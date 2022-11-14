@@ -13,7 +13,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"dagger.io/dagger"
-	generator "github.com/dagger/dagger/codegen/generator/go"
+	"github.com/dagger/dagger/codegen/generator"
+	gogenerator "github.com/dagger/dagger/codegen/generator/go"
+	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
+	"github.com/dagger/dagger/codegen/introspection"
 )
 
 var clientGenCmd = &cobra.Command{
@@ -50,10 +53,14 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		panic(err)
 	}
 
-	generated, err := generator.IntrospectAndGenerate(ctx, c, generator.Config{
+	schema, err := generator.Introspect(ctx, c)
+	if err != nil {
+		panic(err)
+	}
+
+	generated, err := generate(ctx, schema, generator.Config{
 		Package: pkg,
-		// FIXME: use a flag to customize this
-		Lang: generator.SDKLang(lang),
+		Lang:    generator.SDKLang(lang),
 	})
 	if err != nil {
 		return err
@@ -84,16 +91,12 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 }
 
 func getLang(cmd *cobra.Command) (string, error) {
-	pkg, err := cmd.Flags().GetString("lang")
+	lang, err := cmd.Flags().GetString("lang")
 	if err != nil {
 		return "", err
 	}
 
-	// If a package name was provided as a flag, use it
-	if pkg != "" {
-		return pkg, nil
-	}
-	return "", nil
+	return lang, nil
 }
 
 func getPackage(cmd *cobra.Command) (string, error) {
@@ -134,4 +137,27 @@ func getPackage(cmd *cobra.Command) (string, error) {
 
 	// Otherwise (e.g. outputting to a new directory), use the directory name as package name
 	return strings.ToLower(filepath.Base(directory)), nil
+}
+
+func generate(ctx context.Context, schema *introspection.Schema, cfg generator.Config) ([]byte, error) {
+	generator.SetSchemaParents(schema)
+
+	var gen generator.Generator
+	switch cfg.Lang {
+	case generator.SDKLangGo:
+		gen = &gogenerator.GoGenerator{
+			Config: cfg,
+		}
+	case generator.SDKLangNodeJS:
+		gen = &nodegenerator.NodeGenerator{}
+
+	default:
+		sdks := []string{
+			string(generator.SDKLangGo),
+			string(generator.SDKLangNodeJS),
+		}
+		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
+	}
+
+	return gen.Generate(ctx, schema)
 }
