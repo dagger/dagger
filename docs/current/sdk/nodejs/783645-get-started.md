@@ -284,4 +284,4 @@ build-node-16
 
 This tutorial introduced you to the Dagger Node.js SDK. It explained how to install the SDK and use it with a Node.js application. It also provided a working example of a Node.js CI tool powered by the SDK, demonstrating how to test an application against multiple Node.js versions in parallel.
 
-Use the SDK Reference to learn more about the Dagger Node.js SDK.
+Use the [SDK Reference](./reference/modules.md) to learn more about the Dagger Node.js SDK.
