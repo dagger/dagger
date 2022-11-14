@@ -19,8 +19,9 @@ type SDKLang string
 
 const (
 	SDKLangUnknown SDKLang = ""
-	SDKLangGo      SDKLang = "Go"
-	SDKLangTS      SDKLang = "TypeScript"
+	SDKLangGo      SDKLang = "go"
+	SDKLangNodeJS  SDKLang = "nodejs"
+	SDKLangPython  SDKLang = "python"
 )
 
 type Config struct {

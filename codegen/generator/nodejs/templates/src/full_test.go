@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	generator "github.com/dagger/dagger/codegen/generator/go"
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/stretchr/testify/require"
 )
 

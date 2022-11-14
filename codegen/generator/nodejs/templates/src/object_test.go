@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	generator "github.com/dagger/dagger/codegen/generator/go"
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/stretchr/testify/require"
 )
