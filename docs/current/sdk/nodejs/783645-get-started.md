@@ -15,6 +15,7 @@ This tutorial teaches you the basics of using Dagger in NodeJS. You will learn h
 
 This tutorial assumes that:
 
+<<<<<<< HEAD
 - You have a basic understanding of the TypeScript programming language. If not, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html).
 - You have a NodeJS development environment with NodeJS 16.x or later. If not, install [NodeJS](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
@@ -27,10 +28,32 @@ npx create-react-app myapp
 ```
 
 The code samples in this tutorial are based on the above React application. If using a different project, adjust the code samples accordingly.
+=======
+- You have a basic understanding of the Typescript or Javascript programming languages. If not, [read the Typescript tutorials](https://www.typescriptlang.org/docs/).
+- You have a NodeJS development environment with NodeJS 16 or later. If not, install [NodeJS](https://nodejs.org/en/download/).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+
+:::note
+This tutorial build, test and deploy a React application.
+If you don't have a React application already, clone an existing React project with a well-defined test suite before proceeding.
+A good example is the [Getting started with NodeJS SDK](https://github.com/slumbering/gettingstarted-nodejs-sdk) repo, which you can clone as below:
+
+```shell
+git clone https://github.com/slumbering/gettingstarted-nodejs-sdk.git
+```
+
+The code samples in this tutorial are based on the above React app project. If using a different project, adjust the code samples accordingly.
+>>>>>>> 3d1e535e3de0e7ebfa4701b53a76e7d13e7522c1
 :::
 
 ## Step 1: Install the Dagger NodeJS SDK
 
+<<<<<<< HEAD
+=======
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+>>>>>>> 3d1e535e3de0e7ebfa4701b53a76e7d13e7522c1
 :::note
 The Dagger NodeJS SDK requires [NodeJS 16 or later](https://nodejs.org/en/download/).
 :::
@@ -94,12 +117,4 @@ The tool outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and Python 3.10.8
-```
-
-
-
-## Step 2: Code snippet
-
-```typescript
-
 ```
