@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -248,9 +247,9 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	}
 
 	if dockerfile != "" {
-		opts["filename"] = filepath.Join(ctxPayload.Dir, dockerfile)
+		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
 	} else {
-		opts["filename"] = filepath.Join(ctxPayload.Dir, defaultDockerfileName)
+		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
 	}
 
 	inputs := map[string]*pb.Definition{
@@ -707,9 +706,9 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// directory first and then make it the base of the /dagger mount point.
 	//
 	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(metaSourcePath, 0777)
+	meta := llb.Mkdir(metaSourcePath, 0o777)
 	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(opts.Stdin))
+		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0o600, []byte(opts.Stdin))
 	}
 
 	// create /dagger mount point for the shim to write to
