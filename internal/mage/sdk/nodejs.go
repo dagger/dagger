@@ -9,6 +9,10 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
+var (
+	nodejsGeneratedAPIPath = "sdk/nodejs/dagger/api/api.ts"
+)
+
 var _ SDK = NodeJS{}
 
 type NodeJS mg.Namespace
@@ -39,7 +43,26 @@ func (t NodeJS) Test(ctx context.Context) error {
 
 // Generate re-generates the SDK API
 func (t NodeJS) Generate(ctx context.Context) error {
-	panic("FIXME")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		generated, err := util.GoBase(c).
+			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"cloak", "client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			File(nodejsGeneratedAPIPath).
+			Contents(ctx)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+	})
 }
 
 // Publish publishes the NodeJS SDK
