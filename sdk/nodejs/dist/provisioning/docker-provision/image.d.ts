@@ -1,5 +1,5 @@
-import { ConnectOpts, EngineConn } from '../engineconn.js';
-import { GraphQLClient } from 'graphql-request';
+import { ConnectOpts, EngineConn } from "../engineconn.js";
+import { GraphQLClient } from "graphql-request";
 export declare class DockerImage implements EngineConn {
     private imageRef;
     private readonly cacheDir;
