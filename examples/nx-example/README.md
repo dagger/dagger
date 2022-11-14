@@ -4,6 +4,6 @@ This repository was automatically created by running `npx create-nx-workspace@15
 
 ## Steps to setup this repo yourself
 Add the dagger dev dependency by running
-`$ npm i -D @dagger.io/nodejs-sdk`
+`$ npm i -D @dagger.io/dagger`
 
 
