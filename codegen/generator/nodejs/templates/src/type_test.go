@@ -25,7 +25,7 @@ var expectedFieldArgsType = `
 /**
  * Hola
  */
-export type Container = any;
+export type Container = string;
 `
 
 var fieldArgsTypeJSON = `
