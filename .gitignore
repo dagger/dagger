@@ -34,3 +34,7 @@ __pycache__
 
 # Built Binary
 /bin
+
+# Local environment variables, usually secrets
+.env
+.envrc
