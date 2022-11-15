@@ -130,8 +130,8 @@ class _Registry(UserDict[str, type[Connector]]):
     def get_(self, cfg: Config) -> Connector:
         try:
             cls = self.data[cfg.host.scheme]
-        except KeyError:
-            raise ValueError(f'Invalid dagger host "{cfg.host.geturl()}"')
+        except KeyError as e:
+            raise ValueError(f'Invalid dagger host "{cfg.host.geturl()}"') from e
         return cls(cfg)
 
 
