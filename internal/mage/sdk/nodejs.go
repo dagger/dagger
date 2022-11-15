@@ -2,8 +2,10 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
@@ -27,12 +29,11 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = nodeJSBase(c).
+		_, err = nodeJsBase(c).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "lint"},
 				ExperimentalPrivilegedNesting: true,
 			}).
-			WithWorkdir("/app").
 			ExitCode(ctx)
 		return err
 	})
@@ -54,7 +55,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = nodeJSBase(c).
+		_, err = nodeJsBase(c).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "run", "test"},
 				ExperimentalPrivilegedNesting: true,
@@ -90,7 +91,48 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 // Publish publishes the Node.js SDK
 func (t Nodejs) Publish(ctx context.Context, tag string) error {
-	panic("FIXME")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var (
+		version     = strings.TrimPrefix(tag, "sdk/nodejs/v")
+		tokenSecret = c.Host().EnvVariable("NPM_TOKEN").Secret()
+	)
+	token, err := tokenSecret.Plaintext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if token == "" {
+		return errors.New("NPM_TOKEN environment variable must be set")
+	}
+
+	build := nodeJsBase(c).Exec(dagger.ContainerExecOpts{
+		Args: []string{"npm", "run", "build"},
+	})
+
+	// configure .npmrc
+	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
+registry=https://registry.npmjs.org/
+always-auth=true`, token)
+	if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0600); err != nil {
+		return err
+	}
+
+	// set version & publish
+	_, err = build.
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"npm", "version", version},
+		}).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"npm", "publish", "--access", "public"},
+		}).
+		ExitCode(ctx)
+
+	return err
 }
 
 // Bump the Node.js SDK's Engine dependency
@@ -103,17 +145,29 @@ func (t Nodejs) Bump(ctx context.Context, version string) error {
 	return os.WriteFile("sdk/nodejs/provisioning/default.ts", []byte(engineReference), 0600)
 }
 
-func nodeJSBase(c *dagger.Client) *dagger.Container {
-	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
+func nodeJsBase(c *dagger.Client) *dagger.Container {
+	workdir := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
 
 	base := c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json
-		From("node:16-alpine")
+		From("node:16-alpine").
+		WithWorkdir("/workdir")
 
-	return base.
-		WithMountedDirectory("/app", src).
-		WithWorkdir("/app").
+	deps := base.WithFS(
+		base.
+			FS().
+			WithFile("/workdir/package.json", workdir.File("package.json")).
+			WithFile("/workdir/yarn.lock", workdir.File("yarn.lock")),
+	).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"yarn", "install"},
 		})
+
+	src := deps.WithFS(
+		deps.
+			FS().
+			WithDirectory("/workdir", workdir),
+	)
+
+	return src
 }
