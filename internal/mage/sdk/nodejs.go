@@ -19,7 +19,29 @@ type NodeJS mg.Namespace
 
 // Lint lints the NodeJS SDK
 func (t NodeJS) Lint(ctx context.Context) error {
-	panic("FIXME")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	err = util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err = nodeJSBase(c).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"yarn", "eslint", "."},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			WithWorkdir("/app").
+			ExitCode(ctx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	return lintGeneratedCode(func() error {
+		return t.Generate(ctx)
+	}, nodejsGeneratedAPIPath)
 }
 
 // Test tests the NodeJS SDK
@@ -76,9 +98,7 @@ func (t NodeJS) Bump(ctx context.Context, version string) error {
 }
 
 func nodeJSBase(c *dagger.Client) *dagger.Container {
-	// FIXME: change to `util.Repository(c).Directory("sdk/python")` once #3459 is merged
-
-	src := c.Directory().WithDirectory("/", util.Repository(c))
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
 
 	base := c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json
