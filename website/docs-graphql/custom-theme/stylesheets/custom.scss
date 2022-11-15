@@ -94,8 +94,8 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
 // Copy Docs Button
 .operation-example {
     a {
-        background: rgb(254, 250, 216);
-        color: black !important;
+        background: #3D66FF;
+        color: white !important;
         font-size: 1rem;
         font-style: normal;
         font-weight: 700;
@@ -108,8 +108,8 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
         transition: background 0.25s ease;
 
         &:hover {
-            background: transparent;
-            color: var(grey) !important;
+            background: rgba($color: #3D66FF, $alpha: 0.8);
+            // color: var(grey) !important;
             cursor: pointer;
         }
     }
