@@ -120,11 +120,35 @@ export class DockerImage implements EngineConn {
   private buildBinPath(): string {
     const binPath = `${this.cacheDir}/${this.ENGINE_SESSION_BINARY_PREFIX}-${this.imageRef.ID}`;
 
-    switch (os.platform()) {
-      case "win32":
+    switch (this.normalizedOS()) {
+      case "windows":
         return `${binPath}.exe`;
       default:
         return binPath;
+    }
+  }
+
+  /**
+   * normalizedArch returns the architecture name used by the rest of our SDKs.
+   */
+  private normalizedArch(): string {
+    switch (os.arch()) {
+      case "x64":
+        return "amd64";
+      default:
+        return os.arch();
+    }
+  }
+
+  /**
+   * normalizedOS returns the os name used by the rest of our SDKs.
+   */
+  private normalizedOS(): string {
+    switch (os.platform()) {
+      case "win32":
+        return "windows";
+      default:
+        return os.platform();
     }
   }
 
@@ -150,7 +174,7 @@ export class DockerImage implements EngineConn {
       this.imageRef.Ref,
       `/usr/bin/${
         this.ENGINE_SESSION_BINARY_PREFIX
-      }-${os.platform()}-${os.arch()}`,
+      }-${this.normalizedOS()}-${this.normalizedArch()}`,
     ];
 
     try {
