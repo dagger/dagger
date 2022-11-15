@@ -27,7 +27,8 @@
   "scripts": {
     "build": "tsc",
     "test": "mocha",
-    "gen:typedoc": "yarn typedoc"
+    "gen:typedoc": "yarn typedoc",
+    "lint": "yarn eslint ."
   },
   "devDependencies": {
     "@types/mocha": "latest",

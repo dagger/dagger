@@ -1,4 +1,4 @@
-import { QueryTree } from "./client.js";
+import { QueryTree } from "./client.gen.js";
 
   export function queryBuilder(q: QueryTree[]) {
 

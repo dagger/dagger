@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	nodejsGeneratedAPIPath = "sdk/nodejs/api/client.ts"
+	nodejsGeneratedAPIPath = "sdk/nodejs/api/client.gen.ts"
 )
 
 var _ SDK = NodeJS{}
@@ -26,20 +26,20 @@ func (t NodeJS) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	err = util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJSBase(c).
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"yarn", "eslint", "."},
+				Args:                          []string{"yarn", "lint"},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			WithWorkdir("/app").
 			ExitCode(ctx)
 		return err
 	})
-	if err != nil {
-		return err
-	}
+}
 
+// Generateandcheck checks generated code
+func (t NodeJS) Generateandcheck(ctx context.Context) error {
 	return lintGeneratedCode(func() error {
 		return t.Generate(ctx)
 	}, nodejsGeneratedAPIPath)
@@ -108,27 +108,12 @@ func nodeJSBase(c *dagger.Client) *dagger.Container {
 
 	base := c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json
-		From("node:16-alpine").
-		WithWorkdir("/app")
+		From("node:16-alpine")
 
-	base = base.WithFS(
-		base.
-			FS().
-			WithFile("/app/package.json", src.File("package.json")).
-			WithFile("/app/yarn.lock", src.File("yarn.lock")),
-	).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"env"},
-		}).
+	return base.
+		WithMountedDirectory("/app", src).
+		WithWorkdir("/app").
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"yarn", "install"},
 		})
-
-	base = base.WithFS(
-		base.
-			FS().
-			WithDirectory("/app", src),
-	)
-
-	return base
 }
