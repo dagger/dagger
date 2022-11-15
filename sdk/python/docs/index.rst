@@ -21,6 +21,7 @@ Project links
 * `PyPI Project <https://pypi.org/project/dagger-io/>`_
 * `Documentation <https://docs.dagger.io/sdk/python>`_
 * `Source code <https://github.com/dagger/dagger/tree/main/sdk/python>`_
+* `Release Notes <https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0>`_
 
 
 Indices and tables

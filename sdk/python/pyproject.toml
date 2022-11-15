@@ -11,7 +11,7 @@ authors = ["Dagger <hello@dagger.io>"]
 readme = "README.md"
 homepage = "https://dagger.io"
 documentation = "https://docs.dagger.io/sdk/python"
-repository = "https://github.com/dagger/dagger"
+repository = "https://github.com/dagger/dagger/tree/main/sdk/python"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -30,8 +30,10 @@ packages = [
 ]
 
 [tool.poetry.urls]
-"Bug Tracker" = "https://github.com/dagger/dagger/issues"
-"API Reference" = "https://dagger-io.readthedocs.org"
+"Tracker" = "https://github.com/dagger/dagger/issues"
+"Release Notes" = "https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0"
+"Community" = "https://discord.gg/ufnyBtc8uY"
+"Twitter" = "https://twitter.com/dagger_io"
 
 [tool.poetry.scripts]
 # FIXME: uncomment when extensions become available
