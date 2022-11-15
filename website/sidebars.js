@@ -47,25 +47,6 @@ module.exports = {
     },
     {
       type: "category",
-      label: "Node.js SDK",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "current/sdk/nodejs/index",
-        },
-        "current/sdk/nodejs/install",
-        {
-          type: "doc",
-          label: "Get Started",
-          id: "current/sdk/nodejs/get-started",
-        },
-      ],
-    },
-    {
-      type: "category",
       label: "Python SDK",
       collapsible: false,
       collapsed: false,
