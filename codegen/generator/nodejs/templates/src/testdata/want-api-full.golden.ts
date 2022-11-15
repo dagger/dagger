@@ -25,7 +25,7 @@ class BaseClient {
   constructor({queryTree, port}: ClientConfig = {}) {
     this._queryTree = queryTree || []
     this.port = port || 8080
-		this.client = new GraphQLClient(`http://localhost:${port}/query`);
+		this.client = new GraphQLClient(`http://127.0.0.1:${port}/query`);
   }
 
   get queryTree() {
