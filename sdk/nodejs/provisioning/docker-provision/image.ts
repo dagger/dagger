@@ -51,7 +51,7 @@ class ImageRef {
 	 * @throws no digest found in ref.
 	 */
 	static validate(ref: string): void {
-		if (!ref.includes('@sha256')) {
+		if (!ref.includes('@sha256:')) {
 			throw new Error(`no digest found in ref ${ ref }`);
 		}
 	}
