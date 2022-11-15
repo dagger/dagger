@@ -1,7 +1,7 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
   "include": ["./**/*"],
-  "exclude": ["./api/test/**/*", "./dist/**/*", "./test/**/*"],
+  "exclude": ["./**/*.spec.ts", "./dist/**/*"],
   "compilerOptions": {
     "target": "ES6",
     "strict": true,

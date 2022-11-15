@@ -1,12 +1,27 @@
-import { GraphQLClient } from "graphql-request";
+import Client from "../api/client.js";
+import { StdioOption } from 'execa';
 
 export interface ConnectOpts {
   Workdir?: string;
-  ConfigPath?: string;
+  Project?: string;
+  OutputLog?: StdioOption;
+  Timeout?: number;
 }
 
 export interface EngineConn {
+  /**
+   * Addr returns the connector address.
+   */
   Addr: () => string;
-  Connect: (opts: ConnectOpts) => Promise<GraphQLClient>;
+
+  /**
+   * Connect initializes a ready to use GraphQL Client that
+   * points to the engine.
+   */
+  Connect: (opts: ConnectOpts) => Promise<Client>;
+
+  /**
+   * Close stops the current connection.
+   */
   Close: () => Promise<void>;
 }

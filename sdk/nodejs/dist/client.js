@@ -7,6 +7,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+// TODO(TomChv): Not useful anymore, that should be deleted.
 import axios from "axios";
 import { buildAxiosFetch } from "@lifeomic/axios-fetch";
 import { GraphQLClient } from "graphql-request";

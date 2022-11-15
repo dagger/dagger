@@ -1,3 +1,4 @@
+// TODO(TomChv): Not useful anymore, that should be deleted.
 import axios from "axios";
 import { buildAxiosFetch } from "@lifeomic/axios-fetch";
 import { GraphQLClient } from "graphql-request";

@@ -1,27 +1,30 @@
 import { ConnectOpts, EngineConn } from '../engineconn.js';
-import { GraphQLClient } from 'graphql-request';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import readline from 'readline';
 import { execaCommandSync, execaCommand } from 'execa';
+import Client from '../../api/client.js';
 
+/**
+ * ImageRef is a simple abstraction of docker image reference.
+ */
 class ImageRef {
 	private readonly ref: string;
 
 	/**
 	 * id is the unique identifier of the image
-	 * based on image's digest
+	 * based on image's digest.
 	 */
 	private readonly id: string;
 
 	/**
-	 * trim image digests to 16 characters to make output more readable
+	 * trim image digests to 16 characters to make output more readable.
 	 */
 	private readonly DIGEST_LEN = 16;
 
 	constructor(ref: string) {
-		// Throw error if ref is not correctly formatted
+		// Throw error if ref is not correctly formatted.
 		ImageRef.validate(ref);
 
 		this.ref = ref;
@@ -40,12 +43,12 @@ class ImageRef {
 
 	/**
 	 * validateImage verify that the passed ref
-	 * is compliant with DockerImage constructor
+	 * is compliant with DockerImage constructor.
 	 *
 	 * This function does not return anything but
 	 * only throw on error.
 	 *
-	 * @throws no digest found in ref
+	 * @throws no digest found in ref.
 	 */
 	static validate(ref: string): void {
 		if (!ref.includes('@sha256')) {
@@ -54,6 +57,10 @@ class ImageRef {
 	}
 }
 
+/**
+ * DockerImage is an implementation of EngineConn to set up a Dagger
+ * Engine session from a pulled docker image.
+ */
 export class DockerImage implements EngineConn {
 	private imageRef: ImageRef;
 
@@ -64,6 +71,8 @@ export class DockerImage implements EngineConn {
 
 	private readonly ENGINE_SESSION_BINARY_PREFIX = 'dagger-engine-session';
 
+	private enginePid?: number;
+
 	constructor(u: URL) {
 		this.imageRef = new ImageRef(u.host + u.pathname);
 	}
@@ -72,7 +81,7 @@ export class DockerImage implements EngineConn {
 		return 'http://dagger';
 	}
 
-	async Connect(opts: ConnectOpts): Promise<GraphQLClient> {
+	async Connect(opts: ConnectOpts): Promise<Client> {
 		this.createCacheDir();
 
 		const engineSessionBinPath = this.buildBinPath();
@@ -80,32 +89,7 @@ export class DockerImage implements EngineConn {
 			this.pullEngineSessionBin(engineSessionBinPath);
 		}
 
-		const remote = 'docker-image://' + this.imageRef.Ref;
-		var engineSessionArgs = [ engineSessionBinPath, '--remote', remote ];
-		if (opts.Workdir) {
-			engineSessionArgs.push('--workdir', opts.Workdir);
-		}
-		if (opts.ConfigPath) {
-			engineSessionArgs.push('--project', opts.ConfigPath);
-		}
-
-		const commandOpts = {
-			stderr: process.stderr, // TODO: this is supposed to be configurable
-			// Kill the process if parent exit.
-			cleanup: true,
-		};
-		const cmd = execaCommand(engineSessionArgs.join(' '), commandOpts);
-		const stdoutReader = readline.createInterface({
-			input: cmd.stdout!,
-		});
-		var port: number;
-		// TODO: timeout here
-		for await (const line of stdoutReader) {
-			// read line as a port number
-			port = parseInt(line);
-			return new GraphQLClient(`http://127.0.0.1:${ port }/query`);
-		}
-		throw new Error('failed to connect to engine session');
+		return this.runEngineSession(engineSessionBinPath, opts);
 	}
 
 	/**
@@ -137,8 +121,14 @@ export class DockerImage implements EngineConn {
 		}
 	}
 
+	/**
+	 * pullEngineSessionBin will retrieve Dagger binary from its docker image
+	 * and copy it to the local host.
+	 * This function automatically resolves host's platform to copy the correct
+	 * binary.
+	 */
 	private pullEngineSessionBin(engineSessionBinPath: string): void {
-		// Create a temporary bin file
+		// Create a temporary bin file path
 		const tmpBinPath = path.join(
 			this.cacheDir,
 			`temp-${ this.ENGINE_SESSION_BINARY_PREFIX }`
@@ -156,7 +146,8 @@ export class DockerImage implements EngineConn {
 
 		try {
 			const fd = fs.openSync(tmpBinPath, 'w', 0o700);
-			const process = execaCommandSync(dockerRunArgs.join(' '), {
+
+			execaCommandSync(dockerRunArgs.join(' '), {
 				stdout: fd,
 				stderr: 'pipe',
 				encoding: null,
@@ -166,17 +157,81 @@ export class DockerImage implements EngineConn {
 				reject: false,
 				timeout: 300000,
 			});
+
 			fs.closeSync(fd);
 			fs.renameSync(tmpBinPath, engineSessionBinPath);
 		} catch (e) {
 			fs.rmSync(tmpBinPath);
+
 			throw new Error(`failed to copy engine session binary: ${ e }`);
 		}
 
-		// TODO: garbage collect older binaries
+		// Remove all temporary binary files
+		// Ignore current engine session binary or other files that have not be
+		// created by this SDK.
+		try {
+			const files = fs.readdirSync(this.cacheDir);
+			files.forEach((file) => {
+				const filePath = `${ this.cacheDir }/${ file }`;
+				if (filePath === engineSessionBinPath || !file.startsWith(this.ENGINE_SESSION_BINARY_PREFIX)) {
+					return;
+				}
+
+				fs.unlinkSync(filePath);
+			});
+		} catch (e) {
+			// Log the error but do not interrupt program.
+			console.error('could not clean up temporary binary files');
+		}
+	}
+
+	/**
+	 * runEngineSession execute the engine binary and set up a GraphQL client that
+	 * target this engine.
+	 */
+	private async runEngineSession(engineSessionBinPath: string, opts: ConnectOpts): Promise<Client> {
+		const engineSessionArgs = [ engineSessionBinPath, '--remote', `docker-image://${ this.imageRef.Ref }` ];
+
+		if (opts.Workdir) {
+			engineSessionArgs.push('--workdir', opts.Workdir);
+		}
+		if (opts.Project) {
+			engineSessionArgs.push('--project', opts.Project);
+		}
+
+		const { stdout, pid } = execaCommand(engineSessionArgs.join(' '),
+			{
+				stderr: opts.OutputLog || process.stderr,
+
+				// Kill the process if parent exit.
+				cleanup: true,
+			});
+
+		// Register PID to kill it later.
+		this.enginePid = pid;
+
+		const stdoutReader = readline.createInterface({
+			input: stdout!,
+		});
+
+		// Set a timeout of 10 seconds by default
+		// Do not call the function if port is successfully retrieved.
+		const timeoutFct = setTimeout(async () => this.Close(), opts.Timeout || 10000);
+
+		for await (const line of stdoutReader) {
+			// Read line as a port number
+			const port = parseInt(line);
+
+			clearTimeout(timeoutFct);
+			return new Client({ port: port });
+		}
+
+		throw new Error('failed to connect to engine session');
 	}
 
 	async Close(): Promise<void> {
-		return Promise.resolve(undefined);
+		if (this.enginePid) {
+			process.kill(this.enginePid);
+		}
 	}
 }

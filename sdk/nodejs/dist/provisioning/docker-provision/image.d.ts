@@ -1,12 +1,17 @@
 import { ConnectOpts, EngineConn } from '../engineconn.js';
-import { GraphQLClient } from 'graphql-request';
+import Client from '../../api/client.js';
+/**
+ * DockerImage is an implementation of EngineConn to set up a Dagger
+ * Engine session from a pulled docker image.
+ */
 export declare class DockerImage implements EngineConn {
     private imageRef;
     private readonly cacheDir;
     private readonly ENGINE_SESSION_BINARY_PREFIX;
+    private enginePid?;
     constructor(u: URL);
     Addr(): string;
-    Connect(opts: ConnectOpts): Promise<GraphQLClient>;
+    Connect(opts: ConnectOpts): Promise<Client>;
     /**
      * createCacheDir will create a cache directory on user
      * host to store dagger binary.
@@ -23,7 +28,18 @@ export declare class DockerImage implements EngineConn {
      * of the base engine session as constant and the engine identifier.
      */
     private buildBinPath;
+    /**
+     * pullEngineSessionBin will retrieve Dagger binary from its docker image
+     * and copy it to the local host.
+     * This function automatically resolves host's platform to copy the correct
+     * binary.
+     */
     private pullEngineSessionBin;
+    /**
+     * runEngineSession execute the engine binary and set up a GraphQL client that
+     * target this engine.
+     */
+    private runEngineSession;
     Close(): Promise<void>;
 }
 //# sourceMappingURL=image.d.ts.map

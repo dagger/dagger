@@ -1,3 +1,4 @@
+// TODO(TomChv): Is this file useful?
 import type { Client } from "./client.js";
 
 import * as fs from "fs";
