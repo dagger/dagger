@@ -90,11 +90,46 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
 //
 // $background-arguments: #fafbfc;
 
+
+// Copy Docs Button
 .operation-example {
     a {
-        padding: 10px;
+        background: rgb(254, 250, 216);
+        color: black !important;
+        font-size: 1rem;
+        font-style: normal;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0em;
+        text-align: left;
+        padding: 0.625rem 1.5rem;
+        border: 0;
+        border-radius: 50px;
+        transition: background 0.25s ease;
+
+        &:hover {
+            background: transparent;
+            color: var(grey) !important;
+            cursor: pointer;
+        }
+    }
+
+    pre {
         border-radius: 10px;
-        box-shadow: 5px 5px 5px 5px grey;
-        background-color: red;
+    }
+}
+
+div .operation-variables-example,
+div .operation-query-example,
+div .operation-response-example,
+div .welcome-api-endpoints-section.example-section-is-code {
+    border-radius: 10px !important;
+
+    h5 {
+        border-radius: 10px 10px 0px 0px !important;
+    }
+
+    pre {
+        border-radius: 0px 0px 10px 10px !important;
     }
 }
