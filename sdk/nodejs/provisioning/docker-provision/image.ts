@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import readline from 'readline';
 import { execaCommandSync, execaCommand, ExecaChildProcess } from 'execa';
-import Client from '../../api/client.js';
+import Client from '../../api/client.gen.js';
 
 /**
  * ImageRef is a simple abstraction of docker image reference.

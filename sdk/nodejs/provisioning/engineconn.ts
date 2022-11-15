@@ -1,4 +1,4 @@
-import Client from "../api/client.js";
+import Client from "../api/client.gen.js";
 import { StdioOption } from 'execa';
 
 export interface ConnectOpts {
