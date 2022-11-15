@@ -40,10 +40,10 @@ class ImageRef:
         if "@sha256:" not in ref:
             raise ValueError("Image ref must contain a digest")
 
-        id = ref.split("@sha256:", maxsplit=1)[1]
+        id_ = ref.split("@sha256:", maxsplit=1)[1]
         # TODO: add verification that the digest is valid
         # (not something malicious with / or ..)
-        self.id = id[: self.DIGEST_LEN]
+        self.id = id_[: self.DIGEST_LEN]
 
 
 @define

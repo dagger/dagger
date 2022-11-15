@@ -111,13 +111,13 @@ async def test_container_with_mounted_cache():
 
 async def test_directory():
     async with dagger.Connection() as client:
-        dir = (
+        dir_ = (
             client.directory()
             .with_new_file("hello.txt", "Hello, world!")
             .with_new_file("goodbye.txt", "Goodbye, world!")
         )
 
-        entries = await dir.entries()
+        entries = await dir_.entries()
 
         assert entries == ["goodbye.txt", "hello.txt"]
 

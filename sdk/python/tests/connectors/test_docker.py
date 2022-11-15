@@ -39,8 +39,8 @@ async def test_docker_image_provision(tmp_path: Path, monkeypatch: pytest.Monkey
 
     # assert that there's only one engine-session binary in the cache
     files = cache_dir.iterdir()
-    bin = next(files)
-    assert bin.name.startswith("dagger-engine-session-")
+    bin_ = next(files)
+    assert bin_.name.startswith("dagger-engine-session-")
     with pytest.raises(StopIteration):
         next(files)
     # assert the garbage was cleaned up
