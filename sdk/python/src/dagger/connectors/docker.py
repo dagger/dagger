@@ -75,6 +75,12 @@ class Engine:
                 "delete": False,
             }
             with tempfile.NamedTemporaryFile(**tempfile_args) as tmp_bin:
+
+                def cleanup():
+                    """Remove the tmp_bin on error."""
+                    tmp_bin.close()
+                    os.unlink(tmp_bin.name)
+
                 docker_run_args = [
                     "docker",
                     "run",
@@ -100,6 +106,13 @@ class Engine:
                     raise ProvisionError(
                         f"Failed to copy engine session binary: {e.stderr}"
                     ) from e
+                else:
+                    # Flake8 Ignores
+                    # F811 -- redefinition of (yet) unused function
+                    # E731 -- assigning a lambda.
+                    cleanup = lambda: None  # noqa: F811,E731
+                finally:
+                    cleanup()
 
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
