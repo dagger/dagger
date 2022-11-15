@@ -55,7 +55,7 @@ func (t NodeJS) Test(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJSBase(c).
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"yarn", "run", "test-sdk"},
+				Args:                          []string{"yarn", "run", "test"},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
