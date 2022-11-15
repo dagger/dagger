@@ -89,18 +89,8 @@ jobs:
     name: sdk / nodejs
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - uses: actions/setup-node@v3
-        with:
-          # ⚠️  Keep this in sync with https://github.com/dagger/dagger/blob/main/package.json#L14
-          node-version: 16
-      - run: npm install -g yarn
-      - uses: actions/checkout@v3
-      - run: ./hack/make engine:build
-      - run: echo `pwd`/bin >> $GITHUB_PATH
-      - run: yarn install
-        working-directory: sdk/nodejs
-      - run: yarn run test
-        working-directory: sdk/nodejs
+      - run: ./hack/make sdk:nodejs:test
