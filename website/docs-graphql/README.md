@@ -14,3 +14,7 @@ The examples are rendered with `spectaql` with the use of [helpers](https://gith
 The examples live in the [`./data/examples`](./data/examples/) folder and are read at the time of generation with a script that lives in [`./custom-theme/data/index.js`](`./custom-theme/data/index.js`).  
 
 The script does not fail if there is a missing example for a given query, but it outputs the results to the console with a warning.  
+
+## Introduction Content  
+
+To modify the content in the introduction section, modify the info field in [the configuration file](./config.yml).  
