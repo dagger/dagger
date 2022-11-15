@@ -1,0 +1,69 @@
+name: provisioning-test
+on:
+  pull_request:
+  # schedule:
+  #   # https://crontab.guru/#6_9_*_*_*
+  #   # Every day, at 9:06 am
+  #   - cron: "6 9 * * *"
+  #   # There is high load on GitHub Actions at the top of the hour:
+  #   #
+  #   #     Note: The schedule event can be delayed during periods of high loads of
+  #   #     GitHub Actions workflow runs. High load times include the start of every
+  #   #     hour. To decrease the chance of delay, schedule your workflow to run at a
+  #   #     different time of the hour.
+  #   #
+  #   # So we run these at a special time, 9:06. Ask @gerhard about it.
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        # Windows hosts don't support linux containers yet (https://github.com/actions/virtual-environments/issues/1143)
+        # os: [ubuntu-latest, macos-latest]
+        os: [macos-latest]
+        python-version: ["3.10"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Bootstrap poetry
+        run: |
+          curl -sL https://install.python-poetry.org | python - -y
+
+      # Docker is not installed on GitHub's MacOS hosted workers due to licensing issues
+      # (and it's necessary to run Autobahn tests)
+      - name: Setup docker (missing on MacOS)
+        if: runner.os == 'macos'
+        run: |
+          brew install docker
+          # using mount-type 9p to allow the containers launched to chown
+          # https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077
+          colima start --mount-type 9p
+
+      - name: Manual Go SDK provisioning test
+        run: |
+          cd sdk/go && go test -count=1 -run="TestImageProvision" -v ./...
+
+      - name: Print Engine Logs
+        if: always()
+        run: |
+          docker logs $(docker ps -a | grep dagger-engine |cut -d " " -f 1)
+
+      - name: Manual Python SDK provisioning test
+        run: |
+          cd sdk/python && poetry install && poetry run poe test -- -xk 'test_docker'
+
+      - name: Print Engine Logs
+        if: always()
+        run: |
+          docker logs $(docker ps -a | grep dagger-engine |cut -d " " -f 1)
