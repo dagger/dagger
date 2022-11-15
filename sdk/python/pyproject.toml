@@ -93,12 +93,11 @@ default_item_type = "cmd"
 
 [tool.poe.tasks.fmt]
 sequence = [
-    "autoflake --in-place .",
-    "isort .",
-    "black .",
-    { ref = "lint"},
+    {cmd = "autoflake --in-place ."},
+    {cmd = "isort ."},
+    {cmd = "black ."},
+    {ref = "lint"},
 ]
-default_item_type = "cmd"
 
 [tool.poe.tasks.generate]
 sequence = [
