@@ -163,7 +163,7 @@ export class DockerImage implements EngineConn {
         // Kill the process if parent exit.
         cleanup: true,
         // Throw on error
-        reject: false,
+        reject: true,
         timeout: 300000,
       });
 
