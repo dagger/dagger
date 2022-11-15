@@ -136,15 +136,21 @@ class Engine:
             port = int(self._proc.stdout.readline())
         except ValueError as e:
             # Check if the subprocess exited with an error.
-            return_value = self._proc.poll()
-            if return_value != 0 or return_value is not None:
-                raise DaggerException(self._proc.stderr.readline()) from e
+            exit_code = self._proc.poll()
+            if exit_code != 0 or exit_code is not None:
+                if self._proc.stderr is not None and self._proc.stderr.readable():
+                    raise DaggerException(
+                        f"Dagger engine failed to start. {self._proc.stderr.readline()}"
+                    ) from e
+                else:
+                    raise DaggerException(
+                        "Dagger engine failed to start, is docker running?"
+                    )
             # if the subprocess is OK raise the original error
             else:
                 raise e
 
         # TODO: verify port number is valid
-
         self.cfg.host = f"http://localhost:{port}"
 
     def is_running(self) -> bool:
