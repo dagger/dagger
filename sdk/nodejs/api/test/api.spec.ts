@@ -1,11 +1,10 @@
-import assert from "assert";
+import assert from 'assert';
 import Client from "../client.js"
 import { queryBuilder, queryFlatten } from "../utils.js"
 
 describe('NodeJS SDK api', function () {
   
   it('Build correctly a query with one argument', async function () {
-
     const tree = new Client().container().from({address: "alpine"})
 
     assert.strictEqual(queryBuilder(tree.queryTree), `{container{from(address:"alpine")}}`);

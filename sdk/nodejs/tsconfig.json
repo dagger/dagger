@@ -1,17 +1,18 @@
 // Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
 {
   "include": ["./**/*"],
-  "exclude": ["./api/test/**/*", "./dist/**/*", "./test/**/*"],
+  "exclude": ["./**/*.spec.ts", "./dist/**/*"],
   "compilerOptions": {
-    "target": "es2015",
+    "target": "ES6",
     "strict": true,
     "outDir": "./dist",
     "rootDir": ".",
     "esModuleInterop": true,
-    "module": "ESNext",
+    "allowSyntheticDefaultImports": true,
+    "module": "ES6",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "moduleResolution": "node",
+    "moduleResolution": "Node",
     "declaration": true,
     "declarationMap": true
   },

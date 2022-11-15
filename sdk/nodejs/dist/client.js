@@ -7,16 +7,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-import axios from 'axios';
-import { buildAxiosFetch } from '@lifeomic/axios-fetch';
-import { GraphQLClient } from 'graphql-request';
-import { Response } from 'node-fetch';
+// TODO(TomChv): Not useful anymore, that should be deleted.
+import axios from "axios";
+import { buildAxiosFetch } from "@lifeomic/axios-fetch";
+import { GraphQLClient } from "graphql-request";
+import { Response } from "node-fetch";
 // @ts-expect-error node-fetch doesn't exactly match the Response object, but close enough.
 global.Response = Response;
 // TODO(Tomchv): useless so we can remove it later.
-export const client = new GraphQLClient('http://fake.invalid/query', {
+export const client = new GraphQLClient("http://fake.invalid/query", {
     fetch: buildAxiosFetch(axios.create({
-        socketPath: '/dagger.sock',
+        socketPath: "/dagger.sock",
         timeout: 3600e3,
     })),
 });
@@ -24,8 +25,8 @@ export class Client {
     /**
      * creates a new Dagger Typescript SDK GraphQL client.
      */
-    constructor(port = 8080) {
-        this.client = new GraphQLClient(`http://localhost:${port}/query`);
+    constructor(client) {
+        this.client = client;
     }
     /**
      * do takes a GraphQL query payload as parameter and send it

@@ -5,19 +5,15 @@ import Client from './api/client.js';
  * Options are based on `dagger cloak` CLI.
  */
 export interface ConnectOpts {
-    Port?: number;
     Workdir?: string;
     ConfigPath?: string;
 }
-/**
- * ConnectExecCB is the type of the connect callback
- * This call acts as a context with a ready to use Dagger GraphQL client.
- */
-export declare type ConnectExecCB = (client: Client) => Promise<void>;
+declare type CallbackFct = (client: Client) => Promise<void>;
 /**
  * connect runs cloak GraphQL server and initializes a
  * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
-export declare function connect(cb: ConnectExecCB, config?: ConnectOpts): Promise<void>;
+export declare function connect(cb: CallbackFct, config?: ConnectOpts): Promise<void>;
+export {};
 //# sourceMappingURL=connect.d.ts.map
