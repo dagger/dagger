@@ -9,13 +9,39 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
+var (
+	nodejsGeneratedAPIPath = "sdk/nodejs/api/client.ts"
+)
+
 var _ SDK = NodeJS{}
 
 type NodeJS mg.Namespace
 
 // Lint lints the NodeJS SDK
 func (t NodeJS) Lint(ctx context.Context) error {
-	panic("FIXME")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	err = util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err = nodeJSBase(c).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"yarn", "eslint", "."},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			WithWorkdir("/app").
+			ExitCode(ctx)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+
+	return lintGeneratedCode(func() error {
+		return t.Generate(ctx)
+	}, nodejsGeneratedAPIPath)
 }
 
 // Test tests the NodeJS SDK
@@ -29,7 +55,7 @@ func (t NodeJS) Test(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJSBase(c).
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"yarn", "run", "test-sdk"},
+				Args:                          []string{"yarn", "run", "test"},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
@@ -39,7 +65,26 @@ func (t NodeJS) Test(ctx context.Context) error {
 
 // Generate re-generates the SDK API
 func (t NodeJS) Generate(ctx context.Context) error {
-	panic("FIXME")
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		generated, err := util.GoBase(c).
+			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"cloak", "client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			File(nodejsGeneratedAPIPath).
+			Contents(ctx)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+	})
 }
 
 // Publish publishes the NodeJS SDK
@@ -53,9 +98,7 @@ func (t NodeJS) Bump(ctx context.Context, version string) error {
 }
 
 func nodeJSBase(c *dagger.Client) *dagger.Container {
-	// FIXME: change to `util.Repository(c).Directory("sdk/python")` once #3459 is merged
-
-	src := c.Directory().WithDirectory("/", util.Repository(c))
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
 
 	base := c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json

@@ -1,0 +1,14 @@
+{{ define "method_comment" }}
+	{{- if . -}}
+		{{- $commentLines := CommentToLines . }}
+		{{- /* we split the comment string into a string slice of one line per element */ -}}
+{{""}}
+{{""}}
+  /**
+		{{- range $commentLines }}
+   * {{ . }}
+		{{- end }}
+   */
+{{ "" -}}
+	{{- end }}
+{{- end }}

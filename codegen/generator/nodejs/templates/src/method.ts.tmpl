@@ -1,0 +1,16 @@
+{{ define "method" }}
+{{- template "method_comment" .Description }}
+{{- "" }}  {{ .Name -}}({{- template "args" .Args -}}){{ template "return" .TypeRef }} {
+		{{- if .TypeRef }}
+    return new {{ .TypeRef | FormatOutputType }}({queryTree: [
+      ...this._queryTree,
+      {
+      operation: '{{ .Name}}'
+			{{- if .Args }},
+      args: { {{- template "call_args" .Args -}} }
+			{{- end }}
+      }
+    ], port: this.port})
+		{{- end }}
+  }
+{{- end }}

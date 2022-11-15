@@ -5,7 +5,8 @@ import { QueryTree } from "./client.js";
     const args = (item: any) => { 
       const regex = /\{"[a-zA-Z]+"/ig;
       
-      return Object.entries(item.args)
+      const entries = Object.entries(item.args)
+        .filter(value => value[1] !== undefined)
         .map(value => {
             if(typeof value[1] === 'object') {
               return `${value[0]}: ${JSON.stringify(value[1]).replace(regex, str => str.replace(/"/g, ''))}`
@@ -15,12 +16,17 @@ import { QueryTree } from "./client.js";
             }
           return `${value[0]}: "${value[1]}"`
         })
+      if (entries.length === 0) {
+              return ''
+      }
+      return '('+entries+')'
     }
+
 
     let query = "{"
     q.forEach((item: QueryTree, index: number) => {
       query += `
-        ${item.operation} ${item.args ? `(${args(item)})` : ''} ${q.length - 1 !== index ? '{' : '}'.repeat(q.length - 1)}
+        ${item.operation} ${item.args ? `${args(item)}` : '' } ${q.length - 1 !== index ? '{' : '}'.repeat(q.length - 1)}
       `
     })
     query += "}"

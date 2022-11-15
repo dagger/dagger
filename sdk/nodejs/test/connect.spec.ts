@@ -7,9 +7,9 @@ describe('NodeJS sdk', function () {
 
 		await connect(async (client) => {
 			const result = await client.container()
-				.from({ address: 'alpine' })
-				.exec({ args: [ 'apk', 'add', 'curl' ] })
-				.exec({ args: [ 'curl', 'https://dagger.io/' ] })
+				.from('alpine')
+				.exec([ 'apk', 'add', 'curl' ])
+				.exec([ 'curl', 'https://dagger.io/' ])
 				.stdout().size();
 
 			assert.ok(result.size > 10000);

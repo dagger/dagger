@@ -1,4 +1,4 @@
-//go:generate cloak client-gen -o api.gen.go --package dagger
+//go:generate cloak client-gen -o api.gen.go --package dagger --lang go
 package dagger
 
 import (
