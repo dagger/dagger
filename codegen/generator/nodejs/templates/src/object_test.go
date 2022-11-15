@@ -33,7 +33,7 @@ class Container extends BaseClient {
       operation: 'exec',
       args: {args, stdin, redirectStdout, redirectStderr}
       }
-    ], port: this.port})
+    ], host: this._host})
   }
 }
 `

@@ -67,7 +67,7 @@ class Host extends BaseClient {
       operation: 'directory',
       args: {path, exclude, include}
       }
-    ], port: this.port})
+    ], host: this._host})
   }
 
   /**
@@ -80,7 +80,7 @@ class Host extends BaseClient {
       operation: 'envVariable',
       args: {name}
       }
-    ], port: this.port})
+    ], host: this._host})
   }
 
   /**
@@ -93,7 +93,7 @@ class Host extends BaseClient {
       operation: 'workdir',
       args: {exclude, include}
       }
-    ], port: this.port})
+    ], host: this._host})
   }
 }
 `

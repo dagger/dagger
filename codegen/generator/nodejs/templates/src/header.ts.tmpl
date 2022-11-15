@@ -14,19 +14,19 @@ export type QueryTree = {
 
 interface ClientConfig {
   queryTree?: QueryTree[],
-  port?: number
+  host?: string
 }
 
 class BaseClient {
   protected _queryTree:  QueryTree[]
 	private client: GraphQLClient;
-  protected port: number
+  protected _host: string
 
 
-  constructor({queryTree, port}: ClientConfig = {}) {
+  constructor({queryTree, host}: ClientConfig = {}) {
     this._queryTree = queryTree || []
-    this.port = port || 8080
-		this.client = new GraphQLClient(`http://127.0.0.1:${port}/query`);
+    this._host = host || "127.0.0.1:8080"
+		this.client = new GraphQLClient(`http://${host}/query`);
   }
 
   get queryTree() {
