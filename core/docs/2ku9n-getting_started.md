@@ -43,6 +43,13 @@ dagger -p examples/yarn/dagger.json do --local-dir source=. --set runArgs=build
 
 ## Development
 
+## Cloak Dev Development
+
+1. Running `./hack/make engine:build` will build a cloak executable inside `./bin/cloak` (If you don't want to use your own version reset `DAGGER_HOST` to an empty string)
+2. Running `./bin/cloak dev` will start a dev server accepting queries and hosting a web interface at `http://localhost:8080`
+3. By Setting the env variable `DAGGER_HOST=http://localhost:8080` the local dev instance of cloak will be used. Be careful as step 1, will use that version unless `DAGGER_HOST` is reset
+4. Run tests or otherwise try out the modified version of cloak
+
 ### Invoking Actions
 
 #### With Dagger CLI
