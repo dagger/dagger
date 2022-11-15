@@ -80,8 +80,8 @@ export class DockerImage implements EngineConn {
   /**
    * Generate a unix timestamp in nanosecond
    */
-  private getRandomId() {
-    return Math.floor(Date.now() * 1000000)
+  private getRandomId(): string {
+    return process.hrtime.bigint().toString()
   }
 
   Addr(): string {
