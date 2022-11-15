@@ -1,14 +1,14 @@
 import Client from "./api/client.gen.js"
 import { getProvisioner, DEFAULT_HOST } from "./provisioning/index.js"
+import { Writable } from "node:stream"
 
 /**
- * ConnectOpts defines option used to run cloak
- * in dev mode.
- * Options are based on `dagger cloak` CLI.
+ * ConnectOpts defines option used to connect to an engine.
  */
 export interface ConnectOpts {
   Workdir?: string
   ConfigPath?: string
+  LogOutput?: Writable
 }
 
 type CallbackFct = (client: Client) => Promise<void>
@@ -24,7 +24,7 @@ export async function connect(
 ): Promise<void> {
   // Create config with default values that may be overridden
   // by config if values are set.
-  const _config: Required<ConnectOpts> = {
+  const _config: ConnectOpts = {
     Workdir: process.env["DAGGER_WORKDIR"] || process.cwd(),
     ConfigPath: process.env["DAGGER_CONFIG"] || "./dagger.json",
     ...config,

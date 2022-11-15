@@ -243,7 +243,7 @@ export class DockerImage implements EngineConn {
     }
 
     this.subProcess = execaCommand(engineSessionArgs.join(" "), {
-      stderr: opts.OutputLog || process.stderr,
+      stderr: opts.LogOutput || "ignore",
 
       // Kill the process if parent exit.
       cleanup: true,
