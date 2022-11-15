@@ -13,15 +13,14 @@ The Dagger Python SDK contains everything you need to develop CI/CD pipelines in
 ```python
 # say.py
 import sys
-import anyio
 
+import anyio
 import dagger
 
 
 async def main(args: list[str]):
     async with dagger.Connection() as client:
         # build container with cowsay entrypoint
-        # note: this is reusable, no request is made to the server
         ctr = (
             client.container()
             .from_("python:alpine")
@@ -30,8 +29,6 @@ async def main(args: list[str]):
         )
 
         # run cowsay with requested message
-        # note: methods that return a coroutine with a Result need to
-        # await query execution
         result = await ctr.exec(args).stdout().contents()
 
         print(result)
