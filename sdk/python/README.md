@@ -1,5 +1,7 @@
 # Dagger Python SDK
 
+[![PyPI](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/pytest/) [![Supported Python Versions](https://img.shields.io/pypi/pyversions/dagger-io.svg)](https://pypi.org/project/pytest/) [![Code style](https://img.shields.io/badge/code%20style-black-black.svg)](https://github.com/psf/black)
+
 A client package for running [Dagger](https://dagger.io/) pipelines.
 
 ## What is the Dagger Python SDK?
