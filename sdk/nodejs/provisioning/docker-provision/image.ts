@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import readline from 'readline';
-import { execaCommandSync, execaCommand } from 'execa';
+import { execaCommandSync, execaCommand, ExecaChildProcess } from 'execa';
 import Client from '../../api/client.js';
 
 /**
@@ -71,7 +71,7 @@ export class DockerImage implements EngineConn {
 
 	private readonly ENGINE_SESSION_BINARY_PREFIX = 'dagger-engine-session';
 
-	private enginePid?: number;
+	private subProcess?: ExecaChildProcess;
 
 	constructor(u: URL) {
 		this.imageRef = new ImageRef(u.host + u.pathname);
@@ -199,7 +199,7 @@ export class DockerImage implements EngineConn {
 			engineSessionArgs.push('--project', opts.Project);
 		}
 
-		const { stdout, pid } = execaCommand(engineSessionArgs.join(' '),
+		this.subProcess = execaCommand(engineSessionArgs.join(' '),
 			{
 				stderr: opts.OutputLog || process.stderr,
 
@@ -207,11 +207,9 @@ export class DockerImage implements EngineConn {
 				cleanup: true,
 			});
 
-		// Register PID to kill it later.
-		this.enginePid = pid;
-
 		const stdoutReader = readline.createInterface({
-			input: stdout!,
+			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+			input: this.subProcess.stdout!,
 		});
 
 		// Set a timeout of 10 seconds by default
@@ -229,9 +227,11 @@ export class DockerImage implements EngineConn {
 		throw new Error('failed to connect to engine session');
 	}
 
-	async Close(): Promise<void> {
-		if (this.enginePid) {
-			process.kill(this.enginePid);
+	async Close(): Promise<void> {		
+		if (this.subProcess?.pid) {
+			this.subProcess.kill('SIGTERM', {
+				forceKillAfterTimeout: 2000
+			});
 		}
 	}
 }
