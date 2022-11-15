@@ -338,6 +338,54 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return &Container{ID: id}, nil
 }
 
+func (container *Container) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	fs, err := container.RootFS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fs, err = fs.WithDirectory(ctx, absPath(payload.Config.WorkingDir, subdir), src, filter)
+	if err != nil {
+		return nil, err
+	}
+	return container.WithRootFS(ctx, fs)
+}
+
+func (container *Container) WithFile(ctx context.Context, subdir string, src *File) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	fs, err := container.RootFS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fs, err = fs.WithFile(ctx, absPath(payload.Config.WorkingDir, subdir), src)
+	if err != nil {
+		return nil, err
+	}
+	return container.WithRootFS(ctx, fs)
+}
+
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	fs, err := container.RootFS(ctx)
+	if err != nil {
+		return nil, err
+	}
+	fs, err = fs.WithNewFile(ctx, gw, absPath(payload.Config.WorkingDir, dest), content)
+	if err != nil {
+		return nil, err
+	}
+	return container.WithRootFS(ctx, fs)
+}
+
 func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {

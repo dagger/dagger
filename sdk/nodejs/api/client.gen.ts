@@ -488,6 +488,27 @@ export class Container extends BaseClient {
   }
 
   /**
+   * This container plus a directory written at the given path
+   */
+  withDirectory(
+    path: string,
+    directory: DirectoryID,
+    exclude?: string[],
+    include?: string[]
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDirectory",
+          args: { path, directory, exclude, include },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * This container but with a different command entrypoint
    */
   withEntrypoint(args: string[]): Container {
@@ -559,6 +580,22 @@ export class Container extends BaseClient {
         {
           operation: "withFS",
           args: { id },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * This container plus the contents of the given file copied to the given path
+   */
+  withFile(path: string, source: FileID): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFile",
+          args: { path, source },
         },
       ],
       host: this.clientHost,
@@ -643,6 +680,22 @@ export class Container extends BaseClient {
         {
           operation: "withMountedTemp",
           args: { path },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * This container plus a new file written at the given path
+   */
+  withNewFile(path: string, contents?: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withNewFile",
+          args: { path, contents },
         },
       ],
       host: this.clientHost,

@@ -1384,6 +1384,92 @@ func TestContainerWithMountedTemp(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
 }
 
+func TestContainerWithDirectory(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	dir := c.Directory().
+		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		}).
+		WithNewFile("some-dir/sub-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "sub-content",
+		}).
+		Directory("some-dir")
+
+	ctr := c.Container().From("alpine:3.16.2").WithWorkdir("/workdir").WithDirectory("with-dir", dir)
+
+	contents, err := ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "with-dir/sub-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", contents)
+
+	contents, err = ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "/workdir/with-dir/sub-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", contents)
+}
+
+func TestContainerWithFile(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	file := c.Directory().
+		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		}).
+		File("some-file")
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithFile("target-file", file)
+
+	contents, err := ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "target-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "/workdir/target-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
+func TestContainerWithNewFile(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithNewFile("some-file", dagger.ContainerWithNewFileOpts{
+			Contents: "some-content",
+		})
+
+	contents, err := ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "some-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "/workdir/some-file"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
 func TestContainerMountsWithoutMount(t *testing.T) {
 	t.Parallel()
 
