@@ -254,22 +254,25 @@ export class DockerImage implements EngineConn {
       input: this.subProcess.stdout!,
     })
 
-    // Set a timeout of 10 seconds by default
-    // Do not call the function if port is successfully retrieved.
-    const timeoutFct = setTimeout(
-      async () => this.Close(),
-      opts.Timeout || 10000
-    )
+    const port = await Promise.race([
+      this.readPort(stdoutReader),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          reject(new Error("timeout reading port from engine session"))
+        }, 300000).unref() // long timeout to account for extensions, though that should be optimized in future
+      }),
+    ])
 
+    return new Client({ host: `127.0.0.1:${port}` })
+  }
+
+  private async readPort(stdoutReader: readline.Interface): Promise<number> {
     for await (const line of stdoutReader) {
       // Read line as a port number
       const port = parseInt(line)
-
-      clearTimeout(timeoutFct)
-      return new Client({ host: `127.0.0.1:${port}` })
+      return port
     }
-
-    throw new Error("failed to connect to engine session")
+    throw new Error("failed to read port from engine session")
   }
 
   async Close(): Promise<void> {
