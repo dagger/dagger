@@ -1,4 +1,5 @@
-import { QueryTree } from "./client.js";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import { QueryTree } from "./client.gen.js";
 
   export function queryBuilder(q: QueryTree[]) {
 
@@ -34,7 +35,7 @@ import { QueryTree } from "./client.js";
     return query.replace(/\s+/g, '')
   }
 
-  export function queryFlatten(res: Record<string, any>) {
+  export function queryFlatten(res: Record<string, any>) : Record<string, any> {
     if (res.errors) throw res.errors[0]
     return Object.assign(
       {}, 

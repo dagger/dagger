@@ -1,4 +1,4 @@
-import Client from './api/client.js';
+import Client from './api/client.gen.js';
 import { getProvisioner, DEFAULT_HOST } from './provisioning/index.js';
 
 /**
