@@ -77,6 +77,15 @@ export class DockerImage implements EngineConn {
 		this.imageRef = new ImageRef(u.host + u.pathname);
 	}
 
+	/**
+	 * Generate a unix timestamp in nanosecond
+	 */
+	private getRandomId() {
+		return Math.floor(
+			Date.now() * 1000000
+		)
+	}
+
 	Addr(): string {
 		return 'http://dagger';
 	}
@@ -131,7 +140,7 @@ export class DockerImage implements EngineConn {
 		// Create a temporary bin file path
 		const tmpBinPath = path.join(
 			this.cacheDir,
-			`temp-${ this.ENGINE_SESSION_BINARY_PREFIX }`
+			`temp-${ this.ENGINE_SESSION_BINARY_PREFIX }-${this.getRandomId()}`
 		);
 
 		const dockerRunArgs = [
