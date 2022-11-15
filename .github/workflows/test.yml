@@ -102,5 +102,5 @@ jobs:
       - run: echo `pwd`/bin >> $GITHUB_PATH
       - run: yarn install
         working-directory: sdk/nodejs
-      - run: yarn run test-sdk
+      - run: yarn run test
         working-directory: sdk/nodejs

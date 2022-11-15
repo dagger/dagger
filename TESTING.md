@@ -15,5 +15,5 @@ NOTE: when running core integration tests don't specify an individual file; alwa
 Run nodejs test(s):
 
 ```console
-yarn run test-sdk
+yarn run test
 ```
