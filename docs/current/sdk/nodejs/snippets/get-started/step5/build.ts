@@ -9,7 +9,7 @@ connect(async (client: Client) => {
   // highlight-end
 
   // get reference to the local project
-  const source = await client.host().workdir().id();
+  const source = await client.host().workdir(["node_modules/"]).id();
 
   // highlight-start
   // for each Node version
@@ -27,6 +27,7 @@ connect(async (client: Client) => {
       .container(node.id)
       .withMountedDirectory("/src", source.id)
       .withWorkdir("/src")
+      .exec(["npm", "install"])
 
     // run tests
     await runner
