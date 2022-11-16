@@ -13,6 +13,8 @@ from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 
+from dagger.exceptions import DaggerException
+
 _T = TypeVar("_T")
 
 
@@ -146,7 +148,7 @@ class Root(Type):
         return self._ctx.schema._schema
 
 
-class ClientError(Exception):
+class ClientError(DaggerException):
     """Base class for client errors."""
 
 

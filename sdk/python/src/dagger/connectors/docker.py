@@ -9,6 +9,7 @@ import anyio
 from attrs import Factory, define, field
 
 from dagger import Client
+from dagger.exceptions import DaggerException
 
 from .base import Config, register_connector
 from .http import HTTPConnector
@@ -75,6 +76,12 @@ class Engine:
                 "delete": False,
             }
             with tempfile.NamedTemporaryFile(**tempfile_args) as tmp_bin:
+
+                def cleanup():
+                    """Remove the tmp_bin on error."""
+                    tmp_bin.close()
+                    os.unlink(tmp_bin.name)
+
                 docker_run_args = [
                     "docker",
                     "run",
@@ -92,12 +99,21 @@ class Engine:
                         encoding="utf-8",
                         check=True,
                     )
-                except subprocess.CalledProcessError as e:
-                    tmp_bin.close()
-                    os.unlink(tmp_bin.name)
+                except FileNotFoundError as e:
                     raise ProvisionError(
-                        f"Failed to copy engine session binary: {e.stdout}"
-                    )
+                        f"Command '{docker_run_args[0]}' not found."
+                    ) from e
+                except subprocess.CalledProcessError as e:
+                    raise ProvisionError(
+                        f"Failed to copy engine session binary: {e.stderr}"
+                    ) from e
+                else:
+                    # Flake8 Ignores
+                    # F811 -- redefinition of (yet) unused function
+                    # E731 -- assigning a lambda.
+                    cleanup = lambda: None  # noqa: F811,E731
+                finally:
+                    cleanup()
 
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
@@ -125,15 +141,30 @@ class Engine:
             engine_session_args,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=self.cfg.log_output or subprocess.DEVNULL,
+            stderr=self.cfg.log_output or subprocess.PIPE,
             encoding="utf-8",
         )
 
-        # read port number from first line of stdout
-        port = int(self._proc.stdout.readline())
+        try:
+            # read port number from first line of stdout
+            port = int(self._proc.stdout.readline())
+        except ValueError as e:
+            # Check if the subprocess exited with an error.
+            if not self._proc.poll():
+                raise e
+
+            # FIXME: Duplicate writes into a buffer until end of provisioning
+            # instead of reading directly from what the user may set in `log_output`
+            if self._proc.stderr is not None and self._proc.stderr.readable():
+                raise ProvisionError(
+                    f"Dagger engine failed to start: {self._proc.stderr.readline()}"
+                ) from e
+
+            raise ProvisionError(
+                "Dagger engine failed to start, is docker running?"
+            ) from e
 
         # TODO: verify port number is valid
-
         self.cfg.host = f"http://localhost:{port}"
 
     def is_running(self) -> bool:
@@ -190,5 +221,5 @@ class DockerConnector(HTTPConnector):
         self.engine.stop(exc_type)
 
 
-class ProvisionError(Exception):
+class ProvisionError(DaggerException):
     """Error while provisioning the Dagger engine."""
