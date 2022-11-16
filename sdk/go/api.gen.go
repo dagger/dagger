@@ -132,10 +132,17 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
-	Args                          []string
-	Stdin                         string
-	RedirectStdout                string
-	RedirectStderr                string
+	// Command to run instead of the container's default command
+	Args []string
+	// Content to write to the command's standard input before closing
+	Stdin string
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string
+	// Provide dagger access to the executed command
+	// Do not use this option unless you trust the command being executed
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 	ExperimentalPrivilegedNesting bool
 }
 
@@ -641,6 +648,7 @@ func (r *Directory) LoadProject(configPath string) *Project {
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
 	Exclude []string
+
 	Include []string
 }
 
@@ -919,6 +927,7 @@ type Host struct {
 // HostDirectoryOpts contains options for Host.Directory
 type HostDirectoryOpts struct {
 	Exclude []string
+
 	Include []string
 }
 
@@ -961,6 +970,7 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 // HostWorkdirOpts contains options for Host.Workdir
 type HostWorkdirOpts struct {
 	Exclude []string
+
 	Include []string
 }
 
@@ -1092,7 +1102,8 @@ func (r *Query) CacheVolume(key string) *CacheVolume {
 
 // ContainerOpts contains options for Query.Container
 type ContainerOpts struct {
-	ID       ContainerID
+	ID ContainerID
+
 	Platform Platform
 }
 
@@ -1164,10 +1175,22 @@ func (r *Query) File(id FileID) *File {
 	}
 }
 
+// GitOpts contains options for Query.Git
+type GitOpts struct {
+	KeepGitDir bool
+}
+
 // Query a git repository
-func (r *Query) Git(url string) *GitRepository {
+func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
 	q = q.Arg("url", url)
+	// `keepGitDir` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
+			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+			break
+		}
+	}
 
 	return &GitRepository{
 		q: q,

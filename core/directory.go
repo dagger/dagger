@@ -409,7 +409,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = payload.SetState(ctx, st.File(llb.Rm(path)))
+	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true))))
 	if err != nil {
 		return nil, err
 	}

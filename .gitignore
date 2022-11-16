@@ -31,7 +31,10 @@ node_modules
 # python
 .venv
 __pycache__
-.mypy_cache
 
 # Built Binary
 /bin
+
+# Local environment variables, usually secrets
+.env
+.envrc

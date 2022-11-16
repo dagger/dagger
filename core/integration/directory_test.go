@@ -324,74 +324,85 @@ func TestDirectoryWithFile(t *testing.T) {
 	require.Equal(t, "some-content", content)
 }
 
-func TestDirectoryWithoutDirectory(t *testing.T) {
+func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
 
-	dirID := newDirWithFiles(t,
-		"some-file", "some-content",
-		"some-dir/sub-file", "sub-content")
-
-	var res2 struct {
-		Directory struct {
-			WithDirectory struct {
-				WithoutDirectory struct {
-					Entries []string
-				}
-			}
+	contents := func(s string) dagger.DirectoryWithNewFileOpts {
+		return dagger.DirectoryWithNewFileOpts{
+			Contents: s,
 		}
 	}
 
-	err := testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "with-dir", directory: $src) {
-					withoutDirectory(path: "with-dir/some-dir") {
-						entries(path: "with-dir")
-					}
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": dirID,
-			},
-		})
+	dir1 := c.Directory().
+		WithNewFile("some-file", contents("some-content")).
+		WithNewFile("some-dir/sub-file", contents("sub-content"))
+
+	entries, err := dir1.
+		WithoutDirectory("some-dir").
+		Entries(ctx)
+
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-file"}, res2.Directory.WithDirectory.WithoutDirectory.Entries)
-}
+	require.Equal(t, []string{"some-file"}, entries)
 
-func TestDirectoryWithoutFile(t *testing.T) {
-	t.Parallel()
+	dir := c.Directory().
+		WithNewFile("foo.txt", contents("foo")).
+		WithNewFile("a/bar.txt", contents("bar")).
+		WithNewFile("a/data.json", contents("{\"datum\": 10}")).
+		WithNewFile("b/foo.txt", contents("foo")).
+		WithNewFile("b/bar.txt", contents("bar")).
+		WithNewFile("b/data.json", contents("{\"datum\": 10}")).
+		WithNewFile("c/file-a1.txt", contents("file-a1.txt")).
+		WithNewFile("c/file-a1.json", contents("file-a1.json")).
+		WithNewFile("c/file-b1.txt", contents("file-b1.txt")).
+		WithNewFile("c/file-b1.json", contents("file-b1.json"))
 
-	dirID := newDirWithFiles(t,
-		"some-file", "some-content",
-		"some-dir/sub-file", "sub-content")
-
-	var res2 struct {
-		Directory struct {
-			WithDirectory struct {
-				WithoutFile struct {
-					Entries []string
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`query Test($src: DirectoryID!) {
-			directory {
-				withDirectory(path: "with-dir", directory: $src) {
-					withoutFile(path: "with-dir/some-file") {
-						entries(path: "with-dir")
-					}
-				}
-			}
-		}`, &res2, &testutil.QueryOptions{
-			Variables: map[string]any{
-				"src": dirID,
-			},
-		})
+	entries, err = dir.Entries(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{"some-dir"}, res2.Directory.WithDirectory.WithoutFile.Entries)
+	require.Equal(t, []string{"a", "b", "c", "foo.txt"}, entries)
+
+	entries, err = dir.
+		WithoutDirectory("a").
+		Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b", "c", "foo.txt"}, entries)
+
+	entries, err = dir.
+		WithoutFile("b/*.txt").
+		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "b"})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"data.json"}, entries)
+
+	entries, err = dir.
+		WithoutFile("c/*a1*").
+		Entries(ctx, dagger.DirectoryEntriesOpts{Path: "c"})
+
+	require.NoError(t, err)
+	require.Equal(t, []string{"file-b1.json", "file-b1.txt"}, entries)
+
+	dirDir := c.Directory().
+		WithNewFile("foo.txt", contents("foo")).
+		WithNewFile("a1/a1-file", contents("a1-file")).
+		WithNewFile("a2/a2-file", contents("a2-file")).
+		WithNewFile("b1/b1-file", contents("b1-file"))
+
+	entries, err = dirDir.WithoutDirectory("a*").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"b1", "foo.txt"}, entries)
+
+	// Test WithoutFile
+	filesDir := c.Directory().
+		WithNewFile("some-file", contents("some-content")).
+		WithNewFile("some-dir/sub-file", contents("sub-content")).
+		WithoutFile("some-file")
+
+	entries, err = filesDir.Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"some-dir"}, entries)
 }
 
 func TestDirectoryDiff(t *testing.T) {

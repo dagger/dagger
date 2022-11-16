@@ -1,0 +1,20 @@
+{{ define "method_solve" }}
+{{- template "method_comment" .Description }}
+{{- "" }}  async {{ .Name -}}({{- template "args" .Args -}}){{ template "return_solve" .TypeRef }} {
+		{{- if .TypeRef }}
+    this._queryTree = [
+      ...this._queryTree,
+      {
+      operation: '{{ .Name }}'
+			{{- if .Args }},
+      args: { {{- template "call_args" .Args -}} }
+			{{- end }}
+      }
+    ]
+
+    const response: Awaited<Record<string, {{ .TypeRef | FormatOutputType }}>> = await this._compute()
+
+    return response
+  }
+		{{- end }}
+{{- end }}

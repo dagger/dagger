@@ -1,17 +1,19 @@
 import types
 import typing
 from collections import deque
-from typing import Any, Generic, NamedTuple, Sequence, TypeVar
+from typing import Any, NamedTuple, Protocol, Sequence, TypeVar, runtime_checkable
 
+import anyio
 import attr
-import attrs
 import cattrs
 import gql
 import graphql
 from attrs import define
 from cattrs.preconf.json import make_converter
-from gql.client import AsyncClientSession
+from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
+
+from dagger.exceptions import DaggerException
 
 _T = TypeVar("_T")
 
@@ -33,22 +35,37 @@ class Field:
         return field
 
 
+@runtime_checkable
+class IDType(Protocol):
+    async def id(self) -> str:
+        ...
+
+
+@runtime_checkable
+class SyncIDType(Protocol):
+    def id(self) -> str:
+        ...
+
+
 @define
 class Context:
-    session: AsyncClientSession
+    session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
     selections: deque[Field] = attr.ib(factory=deque)
     converter: cattrs.Converter = attr.ib(factory=make_converter)
 
     def select(
-        self, type_name: str, field_name: str, args: dict[str, Any]
+        self,
+        type_name: str,
+        field_name: str,
+        args: dict[str, Any],
     ) -> "Context":
         field = Field(type_name, field_name, args)
 
         selections = self.selections.copy()
         selections.append(field)
 
-        return attrs.evolve(self, selections=selections)
+        return attr.evolve(self, selections=selections)
 
     def build(self) -> DSLSelectable:
         if not self.selections:
@@ -57,9 +74,9 @@ class Context:
         selections = self.selections.copy()
         selectable = selections.pop().to_dsl(self.schema)
 
-        for field in reversed(selections):
-            dsl_field = field.to_dsl(self.schema)
-            selectable = dsl_field.select(selectable)
+        while selections:
+            parent = selections.pop().to_dsl(self.schema)
+            selectable = parent.select(selectable)
 
         return selectable
 
@@ -67,9 +84,37 @@ class Context:
         return dsl_gql(DSLQuery(self.build()))
 
     async def execute(self, return_type: type[_T]) -> _T:
+        assert isinstance(self.session, AsyncClientSession)
+        await self.resolve_ids()
         query = self.query()
         result = await self.session.execute(query, get_execution_result=True)
         return self._get_value(result.data, return_type)
+
+    def execute_sync(self, return_type: type[_T]) -> _T:
+        assert isinstance(self.session, SyncClientSession)
+        self.resolve_ids_sync()
+        query = self.query()
+        result = self.session.execute(query, get_execution_result=True)
+        return self._get_value(result.data, return_type)
+
+    async def resolve_ids(self) -> None:
+        # mutating to avoid re-fetching on forked pipeline
+        async def _resolve_id(pos: int, k: str, v: IDType):
+            sel = self.selections[pos]
+            sel.args[k] = await v.id()
+
+        # resolve all ids concurrently
+        async with anyio.create_task_group() as tg:
+            for i, sel in enumerate(self.selections):
+                for k, v in sel.args.items():
+                    if isinstance(v, (Type, IDType)):
+                        tg.start_soon(_resolve_id, i, k, v)
+
+    def resolve_ids_sync(self) -> None:
+        for sel in self.selections:
+            for k, v in sel.args.items():
+                if isinstance(v, (Type, SyncIDType)):
+                    sel.args[k] = v.id()
 
     def _get_value(self, value: dict[str, Any] | None, return_type: type[_T]) -> _T:
         if value is not None:
@@ -90,23 +135,10 @@ class Context:
         return self.converter.structure(response, return_type)
 
 
-@define
-class Result(Generic[_T]):
-    value: _T
-    type_: type[_T]
-    context: Context
-    document: graphql.DocumentNode
-    result: graphql.ExecutionResult
-
-    @property
-    def query(self) -> str:
-        return graphql.print_ast(self.document)
-
-
 class Arg(NamedTuple):
     name: str
     value: Any
-    default: Any = attrs.NOTHING
+    default: Any = attr.NOTHING
 
 
 @define
@@ -152,7 +184,7 @@ class Root(Type):
         return self._ctx.schema._schema
 
 
-class ClientError(Exception):
+class ClientError(DaggerException):
     """Base class for client errors."""
 
 

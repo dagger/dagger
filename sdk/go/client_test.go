@@ -1,8 +1,8 @@
 package dagger
 
 import (
-	"bytes"
 	"context"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -104,8 +104,8 @@ func TestConnectOption(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	var b bytes.Buffer
-	c, err := Connect(ctx, WithLogOutput(&b))
+	r, w := io.Pipe()
+	c, err := Connect(ctx, WithLogOutput(w))
 	require.NoError(t, err)
 
 	_, err = c.
@@ -117,6 +117,7 @@ func TestConnectOption(t *testing.T) {
 	require.NoError(t, err)
 
 	err = c.Close()
+	w.Close()
 	require.NoError(t, err)
 
 	wants := []string{
@@ -127,8 +128,11 @@ func TestConnectOption(t *testing.T) {
 		"#2 (DONE [0-9.]+s|CACHED)",
 	}
 
+	logOutput, err := io.ReadAll(r)
+	require.NoError(t, err)
+
 	for _, want := range wants {
-		require.Regexp(t, b.String(), want)
+		require.Regexp(t, string(logOutput), want)
 	}
 }
 

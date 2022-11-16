@@ -23,6 +23,15 @@ from dagger.codegen import (
 )
 
 
+@pytest.fixture
+def id_map():
+    return {
+        "CacheID": "CacheVolume",
+        "FileID": "File",
+        "SecretID": "Secret",
+    }
+
+
 @pytest.mark.parametrize(
     "graphql, expected",
     [
@@ -52,8 +61,8 @@ opts = InputObject(
         (NonNull(List(NonNull(String))), "list[str]"),
         (List(String), "list[str | None] | None"),
         (List(NonNull(String)), "list[str] | None"),
-        (NonNull(Scalar("FileID")), "FileID"),
-        (Scalar("FileID"), "FileID | None"),
+        (NonNull(Scalar("FileID")), "File"),
+        (Scalar("FileID"), "File | None"),
         (NonNull(opts), "Options"),
         (opts, "Options | None"),
         (NonNull(opts), "Options"),
@@ -63,8 +72,8 @@ opts = InputObject(
         (List(opts), "list[Options | None] | None"),
     ],
 )
-def test_format_input_type(graphql, expected):
-    assert format_input_type(graphql) == expected
+def test_format_input_type(graphql, expected, id_map):
+    assert format_input_type(graphql, id_map) == expected
 
 
 cache_volume = Object(
@@ -93,8 +102,8 @@ def test_format_output_type(graphql, expected):
 @pytest.mark.parametrize(
     "name, args, expected",
     [
-        ("context", (NonNull(Scalar("DirectoryID")),), "context: DirectoryID"),
-        ("secret", (Scalar("SecretID"),), "secret: SecretID | None = None"),
+        ("secret", (NonNull(Scalar("SecretID")),), 'secret: "Secret"'),
+        ("secret", (Scalar("SecretID"),), 'secret: "Secret | None" = None'),
         ("from", (String, None), "from_: str | None = None"),
         ("lines", (Int, 1), "lines: int | None = 1"),
         (
@@ -105,8 +114,8 @@ def test_format_output_type(graphql, expected):
     ],
 )
 @pytest.mark.parametrize("cls", [Argument, Input])
-def test_input_field_param(cls, name, args, expected):
-    assert _InputField(name, cls(*args)).as_param() == expected
+def test_input_field_param(cls, name, args, expected, id_map):
+    assert _InputField(name, cls(*args), id_map).as_param() == expected
 
 
 @pytest.mark.parametrize(
@@ -124,8 +133,8 @@ def test_input_field_param(cls, name, args, expected):
     ],
 )
 @pytest.mark.parametrize("cls", [Argument, Input])
-def test_input_field_arg(cls, name, args, expected):
-    assert _InputField(name, cls(*args)).as_arg() == expected
+def test_input_field_arg(cls, name, args, expected, id_map):
+    assert _InputField(name, cls(*args), id_map).as_arg() == expected
 
 
 @pytest.mark.parametrize(

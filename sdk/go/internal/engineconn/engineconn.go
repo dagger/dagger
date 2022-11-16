@@ -13,6 +13,7 @@ type RegisterFunc func(*url.URL) (EngineConn, error)
 var helpers = map[string]RegisterFunc{}
 
 type EngineConn interface {
+	Addr() string
 	Connect(ctx context.Context, cfg *Config) (*http.Client, error)
 	Close() error
 }

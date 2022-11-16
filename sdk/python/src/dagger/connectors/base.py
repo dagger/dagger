@@ -3,7 +3,7 @@ import os
 from abc import ABC, abstractmethod
 from collections import UserDict
 from pathlib import Path
-from typing import TypeVar
+from typing import TextIO, TypeVar
 from urllib.parse import ParseResult as ParsedURL
 from urllib.parse import urlparse
 
@@ -11,13 +11,13 @@ from attrs import Factory, define, field
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
 
-from dagger import Client
+from dagger import Client, SyncClient
+
+from .engine_version import ENGINE_IMAGE_REF
 
 logger = logging.getLogger(__name__)
 
-
-DEFAULT_HOST = "http://localhost:8080"
-DEFAULT_CONFIG = "dagger.json"
+DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
 
 
 @define
@@ -32,6 +32,8 @@ class Config:
         The host workdir loaded into dagger.
     config_path:
         Project config file.
+    log_output:
+        A TextIO object to send the logs from the engine.
     timeout:
         The maximum time in seconds for establishing a connection to the server.
     execute_timeout:
@@ -46,21 +48,12 @@ class Config:
         factory=lambda: os.environ.get("DAGGER_HOST", DEFAULT_HOST),
         converter=urlparse,
     )
+    workdir: Path | str = ""
+    config_path: Path | str = ""
+    log_output: TextIO | None = None
     timeout: int = 10
     execute_timeout: int | float | None = 60 * 5
     reconnecting: bool = True
-
-    # FIXME: aren't these environment variables usable by the engine directly?
-    # If so just skip setting the CLI option if not set by the user explicitly.
-
-    workdir: Path = field(
-        factory=lambda: os.environ.get("DAGGER_WORKDIR", "."),
-        converter=Path,
-    )
-    config_path: Path = field(
-        factory=lambda: os.environ.get("DAGGER_CONFIG", DEFAULT_CONFIG),
-        converter=Path,
-    )
 
 
 @define
@@ -70,7 +63,7 @@ class Connector(ABC):
     """
 
     cfg: Config = Factory(Config)
-    client: Client | None = None
+    client: Client | SyncClient | None = None
 
     async def connect(self) -> Client:
         transport = self.make_transport()
@@ -80,19 +73,19 @@ class Connector(ABC):
         self.client = Client.from_session(session)
         return self.client
 
-    async def close(self) -> None:
+    async def close(self, exc_type) -> None:
         assert self.client is not None
         await self.client._gql_client.close_async()
 
-    def connect_sync(self) -> Client:
+    def connect_sync(self) -> SyncClient:
         transport = self.make_sync_transport()
         gql_client = self.make_graphql_client(transport)
         # FIXME: handle errors from establishing session
         session = gql_client.connect_sync()
-        self.client = Client.from_session(session)
+        self.client = SyncClient.from_session(session)
         return self.client
 
-    def close_sync(self) -> None:
+    def close_sync(self, exc_type) -> None:
         assert self.client is not None
         self.client._gql_client.close_sync()
 
@@ -137,8 +130,8 @@ class _Registry(UserDict[str, type[Connector]]):
     def get_(self, cfg: Config) -> Connector:
         try:
             cls = self.data[cfg.host.scheme]
-        except KeyError:
-            raise ValueError(f'Invalid dagger host "{cfg.host.geturl()}"')
+        except KeyError as e:
+            raise ValueError(f'Invalid dagger host "{cfg.host.geturl()}"') from e
         return cls(cfg)
 
 

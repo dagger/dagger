@@ -7,7 +7,6 @@ import (
 	"io"
 	"os"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -248,9 +247,9 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	}
 
 	if dockerfile != "" {
-		opts["filename"] = filepath.Join(ctxPayload.Dir, dockerfile)
+		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
 	} else {
-		opts["filename"] = filepath.Join(ctxPayload.Dir, defaultDockerfileName)
+		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
 	}
 
 	inputs := map[string]*pb.Definition{
@@ -272,9 +271,14 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	st, err := bkref.ToState()
-	if err != nil {
-		return nil, err
+	var st llb.State
+	if bkref == nil {
+		st = llb.Scratch()
+	} else {
+		st, err = bkref.ToState()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -651,7 +655,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -660,6 +664,9 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	cfg := payload.Config
 	mounts := payload.Mounts
 	platform := payload.Platform
+	if platform.OS == "" {
+		platform = defaultPlatform
+	}
 
 	shimSt, err := shim.Build(ctx, gw, platform)
 	if err != nil {
@@ -699,9 +706,9 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, opts Conta
 	// directory first and then make it the base of the /dagger mount point.
 	//
 	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(metaSourcePath, 0777)
+	meta := llb.Mkdir(metaSourcePath, 0o777)
 	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0600, []byte(opts.Stdin))
+		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0o600, []byte(opts.Stdin))
 	}
 
 	// create /dagger mount point for the shim to write to

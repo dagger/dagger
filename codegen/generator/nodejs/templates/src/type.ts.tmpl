@@ -1,0 +1,7 @@
+{{ define "type" -}}
+	{{- if IsCustomScalar . }}
+{{ template "object_comment" .Description }}
+export type {{ .Name }} = string;
+{{ "" }}
+	{{- end }}
+{{- end }}

@@ -1,5 +1,7 @@
 # Dagger Python SDK
 
+[![PyPI](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/pytest/) [![Supported Python Versions](https://img.shields.io/pypi/pyversions/dagger-io.svg)](https://pypi.org/project/pytest/) [![Code style](https://img.shields.io/badge/code%20style-black-black.svg)](https://github.com/psf/black)
+
 A client package for running [Dagger](https://dagger.io/) pipelines.
 
 ## What is the Dagger Python SDK?
@@ -11,15 +13,14 @@ The Dagger Python SDK contains everything you need to develop CI/CD pipelines in
 ```python
 # say.py
 import sys
-import anyio
 
+import anyio
 import dagger
 
 
 async def main(args: list[str]):
     async with dagger.Connection() as client:
         # build container with cowsay entrypoint
-        # note: this is reusable, no request is made to the server
         ctr = (
             client.container()
             .from_("python:alpine")
@@ -28,8 +29,6 @@ async def main(args: list[str]):
         )
 
         # run cowsay with requested message
-        # note: methods that return a coroutine with a Result need to
-        # await query execution
         result = await ctr.exec(args).stdout().contents()
 
         print(result)
@@ -57,7 +56,8 @@ $ python say.py "Simple is better than complex"
 
 ## Learn more
 
-- [Documentation](https://docs.dagger.io)
+- [Documentation](https://docs.dagger.io/sdk/python)
+- [API Reference](https://dagger-io.readthedocs.org)
 - [Source code](https://github.com/dagger/dagger/tree/main/sdk/python)
 
 ## Development
@@ -65,10 +65,17 @@ $ python say.py "Simple is better than complex"
 Requirements:
 
 - Python 3.10+
-- [Hatch](https://hatch.pypa.io/latest/install/)
+- [Poetry](https://python-poetry.org/docs/)
+- [Docker](https://docs.docker.com/engine/install/)
 
-Run tests with `hatch run test`.
+Start environment with `poetry install`.
 
-Run the linter, reformatting code with `hatch run lint:fmt` or just check with `hatch run lint:style`.
+Run tests with `poetry run poe test`.
 
-Re-regenerate client with `hatch run generate`. Remember to run `hatch run lint:fmt` afterwards for consistent output!
+Reformat code with `poetry run poe fmt` or just check with `poetry run poe lint`.
+
+Re-regenerate client with `poetry run poe generate`.
+
+Build reference docs with `poetry run poe docs`.
+
+Tip: You don't need to prefix the previous commands with `poetry run` if you activate the virtualenv with `poetry shell`.

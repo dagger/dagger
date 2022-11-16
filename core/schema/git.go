@@ -44,7 +44,8 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL string `json:"url"`
+	URL        string `json:"url"`
+	KeepGitDir bool   `json:"keepGitDir"`
 }
 
 type gitRef struct {
@@ -53,7 +54,8 @@ type gitRef struct {
 }
 
 type gitArgs struct {
-	URL string `json:"url"`
+	URL        string `json:"url"`
+	KeepGitDir bool   `json:"keepGitDir"`
 }
 
 func (s *gitSchema) git(ctx *router.Context, parent any, args gitArgs) (gitRepository, error) {
@@ -107,6 +109,9 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 
 func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*core.Directory, error) {
 	var opts []llb.GitOption
+	if parent.Repository.KeepGitDir {
+		opts = append(opts, llb.KeepGitDir())
+	}
 	if s.sshAuthSockID != "" {
 		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
 	}

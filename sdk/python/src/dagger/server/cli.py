@@ -22,8 +22,10 @@ def main(
 
     try:
         from main import server  # type: ignore
-    except ImportError:
-        raise typer.BadParameter("No “server: dagger.Server” found in “main” module.")
+    except ImportError as e:
+        raise typer.BadParameter(
+            "No “server: dagger.Server” found in “main” module."
+        ) from e
 
     if not isinstance(server, Server):
         raise typer.BadParameter("The “server” must be an instance of “dagger.Server”")

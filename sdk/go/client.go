@@ -1,4 +1,4 @@
-//go:generate cloak client-gen -o api.gen.go --package dagger
+//go:generate cloak client-gen -o api.gen.go --package dagger --lang go
 package dagger
 
 import (
@@ -7,11 +7,16 @@ import (
 	"os"
 
 	"dagger.io/dagger/internal/engineconn"
-	_ "dagger.io/dagger/internal/engineconn/embedded" // embedded connection
-	_ "dagger.io/dagger/internal/engineconn/unix"     // unix connection
+	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine in docker
+	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
+	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+)
+
+const (
+	defaultHost = "docker-image://" + engineImageRef
 )
 
 // Client is the Dagger Engine Client
@@ -75,8 +80,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		o.setClientOpt(cfg)
 	}
 
-	// default host
-	host := "embedded://"
+	host := defaultHost
 	// if one is found in `DAGGER_HOST` -- use it instead
 	if h := os.Getenv("DAGGER_HOST"); h != "" {
 		host = h
@@ -92,7 +96,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	if err != nil {
 		return nil, err
 	}
-	c.gql = errorWrappedClient{graphql.NewClient("http://dagger/query", client)}
+	c.gql = errorWrappedClient{graphql.NewClient(c.conn.Addr()+"/query", client)}
 	c.Query = Query{
 		q: querybuilder.Query(),
 		c: c.gql,

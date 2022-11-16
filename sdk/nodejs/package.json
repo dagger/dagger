@@ -1,0 +1,50 @@
+{
+  "name": "@dagger.io/dagger",
+  "version": "0.0.0",
+  "author": "hello@dagger.io",
+  "license": "Apache-2.0",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=16"
+  },
+  "main": "dist/index.js",
+  "dependencies": {
+    "@lifeomic/axios-fetch": "^3.0.1",
+    "axios": "^1.1.2",
+    "execa": "^6.1.0",
+    "graphql": "^16.5.0",
+    "graphql-request": "^5.0.0",
+    "graphql-tag": "^2.12.6",
+    "node-fetch": "^3.3.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "mocha",
+    "gen:typedoc": "yarn typedoc",
+    "lint": "yarn eslint --max-warnings=0 .",
+    "fmt": "yarn eslint --fix ."
+  },
+  "devDependencies": {
+    "@types/mocha": "latest",
+    "@types/node": "~16",
+    "@typescript-eslint/eslint-plugin": "^5.42.1",
+    "@typescript-eslint/parser": "^5.42.1",
+    "eslint": "^8.27.0",
+    "eslint-config-prettier": "^8.5.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "mocha": "^10.1.0",
+    "prettier": "^2.7.1",
+    "ts-node": "^10.9.1",
+    "typedoc": "^0.23.21",
+    "typedoc-plugin-markdown": "^3.13.6",
+    "typedoc-plugin-missing-exports": "^1.0.0",
+    "typescript": "^4.9.3"
+  }
+}

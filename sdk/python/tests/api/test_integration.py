@@ -29,14 +29,8 @@ async def test_git_repository():
 
 async def test_container_build():
     async with dagger.Connection() as client:
-        repo_id = (
-            await client.git("https://github.com/dagger/dagger")
-            .tag("v0.3.0")
-            .tree()
-            .id()
-        )
-
-        dagger_img = client.container().build(repo_id)
+        repo = client.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
+        dagger_img = client.container().build(repo)
 
         out = await dagger_img.exec(["version"]).stdout().contents()
 
@@ -57,17 +51,16 @@ async def test_container_with_env_variable():
 
 async def test_container_with_mounted_directory():
     async with dagger.Connection() as client:
-        dir_id = await (
+        dir_ = (
             client.directory()
             .with_new_file("hello.txt", "Hello, world!")
             .with_new_file("goodbye.txt", "Goodbye, world!")
-            .id()
         )
 
         container = (
             client.container()
             .from_("alpine:3.16.2")
-            .with_mounted_directory("/mnt", dir_id)
+            .with_mounted_directory("/mnt", dir_)
         )
 
         out = await container.exec(["ls", "/mnt"]).stdout().contents()
@@ -84,12 +77,10 @@ async def test_container_with_mounted_cache():
     async with dagger.Connection() as client:
         cache_key = f"example-{datetime.now().isoformat()}"
 
-        cache_id = await client.cache_volume(cache_key).id()
-
         container = (
             client.container()
             .from_("alpine:3.16.2")
-            .with_mounted_cache("/cache", cache_id)
+            .with_mounted_cache("/cache", client.cache_volume(cache_key))
         )
 
         for i in range(5):
@@ -111,20 +102,18 @@ async def test_container_with_mounted_cache():
 
 async def test_directory():
     async with dagger.Connection() as client:
-        dir = (
+        dir_ = (
             client.directory()
             .with_new_file("hello.txt", "Hello, world!")
             .with_new_file("goodbye.txt", "Goodbye, world!")
         )
 
-        entries = await dir.entries()
+        entries = await dir_.entries()
 
         assert entries == ["goodbye.txt", "hello.txt"]
 
 
 async def test_host_workdir():
-    async with dagger.Connection(dagger.Config(workdir=".")) as client:
+    async with dagger.Connection() as client:
         readme = await client.host().workdir().file("README.md").contents()
-        lines = readme.strip().split("\n")
-
-        assert lines[0] == "# Dagger Python SDK"
+        assert "Dagger" in readme

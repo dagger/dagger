@@ -13,11 +13,12 @@ updates:
     labels:
       - "kind/dependencies"
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/sdk/nodejs"
     schedule:
       interval: "daily"
     labels:
       - "kind/dependencies"
+      - "sdk/nodejs"
 
   - package-ecosystem: "npm"
     directory: "/website"
@@ -33,3 +34,12 @@ updates:
       interval: "daily"
     labels:
       - "kind/dependencies"
+      - "sdk/go"
+
+  - package-ecosystem: "pip"
+    directory: "/sdk/python"
+    schedule:
+      interval: "daily"
+    labels:
+      - "kind/dependencies"
+      - "sdk/python"
