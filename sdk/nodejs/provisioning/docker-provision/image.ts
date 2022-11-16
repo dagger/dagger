@@ -1,44 +1,44 @@
-import { ConnectOpts, EngineConn } from "../engineconn.js";
-import * as path from "path";
-import * as fs from "fs";
-import * as os from "os";
-import readline from "readline";
-import { execaCommandSync, execaCommand, ExecaChildProcess } from "execa";
-import Client from "../../api/client.gen.js";
+import { ConnectOpts, EngineConn } from "../engineconn.js"
+import * as path from "path"
+import * as fs from "fs"
+import * as os from "os"
+import readline from "readline"
+import { execaCommandSync, execaCommand, ExecaChildProcess } from "execa"
+import Client from "../../api/client.gen.js"
 
 /**
  * ImageRef is a simple abstraction of docker image reference.
  */
 class ImageRef {
-  private readonly ref: string;
+  private readonly ref: string
 
   /**
    * id is the unique identifier of the image
    * based on image's digest.
    */
-  private readonly id: string;
+  private readonly id: string
 
   /**
    * trim image digests to 16 characters to make output more readable.
    */
-  private readonly DIGEST_LEN = 16;
+  private readonly DIGEST_LEN = 16
 
   constructor(ref: string) {
     // Throw error if ref is not correctly formatted.
-    ImageRef.validate(ref);
+    ImageRef.validate(ref)
 
-    this.ref = ref;
+    this.ref = ref
 
-    const id = ref.split("@sha256:", 2)[1];
-    this.id = id.slice(0, this.DIGEST_LEN);
+    const id = ref.split("@sha256:", 2)[1]
+    this.id = id.slice(0, this.DIGEST_LEN)
   }
 
   get Ref(): string {
-    return this.ref;
+    return this.ref
   }
 
   get ID(): string {
-    return this.id;
+    return this.id
   }
 
   /**
@@ -52,7 +52,7 @@ class ImageRef {
    */
   static validate(ref: string): void {
     if (!ref.includes("@sha256:")) {
-      throw new Error(`no digest found in ref ${ref}`);
+      throw new Error(`no digest found in ref ${ref}`)
     }
   }
 }
@@ -62,41 +62,41 @@ class ImageRef {
  * Engine session from a pulled docker image.
  */
 export class DockerImage implements EngineConn {
-  private imageRef: ImageRef;
+  private imageRef: ImageRef
 
   private readonly cacheDir = path.join(
     process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"),
     "dagger"
-  );
+  )
 
-  private readonly ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session";
+  private readonly ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session"
 
-  private subProcess?: ExecaChildProcess;
+  private subProcess?: ExecaChildProcess
 
   constructor(u: URL) {
-    this.imageRef = new ImageRef(u.host + u.pathname);
+    this.imageRef = new ImageRef(u.host + u.pathname)
   }
 
   /**
    * Generate a unix timestamp in nanosecond
    */
   private getRandomId() {
-    return Math.floor(Date.now() * 1000000);
+    return Math.floor(Date.now() * 1000000)
   }
 
   Addr(): string {
-    return "http://dagger";
+    return "http://dagger"
   }
 
   async Connect(opts: ConnectOpts): Promise<Client> {
-    this.createCacheDir();
+    this.createCacheDir()
 
-    const engineSessionBinPath = this.buildBinPath();
+    const engineSessionBinPath = this.buildBinPath()
     if (!fs.existsSync(engineSessionBinPath)) {
-      this.pullEngineSessionBin(engineSessionBinPath);
+      this.pullEngineSessionBin(engineSessionBinPath)
     }
 
-    return this.runEngineSession(engineSessionBinPath, opts);
+    return this.runEngineSession(engineSessionBinPath, opts)
   }
 
   /**
@@ -108,7 +108,7 @@ export class DockerImage implements EngineConn {
    * Nothing happens if the directory already exists.
    */
   private createCacheDir(): void {
-    fs.mkdirSync(this.cacheDir, { mode: 0o700, recursive: true });
+    fs.mkdirSync(this.cacheDir, { mode: 0o700, recursive: true })
   }
 
   /**
@@ -118,13 +118,13 @@ export class DockerImage implements EngineConn {
    * of the base engine session as constant and the engine identifier.
    */
   private buildBinPath(): string {
-    const binPath = `${this.cacheDir}/${this.ENGINE_SESSION_BINARY_PREFIX}-${this.imageRef.ID}`;
+    const binPath = `${this.cacheDir}/${this.ENGINE_SESSION_BINARY_PREFIX}-${this.imageRef.ID}`
 
     switch (this.normalizedOS()) {
       case "windows":
-        return `${binPath}.exe`;
+        return `${binPath}.exe`
       default:
-        return binPath;
+        return binPath
     }
   }
 
@@ -134,9 +134,9 @@ export class DockerImage implements EngineConn {
   private normalizedArch(): string {
     switch (os.arch()) {
       case "x64":
-        return "amd64";
+        return "amd64"
       default:
-        return os.arch();
+        return os.arch()
     }
   }
 
@@ -146,9 +146,9 @@ export class DockerImage implements EngineConn {
   private normalizedOS(): string {
     switch (os.platform()) {
       case "win32":
-        return "windows";
+        return "windows"
       default:
-        return os.platform();
+        return os.platform()
     }
   }
 
@@ -163,7 +163,7 @@ export class DockerImage implements EngineConn {
     const tmpBinPath = path.join(
       this.cacheDir,
       `temp-${this.ENGINE_SESSION_BINARY_PREFIX}-${this.getRandomId()}`
-    );
+    )
 
     const dockerRunArgs = [
       "docker",
@@ -175,10 +175,10 @@ export class DockerImage implements EngineConn {
       `/usr/bin/${
         this.ENGINE_SESSION_BINARY_PREFIX
       }-${this.normalizedOS()}-${this.normalizedArch()}`,
-    ];
+    ]
 
     try {
-      const fd = fs.openSync(tmpBinPath, "w", 0o700);
+      const fd = fs.openSync(tmpBinPath, "w", 0o700)
 
       execaCommandSync(dockerRunArgs.join(" "), {
         stdout: fd,
@@ -189,35 +189,35 @@ export class DockerImage implements EngineConn {
         // Throw on error
         reject: true,
         timeout: 300000,
-      });
+      })
 
-      fs.closeSync(fd);
-      fs.renameSync(tmpBinPath, engineSessionBinPath);
+      fs.closeSync(fd)
+      fs.renameSync(tmpBinPath, engineSessionBinPath)
     } catch (e) {
-      fs.rmSync(tmpBinPath);
+      fs.rmSync(tmpBinPath)
 
-      throw new Error(`failed to copy engine session binary: ${e}`);
+      throw new Error(`failed to copy engine session binary: ${e}`)
     }
 
     // Remove all temporary binary files
     // Ignore current engine session binary or other files that have not be
     // created by this SDK.
     try {
-      const files = fs.readdirSync(this.cacheDir);
+      const files = fs.readdirSync(this.cacheDir)
       files.forEach((file) => {
-        const filePath = `${this.cacheDir}/${file}`;
+        const filePath = `${this.cacheDir}/${file}`
         if (
           filePath === engineSessionBinPath ||
           !file.startsWith(this.ENGINE_SESSION_BINARY_PREFIX)
         ) {
-          return;
+          return
         }
 
-        fs.unlinkSync(filePath);
-      });
+        fs.unlinkSync(filePath)
+      })
     } catch (e) {
       // Log the error but do not interrupt program.
-      console.error("could not clean up temporary binary files");
+      console.error("could not clean up temporary binary files")
     }
   }
 
@@ -233,13 +233,13 @@ export class DockerImage implements EngineConn {
       engineSessionBinPath,
       "--remote",
       `docker-image://${this.imageRef.Ref}`,
-    ];
+    ]
 
     if (opts.Workdir) {
-      engineSessionArgs.push("--workdir", opts.Workdir);
+      engineSessionArgs.push("--workdir", opts.Workdir)
     }
     if (opts.Project) {
-      engineSessionArgs.push("--project", opts.Project);
+      engineSessionArgs.push("--project", opts.Project)
     }
 
     this.subProcess = execaCommand(engineSessionArgs.join(" "), {
@@ -247,36 +247,36 @@ export class DockerImage implements EngineConn {
 
       // Kill the process if parent exit.
       cleanup: true,
-    });
+    })
 
     const stdoutReader = readline.createInterface({
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       input: this.subProcess.stdout!,
-    });
+    })
 
     // Set a timeout of 10 seconds by default
     // Do not call the function if port is successfully retrieved.
     const timeoutFct = setTimeout(
       async () => this.Close(),
       opts.Timeout || 10000
-    );
+    )
 
     for await (const line of stdoutReader) {
       // Read line as a port number
-      const port = parseInt(line);
+      const port = parseInt(line)
 
-      clearTimeout(timeoutFct);
-      return new Client({ host: `127.0.0.1:${port}` });
+      clearTimeout(timeoutFct)
+      return new Client({ host: `127.0.0.1:${port}` })
     }
 
-    throw new Error("failed to connect to engine session");
+    throw new Error("failed to connect to engine session")
   }
 
   async Close(): Promise<void> {
     if (this.subProcess?.pid) {
       this.subProcess.kill("SIGTERM", {
         forceKillAfterTimeout: 2000,
-      });
+      })
     }
   }
 }

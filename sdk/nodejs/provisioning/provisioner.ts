@@ -1,13 +1,13 @@
-import { EngineConn } from "./engineconn.js";
-import { DockerImage } from "./docker-provision/image.js";
-import { HTTP } from "./http/http.js";
+import { EngineConn } from "./engineconn.js"
+import { DockerImage } from "./docker-provision/image.js"
+import { HTTP } from "./http/http.js"
 
-type ProvisionerFunc = (u: URL) => EngineConn;
+type ProvisionerFunc = (u: URL) => EngineConn
 
 const provisioners: Record<string, ProvisionerFunc> = {
   "docker-image": (u: URL) => new DockerImage(u),
   http: (u: URL) => new HTTP(u),
-};
+}
 
 /**
  * getProvisioner returns a ready to use Engine connector.
@@ -18,14 +18,14 @@ const provisioners: Record<string, ProvisionerFunc> = {
  * - docker-image
  */
 export function getProvisioner(host: string): EngineConn {
-  const url = new URL(host);
+  const url = new URL(host)
 
   // Use slice(0, -1) to remove the extra : from the protocol
   // For instance http: -> http
-  const provisioner = provisioners[url.protocol.slice(0, -1)];
+  const provisioner = provisioners[url.protocol.slice(0, -1)]
   if (!provisioner) {
-    throw new Error(`invalid dagger host: ${host}.`);
+    throw new Error(`invalid dagger host: ${host}.`)
   }
 
-  return provisioner(url);
+  return provisioner(url)
 }
