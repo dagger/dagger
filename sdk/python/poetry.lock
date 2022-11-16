@@ -783,7 +783,7 @@ test = ["pytest"]
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.140.3"
+version = "0.142.2"
 description = "A library for creating GraphQL APIs"
 category = "main"
 optional = false
@@ -1439,8 +1439,8 @@ sphinxcontrib-serializinghtml = [
     {file = "sphinxcontrib_serializinghtml-1.1.5-py2.py3-none-any.whl", hash = "sha256:352a9a00ae864471d3a7ead8d7d79f5fc0b57e8b3f95e9867eb9eb28999b92fd"},
 ]
 strawberry-graphql = [
-    {file = "strawberry_graphql-0.140.3-py3-none-any.whl", hash = "sha256:a1b6731afed43976db93c611c897bc8eb25df9569dc10cec6f1363c3ac665dcd"},
-    {file = "strawberry_graphql-0.140.3.tar.gz", hash = "sha256:cf7de7e88c4aa6d58f24cedc6a723d65758072fab5214d6648054a1167cb015f"},
+    {file = "strawberry_graphql-0.142.2-py3-none-any.whl", hash = "sha256:1436844d1f2a18aed27d8d4b6ab5eea2497c1cf58cd9671cf39a97df151037e4"},
+    {file = "strawberry_graphql-0.142.2.tar.gz", hash = "sha256:e8f723973b203a47e3f0126c151a03994d366a21ffea2e227c44ccfc8b0a3478"},
 ]
 tomli = [
     {file = "tomli-2.0.1-py3-none-any.whl", hash = "sha256:939de3e7a6161af0c887ef91b7d41a53e7c5a1ca976325f429cb46ea9bc30ecc"},
