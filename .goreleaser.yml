@@ -7,8 +7,8 @@ before:
 builds:
   - env:
       - CGO_ENABLED=0
-    main: ./cmd/cloak
-    binary: cloak
+    main: ./cmd/dagger
+    binary: dagger
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -51,6 +51,7 @@ changelog:
       - "^chore"
       - "^build"
       - "^Merge"
+      - "^sdk"
   groups:
     - title: Breaking Changes
       regexp: "^.*!:+.*$"
@@ -61,7 +62,7 @@ changelog:
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
-      owner: dagger
+      owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
       name: homebrew-tap
     name: dagger@{{ .Major }}.{{ .Minor }}
     commit_author:
@@ -71,11 +72,11 @@ brews:
     homepage: "https://github.com/dagger/dagger"
     description: "Dagger is a programmable deployment system."
     test: |
-      system "#{bin}/cloak version"
+      system "#{bin}/dagger version"
 
 blobs:
   - provider: s3
-    region: us-east-1
+    region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
     folder: "dagger/releases/{{ .Version }}"
 
