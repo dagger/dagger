@@ -1,12 +1,14 @@
 import { EngineConn } from "./engineconn.js"
 import { DockerImage } from "./docker-provision/image.js"
 import { HTTP } from "./http/http.js"
+import { Bin } from "./bin/bin.js"
 
 type ProvisionerFunc = (u: URL) => EngineConn
 
 const provisioners: Record<string, ProvisionerFunc> = {
   "docker-image": (u: URL) => new DockerImage(u),
   http: (u: URL) => new HTTP(u),
+  bin: (u: URL) => new Bin(u),
 }
 
 /**
