@@ -1,13 +1,13 @@
-import Client, {connect} from "@dagger.io/nodejs-sdk"
+import Client, {connect} from "@dagger.io/dagger"
 
 connect(async (client: Client) => {
   const ctr = client
     .container()
-    .from({address: "node"})
-    .exec({args: ["npm", "install", "-g", "cowsay"]})
-    .withEntrypoint({args: ["cowsay"]})
+    .from("node")
+    .exec(["npm", "install", "-g", "cowsay"])
+    .withEntrypoint(["cowsay"])
 
-  const result = await ctr.exec({args: process.argv.slice(2)}).stdout().contents()
-  
+  const result = await ctr.exec(process.argv.slice(2)).stdout().contents()
+
   console.log(result.contents)
 })
