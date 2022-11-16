@@ -10,7 +10,7 @@
       args: { {{- template "call_args" .Args -}} }
 			{{- end }}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
 		{{- end }}
   }
 {{- end }}

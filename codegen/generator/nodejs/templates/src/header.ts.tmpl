@@ -7,6 +7,9 @@
 import { GraphQLClient, gql } from "graphql-request";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
+/**
+ * @hidden
+ */
 export type QueryTree = {
   operation: string
   args?: Record<string, any>
@@ -20,19 +23,30 @@ interface ClientConfig {
 class BaseClient {
   protected _queryTree:  QueryTree[]
 	private client: GraphQLClient;
-  protected _host: string
+  /**
+   * @defaulValue `127.0.0.1:8080`
+   */
+  public clientHost: string
 
-
+  /**
+   * @hidden
+   */
   constructor({queryTree, host}: ClientConfig = {}) {
     this._queryTree = queryTree || []
-    this._host = host || "127.0.0.1:8080"
+    this.clientHost = host || "127.0.0.1:8080"
 		this.client = new GraphQLClient(`http://${host}/query`);
   }
 
+  /**
+   * @hidden
+   */
   get queryTree() {
     return this._queryTree;
   }
 
+  /**
+   * @hidden
+   */
   protected async _compute() : Promise<Record<string, any>> {
     try {
       // run the query and return the result.

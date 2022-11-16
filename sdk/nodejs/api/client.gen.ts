@@ -6,6 +6,9 @@
 import { GraphQLClient, gql } from "graphql-request";
 import { queryBuilder, queryFlatten } from "./utils.js"
 
+/**
+ * @hidden
+ */
 export type QueryTree = {
   operation: string
   args?: Record<string, any>
@@ -19,19 +22,30 @@ interface ClientConfig {
 class BaseClient {
   protected _queryTree:  QueryTree[]
 	private client: GraphQLClient;
-  protected _host: string
+  /**
+   * @defaulValue `127.0.0.1:8080`
+   */
+  public clientHost: string
 
-
+  /**
+   * @hidden
+   */
   constructor({queryTree, host}: ClientConfig = {}) {
     this._queryTree = queryTree || []
-    this._host = host || "127.0.0.1:8080"
+    this.clientHost = host || "127.0.0.1:8080"
 		this.client = new GraphQLClient(`http://${host}/query`);
   }
 
+  /**
+   * @hidden
+   */
   get queryTree() {
     return this._queryTree;
   }
 
+  /**
+   * @hidden
+   */
   protected async _compute() : Promise<Record<string, any>> {
     try {
       // run the query and return the result.
@@ -48,21 +62,25 @@ class BaseClient {
 
 /**
  * A global cache volume identifier
+ * @hidden
  */
 export type CacheID = string;
 
 /**
  * A unique container identifier. Null designates an empty container (scratch).
+ * @hidden
  */
 export type ContainerID = string;
 
 /**
  * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
+ * @hidden
  */
 export type DateTime = string;
 
 /**
  * A content-addressed directory identifier
+ * @hidden
  */
 export type DirectoryID = string;
 
@@ -71,6 +89,7 @@ export type FileID = string;
 
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
+ * @hidden
  */
 export type ID = string;
 
@@ -79,6 +98,7 @@ export type Platform = string;
 
 /**
  * A unique identifier for a secret
+ * @hidden
  */
 export type SecretID = string;
 
@@ -90,7 +110,7 @@ export type SecretID = string;
 /**
  * A directory whose contents persist across runs
  */
-class CacheVolume extends BaseClient {
+export class CacheVolume extends BaseClient {
   async id(): Promise<Record<string, CacheID>> {
     this._queryTree = [
       ...this._queryTree,
@@ -108,7 +128,7 @@ class CacheVolume extends BaseClient {
 /**
  * An OCI-compatible container, also known as a docker container
  */
-class Container extends BaseClient {
+export class Container extends BaseClient {
 
 
   /**
@@ -121,7 +141,7 @@ class Container extends BaseClient {
       operation: 'build',
       args: {context, dockerfile}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -150,7 +170,7 @@ class Container extends BaseClient {
       operation: 'directory',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -212,7 +232,7 @@ class Container extends BaseClient {
       operation: 'exec',
       args: {args, stdin, redirectStdout, redirectStderr, experimentalPrivilegedNesting}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -259,7 +279,7 @@ class Container extends BaseClient {
       operation: 'file',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -272,7 +292,7 @@ class Container extends BaseClient {
       operation: 'from',
       args: {address}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -284,7 +304,7 @@ class Container extends BaseClient {
       {
       operation: 'fs'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -362,7 +382,7 @@ class Container extends BaseClient {
       {
       operation: 'stderr'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -375,7 +395,7 @@ class Container extends BaseClient {
       {
       operation: 'stdout'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -404,7 +424,7 @@ class Container extends BaseClient {
       operation: 'withDefaultArgs',
       args: {args}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -417,7 +437,7 @@ class Container extends BaseClient {
       operation: 'withEntrypoint',
       args: {args}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -430,7 +450,7 @@ class Container extends BaseClient {
       operation: 'withEnvVariable',
       args: {name, value}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -443,7 +463,7 @@ class Container extends BaseClient {
       operation: 'withFS',
       args: {id}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -456,7 +476,7 @@ class Container extends BaseClient {
       operation: 'withMountedCache',
       args: {path, cache, source}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -469,7 +489,7 @@ class Container extends BaseClient {
       operation: 'withMountedDirectory',
       args: {path, source}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -482,7 +502,7 @@ class Container extends BaseClient {
       operation: 'withMountedFile',
       args: {path, source}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -495,7 +515,7 @@ class Container extends BaseClient {
       operation: 'withMountedSecret',
       args: {path, source}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -508,7 +528,7 @@ class Container extends BaseClient {
       operation: 'withMountedTemp',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -521,7 +541,7 @@ class Container extends BaseClient {
       operation: 'withSecretVariable',
       args: {name, secret}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -534,7 +554,7 @@ class Container extends BaseClient {
       operation: 'withUser',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -547,7 +567,7 @@ class Container extends BaseClient {
       operation: 'withWorkdir',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -560,7 +580,7 @@ class Container extends BaseClient {
       operation: 'withoutEnvVariable',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -573,7 +593,7 @@ class Container extends BaseClient {
       operation: 'withoutMount',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -600,7 +620,7 @@ class Container extends BaseClient {
 /**
  * A directory
  */
-class Directory extends BaseClient {
+export class Directory extends BaseClient {
 
 
   /**
@@ -613,7 +633,7 @@ class Directory extends BaseClient {
       operation: 'diff',
       args: {other}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -626,7 +646,7 @@ class Directory extends BaseClient {
       operation: 'directory',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -673,7 +693,7 @@ class Directory extends BaseClient {
       operation: 'file',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -702,7 +722,7 @@ class Directory extends BaseClient {
       operation: 'loadProject',
       args: {configPath}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -715,7 +735,7 @@ class Directory extends BaseClient {
       operation: 'withDirectory',
       args: {path, directory, exclude, include}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -728,7 +748,7 @@ class Directory extends BaseClient {
       operation: 'withFile',
       args: {path, source}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -741,7 +761,7 @@ class Directory extends BaseClient {
       operation: 'withNewDirectory',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -754,7 +774,7 @@ class Directory extends BaseClient {
       operation: 'withNewFile',
       args: {path, contents}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -767,7 +787,7 @@ class Directory extends BaseClient {
       operation: 'withoutDirectory',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -780,7 +800,7 @@ class Directory extends BaseClient {
       operation: 'withoutFile',
       args: {path}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 
@@ -789,7 +809,7 @@ class Directory extends BaseClient {
 /**
  * EnvVariable is a simple key value object that represents an environment variable.
  */
-class EnvVariable extends BaseClient {
+export class EnvVariable extends BaseClient {
 
 
   /**
@@ -828,7 +848,7 @@ class EnvVariable extends BaseClient {
 /**
  * A file
  */
-class File extends BaseClient {
+export class File extends BaseClient {
 
 
   /**
@@ -884,7 +904,7 @@ class File extends BaseClient {
       {
       operation: 'secret'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -911,7 +931,7 @@ class File extends BaseClient {
 /**
  * A git ref (tag or branch)
  */
-class GitRef extends BaseClient {
+export class GitRef extends BaseClient {
 
 
   /**
@@ -939,14 +959,14 @@ class GitRef extends BaseClient {
       {
       operation: 'tree'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 
 /**
  * A git repository
  */
-class GitRepository extends BaseClient {
+export class GitRepository extends BaseClient {
 
 
   /**
@@ -959,7 +979,7 @@ class GitRepository extends BaseClient {
       operation: 'branch',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -988,7 +1008,7 @@ class GitRepository extends BaseClient {
       operation: 'commit',
       args: {id}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1001,7 +1021,7 @@ class GitRepository extends BaseClient {
       operation: 'tag',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1024,7 +1044,7 @@ class GitRepository extends BaseClient {
 /**
  * Information about the host execution environment
  */
-class Host extends BaseClient {
+export class Host extends BaseClient {
 
 
   /**
@@ -1037,7 +1057,7 @@ class Host extends BaseClient {
       operation: 'directory',
       args: {path, exclude, include}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1050,7 +1070,7 @@ class Host extends BaseClient {
       operation: 'envVariable',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1063,14 +1083,14 @@ class Host extends BaseClient {
       operation: 'workdir',
       args: {exclude, include}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 
 /**
  * An environment variable on the host environment
  */
-class HostVariable extends BaseClient {
+export class HostVariable extends BaseClient {
 
 
   /**
@@ -1082,7 +1102,7 @@ class HostVariable extends BaseClient {
       {
       operation: 'secret'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1111,7 +1131,7 @@ class HostVariable extends BaseClient {
 /**
  * A set of scripts and/or extensions
  */
-class Project extends BaseClient {
+export class Project extends BaseClient {
 
 
   /**
@@ -1139,7 +1159,7 @@ class Project extends BaseClient {
       {
       operation: 'generatedCode'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1221,7 +1241,7 @@ export default class Client extends BaseClient {
       operation: 'cacheVolume',
       args: {key}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1236,7 +1256,7 @@ export default class Client extends BaseClient {
       operation: 'container',
       args: {id, platform}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1265,7 +1285,7 @@ export default class Client extends BaseClient {
       operation: 'directory',
       args: {id}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1278,7 +1298,7 @@ export default class Client extends BaseClient {
       operation: 'file',
       args: {id}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1291,7 +1311,7 @@ export default class Client extends BaseClient {
       operation: 'git',
       args: {url, keepGitDir}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1303,7 +1323,7 @@ export default class Client extends BaseClient {
       {
       operation: 'host'
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1316,7 +1336,7 @@ export default class Client extends BaseClient {
       operation: 'http',
       args: {url}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1329,7 +1349,7 @@ export default class Client extends BaseClient {
       operation: 'project',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -1342,14 +1362,14 @@ export default class Client extends BaseClient {
       operation: 'secret',
       args: {id}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 
 /**
  * A reference to a secret value, which can be handled more safely than the value itself
  */
-class Secret extends BaseClient {
+export class Secret extends BaseClient {
 
 
   /**

@@ -25,7 +25,7 @@ func TestObject(t *testing.T) {
 }
 
 var wantTestObject = `
-class Container extends BaseClient {
+export class Container extends BaseClient {
   exec(args?: string[], stdin?: string, redirectStdout?: string, redirectStderr?: string): Container {
     return new Container({queryTree: [
       ...this._queryTree,
@@ -33,7 +33,7 @@ class Container extends BaseClient {
       operation: 'exec',
       args: {args, stdin, redirectStdout, redirectStderr}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 `
