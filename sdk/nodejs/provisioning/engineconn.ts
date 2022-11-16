@@ -1,10 +1,10 @@
 import Client from "../api/client.gen.js"
-import { StdioOption } from "execa"
+import { Writable } from "node:stream"
 
 export interface ConnectOpts {
   Workdir?: string
   Project?: string
-  OutputLog?: StdioOption
+  LogOutput?: Writable
   Timeout?: number
 }
 
