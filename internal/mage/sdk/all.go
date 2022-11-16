@@ -33,22 +33,22 @@ type All mg.Namespace
 
 // Lint runs all SDK linters
 func (t All) Lint(ctx context.Context) error {
-	return t.runAll(func(s SDK) any {
-		return s.Lint
+	return t.runAll(ctx, func(ctx context.Context, s SDK) error {
+		return s.Lint(ctx)
 	})
 }
 
 // Test runs all SDK tests
 func (t All) Test(ctx context.Context) error {
-	return t.runAll(func(s SDK) any {
-		return s.Test
+	return t.runAll(ctx, func(ctx context.Context, s SDK) error {
+		return s.Test(ctx)
 	})
 }
 
 // Generate re-generates all SDK APIs
 func (t All) Generate(ctx context.Context) error {
-	return t.runAll(func(s SDK) any {
-		return s.Generate
+	return t.runAll(ctx, func(ctx context.Context, s SDK) error {
+		return s.Generate(ctx)
 	})
 }
 
@@ -59,23 +59,21 @@ func (t All) Publish(ctx context.Context, version string) error {
 
 // Bump SDKs to a specific Engine version
 func (t All) Bump(ctx context.Context, engineVersion string) error {
+	return t.runAll(ctx, func(ctx context.Context, s SDK) error {
+		return s.Bump(ctx, engineVersion)
+	})
+}
+
+func (t All) runAll(ctx context.Context, fn func(context.Context, SDK) error) error {
 	eg, gctx := errgroup.WithContext(ctx)
+
 	for _, sdk := range availableSDKs {
 		sdk := sdk
 		eg.Go(func() error {
-			return sdk.Bump(gctx, engineVersion)
+			return fn(gctx, sdk)
 		})
 	}
 	return eg.Wait()
-}
-
-func (t All) runAll(fn func(SDK) any) error {
-	handlers := []any{}
-	for _, sdk := range availableSDKs {
-		handlers = append(handlers, fn(sdk))
-	}
-	mg.Deps(handlers...)
-	return nil
 }
 
 // lintGeneratedCode ensures the generated code is up to date.
