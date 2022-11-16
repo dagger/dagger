@@ -5,7 +5,7 @@ connect(async (client: Client) => {
 
   // highlight-start
   // get reference to the local project
-  const source = await client.host().workdir().id();
+  const source = await client.host().workdir(["node_modules/"]).id();
 
   // get Node image
   const node = await client
@@ -18,6 +18,7 @@ connect(async (client: Client) => {
     .container(node.id)
     .withMountedDirectory("/src", source.id)
     .withWorkdir("/src")
+    .exec(["npm", "install"])
 
   // run tests
   await runner
