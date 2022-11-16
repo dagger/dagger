@@ -1,6 +1,8 @@
 ---
 slug: /sdk/nodejs/783645/get-started
 ---
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
 
 # Get Started with the Dagger Node.js SDK
 
@@ -52,17 +54,25 @@ Follow the steps below to create a sample React application.
 The Dagger Node.js SDK requires [NodeJS 16.x or later](https://nodejs.org/en/download/).
 :::
 
-Install the Dagger Node.js SDK in your project using `npm`:
+Install the Dagger Node.js SDK in your project using `npm` or `yarn`:
+
+<Tabs>
+<TabItem value="npm">
 
 ```shell
 npm install @dagger.io/dagger
 ```
 
-Alternatively, install using `yarn`:
+</TabItem>
+
+<TabItem value="yarn">
 
 ```shell
 yarn add @dagger.io/dagger
 ```
+
+</TabItem>
+</Tabs>
 
 ## Step 3: Create a Dagger client in Node.js
 
