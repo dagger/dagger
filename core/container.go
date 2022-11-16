@@ -24,8 +24,8 @@ import (
 )
 
 const (
-	DaggerSockName = "dagger-sock"
-	DaggerSockPath = "/dagger.sock"
+	RunnerProxySockName = "dagger-runner-sock"
+	RunnerProxySockPath = "/dagger-runner.sock"
 )
 
 // Container is a content-addressed container.
@@ -685,10 +685,13 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts,
-			llb.AddEnv("DAGGER_HOST", "unix:///dagger.sock"),
+			// TODO: right now the user needs to explicitly set DAGGER_HOST,
+			// instead the default should be that the shim provides an engine
+			// session ala "dagger exec"
+			llb.AddEnv("DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
 			llb.AddSSHSocket(
-				llb.SSHID(DaggerSockName),
-				llb.SSHSocketTarget(DaggerSockPath),
+				llb.SSHID(RunnerProxySockName),
+				llb.SSHSocketTarget(RunnerProxySockPath),
 			),
 		)
 	}

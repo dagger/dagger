@@ -1,19 +1,12 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -55,16 +48,6 @@ func shim() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
 		return 1
-	}
-
-	// Proxy DAGGER_HOST `unix://` -> `http://`
-	if daggerHost := os.Getenv("DAGGER_HOST"); strings.HasPrefix(daggerHost, "unix://") {
-		proxyAddr, err := proxyAPI(daggerHost)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "err: %v\n", err)
-			return 1
-		}
-		os.Setenv("DAGGER_HOST", proxyAddr)
 	}
 
 	name := os.Args[1]
@@ -212,35 +195,6 @@ func execRunc() int {
 		return 1
 	}
 	panic("congratulations: you've reached unreachable code, please report a bug!")
-}
-
-func proxyAPI(daggerHost string) (string, error) {
-	u, err := url.Parse(daggerHost)
-	if err != nil {
-		return "", err
-	}
-	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
-		Scheme: "http",
-		Host:   "localhost",
-	})
-	proxy.Transport = &http.Transport{
-		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-			return net.Dial("unix", u.Path)
-		},
-	}
-
-	l, err := net.Listen("tcp", "localhost:0")
-	if err != nil {
-		return "", err
-	}
-	port := l.Addr().(*net.TCPAddr).Port
-
-	srv := &http.Server{
-		Handler:           proxy,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	go srv.Serve(l)
-	return fmt.Sprintf("http://localhost:%d", port), nil
 }
 
 func internalEnv(name string) (string, bool) {

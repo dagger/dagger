@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/internal/engineconn/bin"
 	"github.com/adrg/xdg"
 	"github.com/opencontainers/go-digest"
 	exec "golang.org/x/sys/execabs"
@@ -132,7 +133,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := startEngineSession(ctx, cfg.LogOutput, engineSessionBinPath, args...)
+	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, engineSessionBinPath, args...)
 	if err != nil {
 		return nil, err
 	}

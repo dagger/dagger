@@ -30,6 +30,9 @@ const (
 
 	outputMountPath = "/outputs"
 	outputFile      = "/dagger.json"
+
+	SessionProxySockName = "dagger-session"
+	sessionProxySockPath = "/dagger.sock"
 )
 
 type State struct {
@@ -318,17 +321,16 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
-			llb.AddEnv("DAGGER_HOST", "unix:///dagger.sock"),
+			llb.AddEnv("DAGGER_HOST", "unix://"+sessionProxySockPath),
 			llb.AddSSHSocket(
-				llb.SSHID(core.DaggerSockName),
-				llb.SSHSocketTarget(core.DaggerSockPath),
+				llb.SSHID(SessionProxySockName),
+				llb.SSHSocketTarget(sessionProxySockPath),
 			),
 			llb.AddMount(inputMountPath, input, llb.Readonly),
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
 			llb.ReadonlyRootFS(),
 		)
 
-		// TODO:
 		if sdk == "go" {
 			st.AddMount("/src", wdState, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
 		}

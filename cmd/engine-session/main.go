@@ -47,7 +47,6 @@ func EngineSession(cmd *cobra.Command, args []string) {
 		LogOutput:  os.Stderr,
 		RemoteAddr: remote,
 	}
-
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 

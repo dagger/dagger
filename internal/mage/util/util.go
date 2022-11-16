@@ -71,6 +71,10 @@ func GoBase(c *dagger.Client) *dagger.Container {
 
 	return c.Container().
 		From("golang:1.19-alpine").
+		Exec(dagger.ContainerExecOpts{
+			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+			Args: []string{"apk", "add", "build-base"},
+		}).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
@@ -89,6 +93,14 @@ func DaggerBinary(c *dagger.Client) *dagger.File {
 			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "./cmd/cloak"},
 		}).
 		File("./bin/cloak")
+}
+
+func EngineSessionBinary(c *dagger.Client) *dagger.File {
+	return GoBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"},
+		}).
+		File("./bin/dagger-engine-session")
 }
 
 const (

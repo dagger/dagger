@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/sshforward"
@@ -14,27 +13,27 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-var _ session.Attachable = &APIProxy{}
+var _ session.Attachable = &SessionProxy{}
 
-type APIProxy struct {
+type SessionProxy struct {
 	router *router.Router
 }
 
-func NewAPIProxy(router *router.Router) *APIProxy {
-	return &APIProxy{
+func NewSessionProxy(router *router.Router) *SessionProxy {
+	return &SessionProxy{
 		router: router,
 	}
 }
 
-func (p *APIProxy) Register(server *grpc.Server) {
+func (p *SessionProxy) Register(server *grpc.Server) {
 	sshforward.RegisterSSHServer(server, p)
 }
 
-func (p *APIProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
+func (p *SessionProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgentRequest) (*sshforward.CheckAgentResponse, error) {
 	return &sshforward.CheckAgentResponse{}, nil
 }
 
-func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
+func (p *SessionProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
 	opts, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return status.Errorf(codes.Internal, "no metadata in context")
@@ -45,8 +44,8 @@ func (p *APIProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error 
 	}
 	id := v[0]
 
-	if id != core.DaggerSockName {
-		return status.Errorf(codes.Internal, "no api connection for id %s", id)
+	if id != SessionProxySockName {
+		return status.Errorf(codes.Internal, "no session proxy connection for id %s", id)
 	}
 	serverConn, clientConn := net.Pipe()
 	go func() {
