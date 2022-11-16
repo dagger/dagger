@@ -1,9 +1,12 @@
+import shutil
 from pathlib import Path
 
 import anyio
 import pytest
 
 import dagger
+from dagger.connectors import docker
+from dagger.connectors.base import Config
 
 pytestmark = [
     pytest.mark.anyio,
@@ -11,15 +14,21 @@ pytestmark = [
 ]
 
 
+@pytest.fixture
+def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Creates a temp cache_dir for testing & sets XDG_CACHE_HOME."""
+    cache_dir = tmp_path / "dagger"
+    cache_dir.mkdir()
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+    yield cache_dir
+    shutil.rmtree(str(cache_dir))
+
+
 @pytest.mark.skipif(
     dagger.Config().host.scheme != "docker-image",
     reason="DAGGER_HOST is not docker-image",
 )
-async def test_docker_image_provision(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    cache_dir = tmp_path / "dagger"
-    cache_dir.mkdir()
-    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-
+async def test_docker_image_provision(cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
     # make some garbage for the image provisioner to collect
     garbage_path = cache_dir / "dagger-engine-session-gcme"
     garbage_path.touch()
@@ -45,3 +54,15 @@ async def test_docker_image_provision(tmp_path: Path, monkeypatch: pytest.Monkey
         next(files)
     # assert the garbage was cleaned up
     assert not garbage_path.exists()
+
+
+def test_docker_cli_is_not_installed(cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    eng = docker.Engine(Config())
+
+    def pached_subprocess_run(*args, **kwargs):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(docker.subprocess, "run", pached_subprocess_run)
+
+    with pytest.raises(docker.ProvisionError):
+        eng.start()
