@@ -1,5 +1,8 @@
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+from typing import TextIO
 
 import anyio
 import pytest
@@ -57,6 +60,11 @@ async def test_docker_image_provision(cache_dir: Path, monkeypatch: pytest.Monke
 
 
 def test_docker_cli_is_not_installed(cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    When the docker cli is not installed ensure that the `FileNotFoundError` returned by
+    `subprocess.run` is wrapped by a `docker.ProvisionError` stating that
+    the command is not found.
+    """
     eng = docker.Engine(Config())
 
     def pached_subprocess_run(*args, **kwargs):
@@ -64,5 +72,67 @@ def test_docker_cli_is_not_installed(cache_dir: Path, monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(docker.subprocess, "run", pached_subprocess_run)
 
+    with pytest.raises(docker.ProvisionError) as execinfo:
+        eng.start()
+    assert "Command 'docker' not found" in str(execinfo.value)
+
+
+def test_tmp_files_are_removed_on_error(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    Ensure that the created temporary file is removed if copying from the
+    docker-image fails.
+    """
+    eng = docker.Engine(Config())
+
+    monkeypatch.setattr(
+        docker.subprocess,
+        "run",
+        lambda *args, **kwargs: 1 / 0,  # Raises ZeroDivisionError
+    )
+
+    try:
+        eng.start()
+    except ZeroDivisionError:
+        pass
+
+    assert not [x for x in cache_dir.iterdir()]
+
+
+def test_docker_engine_is_not_running(cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+    """
+    When the docker image is not installed ensure that
+    the `CalledProcessError` is wrapped in a `dagger.ProvisionError`
+    """
+    eng = docker.Engine(Config())
+
+    def pached_subprocess_run(*args, **kwargs):
+        raise subprocess.CalledProcessError(returncode=1, cmd="mocked")
+
+    monkeypatch.setattr(docker.subprocess, "run", pached_subprocess_run)
+
     with pytest.raises(docker.ProvisionError):
         eng.start()
+
+
+@pytest.mark.parametrize("log_output", [sys.stderr, subprocess.PIPE])
+async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
+    log_output: TextIO, cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """
+    When docker isn't running, but a cached version of the dagger engine exists,
+    ensure that the `ValueError` is wrapped in a `ProvisionError`
+    and a more helpful error message is printed.
+    """
+    # Create the cached 'dagger engine'
+    cfg = Config(log_output=log_output)
+    async with dagger.Connection():
+        pass
+
+    # Mock DOCKER_HOST to make it seem like docker isn't running.
+    monkeypatch.setenv("DOCKER_HOST", "127.1.2.3")
+    with pytest.raises(docker.ProvisionError) as execinfo:
+        async with dagger.Connection(cfg):
+            pass
+    assert "Dagger engine failed to start" in str(execinfo.value)
