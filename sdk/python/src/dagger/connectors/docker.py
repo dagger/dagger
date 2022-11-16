@@ -217,7 +217,7 @@ class DockerConnector(HTTPConnector):
 
     def close_sync(self, exc_type) -> None:
         # FIXME: need exit stack?
-        super().close_sync()
+        super().close_sync(exc_type)
         self.engine.stop(exc_type)
 
 
