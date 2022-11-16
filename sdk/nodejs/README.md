@@ -9,7 +9,7 @@ The Dagger NodeJS SDK contains everything you need to develop CI/CD pipelines in
 ## Install
 
 ```shell
-npm install @dagger.io/dagger
+npm install @dagger.io/dagger --save-dev
 ```
 
 ## Documentation

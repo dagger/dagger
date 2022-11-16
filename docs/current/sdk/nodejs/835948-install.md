@@ -16,7 +16,7 @@ Install the Dagger Node.js SDK in your project using `npm` or `yarn`:
 <TabItem value="npm">
 
 ```shell
-npm install @dagger.io/dagger
+npm install @dagger.io/dagger --save-dev
 ```
 
 </TabItem>
@@ -24,7 +24,7 @@ npm install @dagger.io/dagger
 <TabItem value="yarn">
 
 ```shell
-yarn add @dagger.io/dagger
+yarn add @dagger.io/dagger --dev
 ```
 
 </TabItem>
