@@ -6,7 +6,8 @@ import typer
 
 from dagger import codegen
 from dagger.connectors import Config, get_connector
-from dagger.connectors.docker import Engine
+from dagger.connectors.bin import Engine
+from dagger.connectors.docker import EngineFromImage
 
 app = typer.Typer()
 
@@ -32,6 +33,9 @@ def generate(
     cfg = Config()
 
     if cfg.host.scheme == "docker-image":
+        with EngineFromImage(cfg) as engine:
+            code = generate_code(engine.cfg, sync)
+    elif cfg.host.scheme == "bin":
         with Engine(cfg) as engine:
             code = generate_code(engine.cfg, sync)
     else:
