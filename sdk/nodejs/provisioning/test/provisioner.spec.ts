@@ -4,7 +4,7 @@ import { DEFAULT_HOST } from "../default.js"
 
 describe("Provisioner", function () {
   describe("Docker Image", function () {
-    it.skip("Should create a GQL client on call to connect", async function () {
+    it("Should create a GQL client on call to connect", async function () {
       this.timeout(30000)
       const provisioner = getProvisioner(DEFAULT_HOST)
 
