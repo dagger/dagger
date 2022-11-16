@@ -325,47 +325,48 @@ foo.txt"
   #  assert_output --partial "no match for platform in manifest"
 }
 
-@test "plan/do: invalid BUILDKIT_HOST results in error" {
+@test "plan/do: invalid DAGGER_HOST results in error" {
    cd "$TESTDIR"
 
    # ip address is in a reserved range that should be unroutable
-   export BUILDKIT_HOST=tcp://192.0.2.1:1234
+   export DAGGER_HOST=tcp://192.0.2.1:1234
    run timeout 30 "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
    assert_failure
-   assert_output --partial "Unavailable: connection error"
+   assert_output --partial "invalid dagger host"
 }
 
-@test "plan/do: cache" {
-   cd "$TESTDIR"
+# Not Implemented
+# @test "plan/do: cache" {
+#    cd "$TESTDIR"
 
-   unset ACTIONS_RUNTIME_URL
-   unset ACTIONS_RUNTIME_TOKEN
-   unset ACTIONS_CACHE_URL
+#    unset ACTIONS_RUNTIME_URL
+#    unset ACTIONS_RUNTIME_TOKEN
+#    unset ACTIONS_CACHE_URL
 
-   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope
-   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
-   assert_failure
-   assert_output --partial "missing github actions token"
-   unset DAGGER_CACHE_FROM
+#    export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope
+#    run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+#    assert_failure
+#    assert_output --partial "missing github actions token"
+#    unset DAGGER_CACHE_FROM
 
-   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope
-   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
-   assert_failure
-   assert_output --partial "missing github actions token"
-   unset DAGGER_CACHE_TO
+#    export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope
+#    run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+#    assert_failure
+#    assert_output --partial "missing github actions token"
+#    unset DAGGER_CACHE_TO
 
-   export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
-   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
-   assert_failure
-   assert_output --partial "missing github actions cache url"
-   unset DAGGER_CACHE_FROM
+#    export DAGGER_CACHE_FROM=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+#    run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+#    assert_failure
+#    assert_output --partial "missing github actions cache url"
+#    unset DAGGER_CACHE_FROM
 
-   export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
-   run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
-   assert_failure
-   assert_output --partial "missing github actions cache url"
-   unset DAGGER_CACHE_TO
-}
+#    export DAGGER_CACHE_TO=type=gha,scope=dagger-ci-foo-bar-test-scope,token=xyz
+#    run "$DAGGER" "do" -p ./plan/do/actions.cue frontend test
+#    assert_failure
+#    assert_output --partial "missing github actions cache url"
+#    unset DAGGER_CACHE_TO
+# }
 
 @test "plan/validate/concrete" {
   cd "$TESTDIR"

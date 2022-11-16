@@ -130,24 +130,24 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 
-	ctrEnvs, err := ctr.EnvVariables(ctx)
-	if err != nil {
-		return nil, err
-	}
-	envs := map[string]string{}
-	// ctr.
+	// ctrEnvs, err := ctr.EnvVariables(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// envs := map[string]string{}
+	// // ctr.
 
-	for _, env := range ctrEnvs {
-		name, err := env.Name(ctx)
-		if err != nil {
-			return nil, err
-		}
-		val, err := env.Value(ctx)
-		if err != nil {
-			return nil, err
-		}
-		envs[name] = val
-	}
+	// for _, env := range ctrEnvs {
+	// 	name, err := env.Name(ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	val, err := env.Value(ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	envs[name] = val
+	// }
 
 	cmd, err := ctr.DefaultArgs(ctx)
 	if err != nil {
@@ -162,9 +162,9 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	imgConfig := ImageConfig{
 		Entrypoint: entrypoint,
 		WorkingDir: workdir,
-		Env:        envs,
-		Cmd:        cmd,
-		User:       user,
+		// Env:        envs,
+		Cmd:  cmd,
+		User: user,
 	}
 
 	// return val, err

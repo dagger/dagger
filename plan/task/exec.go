@@ -4,16 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"net"
-	"os"
-	"strings"
 
 	"dagger.io/dagger"
 
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/solver/pb"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
@@ -86,15 +79,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		switch {
 		case m.cacheMount != nil:
 			// TODO: Need sharing mode...
-			// var sharingMode string
-			// switch m.cacheMount.concurrency {
-			// case llb.CacheMountShared:
-			// 	sharingMode = "shared"
-			// case llb.CacheMountPrivate:
-			// 	sharingMode = "private"
-			// case llb.CacheMountLocked:
-			// 	sharingMode = "locked"
-			// }
+
 			ctr = ctr.WithMountedCache(m.dest, dgr.CacheVolume(m.cacheMount.id))
 		case m.tmpMount != nil:
 			ctr = ctr.WithMountedTemp(m.dest)
@@ -222,55 +207,6 @@ type execCommon struct {
 	mounts  []mount
 }
 
-func (e execCommon) runOpts() ([]llb.RunOption, error) {
-	opts := []llb.RunOption{
-		llb.Args(e.args),
-		llb.Dir(e.workdir),
-		llb.User(e.user),
-	}
-
-	for k, v := range e.hosts {
-		opts = append(opts, llb.AddExtraHost(k, net.ParseIP(v)))
-	}
-
-	for _, mnt := range e.mounts {
-		opt, err := mnt.runOpt()
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, opt)
-	}
-
-	// Handle HTTP_PROXY, HTTPS_PROXY, FTP_PROXY, etc...
-	proxyEnv := llb.ProxyEnv{}
-	for _, envVar := range os.Environ() {
-		split := strings.SplitN(envVar, "=", 2)
-		if len(split) != 2 {
-			continue
-		}
-		key, val := split[0], split[1]
-		if strings.EqualFold(key, "no_proxy") {
-			proxyEnv.NoProxy = val
-		}
-		if strings.EqualFold(key, "all_proxy") {
-			proxyEnv.AllProxy = val
-		}
-		if strings.EqualFold(key, "http_proxy") {
-			proxyEnv.HTTPProxy = val
-		}
-		if strings.EqualFold(key, "https_proxy") {
-			proxyEnv.HTTPSProxy = val
-		}
-		if strings.EqualFold(key, "ftp_proxy") {
-			proxyEnv.FTPProxy = val
-		}
-	}
-	if proxyEnv != (llb.ProxyEnv{}) {
-		opts = append(opts, llb.WithProxy(proxyEnv))
-	}
-	return opts, nil
-}
-
 func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 	dest, err := v.Lookup("dest").String()
 	if err != nil {
@@ -298,14 +234,14 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 		if err != nil {
 			return mount{}, err
 		}
-		var mode llb.CacheMountSharingMode
+		var mode string
 		switch concurrency {
 		case "shared":
-			mode = llb.CacheMountShared
+			mode = concurrency
 		case "private":
-			mode = llb.CacheMountPrivate
+			mode = concurrency
 		case "locked":
-			mode = llb.CacheMountLocked
+			mode = concurrency
 		default:
 			return mount{}, fmt.Errorf("unknown concurrency mode %q", concurrency)
 		}
@@ -427,121 +363,121 @@ type mount struct {
 	fileMount   *fileMount
 }
 
-func (m mount) runOpt() (llb.RunOption, error) {
-	switch {
-	case m.cacheMount != nil:
-		return llb.AddMount(
-			m.dest,
-			llb.Scratch(),
-			llb.AsPersistentCacheDir(m.cacheMount.id, m.cacheMount.concurrency),
-		), nil
-	case m.tmpMount != nil:
-		// FIXME: handle size
-		return llb.AddMount(
-			m.dest,
-			llb.Scratch(),
-			llb.Tmpfs(),
-		), nil
-	case m.socketMount != nil:
-		return llb.AddSSHSocket(
-			llb.SSHID(m.socketMount.id),
-			llb.SSHSocketTarget(m.dest),
-		), nil
-	case m.fsMount != nil:
-		st, err := m.fsMount.contents.State()
-		if err != nil {
-			return nil, err
-		}
-		var opts []llb.MountOption
-		if m.fsMount.source != "" {
-			opts = append(opts, llb.SourcePath(m.fsMount.source))
-		}
-		if m.fsMount.readonly {
-			opts = append(opts, llb.Readonly)
-		}
-		return llb.AddMount(
-			m.dest,
-			st,
-			opts...,
-		), nil
-	case m.secretMount != nil:
-		return llb.AddSecret(
-			m.dest,
-			llb.SecretID(m.secretMount.id),
-			llb.SecretFileOpt(int(m.secretMount.uid), int(m.secretMount.gid), int(m.secretMount.mask)),
-		), nil
-	case m.fileMount != nil:
-		return llb.AddMount(
-			m.dest,
-			llb.Scratch().File(llb.Mkfile(
-				"/file",
-				fs.FileMode(m.fileMount.permissions),
-				[]byte(m.fileMount.contents))),
-			llb.SourcePath("/file"),
-		), nil
-	}
-	return nil, fmt.Errorf("no mount type set")
-}
+// func (m mount) runOpt() (llb.RunOption, error) {
+// 	switch {
+// 	case m.cacheMount != nil:
+// 		return llb.AddMount(
+// 			m.dest,
+// 			llb.Scratch(),
+// 			llb.AsPersistentCacheDir(m.cacheMount.id, m.cacheMount.concurrency),
+// 		), nil
+// 	case m.tmpMount != nil:
+// 		// FIXME: handle size
+// 		return llb.AddMount(
+// 			m.dest,
+// 			llb.Scratch(),
+// 			llb.Tmpfs(),
+// 		), nil
+// 	case m.socketMount != nil:
+// 		return llb.AddSSHSocket(
+// 			llb.SSHID(m.socketMount.id),
+// 			llb.SSHSocketTarget(m.dest),
+// 		), nil
+// 	case m.fsMount != nil:
+// 		st, err := m.fsMount.contents.State()
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		var opts []llb.MountOption
+// 		if m.fsMount.source != "" {
+// 			opts = append(opts, llb.SourcePath(m.fsMount.source))
+// 		}
+// 		if m.fsMount.readonly {
+// 			opts = append(opts, llb.Readonly)
+// 		}
+// 		return llb.AddMount(
+// 			m.dest,
+// 			st,
+// 			opts...,
+// 		), nil
+// 	case m.secretMount != nil:
+// 		return llb.AddSecret(
+// 			m.dest,
+// 			llb.SecretID(m.secretMount.id),
+// 			llb.SecretFileOpt(int(m.secretMount.uid), int(m.secretMount.gid), int(m.secretMount.mask)),
+// 		), nil
+// 	case m.fileMount != nil:
+// 		return llb.AddMount(
+// 			m.dest,
+// 			llb.Scratch().File(llb.Mkfile(
+// 				"/file",
+// 				fs.FileMode(m.fileMount.permissions),
+// 				[]byte(m.fileMount.contents))),
+// 			llb.SourcePath("/file"),
+// 		), nil
+// 	}
+// 	return nil, fmt.Errorf("no mount type set")
+// }
 
-func (m mount) containerMount() (client.Mount, error) {
-	switch {
-	case m.cacheMount != nil:
-		mnt := client.Mount{
-			Dest:      m.dest,
-			MountType: pb.MountType_CACHE,
-			CacheOpt: &pb.CacheOpt{
-				ID: m.cacheMount.id,
-			},
-		}
-		switch m.cacheMount.concurrency {
-		case llb.CacheMountShared:
-			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-		case llb.CacheMountPrivate:
-			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-		case llb.CacheMountLocked:
-			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-		}
-		return mnt, nil
-	case m.tmpMount != nil:
-		// FIXME: handle size
-		return client.Mount{
-			Dest:      m.dest,
-			MountType: pb.MountType_TMPFS,
-		}, nil
-	case m.socketMount != nil:
-		return client.Mount{
-			Dest:      m.dest,
-			MountType: pb.MountType_SSH,
-			SSHOpt: &pb.SSHOpt{
-				ID: m.socketMount.id,
-			},
-		}, nil
-	case m.fsMount != nil:
-		return client.Mount{
-			Dest:      m.dest,
-			MountType: pb.MountType_BIND,
-			Ref:       m.fsMount.contents.Result(),
-			Selector:  m.fsMount.source,
-			Readonly:  m.fsMount.readonly,
-		}, nil
-	case m.secretMount != nil:
-		return client.Mount{
-			Dest:      m.dest,
-			MountType: pb.MountType_SECRET,
-			SecretOpt: &pb.SecretOpt{
-				ID:   m.secretMount.id,
-				Uid:  m.secretMount.uid,
-				Gid:  m.secretMount.gid,
-				Mode: m.secretMount.mask,
-			},
-		}, nil
-	}
-	return client.Mount{}, fmt.Errorf("no mount type set")
-}
+// func (m mount) containerMount() (client.Mount, error) {
+// 	switch {
+// 	case m.cacheMount != nil:
+// 		mnt := client.Mount{
+// 			Dest:      m.dest,
+// 			MountType: pb.MountType_CACHE,
+// 			CacheOpt: &pb.CacheOpt{
+// 				ID: m.cacheMount.id,
+// 			},
+// 		}
+// 		switch m.cacheMount.concurrency {
+// 		case llb.CacheMountShared:
+// 			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+// 		case llb.CacheMountPrivate:
+// 			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+// 		case llb.CacheMountLocked:
+// 			mnt.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+// 		}
+// 		return mnt, nil
+// 	case m.tmpMount != nil:
+// 		// FIXME: handle size
+// 		return client.Mount{
+// 			Dest:      m.dest,
+// 			MountType: pb.MountType_TMPFS,
+// 		}, nil
+// 	case m.socketMount != nil:
+// 		return client.Mount{
+// 			Dest:      m.dest,
+// 			MountType: pb.MountType_SSH,
+// 			SSHOpt: &pb.SSHOpt{
+// 				ID: m.socketMount.id,
+// 			},
+// 		}, nil
+// 	case m.fsMount != nil:
+// 		return client.Mount{
+// 			Dest:      m.dest,
+// 			MountType: pb.MountType_BIND,
+// 			Ref:       m.fsMount.contents.Result(),
+// 			Selector:  m.fsMount.source,
+// 			Readonly:  m.fsMount.readonly,
+// 		}, nil
+// 	case m.secretMount != nil:
+// 		return client.Mount{
+// 			Dest:      m.dest,
+// 			MountType: pb.MountType_SECRET,
+// 			SecretOpt: &pb.SecretOpt{
+// 				ID:   m.secretMount.id,
+// 				Uid:  m.secretMount.uid,
+// 				Gid:  m.secretMount.gid,
+// 				Mode: m.secretMount.mask,
+// 			},
+// 		}, nil
+// 	}
+// 	return client.Mount{}, fmt.Errorf("no mount type set")
+// }
 
 type cacheMount struct {
 	id          string
-	concurrency llb.CacheMountSharingMode
+	concurrency string
 }
 
 type tmpMount struct {

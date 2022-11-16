@@ -7,8 +7,8 @@ import (
 
 // Context holds the execution context for a plan.
 type Context struct {
-	Platform  *platformContext
-	FS        *fsContext
+	Platform *platformContext
+	// FS        *fsContext
 	LocalDirs *localDirContext
 	TempDirs  *tempDirContext
 	Secrets   *secretContext
@@ -18,9 +18,9 @@ type Context struct {
 func New() *Context {
 	return &Context{
 		Platform: &platformContext{},
-		FS: &fsContext{
-			store: make(map[string]*FS),
-		},
+		// FS: &fsContext{
+		// 	store: make(map[string]*FS),
+		// },
 		LocalDirs: &localDirContext{
 			store: []string{},
 		},

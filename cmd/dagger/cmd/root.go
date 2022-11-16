@@ -1,11 +1,11 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"strings"
 
 	"github.com/docker/buildx/util/logutil"
-	"github.com/moby/buildkit/util/appcontext"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -67,7 +67,7 @@ func init() {
 
 func Execute() {
 	var (
-		ctx = appcontext.Context()
+		ctx = context.Background()
 		// `--log-*` flags have not been parsed yet at this point so we get a
 		// default logger. Therefore, we can't store the logger into the context.
 		lg     = logger.New()

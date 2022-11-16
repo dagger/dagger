@@ -27,6 +27,7 @@ import (
 	"go.dagger.io/dagger/solver"
 	"go.dagger.io/dagger/telemetry"
 	"go.dagger.io/dagger/telemetry/event"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/term"
 )
 
@@ -229,7 +230,7 @@ var doCmd = &cobra.Command{
 
 		}
 
-		cl := common.NewClient(ctx)
+		// cl := common.NewClient(ctx)
 
 		actionFlags.VisitAll(func(flag *pflag.Flag) {
 			if cmd.Flags().Changed(flag.Name) {
@@ -246,9 +247,21 @@ var doCmd = &cobra.Command{
 			Value: cue.MakePath(targetPath.Selectors()[1:]...).String(),
 		})
 
-		err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
-			return daggerPlan.Do(ctx, targetPath, s)
+		eg, gctx := errgroup.WithContext(ctx)
+
+		// err = cl.Do(ctx, daggerPlan.Context(), func(ctx context.Context, s *solver.Solver) error {
+		// 	return daggerPlan.Do(ctx, targetPath, s)
+		// })
+
+		eg.Go(func() error {
+			s := &solver.Solver{}
+			return daggerPlan.Do(gctx, targetPath, s)
 		})
+
+		err = eg.Wait()
+		if err != nil {
+			lg.Fatal().Err(err).Msg("failed to execute plan")
+		}
 
 		<-doneCh
 

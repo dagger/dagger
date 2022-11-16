@@ -2,10 +2,6 @@ package task
 
 import (
 	"time"
-
-	"github.com/moby/buildkit/frontend/dockerfile/dockerfile2llb"
-	"github.com/moby/buildkit/frontend/dockerfile/shell"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // ImageConfig defines the execution parameters which should be used as a base when running a container using an image.
@@ -68,99 +64,4 @@ type HealthConfig struct {
 	// Retries is the number of consecutive failures needed to consider a container as unhealthy.
 	// Zero means inherit.
 	Retries int `json:"retries,omitempty"`
-}
-
-func (ic ImageConfig) ToSpec() dockerfile2llb.ImageConfig {
-	cfg := dockerfile2llb.ImageConfig{}
-
-	cfg.User = ic.User
-	cfg.ExposedPorts = ic.ExposedPorts
-	cfg.Env = envToSpec(ic.Env)
-	cfg.Entrypoint = ic.Entrypoint
-	cfg.Cmd = ic.Cmd
-	cfg.Volumes = ic.Volumes
-	cfg.WorkingDir = ic.WorkingDir
-	cfg.Labels = ic.Labels
-	cfg.StopSignal = ic.StopSignal
-
-	cfg.Healthcheck = ic.Healthcheck.ToSpec()
-	cfg.ArgsEscaped = ic.ArgsEscaped
-	cfg.OnBuild = ic.OnBuild
-	cfg.StopTimeout = ic.StopTimeout
-	cfg.Shell = ic.Shell
-
-	return cfg
-}
-
-func ConvertImageConfig(spec dockerfile2llb.ImageConfig) ImageConfig {
-	cfg := ImageConfig{}
-
-	cfg.User = spec.User
-	cfg.ExposedPorts = spec.ExposedPorts
-	cfg.Env = shell.BuildEnvs(spec.Env)
-	cfg.Entrypoint = spec.Entrypoint
-	cfg.Cmd = spec.Cmd
-	cfg.Volumes = spec.Volumes
-	cfg.WorkingDir = spec.WorkingDir
-	cfg.Labels = spec.Labels
-	cfg.StopSignal = spec.StopSignal
-
-	cfg.Healthcheck = ConvertHealthConfig(spec.Healthcheck)
-	cfg.ArgsEscaped = spec.ArgsEscaped
-	cfg.OnBuild = spec.OnBuild
-	cfg.StopTimeout = spec.StopTimeout
-	cfg.Shell = spec.Shell
-
-	return cfg
-}
-
-func envToSpec(env map[string]string) []string {
-	envs := []string{}
-	for k, v := range env {
-		envs = append(envs, k+"="+v)
-	}
-	return envs
-}
-
-func (hc *HealthConfig) ToSpec() *dockerfile2llb.HealthConfig {
-	if hc == nil {
-		return nil
-	}
-
-	cfg := dockerfile2llb.HealthConfig{}
-
-	cfg.Test = hc.Test
-	cfg.Interval = hc.Interval
-	cfg.Timeout = hc.Timeout
-	cfg.StartPeriod = hc.StartPeriod
-	cfg.Retries = hc.Retries
-
-	return &cfg
-}
-
-func ConvertHealthConfig(spec *dockerfile2llb.HealthConfig) *HealthConfig {
-	if spec == nil {
-		return nil
-	}
-
-	cfg := HealthConfig{}
-
-	cfg.Test = spec.Test
-	cfg.Interval = spec.Interval
-	cfg.Timeout = spec.Timeout
-	cfg.StartPeriod = spec.StartPeriod
-	cfg.Retries = spec.Retries
-
-	return &cfg
-}
-
-func NewImage(config ImageConfig, platform specs.Platform) dockerfile2llb.Image {
-	return dockerfile2llb.Image{
-		Config: config.ToSpec(),
-		Image: specs.Image{
-			Architecture: platform.Architecture,
-			OS:           platform.OS,
-		},
-		Variant: platform.Variant,
-	}
 }
