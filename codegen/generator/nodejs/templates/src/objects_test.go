@@ -36,7 +36,7 @@ var wantObjects = `
 /**
  * A directory whose contents persist across runs
  */
-class CacheVolume extends BaseClient {
+export class CacheVolume extends BaseClient {
   async id(): Promise<Record<string, CacheID>> {
     this._queryTree = [
       ...this._queryTree,
@@ -54,7 +54,7 @@ class CacheVolume extends BaseClient {
 /**
  * Information about the host execution environment
  */
-class Host extends BaseClient {
+export class Host extends BaseClient {
 
 
   /**
@@ -67,7 +67,7 @@ class Host extends BaseClient {
       operation: 'directory',
       args: {path, exclude, include}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -80,7 +80,7 @@ class Host extends BaseClient {
       operation: 'envVariable',
       args: {name}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 
   /**
@@ -93,7 +93,7 @@ class Host extends BaseClient {
       operation: 'workdir',
       args: {exclude, include}
       }
-    ], host: this._host})
+    ], host: this.clientHost})
   }
 }
 `

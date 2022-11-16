@@ -13,6 +13,7 @@ func TestComment(t *testing.T) {
 		tmpl := templateHelper(t)
 		want := `/**
  * This is a comment
+ * @hidden
  */`
 		comments := "This is a comment"
 
@@ -27,6 +28,7 @@ func TestComment(t *testing.T) {
 		want := `/**
  * This is a comment
  * that spans on multiple lines
+ * @hidden
  */`
 		comments := "This is a comment\nthat spans on multiple lines"
 
