@@ -85,7 +85,7 @@ class Connector(ABC):
         self.client = SyncClient.from_session(session)
         return self.client
 
-    def close_sync(self) -> None:
+    def close_sync(self, exc_type) -> None:
         assert self.client is not None
         self.client._gql_client.close_sync()
 

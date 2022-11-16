@@ -78,6 +78,7 @@ GEN_PATH = "./src/dagger/api"
 
 [tool.poe.tasks]
 test = "pytest"
+unittest = "pytest -m 'not slow'"
 typing = "mypy src/dagger tests"
 
 [tool.poe.tasks.docs]
