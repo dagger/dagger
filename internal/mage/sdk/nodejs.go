@@ -153,9 +153,9 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 		From("node:16-alpine").
 		WithWorkdir("/workdir")
 
-	deps := base.WithFS(
+	deps := base.WithRootfs(
 		base.
-			FS().
+			Rootfs().
 			WithFile("/workdir/package.json", workdir.File("package.json")).
 			WithFile("/workdir/yarn.lock", workdir.File("yarn.lock")),
 	).
@@ -163,9 +163,9 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 			Args: []string{"yarn", "install"},
 		})
 
-	src := deps.WithFS(
+	src := deps.WithRootfs(
 		deps.
-			FS().
+			Rootfs().
 			WithDirectory("/workdir", workdir),
 	)
 

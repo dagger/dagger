@@ -27,10 +27,17 @@ type Container {
   build(context: DirectoryID!, dockerfile: String): Container!
 
   "This container's root filesystem. Mounts are not included."
-  fs: Directory!
+  rootfs: Directory!
+
+  "This container's root filesystem. Mounts are not included."
+  fs: Directory! @deprecated(reason: "replaced by rootfs")
+
+  "Initialize this container from this DirectoryID"
+  withRootfs(id: DirectoryID!): Container!
 
   "Initialize this container from this DirectoryID"
   withFS(id: DirectoryID!): Container!
+    @deprecated(reason: "replaced by withRootfs")
 
   "Retrieve a directory at the given path. Mounts are included."
   directory(path: String!): Directory!

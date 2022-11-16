@@ -121,7 +121,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 			require.Equal(t, platformToUname[defaultPlatform], stdout)
 
 			out := ctr.Directory("/out")
-			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithFS(out)
+			variants[i] = c.Container(dagger.ContainerOpts{Platform: platform}).WithRootfs(out)
 			return nil
 		})
 	}
@@ -154,7 +154,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	for platform, uname := range platformToFileArch {
 		pulledDir := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
-			FS()
+			Rootfs()
 		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
 		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | grep '%s'`, platform, uname))
 	}
@@ -243,7 +243,7 @@ func TestPlatformWindows(t *testing.T) {
 	// It's not possible to exec, but we can pull and read files
 	ents, err := c.Container(dagger.ContainerOpts{Platform: "windows/amd64"}).
 		From("mcr.microsoft.com/windows/nanoserver:ltsc2022").
-		FS().
+		Rootfs().
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"License.txt", "ProgramData", "Users", "Windows"}, ents)

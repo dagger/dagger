@@ -35,8 +35,10 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		"Container": router.ObjectResolver{
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
-			"fs":                   router.ToResolver(s.fs),
-			"withFS":               router.ToResolver(s.withFS),
+			"rootfs":               router.ToResolver(s.rootfs),
+			"fs":                   router.ToResolver(s.rootfs), // deprecated
+			"withRootfs":           router.ToResolver(s.withRootfs),
+			"withFS":               router.ToResolver(s.withRootfs), // deprecated
 			"file":                 router.ToResolver(s.file),
 			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
@@ -107,8 +109,8 @@ func (s *containerSchema) build(ctx *router.Context, parent *core.Container, arg
 	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile)
 }
 
-func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
-	ctr, err := parent.WithFS(ctx, &arg)
+func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
+	ctr, err := parent.WithRootFS(ctx, &arg)
 	if err != nil {
 		return nil, err
 	}
@@ -116,8 +118,8 @@ func (s *containerSchema) withFS(ctx *router.Context, parent *core.Container, ar
 	return ctr, nil
 }
 
-func (s *containerSchema) fs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
-	return parent.FS(ctx)
+func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
+	return parent.RootFS(ctx)
 }
 
 type containerExecArgs struct {

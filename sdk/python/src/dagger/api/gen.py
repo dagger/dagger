@@ -262,6 +262,12 @@ class Container(Type):
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
 
+    def rootfs(self) -> "Directory":
+        """This container's root filesystem. Mounts are not included."""
+        _args: list[Arg] = []
+        _ctx = self._select("rootfs", _args)
+        return Directory(_ctx)
+
     def stderr(self) -> "File":
         """The error stream of the last executed command.
 
@@ -372,6 +378,14 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withMountedTemp", _args)
+        return Container(_ctx)
+
+    def with_rootfs(self, id: "DirectoryID") -> "Container":
+        """Initialize this container from this DirectoryID"""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
     def with_secret_variable(self, name: str, secret: "Secret") -> "Container":

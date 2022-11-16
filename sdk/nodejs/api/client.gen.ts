@@ -406,6 +406,18 @@ export class Container extends BaseClient {
   }
 
   /**
+   * This container's root filesystem. Mounts are not included.
+   */
+  rootfs(): Directory {
+    return new Directory({queryTree: [
+      ...this._queryTree,
+      {
+      operation: 'rootfs'
+      }
+    ], host: this.clientHost})
+  }
+
+  /**
    * The error stream of the last executed command.
    * Null if no command has been executed.
    */
@@ -599,6 +611,19 @@ export class Container extends BaseClient {
       ],
       host: this.clientHost,
     })
+  }
+
+  /**
+   * Initialize this container from this DirectoryID
+   */
+  withRootfs(id: DirectoryID): Container {
+    return new Container({queryTree: [
+      ...this._queryTree,
+      {
+      operation: 'withRootfs',
+      args: {id}
+      }
+    ], host: this.clientHost})
   }
 
   /**

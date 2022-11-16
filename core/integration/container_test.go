@@ -170,7 +170,7 @@ CMD goenv
 	})
 }
 
-func TestContainerWithFS(t *testing.T) {
+func TestContainerWithRootFS(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -184,8 +184,8 @@ func TestContainerWithFS(t *testing.T) {
 	require.NoError(t, err)
 
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
-	dir := alpine316.FS()
-	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithFS(dir).Exec(dagger.ContainerExecOpts{
+	dir := alpine316.Rootfs()
+	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithRootfs(dir).Exec(dagger.ContainerExecOpts{
 		Args: []string{
 			"/bin/sh",
 			"-c",
@@ -206,7 +206,7 @@ func TestContainerWithFS(t *testing.T) {
 
 	require.Equal(t, varVal, varValResp)
 
-	alpine315ReplacedFS := alpine315WithVar.WithFS(dir)
+	alpine315ReplacedFS := alpine315WithVar.WithRootfs(dir)
 
 	varValResp, err = alpine315ReplacedFS.EnvVariable(ctx, "DAGGER_TEST")
 	require.NoError(t, err)
@@ -2387,7 +2387,7 @@ func TestContainerPublish(t *testing.T) {
 	require.Contains(t, pushedRef, "@sha256:")
 
 	contents, err := c.Container().
-		From(pushedRef).FS().File("/etc/alpine-release").Contents(ctx)
+		From(pushedRef).Rootfs().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.16.2\n")
 }
