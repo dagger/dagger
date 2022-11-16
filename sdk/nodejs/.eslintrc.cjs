@@ -10,9 +10,8 @@ module.exports = {
 
     // FIXME: generated files should be linted
     "api/client.gen.ts",
-    "api/types.ts",
   ],
   parser: "@typescript-eslint/parser",
   plugins: ["@typescript-eslint"],
   root: true,
-};
+}
