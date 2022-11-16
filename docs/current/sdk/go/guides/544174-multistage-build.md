@@ -5,10 +5,10 @@ displayed_sidebar: "current"
 
 # Use Dagger with Multi-stage Container Builds
 
-Multi-stage builds are a common practice when building containers with Docker. 
+Multi-stage builds are a common practice when building containers with Docker.
 
-- First, your application is compiled in a context which has tools that are required for building the application, but not necessarily required for running it. 
-- Next, to reduce the number of dependencies and hence the size of the image, the compiled application is copied to a different base image which only has the required components to run the application. 
+- First, your application is compiled in a context which has tools that are required for building the application, but not necessarily required for running it.
+- Next, to reduce the number of dependencies and hence the size of the image, the compiled application is copied to a different base image which only has the required components to run the application.
 
 [Learn more about multi-stage builds in the Docker documentation](https://docs.docker.com/build/building/multi-stage/).
 
@@ -24,7 +24,7 @@ This guide assumes that:
 
 ## Example
 
-The following code snippet demonstrates a multi-stage build with the Go SDK. 
+The following code snippet demonstrates a multi-stage build with the Go SDK.
 
 ```go file=../snippets/multistage-build/main.go
 
