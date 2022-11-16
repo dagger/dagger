@@ -1,9 +1,4 @@
 import { ConnectOpts, EngineConn } from "../engineconn.js";
-import * as path from "path";
-import * as fs from "fs";
-import * as os from "os";
-import readline from "readline";
-import { execaCommandSync, execaCommand, ExecaChildProcess } from "execa";
 import Client from "../../api/client.gen.js";
 
 /**
@@ -21,6 +16,7 @@ export class HTTP implements EngineConn {
     return this.url.toString();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async Connect(opts: ConnectOpts): Promise<Client> {
     return new Client({ host: this.url.host });
   }

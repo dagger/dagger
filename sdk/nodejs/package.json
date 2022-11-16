@@ -28,7 +28,7 @@
     "build": "tsc",
     "test": "mocha",
     "gen:typedoc": "yarn typedoc",
-    "lint": "yarn eslint ."
+    "lint": "yarn eslint --max-warnings=0 ."
   },
   "devDependencies": {
     "@types/mocha": "latest",
