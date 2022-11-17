@@ -12,7 +12,7 @@ import { queryBuilder, queryFlatten } from "./utils.js"
  */
 export type QueryTree = {
   operation: string
-  args?: Record<string, any>
+  args?: Record<string, unknown>
 }
 
 interface ClientConfig {
@@ -47,11 +47,11 @@ class BaseClient {
   /**
    * @hidden
    */
-  protected async _compute() : Promise<Record<string, any>> {
+  protected async _compute<T>() : Promise<Record<string, T>> {
     try {
       // run the query and return the result.
       const query = queryBuilder(this._queryTree)
-      const computeQuery: Awaited<Promise<Record<string, any>>> =  await this.client.request(gql`${query}`)
+      const computeQuery: Awaited<Promise<Record<string, T>>> =  await this.client.request(gql`${query}`)
 
       return queryFlatten(computeQuery)
     } catch (error) {
