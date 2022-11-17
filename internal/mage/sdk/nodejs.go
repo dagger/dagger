@@ -85,7 +85,21 @@ func (t Nodejs) Generate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+		err = os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+		if err != nil {
+			return err
+		}
+		formatted, err := nodeJsBase(c).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          []string{"yarn", "fmt"},
+				ExperimentalPrivilegedNesting: true,
+			}).
+			File(nodejsGeneratedAPIPath).
+			Contents(ctx)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(nodejsGeneratedAPIPath, []byte(formatted), 0o600)
 	})
 }
 
