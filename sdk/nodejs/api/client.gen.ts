@@ -23,7 +23,7 @@ class BaseClient {
   protected _queryTree:  QueryTree[]
 	private client: GraphQLClient;
   /**
-   * @defaulValue `127.0.0.1:8080`
+   * @defaultValue `127.0.0.1:8080`
    */
   public clientHost: string
 
@@ -51,7 +51,7 @@ class BaseClient {
       // run the query and return the result.
       const query = queryBuilder(this._queryTree)
       const computeQuery: Awaited<Promise<Record<string, any>>> =  await this.client.request(gql`${query}`)
-    
+
       return queryFlatten(computeQuery)
     } catch (error) {
       console.error(JSON.stringify(error, undefined, 2))
@@ -1404,8 +1404,3 @@ export class Secret extends BaseClient {
     return response
   }
 }
-
-
-
-
-
