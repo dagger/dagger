@@ -1,26 +1,21 @@
 import Client, { connect } from "@dagger.io/dagger"
 
- // initialize Dagger client
+// initialize Dagger client
 connect(async (client: Client) => {
-
   // highlight-start
   // Set Node versions against which to test and build
   const nodeVersions = ["12", "14", "16"]
   // highlight-end
 
   // get reference to the local project
-  const source = await client.host().workdir(["node_modules/"]).id();
+  const source = await client.host().workdir(["node_modules/"]).id()
 
   // highlight-start
   // for each Node version
   for (const nodeVersion of nodeVersions) {
-
     // get Node image
-    const node = await client
-      .container()
-      .from(`node:${nodeVersion}`)
-      .id()
-  // highlight-end
+    const node = await client.container().from(`node:${nodeVersion}`).id()
+    // highlight-end
 
     // mount cloned repository into Node image
     const runner = client
@@ -30,9 +25,7 @@ connect(async (client: Client) => {
       .exec(["npm", "install"])
 
     // run tests
-    await runner
-      .exec(["npm", "test", "--", "--watchAll=false"])
-      .exitCode()
+    await runner.exec(["npm", "test", "--", "--watchAll=false"]).exitCode()
 
     // highlight-start
     // build application using specified Node version
@@ -43,4 +36,4 @@ connect(async (client: Client) => {
       .export(`./build-node-${nodeVersion}`)
   }
   // highlight-end
-});
+})
