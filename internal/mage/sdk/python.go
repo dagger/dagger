@@ -98,7 +98,7 @@ func (t Python) Generate(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			if err := os.WriteFile(f, []byte(contents), 0600); err != nil {
+			if err := os.WriteFile(f, []byte(contents), 0o600); err != nil {
 				return err
 			}
 		}
@@ -158,7 +158,7 @@ func (t Python) Bump(ctx context.Context, version string) error {
 ENGINE_IMAGE_REF = %q
 `, version)
 
-	return os.WriteFile("sdk/python/src/dagger/connectors/engine_version.py", []byte(engineReference), 0600)
+	return os.WriteFile("sdk/python/src/dagger/connectors/engine_version.py", []byte(engineReference), 0o600)
 }
 
 func pythonBase(c *dagger.Client, version string) *dagger.Container {

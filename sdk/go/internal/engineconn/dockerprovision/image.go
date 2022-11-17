@@ -15,7 +15,6 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	"dagger.io/dagger/internal/engineconn/bin"
 	"github.com/adrg/xdg"
-	"github.com/opencontainers/go-digest"
 	exec "golang.org/x/sys/execabs"
 )
 
@@ -35,7 +34,7 @@ type DockerImage struct {
 func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
 	// TODO: does xdg work on Windows?
 	cacheDir := filepath.Join(xdg.CacheHome, "dagger")
-	if err := os.MkdirAll(cacheDir, 0700); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return nil, err
 	}
 
@@ -43,15 +42,12 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	// our other SDKs don't have access to that, so this is simpler to
 	// replicate and keep consistent.
 	var id string
-	_, dgst, ok := strings.Cut(c.imageRef, "@sha256:")
+	_, dgst, ok := strings.Cut(c.imageRef, ":")
 	if !ok {
 		return nil, fmt.Errorf("invalid image reference %q", c.imageRef)
 	}
-	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-		return nil, fmt.Errorf("invalid digest: %w", err)
-	}
 	id = dgst
-	id = id[:digestLen]
+	id = id[:hashLen]
 
 	engineSessionBinName := engineSessionBinPrefix + id
 	if runtime.GOOS == "windows" {
@@ -84,7 +80,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 			return nil, fmt.Errorf("failed to transfer dagger-engine-session bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
 		}
 
-		if err := tmpbin.Chmod(0700); err != nil {
+		if err := tmpbin.Chmod(0o700); err != nil {
 			return nil, err
 		}
 
@@ -121,11 +117,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		}
 	}
 
-	remote := "docker-image://" + c.imageRef
-
-	args := []string{
-		"--remote", remote,
-	}
+	args := []string{}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}

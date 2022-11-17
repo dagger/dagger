@@ -56,10 +56,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		// TODO: names are highly inconsistent
 		if v, ok := os.LookupEnv("DAGGER_RUNNER_HOST"); ok {
 			startOpts.RemoteAddr = v
-		} else {
-			// default to the legacy implementation until cloak dev has been
-			// updated or depracted
-			startOpts.RemoteAddr = engine.LegacyBuildkitdProvider + "://"
 		}
 	}
 	remote, err := url.Parse(startOpts.RemoteAddr)

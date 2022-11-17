@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
@@ -17,7 +16,7 @@ const (
 	DockerContainerProvider = "docker-container"
 
 	// trim image digests to 16 characters to makeoutput more readable
-	digestLen           = 16
+	hashLen             = 16
 	containerNamePrefix = "dagger-engine-"
 )
 
@@ -33,15 +32,12 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 	// our other SDKs don't have access to that, so this is simpler to
 	// replicate and keep consistent.
 	var id string
-	_, dgst, ok := strings.Cut(imageRef, "@sha256:")
+	_, dgst, ok := strings.Cut(imageRef, ":")
 	if !ok {
 		return "", errors.Errorf("invalid image reference %q", imageRef)
 	}
-	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-		return "", errors.Wrap(err, "invalid digest")
-	}
 	id = dgst
-	id = id[:digestLen]
+	id = id[:hashLen]
 
 	containerName := containerNamePrefix + id
 

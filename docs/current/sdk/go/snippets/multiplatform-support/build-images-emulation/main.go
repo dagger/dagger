@@ -53,8 +53,8 @@ func main() {
 		ctr = ctr.Exec(dagger.ContainerExecOpts{
 			Args: []string{
 				"go", "build",
-				"-o", "/output/cloak",
-				"/src/cmd/cloak",
+				"-o", "/output/dagger",
+				"/src/cmd/dagger",
 			},
 		})
 

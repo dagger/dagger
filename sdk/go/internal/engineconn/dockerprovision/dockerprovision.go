@@ -16,7 +16,7 @@ func init() {
 
 const (
 	// trim image digests to 16 characters to makeoutput more readable
-	digestLen                       = 16
+	hashLen                         = 16
 	containerNamePrefix             = "dagger-engine-"
 	engineSessionBinPrefix          = "dagger-engine-session-"
 	containerEngineSessionBinPrefix = "/usr/bin/" + engineSessionBinPrefix

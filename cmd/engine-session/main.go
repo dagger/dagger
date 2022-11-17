@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 	"time"
 
@@ -21,13 +22,14 @@ import (
 var (
 	configPath string
 	workdir    string
-	remote     string
+
+	// this variable gets set at build time.
+	buildRemoteEngineAddr = fmt.Sprintf("docker-image://ghcr.io/dagger/engine:%s", buildRevision())
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
-	rootCmd.PersistentFlags().StringVar(&remote, "remote", "", "")
 }
 
 var rootCmd = &cobra.Command{
@@ -41,11 +43,15 @@ var rootCmd = &cobra.Command{
 }
 
 func EngineSession(cmd *cobra.Command, args []string) {
+	remoteEngineAddr := buildRemoteEngineAddr
+	if dh := os.Getenv("DAGGER_RUNNER_HOST"); dh != "" {
+		remoteEngineAddr = dh
+	}
 	startOpts := &engine.Config{
 		Workdir:    workdir,
 		ConfigPath: configPath,
 		LogOutput:  os.Stderr,
-		RemoteAddr: remote,
+		RemoteAddr: remoteEngineAddr,
 	}
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
@@ -103,4 +109,18 @@ func main() {
 		os.Exit(1)
 	}
 	closer.Close()
+}
+
+func buildRevision() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "vcs.revision" {
+			return s.Value
+		}
+	}
+
+	return ""
 }

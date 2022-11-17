@@ -81,7 +81,8 @@ func (t Go) Generate(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated, err := util.GoBase(c).
-			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
+			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
 			Exec(dagger.ContainerExecOpts{
@@ -93,7 +94,7 @@ func (t Go) Generate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0600)
+		return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0o600)
 	})
 }
 
@@ -105,25 +106,25 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	var targetTag = strings.TrimPrefix(tag, "sdk/go/")
+	targetTag := strings.TrimPrefix(tag, "sdk/go/")
 
-	var targetRepo = os.Getenv("TARGET_REPO")
+	targetRepo := os.Getenv("TARGET_REPO")
 	if targetRepo == "" {
 		targetRepo = "https://github.com/dagger/dagger-go-sdk.git"
 	}
 
-	var pat = os.Getenv("GITHUB_PAT")
+	pat := os.Getenv("GITHUB_PAT")
 	if pat == "" {
 		return errors.New("GITHUB_PAT environment variable must be set")
 	}
 	encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
 
-	var gitUserName = os.Getenv("GIT_USER_NAME")
+	gitUserName := os.Getenv("GIT_USER_NAME")
 	if gitUserName == "" {
 		gitUserName = "dagger-ci"
 	}
 
-	var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
+	gitUserEmail := os.Getenv("GIT_USER_EMAIL")
 	if gitUserEmail == "" {
 		gitUserEmail = "hellog@dagger.io"
 	}
@@ -139,7 +140,8 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 			Args: []string{"git", "config", "--global", "user.email", gitUserEmail},
 		}).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"git", "config", "--global",
+			Args: []string{
+				"git", "config", "--global",
 				"http.https://github.com/.extraheader",
 				fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT),
 			},
@@ -183,5 +185,5 @@ package dagger
 const engineImageRef = %q
 `, version)
 
-	return os.WriteFile("sdk/go/engine.gen.go", []byte(versionFile), 0600)
+	return os.WriteFile("sdk/go/engine.gen.go", []byte(versionFile), 0o600)
 }

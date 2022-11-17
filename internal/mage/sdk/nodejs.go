@@ -12,9 +12,7 @@ import (
 	"github.com/magefile/mage/mg"
 )
 
-var (
-	nodejsGeneratedAPIPath = "sdk/nodejs/api/client.gen.ts"
-)
+var nodejsGeneratedAPIPath = "sdk/nodejs/api/client.gen.ts"
 
 var _ SDK = Nodejs{}
 
@@ -76,10 +74,10 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated, err := nodeJsBase(c).
-			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"cloak", "client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
+				Args:                          []string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
 				ExperimentalPrivilegedNesting: true,
 			}).
 			Exec(dagger.ContainerExecOpts{
@@ -127,7 +125,7 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-	if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0600); err != nil {
+	if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
 		return err
 	}
 
@@ -151,7 +149,7 @@ func (t Nodejs) Bump(ctx context.Context, version string) error {
 
 		"export const DEFAULT_HOST = `docker-image://${DEFAULT_IMAGE_REF}`\n", version)
 
-	return os.WriteFile("sdk/nodejs/provisioning/default.ts", []byte(engineReference), 0600)
+	return os.WriteFile("sdk/nodejs/provisioning/default.ts", []byte(engineReference), 0o600)
 }
 
 func nodeJsBase(c *dagger.Client) *dagger.Container {

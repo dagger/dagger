@@ -86,7 +86,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 
 	startRegistry(ctx, c, t)
 
-	// cross compile the cloak binary for each platform
+	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
 	variants := make([]*dagger.Container, len(platformToFileArch))
@@ -107,7 +107,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 				WithEnvVariable("TARGETPLATFORM", string(platform)).
 				WithEnvVariable("CGO_ENABLED", "0").
 				Exec(dagger.ContainerExecOpts{
-					Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/cloak /src/cmd/cloak"},
+					Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"},
 				})
 
 			// should be running as the default (buildkit host) platform
@@ -131,7 +131,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	for _, ctr := range variants {
 		exit, err := ctr.
 			Exec(dagger.ContainerExecOpts{
-				Args: []string{"/cloak", "version"},
+				Args: []string{"/dagger", "version"},
 			}).
 			ExitCode(ctx)
 		require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 			From(testRef).
 			Rootfs()
 		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
-		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | tee /dev/stderr | grep -q '%s'`, platform, uname))
+		cmds = append(cmds, fmt.Sprintf(`file /%s/dagger | tee /dev/stderr | grep -q '%s'`, platform, uname))
 	}
 	exit, err := ctr.
 		Exec(dagger.ContainerExecOpts{

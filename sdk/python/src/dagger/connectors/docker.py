@@ -121,9 +121,7 @@ class EngineFromImage(Engine):
                 if bin != engine_session_bin_path:
                     bin.unlink()
 
-        self._start(
-            [engine_session_bin_path, "--remote", f"docker-image://{image.ref}"]
-        )
+        self._start([engine_session_bin_path])
 
 
 @register_connector("docker-image")
