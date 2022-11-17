@@ -59,6 +59,7 @@ func (t Go) Test(ctx context.Context) error {
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
 			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"go", "test", "-v", "./..."},
 				ExperimentalPrivilegedNesting: true,

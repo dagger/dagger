@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -102,6 +103,19 @@ func EngineSessionBinary(c *dagger.Client) *dagger.File {
 			Args: []string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"},
 		}).
 		File("./bin/dagger-engine-session")
+}
+
+// HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir
+func HostDockerDir(c *dagger.Client) *dagger.Directory {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return c.Directory()
+	}
+	path := filepath.Join(home, ".docker")
+	if _, err := os.Stat(path); err != nil {
+		return c.Directory()
+	}
+	return c.Host().Directory(path)
 }
 
 const (

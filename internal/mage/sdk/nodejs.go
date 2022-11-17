@@ -60,6 +60,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 		_, err = nodeJsBase(c).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "test"},
 				ExperimentalPrivilegedNesting: true,

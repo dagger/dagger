@@ -140,6 +140,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 			WithWorkdir("/app").
 			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          args,
 				ExperimentalPrivilegedNesting: true,

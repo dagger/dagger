@@ -63,6 +63,7 @@ func (t Python) Test(ctx context.Context) error {
 			test := pythonBase(c, version).
 				WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 				WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
+				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 				Exec(dagger.ContainerExecOpts{
 					Args:                          []string{"poe", "test"},
 					ExperimentalPrivilegedNesting: true,
