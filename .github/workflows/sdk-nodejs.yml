@@ -1,0 +1,38 @@
+name: Node.js SDK
+on:
+  push:
+    branches: [main]
+    paths:
+      - "sdk/nodejs/**.ts"
+      - "sdk/nodejs/**.js"
+      - "sdk/nodejs/**.json"
+      - "sdk/nodejs/.eslintrc.cjs"
+      - ".github/workflows/test-sdk-nodejs.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "sdk/nodejs/**.ts"
+      - "sdk/nodejs/**.js"
+      - "sdk/nodejs/**.json"
+      - "sdk/nodejs/.eslintrc.cjs"
+      - ".github/workflows/test-sdk-nodejs.yml"
+  # Enable manual trigger for easy ad-hoc debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - run: ./hack/make sdk:nodejs:lint
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - run: ./hack/make sdk:nodejs:test
