@@ -17,7 +17,7 @@ This tutorial teaches you the basics of using Dagger in Node.js. You will learn 
 
 This tutorial assumes that:
 
-- You have a basic understanding of TypeScript or the JavaScript programming language. If you're new to TypeScript, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html). There are many resources for JavaScript online as well.
+- You have a basic understanding of the TypeScript or JavaScript programming languages. If you're new to TypeScript, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html). There are many resources for JavaScript online as well.
 - You have a Node.js development environment with Node.js 16.x or later. If not, install [NodeJS](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
