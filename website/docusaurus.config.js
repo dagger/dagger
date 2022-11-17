@@ -132,7 +132,26 @@ async function createConfig() {
       "docusaurus-plugin-image-zoom",
       path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
       path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
-      "docusaurus-plugin-includes"
+      "docusaurus-plugin-includes",
+      [
+        "docusaurus-plugin-typedoc",
+        {
+          entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts'],
+          tsconfig: '../sdk/nodejs/tsconfig.json',
+          out: '../../docs/current/sdk/nodejs/reference/',
+          excludeProtected: true,
+          skipErrorChecking: true,
+          disableSources: true,
+          sidebar: {
+            categoryLabel: 'Reference',
+          },
+          frontmatter: {
+            displayed_sidebar: 'current',
+            sidebar_label: 'Reference'
+          },
+          hideMembersSymbol: true,
+        },
+      ]
     ],
   }
 }

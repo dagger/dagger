@@ -62,6 +62,11 @@ module.exports = {
           label: "Get Started",
           id: "current/sdk/nodejs/get-started",
         },
+        {
+          type: "doc",
+          label: "Reference",
+          id: "current/sdk/nodejs/reference/modules",
+        },
       ],
     },
     {
