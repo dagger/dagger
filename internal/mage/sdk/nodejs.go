@@ -85,21 +85,27 @@ func (t Nodejs) Generate(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		err = os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
-		if err != nil {
-			return err
-		}
-		formatted, err := nodeJsBase(c).
+		return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
+	})
+}
+
+// Format all SDK files
+func (t Nodejs) Fmt(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err := nodeJsBase(c).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "fmt"},
 				ExperimentalPrivilegedNesting: true,
 			}).
-			File(nodejsGeneratedAPIPath).
-			Contents(ctx)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(nodejsGeneratedAPIPath, []byte(formatted), 0o600)
+			Directory(".").
+			Export(ctx, "sdk/nodejs")
+		return err
 	})
 }
 
