@@ -7,6 +7,7 @@ extend type Query {
 type Host {
   "The current working directory on the host"
   workdir(exclude: [String!], include: [String!]): Directory!
+    @deprecated(reason: "Use `directory` with `path` set to . instead")
 
   "Access a directory on the host"
   directory(path: String!, exclude: [String!], include: [String!]): Directory!
