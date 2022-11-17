@@ -17,7 +17,7 @@ This tutorial teaches you the basics of using Dagger in Node.js. You will learn 
 
 This tutorial assumes that:
 
-- You have a basic understanding of the TypeScript programming language. If not, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html).
+- You have a basic understanding of the TypeScript or JavaScript programming languages. If you're new to TypeScript, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html). There are many resources for JavaScript online as well.
 - You have a Node.js development environment with Node.js 16.x or later. If not, install [NodeJS](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
@@ -76,10 +76,24 @@ yarn add @dagger.io/dagger --dev
 
 ## Step 3: Create a Dagger client in Node.js
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 In your project directory, create a new file named `build.ts` and add the following code to it.
 
 ```typescript file=snippets/get-started/step3/build.ts
 ```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+In your project directory, create a new file named `build.js` and add the following code to it.
+
+```typescript file=snippets/get-started/step3/build.js
+```
+
+  </TabItem>
+</Tabs>
 
 This Node.js stub imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
 
@@ -90,9 +104,22 @@ This Node.js stub imports the Dagger SDK and defines an asynchronous function. T
 
 Run the Node.js CI tool by executing the command below from the project directory:
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 ```shell
 node --loader ts-node/esm ./build.ts
 ```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```shell
+node ./build.js
+```
+
+  </TabItem>
+</Tabs>
 
 The tool outputs a string similar to the one below.
 
@@ -104,10 +131,24 @@ Hello from Dagger and Node v16.18.1
 
 Now that the basic structure of the CI tool is defined and functional, the next step is to flesh it out to actually test and build the React application.
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 Replace the `build.ts` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```typescript file=snippets/get-started/step4/build.ts
 ```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
+
+```typescript file=snippets/get-started/step4/build.js
+```
+
+  </TabItem>
+</Tabs>
 
 The revised code now does the following:
 
@@ -127,9 +168,22 @@ The `from()`, `withMountedDirectory()`, `withWorkdir()` and `exec()` methods all
 
 Run the Node.js CI tool by executing the command below:
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 ```shell
 node --loader ts-node/esm ./build.ts
 ```
+
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+```shell
+node ./build.js
+```
+
+  </TabItem>
+</Tabs>
 
 The tool tests and builds the application, logging the output of the test and build operations to the console as it works. At the end of the process, the built React application is available in a new `build` folder in the project directory, as shown below:
 
@@ -161,11 +215,24 @@ build
 
 Now that the Node.js CI tool can test the application against a single Node.js version, the next step is to extend it for multiple Node.js versions.
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 Replace the `build.ts` file from the previous step with the version below (highlighted lines indicate changes):
 
 ```typescript file=snippets/get-started/step5/build.ts
 ```
 
+  </TabItem>
+  <TabItem value="js" label="JavaScript">
+
+Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
+
+```typescript file=snippets/get-started/step5/build.js
+```
+
+  </TabItem>
+</Tabs>
 This version of the CI tool has additional support for testing and building against multiple Node.js versions.
 
 - It defines the test/build matrix, consisting of Node.js versions `12`, `14` and `16`.
@@ -174,9 +241,23 @@ This version of the CI tool has additional support for testing and building agai
 
 Run the Node.js CI tool by executing the command below:
 
+<Tabs groupId="typescript-javascript">
+  <TabItem value="ts" label="TypeScript">
+
 ```shell
 node --loader ts-node/esm ./build.ts
 ```
+
+  </TabItem>
+
+  <TabItem value="js" label="JavaScript">
+
+```shell
+node ./build.js
+```
+
+  </TabItem>
+</Tabs>
 
 The tool tests and builds the application against each version in sequence. At the end of the process, a built React application is available for each Node.js version in a `build-node-XX` folder in the project directory, as shown below:
 
