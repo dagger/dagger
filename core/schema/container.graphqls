@@ -30,14 +30,14 @@ type Container {
   rootfs: Directory!
 
   "This container's root filesystem. Mounts are not included."
-  fs: Directory! @deprecated(reason: "replaced by rootfs")
+  fs: Directory! @deprecated(reason: "Replaced by `rootfs`.")
 
   "Initialize this container from this DirectoryID"
   withRootfs(id: DirectoryID!): Container!
 
   "Initialize this container from this DirectoryID"
   withFS(id: DirectoryID!): Container!
-    @deprecated(reason: "replaced by withRootfs")
+    @deprecated(reason: "Replaced by `withRootfs`.")
 
   "Retrieve a directory at the given path. Mounts are included."
   directory(path: String!): Directory!

@@ -247,7 +247,7 @@ func (r *Container) From(address string) *Container {
 
 // This container's root filesystem. Mounts are not included.
 //
-// Deprecated: replaced by rootfs
+// Deprecated: Replaced by Rootfs.
 func (r *Container) FS() *Directory {
 	q := r.q.Select("fs")
 
@@ -408,7 +408,7 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 
 // Initialize this container from this DirectoryID
 //
-// Deprecated: replaced by withRootfs
+// Deprecated: Replaced by WithRootfs.
 func (r *Container) WithFS(id *Directory) *Container {
 	q := r.q.Select("withFS")
 	q = q.Arg("id", id)

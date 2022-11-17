@@ -204,7 +204,7 @@ class Container(Type):
         """This container's root filesystem. Mounts are not included.
 
         .. deprecated::
-            replaced by rootfs
+            Replaced by `rootfs`.
         """
         _args: list[Arg] = []
         _ctx = self._select("fs", _args)
@@ -333,7 +333,7 @@ class Container(Type):
         """Initialize this container from this DirectoryID
 
         .. deprecated::
-            replaced by withRootfs
+            Replaced by `withRootfs`.
         """
         _args = [
             Arg("id", id),

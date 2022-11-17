@@ -24,7 +24,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{ $field.Description | Comment }}
 {{- if $field.IsDeprecated }}
 //
-// Deprecated: {{ $field.DeprecationReason }}
+{{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
 {{ $field | FieldFunction }} {
 	q := r.q.Select("{{ $field.Name }}")
