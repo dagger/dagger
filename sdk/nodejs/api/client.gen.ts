@@ -324,6 +324,8 @@ export class Container extends BaseClient {
 
   /**
    * This container's root filesystem. Mounts are not included.
+   *
+   * @deprecated Replaced by rootfs.
    */
   fs(): Directory {
     return new Directory({
@@ -518,6 +520,8 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from this DirectoryID
+   *
+   * @deprecated Replaced by withRootfs.
    */
   withFS(id: DirectoryID): Container {
     return new Container({

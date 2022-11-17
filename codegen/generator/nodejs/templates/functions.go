@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -11,16 +12,17 @@ import (
 
 var (
 	funcMap = template.FuncMap{
-		"CommentToLines":   commentToLines,
-		"FormatInputType":  formatInputType,
-		"FormatOutputType": formatOutputType,
-		"FormatName":       formatName,
-		"HasPrefix":        strings.HasPrefix,
-		"PascalCase":       pascalCase,
-		"IsArgOptional":    isArgOptional,
-		"IsCustomScalar":   isCustomScalar,
-		"Solve":            solve,
-		"Subtract":         subtract,
+		"CommentToLines":    commentToLines,
+		"FormatDeprecation": formatDeprecation,
+		"FormatInputType":   formatInputType,
+		"FormatOutputType":  formatOutputType,
+		"FormatName":        formatName,
+		"HasPrefix":         strings.HasPrefix,
+		"PascalCase":        pascalCase,
+		"IsArgOptional":     isArgOptional,
+		"IsCustomScalar":    isCustomScalar,
+		"Solve":             solve,
+		"Subtract":          subtract,
 	}
 )
 
@@ -46,6 +48,20 @@ func subtract(a, b int) int {
 func commentToLines(s string) []string {
 	split := strings.Split(s, "\n")
 	return split
+}
+
+// format the deprecation reason
+// Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
+func formatDeprecation(s string) []string {
+	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
+	matches := r.FindAllString(s, -1)
+	for _, match := range matches {
+		replacement := strings.TrimPrefix(match, "`")
+		replacement = strings.TrimSuffix(replacement, "`")
+		replacement = formatName(replacement)
+		s = strings.ReplaceAll(s, match, replacement)
+	}
+	return commentToLines("@deprecated " + s)
 }
 
 // formatType formats a GraphQL type into Go

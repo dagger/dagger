@@ -1,5 +1,5 @@
 {{ define "method_solve" }}
-{{- template "method_comment" .Description }}
+{{- template "method_comment" . }}
 {{- "" }}  async {{ .Name -}}({{- template "args" .Args -}}){{ template "return_solve" .TypeRef }} {
 		{{- if .TypeRef }}
     this._queryTree = [
