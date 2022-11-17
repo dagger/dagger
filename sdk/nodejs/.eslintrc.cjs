@@ -5,12 +5,7 @@ module.exports = {
     "prettier",
     "plugin:prettier/recommended",
   ],
-  ignorePatterns: [
-    "dist/",
-
-    // FIXME: generated files should be linted
-    "api/client.gen.ts",
-  ],
+  ignorePatterns: ["dist/"],
   parser: "@typescript-eslint/parser",
   plugins: ["@typescript-eslint"],
   root: true,
