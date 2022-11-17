@@ -42,7 +42,7 @@ func setupServer(ctx context.Context) error {
 	}
 
 	if debugLogs {
-		opts = append(opts, dagger.WithLogOutput(os.Stderr))
+		opts = append(opts, dagger.WithLogOutput(os.Stdout))
 	}
 
 	c, err := dagger.Connect(ctx, opts...)
