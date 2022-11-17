@@ -14,7 +14,7 @@ export interface ConnectOpts {
 type CallbackFct = (client: Client) => Promise<void>
 
 /**
- * connect runs cloak GraphQL server and initializes a
+ * connect runs GraphQL server and initializes a
  * GraphQL client to execute query on it through its callback.
  * This implementation is based on the existing Go SDK.
  */
