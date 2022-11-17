@@ -22,6 +22,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{- end }}
 
 {{ $field.Description | Comment }}
+{{- if $field.IsDeprecated }}
+//
+{{ $field.DeprecationReason | FormatDeprecation }}
+{{- end }}
 {{ $field | FieldFunction }} {
 	q := r.q.Select("{{ $field.Name }}")
 	{{- range $arg := $field.Args }}

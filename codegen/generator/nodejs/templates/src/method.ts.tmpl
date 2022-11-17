@@ -1,5 +1,5 @@
 {{ define "method" }}
-{{- template "method_comment" .Description }}
+{{- template "method_comment" . }}
 {{- "" }}  {{ .Name -}}({{- template "args" .Args -}}){{ template "return" .TypeRef }} {
 		{{- if .TypeRef }}
     return new {{ .TypeRef | FormatOutputType }}({queryTree: [

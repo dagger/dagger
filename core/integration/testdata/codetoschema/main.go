@@ -77,7 +77,7 @@ func (Test) ReturnDirectory(ctx context.Context, ref string) (*dagger.Directory,
 		return nil, err
 	}
 	defer client.Close()
-	return client.Container().From(ref).FS(), nil
+	return client.Container().From(ref).Rootfs(), nil
 }
 
 type AllTheTypes struct {

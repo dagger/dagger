@@ -2,6 +2,7 @@ package templates
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -11,6 +12,7 @@ import (
 var (
 	funcMap = template.FuncMap{
 		"Comment":                comment,
+		"FormatDeprecation":      formatDeprecation,
 		"FormatInputType":        formatInputType,
 		"FormatOutputType":       formatOutputType,
 		"FormatName":             formatName,
@@ -30,6 +32,20 @@ func comment(s string) string {
 		lines[i] = "// " + l
 	}
 	return strings.Join(lines, "\n")
+}
+
+// format the deprecation reason
+// Example: `Replaced by @foo.` -> `// Replaced by Foo\n`
+func formatDeprecation(s string) string {
+	r := regexp.MustCompile("`[a-zA-Z0-9_]+`")
+	matches := r.FindAllString(s, -1)
+	for _, match := range matches {
+		replacement := strings.TrimPrefix(match, "`")
+		replacement = strings.TrimSuffix(replacement, "`")
+		replacement = formatName(replacement)
+		s = strings.ReplaceAll(s, match, replacement)
+	}
+	return comment("Deprecated: " + s)
 }
 
 // formatType formats a GraphQL type into Go

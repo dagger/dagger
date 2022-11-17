@@ -83,7 +83,7 @@ func main() {
 		// with the platform
 		binaryCtr := client.
 			Container(dagger.ContainerOpts{Platform: platform}).
-			WithFS(outputDir)
+			WithRootfs(outputDir)
 		platformVariants = append(platformVariants, binaryCtr)
 	}
 

@@ -216,7 +216,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	ctr, err := container.WithFS(ctx, dir)
+	ctr, err := container.WithRootFS(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +306,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) FS(ctx context.Context) (*Directory, error) {
+func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -318,7 +318,7 @@ func (container *Container) FS(ctx context.Context) (*Directory, error) {
 	}).ToDirectory()
 }
 
-func (container *Container) WithFS(ctx context.Context, dir *Directory) (*Container, error) {
+func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err

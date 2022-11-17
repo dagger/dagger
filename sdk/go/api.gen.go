@@ -246,6 +246,8 @@ func (r *Container) From(address string) *Container {
 }
 
 // This container's root filesystem. Mounts are not included.
+//
+// Deprecated: Replaced by Rootfs.
 func (r *Container) FS() *Directory {
 	q := r.q.Select("fs")
 
@@ -316,6 +318,16 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// This container's root filesystem. Mounts are not included.
+func (r *Container) Rootfs() *Directory {
+	q := r.q.Select("rootfs")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The error stream of the last executed command.
@@ -395,6 +407,8 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 }
 
 // Initialize this container from this DirectoryID
+//
+// Deprecated: Replaced by WithRootfs.
 func (r *Container) WithFS(id *Directory) *Container {
 	q := r.q.Select("withFS")
 	q = q.Arg("id", id)
@@ -469,6 +483,17 @@ func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
 func (r *Container) WithMountedTemp(path string) *Container {
 	q := r.q.Select("withMountedTemp")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Initialize this container from this DirectoryID
+func (r *Container) WithRootfs(id *Directory) *Container {
+	q := r.q.Select("withRootfs")
+	q = q.Arg("id", id)
 
 	return &Container{
 		q: q,

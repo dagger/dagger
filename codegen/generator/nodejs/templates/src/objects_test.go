@@ -57,6 +57,7 @@ export class CacheVolume extends BaseClient {
 export class Host extends BaseClient {
 
 
+
   /**
    * Access a directory on the host
    */
@@ -70,6 +71,7 @@ export class Host extends BaseClient {
     ], host: this.clientHost})
   }
 
+
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
    */
@@ -82,6 +84,7 @@ export class Host extends BaseClient {
       }
     ], host: this.clientHost})
   }
+
 
   /**
    * The current working directory on the host

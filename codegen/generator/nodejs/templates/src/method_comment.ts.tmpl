@@ -1,14 +1,21 @@
 {{ define "method_comment" }}
-	{{- if . -}}
-		{{- $commentLines := CommentToLines . }}
-		{{- /* we split the comment string into a string slice of one line per element */ -}}
+  {{- if .Description -}}
+    {{- $commentLines := CommentToLines .Description }}
+    {{- /* we split the comment string into a string slice of one line per element */ -}}
+    {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 {{""}}
 {{""}}
   /**
-		{{- range $commentLines }}
+  {{- range $commentLines }}
    * {{ . }}
-		{{- end }}
+  {{- end }}
+  {{- if .IsDeprecated }}
+   *
+  {{- range $deprecationLines }}
+   * {{ . }}
+  {{- end }}
+  {{- end }}
    */
 {{ "" -}}
-	{{- end }}
+  {{- end }}
 {{- end }}

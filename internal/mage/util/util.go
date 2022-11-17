@@ -116,6 +116,9 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 						Args: []string{"go", "build", "-o", "./bin/" + engineSessionBin, "-ldflags", "-s -w", "/app/cmd/engine-session"},
 					}).
 					File("./bin/" + engineSessionBin)
+				// FIXME: the code below is part of "bootstrap" and using the LATEST
+				// released engine, which does not contain `WithRootfs`
+				//nolint
 				buildkitBase = buildkitBase.WithFS(
 					buildkitBase.FS().WithFile("/usr/bin/"+engineSessionBin+"-"+os+"-"+arch, builtBin),
 				)

@@ -201,7 +201,11 @@ class Container(Type):
         return Container(_ctx)
 
     def fs(self) -> "Directory":
-        """This container's root filesystem. Mounts are not included."""
+        """This container's root filesystem. Mounts are not included.
+
+        .. deprecated::
+            Replaced by `rootfs`.
+        """
         _args: list[Arg] = []
         _ctx = self._select("fs", _args)
         return Directory(_ctx)
@@ -262,6 +266,12 @@ class Container(Type):
         _ctx = self._select("publish", _args)
         return _ctx.execute_sync(str)
 
+    def rootfs(self) -> "Directory":
+        """This container's root filesystem. Mounts are not included."""
+        _args: list[Arg] = []
+        _ctx = self._select("rootfs", _args)
+        return Directory(_ctx)
+
     def stderr(self) -> "File":
         """The error stream of the last executed command.
 
@@ -320,7 +330,11 @@ class Container(Type):
         return Container(_ctx)
 
     def with_fs(self, id: "DirectoryID") -> "Container":
-        """Initialize this container from this DirectoryID"""
+        """Initialize this container from this DirectoryID
+
+        .. deprecated::
+            Replaced by `withRootfs`.
+        """
         _args = [
             Arg("id", id),
         ]
@@ -372,6 +386,14 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withMountedTemp", _args)
+        return Container(_ctx)
+
+    def with_rootfs(self, id: "DirectoryID") -> "Container":
+        """Initialize this container from this DirectoryID"""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
 
     def with_secret_variable(self, name: str, secret: "Secret") -> "Container":

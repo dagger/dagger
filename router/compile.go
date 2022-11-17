@@ -32,8 +32,20 @@ func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	}
 
 	schema, err := tools.MakeExecutableSchema(tools.ExecutableSchema{
-		TypeDefs:   s.Schema(),
-		Resolvers:  typeResolvers,
+		TypeDefs:  s.Schema(),
+		Resolvers: typeResolvers,
+		SchemaDirectives: tools.SchemaDirectiveVisitorMap{
+			"deprecated": &tools.SchemaDirectiveVisitor{
+				VisitFieldDefinition: func(p tools.VisitFieldDefinitionParams) error {
+					reason := "No longer supported"
+					if r, ok := p.Args["reason"].(string); ok {
+						reason = r
+					}
+					p.Config.DeprecationReason = reason
+					return nil
+				},
+			},
+		},
 		Extensions: []graphql.Extension{&tracing.GraphQLTracer{}},
 	})
 	if err != nil {

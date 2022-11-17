@@ -90,10 +90,12 @@ func (t Types) Get(name string) *Type {
 }
 
 type Field struct {
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	TypeRef     *TypeRef    `json:"type"`
-	Args        InputValues `json:"args"`
+	Name              string      `json:"name"`
+	Description       string      `json:"description"`
+	TypeRef           *TypeRef    `json:"type"`
+	Args              InputValues `json:"args"`
+	IsDeprecated      bool        `json:"isDeprecated"`
+	DeprecationReason string      `json:"deprecationReason"`
 
 	ParentObject *Type `json:"-"`
 }

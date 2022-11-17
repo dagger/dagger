@@ -22,7 +22,7 @@ func main() {
 		From("mcr.microsoft.com/windows/nanoserver:ltsc2022")
 
 	// listing files works, no error should be returned
-	entries, err := ctr.FS().Entries(ctx)
+	entries, err := ctr.Rootfs().Entries(ctx)
 	if err != nil {
 		panic(err) // shouldn't happen
 	}
