@@ -352,6 +352,12 @@ class _ObjectField:
                 for line in self.description.split("\n"):
                     yield wrap(line)
 
+            if self.graphql.deprecation_reason:
+                yield chain(
+                    (".. deprecated::",),
+                    wrap_indent(self.graphql.deprecation_reason),
+                )
+
             if self.name == "id":
                 yield (
                     "Note",

@@ -201,7 +201,11 @@ class Container(Type):
         return Container(_ctx)
 
     def fs(self) -> "Directory":
-        """This container's root filesystem. Mounts are not included."""
+        """This container's root filesystem. Mounts are not included.
+
+        .. deprecated::
+            replaced by rootfs
+        """
         _args: list[Arg] = []
         _ctx = self._select("fs", _args)
         return Directory(_ctx)
@@ -326,7 +330,11 @@ class Container(Type):
         return Container(_ctx)
 
     def with_fs(self, id: "DirectoryID") -> "Container":
-        """Initialize this container from this DirectoryID"""
+        """Initialize this container from this DirectoryID
+
+        .. deprecated::
+            replaced by withRootfs
+        """
         _args = [
             Arg("id", id),
         ]
