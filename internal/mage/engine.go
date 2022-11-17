@@ -138,7 +138,6 @@ func (t Engine) test(ctx context.Context, race bool) error {
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 			WithWorkdir("/app").
-			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{

@@ -685,9 +685,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts,
-			// TODO: right now the user needs to explicitly set DAGGER_HOST,
-			// instead the default should be that the shim provides an engine
-			// session ala "dagger exec"
+			llb.AddEnv("DAGGER_HOST", "bin://"), // default to finding dagger-engine-session in $PATH
 			llb.AddEnv("DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
 			llb.AddSSHSocket(
 				llb.SSHID(RunnerProxySockName),

@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -26,21 +25,11 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 	path := u.Host + u.Path
 	var err error
 	if path == "" {
-		path, err = exec.LookPath("dagger-engine-session")
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		path, err = filepath.Abs(path)
-		if err != nil {
-			return nil, err
-		}
-		// check that it's executable
-		if stat, err := os.Stat(path); err != nil {
-			return nil, err
-		} else if stat.Mode()&0111 == 0 {
-			return nil, fmt.Errorf("%q is not executable", path)
-		}
+		path = "dagger-engine-session"
+	}
+	path, err = exec.LookPath(path)
+	if err != nil {
+		return nil, err
 	}
 
 	return &Bin{

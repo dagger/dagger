@@ -14,10 +14,8 @@ export class Bin implements EngineConn {
   constructor(u: URL) {
     this.path = u.host + u.pathname
     if (this.path == "") {
-      // TODO: support finding in $PATH
-      // the "which" module looks good but is incompatible w/ our node version
-      // the "command-exists" module is compatible but implemented by shelling out... :-(
-      throw new Error("no engine session binary specified")
+      // this results in execa looking for it in the $PATH
+      this.path = "dagger-engine-session"
     }
   }
 

@@ -28,7 +28,10 @@ class Engine:
             hostname = ""
         engine_session_bin_path = hostname + self.cfg.host.path
         if engine_session_bin_path == "":
-            engine_session_bin_path = shutil.which("dagger-engine-session")
+            engine_session_bin_path = "dagger-engine-session"
+        engine_session_bin_path = shutil.which("dagger-engine-session")
+        if engine_session_bin_path is None:
+            raise DaggerException("Could not find dagger-engine-session executable")
 
         self._start([engine_session_bin_path])
 

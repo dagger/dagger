@@ -58,7 +58,6 @@ func (t Go) Test(ctx context.Context) error {
 		output, err := util.GoBase(c).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
-			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"go", "test", "-v", "./..."},
@@ -84,7 +83,6 @@ func (t Go) Generate(ctx context.Context) error {
 		generated, err := util.GoBase(c).
 			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 			WithWorkdir("sdk/go").
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"go", "generate", "-v", "./..."},

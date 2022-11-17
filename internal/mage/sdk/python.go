@@ -62,7 +62,6 @@ func (t Python) Test(ctx context.Context) error {
 		for _, version := range versions {
 			test := pythonBase(c, version).
 				WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-				WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 				Exec(dagger.ContainerExecOpts{
 					Args:                          []string{"poe", "test"},
@@ -89,7 +88,6 @@ func (t Python) Generate(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated := pythonBase(c, pythonDefaultVersion).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-			WithEnvVariable("DAGGER_HOST", "bin:///usr/bin/dagger-engine-session").
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"poe", "generate"},
 				ExperimentalPrivilegedNesting: true,
