@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core/shim"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -668,11 +667,6 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 		platform = defaultPlatform
 	}
 
-	shimSt, err := shim.Build(ctx, gw, platform)
-	if err != nil {
-		return nil, fmt.Errorf("build shim: %w", err)
-	}
-
 	args := opts.Args
 
 	if len(args) == 0 {
@@ -685,10 +679,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	}
 
 	runOpts := []llb.RunOption{
-		// run the command via the shim, hide shim behind custom name
-		llb.AddMount(shim.Path, shimSt, llb.SourcePath(shim.Path)),
-		llb.Args(append([]string{shim.Path}, args...)),
-		llb.WithCustomName(strings.Join(args, " ")),
+		llb.Args(args),
 	}
 
 	// this allows executed containers to communicate back to this API

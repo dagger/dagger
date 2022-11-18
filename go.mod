@@ -21,12 +21,14 @@ require (
 	github.com/netlify/open-api/v2 v2.12.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.3-0.20211202183452-c5a74bcca799
+	github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 	github.com/pkg/errors v0.9.1
 	github.com/rs/zerolog v1.28.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.1
 	github.com/tonistiigi/fsutil v0.0.0-20220315205639-9ed612626da3
+	github.com/vektah/gqlparser/v2 v2.5.1
 	go.opentelemetry.io/otel v1.10.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
 	go.opentelemetry.io/otel/sdk v1.9.0
@@ -96,7 +98,6 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f // indirect
-	github.com/vektah/gqlparser/v2 v2.5.1 // indirect
 	go.mongodb.org/mongo-driver v1.10.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.34.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.9.0 // indirect
