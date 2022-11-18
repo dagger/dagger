@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -104,22 +106,20 @@ func shim() int {
 	return exitCode
 }
 
-// nolint: unparam
 func setupBundle() int {
 	// Figure out the path to the bundle dir, in which we can obtain the
 	// oci runtime config.json
 	var bundleDir string
+	var isRun bool
 	for i, arg := range os.Args {
-		if arg == "--bundle" {
-			if i+1 >= len(os.Args) {
-				fmt.Printf("Missing bundle path\n")
-				return 1
-			}
+		if arg == "--bundle" && i+1 < len(os.Args) {
 			bundleDir = os.Args[i+1]
-			break
+		}
+		if arg == "run" {
+			isRun = true
 		}
 	}
-	if bundleDir == "" {
+	if bundleDir == "" || !isRun {
 		// this may be a different runc command, just passthrough
 		return execRunc()
 	}
@@ -182,8 +182,36 @@ func setupBundle() int {
 		}
 	}
 
-	// Exec the actual runc binary with the (possibly updated) config
-	return execRunc()
+	// Run the actual runc binary as a child process with the (possibly updated) config
+	cmd := exec.Command(runcPath, os.Args[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGKILL,
+	}
+
+	sigCh := make(chan os.Signal, 32)
+	signal.Notify(sigCh)
+	if err := cmd.Start(); err != nil {
+		fmt.Printf("Error starting runc: %v", err)
+		return 1
+	}
+	go func() {
+		for sig := range sigCh {
+			cmd.Process.Signal(sig)
+		}
+	}()
+	if err := cmd.Wait(); err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			if exitcode, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+				return exitcode.ExitStatus()
+			}
+		}
+		fmt.Printf("Error waiting for runc: %v", err)
+		return 1
+	}
+	return 0
 }
 
 // nolint: unparam
