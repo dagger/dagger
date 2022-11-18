@@ -1,4 +1,3 @@
-import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -12,11 +11,6 @@ import dagger
 from dagger.connectors import docker
 from dagger.connectors.base import Config
 
-pytestmark = [
-    pytest.mark.anyio,
-    pytest.mark.slow,
-]
-
 
 @pytest.fixture
 def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -24,8 +18,7 @@ def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     cache_dir = tmp_path / "dagger"
     cache_dir.mkdir()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
-    yield cache_dir
-    shutil.rmtree(str(cache_dir))
+    return cache_dir
 
 
 @pytest.fixture
@@ -44,7 +37,9 @@ def mocked_image_ref(monkeypatch: pytest.MonkeyPatch):
     dagger.Config().host.scheme != "docker-image",
     reason="DAGGER_HOST is not docker-image",
 )
-async def test_docker_image_provision(cache_dir: Path, monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.anyio()
+@pytest.mark.slow()
+async def test_docker_image_provision(cache_dir: Path):
     # make some garbage for the image provisioner to collect
     garbage_path = cache_dir / "dagger-engine-session-gcme"
     garbage_path.touch()
@@ -136,6 +131,7 @@ def test_docker_engine_is_not_running(
     reason="DAGGER_HOST is not docker-image",
 )
 @pytest.mark.parametrize("log_output", [sys.stderr, subprocess.PIPE])
+@pytest.mark.anyio()
 async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
     log_output: TextIO,
     cache_dir: Path,
@@ -153,7 +149,7 @@ async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
         pass
 
     # Mock DOCKER_HOST to make it seem like docker isn't running.
-    monkeypatch.setenv("DOCKER_HOST", "127.1.2.3")
+    monkeypatch.setenv("DOCKER_HOST", "tcp://127.1.2.3:3000")
     with pytest.raises(docker.ProvisionError) as execinfo:
         docker.Engine(cfg).start()
     assert "Dagger engine failed to start" in str(execinfo.value)
