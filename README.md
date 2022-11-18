@@ -31,3 +31,4 @@ Dagger may be a good fit if you are...
 * [Getting started](https://docs.dagger.io/#getting-started)
 * [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
 * [Follow us on Twitter](https://twitter.com/dagger_io)
+* [Join the weekly community calls](https://dagger-io.zoom.us/webinar/register/8016688079871/WN_USQjVBGXT0SWhNMvqYVvCA)
