@@ -146,7 +146,7 @@ class Engine:
         # langs and the kernel): https://github.com/golang/go/issues/22315
         # Unfortunately, this sort of retry loop is the best workaround. The
         # case is obscure enough that it should not be hit very often at all.
-        for _attempt in range(10):
+        for _ in range(10):
             try:
                 self._proc = subprocess.Popen(
                     engine_session_args,
