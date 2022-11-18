@@ -61,7 +61,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
 			"withoutMount":         router.ToResolver(s.withoutMount),
-			"exec":                 router.ToResolver(s.exec),
+			"withExec":             router.ToResolver(s.withExec),
+			"exec":                 router.ToResolver(s.withExec), // deprecated
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
@@ -126,7 +127,7 @@ type containerExecArgs struct {
 	core.ContainerExecOpts
 }
 
-func (s *containerSchema) exec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
 	return parent.Exec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 

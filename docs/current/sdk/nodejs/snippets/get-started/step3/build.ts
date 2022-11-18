@@ -4,7 +4,7 @@ import Client, { connect } from "@dagger.io/dagger"
 connect(async (client: Client) => {
   // get Node image
   // get Node version
-  const node = await client.container().from("node:16").exec(["node", "-v"])
+  const node = await client.container().from("node:16").withExec(["node", "-v"])
 
   // execute
   const version = await node.stdout()

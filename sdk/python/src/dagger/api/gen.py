@@ -122,6 +122,9 @@ class Container(Type):
     ) -> "Container":
         """This container after executing the specified command inside it
 
+        .. deprecated::
+            Replaced by :py:meth:`with_exec`.
+
         Parameters
         ----------
         args:
@@ -341,6 +344,42 @@ class Container(Type):
             Arg("value", value),
         ]
         _ctx = self._select("withEnvVariable", _args)
+        return Container(_ctx)
+
+    def with_exec(
+        self,
+        args: list[str],
+        stdin: str | None = None,
+        redirect_stdout: str | None = None,
+        redirect_stderr: str | None = None,
+        experimental_privileged_nesting: bool | None = None,
+    ) -> "Container":
+        """This container after executing the specified command inside it
+
+        Parameters
+        ----------
+        args:
+            Command to run instead of the container's default command
+        stdin:
+            Content to write to the command's standard input before closing
+        redirect_stdout:
+            Redirect the command's standard output to a file in the container
+        redirect_stderr:
+            Redirect the command's standard error to a file in the container
+        experimental_privileged_nesting:
+            Provide dagger access to the executed command
+            Do not use this option unless you trust the command being executed
+            The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
+            HOST FILESYSTEM
+        """
+        _args = [
+            Arg("args", args),
+            Arg("stdin", stdin, None),
+            Arg("redirectStdout", redirect_stdout, None),
+            Arg("redirectStderr", redirect_stderr, None),
+            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+        ]
+        _ctx = self._select("withExec", _args)
         return Container(_ctx)
 
     def with_fs(self, id: "DirectoryID") -> "Container":

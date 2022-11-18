@@ -29,8 +29,7 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJsBase(c).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"yarn", "lint"},
+			WithExec([]string{"yarn", "lint"}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
@@ -55,8 +54,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 		_, err = nodeJsBase(c).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"yarn", "test"},
+			WithExec([]string{"yarn", "test"}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
@@ -76,16 +74,13 @@ func (t Nodejs) Generate(ctx context.Context) error {
 		generated, err := nodeJsBase(c).
 			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
+			WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			}).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{
-					"yarn",
-					"fmt",
-					nodejsGeneratedAPIPath,
-				},
+			WithExec([]string{
+				"yarn",
+				"fmt",
+				nodejsGeneratedAPIPath,
 			}).
 			File(nodejsGeneratedAPIPath).
 			Contents(ctx)
@@ -104,42 +99,38 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	var (
-		version     = strings.TrimPrefix(tag, "sdk/nodejs/v")
-		tokenSecret = c.Host().EnvVariable("NPM_TOKEN").Secret()
-	)
-	token, err := tokenSecret.Plaintext(ctx)
-	if err != nil {
-		return err
-	}
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		var (
+			version     = strings.TrimPrefix(tag, "sdk/nodejs/v")
+			tokenSecret = c.Host().EnvVariable("NPM_TOKEN").Secret()
+		)
+		token, err := tokenSecret.Plaintext(ctx)
+		if err != nil {
+			return err
+		}
 
-	if token == "" {
-		return errors.New("NPM_TOKEN environment variable must be set")
-	}
+		if token == "" {
+			return errors.New("NPM_TOKEN environment variable must be set")
+		}
 
-	build := nodeJsBase(c).Exec(dagger.ContainerExecOpts{
-		Args: []string{"npm", "run", "build"},
-	})
+		build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
 
-	// configure .npmrc
-	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
+		// configure .npmrc
+		npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-	if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
+		if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0600); err != nil {
+			return err
+		}
+
+		// set version & publish
+		_, err = build.
+			WithExec([]string{"npm", "version", version}).
+			WithExec([]string{"npm", "publish", "--access", "public"}).
+			ExitCode(ctx)
+
 		return err
-	}
-
-	// set version & publish
-	_, err = build.
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"npm", "version", version},
-		}).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"npm", "publish", "--access", "public"},
-		}).
-		ExitCode(ctx)
-
-	return err
+	})
 }
 
 // Bump the Node.js SDK's Engine dependency
@@ -166,9 +157,7 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 			WithFile("/workdir/package.json", workdir.File("package.json")).
 			WithFile("/workdir/yarn.lock", workdir.File("yarn.lock")),
 	).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"yarn", "install"},
-		})
+		WithExec([]string{"yarn", "install"})
 
 	src := deps.WithRootfs(
 		deps.

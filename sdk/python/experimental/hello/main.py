@@ -17,8 +17,8 @@ class Hello:
             return await (
                 client.container()
                 .from_("alpine")
-                .exec(["apk", "add", "curl"])
-                .exec(["curl", "https://dagger.io/"])
+                .with_exec(["apk", "add", "curl"])
+                .with_exec(["curl", "https://dagger.io/"])
                 .stdout()
             )
 

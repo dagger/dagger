@@ -39,9 +39,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"uname", "-m"},
-			})
+			WithExec([]string{"uname", "-m"})
 		variants = append(variants, ctr)
 
 		ctrPlatform, err := ctr.Platform(ctx)
@@ -63,9 +61,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(testRef).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"uname", "-m"},
-			})
+			WithExec([]string{"uname", "-m"})
 		output, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
 		output = strings.TrimSpace(output)
@@ -106,9 +102,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).
 				WithEnvVariable("CGO_ENABLED", "0").
-				Exec(dagger.ContainerExecOpts{
-					Args: []string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"},
-				})
+				WithExec([]string{"sh", "-c", "uname -m && goxx-go build -o /out/dagger /src/cmd/dagger"})
 
 			// should be running as the default (buildkit host) platform
 			ctrPlatform, err := ctr.Platform(ctx)
@@ -130,9 +124,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	// make sure the binaries for each platform are executable via emulation now
 	for _, ctr := range variants {
 		exit, err := ctr.
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"/dagger", "version"},
-			}).
+			WithExec([]string{"/dagger", "version"}).
 			ExitCode(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 0, exit)
@@ -146,10 +138,8 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 
 	// pull the images, mount them all into a container and ensure the binaries are the right platform
-	ctr := c.Container().From("alpine:3.16").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"apk", "add", "file"},
-		})
+	ctr := c.Container().From("alpine:3.16").WithExec([]string{"apk", "add", "file"})
+
 	cmds := make([]string, 0, len(platformToFileArch))
 	for platform, uname := range platformToFileArch {
 		pulledDir := c.Container(dagger.ContainerOpts{Platform: platform}).
@@ -159,9 +149,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 		cmds = append(cmds, fmt.Sprintf(`file /%s/dagger | tee /dev/stderr | grep -q '%s'`, platform, uname))
 	}
 	exit, err := ctr.
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-x", "-e", "-c", strings.Join(cmds, "\n")},
-		}).
+		WithExec([]string{"sh", "-x", "-e", "-c", strings.Join(cmds, "\n")}).
 		ExitCode(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 0, exit)
@@ -189,12 +177,10 @@ func TestPlatformCacheMounts(t *testing.T) {
 		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16").
 			WithMountedCache("/cache", cache).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"sh", "-x", "-c", strings.Join([]string{
-					"mkdir -p /cache/" + randomID + string(platform),
-					"uname -m > /cache/" + randomID + string(platform) + "/uname",
-				}, " && ")},
-			}).
+			WithExec([]string{"sh", "-x", "-c", strings.Join([]string{
+				"mkdir -p /cache/" + randomID + string(platform),
+				"uname -m > /cache/" + randomID + string(platform) + "/uname",
+			}, " && ")}).
 			ExitCode(ctx)
 		require.NoError(t, err)
 		require.Equal(t, 0, exit)
@@ -204,9 +190,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 	exit, err := c.Container().
 		From("alpine:3.16").
 		WithMountedCache("/cache", cache).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-x", "-c", strings.Join(cmds, " && ")},
-		}).
+		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
 		ExitCode(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 0, exit)

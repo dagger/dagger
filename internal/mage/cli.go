@@ -23,7 +23,7 @@ func (cl Cli) Publish(ctx context.Context) error {
 		container := c.Container().
 			From("ghcr.io/goreleaser/goreleaser:v1.12.3").
 			WithEntrypoint([]string{}).
-			Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "aws-cli"}}).
+			WithExec([]string{"apk", "add", "aws-cli"}).
 			WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 			WithWorkdir("/app").
 			WithMountedDirectory("/app", wd).
@@ -36,7 +36,7 @@ func (cl Cli) Publish(ctx context.Context) error {
 			WithSecretVariable("HOMEBREW_TAP_OWNER", c.Host().EnvVariable("HOMEBREW_TAP_OWNER").Secret())
 
 		_, err := container.
-			Exec(dagger.ContainerExecOpts{Args: []string{"release", "--rm-dist", "--debug"}}).
+			WithExec([]string{"release", "--rm-dist", "--debug"}).
 			ExitCode(ctx)
 		return err
 	})

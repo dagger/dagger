@@ -47,7 +47,7 @@ async def build():
                     .with_env_variable("GOARCH", goarch)
 
                     # build application
-                    .exec(["go", "build", "-o", path])
+                    .with_exec(["go", "build", "-o", path])
                 )
 
                 # get reference to build output directory in container

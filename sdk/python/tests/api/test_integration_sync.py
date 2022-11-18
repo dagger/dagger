@@ -15,7 +15,7 @@ def test_container_build():
         repo = client.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
         dagger_img = client.container().build(repo)
 
-        out = dagger_img.exec(["version"]).stdout()
+        out = dagger_img.with_exec(["version"]).stdout()
 
         words = out.strip().split(" ")
 
@@ -36,7 +36,7 @@ def test_container_with_mounted_directory():
             .with_mounted_directory("/mnt", dir_)
         )
 
-        out = container.exec(["ls", "/mnt"]).stdout()
+        out = container.with_exec(["ls", "/mnt"]).stdout()
 
         assert out == dedent(
             """\
@@ -57,7 +57,7 @@ def test_container_with_mounted_cache():
         )
 
         for i in range(5):
-            out = container.exec(
+            out = container.with_exec(
                 [
                     "sh",
                     "-c",

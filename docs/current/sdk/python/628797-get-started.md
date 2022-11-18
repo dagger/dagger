@@ -54,7 +54,7 @@ This Python stub imports the Dagger SDK and defines an asynchronous function nam
 
 - It creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine. The optional `dagger.Config(log_output=sys.stderr)` configuration displays the output from the Dagger engine.
 - It uses the client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the `python:3.10-slim-buster` image. This method returns a `Container` representing an OCI-compatible container image.
-- It uses the `Container.exec()` method to define the command to be executed in the container - in this case, the command `python -V`, which returns the Python version string. The `exec()` method returns a revised `Container` with the results of command execution.
+- It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the command `python -V`, which returns the Python version string. The `with_exec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed command with the `Container.stdout()` method and prints its contents.
 
 Run the Python CI tool by executing the command below from the project directory:
@@ -85,11 +85,11 @@ The revised `test()` function now does the following:
 - It uses the client's `container().from_()` method to initialize a new container from a base image. This base image is the Python version to be tested against - the `python:3.10-slim-buster` image. This method returns a new `Container` class with the results.
 - It uses the `Container.with_mounted_directory()` method to mount the host directory into the container at the `/src` mount point.
 - It uses the `Container.with_workdir()` method to set the working directory in the container.
-- It chains `Container.exec()` methods to install test dependencies and run tests in the container.
+- It chains `Container.with_exec()` methods to install test dependencies and run tests in the container.
 - It uses the `Container.exit_code()` method to obtain the exit code of the last executed command. An exit code of `0` implies successful execution.
 
 :::tip
-The `from_()`, `with_mounted_directory()`, `with_workdir()` and `exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is easy and intuitive to understand.
+The `from_()`, `with_mounted_directory()`, `with_workdir()` and `with_exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is easy and intuitive to understand.
 :::
 
 Run the Python CI tool by executing the command below:

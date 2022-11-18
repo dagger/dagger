@@ -16,35 +16,35 @@ describe("NodeJS SDK api", function () {
     const tree = new Client()
       .container()
       .from("alpine")
-      .exec(["apk", "add", "curl"])
+      .withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
       queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine"){exec(args:["apk","add","curl"])}}}`
+      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
     )
   })
 
   it("Build a query by splitting it", async function () {
     const image = new Client().container().from("alpine")
-    const pkg = image.exec(["apk", "add", "curl"])
+    const pkg = image.withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
       queryBuilder(pkg.queryTree),
-      `{container{from(address:"alpine"){exec(args:["apk","add","curl"])}}}`
+      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
     )
   })
 
   it("Test Field Immutability", async function () {
     const image = new Client().container().from("alpine")
-    const a = image.exec(["echo", "hello", "world"])
+    const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       queryBuilder(a.queryTree),
-      `{container{from(address:"alpine"){exec(args:["echo","hello","world"])}}}`
+      `{container{from(address:"alpine"){withExec(args:["echo","hello","world"])}}}`
     )
-    const b = image.exec(["echo", "foo", "bar"])
+    const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       queryBuilder(b.queryTree),
-      `{container{from(address:"alpine"){exec(args:["echo","foo","bar"])}}}`
+      `{container{from(address:"alpine"){withExec(args:["echo","foo","bar"])}}}`
     )
   })
 

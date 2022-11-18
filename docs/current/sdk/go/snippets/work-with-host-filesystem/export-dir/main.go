@@ -25,9 +25,7 @@ func main() {
 	// highlight-start
 	_, err = client.Container().From("alpine:latest").
 		WithWorkdir("/tmp").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"wget", "https://dagger.io"},
-		}).
+		WithExec([]string{"wget", "https://dagger.io"}).
 		Directory(".").
 		Export(ctx, hostdir)
 	if err != nil {

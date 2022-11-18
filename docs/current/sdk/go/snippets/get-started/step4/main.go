@@ -36,9 +36,7 @@ func build(ctx context.Context) error {
 
 	// define the application build command
 	path := "build/"
-	golang = golang.Exec(dagger.ContainerExecOpts{
-		Args: []string{"go", "build", "-o", path},
-	})
+	golang = golang.WithExec([]string{"go", "build", "-o", path})
 
 	// get reference to build output directory in container
 	output := golang.Directory(path)

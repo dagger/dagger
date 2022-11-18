@@ -22,9 +22,8 @@ func main() {
 	contents, err := client.Container().
 		From("alpine:latest").
 		WithMountedDirectory("/host", client.Host().Directory(".")).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"ls", "/host"},
-		}).Stdout(ctx)
+		WithExec([]string{"ls", "/host"}).
+		Stdout(ctx)
 	// highlight-end
 	if err != nil {
 		log.Println(err)

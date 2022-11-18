@@ -26,9 +26,8 @@ func TestHostWorkdir(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", c.Host().Directory(".")).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo\n", contents)
 	})
@@ -40,9 +39,8 @@ func TestHostWorkdir(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", c.Host().Directory(".")).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "foo\n", contents)
 	})
@@ -69,9 +67,8 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wd).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a.txt\nb.txt\n", contents)
 	})
@@ -84,9 +81,8 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wd).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "c.txt.rar\n", contents)
 	})
@@ -100,9 +96,8 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wd).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a.txt\n", contents)
 	})
@@ -116,9 +111,8 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wd).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "", contents)
 	})
@@ -245,9 +239,8 @@ func TestHostVariable(t *testing.T) {
 	env, err := c.Container().
 		From("alpine:3.16.2").
 		WithSecretVariable("SECRET", secret.Secret()).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"env"},
-		}).Stdout(ctx)
+		WithExec([]string{"env"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 
 	require.Contains(t, env, "SECRET=hello")
