@@ -20,9 +20,7 @@ func TestDirectory(t *testing.T) {
 	dir := c.Directory()
 
 	contents, err := dir.
-		WithNewFile("/hello.txt", DirectoryWithNewFileOpts{
-			Contents: "world",
-		}).
+		WithNewFile("/hello.txt", "world").
 		File("/hello.txt").
 		Contents(ctx)
 

@@ -569,11 +569,11 @@ class Directory(Type):
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
 
-    def with_new_file(self, path: str, contents: str | None = None) -> "Directory":
+    def with_new_file(self, path: str, contents: str) -> "Directory":
         """This directory plus a new file written at the given path"""
         _args = [
             Arg("path", path),
-            Arg("contents", contents, None),
+            Arg("contents", contents),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)

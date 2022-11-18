@@ -113,12 +113,8 @@ func ExampleContainer_WithMountedDirectory() {
 	defer client.Close()
 
 	dir := client.Directory().
-		WithNewFile("hello.txt", dagger.DirectoryWithNewFileOpts{
-			Contents: "Hello, world!",
-		}).
-		WithNewFile("goodbye.txt", dagger.DirectoryWithNewFileOpts{
-			Contents: "Goodbye, world!",
-		})
+		WithNewFile("hello.txt", "Hello, world!").
+		WithNewFile("goodbye.txt", "Goodbye, world!")
 
 	container := client.Container().From("alpine:3.16.2")
 
@@ -180,12 +176,8 @@ func ExampleDirectory() {
 	defer client.Close()
 
 	dir := client.Directory().
-		WithNewFile("hello.txt", dagger.DirectoryWithNewFileOpts{
-			Contents: "Hello, world!",
-		}).
-		WithNewFile("goodbye.txt", dagger.DirectoryWithNewFileOpts{
-			Contents: "Goodbye, world!",
-		})
+		WithNewFile("hello.txt", "Hello, world!").
+		WithNewFile("goodbye.txt", "Goodbye, world!")
 
 	entries, err := dir.Entries(ctx)
 	if err != nil {

@@ -726,22 +726,11 @@ func (r *Directory) WithNewDirectory(path string) *Directory {
 	}
 }
 
-// DirectoryWithNewFileOpts contains options for Directory.WithNewFile
-type DirectoryWithNewFileOpts struct {
-	Contents string
-}
-
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, opts ...DirectoryWithNewFileOpts) *Directory {
+func (r *Directory) WithNewFile(path string, contents string) *Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
-	// `contents` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Contents) {
-			q = q.Arg("contents", opts[i].Contents)
-			break
-		}
-	}
+	q = q.Arg("contents", contents)
 
 	return &Directory{
 		q: q,

@@ -134,7 +134,7 @@ func TestSecretPlaintext(t *testing.T) {
 	defer c.Close()
 
 	plaintext, err := c.Directory().
-		WithNewFile("TOP_SECRET", dagger.DirectoryWithNewFileOpts{Contents: "hi"}).File("TOP_SECRET").Secret().Plaintext(ctx)
+		WithNewFile("TOP_SECRET", "hi").File("TOP_SECRET").Secret().Plaintext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hi", plaintext)
 }
