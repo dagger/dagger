@@ -3,7 +3,6 @@ import os
 import platform
 import subprocess
 import tempfile
-import time
 from pathlib import Path
 
 from attrs import Factory, define, field
@@ -122,23 +121,9 @@ class EngineFromImage(Engine):
                 if bin != engine_session_bin_path:
                     bin.unlink()
 
-        remote = f"docker-image://{image.ref}"
-        self._start([engine_session_bin_path, "--remote", remote])
-
-    def is_running(self) -> bool:
-        return self._proc is not None
-
-    def stop(self, exc_type) -> None:
-        if not self.is_running():
-            return
-        self._proc.__exit__(exc_type, None, None)
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, *args, **kwargs):
-        self.stop(exc_type)
+        self._start(
+            [engine_session_bin_path, "--remote", f"docker-image://{image.ref}"]
+        )
 
 
 @register_connector("docker-image")

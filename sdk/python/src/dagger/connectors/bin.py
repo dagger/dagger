@@ -1,5 +1,4 @@
 import logging
-import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -23,19 +22,11 @@ class Engine:
     _proc: subprocess.Popen | None = field(default=None, init=False)
 
     def start(self) -> None:
-        hostname = self.cfg.host.hostname
-        if hostname is None:
-            hostname = ""
-        engine_session_bin_path = hostname + self.cfg.host.path
-        if engine_session_bin_path == "":
-            engine_session_bin_path = "dagger-engine-session"
-        engine_session_bin_path = shutil.which("dagger-engine-session")
-        if engine_session_bin_path is None:
-            raise DaggerException("Could not find dagger-engine-session executable")
+        self._start(
+            [f"{self.cfg.host.netloc}{self.cfg.host.path}" or "dagger-engine-session"]
+        )
 
-        self._start([engine_session_bin_path])
-
-    def _start(self, base_args) -> None:
+    def _start(self, base_args: list[str]) -> None:
         if self.cfg.workdir:
             base_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
         if self.cfg.config_path:
@@ -58,6 +49,8 @@ class Engine:
                     stderr=self.cfg.log_output or subprocess.PIPE,
                     encoding="utf-8",
                 )
+            except FileNotFoundError as e:
+                raise ProvisionError(f"Could not find {e.filename} executable") from e
             except OSError as e:
                 # 26 is ETXTBSY
                 if e.errno == 26:
