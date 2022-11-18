@@ -21,6 +21,7 @@ jobs:
         # Windows hosts don't support linux containers yet (https://github.com/actions/virtual-environments/issues/1143)
         # os: [ubuntu-latest, macos-latest]
         os: [macos-latest]
+        # os: [macos-latest]
         python-version: ["3.10"]
     steps:
       - name: Checkout repository
@@ -40,6 +41,9 @@ jobs:
         run: |
           curl -sL https://install.python-poetry.org | python - -y
 
+      - name: Update PATH
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
       # Docker is not installed on GitHub's MacOS hosted workers due to licensing issues
       # (and it's necessary to run Autobahn tests)
       - name: Setup docker (missing on MacOS)
@@ -50,18 +54,18 @@ jobs:
           # https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077
           colima start --mount-type 9p
 
-      - name: Manual Go SDK provisioning test
-        run: |
-          cd sdk/go && go test -count=1 -run="TestImageProvision" -v ./...
+      # - name: Manual Go SDK provisioning test
+      #   run: |
+      #     cd sdk/go && go test -count=1 -run="TestImageProvision" -v ./...
 
-      - name: Print Engine Logs
-        if: always()
-        run: |
-          docker logs $(docker ps -a | grep dagger-engine |cut -d " " -f 1)
+      # - name: Print Engine Logs
+      #   if: always()
+      #   run: |
+      #     docker logs $(docker ps -a | grep dagger-engine |cut -d " " -f 1)
 
       - name: Manual Python SDK provisioning test
         run: |
-          cd sdk/python && poetry install && poetry run poe test -- -xk 'test_docker'
+          cd sdk/python && poetry install && poetry run poe test -xm provision
 
       - name: Print Engine Logs
         if: always()
