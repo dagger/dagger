@@ -21,7 +21,7 @@ func main() {
 	// highlight-start
 	contents, err := client.Container().
 		From("alpine:latest").
-		WithMountedDirectory("/host", client.Host().Workdir()).
+		WithMountedDirectory("/host", client.Host().Directory(".")).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"ls", "/host"},
 		}).Stdout().Contents(ctx)

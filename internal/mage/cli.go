@@ -19,7 +19,7 @@ func (cl Cli) Publish(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		wd := c.Host().Workdir()
+		wd := c.Host().Directory(".")
 		container := c.Container().
 			From("ghcr.io/goreleaser/goreleaser:v1.12.3").
 			WithEntrypoint([]string{}).

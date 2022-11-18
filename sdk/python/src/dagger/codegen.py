@@ -37,6 +37,9 @@ from graphql.pyutils import camel_to_snake
 ACRONYM_RE = re.compile(r"([A-Z\d]+)(?=[A-Z\d]|$)")
 """Pattern for grouping initialisms."""
 
+DEPRECATION_RE = re.compile(r"`([a-zA-Z\d_]+)`")
+"""Pattern for extracting replaced references in deprecations."""
+
 logger = logging.getLogger(__name__)
 
 indent = partial(textwrap.indent, prefix=" " * 4)
@@ -352,10 +355,10 @@ class _ObjectField:
                 for line in self.description.split("\n"):
                     yield wrap(line)
 
-            if self.graphql.deprecation_reason:
+            if deprecated := self.deprecated():
                 yield chain(
                     (".. deprecated::",),
-                    wrap_indent(self.graphql.deprecation_reason),
+                    wrap_indent(deprecated),
                 )
 
             if self.name == "id":
@@ -388,9 +391,16 @@ class _ObjectField:
 
         return "\n\n".join("\n".join(section) for section in _out())
 
-    @joiner
-    def func_doc_params(self):
-        ...
+    def deprecated(self) -> str:
+        def _format_name(m):
+            name = format_name(m.group().strip("`"))
+            return f":py:meth:`{name}`"
+
+        return (
+            DEPRECATION_RE.sub(_format_name, reason)
+            if (reason := self.graphql.deprecation_reason)
+            else ""
+        )
 
 
 _H = TypeVar("_H", bound=GraphQLNamedType)

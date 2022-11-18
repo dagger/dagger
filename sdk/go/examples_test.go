@@ -197,7 +197,7 @@ func ExampleDirectory() {
 	// Output: [goodbye.txt hello.txt]
 }
 
-func ExampleHost_Workdir() {
+func ExampleHost_Directory() {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithWorkdir("."))
 	if err != nil {
@@ -205,7 +205,7 @@ func ExampleHost_Workdir() {
 	}
 	defer client.Close()
 
-	readme, err := client.Host().Workdir().File("README.md").Contents(ctx)
+	readme, err := client.Host().Directory(".").File("README.md").Contents(ctx)
 	if err != nil {
 		panic(err)
 	}

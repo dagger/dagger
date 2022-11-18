@@ -81,7 +81,7 @@ Replace the `test.py` file from the previous step with the version below (highli
 The revised `test()` function now does the following:
 
 - It creates a Dagger client with `dagger.Connection()` as before.
-- It uses the client's `host().workdir().id()` method to obtain a reference to the current directory on the host. This reference is stored in the `src_id` variable.
+- It uses the client's `host().directory(".").id()` method to obtain a reference to the current directory on the host. This reference is stored in the `src_id` variable.
 - It uses the client's `container().from_()` method to initialize a new container from a base image. This base image is the Python version to be tested against - the `python:3.10-slim-buster` image. This method returns a new `Container` class with the results.
 - It uses the `Container.with_mounted_directory()` method to mount the host directory into the container at the `/src` mount point.
 - It uses the `Container.with_workdir()` method to set the working directory in the container.

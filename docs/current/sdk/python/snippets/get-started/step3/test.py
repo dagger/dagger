@@ -11,7 +11,7 @@ async def test():
 
         # highlight-start
         # get reference to the local project
-        src_id = await client.host().workdir().id()
+        src_id = await client.host().directory(".").id()
 
         python = (
             client.container()

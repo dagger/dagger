@@ -113,7 +113,7 @@ async def test_directory():
         assert entries == ["goodbye.txt", "hello.txt"]
 
 
-async def test_host_workdir():
+async def test_host_directory():
     async with dagger.Connection() as client:
-        readme = await client.host().workdir().file("README.md").contents()
+        readme = await client.host().directory(".").file("README.md").contents()
         assert "Dagger" in readme

@@ -12,7 +12,7 @@ async def test():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # get reference to the local project
-        src_id = await client.host().workdir().id()
+        src_id = await client.host().directory(".").id()
 
         # highlight-start
         # when this block exits, all tasks will be awaited (i.e., executed)

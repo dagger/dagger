@@ -204,7 +204,7 @@ class Container(Type):
         """This container's root filesystem. Mounts are not included.
 
         .. deprecated::
-            Replaced by `rootfs`.
+            Replaced by :py:meth:`rootfs`.
         """
         _args: list[Arg] = []
         _ctx = self._select("fs", _args)
@@ -333,7 +333,7 @@ class Container(Type):
         """Initialize this container from this DirectoryID
 
         .. deprecated::
-            Replaced by `withRootfs`.
+            Replaced by :py:meth:`with_rootfs`.
         """
         _args = [
             Arg("id", id),
@@ -801,7 +801,11 @@ class Host(Type):
     def workdir(
         self, exclude: list[str] | None = None, include: list[str] | None = None
     ) -> "Directory":
-        """The current working directory on the host"""
+        """The current working directory on the host
+
+        .. deprecated::
+            Use :py:meth:`directory` with path set to '.' instead.
+        """
         _args = [
             Arg("exclude", exclude, None),
             Arg("include", include, None),

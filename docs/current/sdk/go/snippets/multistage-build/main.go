@@ -17,7 +17,7 @@ func main() {
 	}
 	defer client.Close()
 
-	project := client.Host().Workdir()
+	project := client.Host().Directory(".")
 
 	// Build our app
 	builder := client.Container().

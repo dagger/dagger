@@ -20,7 +20,7 @@ async def build():
     async with dagger.Connection() as client:
 
         # get reference to the local project
-        src_id = await client.host().workdir().id()
+        src_id = await client.host().directory(".").id()
 
         # create empty directory to put build outputs
         outputs = client.directory()
