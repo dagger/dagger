@@ -137,8 +137,8 @@ func setupBundle() int {
 		}
 	}
 	if bundleDir == "" {
-		fmt.Printf("Missing bundle path\n")
-		return 1
+		// this may be a different runc command, just passthrough
+		return execRunc()
 	}
 
 	configPath := filepath.Join(bundleDir, "config.json")
@@ -200,6 +200,11 @@ func setupBundle() int {
 	}
 
 	// Exec the actual runc binary with the (possibly updated) config
+	return execRunc()
+}
+
+// nolint: unparam
+func execRunc() int {
 	args := []string{runcPath}
 	args = append(args, os.Args[1:]...)
 	if err := unix.Exec(runcPath, args, os.Environ()); err != nil {
