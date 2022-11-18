@@ -29,7 +29,7 @@
     "test": "mocha",
     "gen:typedoc": "yarn typedoc",
     "lint": "yarn eslint --max-warnings=0 .",
-    "fmt": "yarn eslint --fix ."
+    "fmt": "yarn eslint --fix"
   },
   "devDependencies": {
     "@types/mocha": "latest",
