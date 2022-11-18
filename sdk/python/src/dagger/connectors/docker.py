@@ -3,6 +3,7 @@ import os
 import platform
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import anyio
@@ -137,13 +138,35 @@ class Engine:
                 ["--project", str(Path(self.cfg.config_path).absolute())]
             )
 
-        self._proc = subprocess.Popen(
-            engine_session_args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=self.cfg.log_output or subprocess.PIPE,
-            encoding="utf-8",
-        )
+        # Retry starting if "text file busy" error is hit. That error can happen
+        # due to a flaw in how Linux works: if any fork of this process happens
+        # while the temp binary file is open for writing, a child process can
+        # still have it open for writing before it calls exec.
+        # See this golang issue (which itself links to bug reports in other
+        # langs and the kernel): https://github.com/golang/go/issues/22315
+        # Unfortunately, this sort of retry loop is the best workaround. The
+        # case is obscure enough that it should not be hit very often at all.
+        for _ in range(10):
+            try:
+                self._proc = subprocess.Popen(
+                    engine_session_args,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=self.cfg.log_output or subprocess.PIPE,
+                    encoding="utf-8",
+                )
+            except OSError as e:
+                # 26 is ETXTBSY
+                if e.errno == 26:
+                    time.sleep(0.1)
+                else:
+                    raise ProvisionError(f"Failed to start engine session: {e}") from e
+            except Exception as e:
+                raise ProvisionError(f"Failed to start engine session: {e}") from e
+            else:
+                break
+        else:
+            raise ProvisionError("Failed to start engine session after retries.")
 
         try:
             # read port number from first line of stdout
