@@ -22,7 +22,7 @@ async def test():
         )
 
         # execute
-        version = await python.stdout().contents()
+        version = await python.stdout()
 
         print(f"Hello from Dagger and {version}")
 

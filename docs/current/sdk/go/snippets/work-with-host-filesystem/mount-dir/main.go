@@ -24,7 +24,7 @@ func main() {
 		WithMountedDirectory("/host", client.Host().Directory(".")).
 		Exec(dagger.ContainerExecOpts{
 			Args: []string{"ls", "/host"},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 	// highlight-end
 	if err != nil {
 		log.Println(err)

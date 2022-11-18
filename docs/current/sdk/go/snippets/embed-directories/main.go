@@ -60,7 +60,7 @@ func main() {
 	// List files
 	out, err := container.Exec(dagger.ContainerExecOpts{
 		Args: []string{"ls", "-lR", "/embed/"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}

@@ -272,23 +272,37 @@ class Container(Type):
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
 
-    def stderr(self) -> "File":
+    def stderr(self) -> str | None:
         """The error stream of the last executed command.
 
         Null if no command has been executed.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("stderr", _args)
-        return File(_ctx)
+        return _ctx.execute_sync(str | None)
 
-    def stdout(self) -> "File":
+    def stdout(self) -> str | None:
         """The output stream of the last executed command.
 
         Null if no command has been executed.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("stdout", _args)
-        return File(_ctx)
+        return _ctx.execute_sync(str | None)
 
     def user(self) -> str | None:
         """The user to be set for all commands

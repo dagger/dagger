@@ -139,13 +139,13 @@ type Container {
   The output stream of the last executed command.
   Null if no command has been executed.
   """
-  stdout: File
+  stdout: String
 
   """
   The error stream of the last executed command.
   Null if no command has been executed.
   """
-  stderr: File
+  stderr: String
 
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.

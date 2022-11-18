@@ -2,9 +2,7 @@
   git(remote: "github.com/dagger/dagger") {
     dockerbuild(dockerfile: "Dockerfile") {
       exec(args: ["dagger", "version"]) {
-        stdout {
-          contents
-        }
+        stdout
       }
     }
   }

@@ -22,7 +22,7 @@ func ExampleContainer() {
 
 	out, err := alpine.Exec(dagger.ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -69,7 +69,7 @@ func ExampleContainer_Build() {
 
 	out, err := daggerImg.Exec(dagger.ContainerExecOpts{
 		Args: []string{"version"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -94,7 +94,7 @@ func ExampleContainer_WithEnvVariable() {
 
 	out, err := container.Exec(dagger.ContainerExecOpts{
 		Args: []string{"sh", "-c", "echo $FOO"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -122,7 +122,7 @@ func ExampleContainer_WithMountedDirectory() {
 
 	out, err := container.Exec(dagger.ContainerExecOpts{
 		Args: []string{"ls", "/mnt"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +156,7 @@ func ExampleContainer_WithMountedCache() {
 				"echo $0 >> /cache/x.txt; cat /cache/x.txt",
 				strconv.Itoa(i),
 			},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 		if err != nil {
 			panic(err)
 		}
@@ -228,7 +228,7 @@ func ExampleHost_Directory() {
 // 		Exec(dagger.ContainerExecOpts{
 // 			Args: []string{"sh", "-c", "echo $PASSWORD"},
 // 		}).
-// 		Stdout().Contents(ctx)
+// 		Stdout(ctx)
 // 	if err != nil {
 // 		panic(err)
 // 	}
