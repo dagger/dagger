@@ -36,15 +36,13 @@ func (t Nodejs) Lint(ctx context.Context) error {
 				ExperimentalPrivilegedNesting: true,
 			}).
 			ExitCode(ctx)
-		return err
+		if err != nil {
+			return err
+		}
+		return lintGeneratedCode(func() error {
+			return t.Generate(ctx)
+		}, nodejsGeneratedAPIPath)
 	})
-}
-
-// Generateandcheck checks generated code
-func (t Nodejs) Generateandcheck(ctx context.Context) error {
-	return lintGeneratedCode(func() error {
-		return t.Generate(ctx)
-	}, nodejsGeneratedAPIPath)
 }
 
 // Test tests the Node.js SDK
@@ -77,12 +75,19 @@ func (t Nodejs) Generate(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated, err := util.GoBase(c).
+		generated, err := nodeJsBase(c).
 			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"cloak", "client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
 				ExperimentalPrivilegedNesting: true,
+			}).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{
+					"yarn",
+					"fmt",
+					nodejsGeneratedAPIPath,
+				},
 			}).
 			File(nodejsGeneratedAPIPath).
 			Contents(ctx)
