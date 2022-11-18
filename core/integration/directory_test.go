@@ -187,12 +187,8 @@ func TestDirectoryWithDirectory(t *testing.T) {
 	defer c.Close()
 
 	dir := c.Directory().
-		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		}).
-		WithNewFile("some-dir/sub-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "sub-content",
-		}).
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content").
 		Directory("some-dir")
 
 	entries, err := c.Directory().WithDirectory("with-dir", dir).Entries(ctx, dagger.DirectoryEntriesOpts{
@@ -221,12 +217,12 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 	defer c.Close()
 
 	dir := c.Directory().
-		WithNewFile("a.txt").
-		WithNewFile("b.txt").
-		WithNewFile("c.txt.rar").
-		WithNewFile("subdir/d.txt").
-		WithNewFile("subdir/e.txt").
-		WithNewFile("subdir/f.txt.rar")
+		WithNewFile("a.txt", "").
+		WithNewFile("b.txt", "").
+		WithNewFile("c.txt.rar", "").
+		WithNewFile("subdir/d.txt", "").
+		WithNewFile("subdir/e.txt", "").
+		WithNewFile("subdir/f.txt.rar", "")
 
 	t.Run("exclude", func(t *testing.T) {
 		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
@@ -306,9 +302,7 @@ func TestDirectoryWithFile(t *testing.T) {
 	defer c.Close()
 
 	file := c.Directory().
-		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		}).
+		WithNewFile("some-file", "some-content").
 		File("some-file")
 
 	content, err := c.Directory().
@@ -331,15 +325,9 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	contents := func(s string) dagger.DirectoryWithNewFileOpts {
-		return dagger.DirectoryWithNewFileOpts{
-			Contents: s,
-		}
-	}
-
 	dir1 := c.Directory().
-		WithNewFile("some-file", contents("some-content")).
-		WithNewFile("some-dir/sub-file", contents("sub-content"))
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content")
 
 	entries, err := dir1.
 		WithoutDirectory("some-dir").
@@ -349,16 +337,16 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	require.Equal(t, []string{"some-file"}, entries)
 
 	dir := c.Directory().
-		WithNewFile("foo.txt", contents("foo")).
-		WithNewFile("a/bar.txt", contents("bar")).
-		WithNewFile("a/data.json", contents("{\"datum\": 10}")).
-		WithNewFile("b/foo.txt", contents("foo")).
-		WithNewFile("b/bar.txt", contents("bar")).
-		WithNewFile("b/data.json", contents("{\"datum\": 10}")).
-		WithNewFile("c/file-a1.txt", contents("file-a1.txt")).
-		WithNewFile("c/file-a1.json", contents("file-a1.json")).
-		WithNewFile("c/file-b1.txt", contents("file-b1.txt")).
-		WithNewFile("c/file-b1.json", contents("file-b1.json"))
+		WithNewFile("foo.txt", "foo").
+		WithNewFile("a/bar.txt", "bar").
+		WithNewFile("a/data.json", "{\"datum\": 10}").
+		WithNewFile("b/foo.txt", "foo").
+		WithNewFile("b/bar.txt", "bar").
+		WithNewFile("b/data.json", "{\"datum\": 10}").
+		WithNewFile("c/file-a1.txt", "file-a1.txt").
+		WithNewFile("c/file-a1.json", "file-a1.json").
+		WithNewFile("c/file-b1.txt", "file-b1.txt").
+		WithNewFile("c/file-b1.json", "file-b1.json")
 
 	entries, err = dir.Entries(ctx)
 	require.NoError(t, err)
@@ -385,10 +373,10 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 	require.Equal(t, []string{"file-b1.json", "file-b1.txt"}, entries)
 
 	dirDir := c.Directory().
-		WithNewFile("foo.txt", contents("foo")).
-		WithNewFile("a1/a1-file", contents("a1-file")).
-		WithNewFile("a2/a2-file", contents("a2-file")).
-		WithNewFile("b1/b1-file", contents("b1-file"))
+		WithNewFile("foo.txt", "foo").
+		WithNewFile("a1/a1-file", "a1-file").
+		WithNewFile("a2/a2-file", "a2-file").
+		WithNewFile("b1/b1-file", "b1-file")
 
 	entries, err = dirDir.WithoutDirectory("a*").Entries(ctx)
 	require.NoError(t, err)
@@ -396,8 +384,8 @@ func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {
 
 	// Test WithoutFile
 	filesDir := c.Directory().
-		WithNewFile("some-file", contents("some-content")).
-		WithNewFile("some-dir/sub-file", contents("sub-content")).
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content").
 		WithoutFile("some-file")
 
 	entries, err = filesDir.Entries(ctx)

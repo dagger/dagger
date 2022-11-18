@@ -21,7 +21,7 @@ type Directory {
   withFile(path: String!, source: FileID!): Directory!
 
   "This directory plus a new file written at the given path"
-  withNewFile(path: String!, contents: String): Directory!
+  withNewFile(path: String!, contents: String!): Directory!
 
   "This directory with the file at the given path removed"
   withoutFile(path: String!): Directory!

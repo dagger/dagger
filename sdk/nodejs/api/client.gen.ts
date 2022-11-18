@@ -907,7 +907,7 @@ export class Directory extends BaseClient {
   /**
    * This directory plus a new file written at the given path
    */
-  withNewFile(path: string, contents?: string): Directory {
+  withNewFile(path: string, contents: string): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,

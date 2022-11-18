@@ -78,29 +78,27 @@ func TestContainerBuild(t *testing.T) {
 	defer c.Close()
 
 	contextDir := c.Directory().
-		WithNewFile("main.go", dagger.DirectoryWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go",
+			`package main
 import "fmt"
 import "os"
 func main() {
 	for _, env := range os.Environ() {
 		fmt.Println(env)
 	}
-}`,
-		})
+}`)
 
 	t.Run("default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		env, err := c.Container().Build(src).Exec().Stdout().Contents(ctx)
 		require.NoError(t, err)
@@ -109,16 +107,15 @@ CMD goenv
 
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		env, err := c.Container().Build(src, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
@@ -129,16 +126,15 @@ CMD goenv
 
 	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
@@ -149,16 +145,15 @@ CMD goenv
 
 	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
@@ -1579,13 +1574,9 @@ func TestContainerReplacedMounts(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	lower := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "lower-content",
-	})
+	lower := c.Directory().WithNewFile("some-file", "lower-content")
 
-	upper := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "upper-content",
-	})
+	upper := c.Directory().WithNewFile("some-file", "upper-content")
 
 	ctr := c.Container().
 		From("alpine:3.16.2").
@@ -1624,9 +1615,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		require.Empty(t, mnts)
 	})
 
-	clobberedDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "clobbered-content",
-	})
+	clobberedDir := c.Directory().WithNewFile("some-file", "clobbered-content")
 	clobbered := replaced.WithMountedDirectory("/mnt", clobberedDir)
 
 	t.Run("replacing parent of a mount clobbers child", func(t *testing.T) {
@@ -1641,9 +1630,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		require.Equal(t, "clobbered-content", out)
 	})
 
-	clobberedSubDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "clobbered-sub-content",
-	})
+	clobberedSubDir := c.Directory().WithNewFile("some-file", "clobbered-sub-content")
 	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubDir)
 
 	t.Run("restoring mount under clobbered mount", func(t *testing.T) {
