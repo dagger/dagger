@@ -8,7 +8,7 @@ connect(async (client) => {
   // highlight-end
 
   // get reference to the local project
-  const source = await client.host().workdir(["node_modules/"]).id()
+  const source = await client.host().directory(".", ["node_modules/"]).id()
 
   // highlight-start
   // for each Node version

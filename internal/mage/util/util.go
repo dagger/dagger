@@ -14,7 +14,7 @@ import (
 
 // Repository with common set of exclude filters to speed up upload
 func Repository(c *dagger.Client) *dagger.Directory {
-	return c.Host().Workdir(dagger.HostWorkdirOpts{
+	return c.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{
 			// node
 			"**/node_modules",

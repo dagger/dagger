@@ -25,7 +25,7 @@ func TestHostWorkdir(t *testing.T) {
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", c.Host().Workdir()).
+			WithMountedDirectory("/host", c.Host().Directory(".")).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -39,7 +39,7 @@ func TestHostWorkdir(t *testing.T) {
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
-			WithMountedDirectory("/host", c.Host().Workdir()).
+			WithMountedDirectory("/host", c.Host().Directory(".")).
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"ls", "/host"},
 			}).Stdout().Contents(ctx)
@@ -62,7 +62,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	defer c.Close()
 
 	t.Run("exclude", func(t *testing.T) {
-		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
 			Exclude: []string{"*.rar"},
 		})
 
@@ -77,7 +77,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("include", func(t *testing.T) {
-		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
 			Include: []string{"*.rar"},
 		})
 
@@ -92,7 +92,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("exclude overrides include", func(t *testing.T) {
-		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
 			Include: []string{"*.txt"},
 			Exclude: []string{"b.txt"},
 		})
@@ -108,7 +108,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("include does not override exclude", func(t *testing.T) {
-		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
 			Include: []string{"a.txt"},
 			Exclude: []string{"*.txt"},
 		})
@@ -139,7 +139,7 @@ func TestHostDirectoryRelative(t *testing.T) {
 		wdID1, err := c.Host().Directory(".").ID(ctx)
 		require.NoError(t, err)
 
-		wdID2, err := c.Host().Workdir().ID(ctx)
+		wdID2, err := c.Host().Directory(".").ID(ctx)
 		require.NoError(t, err)
 
 		require.Equal(t, wdID1, wdID2)

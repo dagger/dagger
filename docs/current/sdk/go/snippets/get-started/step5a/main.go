@@ -31,7 +31,7 @@ func build(ctx context.Context) error {
 	defer client.Close()
 
 	// get reference to the local project
-	src := client.Host().Workdir()
+	src := client.Host().Directory(".")
 
 	// highlight-start
 	// create empty directory to put build outputs

@@ -68,7 +68,7 @@ func TestExtensionNetlify(t *testing.T) {
 			require.NoError(t, err)
 			defer c.Close()
 
-			dirID, err := c.Host().Workdir().ID(ctx)
+			dirID, err := c.Host().Directory(".").ID(ctx)
 			require.NoError(t, err)
 
 			secretID, err := c.Host().EnvVariable("NETLIFY_AUTH_TOKEN").Secret().ID(ctx)

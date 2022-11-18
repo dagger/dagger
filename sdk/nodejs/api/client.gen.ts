@@ -1231,7 +1231,7 @@ export class Host extends BaseClient {
   /**
    * The current working directory on the host
    *
-   * @deprecated Use directory with path set to . instead
+   * @deprecated Use directory with path set to "." instead
    */
   workdir(exclude?: string[], include?: string[]): Directory {
     return new Directory({

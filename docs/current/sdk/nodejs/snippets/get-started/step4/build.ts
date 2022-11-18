@@ -4,7 +4,7 @@ import Client, { connect } from "@dagger.io/dagger"
 connect(async (client: Client) => {
   // highlight-start
   // get reference to the local project
-  const source = await client.host().workdir(["node_modules/"]).id()
+  const source = await client.host().directory(".", ["node_modules/"]).id()
 
   // get Node image
   const node = await client.container().from("node:16").id()

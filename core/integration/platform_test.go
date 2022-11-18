@@ -101,7 +101,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 				From("crazymax/goxx:latest").
 				WithMountedCache("/go/pkg/mod", c.CacheVolume("gomod")).
 				WithMountedCache("/root/.cache/go-build", c.CacheVolume("gobuild")).
-				WithMountedDirectory("/src", c.Host().Workdir()).
+				WithMountedDirectory("/src", c.Host().Directory(".")).
 				WithMountedDirectory("/out", c.Directory()).
 				WithWorkdir("/src").
 				WithEnvVariable("TARGETPLATFORM", string(platform)).

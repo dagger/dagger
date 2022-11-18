@@ -26,7 +26,7 @@ func main() {
 	defer client.Close()
 
 	// highlight-start
-	entries, err := client.Host().Workdir(dagger.HostWorkdirOpts{
+	entries, err := client.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{"*.txt"},
 	}).Entries(ctx)
 	// highlight-end
