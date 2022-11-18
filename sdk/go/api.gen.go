@@ -1001,7 +1001,7 @@ type HostWorkdirOpts struct {
 
 // The current working directory on the host
 //
-// Deprecated: Use Directory with Path set to . instead
+// Deprecated: Use Directory with path set to '.' instead.
 func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 	q := r.q.Select("workdir")
 	// `exclude` optional argument
