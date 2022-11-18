@@ -42,7 +42,7 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *so
 		switch {
 		case !hasEnv && !field.IsOptional && !hasDefault:
 			return nil, fmt.Errorf("environment variable %q not set", envvar)
-		case plancontext.IsSecretValue(val):
+		case utils.IsSecretValue(val):
 			{
 				secretid, err := s.Client.Host().EnvVariable(envvar).Secret().ID(ctx)
 				if err != nil {

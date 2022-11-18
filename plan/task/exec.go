@@ -57,7 +57,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		return nil, err
 	}
 	for _, env := range envs {
-		if plancontext.IsSecretValue(env.Value) {
+		if utils.IsSecretValue(env.Value) {
 			id, err := utils.GetSecretId(env.Value)
 
 			if err != nil {
@@ -299,7 +299,7 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 		return mnt, nil
 
 	case "secret":
-		contents, err := pctx.Secrets.FromValue(v.Lookup("contents"))
+		secretID, err := utils.GetSecretId(v.Lookup("contents"))
 		if err != nil {
 			return mount{}, err
 		}
@@ -316,7 +316,7 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 		return mount{
 			dest: dest,
 			secretMount: &secretMount{
-				id:   contents.ID(),
+				id:   string(secretID),
 				uid:  opts.UID,
 				gid:  opts.GID,
 				mask: opts.Mask,

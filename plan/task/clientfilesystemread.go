@@ -29,7 +29,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		return err
 	}
 
-	if plancontext.IsFSValue(v.Lookup("contents")) {
+	if utils.IsFSValue(v.Lookup("contents")) {
 		// attempt to detect if it's a dynamic path to give a more useful error message
 		if pv.IsReference() {
 			return fmt.Errorf("reading directories without a static path is not supported")
@@ -78,7 +78,7 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 	lg := log.Ctx(ctx)
 
 	contents := v.Lookup("contents")
-	isFS := plancontext.IsFSValue(contents)
+	isFS := utils.IsFSValue(contents)
 
 	if err := t.validatePath(path, isFS); err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func (t clientFilesystemReadTask) readContents(ctx context.Context, pctx *planco
 		return t.readFS(ctx, pctx, s, v, path)
 	}
 
-	if plancontext.IsSecretValue(contents) {
+	if utils.IsSecretValue(contents) {
 		lg.Debug().Str("path", path).Msg("loading local secret file")
 		return t.readSecret(ctx, pctx, s, path)
 	}

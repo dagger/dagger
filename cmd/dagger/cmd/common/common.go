@@ -6,6 +6,7 @@ import (
 
 	"cuelang.org/go/cue"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 )
 
@@ -14,9 +15,9 @@ func FormatValue(val *compiler.Value) string {
 	switch {
 	case val.HasAttr("artifact"):
 		return "dagger.#Artifact"
-	case plancontext.IsSecretValue(val):
+	case utils.IsSecretValue(val):
 		return "dagger.#Secret"
-	case plancontext.IsFSValue(val):
+	case utils.IsFSValue(val):
 		return "dagger.#FS"
 	case plancontext.IsSocketValue(val):
 		return "dagger.#Socket"

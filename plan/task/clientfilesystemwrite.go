@@ -51,7 +51,7 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 
 	defer fileLock.Unlock()
 
-	if plancontext.IsFSValue(contents) {
+	if utils.IsFSValue(contents) {
 		lg.Debug().Str("path", path).Msg("writing files to local directory")
 		return t.writeFS(ctx, pctx, s, contents, path)
 	}
@@ -65,7 +65,7 @@ func (t clientFilesystemWriteTask) writeContents(ctx context.Context, pctx *plan
 		permissions = fs.FileMode(p)
 	}
 
-	if plancontext.IsSecretValue(contents) {
+	if utils.IsSecretValue(contents) {
 		lg.Debug().Str("path", path).Msg("writing secret to local file")
 		secretid, err := utils.GetSecretId(contents)
 		if err != nil {

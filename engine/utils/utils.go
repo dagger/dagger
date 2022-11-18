@@ -71,6 +71,14 @@ func NewSecretFromId(id dagger.SecretID) *compiler.Value {
 	return v
 }
 
-// func NewSecret(plaintext string) *dagger.Secret {
-// 	dagger.Host.EnvVariables
-// }
+func IsSecretValue(v *compiler.Value) bool {
+	return v.LookupPath(secretIDPath).Exists()
+}
+
+func IsFSValue(v *compiler.Value) bool {
+	return v.LookupPath(fsIDPath).Exists()
+}
+
+func IsFSScratchValue(v *compiler.Value) bool {
+	return IsFSValue(v) && v.LookupPath(fsIDPath).Kind() == cue.NullKind
+}

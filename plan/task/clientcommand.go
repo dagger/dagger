@@ -131,7 +131,7 @@ func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s
 }
 
 func (t clientCommandTask) getString(ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, v *compiler.Value) (string, error) {
-	if plancontext.IsSecretValue(v) {
+	if utils.IsSecretValue(v) {
 
 		secretid, err := utils.GetSecretId(v)
 		if err != nil {
@@ -159,7 +159,7 @@ func (t clientCommandTask) readPipe(pipe *io.ReadCloser, ctx context.Context, pc
 	val, _ := v.Default()
 	out := compiler.NewValue()
 
-	if plancontext.IsSecretValue(val) {
+	if utils.IsSecretValue(val) {
 		secretid, err := solver.NewSecret(read).ID(ctx)
 		if err != nil {
 			return nil, err

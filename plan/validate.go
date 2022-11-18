@@ -7,6 +7,7 @@ import (
 	cueerrors "cuelang.org/go/cue/errors"
 	"cuelang.org/go/cue/token"
 	"go.dagger.io/dagger/compiler"
+	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
 )
 
@@ -49,7 +50,7 @@ func fieldMissingErr(p *compiler.Value, field *compiler.Value) error {
 }
 
 func isDockerImage(v *compiler.Value) bool {
-	return plancontext.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
+	return utils.IsFSValue(v.Lookup("rootfs")) && v.Lookup("config").Kind() == cue.StructKind
 }
 
 func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
@@ -73,9 +74,9 @@ func isPlanConcrete(p *compiler.Value, v *compiler.Value) error {
 			return fieldMissingErr(p, v)
 		}
 	// Core types (FS, Secret, Socket): make sure they are references, otherwise abort.
-	case plancontext.IsFSValue(v) || plancontext.IsSecretValue(v) || plancontext.IsSocketValue(v):
+	case utils.IsFSValue(v) || utils.IsSecretValue(v) || plancontext.IsSocketValue(v):
 		// Special case: `dagger.#Scratch` is always concrete
-		if plancontext.IsFSScratchValue(v) {
+		if utils.IsFSScratchValue(v) {
 			return nil
 		}
 
