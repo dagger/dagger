@@ -2393,7 +2393,8 @@ func TestContainerPublish(t *testing.T) {
 }
 
 func TestExecFromScratch(t *testing.T) {
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()

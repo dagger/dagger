@@ -1,6 +1,6 @@
 //go:build !linux
 
-package dockerprovision
+package bin
 
 import (
 	"os/exec"

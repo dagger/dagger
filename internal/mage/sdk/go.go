@@ -55,13 +55,18 @@ func (t Go) Test(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = util.GoBase(c).
+		output, err := util.GoBase(c).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"go", "test", "-p", "16", "-v", "./..."},
+				Args:                          []string{"go", "test", "-v", "./..."},
 				ExperimentalPrivilegedNesting: true,
 			}).
-			ExitCode(ctx)
+			Stdout().Contents(ctx)
+		if err != nil {
+			err = fmt.Errorf("test failed: %w\n%s", err, output)
+		}
 		return err
 	})
 }
@@ -77,6 +82,7 @@ func (t Go) Generate(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated, err := util.GoBase(c).
 			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"go", "generate", "-v", "./..."},

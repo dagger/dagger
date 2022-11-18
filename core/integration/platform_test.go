@@ -54,7 +54,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 		require.Equal(t, uname, output)
 	}
 
-	testRef := "127.0.0.1:5000/testmultiplatimagepush:latest"
+	testRef := "127.0.0.1:5000/testplatformemulatedexecandpush:latest"
 	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
@@ -139,7 +139,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	}
 
 	// push a multiplatform image
-	testRef := "127.0.0.1:5000/testmultiplatimagepush:latest"
+	testRef := "127.0.0.1:5000/testplatformcrosscompile:latest"
 	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
@@ -156,11 +156,11 @@ func TestPlatformCrossCompile(t *testing.T) {
 			From(testRef).
 			Rootfs()
 		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
-		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | grep '%s'`, platform, uname))
+		cmds = append(cmds, fmt.Sprintf(`file /%s/cloak | tee /dev/stderr | grep -q '%s'`, platform, uname))
 	}
 	exit, err := ctr.
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-c", strings.Join(cmds, " && ")},
+			Args: []string{"sh", "-x", "-e", "-c", strings.Join(cmds, "\n")},
 		}).
 		ExitCode(ctx)
 	require.NoError(t, err)

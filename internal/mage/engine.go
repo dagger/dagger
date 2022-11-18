@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"time"
 
@@ -125,21 +124,32 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	defer c.Close()
 
+	cgoEnabledEnv := "0"
 	args := []string{"go", "test", "-p", "16", "-v", "-count=1"}
 	if race {
 		args = append(args, "-race", "-timeout=1h")
+		cgoEnabledEnv = "1"
 	}
 	args = append(args, "./...")
 
-	fmt.Println("Running tests with args:", args)
-
-	// #nosec
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		cmd := exec.CommandContext(ctx, args[0], args[1:]...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.Env = os.Environ()
-		return cmd.Run()
+		output, err := util.GoBase(c).
+			WithMountedFile("/usr/bin/cloak", util.DaggerBinary(c)).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
+			WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
+			WithWorkdir("/app").
+			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+			Exec(dagger.ContainerExecOpts{
+				Args:                          args,
+				ExperimentalPrivilegedNesting: true,
+			}).
+			Stdout().Contents(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Println(output)
+		return nil
 	})
 }
 

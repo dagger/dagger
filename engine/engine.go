@@ -53,15 +53,20 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	if startOpts.RemoteAddr == "" {
-		// default to the legacy implementation until cloak dev has been
-		// updated or depracted
-		startOpts.RemoteAddr = engine.LegacyBuildkitdProvider + "://"
+		// TODO: names are highly inconsistent
+		if v, ok := os.LookupEnv("DAGGER_RUNNER_HOST"); ok {
+			startOpts.RemoteAddr = v
+		} else {
+			// default to the legacy implementation until cloak dev has been
+			// updated or depracted
+			startOpts.RemoteAddr = engine.LegacyBuildkitdProvider + "://"
+		}
 	}
 	remote, err := url.Parse(startOpts.RemoteAddr)
 	if err != nil {
 		return err
 	}
-	c, err := engine.Client(ctx, remote)
+	c, buildkitdHost, err := engine.Client(ctx, remote)
 	if err != nil {
 		return err
 	}
@@ -93,7 +98,8 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	secretStore := secret.NewStore()
 
 	socketProviders := MergedSocketProviders{
-		core.DaggerSockName: project.NewAPIProxy(router),
+		core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
+		project.SessionProxySockName: project.NewSessionProxy(router),
 	}
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {

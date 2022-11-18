@@ -30,6 +30,7 @@ func (t Nodejs) Lint(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJsBase(c).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "lint"},
 				ExperimentalPrivilegedNesting: true,
@@ -56,6 +57,8 @@ func (t Nodejs) Test(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		_, err = nodeJsBase(c).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
+			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"yarn", "test"},
 				ExperimentalPrivilegedNesting: true,
@@ -76,6 +79,7 @@ func (t Nodejs) Generate(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated, err := util.GoBase(c).
 			WithMountedFile("/usr/local/bin/cloak", util.DaggerBinary(c)).
+			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			Exec(dagger.ContainerExecOpts{
 				Args:                          []string{"cloak", "client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath},
 				ExperimentalPrivilegedNesting: true,

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// misc
 			".golangci.yml",
 			"**/Dockerfile", // needed for shim TODO: just build shim directly
+			"**/README.md",  // needed for examples test
 		},
 	})
 }
@@ -71,6 +73,10 @@ func GoBase(c *dagger.Client) *dagger.Container {
 
 	return c.Container().
 		From("golang:1.19-alpine").
+		Exec(dagger.ContainerExecOpts{
+			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+			Args: []string{"apk", "add", "build-base"},
+		}).
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
@@ -89,6 +95,27 @@ func DaggerBinary(c *dagger.Client) *dagger.File {
 			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "./cmd/cloak"},
 		}).
 		File("./bin/cloak")
+}
+
+func EngineSessionBinary(c *dagger.Client) *dagger.File {
+	return GoBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"},
+		}).
+		File("./bin/dagger-engine-session")
+}
+
+// HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir
+func HostDockerDir(c *dagger.Client) *dagger.Directory {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return c.Directory()
+	}
+	path := filepath.Join(home, ".docker")
+	if _, err := os.Stat(path); err != nil {
+		return c.Directory()
+	}
+	return c.Host().Directory(path)
 }
 
 const (

@@ -10,6 +10,7 @@ import (
 	"runtime"
 
 	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/internal/engineconn/bin"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pkg/errors"
 	exec "golang.org/x/sys/execabs"
@@ -76,7 +77,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := startEngineSession(ctx, cfg.LogOutput, tmpbin.Name(), args...)
+	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, tmpbin.Name(), args...)
 	if err != nil {
 		return nil, err
 	}
