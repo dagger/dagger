@@ -92,9 +92,10 @@ func DaggerBinary(c *dagger.Client) *dagger.File {
 }
 
 const (
-	engineSessionBin = "dagger-engine-session"
-	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.10.5"
+	engineSessionBinName = "dagger-engine-session"
+	shimBinName          = "dagger-shim"
+	buildkitRepo         = "github.com/moby/buildkit"
+	buildkitBranch       = "v0.10.5"
 )
 
 func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
@@ -105,6 +106,8 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 		buildkitBase := c.Container(dagger.ContainerOpts{
 			Platform: dagger.Platform("linux/" + arch),
 		}).Build(buildkitRepo)
+
+		// build engine-session bins
 		for _, os := range oses {
 			// include each engine-session bin for each arch too in case there is a
 			// client/server mismatch
@@ -113,17 +116,37 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 					WithEnvVariable("GOOS", os).
 					WithEnvVariable("GOARCH", arch).
 					Exec(dagger.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", "./bin/" + engineSessionBin, "-ldflags", "-s -w", "/app/cmd/engine-session"},
+						Args: []string{"go", "build", "-o", "./bin/" + engineSessionBinName, "-ldflags", "-s -w", "/app/cmd/engine-session"},
 					}).
-					File("./bin/" + engineSessionBin)
+					File("./bin/" + engineSessionBinName)
 				// FIXME: the code below is part of "bootstrap" and using the LATEST
 				// released engine, which does not contain `WithRootfs`
 				//nolint
 				buildkitBase = buildkitBase.WithFS(
-					buildkitBase.FS().WithFile("/usr/bin/"+engineSessionBin+"-"+os+"-"+arch, builtBin),
+					buildkitBase.FS().WithFile("/usr/bin/"+engineSessionBinName+"-"+os+"-"+arch, builtBin),
 				)
 			}
 		}
+
+		// build the shim binary
+		shimBin := GoBase(c).
+			WithEnvVariable("GOOS", "linux").
+			WithEnvVariable("GOARCH", arch).
+			Exec(dagger.ContainerExecOpts{
+				Args: []string{"go", "build", "-o", "./bin/" + shimBinName, "-ldflags", "-s -w", "/app/cmd/shim"},
+			}).
+			File("./bin/" + shimBinName)
+		//nolint
+		buildkitBase = buildkitBase.WithFS(
+			buildkitBase.FS().WithFile("/usr/bin/"+shimBinName, shimBin),
+		)
+
+		// setup entrypoint
+		buildkitBase = buildkitBase.WithEntrypoint([]string{
+			"buildkitd",
+			"--oci-worker-binary", "/usr/bin/" + shimBinName,
+		})
+
 		platformVariants = append(platformVariants, buildkitBase)
 	}
 
