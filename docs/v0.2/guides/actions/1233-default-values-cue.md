@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Default values and optional fields
 
+{@include: ../../../partials/_caution-old-version.md}
+
 When writing a Cue config, you will sometimes want to set default values in your package.
 
 The most common way you'll encounter in our codebase is: `key: type | *value`:
@@ -27,7 +29,7 @@ To test the type of `defaultValue`, you can directly do such assertion:
 if defaultValue != "foo" | if defaultValue != false | if defaultValue != null {
     ...
 }
- 
+
 if defaultValue == "foo" | if defaultValue == false | if defaultValue == null {
     ...
 }
@@ -47,7 +49,7 @@ To check on a field's concreteness, use the bottom value `_|_`:
 if foo != _|_ { // if foo is not `undefined`
     ...
 }
- 
+
 if foo == _|_ { // if foo is `undefined`
     ...
 }

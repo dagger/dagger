@@ -3,11 +3,9 @@ slug: /1002/vs/
 ---
 
 
-import CautionBanner from '../\_caution-banner.md'
-
 # Dagger vs. Other Software
 
-<CautionBanner old="0.1" new="0.2" />
+{@include: ../../partials/_caution-old-version.md}
 
 ## Dagger vs. CI (GitHub Actions, GitLab, CircleCI, Jenkins, etc.)
 

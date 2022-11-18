@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Interacting with the client
 
+{@include: ../../partials/_caution-old-version.md}
+
 `dagger.#Plan` has a `client` field that allows interaction with the local machine where the `dagger` command line client is run. You can:
 
 - Read and write files and directories;

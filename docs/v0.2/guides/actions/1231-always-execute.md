@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # How to always execute an action?
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Dagger implemented a way to invalidate cache for a specific action.
 
 The `docker.#Run` and `core.#Exec` actions have an `always` field (which means "always run"):

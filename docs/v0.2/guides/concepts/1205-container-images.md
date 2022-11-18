@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Building container images
 
+{@include: ../../../partials/_caution-old-version.md}
+
 You can use Dagger to build container images, either by executing a Dockerfile, or specifying the build steps natively in CUE. Which method to choose depends on the requirements of your project. You can mix and match builds from both methods in the same plan.
 
 :::tip

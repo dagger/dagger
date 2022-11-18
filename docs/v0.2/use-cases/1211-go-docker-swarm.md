@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Go on Docker Swarm
 
+{@include: ../../partials/_caution-old-version.md}
+
 ![particubes.com](/img/use-cases/particubes.com.png)
 
 [Particubes](https://particubes.com) is a platform dedicated to voxel games, which are games made out of little cubes, like Minecraft.

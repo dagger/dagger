@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Loading an image into a docker engine
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Dagger can build, run, push and pull docker images natively, without the need of a Docker engine.
 This feature is available in the package `universe.dagger.io/docker`.
 

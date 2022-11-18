@@ -7,6 +7,8 @@ import DaggerCloudCTA from '../../includes/\_dagger-cloud-cta.md';
 
 # How can I have better logs ?
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Dagger exposes 2 logging format options:
 
 - `--log-format <auto|plain|tty|json>`

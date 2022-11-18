@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # Project file organization
 
+{@include: ../../../partials/_caution-old-version.md}
+
 When your Dagger configuration grows, you may feel the need to better organize your project by splitting it into multiple files.
 
 A simple way to accomplish this is to create and import packages within your project's module.

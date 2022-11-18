@@ -2,11 +2,9 @@
 slug: /1010/dev-cue-package/
 ---
 
-import CautionBanner from '../\_caution-banner.md'
-
 # Develop a new CUE package for Dagger
 
-<CautionBanner old="0.1" new="0.2" />
+{@include: ../../partials/_caution-old-version.md}
 
 This tutorial illustrates how to create new packages, manually distribute them among your applications and contribute to the Dagger stdlib packages.
 

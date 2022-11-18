@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # The docker package
 
+{@include: ../../../partials/_caution-old-version.md}
+
 The `universe.dagger.io` module is meant to provide higher level abstractions on top of [core actions](../../references/1222-core-actions-reference.md). Of these, the `universe.dagger.io/docker` package provides a general base for building and running docker images.
 
 Let's explore what you can do with this package.

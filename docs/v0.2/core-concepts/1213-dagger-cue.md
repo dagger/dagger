@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Dagger CUE API
 
+{@include: ../../partials/_caution-old-version.md}
+
 As of Dagger 0.2, the Dagger CUE API can be imported via `dagger.io/dagger` & `dagger.io/dagger/core`
 
 The Dagger CUE API is the set of CUE packages released alongside the Dagger engine.

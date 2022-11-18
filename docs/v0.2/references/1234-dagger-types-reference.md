@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # Dagger Types Reference
 
+{@include: ../../partials/_caution-old-version.md}
+
 Dagger Types are primitives that hold internal references to values stored in the Dagger Engine. They extend the CUE type system and can be used in [Dagger Actions](../core-concepts/1221-action.md). Their definitions can be imported from the `dagger.io/dagger` package.
 
 The following types are available:

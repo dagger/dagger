@@ -3,11 +3,9 @@ slug: /1013/operator-manual/
 displayed_sidebar: '0.1'
 ---
 
-import CautionBanner from '../\_caution-banner.md'
-
 # Dagger Operator Manual
 
-<CautionBanner old="0.1" new="0.2" />
+{@include: ../../partials/_caution-old-version.md}
 
 ## Custom buildkit setup
 
