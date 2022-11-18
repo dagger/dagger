@@ -46,3 +46,24 @@
     color: var(--ifm-color-primary-darker);
   }
 }
+
+.playground {
+  background: #3D66FF;
+  color: white !important;
+  font-size: 1rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0em;
+  text-align: left;
+  padding: 0.625rem 1.5rem;
+  border: 1;
+  border-radius: 50px;
+  transition: background 0.25s ease;
+  white-space: nowrap;
+
+  &:hover {
+      background: rgba($color: #3D66FF, $alpha: 0.8);
+      cursor: pointer;
+  }
+}

@@ -147,7 +147,8 @@ async function createConfig() {
           },
           frontmatter: {
             displayed_sidebar: 'current',
-            sidebar_label: 'Reference'
+            sidebar_label: 'Reference',
+            title: "Dagger NodeJS SDK"
           },
           hideMembersSymbol: true,
         },
