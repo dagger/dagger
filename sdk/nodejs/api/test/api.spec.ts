@@ -17,22 +17,20 @@ describe("NodeJS SDK api", function () {
       .container()
       .from("alpine")
       .exec(["apk", "add", "curl"])
-      .stdout()
 
     assert.strictEqual(
       queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`
+      `{container{from(address:"alpine"){exec(args:["apk","add","curl"])}}}`
     )
   })
 
   it("Build a query by splitting it", async function () {
     const image = new Client().container().from("alpine")
     const pkg = image.exec(["apk", "add", "curl"])
-    const result = pkg.stdout()
 
     assert.strictEqual(
-      queryBuilder(result.queryTree),
-      `{container{from(address:"alpine"){exec(args:["apk","add","curl"]){stdout}}}}`
+      queryBuilder(pkg.queryTree),
+      `{container{from(address:"alpine"){exec(args:["apk","add","curl"])}}}`
     )
   })
 
@@ -55,17 +53,15 @@ describe("NodeJS SDK api", function () {
       container: {
         from: {
           exec: {
-            stdout: {
-              contents:
-                "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
-            },
+            stdout:
+              "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
           },
         },
       },
     }
 
     assert.deepStrictEqual(queryFlatten(tree), {
-      contents:
+      stdout:
         "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
     })
   })

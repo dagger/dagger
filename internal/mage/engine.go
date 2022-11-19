@@ -144,7 +144,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 				Args:                          args,
 				ExperimentalPrivilegedNesting: true,
 			}).
-			Stdout().Contents(ctx)
+			Stdout(ctx)
 		if err != nil {
 			return err
 		}

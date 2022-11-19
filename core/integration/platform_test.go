@@ -48,7 +48,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, platform, ctrPlatform)
 
-		output, err := ctr.Stdout().Contents(ctx)
+		output, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
 		output = strings.TrimSpace(output)
 		require.Equal(t, uname, output)
@@ -66,7 +66,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"uname", "-m"},
 			})
-		output, err := ctr.Stdout().Contents(ctx)
+		output, err := ctr.Stdout(ctx)
 		require.NoError(t, err)
 		output = strings.TrimSpace(output)
 		require.Equal(t, uname, output)
@@ -115,7 +115,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, defaultPlatform, ctrPlatform)
 
-			stdout, err := ctr.Stdout().Contents(ctx)
+			stdout, err := ctr.Stdout(ctx)
 			require.NoError(t, err)
 			stdout = strings.TrimSpace(stdout)
 			require.Equal(t, platformToUname[defaultPlatform], stdout)

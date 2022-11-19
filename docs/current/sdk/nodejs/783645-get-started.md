@@ -100,7 +100,7 @@ This Node.js stub imports the Dagger SDK and defines an asynchronous function. T
 - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
 - It uses the client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:16` image. This method returns a `Container` representing an OCI-compatible container image.
 - It uses the `Container.exec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `exec()` method returns a revised `Container` with the results of command execution.
-- It retrieves the output stream of the last executed command as a `File` object with the `Container.stdout()` method and uses the `File.contents()` methods to print the result to the console.
+- It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
 
 Run the Node.js CI tool by executing the command below from the project directory:
 

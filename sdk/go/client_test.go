@@ -80,7 +80,7 @@ func TestContainer(t *testing.T) {
 
 	stdout, err := alpine.Exec(ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", stdout)
 

@@ -332,24 +332,22 @@ func (r *Container) Rootfs() *Directory {
 
 // The error stream of the last executed command.
 // Null if no command has been executed.
-func (r *Container) Stderr() *File {
+func (r *Container) Stderr(ctx context.Context) (string, error) {
 	q := r.q.Select("stderr")
 
-	return &File{
-		q: q,
-		c: r.c,
-	}
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The output stream of the last executed command.
 // Null if no command has been executed.
-func (r *Container) Stdout() *File {
+func (r *Container) Stdout(ctx context.Context) (string, error) {
 	q := r.q.Select("stdout")
 
-	return &File{
-		q: q,
-		c: r.c,
-	}
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The user to be set for all commands

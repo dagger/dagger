@@ -3,9 +3,7 @@
     from(address: "alpine") {
       exec(args: ["apk", "add", "curl"]) {
         exec(args: ["curl", "https://dagger.io/"]) {
-          stdout {
-            contents
-          }
+          stdout
         }
       }
     }

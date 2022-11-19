@@ -134,12 +134,12 @@ func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, 
 	return parent.ExitCode(ctx, s.gw)
 }
 
-func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stdout")
+func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+	return parent.MetaFileContents(ctx, s.gw, "stdout")
 }
 
-func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*core.File, error) {
-	return parent.MetaFile(ctx, s.gw, "stderr")
+func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+	return parent.MetaFileContents(ctx, s.gw, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
