@@ -5,6 +5,7 @@ from typing import TextIO
 
 import anyio
 import pytest
+from pytest_subprocess.fake_process import FakeProcess
 from attrs import define
 
 import dagger
@@ -67,60 +68,52 @@ async def test_docker_image_provision(cache_dir: Path):
     assert not garbage_path.exists()
 
 
-def test_docker_cli_is_not_installed(
-    cache_dir: Path, mocked_image_ref, monkeypatch: pytest.MonkeyPatch
-):
+def test_docker_cli_is_not_installed(cache_dir: Path, mocked_image_ref, fp: FakeProcess):
     """
     When the docker cli is not installed ensure that the `FileNotFoundError` returned by
     `subprocess.run` is wrapped by a `docker.ProvisionError` stating that
     the command is not found.
     """
 
-    def pached_subprocess_run(*args, **kwargs):
+    def patched_subprocess_run(*args, **kwargs):
         raise FileNotFoundError()
 
-    monkeypatch.setattr(docker.subprocess, "run", pached_subprocess_run)
+    docker_run_args = ["docker", "run", "--rm", "--entrypoint", "/bin/cat", fp.any()]
+
+    fp.register(docker_run_args, callback=patched_subprocess_run)
 
     with pytest.raises(docker.ProvisionError) as execinfo:
         docker.Engine(Config()).start()
     assert "Command 'docker' not found" in str(execinfo.value)
 
 
-def test_tmp_files_are_removed_on_error(
-    cache_dir: Path, monkeypatch: pytest.MonkeyPatch, mocked_image_ref
-):
+def test_tmp_files_are_removed_on_error(cache_dir: Path, fp: FakeProcess, mocked_image_ref):
     """
     Ensure that the created temporary file is removed if copying from the
     docker-image fails.
     """
     eng = docker.Engine(Config())
 
-    monkeypatch.setattr(
-        docker.subprocess,
-        "run",
-        lambda *args, **kwargs: 1 / 0,  # Raises ZeroDivisionError
+    fp.register(
+        ["docker", "run", fp.any()],
+        callback=lambda *args, **kwargs: 1 / 0,  # Raises ZeroDivisionError
     )
-
-    try:
+    with pytest.raises(ZeroDivisionError):
         eng.start()
-    except ZeroDivisionError:
-        pass
 
     assert not [x for x in cache_dir.iterdir()]
 
 
-def test_docker_engine_is_not_running(
-    cache_dir: Path, monkeypatch: pytest.MonkeyPatch, mocked_image_ref
-):
+def test_docker_engine_is_not_running(cache_dir: Path, fp: FakeProcess, mocked_image_ref):
     """
     When the docker image is not installed ensure that
     the `CalledProcessError` is wrapped in a `dagger.ProvisionError`
     """
 
-    def pached_subprocess_run(*args, **kwargs):
+    def patched_subprocess_run(*args, **kwargs):
         raise subprocess.CalledProcessError(returncode=1, cmd="mocked")
 
-    monkeypatch.setattr(docker.subprocess, "run", pached_subprocess_run)
+    fp.register(["docker", "run", fp.any()], callback=patched_subprocess_run)
 
     with pytest.raises(docker.ProvisionError):
         docker.Engine(Config()).start()
