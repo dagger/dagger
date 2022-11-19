@@ -55,7 +55,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		return nil, errors.Wrapf(err, "failed to copy dagger-engine-session bin: %s", output)
 	}
 
-	if err := tmpbin.Chmod(0700); err != nil {
+	if err := tmpbin.Chmod(0o700); err != nil {
 		return nil, err
 	}
 
@@ -63,13 +63,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		return nil, err
 	}
 
-	// TODO: verify checksum?
-
-	remote := "docker-container://" + c.containerName
-
-	args := []string{
-		"--remote", remote,
-	}
+	args := []string{}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}

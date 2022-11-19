@@ -39,6 +39,9 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// go source
 			"**/*.go",
 
+			// git since we need the vcs buildinfo
+			".git",
+
 			// modules
 			"**/go.mod",
 			"**/go.sum",
@@ -78,6 +81,11 @@ func GoBase(c *dagger.Client) *dagger.Container {
 			Args: []string{"apk", "add", "build-base"},
 		}).
 		WithEnvVariable("CGO_ENABLED", "0").
+		// adding the git CLI to inject vcs info
+		// into the go binaries
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"apk", "add", "git"},
+		}).
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithMountedDirectory("/app", goMods).
@@ -92,9 +100,18 @@ func GoBase(c *dagger.Client) *dagger.Container {
 func DaggerBinary(c *dagger.Client) *dagger.File {
 	return GoBase(c).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "./cmd/cloak"},
+			Args: []string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"},
 		}).
-		File("./bin/cloak")
+		File("./bin/dagger")
+}
+
+// ClientGenBinary returns a compiled dagger binary
+func ClientGenBinary(c *dagger.Client) *dagger.File {
+	return GoBase(c).
+		Exec(dagger.ContainerExecOpts{
+			Args: []string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"},
+		}).
+		File("./bin/client-gen")
 }
 
 func EngineSessionBinary(c *dagger.Client) *dagger.File {
@@ -180,9 +197,11 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 	return platformVariants
 }
 
-var devEngineOnce sync.Once
-var devEngineContainerName string
-var devEngineErr error
+var (
+	devEngineOnce          sync.Once
+	devEngineContainerName string
+	devEngineErr           error
+)
 
 func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 	devEngineOnce.Do(func() {
@@ -264,6 +283,9 @@ func WithDevEngine(ctx context.Context, c *dagger.Client, cb func(context.Contex
 	// TODO: not thread safe.... only other option is to put dagger host in dagger.Client
 	os.Setenv("DAGGER_HOST", "docker-container://"+containerName)
 	defer os.Unsetenv("DAGGER_HOST")
+
+	os.Setenv("DAGGER_RUNNER_HOST", "docker-container://"+containerName)
+	defer os.Unsetenv("DAGGER_RUNNER_HOST")
 
 	otherClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {

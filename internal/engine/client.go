@@ -34,7 +34,6 @@ func passthroughEngineProvider(ctx context.Context, u *url.URL) (string, error) 
 var engineProviderHandler = map[string]engineProviderFunc{
 	DockerContainerProvider: dockerContainerProvider,
 	DockerImageProvider:     dockerImageProvider,
-	LegacyBuildkitdProvider: legacyBuildkitdProvider,
 	"unix":                  passthroughEngineProvider,
 }
 

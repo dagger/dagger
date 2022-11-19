@@ -17,17 +17,25 @@ import (
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
 	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
 	"github.com/dagger/dagger/codegen/introspection"
+	"github.com/dagger/dagger/tracing"
 )
 
-var clientGenCmd = &cobra.Command{
+var (
+	configPath string
+	workdir    string
+)
+
+var rootCmd = &cobra.Command{
 	Use:  "client-gen",
 	RunE: ClientGen,
 }
 
 func init() {
-	clientGenCmd.Flags().StringP("output", "o", "", "output file")
-	clientGenCmd.Flags().String("package", "", "package name")
-	clientGenCmd.Flags().String("lang", "", "language to generate in")
+	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
+	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
+	rootCmd.Flags().StringP("output", "o", "", "output file")
+	rootCmd.Flags().String("package", "", "package name")
+	rootCmd.Flags().String("lang", "", "language to generate in")
 }
 
 func ClientGen(cmd *cobra.Command, args []string) error {
@@ -74,15 +82,15 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	if output == "" || output == "-" {
 		fmt.Fprint(os.Stdout, string(generated))
 	} else {
-		if err := os.MkdirAll(filepath.Dir(output), 0700); err != nil {
+		if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
 			return err
 		}
-		if err := os.WriteFile(output, generated, 0600); err != nil {
+		if err := os.WriteFile(output, generated, 0o600); err != nil {
 			return err
 		}
 
 		gitAttributes := fmt.Sprintf("/%s linguist-generated=true", filepath.Base(output))
-		if err := os.WriteFile(path.Join(filepath.Dir(output), ".gitattributes"), []byte(gitAttributes), 0600); err != nil {
+		if err := os.WriteFile(path.Join(filepath.Dir(output), ".gitattributes"), []byte(gitAttributes), 0o600); err != nil {
 			return err
 		}
 	}
@@ -160,4 +168,14 @@ func generate(ctx context.Context, schema *introspection.Schema, cfg generator.C
 	}
 
 	return gen.Generate(ctx, schema)
+}
+
+func main() {
+	closer := tracing.Init()
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		closer.Close()
+		os.Exit(1)
+	}
+	closer.Close()
 }

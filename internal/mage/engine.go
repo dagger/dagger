@@ -18,13 +18,13 @@ const (
 	EngineImageRef = "ghcr.io/dagger/engine"
 )
 
-func taggedEngineImageRef(tag string) (string, error) {
+func parseRef(tag string) error {
 	if tag != "main" {
 		if ok := semver.IsValid(tag); !ok {
-			return "", fmt.Errorf("invalid semver tag: %s", tag)
+			return fmt.Errorf("invalid semver tag: %s", tag)
 		}
 	}
-	return fmt.Sprintf("%s:%s", EngineImageRef, tag), nil
+	return fmt.Errorf("invalid reference")
 }
 
 type Engine mg.Namespace
@@ -41,7 +41,7 @@ func (t Engine) Build(ctx context.Context) error {
 		WithEnvVariable("GOOS", runtime.GOOS).
 		WithEnvVariable("GOARCH", runtime.GOARCH).
 		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./bin/cloak", "-ldflags", "-s -w", "/app/cmd/cloak"},
+			Args: []string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "/app/cmd/dagger"},
 		})
 
 	_, err = build.Directory("./bin").Export(ctx, "./bin")
@@ -66,11 +66,12 @@ func (t Engine) Lint(ctx context.Context) error {
 	return err
 }
 
-func (t Engine) Publish(ctx context.Context, tag string) error {
-	engineImageRef, err := taggedEngineImageRef(tag)
-	if err != nil {
+func (t Engine) Publish(ctx context.Context, refName, commitSHA string) error {
+	if err := parseRef(refName); err != nil {
 		return err
 	}
+
+	engineImageRef := fmt.Sprintf("%s:%s", EngineImageRef, commitSHA)
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -81,22 +82,22 @@ func (t Engine) Publish(ctx context.Context, tag string) error {
 	arches := []string{"amd64", "arm64"}
 	oses := []string{"linux", "darwin", "windows"}
 
-	imageRef, err := c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
+	_, err = c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
 		PlatformVariants: util.DevEngineContainer(c, arches, oses),
 	})
 	if err != nil {
 		return err
 	}
 
-	if semver.IsValid(tag) {
+	if semver.IsValid(refName) {
 		sdks := sdk.All{}
-		if err := sdks.Bump(ctx, imageRef); err != nil {
+		if err := sdks.Bump(ctx, engineImageRef); err != nil {
 			return err
 		}
 	}
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
-	fmt.Println("PUBLISHED IMAGE REF:", imageRef)
+	fmt.Println("PUBLISHED IMAGE REF:", engineImageRef)
 
 	return nil
 }

@@ -229,11 +229,7 @@ export class DockerImage implements EngineConn {
     engineSessionBinPath: string,
     opts: ConnectOpts
   ): Promise<Client> {
-    const engineSessionArgs = [
-      engineSessionBinPath,
-      "--remote",
-      `docker-image://${this.imageRef.Ref}`,
-    ]
+    const engineSessionArgs = [engineSessionBinPath]
 
     if (opts.Workdir) {
       engineSessionArgs.push("--workdir", opts.Workdir)

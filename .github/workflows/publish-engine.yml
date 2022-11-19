@@ -31,7 +31,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - run: ./hack/make engine:publish ${{ github.ref_name }}
+      - run: ./hack/make engine:publish ${{ github.ref_name }} ${{ github.sha }}
 
       - name: Bump SDK Engine Dependencies
         uses: peter-evans/create-pull-request@v3
@@ -40,10 +40,12 @@ jobs:
           add-paths: ./sdk/
           committer: Dagger CI <hello@dagger.io>
           author: Dagger CI <hello@dagger.io>
-          commit-message: "sdk: Bump engine dependency to ${{ github.ref_name }}"
+          commit-message: "sdk: Bump engine dependency to ${{ github.ref_name }}@${{ github.sha }}"
           signoff: true
-          title: "sdk: Bump engine dependency to ${{ github.ref_name }}"
+          title: "sdk: Bump engine dependency to ${{ github.ref_name }}@${{ github.sha }}"
           body: |
             This PR was auto-generated.
           delete-branch: true
           branch: bump-engine
+
+      ## TODO add publish CLI workflow
