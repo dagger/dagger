@@ -41,13 +41,9 @@ def generate(
     else:
         code = generate_code(cfg, sync)
 
-    if output is not None:
+    if output:
         output.write_text(code)
-
-        git_attrs = output.with_name(".gitattributes")
-        if not git_attrs.exists():
-            git_attrs.write_text(f"/{output.name} linguist-generated=true\n")
-
+        _update_gitattributes(output)
         rich.print(f"[green]Client generated successfully to[/green] {output} :rocket:")
     else:
         rich.print(code)
@@ -63,3 +59,15 @@ def generate_code(cfg: Config, sync: bool) -> str:
                 "Schema not initialized. Make sure the dagger engine is running."
             )
         return codegen.generate(session.client.schema, sync)
+
+
+def _update_gitattributes(output: Path) -> None:
+    git_attrs = output.with_name(".gitattributes")
+    contents = f"/{output.name} linguist-generated=true\n"
+
+    if git_attrs.exists():
+        if contents in (text := git_attrs.read_text()):
+            return
+        contents = f"{text}{contents}"
+
+    git_attrs.write_text(contents)
