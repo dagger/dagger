@@ -6,7 +6,6 @@ from typing import TextIO
 import anyio
 import pytest
 from pytest_subprocess.fake_process import FakeProcess
-from attrs import define
 
 import dagger
 from dagger.connectors import docker
@@ -20,18 +19,6 @@ def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     cache_dir.mkdir()
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
     return cache_dir
-
-
-@pytest.fixture
-def mocked_image_ref(monkeypatch: pytest.MonkeyPatch):
-    @define
-    class MockedImageRef:
-        ref: str
-        id: str = "123"
-
-    with monkeypatch.context() as m:
-        m.setattr(docker, "ImageRef", MockedImageRef)
-        yield
 
 
 @pytest.mark.skipif(
@@ -68,7 +55,9 @@ async def test_docker_image_provision(cache_dir: Path):
     assert not garbage_path.exists()
 
 
-def test_docker_cli_is_not_installed(cache_dir: Path, mocked_image_ref, fp: FakeProcess):
+def test_docker_cli_is_not_installed(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch, fp: FakeProcess
+):
     """
     When the docker cli is not installed ensure that the `FileNotFoundError` returned by
     `subprocess.run` is wrapped by a `docker.ProvisionError` stating that
@@ -81,30 +70,36 @@ def test_docker_cli_is_not_installed(cache_dir: Path, mocked_image_ref, fp: Fake
     docker_run_args = ["docker", "run", "--rm", "--entrypoint", "/bin/cat", fp.any()]
 
     fp.register(docker_run_args, callback=patched_subprocess_run)
+    monkeypatch.setenv("DAGGER_HOST", "docker-image://foo.bar/image@sha256:abc")
 
     with pytest.raises(docker.ProvisionError) as execinfo:
-        docker.Engine(Config()).start()
+        docker.EngineFromImage(Config()).start()
     assert "Command 'docker' not found" in str(execinfo.value)
 
 
-def test_tmp_files_are_removed_on_error(cache_dir: Path, fp: FakeProcess, mocked_image_ref):
+def test_tmp_files_are_removed_on_error(
+    cache_dir: Path, fp: FakeProcess, monkeypatch: pytest.MonkeyPatch
+):
     """
     Ensure that the created temporary file is removed if copying from the
     docker-image fails.
     """
-    eng = docker.Engine(Config())
 
     fp.register(
         ["docker", "run", fp.any()],
         callback=lambda *args, **kwargs: 1 / 0,  # Raises ZeroDivisionError
     )
+    monkeypatch.setenv("DAGGER_HOST", "docker-image://foo.bar/image@sha256:abc")
+    eng = docker.EngineFromImage(Config())
     with pytest.raises(ZeroDivisionError):
         eng.start()
 
     assert not [x for x in cache_dir.iterdir()]
 
 
-def test_docker_engine_is_not_running(cache_dir: Path, fp: FakeProcess, mocked_image_ref):
+def test_docker_engine_is_not_running(
+    cache_dir: Path, fp: FakeProcess, monkeypatch: pytest.MonkeyPatch
+):
     """
     When the docker image is not installed ensure that
     the `CalledProcessError` is wrapped in a `dagger.ProvisionError`
@@ -115,8 +110,10 @@ def test_docker_engine_is_not_running(cache_dir: Path, fp: FakeProcess, mocked_i
 
     fp.register(["docker", "run", fp.any()], callback=patched_subprocess_run)
 
+    monkeypatch.setenv("DAGGER_HOST", "docker-image://foo.bar/image@sha256:abc")
+
     with pytest.raises(docker.ProvisionError):
-        docker.Engine(Config()).start()
+        docker.EngineFromImage(Config()).start()
 
 
 @pytest.mark.skipif(
@@ -129,7 +126,6 @@ async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
     log_output: TextIO,
     cache_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
-    mocked_image_ref,
 ):
     """
     When docker isn't running, but a cached version of the dagger engine exists,
@@ -137,12 +133,12 @@ async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
     and a more helpful error message is printed.
     """
     # Create the cached 'dagger engine'
-    cfg = Config(log_output=log_output)
-    async with dagger.Connection(cfg):
+    async with dagger.Connection():
         pass
 
     # Mock DOCKER_HOST to make it seem like docker isn't running.
     monkeypatch.setenv("DOCKER_HOST", "tcp://127.1.2.3:3000")
+    cfg = Config(log_output=log_output)
     with pytest.raises(docker.ProvisionError) as execinfo:
-        docker.Engine(cfg).start()
+        docker.EngineFromImage(cfg).start()
     assert "Dagger engine failed to start" in str(execinfo.value)
