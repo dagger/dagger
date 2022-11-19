@@ -12,9 +12,8 @@ describe("NodeJS sdk", function () {
         .exec(["apk", "add", "curl"])
         .exec(["curl", "https://dagger.io/"])
         .stdout()
-        .size()
 
-      assert.ok(result.size > 10000)
+      assert.ok(result.stdout.length > 10000)
     })
   })
 })

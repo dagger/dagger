@@ -63,7 +63,7 @@ func (t Go) Test(ctx context.Context) error {
 				Args:                          []string{"go", "test", "-v", "./..."},
 				ExperimentalPrivilegedNesting: true,
 			}).
-			Stdout().Contents(ctx)
+			Stdout(ctx)
 		if err != nil {
 			err = fmt.Errorf("test failed: %w\n%s", err, output)
 		}

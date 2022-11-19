@@ -78,93 +78,88 @@ func TestContainerBuild(t *testing.T) {
 	defer c.Close()
 
 	contextDir := c.Directory().
-		WithNewFile("main.go", dagger.DirectoryWithNewFileOpts{
-			Contents: `package main
+		WithNewFile("main.go",
+			`package main
 import "fmt"
 import "os"
 func main() {
 	for _, env := range os.Environ() {
 		fmt.Println(env)
 	}
-}`,
-		})
+}`)
 
 	t.Run("default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
-		env, err := c.Container().Build(src).Exec().Stdout().Contents(ctx)
+		env, err := c.Container().Build(src).Exec().Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		env, err := c.Container().Build(src, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).Exec().Stdout().Contents(ctx)
+		}).Exec().Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("Dockerfile", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
-		env, err := c.Container().Build(sub).Exec().Stdout().Contents(ctx)
+		env, err := c.Container().Build(sub).Exec().Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
 
 	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
 		src := contextDir.
-			WithNewFile("subdir/Dockerfile.whee", dagger.DirectoryWithNewFileOpts{
-				Contents: `FROM golang:1.18.2-alpine
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
 WORKDIR /src
 COPY main.go .
 RUN go mod init hello
 RUN go build -o /usr/bin/goenv main.go
 ENV FOO=bar
 CMD goenv
-`,
-			})
+`)
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
 		env, err := c.Container().Build(sub, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).Exec().Stdout().Contents(ctx)
+		}).Exec().Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -281,9 +276,8 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 		Container struct {
 			From struct {
 				Exec struct {
-					Stdout, Stderr struct {
-						Contents string
-					}
+					Stdout string
+					Stderr string
 				}
 			}
 		}
@@ -294,20 +288,15 @@ func TestContainerExecStdoutStderr(t *testing.T) {
 			container {
 				from(address: "alpine:3.16.2") {
 					exec(args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"]) {
-						stdout {
-							contents
-						}
-
-						stderr {
-							contents
-						}
+						stdout
+						stderr
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Exec.Stdout.Contents, "hello\n")
-	require.Equal(t, res.Container.From.Exec.Stderr.Contents, "goodbye\n")
+	require.Equal(t, res.Container.From.Exec.Stdout, "hello\n")
+	require.Equal(t, res.Container.From.Exec.Stderr, "goodbye\n")
 }
 
 func TestContainerExecStdin(t *testing.T) {
@@ -317,9 +306,7 @@ func TestContainerExecStdin(t *testing.T) {
 		Container struct {
 			From struct {
 				Exec struct {
-					Stdout struct {
-						Contents string
-					}
+					Stdout string
 				}
 			}
 		}
@@ -330,15 +317,13 @@ func TestContainerExecStdin(t *testing.T) {
 			container {
 				from(address: "alpine:3.16.2") {
 					exec(args: ["cat"], stdin: "hello") {
-						stdout {
-							contents
-						}
+						stdout
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Exec.Stdout.Contents, "hello")
+	require.Equal(t, res.Container.From.Exec.Stdout, "hello")
 }
 
 func TestContainerExecRedirectStdoutStderr(t *testing.T) {
@@ -389,13 +374,8 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 						redirectStdout: "out",
 						redirectStderr: "err"
 					) {
-						stdout {
-							contents
-						}
-
-						stderr {
-							contents
-						}
+						stdout
+						stderr
 					}
 				}
 			}
@@ -411,9 +391,8 @@ func TestContainerNullStdoutStderr(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				Stdout, Stderr *struct {
-					Contents string
-				}
+				Stdout *string
+				Stderr *string
 			}
 		}
 	}{}
@@ -422,13 +401,8 @@ func TestContainerNullStdoutStderr(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					stdout {
-						contents
-					}
-
-					stderr {
-						contents
-					}
+					stdout
+					stderr
 				}
 			}
 		}`, &res, nil)
@@ -445,9 +419,7 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 			From struct {
 				WithWorkdir struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -460,16 +432,14 @@ func TestContainerExecWithWorkdir(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withWorkdir(path: "/usr") {
 						exec(args: ["pwd"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout.Contents, "/usr\n")
+	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout, "/usr\n")
 }
 
 func TestContainerExecWithUser(t *testing.T) {
@@ -483,9 +453,7 @@ func TestContainerExecWithUser(t *testing.T) {
 				WithUser struct {
 					User string
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -501,9 +469,7 @@ func TestContainerExecWithUser(t *testing.T) {
 					withUser(name: "daemon") {
 						user
 						exec(args: ["whoami"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -512,7 +478,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "", res.Container.From.User)
 		require.Equal(t, "daemon", res.Container.From.WithUser.User)
-		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout)
 	})
 
 	t.Run("user and group name", func(t *testing.T) {
@@ -524,9 +490,7 @@ func TestContainerExecWithUser(t *testing.T) {
 					withUser(name: "daemon:floppy") {
 						user
 						exec(args: ["sh", "-c", "whoami; groups"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -535,7 +499,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "", res.Container.From.User)
 		require.Equal(t, "daemon:floppy", res.Container.From.WithUser.User)
-		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout)
 	})
 
 	t.Run("user ID", func(t *testing.T) {
@@ -547,9 +511,7 @@ func TestContainerExecWithUser(t *testing.T) {
 					withUser(name: "2") {
 						user
 						exec(args: ["whoami"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -558,7 +520,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "", res.Container.From.User)
 		require.Equal(t, "2", res.Container.From.WithUser.User)
-		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+		require.Equal(t, "daemon\n", res.Container.From.WithUser.Exec.Stdout)
 	})
 
 	t.Run("user and group ID", func(t *testing.T) {
@@ -570,9 +532,7 @@ func TestContainerExecWithUser(t *testing.T) {
 					withUser(name: "2:11") {
 						user
 						exec(args: ["sh", "-c", "whoami; groups"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -581,7 +541,7 @@ func TestContainerExecWithUser(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "", res.Container.From.User)
 		require.Equal(t, "2:11", res.Container.From.WithUser.User)
-		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout.Contents)
+		require.Equal(t, "daemon\nfloppy\n", res.Container.From.WithUser.Exec.Stdout)
 	})
 }
 
@@ -595,9 +555,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 				WithEntrypoint struct {
 					Entrypoint []string
 					Exec       struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 					WithEntrypoint struct {
 						Entrypoint []string
@@ -615,9 +573,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 					withEntrypoint(args: ["sh", "-c"]) {
 						entrypoint
 						exec(args: ["echo $HOME"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 
 						withEntrypoint(args: []) {
@@ -630,7 +586,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, res.Container.From.Entrypoint)
 	require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
-	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout.Contents)
+	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout)
 	require.Empty(t, res.Container.From.WithEntrypoint.WithEntrypoint.Entrypoint)
 }
 
@@ -643,9 +599,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 				Entrypoint  []string
 				DefaultArgs []string
 				Exec        struct {
-					Stdout struct {
-						Contents string
-					}
+					Stdout string
 				}
 				WithDefaultArgs struct {
 					Entrypoint  []string
@@ -655,17 +609,13 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 					Entrypoint  []string
 					DefaultArgs []string
 					Exec        struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 					WithDefaultArgs struct {
 						Entrypoint  []string
 						DefaultArgs []string
 						Exec        struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout string
 						}
 					}
 				}
@@ -689,9 +639,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 						defaultArgs
 
 						exec(args: ["echo $HOME"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 
 						withDefaultArgs(args: ["id"]) {
@@ -699,9 +647,7 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 							defaultArgs
 
 							exec(args: []) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -725,14 +671,14 @@ func TestContainerWithDefaultArgs(t *testing.T) {
 	})
 
 	t.Run("with exec args", func(t *testing.T) {
-		require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout.Contents)
+		require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.Exec.Stdout)
 	})
 
 	t.Run("with default args set", func(t *testing.T) {
 		require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.WithDefaultArgs.Entrypoint)
 		require.Equal(t, []string{"id"}, res.Container.From.WithEntrypoint.WithDefaultArgs.DefaultArgs)
 
-		require.Equal(t, "uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)\n", res.Container.From.WithEntrypoint.WithDefaultArgs.Exec.Stdout.Contents)
+		require.Equal(t, "uid=0(root) gid=0(root) groups=0(root),1(bin),2(daemon),3(sys),4(adm),6(disk),10(wheel),11(floppy),20(dialout),26(tape),27(video)\n", res.Container.From.WithEntrypoint.WithDefaultArgs.Exec.Stdout)
 	})
 }
 
@@ -744,9 +690,7 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 			From struct {
 				WithEnvVariable struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -759,16 +703,14 @@ func TestContainerExecWithEnvVariable(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withEnvVariable(name: "FOO", value: "bar") {
 						exec(args: ["env"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout.Contents, "FOO=bar\n")
+	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout, "FOO=bar\n")
 }
 
 func TestContainerVariables(t *testing.T) {
@@ -779,9 +721,7 @@ func TestContainerVariables(t *testing.T) {
 			From struct {
 				EnvVariables []schema.EnvVariable
 				Exec         struct {
-					Stdout struct {
-						Contents string
-					}
+					Stdout string
 				}
 			}
 		}
@@ -796,9 +736,7 @@ func TestContainerVariables(t *testing.T) {
 						value
 					}
 					exec(args: ["env"]) {
-						stdout {
-							contents
-						}
+						stdout
 					}
 				}
 			}
@@ -809,7 +747,7 @@ func TestContainerVariables(t *testing.T) {
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/go"},
 	}, res.Container.From.EnvVariables)
-	require.Contains(t, res.Container.From.Exec.Stdout.Contents, "GOPATH=/go\n")
+	require.Contains(t, res.Container.From.Exec.Stdout, "GOPATH=/go\n")
 }
 
 func TestContainerVariable(t *testing.T) {
@@ -856,9 +794,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 				WithoutEnvVariable struct {
 					EnvVariables []schema.EnvVariable
 					Exec         struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -875,9 +811,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 							value
 						}
 						exec(args: ["env"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -888,7 +822,7 @@ func TestContainerWithoutVariable(t *testing.T) {
 		{Name: "PATH", Value: "/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"},
 		{Name: "GOPATH", Value: "/go"},
 	})
-	require.NotContains(t, res.Container.From.WithoutEnvVariable.Exec.Stdout.Contents, "GOLANG_VERSION")
+	require.NotContains(t, res.Container.From.WithoutEnvVariable.Exec.Stdout, "GOLANG_VERSION")
 }
 
 func TestContainerEnvVariablesReplace(t *testing.T) {
@@ -900,9 +834,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 				WithEnvVariable struct {
 					EnvVariables []schema.EnvVariable
 					Exec         struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -919,9 +851,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 							value
 						}
 						exec(args: ["env"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -933,7 +863,7 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 		{Name: "GOLANG_VERSION", Value: "1.18.2"},
 		{Name: "GOPATH", Value: "/gone"},
 	})
-	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout.Contents, "GOPATH=/gone\n")
+	require.Contains(t, res.Container.From.WithEnvVariable.Exec.Stdout, "GOPATH=/gone\n")
 }
 
 func TestContainerWorkdir(t *testing.T) {
@@ -944,9 +874,7 @@ func TestContainerWorkdir(t *testing.T) {
 			From struct {
 				Workdir string
 				Exec    struct {
-					Stdout struct {
-						Contents string
-					}
+					Stdout string
 				}
 			}
 		}
@@ -958,16 +886,14 @@ func TestContainerWorkdir(t *testing.T) {
 				from(address: "golang:1.18.2-alpine") {
 					workdir
 					exec(args: ["pwd"]) {
-						stdout {
-							contents
-						}
+						stdout
 					}
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.Workdir, "/go")
-	require.Equal(t, res.Container.From.Exec.Stdout.Contents, "/go\n")
+	require.Equal(t, res.Container.From.Exec.Stdout, "/go\n")
 }
 
 func TestContainerWithWorkdir(t *testing.T) {
@@ -979,9 +905,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 				WithWorkdir struct {
 					Workdir string
 					Exec    struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -995,9 +919,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 					withWorkdir(path: "/usr") {
 						workdir
 						exec(args: ["pwd"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -1005,7 +927,7 @@ func TestContainerWithWorkdir(t *testing.T) {
 		}`, &res, nil)
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.WithWorkdir.Workdir, "/usr")
-	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout.Contents, "/usr\n")
+	require.Equal(t, res.Container.From.WithWorkdir.Exec.Stdout, "/usr\n")
 }
 
 func TestContainerWithMountedDirectory(t *testing.T) {
@@ -1040,14 +962,10 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 
 						Exec struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout string
 						}
 					}
 				}
@@ -1060,14 +978,10 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						exec(args: ["cat", "/mnt/some-file"]) {
-							stdout {
-								contents
-							}
+							stdout
 
 							exec(args: ["cat", "/mnt/some-dir/sub-file"]) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -1077,8 +991,8 @@ func TestContainerWithMountedDirectory(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.Exec.Exec.Stdout.Contents)
+	require.Equal(t, "some-content", execRes.Container.From.WithMountedDirectory.Exec.Stdout)
+	require.Equal(t, "sub-content", execRes.Container.From.WithMountedDirectory.Exec.Exec.Stdout)
 }
 
 func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
@@ -1118,9 +1032,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 				WithMountedDirectory struct {
 					Exec struct {
 						Exec struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout string
 						}
 					}
 				}
@@ -1134,9 +1046,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						exec(args: ["sh", "-c", "echo >> /mnt/sub-file; echo -n more-content >> /mnt/sub-file"]) {
 							exec(args: ["cat", "/mnt/sub-file"]) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -1146,7 +1056,7 @@ func TestContainerWithMountedDirectorySourcePath(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "sub-content\nmore-content", execRes.Container.From.WithMountedDirectory.Exec.Exec.Stdout.Contents)
+	require.Equal(t, "sub-content\nmore-content", execRes.Container.From.WithMountedDirectory.Exec.Exec.Stdout)
 }
 
 func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
@@ -1177,23 +1087,15 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
-						Exec struct {
+						Stdout string
+						Exec   struct {
 							Exec struct {
-								Stdout struct {
-									Contents string
-								}
+								Stdout               string
 								WithMountedDirectory struct {
 									Exec struct {
-										Stdout struct {
-											Contents string
-										}
-										Exec struct {
-											Stdout struct {
-												Contents string
-											}
+										Stdout string
+										Exec   struct {
+											Stdout string
 										}
 									}
 								}
@@ -1211,21 +1113,19 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 					withMountedDirectory(path: "/mnt", source: $id) {
 						exec(args: ["cat", "/mnt/some-file"]) {
 							# original content
-							stdout { contents }
-
+							stdout
 							exec(args: ["sh", "-c", "echo >> /mnt/some-file; echo -n more-content >> /mnt/some-file"]) {
 								exec(args: ["cat", "/mnt/some-file"]) {
 									# modified content should propagate
-									stdout { contents }
-
+									stdout
 									withMountedDirectory(path: "/mnt", source: $id) {
 										exec(args: ["cat", "/mnt/some-file"]) {
 											# should be back to the original content
-											stdout { contents }
+											stdout
 
 											exec(args: ["cat", "/mnt/some-file"]) {
 												# original content override should propagate
-												stdout { contents }
+												stdout
 											}
 										}
 									}
@@ -1242,19 +1142,19 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 
 	require.Equal(t,
 		"some-content",
-		execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+		execRes.Container.From.WithMountedDirectory.Exec.Stdout)
 
 	require.Equal(t,
 		"some-content\nmore-content",
-		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Stdout.Contents)
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.Stdout)
 
 	require.Equal(t,
 		"some-content",
-		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Stdout.Contents)
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Stdout)
 
 	require.Equal(t,
 		"some-content",
-		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Exec.Stdout.Contents)
+		execRes.Container.From.WithMountedDirectory.Exec.Exec.Exec.WithMountedDirectory.Exec.Exec.Stdout)
 }
 
 func TestContainerWithMountedFile(t *testing.T) {
@@ -1289,9 +1189,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 			From struct {
 				WithMountedFile struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -1303,9 +1201,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedFile(path: "/mnt/file", source: $id) {
 						exec(args: ["cat", "/mnt/file"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -1314,7 +1210,7 @@ func TestContainerWithMountedFile(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
+	require.Equal(t, "sub-content", execRes.Container.From.WithMountedFile.Exec.Stdout)
 }
 
 func TestContainerWithMountedCache(t *testing.T) {
@@ -1328,9 +1224,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 				WithEnvVariable struct {
 					WithMountedCache struct {
 						Exec struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout string
 						}
 					}
 				}
@@ -1344,9 +1238,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache) {
 							exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/file; cat /mnt/cache/file"]) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -1360,7 +1252,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		"rand":  rand1,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout)
 
 	rand2 := identity.NewID()
 	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
@@ -1368,7 +1260,7 @@ func TestContainerWithMountedCache(t *testing.T) {
 		"rand":  rand2,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout)
 }
 
 func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
@@ -1406,9 +1298,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 				WithEnvVariable struct {
 					WithMountedCache struct {
 						Exec struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout string
 						}
 					}
 				}
@@ -1422,9 +1312,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 					withEnvVariable(name: "RAND", value: $rand) {
 						withMountedCache(path: "/mnt/cache", cache: $cache, source: $init) {
 							exec(args: ["sh", "-c", "echo $RAND >> /mnt/cache/sub-file; cat /mnt/cache/sub-file"]) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -1439,7 +1327,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		"cache": cacheID,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, "initial-content\n"+rand1+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout)
 
 	rand2 := identity.NewID()
 	err = testutil.Query(query, &execRes, &testutil.QueryOptions{Variables: map[string]any{
@@ -1448,7 +1336,7 @@ func TestContainerWithMountedCacheFromDirectory(t *testing.T) {
 		"cache": cacheID,
 	}})
 	require.NoError(t, err)
-	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout.Contents)
+	require.Equal(t, "initial-content\n"+rand1+"\n"+rand2+"\n", execRes.Container.From.WithEnvVariable.WithMountedCache.Exec.Stdout)
 }
 
 func TestContainerWithMountedTemp(t *testing.T) {
@@ -1459,9 +1347,7 @@ func TestContainerWithMountedTemp(t *testing.T) {
 			From struct {
 				WithMountedTemp struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -1473,16 +1359,14 @@ func TestContainerWithMountedTemp(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedTemp(path: "/mnt/tmp") {
 						exec(args: ["grep", "/mnt/tmp", "/proc/mounts"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
 			}
 		}`, &execRes, nil)
 	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedTemp.Exec.Stdout.Contents, "tmpfs /mnt/tmp tmpfs")
+	require.Contains(t, execRes.Container.From.WithMountedTemp.Exec.Stdout, "tmpfs /mnt/tmp tmpfs")
 }
 
 func TestContainerMountsWithoutMount(t *testing.T) {
@@ -1520,15 +1404,11 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 					WithMountedDirectory struct {
 						Mounts []string
 						Exec   struct {
-							Stdout struct {
-								Contents string
-							}
+							Stdout       string
 							WithoutMount struct {
 								Mounts []string
 								Exec   struct {
-									Stdout struct {
-										Contents string
-									}
+									Stdout string
 								}
 							}
 						}
@@ -1546,15 +1426,11 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 						withMountedDirectory(path: "/mnt/dir", source: $id) {
 							mounts
 							exec(args: ["ls", "/mnt/dir"]) {
-								stdout {
-									contents
-								}
+								stdout
 								withoutMount(path: "/mnt/dir") {
 									mounts
 									exec(args: ["ls", "/mnt/dir"]) {
-										stdout {
-											contents
-										}
+										stdout
 									}
 								}
 							}
@@ -1568,8 +1444,8 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.Mounts)
 	require.Equal(t, []string{"/mnt/tmp", "/mnt/dir"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Mounts)
-	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.Stdout.Contents)
-	require.Equal(t, "", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout.Contents)
+	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.Stdout)
+	require.Equal(t, "", execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Exec.Stdout)
 	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Exec.WithoutMount.Mounts)
 }
 
@@ -1579,13 +1455,9 @@ func TestContainerReplacedMounts(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	lower := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "lower-content",
-	})
+	lower := c.Directory().WithNewFile("some-file", "lower-content")
 
-	upper := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "upper-content",
-	})
+	upper := c.Directory().WithNewFile("some-file", "upper-content")
 
 	ctr := c.Container().
 		From("alpine:3.16.2").
@@ -1598,7 +1470,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 
 		out, err := ctr.Exec(dagger.ContainerExecOpts{
 			Args: []string{"cat", "/mnt/dir/some-file"},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "lower-content", out)
 	})
@@ -1612,7 +1484,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 
 		out, err := replaced.Exec(dagger.ContainerExecOpts{
 			Args: []string{"cat", "/mnt/dir/some-file"},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "upper-content", out)
 	})
@@ -1624,9 +1496,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 		require.Empty(t, mnts)
 	})
 
-	clobberedDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "clobbered-content",
-	})
+	clobberedDir := c.Directory().WithNewFile("some-file", "clobbered-content")
 	clobbered := replaced.WithMountedDirectory("/mnt", clobberedDir)
 
 	t.Run("replacing parent of a mount clobbers child", func(t *testing.T) {
@@ -1636,14 +1506,12 @@ func TestContainerReplacedMounts(t *testing.T) {
 
 		out, err := clobbered.Exec(dagger.ContainerExecOpts{
 			Args: []string{"cat", "/mnt/some-file"},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "clobbered-content", out)
 	})
 
-	clobberedSubDir := c.Directory().WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-		Contents: "clobbered-sub-content",
-	})
+	clobberedSubDir := c.Directory().WithNewFile("some-file", "clobbered-sub-content")
 	clobberedSub := clobbered.WithMountedDirectory("/mnt/dir", clobberedSubDir)
 
 	t.Run("restoring mount under clobbered mount", func(t *testing.T) {
@@ -1653,7 +1521,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 
 		out, err := clobberedSub.Exec(dagger.ContainerExecOpts{
 			Args: []string{"cat", "/mnt/dir/some-file"},
-		}).Stdout().Contents(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "clobbered-sub-content", out)
 	})
@@ -1728,9 +1596,7 @@ func TestContainerDirectory(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -1742,9 +1608,7 @@ func TestContainerDirectory(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						exec(args: ["cat", "/mnt/dir/another-file"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -1754,7 +1618,7 @@ func TestContainerDirectory(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "hello\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout)
 }
 
 func TestContainerDirectoryErrors(t *testing.T) {
@@ -1917,9 +1781,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -1931,9 +1793,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						exec(args: ["cat", "/mnt/dir/sub-file"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -1943,7 +1803,7 @@ func TestContainerDirectorySourcePath(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "sub-content\nmore-content\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout)
 }
 
 func TestContainerFile(t *testing.T) {
@@ -1993,9 +1853,7 @@ func TestContainerFile(t *testing.T) {
 			From struct {
 				WithMountedFile struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -2007,9 +1865,7 @@ func TestContainerFile(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedFile(path: "/mnt/file", source: $id) {
 						exec(args: ["cat", "/mnt/file"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -2019,7 +1875,7 @@ func TestContainerFile(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "some-content-appended", execRes.Container.From.WithMountedFile.Exec.Stdout.Contents)
+	require.Equal(t, "some-content-appended", execRes.Container.From.WithMountedFile.Exec.Stdout)
 }
 
 func TestContainerFileErrors(t *testing.T) {
@@ -2144,9 +2000,7 @@ func TestContainerFSDirectory(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -2158,9 +2012,7 @@ func TestContainerFSDirectory(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/etc", source: $id) {
 						exec(args: ["cat", "/mnt/etc/alpine-release"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -2170,7 +2022,7 @@ func TestContainerFSDirectory(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "3.16.2\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "3.16.2\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout)
 }
 
 func TestContainerRelativePaths(t *testing.T) {
@@ -2275,9 +2127,7 @@ func TestContainerRelativePaths(t *testing.T) {
 			From struct {
 				WithMountedDirectory struct {
 					Exec struct {
-						Stdout struct {
-							Contents string
-						}
+						Stdout string
 					}
 				}
 			}
@@ -2289,9 +2139,7 @@ func TestContainerRelativePaths(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedDirectory(path: "/mnt/dir", source: $id) {
 						exec(args: ["ls", "/mnt/dir"]) {
-							stdout {
-								contents
-							}
+							stdout
 						}
 					}
 				}
@@ -2301,7 +2149,7 @@ func TestContainerRelativePaths(t *testing.T) {
 		}})
 	require.NoError(t, err)
 
-	require.Equal(t, "another-file\nsome-file\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout.Contents)
+	require.Equal(t, "another-file\nsome-file\n", execRes.Container.From.WithMountedDirectory.Exec.Stdout)
 }
 
 func TestContainerMultiFrom(t *testing.T) {
@@ -2331,9 +2179,7 @@ func TestContainerMultiFrom(t *testing.T) {
 						From struct {
 							Exec struct {
 								Exec struct {
-									Stdout struct {
-										Contents string
-									}
+									Stdout string
 								}
 							}
 						}
@@ -2351,9 +2197,7 @@ func TestContainerMultiFrom(t *testing.T) {
 							from(address: "golang:1.18.2-alpine") {
 								exec(args: ["sh", "-c", "go version >> /mnt/versions"]) {
 									exec(args: ["cat", "/mnt/versions"]) {
-										stdout {
-											contents
-										}
+										stdout
 									}
 								}
 							}
@@ -2365,8 +2209,8 @@ func TestContainerMultiFrom(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents, "v18.10.0\n")
-	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout.Contents, "go version go1.18.2")
+	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout, "v18.10.0\n")
+	require.Contains(t, execRes.Container.From.WithMountedDirectory.Exec.From.Exec.Exec.Stdout, "go version go1.18.2")
 }
 
 func TestContainerPublish(t *testing.T) {
@@ -2407,7 +2251,7 @@ func TestExecFromScratch(t *testing.T) {
 		WithMountedFile("/busybox", c.Container().From("busybox:musl").File("/bin/busybox")).
 		Exec(dagger.ContainerExecOpts{Args: []string{"/busybox"}})
 
-	_, err = execBusybox.Stdout().Contents(ctx)
+	_, err = execBusybox.Stdout(ctx)
 	require.NoError(t, err)
 	_, err = execBusybox.Publish(ctx, "127.0.0.1:5000/testexecfromscratch:latest")
 	require.NoError(t, err)
@@ -2439,7 +2283,7 @@ func TestContainerMultipleMounts(t *testing.T) {
 		Args: []string{"cat", "/example/one", "/example/two", "/example/three"},
 	})
 
-	out, err := build.Stdout().Contents(ctx)
+	out, err := build.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "123", out)
 }

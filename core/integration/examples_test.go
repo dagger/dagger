@@ -25,9 +25,7 @@ func TestExtensionAlpine(t *testing.T) {
 		Alpine struct {
 			Build struct {
 				Exec struct {
-					Stdout struct {
-						Contents string
-					}
+					Stdout string
 				}
 			}
 		}
@@ -40,9 +38,7 @@ func TestExtensionAlpine(t *testing.T) {
 					alpine {
 						build(pkgs: ["curl"]) {
 							exec(args: ["curl", "--version"]) {
-								stdout {
-									contents
-								}
+								stdout
 							}
 						}
 					}
@@ -51,7 +47,7 @@ func TestExtensionAlpine(t *testing.T) {
 		resp,
 	)
 	require.NoError(t, err)
-	require.NotEmpty(t, data.Alpine.Build.Exec.Stdout.Contents)
+	require.NotEmpty(t, data.Alpine.Build.Exec.Stdout)
 }
 
 func TestExtensionNetlify(t *testing.T) {

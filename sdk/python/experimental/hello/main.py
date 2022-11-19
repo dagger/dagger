@@ -20,7 +20,6 @@ class Hello:
                 .exec(["apk", "add", "curl"])
                 .exec(["curl", "https://dagger.io/"])
                 .stdout()
-                .contents()
             )
 
 

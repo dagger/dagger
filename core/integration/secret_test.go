@@ -19,7 +19,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 			From struct {
 				WithSecretVariable struct {
 					Exec struct {
-						Stdout struct{ Contents string }
+						Stdout string
 					}
 				}
 			}
@@ -32,7 +32,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
 						exec(args: ["env"]) {
-							stdout { contents }
+							stdout
 						}
 					}
 				}
@@ -41,7 +41,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 			"secret": secretID,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, envRes.Container.From.WithSecretVariable.Exec.Stdout.Contents, "SECRET=some-content\n")
+	require.Contains(t, envRes.Container.From.WithSecretVariable.Exec.Stdout, "SECRET=some-content\n")
 }
 
 func TestSecretMountFromFile(t *testing.T) {
@@ -54,7 +54,7 @@ func TestSecretMountFromFile(t *testing.T) {
 			From struct {
 				WithMountedSecret struct {
 					Exec struct {
-						Stdout struct{ Contents string }
+						Stdout string
 					}
 				}
 			}
@@ -67,7 +67,7 @@ func TestSecretMountFromFile(t *testing.T) {
 				from(address: "alpine:3.16.2") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						exec(args: ["cat", "/sekret"]) {
-							stdout { contents }
+							stdout
 						}
 					}
 				}
@@ -76,7 +76,7 @@ func TestSecretMountFromFile(t *testing.T) {
 			"secret": secretID,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, envRes.Container.From.WithMountedSecret.Exec.Stdout.Contents, "some-content")
+	require.Contains(t, envRes.Container.From.WithMountedSecret.Exec.Stdout, "some-content")
 }
 
 func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
@@ -91,7 +91,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 				WithMountedSecret struct {
 					WithMountedFile struct {
 						Exec struct {
-							Stdout struct{ Contents string }
+							Stdout string
 						}
 						File struct {
 							Contents string
@@ -109,7 +109,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withMountedFile(path: "/sekret", source: $file) {
 							exec(args: ["cat", "/sekret"]) {
-								stdout { contents }
+								stdout
 							}
 							file(path: "/sekret") {
 								contents
@@ -123,7 +123,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 			"file":   fileID,
 		}})
 	require.NoError(t, err)
-	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.Exec.Stdout.Contents, "some-secret")
+	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.Exec.Stdout, "some-secret")
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
 
@@ -134,7 +134,7 @@ func TestSecretPlaintext(t *testing.T) {
 	defer c.Close()
 
 	plaintext, err := c.Directory().
-		WithNewFile("TOP_SECRET", dagger.DirectoryWithNewFileOpts{Contents: "hi"}).File("TOP_SECRET").Secret().Plaintext(ctx)
+		WithNewFile("TOP_SECRET", "hi").File("TOP_SECRET").Secret().Plaintext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hi", plaintext)
 }

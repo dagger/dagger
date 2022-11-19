@@ -38,7 +38,7 @@ func main() {
 			Exec(dagger.ContainerExecOpts{
 				Args: []string{"uname", "-m"},
 			}).
-			Stdout().Contents(ctx)
+			Stdout(ctx)
 		if err != nil {
 			panic(err)
 		}

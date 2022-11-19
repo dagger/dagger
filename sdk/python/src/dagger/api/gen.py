@@ -272,23 +272,37 @@ class Container(Type):
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
 
-    def stderr(self) -> "File":
+    async def stderr(self) -> str | None:
         """The error stream of the last executed command.
 
         Null if no command has been executed.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("stderr", _args)
-        return File(_ctx)
+        return await _ctx.execute(str | None)
 
-    def stdout(self) -> "File":
+    async def stdout(self) -> str | None:
         """The output stream of the last executed command.
 
         Null if no command has been executed.
+
+        Returns
+        -------
+        str | None
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
         """
         _args: list[Arg] = []
         _ctx = self._select("stdout", _args)
-        return File(_ctx)
+        return await _ctx.execute(str | None)
 
     async def user(self) -> str | None:
         """The user to be set for all commands
@@ -569,11 +583,11 @@ class Directory(Type):
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
 
-    def with_new_file(self, path: str, contents: str | None = None) -> "Directory":
+    def with_new_file(self, path: str, contents: str) -> "Directory":
         """This directory plus a new file written at the given path"""
         _args = [
             Arg("path", path),
-            Arg("contents", contents, None),
+            Arg("contents", contents),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)

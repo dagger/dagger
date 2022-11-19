@@ -332,24 +332,22 @@ func (r *Container) Rootfs() *Directory {
 
 // The error stream of the last executed command.
 // Null if no command has been executed.
-func (r *Container) Stderr() *File {
+func (r *Container) Stderr(ctx context.Context) (string, error) {
 	q := r.q.Select("stderr")
 
-	return &File{
-		q: q,
-		c: r.c,
-	}
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The output stream of the last executed command.
 // Null if no command has been executed.
-func (r *Container) Stdout() *File {
+func (r *Container) Stdout(ctx context.Context) (string, error) {
 	q := r.q.Select("stdout")
 
-	return &File{
-		q: q,
-		c: r.c,
-	}
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The user to be set for all commands
@@ -726,22 +724,11 @@ func (r *Directory) WithNewDirectory(path string) *Directory {
 	}
 }
 
-// DirectoryWithNewFileOpts contains options for Directory.WithNewFile
-type DirectoryWithNewFileOpts struct {
-	Contents string
-}
-
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, opts ...DirectoryWithNewFileOpts) *Directory {
+func (r *Directory) WithNewFile(path string, contents string) *Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
-	// `contents` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Contents) {
-			q = q.Arg("contents", opts[i].Contents)
-			break
-		}
-	}
+	q = q.Arg("contents", contents)
 
 	return &Directory{
 		q: q,

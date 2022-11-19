@@ -20,9 +20,7 @@ func TestDirectory(t *testing.T) {
 	dir := c.Directory()
 
 	contents, err := dir.
-		WithNewFile("/hello.txt", DirectoryWithNewFileOpts{
-			Contents: "world",
-		}).
+		WithNewFile("/hello.txt", "world").
 		File("/hello.txt").
 		Contents(ctx)
 
@@ -82,7 +80,7 @@ func TestContainer(t *testing.T) {
 
 	stdout, err := alpine.Exec(ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", stdout)
 

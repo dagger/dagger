@@ -24,9 +24,7 @@ func copyEmbedDir(e fs.FS, dir *dagger.Directory) (*dagger.Directory, error) {
 			return err
 		}
 
-		dir = dir.WithNewFile(path, dagger.DirectoryWithNewFileOpts{
-			Contents: string(content),
-		})
+		dir = dir.WithNewFile(path, string(content))
 
 		return nil
 	})
@@ -62,7 +60,7 @@ func main() {
 	// List files
 	out, err := container.Exec(dagger.ContainerExecOpts{
 		Args: []string{"ls", "-lR", "/embed/"},
-	}).Stdout().Contents(ctx)
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}

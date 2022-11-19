@@ -10,6 +10,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -55,25 +56,24 @@ func (t Python) Test(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		outputs := c.Directory()
-
 		versions := []string{"3.10", "3.11"}
 
+		eg, gctx := errgroup.WithContext(ctx)
 		for _, version := range versions {
-			test := pythonBase(c, version).
-				WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-				Exec(dagger.ContainerExecOpts{
-					Args:                          []string{"poe", "test"},
-					ExperimentalPrivilegedNesting: true,
-				})
-
-			outputs = outputs.WithFile(fmt.Sprintf("%s-stdout", version), test.Stdout())
+			version := version
+			eg.Go(func() error {
+				_, err := pythonBase(c, version).
+					WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
+					WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+					Exec(dagger.ContainerExecOpts{
+						Args:                          []string{"poe", "test"},
+						ExperimentalPrivilegedNesting: true,
+					}).ExitCode(gctx)
+				return err
+			})
 		}
 
-		_, err := outputs.Entries(ctx)
-
-		return err
+		return eg.Wait()
 	})
 }
 

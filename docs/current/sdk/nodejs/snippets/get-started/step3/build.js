@@ -7,7 +7,7 @@ connect(async (client) => {
   let node = await client.container().from("node:16").exec(["node", "-v"])
 
   // execute
-  let version = await node.stdout().contents()
+  let version = await node.stdout()
 
   // print output
   console.log("Hello from Dagger and Node " + version.contents)

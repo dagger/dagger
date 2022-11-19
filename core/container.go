@@ -835,7 +835,24 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 }
 
 func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
-	file, err := container.MetaFile(ctx, gw, "exitCode")
+	content, err := container.MetaFileContents(ctx, gw, "exitCode")
+	if err != nil {
+		return nil, err
+	}
+	if content == nil {
+		return nil, nil
+	}
+
+	exitCode, err := strconv.Atoi(*content)
+	if err != nil {
+		return nil, err
+	}
+
+	return &exitCode, nil
+}
+
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
+	file, err := container.MetaFile(ctx, gw, filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -849,12 +866,12 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 		return nil, err
 	}
 
-	exitCode, err := strconv.Atoi(string(content))
+	strContent := string(content)
 	if err != nil {
 		return nil, err
 	}
 
-	return &exitCode, nil
+	return &strContent, nil
 }
 
 func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {

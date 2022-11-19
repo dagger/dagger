@@ -426,32 +426,34 @@ export class Container extends BaseClient {
    * The error stream of the last executed command.
    * Null if no command has been executed.
    */
-  stderr(): File {
-    return new File({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "stderr",
-        },
-      ],
-      host: this.clientHost,
-    })
+  async stderr(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: "stderr",
+      },
+    ]
+
+    const response: Awaited<Record<string, string>> = await this._compute()
+
+    return response
   }
 
   /**
    * The output stream of the last executed command.
    * Null if no command has been executed.
    */
-  stdout(): File {
-    return new File({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "stdout",
-        },
-      ],
-      host: this.clientHost,
-    })
+  async stdout(): Promise<Record<string, string>> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: "stdout",
+      },
+    ]
+
+    const response: Awaited<Record<string, string>> = await this._compute()
+
+    return response
   }
 
   /**
@@ -907,7 +909,7 @@ export class Directory extends BaseClient {
   /**
    * This directory plus a new file written at the given path
    */
-  withNewFile(path: string, contents?: string): Directory {
+  withNewFile(path: string, contents: string): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,

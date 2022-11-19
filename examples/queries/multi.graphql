@@ -3,20 +3,12 @@
     from(address: "alpine") {
       exec(args: ["apk", "add", "curl"]) {
         dagger: exec(args: ["curl", "https://dagger.io/"]) {
-          stderr {
-            contents
-          }
-          stdout {
-            contents
-          }
+          stderr
+          stdout
         }
         github: exec(args: ["curl", "-L", "https://github.com/"]) {
-          stderr {
-            contents
-          }
-          stdout {
-            contents
-          }
+          stderr
+          stdout
         }
       }
     }
