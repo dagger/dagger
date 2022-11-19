@@ -44,7 +44,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 	return nil
 }
 
-func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemReadTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, c *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err

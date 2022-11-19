@@ -20,7 +20,7 @@ func init() {
 type readFileTask struct {
 }
 
-func (t *readFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *readFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -31,8 +31,6 @@ func (t *readFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *so
 	if err != nil {
 		return nil, err
 	}
-
-	dgr := s.Client
 
 	file, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).File(path).Contents(ctx)
 

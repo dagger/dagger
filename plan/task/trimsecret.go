@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"dagger.io/dagger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/engine/utils"
 	"go.dagger.io/dagger/plancontext"
@@ -17,14 +18,14 @@ func init() {
 type trimSecretTask struct {
 }
 
-func (t *trimSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *trimSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, client *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	// input, err := pctx.Secrets.FromValue(v.Lookup("input"))
 	secretid, err := utils.GetSecretId(v.Lookup("input"))
 	if err != nil {
 		return nil, err
 	}
 
-	plaintext, err := s.Client.Secret(secretid).Plaintext(ctx)
+	plaintext, err := client.Secret(secretid).Plaintext(ctx)
 	if err != nil {
 		return nil, err
 	}

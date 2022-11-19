@@ -23,7 +23,7 @@ func init() {
 type clientFilesystemWriteTask struct {
 }
 
-func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientFilesystemWriteTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, c *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	path, err := clientFSPath(v.Lookup("path"))
 	if err != nil {
 		return nil, err

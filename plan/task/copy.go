@@ -18,10 +18,8 @@ func init() {
 type copyTask struct {
 }
 
-func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	var err error
-
-	// return nil, err
 
 	// input, err := pctx.FS.FromValue(v.Lookup("input"))
 	// if err != nil {
@@ -67,8 +65,6 @@ func (t *copyTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	if err := v.Decode(&filters); err != nil {
 		return nil, err
 	}
-
-	dgr := s.Client
 
 	sourceDir := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(contentsFsid)}).Directory(sourcePath)
 

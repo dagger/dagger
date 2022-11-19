@@ -6,6 +6,7 @@ import (
 	"errors"
 
 	"cuelang.org/go/cue"
+	"dagger.io/dagger"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/engine/utils"
@@ -21,7 +22,7 @@ func init() {
 type decodeSecretTask struct {
 }
 
-func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, client *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("decoding secret")
 
@@ -30,7 +31,7 @@ func (c *decodeSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s
 	if err != nil {
 		return nil, err
 	}
-	inputSecret := s.Client.Secret(secretid)
+	inputSecret := client.Secret(secretid)
 
 	format, err := v.Lookup("format").String()
 	if err != nil {

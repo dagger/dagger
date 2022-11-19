@@ -18,9 +18,7 @@ func init() {
 type diffTask struct {
 }
 
-func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	dgr := s.Client
-
+func (t *diffTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	lowerFSID, err := utils.GetFSId(v.Lookup("lower"))
 
 	if err != nil {

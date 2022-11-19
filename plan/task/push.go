@@ -19,7 +19,7 @@ func init() {
 type pushTask struct {
 }
 
-func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	// lg := log.Ctx(ctx)
 
 	rawDest, err := v.Lookup("dest").String()
@@ -92,8 +92,6 @@ func (c *pushTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// 	return nil, fmt.Errorf("image push target %q did not return an image digest", dest.String())
 	// }
 	// imageRef := fmt.Sprintf("%s@%s", resp.ExporterResponse["image.name"], digest)
-
-	dgr := s.Client
 
 	// TODO: I need a digest back.
 

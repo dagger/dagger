@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"dagger.io/dagger"
 	"github.com/rs/zerolog/log"
 	"github.com/sergi/go-diff/diffmatchpatch"
 	"go.dagger.io/dagger/compiler"
@@ -21,7 +22,7 @@ func init() {
 type transformSecretTask struct {
 }
 
-func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context, solver *solver.Solver, client *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 	lg.Debug().Msg("transforming secret")
 
@@ -32,7 +33,7 @@ func (c *transformSecretTask) Run(ctx context.Context, pctx *plancontext.Context
 		return nil, err
 	}
 
-	inputSecretPlaintext, err := solver.Client.Secret(secretid).Plaintext(ctx)
+	inputSecretPlaintext, err := client.Secret(secretid).Plaintext(ctx)
 	if err != nil {
 		return nil, err
 	}

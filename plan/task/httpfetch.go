@@ -17,7 +17,7 @@ func init() {
 type httpFetchTask struct {
 }
 
-func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	var httpFetch struct {
 		Source      string
 		Checksum    string
@@ -68,7 +68,6 @@ func (c *httpFetchTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	// 	return nil, err
 	// }
 
-	dgr := s.Client
 	file := dgr.HTTP(httpFetch.Source)
 
 	// TODO: Remove this (meant to force the download)

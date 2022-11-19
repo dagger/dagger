@@ -17,7 +17,7 @@ func init() {
 type rmTask struct {
 }
 
-func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	// input, err := pctx.FS.FromValue(v.Lookup("input"))
 	// if err != nil {
 	// 	return nil, err
@@ -49,8 +49,6 @@ func (r *rmTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.S
 	if err := v.Decode(&rmOption); err != nil {
 		return nil, err
 	}
-
-	dgr := s.Client
 
 	inputDir := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(inputFsid)})
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"dagger.io/dagger"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/plan/task"
 	"go.dagger.io/dagger/plancontext"
@@ -25,6 +26,7 @@ type Runner struct {
 	pctx     *plancontext.Context
 	target   cue.Path
 	s        *solver.Solver
+	client   *dagger.Client
 	tasks    sync.Map
 	dryRun   bool
 	computed *compiler.Value
@@ -32,11 +34,12 @@ type Runner struct {
 	l        sync.Mutex
 }
 
-func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver, dryRun bool) *Runner {
+func NewRunner(pctx *plancontext.Context, target cue.Path, s *solver.Solver, c *dagger.Client, dryRun bool) *Runner {
 	return &Runner{
 		pctx:     pctx,
 		target:   target,
 		s:        s,
+		client:   c,
 		dryRun:   dryRun,
 		computed: compiler.NewValue(),
 		mirror:   compiler.NewValue(),
@@ -185,7 +188,7 @@ func (r *Runner) taskFunc(flowVal cue.Value) (cueflow.Runner, error) {
 		}
 
 		start := time.Now()
-		result, err := handler.Run(ctx, r.pctx, r.s, compiler.Wrap(t.Value()))
+		result, err := handler.Run(ctx, r.pctx, r.s, r.client, compiler.Wrap(t.Value()))
 		if err != nil {
 			// FIXME: this should use errdefs.IsCanceled(err)
 			if strings.Contains(err.Error(), "context canceled") {

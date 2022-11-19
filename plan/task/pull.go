@@ -20,7 +20,7 @@ func init() {
 type pullTask struct {
 }
 
-func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	// lg := log.Ctx(ctx)
 
 	rawRef, err := v.Lookup("source").String()
@@ -112,20 +112,87 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// 	return nil, err
 	// }
 
-	dgr := s.Client
-
 	ctr := dgr.Container().From(rawRef)
 	fsid, err := ctr.FS().ID(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	// entrypoint, err := ctr.Entrypoint(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// workdir, err := ctr.Workdir(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// ctrEnvs, err := ctr.EnvVariables(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// envs := map[string]string{}
+	// // ctr.
+
+	// for _, env := range ctrEnvs {
+	// 	name, err := env.Name(ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	val, err := env.Value(ctx)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	envs[name] = val
+	// }
+
+	// cmd, err := ctr.DefaultArgs(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// user, err := ctr.User(ctx)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// imgConfig := ImageConfig{
+	// 	Entrypoint: entrypoint,
+	// 	WorkingDir: workdir,
+	// 	// Env:        envs,
+	// 	Cmd:  cmd,
+	// 	User: user,
+	// }
+
+	imgConfig, err := imageConfig(ctx, ctr)
+
+	// return val, err
+	return compiler.NewValue().FillFields(map[string]interface{}{
+		"output": utils.NewFS(dagger.DirectoryID(fsid)),
+		// "digest": digest,
+		"config": imgConfig,
+	})
+}
+
+func imageConfig(ctx context.Context, ctr *dagger.Container) (*ImageConfig, error) {
+	var config *ImageConfig
 	entrypoint, err := ctr.Entrypoint(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	workdir, err := ctr.Workdir(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd, err := ctr.DefaultArgs(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	user, err := ctr.User(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -149,17 +216,7 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// 	envs[name] = val
 	// }
 
-	cmd, err := ctr.DefaultArgs(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	user, err := ctr.User(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	imgConfig := ImageConfig{
+	config = &ImageConfig{
 		Entrypoint: entrypoint,
 		WorkingDir: workdir,
 		// Env:        envs,
@@ -167,10 +224,5 @@ func (c *pullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 		User: user,
 	}
 
-	// return val, err
-	return compiler.NewValue().FillFields(map[string]interface{}{
-		"output": utils.NewFS(dagger.DirectoryID(fsid)),
-		// "digest": digest,
-		"config": imgConfig,
-	})
+	return config, nil
 }

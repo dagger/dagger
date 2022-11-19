@@ -18,9 +18,7 @@ func init() {
 type mkdirTask struct {
 }
 
-func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
-	dgr := s.Client
-
+func (t *mkdirTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	empty := dgr.Directory()
 
 	path, err := v.Lookup("path").String()

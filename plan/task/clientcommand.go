@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cuelang.org/go/cue"
+	"dagger.io/dagger"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/engine/utils"
@@ -24,7 +25,7 @@ func init() {
 type clientCommandTask struct {
 }
 
-func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientCommandTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, c *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	var opts struct {
 		Name string
 		Args []string

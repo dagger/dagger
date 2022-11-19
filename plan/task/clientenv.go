@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"cuelang.org/go/cue"
+	"dagger.io/dagger"
 	"github.com/rs/zerolog/log"
 	"go.dagger.io/dagger/compiler"
 	"go.dagger.io/dagger/engine/utils"
@@ -20,7 +21,7 @@ func init() {
 type clientEnvTask struct {
 }
 
-func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, client *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	log.Ctx(ctx).Debug().Msg("loading environment variables")
 
 	fields, err := v.Fields(cue.Optional(true))
@@ -44,7 +45,7 @@ func (t clientEnvTask) Run(ctx context.Context, pctx *plancontext.Context, s *so
 			return nil, fmt.Errorf("environment variable %q not set", envvar)
 		case utils.IsSecretValue(val):
 			{
-				secretid, err := s.Client.Host().EnvVariable(envvar).Secret().ID(ctx)
+				secretid, err := client.Host().EnvVariable(envvar).Secret().ID(ctx)
 				if err != nil {
 					return nil, err
 				}

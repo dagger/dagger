@@ -22,7 +22,7 @@ func init() {
 type exportTask struct {
 }
 
-func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	// dir := pctx.TempDirs.Get(v.Path().String())
@@ -62,7 +62,6 @@ func (t exportTask) Run(ctx context.Context, pctx *plancontext.Context, s *solve
 	// if err != nil {
 	// 	return nil, err
 	// }
-	dgr := s.Client
 
 	ctr := dgr.Container().WithFS(dgr.Directory(dagger.DirectoryOpts{ID: fsid}))
 

@@ -18,7 +18,7 @@ func init() {
 type newSecretTask struct {
 }
 
-func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	path, err := v.Lookup("path").String()
 	if err != nil {
 		return nil, err
@@ -29,8 +29,6 @@ func (t *newSecretTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	if err != nil {
 		return nil, err
 	}
-
-	dgr := s.Client
 
 	secret := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).File(path).Secret()
 

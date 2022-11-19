@@ -20,7 +20,7 @@ func init() {
 type writeFileTask struct {
 }
 
-func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	var str string
 	var err error
 
@@ -56,8 +56,6 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, s *s
 	if err != nil {
 		return nil, err
 	}
-
-	dgr := s.Client
 
 	newFSID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).WithNewFile(path, dagger.DirectoryWithNewFileOpts{
 		Contents: str,

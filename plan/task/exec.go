@@ -20,7 +20,7 @@ func init() {
 type execTask struct {
 }
 
-func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	common, err := parseCommon(pctx, v)
 	if err != nil {
 		return nil, err
@@ -47,8 +47,6 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver
 	// for _, a := range common.args {
 	// 	args = append(args, fmt.Sprintf("%q", a))
 	// }
-
-	dgr := s.Client
 
 	ctr := dgr.Container().WithFS(dgr.Directory(dagger.DirectoryOpts{ID: common.FSID}))
 

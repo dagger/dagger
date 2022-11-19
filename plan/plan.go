@@ -230,7 +230,7 @@ func (p *Plan) Do(ctx context.Context, path cue.Path, s *solver.Solver) error {
 	defer client.Close()
 	s.Client = client
 
-	r := NewRunner(p.context, path, s, p.config.DryRun)
+	r := NewRunner(p.context, path, s, client, p.config.DryRun)
 	final, err := r.Run(ctx, p.source)
 	if err != nil {
 		return err

@@ -51,7 +51,7 @@ func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *c
 	return nil
 }
 
-func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	lg := log.Ctx(ctx)
 
 	path, err := v.Lookup("path").AbsPath()
@@ -70,7 +70,7 @@ func (c *sourceTask) Run(ctx context.Context, pctx *plancontext.Context, s *solv
 
 	lg.Debug().Str("path", path).Msg("loading local directory")
 
-	dirId, err := s.Client.Host().Directory(path, dagger.HostDirectoryOpts{
+	dirId, err := dgr.Host().Directory(path, dagger.HostDirectoryOpts{
 		Include: source.Include,
 		Exclude: source.Exclude,
 	}).ID(ctx)

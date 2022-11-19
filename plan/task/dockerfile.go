@@ -19,7 +19,7 @@ func init() {
 
 type dockerfileTask struct{}
 
-func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	// lg := log.Ctx(ctx)
 	// auths, err := v.Lookup("auth").Fields()
 	// if err != nil {
@@ -149,8 +149,6 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	// 	return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	// }
 
-	dgr := s.Client
-
 	buildcontext := dgr.Directory(dagger.DirectoryOpts{ID: fsid})
 
 	var filename string
@@ -176,36 +174,6 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, s *
 	container := dgr.Container().Build(buildcontext, dagger.ContainerBuildOpts{
 		Dockerfile: filename,
 	})
-	// res := struct {
-	// 	Core struct {
-	// 		Filesystem struct {
-	// 			Dockerbuild struct {
-	// 				ID string
-	// 			}
-	// 		}
-	// 	}
-	// }{}
-
-	// err = ectx.Client.MakeRequest(ctx,
-	// 	&graphql.Request{
-	// 		Query: `
-	// 		query ($fsid: FSID!, $dockerfile: String) {
-	// 			core {
-	// 				filesystem(id: $fsid) {
-	// 					dockerbuild(dockerfile: $dockerfile) {
-	// 						id
-	// 					}
-	// 				}
-	// 			}
-	// 		}
-	// 		`,
-	// 		Variables: &map[string]interface{}{
-	// 			"fsid":       fsid,
-	// 			"dockerfile": filename,
-	// 		},
-	// 	},
-	// 	&graphql.Response{Data: &res},
-	// )
 
 	dirID, err := container.FS().ID(ctx)
 	if err != nil {

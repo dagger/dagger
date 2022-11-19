@@ -17,7 +17,7 @@ func init() {
 type gitPullTask struct {
 }
 
-func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *solver.Solver, v *compiler.Value) (*compiler.Value, error) {
+func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver.Solver, dgr *dagger.Client, v *compiler.Value) (*compiler.Value, error) {
 	var gitPull struct {
 		Remote     string
 		Ref        string
@@ -86,10 +86,8 @@ func (c *gitPullTask) Run(ctx context.Context, pctx *plancontext.Context, s *sol
 	// 	return nil, err
 	// }
 
-	core := s.Client
-
 	// TODO: How should I differentiate between branches and tags?
-	repo := core.Git(gitPull.Remote).Branch(gitPull.Ref).Tree()
+	repo := dgr.Git(gitPull.Remote).Branch(gitPull.Ref).Tree()
 	// Force download
 	_, err := repo.Entries(ctx, dagger.DirectoryEntriesOpts{})
 	if err != nil {
