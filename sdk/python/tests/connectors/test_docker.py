@@ -12,7 +12,7 @@ from dagger.connectors import docker
 from dagger.connectors.base import Config
 
 
-@pytest.fixture
+@pytest.fixture(autouse=True)
 def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """Creates a temp cache_dir for testing & sets XDG_CACHE_HOME."""
     cache_dir = tmp_path / "dagger"
@@ -55,9 +55,7 @@ async def test_docker_image_provision(cache_dir: Path):
     assert not garbage_path.exists()
 
 
-def test_docker_cli_is_not_installed(
-    cache_dir: Path, monkeypatch: pytest.MonkeyPatch, fp: FakeProcess
-):
+def test_docker_cli_is_not_installed(monkeypatch: pytest.MonkeyPatch, fp: FakeProcess):
     """
     When the docker cli is not installed ensure that the `FileNotFoundError` returned by
     `subprocess.run` is wrapped by a `docker.ProvisionError` stating that
@@ -97,9 +95,7 @@ def test_tmp_files_are_removed_on_error(
     assert not [x for x in cache_dir.iterdir()]
 
 
-def test_docker_engine_is_not_running(
-    cache_dir: Path, fp: FakeProcess, monkeypatch: pytest.MonkeyPatch
-):
+def test_docker_engine_is_not_running(fp: FakeProcess, monkeypatch: pytest.MonkeyPatch):
     """
     When the docker image is not installed ensure that
     the `CalledProcessError` is wrapped in a `dagger.ProvisionError`
@@ -124,7 +120,6 @@ def test_docker_engine_is_not_running(
 @pytest.mark.anyio()
 async def test_docker_engine_is_not_running_cached_dagger_engine_exists(
     log_output: TextIO,
-    cache_dir: Path,
     monkeypatch: pytest.MonkeyPatch,
 ):
     """
