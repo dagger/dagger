@@ -183,6 +183,7 @@ func setupBundle() int {
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config
+	// #nosec G204
 	cmd := exec.Command(runcPath, os.Args[1:]...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
