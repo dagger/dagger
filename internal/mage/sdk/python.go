@@ -34,16 +34,35 @@ func (t Python) Lint(ctx context.Context) error {
 	defer c.Close()
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = pythonBase(c, pythonDefaultVersion).
-			WithExec([]string{"poe", "lint"}).
-			ExitCode(ctx)
-		if err != nil {
-			return err
-		}
+		eg, gctx := errgroup.WithContext(ctx)
 
-		return lintGeneratedCode(func() error {
-			return t.Generate(ctx)
-		}, pythonGeneratedAPIPaths...)
+		base := pythonBase(c, pythonDefaultVersion)
+
+		eg.Go(func() error {
+			_, err = base.
+				WithExec([]string{"poe", "lint"}).
+				ExitCode(gctx)
+			return err
+		})
+
+		eg.Go(func() error {
+			workdir := util.Repository(c)
+			snippets := c.Directory().
+				WithDirectory("/", workdir.Directory("docs/current/sdk/python/snippets"))
+			_, err = base.
+				WithMountedDirectory("/snippets", snippets).
+				WithExec([]string{"poe", "lint", "/snippets"}).
+				ExitCode(gctx)
+			return err
+		})
+
+		eg.Go(func() error {
+			return lintGeneratedCode(func() error {
+				return t.Generate(ctx)
+			}, pythonGeneratedAPIPaths...)
+		})
+
+		return eg.Wait()
 	})
 }
 
@@ -65,7 +84,7 @@ func (t Python) Test(ctx context.Context) error {
 				_, err := pythonBase(c, version).
 					WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 					WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-					WithExec([]string{"poe", "test"}, dagger.ContainerWithExecOpts{
+					WithExec([]string{"poe", "test", "--exitfirst"}, dagger.ContainerWithExecOpts{
 						ExperimentalPrivilegedNesting: true,
 					}).ExitCode(gctx)
 				return err
@@ -160,27 +179,39 @@ ENGINE_IMAGE_REF = %q
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/python"))
 
-	base := c.Container().From(fmt.Sprintf("python:%s-alpine", version)).
-		WithExec([]string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"})
-
 	var (
 		path = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		venv = "/opt/venv"
 	)
 
-	base = base.
+	base := c.Container().
+		From(fmt.Sprintf("python:%s-alpine", version)).
 		WithEnvVariable("PATH", path).
-		WithEnvVariable("PIP_NO_CACHE_DIR", "off").
-		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "on").
-		WithEnvVariable("PIP_DEFAULT_TIMEOUT", "100").
+		WithExec([]string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"}).
 		WithExec([]string{"pip", "install", "--user", "poetry==1.2.2", "poetry-dynamic-versioning"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:%s", venv, path)).
-		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false")
+		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false").
+		WithWorkdir("/app")
 
-	return base.
+	// FIXME: Use single `poetry.lock` directly with `poetry install --no-root`
+	// 	when able: https://github.com/python-poetry/poetry/issues/1301
+	requirements := base.
 		WithMountedDirectory("/app", src).
-		WithWorkdir("/app").
-		WithExec([]string{"poetry", "install"})
+		WithExec([]string{
+			"poetry", "export",
+			"--with", "test,lint,dev",
+			"--without-hashes",
+			"-o", "requirements.txt",
+		}).
+		File("/app/requirements.txt")
+
+	deps := base.
+		WithRootfs(base.Rootfs().WithFile("/app/requirements.txt", requirements)).
+		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
+
+	return deps.
+		WithRootfs(deps.Rootfs().WithDirectory("/app", src)).
+		WithExec([]string{"poetry", "install", "--without", "docs"})
 }

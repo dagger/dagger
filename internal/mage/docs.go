@@ -57,9 +57,8 @@ func (Docs) Lint(ctx context.Context) error {
 			return err
 		})
 
-		// FIXME: Python
-
 		// Go is already linted by engine:lint
+		// Python is already linted by sdk:python:lint
 
 		return eg.Wait()
 	})
