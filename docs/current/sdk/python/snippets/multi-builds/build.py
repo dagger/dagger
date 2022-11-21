@@ -2,11 +2,14 @@
 Create a multi-build pipeline for a Go application.
 """
 
+
+import itertools
 import sys
 
 import anyio
-import dagger
 import graphql
+
+import dagger
 
 
 async def build():
@@ -17,7 +20,7 @@ async def build():
     arches = ["amd64", "arm64"]
 
     # initialize dagger client
-    async with dagger.Connection() as client:
+    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # get reference to the local project
         src_id = await client.host().directory(".").id()
@@ -27,32 +30,28 @@ async def build():
 
         golang = (
             # get `golang` image
-            client.container().from_(f"golang:latest")
-
+            client.container()
+            .from_("golang:latest")
             # mount source code into `golang` image
             .with_mounted_directory("/src", src_id)
             .with_workdir("/src")
         )
 
-        for goos in oses:
-            for goarch in arches:
+        for goos, goarch in itertools.product(oses, arches):
+            # create a directory for each OS and architecture
+            path = f"build/{goos}/{goarch}/"
 
-                # create a directory for each OS and architecture
-                path = f"build/{goos}/{goarch}/"
+            build = (
+                golang
+                # set GOARCH and GOOS in the build environment
+                .with_env_variable("GOOS", goos)
+                .with_env_variable("GOARCH", goarch)
+                .with_exec(["go", "build", "-o", path])
+            )
 
-                build = (
-                    golang
-                    # set GOARCH and GOOS in the build environment
-                    .with_env_variable("GOOS", goos)
-                    .with_env_variable("GOARCH", goarch)
-
-                    # build application
-                    .with_exec(["go", "build", "-o", path])
-                )
-
-                # get reference to build output directory in container
-                dir_id = await build.directory(path).id()
-                outputs = outputs.with_directory(path, dir_id)
+            # get reference to build output directory in container
+            dir_id = await build.directory(path).id()
+            outputs = outputs.with_directory(path, dir_id)
 
         # write build artifacts to host
         await outputs.export(".")
@@ -62,5 +61,5 @@ if __name__ == "__main__":
     try:
         anyio.run(build)
     except graphql.GraphQLError as e:
-        print(e.message)
+        print(e.message, file=sys.stderr)
         sys.exit(1)

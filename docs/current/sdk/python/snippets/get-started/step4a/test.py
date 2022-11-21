@@ -3,8 +3,11 @@ Run tests for multiple Python versions.
 """
 
 import sys
+
 import anyio
+
 import dagger
+
 
 async def test():
     # highlight-start
@@ -12,29 +15,23 @@ async def test():
     # highlight-end
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-
         # get reference to the local project
         src_id = await client.host().directory(".").id()
 
         # highlight-start
         for version in versions:
-        # highlight-end
-
+            # highlight-end
             python = (
                 client.container()
                 # highlight-start
                 .from_(f"python:{version}-slim-buster")
                 # highlight-end
-
                 # mount cloned repository into image
                 .with_mounted_directory("/src", src_id)
-
                 # set current working directory for next commands
                 .with_workdir("/src")
-
                 # install test dependencies
                 .with_exec(["pip", "install", "-e", ".[test]"])
-
                 # run tests
                 .with_exec(["pytest", "tests"])
             )
@@ -49,8 +46,9 @@ async def test():
             # highlight-start
             print(f"Tests for Python {version} succeeded!")
 
-        print("All tasks have finished")
-        # highlight-end
+    print("All tasks have finished")
+    # highlight-end
+
 
 if __name__ == "__main__":
     anyio.run(test)

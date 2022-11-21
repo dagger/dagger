@@ -10,7 +10,7 @@
 ```sh
 python3 -m venv .venv
 source .venv/bin/activate
-pip install --pre dagger-io
+pip install dagger-io
 python say.py "Simple is better than complex"
 ```
 
