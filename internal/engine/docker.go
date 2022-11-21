@@ -14,6 +14,7 @@ import (
 const (
 	DockerImageProvider     = "docker-image"
 	DockerContainerProvider = "docker-container"
+	RemoteBuildkit          = "tcp"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16

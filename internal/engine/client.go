@@ -35,6 +35,7 @@ var engineProviderHandler = map[string]engineProviderFunc{
 	DockerContainerProvider: dockerContainerProvider,
 	DockerImageProvider:     dockerImageProvider,
 	"unix":                  passthroughEngineProvider,
+	RemoteBuildkit:          remoteBuildkitProvider,
 }
 
 func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, string, error) {

@@ -58,6 +58,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			startOpts.RemoteAddr = v
 		}
 	}
+
+	// TODO: Should this really be here?
+	if os.Getenv("BUILDKIT_HOST") != "" {
+		startOpts.RemoteAddr = os.Getenv("BUILDKIT_HOST")
+	}
 	remote, err := url.Parse(startOpts.RemoteAddr)
 	if err != nil {
 		return err
