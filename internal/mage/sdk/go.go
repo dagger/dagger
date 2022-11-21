@@ -57,7 +57,6 @@ func (t Go) Test(ctx context.Context) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		output, err := util.GoBase(c).
-			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
 			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 			WithExec([]string{"go", "test", "-v", "./..."}, dagger.ContainerWithExecOpts{
@@ -83,7 +82,6 @@ func (t Go) Generate(ctx context.Context) error {
 		generated, err := util.GoBase(c).
 			WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
-			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithWorkdir("sdk/go").
 			WithExec([]string{"go", "generate", "-v", "./..."}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
