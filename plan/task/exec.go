@@ -254,12 +254,12 @@ func parseMount(pctx *plancontext.Context, v *compiler.Value) (mount, error) {
 	case "tmp":
 		return mount{dest: dest, tmpMount: &tmpMount{}}, nil
 
-	case "socket":
-		socket, err := pctx.Sockets.FromValue(v.Lookup("contents"))
-		if err != nil {
-			return mount{}, err
-		}
-		return mount{dest: dest, socketMount: &socketMount{id: socket.ID()}}, nil
+	// case "socket":
+	// 	socket, err := pctx.Sockets.FromValue(v.Lookup("contents"))
+	// 	if err != nil {
+	// 		return mount{}, err
+	// 	}
+	// 	return mount{dest: dest, socketMount: &socketMount{id: socket.ID()}}, nil
 
 	case "fs":
 		mnt := mount{

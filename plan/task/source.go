@@ -46,7 +46,7 @@ func (c *sourceTask) PreRun(ctx context.Context, pctx *plancontext.Context, v *c
 		return fmt.Errorf("path %q does not exist", origPath)
 	}
 
-	pctx.LocalDirs.Add(absPath)
+	// pctx.LocalDirs.Add(absPath)
 
 	return nil
 }

@@ -38,7 +38,7 @@ func (t clientFilesystemReadTask) PreRun(_ context.Context, pctx *plancontext.Co
 		if err := t.validatePath(path, true); err != nil {
 			return err
 		}
-		pctx.LocalDirs.Add(path)
+		// pctx.LocalDirs.Add(path)
 	}
 
 	return nil
