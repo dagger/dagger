@@ -30,6 +30,7 @@ from graphql import (
     GraphQLType,
     GraphQLWrappingType,
     Undefined,
+    get_named_type,
     is_leaf_type,
 )
 from graphql.pyutils import camel_to_snake
@@ -163,12 +164,11 @@ def is_object_type(t: GraphQLType) -> TypeGuard[GraphQLObjectType]:
 
 
 def is_output_leaf_type(t: GraphQLOutputType) -> TypeGuard[GraphQLLeafType]:
-    return is_leaf_type(t) or (is_wrapping_type(t) and is_output_leaf_type(t.of_type))
+    return is_leaf_type(get_named_type(t))
 
 
 def is_custom_scalar_type(t: GraphQLNamedType) -> TypeGuard[GraphQLScalarType]:
-    if is_wrapping_type(t):
-        return is_custom_scalar_type(t.of_type)
+    t = get_named_type(t)
     return is_scalar_type(t) and t.name not in Scalars.__members__
 
 
@@ -196,12 +196,7 @@ def format_input_type(t: GraphQLInputType, id_map: dict[str, str]) -> str:
     if is_custom_scalar_type(t) and t.name in id_map:
         return fmt % id_map[t.name]
 
-    if is_scalar_type(t):
-        return fmt % Scalars.from_type(t)
-
-    assert not isinstance(t, GraphQLNonNull)
-
-    return fmt % t.name
+    return fmt % (Scalars.from_type(t) if is_scalar_type(t) else t.name)
 
 
 def format_output_type(t: GraphQLOutputType) -> str:
@@ -248,7 +243,9 @@ class _InputField:
         self.graphql = graphql
 
         self.name = format_name(name)
-        self.type = format_input_type(graphql.type, id_map if name != "id" else {})
+        self.type = format_input_type(graphql.type, id_map)
+        if name == "id" and is_custom_scalar_type(graphql.type):
+            self.type = f"{get_named_type(graphql.type)} | {self.type}"
         self.description = graphql.description
 
         self.has_default = graphql.default_value is not Undefined
