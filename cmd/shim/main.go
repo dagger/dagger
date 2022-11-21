@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -167,6 +170,12 @@ func setupBundle() int {
 			Options:     []string{"rbind", "ro"},
 		})
 
+		spec, err = toggleNesting(spec)
+		if err != nil {
+			fmt.Printf("Error toggling nesting: %v\n", err)
+			return 1
+		}
+
 		// update the args to specify the shim as the init process
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 
@@ -235,4 +244,53 @@ func internalEnv(name string) (string, bool) {
 	os.Unsetenv(name)
 
 	return val, true
+}
+
+func toggleNesting(spec specs.Spec) (specs.Spec, error) {
+	// Setup engine session and runner socket mounts if requested based on env vars
+	var enableNesting bool
+	var daggerHost *url.URL
+	var daggerRunnerHost *url.URL
+	var err error
+	for i, env := range spec.Process.Env {
+		switch {
+		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
+			enableNesting = true
+			// hide it from the container
+			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
+		case strings.HasPrefix(env, "DAGGER_HOST="):
+			daggerHost, err = url.Parse(strings.TrimPrefix(env, "DAGGER_HOST="))
+			if err != nil {
+				return specs.Spec{}, fmt.Errorf("error parsing DAGGER_HOST: %w", err)
+			}
+		case strings.HasPrefix(env, "DAGGER_RUNNER_HOST="):
+			daggerRunnerHost, err = url.Parse(strings.TrimPrefix(env, "DAGGER_RUNNER_HOST="))
+			if err != nil {
+				return specs.Spec{}, fmt.Errorf("error parsing DAGGER_RUNNER_HOST: %w", err)
+			}
+		}
+	}
+	if enableNesting {
+		if daggerHost != nil && daggerHost.Scheme == "bin" {
+			engineBinDest := daggerHost.Host + daggerHost.Path
+			engineBinSource := "/usr/bin/dagger-engine-session-linux-" + runtime.GOARCH
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: engineBinDest,
+				Type:        "bind",
+				Source:      engineBinSource,
+				Options:     []string{"rbind", "ro"},
+			})
+		}
+		if daggerRunnerHost != nil && daggerRunnerHost.Scheme == "unix" {
+			runnerSocketDest := daggerRunnerHost.Host + daggerRunnerHost.Path
+			runnerSocketSource := "/run/buildkit/buildkitd.sock"
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: runnerSocketDest,
+				Type:        "bind",
+				Source:      runnerSocketSource,
+				Options:     []string{"rbind", "ro"},
+			})
+		}
+	}
+	return spec, nil
 }

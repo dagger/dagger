@@ -685,12 +685,9 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts,
-			llb.AddEnv("DAGGER_HOST", "bin://"), // default to finding dagger-engine-session in $PATH
+			llb.AddEnv("DAGGER_HOST", "bin:///.dagger_engine_session"),
 			llb.AddEnv("DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
-			llb.AddSSHSocket(
-				llb.SSHID(RunnerProxySockName),
-				llb.SSHSocketTarget(RunnerProxySockPath),
-			),
+			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 		)
 	}
 
@@ -731,6 +728,11 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 			// it's OK to not be OK
 			// we'll just set an empty env
 			_ = ok
+		}
+
+		if name == "_DAGGER_ENABLE_NESTING" && !opts.ExperimentalPrivilegedNesting {
+			// don't pass this through to the container when manually set, this is internal only
+			continue
 		}
 
 		runOpts = append(runOpts, llb.AddEnv(name, val))

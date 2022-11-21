@@ -137,7 +137,6 @@ func (t Engine) test(ctx context.Context, race bool) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		output, err := util.GoBase(c).
-			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 			WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 			WithWorkdir("/app").
 			WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
