@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Core Actions Reference
 
+{@include: ../../partials/_caution-old-version.md}
+
 Core Actions are primitives implemented by the Dagger Engine itself. They can be combined into higher-level composite actions. Their definitions can be imported in the `dagger.io/dagger/core` package.
 
 For more information about Dagger Actions, see [Dagger Actions](../core-concepts/1221-action.md).

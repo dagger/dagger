@@ -9,6 +9,8 @@ import BrowserOnly from '@docusaurus/BrowserOnly';
 
 # Build, run and test locally
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Everyone should be able to develop, test and run their application using a local pipeline.
 Having to commit & push in order to test a change slows down iteration.
 This guide shows you the Dagger way.

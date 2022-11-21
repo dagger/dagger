@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Basic Node CI
 
+{@include: ../../partials/_caution-old-version.md}
+
 Dagger is incredibly useful for all kinds of complex deployment and building. In this use case we are going to focus on CI and using pre-built tools to check the code we have written. It will aim to give you a basic scaffolding on which to build more complex pipelines.
 
 ## Plan of Action

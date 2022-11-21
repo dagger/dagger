@@ -4,6 +4,8 @@ slug: /1223/custom-buildkit/
 
 # Customizing your Buildkit installation
 
+{@include: ../../../partials/_caution-old-version.md}
+
 ## Using a custom buildkit daemon
 
 Dagger can be configured to use an existing buildkit daemon, running either locally or remotely. This can be done using the environment variable `BUILDKIT_HOST`.

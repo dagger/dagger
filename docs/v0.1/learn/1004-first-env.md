@@ -2,11 +2,9 @@
 slug: /1004/dev-first-env/
 ---
 
-import CautionBanner from '../\_caution-banner.md'
-
 # Create your first Dagger environment
 
-<CautionBanner old="0.1" new="0.2" />
+{@include: ../../partials/_caution-old-version.md}
 
 ## Overview
 

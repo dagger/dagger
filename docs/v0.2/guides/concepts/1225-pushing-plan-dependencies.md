@@ -4,6 +4,8 @@ slug: /1225/pushing-plan-dependencies/
 
 # Pushing your plan's dependencies
 
+{@include: ../../../partials/_caution-old-version.md}
+
 After completing your plan and setting up your GHA or Gitlab CI, you'll realize that a lot of `Cue` files are present in the `cue.mod/pkg` directory. These are the dependencies required by Dagger to run your actions :
 
 ```shell

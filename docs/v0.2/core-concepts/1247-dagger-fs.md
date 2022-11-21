@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # Dagger filesystems: `#FS`
 
+{@include: ../../partials/_caution-old-version.md}
+
 Along with container images, filesystems are one of the building blocks of the Dagger platform. They are represented by the `dagger.#FS` type. An `#FS` is a reference to a filesystem tree: a directory storing files in a hierarchical/tree structure.
 
 ## Filesystems are everywhere

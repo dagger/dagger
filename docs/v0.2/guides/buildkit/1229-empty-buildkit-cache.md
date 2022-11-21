@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # How to empty BuildKit's cache ?
 
+{@include: ../../../partials/_caution-old-version.md}
+
 There are two ways of emptying the BuildKit cache:
 
 - Run your action with the `--no-cache` option:

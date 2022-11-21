@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # Making reusable packages
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Whilst splitting your plan into several files is a good idea, you will sometimes need to create standalone packages aiming to be reusable and shared. Let's explore how to do that.
 
 ## Packages, modules, and Dagger projects

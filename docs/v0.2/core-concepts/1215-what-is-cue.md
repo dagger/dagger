@@ -4,6 +4,8 @@ slug: /1215/what-is-cue/
 
 # What is CUE?
 
+{@include: ../../partials/_caution-old-version.md}
+
 CUE is a powerful configuration language created by Marcel van Lohuizen who co-created the Borg Configuration Language (BCL)&mdash;the [language used to deploy all applications at Google](https://storage.googleapis.com/pub-tools-public-publication-data/pdf/43438.pdf). CUE is the result of years of experience writing configuration languages at Google, and seeks to improve the developer experience while avoiding some nasty pitfalls. It is a superset of JSON, with additional features to make declarative, data-driven programming as pleasant and productive as regular imperative programming.
 
 ## The Need for a Configuration Language
@@ -211,7 +213,7 @@ Bob inherits the _default value_ but is now allowed to specify a different job.
 
 CUE allows the embedding of one definition into another, similar
 to [Golang Embedding](https://go.dev/doc/effective_go#embedding)
-or [object-oriented composition](https://en.wikipedia.org/wiki/Composition_over_inheritance).  
+or [object-oriented composition](https://en.wikipedia.org/wiki/Composition_over_inheritance).
 This avoids adding an extra level of depth to the definition
 
 ```cue
@@ -259,7 +261,7 @@ Bob:
   Domain: Backend
 ```
 
-Any definition that embed `#Engineer` will share its properties, and they will be accessible directly from the definition.  
+Any definition that embed `#Engineer` will share its properties, and they will be accessible directly from the definition.
 [Try it in the CUE Playground](https://cuelang.org/play/?id=iFcZKx72Bwm#cue@export@cue)
 
 ### Packages

@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Packages with customizable images
 
+{@include: ../../../partials/_caution-old-version.md}
+
 You should move away from having a default image inside main actions: for example, actions such as [go](https://github.com/dagger/dagger/blob/d45b946f024c63bcb89d22bd843a011f18d64b69/pkg/universe.dagger.io/go/build.cue#L9-L83) are not as flexible and efficient as [golangci](https://github.com/dagger/dagger/blob/d45b946f024c63bcb89d22bd843a011f18d64b69/pkg/universe.dagger.io/alpha/go/golangci/lint.cue#L17-L48).
 
 Two reasons:

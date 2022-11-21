@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # How to use secrets
 
+{@include: ../../partials/_caution-old-version.md}
+
 ## What are Secrets?
 
 Secrets support in Dagger allows you to utilize confidential information -- such as passwords, API keys, SSH keys, etc -- when running your Dagger Plans, _without_ exposing those secrets in plaintext logs, writing them into the filesystem of containers you're building, or inserting them into cache.
@@ -205,8 +207,8 @@ dagger.#Plan & {
 
 It is possible use Secrets in ways that can risk leaks. Be aware of the risks of these uses, and avoid them if possible.
 
-<!-- 
-TODO: Provide examples of these 
+<!--
+TODO: Provide examples of these
 - Baking secrets into a container, by copying them into a filesystem or container from a mount or environment variable
 -->
 

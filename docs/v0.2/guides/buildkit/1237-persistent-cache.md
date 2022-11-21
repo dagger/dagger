@@ -5,6 +5,8 @@ displayed_sidebar: 0.2
 
 # Persistent cache
 
+{@include: ../../../partials/_caution-old-version.md}
+
 CI that takes an eternity is a real pain and can become a bottleneck when your
 infrastructure and process grow. But Dagger, working with a Buildkit daemon,
 has a powerful cache system that triggers actions only when it's necessary.

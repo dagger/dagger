@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # How can I chain actions together ?
 
+{@include: ../../../partials/_caution-old-version.md}
+
 Dependencies are materialized at runtime, when your Cue files are parsed and the corresponding DAG gets generated:
 
 ```cue

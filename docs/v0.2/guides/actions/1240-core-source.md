@@ -5,6 +5,8 @@ displayed_sidebar: "0.2"
 
 # When to use `core.#Source`?
 
+{@include: ../../../partials/_caution-old-version.md}
+
 The [#Source core action](../../references/1222-core-actions-reference.md#core-actions-related-to-filesystem-trees) seems to do the same as `client: filesystem: ...: read: contents: dagger.#FS`, although there's important differences.
 
 ## Purpose

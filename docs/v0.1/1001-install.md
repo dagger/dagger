@@ -6,7 +6,7 @@ import CautionBanner from './\_caution-banner.md'
 
 # Install Dagger
 
-<CautionBanner old="0.1" new="0.2" />
+{@include: ../../partials/_caution-old-version.md}
 
 :::caution Requirement
 

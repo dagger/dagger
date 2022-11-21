@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Understanding CLI Telemetry
 
+{@include: ../../../partials/_caution-old-version.md}
+
 ## Overview
 
 By default, the dagger CLI sends anonymized telemetry to dagger.io. This allows us to improve Dagger by understanding how it is used.

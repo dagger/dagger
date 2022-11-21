@@ -5,6 +5,8 @@ displayed_sidebar: '0.2'
 
 # Debugging with Dagger Cloud
 
+{@include: ../../../partials/_caution-old-version.md}
+
 <p><a href="https://dagger.cloud/" target="_blank" rel="external"> Dagger Cloud </a> is under development, but we have just released the first telemetry feature!</p>
 
 :::tip
