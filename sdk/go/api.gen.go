@@ -147,6 +147,8 @@ type ContainerExecOpts struct {
 }
 
 // This container after executing the specified command inside it
+//
+// Deprecated: Replaced by WithExec.
 func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 	q := r.q.Select("exec")
 	// `args` optional argument
@@ -397,6 +399,59 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 	q := r.q.Select("withEnvVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithExecOpts contains options for Container.WithExec
+type ContainerWithExecOpts struct {
+	// Content to write to the command's standard input before closing
+	Stdin string
+	// Redirect the command's standard output to a file in the container
+	RedirectStdout string
+	// Redirect the command's standard error to a file in the container
+	RedirectStderr string
+	// Provide dagger access to the executed command
+	// Do not use this option unless you trust the command being executed
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	ExperimentalPrivilegedNesting bool
+}
+
+// This container after executing the specified command inside it
+func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
+	q := r.q.Select("withExec")
+	q = q.Arg("args", args)
+	// `stdin` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
+			break
+		}
+	}
+	// `redirectStdout` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
+			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
+			break
+		}
+	}
+	// `redirectStderr` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
+			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+			break
+		}
+	}
+	// `experimentalPrivilegedNesting` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,

@@ -33,18 +33,18 @@ func (t Python) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	_, err = pythonBase(c, pythonDefaultVersion).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"poe", "lint"},
-		}).
-		ExitCode(ctx)
-	if err != nil {
-		return err
-	}
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		_, err = pythonBase(c, pythonDefaultVersion).
+			WithExec([]string{"poe", "lint"}).
+			ExitCode(ctx)
+		if err != nil {
+			return err
+		}
 
-	return lintGeneratedCode(func() error {
-		return t.Generate(ctx)
-	}, pythonGeneratedAPIPaths...)
+		return lintGeneratedCode(func() error {
+			return t.Generate(ctx)
+		}, pythonGeneratedAPIPaths...)
+	})
 }
 
 // Test tests the Python SDK
@@ -65,8 +65,7 @@ func (t Python) Test(ctx context.Context) error {
 				_, err := pythonBase(c, version).
 					WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
 					WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-					Exec(dagger.ContainerExecOpts{
-						Args:                          []string{"poe", "test"},
+					WithExec([]string{"poe", "test"}, dagger.ContainerWithExecOpts{
 						ExperimentalPrivilegedNesting: true,
 					}).ExitCode(gctx)
 				return err
@@ -88,8 +87,7 @@ func (t Python) Generate(ctx context.Context) error {
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		generated := pythonBase(c, pythonDefaultVersion).
 			WithMountedFile("/usr/bin/dagger-engine-session", util.EngineSessionBinary(c)).
-			Exec(dagger.ContainerExecOpts{
-				Args:                          []string{"poe", "generate"},
+			WithExec([]string{"poe", "generate"}, dagger.ContainerWithExecOpts{
 				ExperimentalPrivilegedNesting: true,
 			})
 
@@ -114,40 +112,38 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	var (
-		version = strings.TrimPrefix(tag, "sdk/python/v")
-		token   = os.Getenv("PYPI_TOKEN")
-		repo    = os.Getenv("PYPI_REPO")
-	)
+	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
+		var (
+			version = strings.TrimPrefix(tag, "sdk/python/v")
+			token   = os.Getenv("PYPI_TOKEN")
+			repo    = os.Getenv("PYPI_REPO")
+		)
 
-	if token == "" {
-		return errors.New("PYPI_TOKEN environment variable must be set")
-	}
+		if token == "" {
+			return errors.New("PYPI_TOKEN environment variable must be set")
+		}
 
-	build := pythonBase(c, pythonDefaultVersion).
-		WithEnvVariable("POETRY_DYNAMIC_VERSIONING_BYPASS", version).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"poetry-dynamic-versioning"},
-		}).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"poetry", "build"},
-		})
+		build := pythonBase(c, pythonDefaultVersion).
+			WithEnvVariable("POETRY_DYNAMIC_VERSIONING_BYPASS", version).
+			WithExec([]string{"poetry-dynamic-versioning"}).
+			WithExec([]string{"poetry", "build"})
 
-	args := []string{"poetry", "publish"}
+		args := []string{"poetry", "publish"}
 
-	if repo == "test" {
-		build = build.WithEnvVariable("POETRY_REPOSITORIES_TEST_URL", "https://test.pypi.org/legacy/")
-		args = append(args, "-r", "test")
-	} else {
-		repo = "pypi"
-	}
+		if repo == "test" {
+			build = build.WithEnvVariable("POETRY_REPOSITORIES_TEST_URL", "https://test.pypi.org/legacy/")
+			args = append(args, "-r", "test")
+		} else {
+			repo = "pypi"
+		}
 
-	_, err = build.
-		WithEnvVariable(fmt.Sprintf("POETRY_PYPI_TOKEN_%s", strings.ToUpper(repo)), token).
-		Exec(dagger.ContainerExecOpts{Args: args}).
-		ExitCode(ctx)
+		_, err = build.
+			WithEnvVariable(fmt.Sprintf("POETRY_PYPI_TOKEN_%s", strings.ToUpper(repo)), token).
+			WithExec(args).
+			ExitCode(ctx)
 
-	return err
+		return err
+	})
 }
 
 // Bump the Python SDK's Engine dependency
@@ -165,9 +161,7 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/python"))
 
 	base := c.Container().From(fmt.Sprintf("python:%s-alpine", version)).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"},
-		})
+		WithExec([]string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"})
 
 	var (
 		path = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -179,12 +173,8 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithEnvVariable("PIP_NO_CACHE_DIR", "off").
 		WithEnvVariable("PIP_DISABLE_PIP_VERSION_CHECK", "on").
 		WithEnvVariable("PIP_DEFAULT_TIMEOUT", "100").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"pip", "install", "--user", "poetry==1.2.2", "poetry-dynamic-versioning"},
-		}).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"python", "-m", "venv", venv},
-		}).
+		WithExec([]string{"pip", "install", "--user", "poetry==1.2.2", "poetry-dynamic-versioning"}).
+		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:%s", venv, path)).
 		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false")
@@ -192,7 +182,5 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	return base.
 		WithMountedDirectory("/app", src).
 		WithWorkdir("/app").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"poetry", "install"},
-		})
+		WithExec([]string{"poetry", "install"})
 }

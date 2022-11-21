@@ -144,7 +144,7 @@ func startRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 		_, err := c.Container().
 			From("registry:2").
 			WithEnvVariable("RANDOM", randomID).
-			Exec().
+			WithExec([]string{}).
 			ExitCode(ctx)
 		if err != nil {
 			t.Logf("error running registry: %v", err)
@@ -154,9 +154,7 @@ func startRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 	_, err := c.Container().
 		From("alpine:3.16.2").
 		WithEnvVariable("RANDOM", randomID).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"},
-		}).
+		WithExec([]string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1"}).
 		ExitCode(ctx)
 	require.NoError(t, err)
 }

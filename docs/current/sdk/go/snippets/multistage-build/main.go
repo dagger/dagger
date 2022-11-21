@@ -25,9 +25,7 @@ func main() {
 		WithMountedDirectory("/src", project).
 		WithWorkdir("/src").
 		WithEnvVariable("CGO_ENABLED", "0").
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "myapp"},
-		})
+		WithExec([]string{"go", "build", "-o", "myapp"})
 
 	// highlight-start
 	// Publish binary on Alpine base

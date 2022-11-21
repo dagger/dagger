@@ -31,9 +31,7 @@ func main() {
 	}
 
 	// however, executing a command will fail
-	_, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cmd.exe"},
-	}).Stdout(ctx)
+	_, err = ctr.WithExec([]string{"cmd.exe"}).Stdout(ctx)
 	if err != nil {
 		panic(err) // should happen
 	}

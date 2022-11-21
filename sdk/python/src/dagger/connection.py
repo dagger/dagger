@@ -24,7 +24,7 @@ class Connection:
 
             async with dagger.Connection(cfg) as client:
                 ctr = client.container().from_("python:3.10.8-alpine")
-                version = await ctr.exec(["python", "-V"]).stdout().contents()
+                version = await ctr.with_exec(["python", "-V"]).stdout().contents()
                 print(version)
 
                 # Output: Python 3.10.8

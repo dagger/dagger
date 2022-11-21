@@ -36,10 +36,10 @@ async def test_version(version: str, src_id, client: dagger.Client):
         .with_workdir("/src")
 
         # install test dependencies
-        .exec(["pip", "install", "-e", ".[test]"])
+        .with_exec(["pip", "install", "-e", ".[test]"])
 
         # run tests
-        .exec(["pytest", "tests"])
+        .with_exec(["pytest", "tests"])
     )
 
     print(f"Starting tests for Python {version}")

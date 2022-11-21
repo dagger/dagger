@@ -12,12 +12,12 @@ async def main(args: list[str]):
         ctr = (
             client.container()
             .from_("python:alpine")
-            .exec(["pip", "install", "cowsay"])
+            .with_exec(["pip", "install", "cowsay"])
             .with_entrypoint(["cowsay"])
         )
 
         # run cowsay with requested message
-        result = await ctr.exec(args).stdout().contents()
+        result = await ctr.with_exec(args).stdout().contents()
 
         print(result)
 

@@ -14,15 +14,15 @@ connect(async (client: Client) => {
     .container(node.id)
     .withMountedDirectory("/src", source.id)
     .withWorkdir("/src")
-    .exec(["npm", "install"])
+    .withExec(["npm", "install"])
 
   // run tests
-  await runner.exec(["npm", "test", "--", "--watchAll=false"]).exitCode()
+  await runner.withExec(["npm", "test", "--", "--watchAll=false"]).exitCode()
 
   // build application
   // write the build output to the host
   await runner
-    .exec(["npm", "run", "build"])
+    .withExec(["npm", "run", "build"])
     .directory("build/")
     .export("./build")
   // highlight-end

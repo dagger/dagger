@@ -35,9 +35,7 @@ func main() {
 		// execute `uname -m`, which prints the current CPU architecture
 		// being executed as
 		stdout, err := ctr.
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"uname", "-m"},
-			}).
+			WithExec([]string{"uname", "-m"}).
 			Stdout(ctx)
 		if err != nil {
 			panic(err)

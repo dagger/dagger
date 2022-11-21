@@ -18,7 +18,7 @@ async def test():
             .from_("python:3.10-slim-buster")
 
             # get Python version
-            .exec(["python", "-V"])
+            .with_exec(["python", "-V"])
         )
 
         # execute

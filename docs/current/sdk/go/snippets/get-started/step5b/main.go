@@ -57,9 +57,7 @@ func build(ctx context.Context) error {
 				build = build.WithEnvVariable("GOARCH", goarch)
 
 				// build application
-				build = build.Exec(dagger.ContainerExecOpts{
-					Args: []string{"go", "build", "-o", path},
-				})
+				build = build.WithExec([]string{"go", "build", "-o", path})
 
 				// get reference to build output directory in container
 				outputs = outputs.WithDirectory(path, build.Directory(path))

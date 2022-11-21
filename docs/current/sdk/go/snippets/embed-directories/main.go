@@ -58,9 +58,7 @@ func main() {
 	container := client.Container().From("alpine:3.16.2").WithMountedDirectory("/embed", dir)
 
 	// List files
-	out, err := container.Exec(dagger.ContainerExecOpts{
-		Args: []string{"ls", "-lR", "/embed/"},
-	}).Stdout(ctx)
+	out, err := container.WithExec([]string{"ls", "-lR", "/embed/"}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}

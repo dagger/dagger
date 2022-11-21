@@ -74,12 +74,12 @@ func GoBase(c *dagger.Client) *dagger.Container {
 		goMods = goMods.WithFile(f, repo.File(f))
 	}
 
+	// FIXME: bootstrap API doesn't support `WithExec`
+	//nolint
 	return c.Container().
 		From("golang:1.19-alpine").
-		Exec(dagger.ContainerExecOpts{
-			// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-			Args: []string{"apk", "add", "build-base"},
-		}).
+		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
+		Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "build-base"}}).
 		WithEnvVariable("CGO_ENABLED", "0").
 		// adding the git CLI to inject vcs info
 		// into the go binaries
@@ -89,9 +89,7 @@ func GoBase(c *dagger.Client) *dagger.Container {
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithMountedDirectory("/app", goMods).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "mod", "download"},
-		}).
+		Exec(dagger.ContainerExecOpts{Args: []string{"go", "mod", "download"}}).
 		// run `go build` with all source
 		WithMountedDirectory("/app", repo)
 }
@@ -99,26 +97,20 @@ func GoBase(c *dagger.Client) *dagger.Container {
 // DaggerBinary returns a compiled dagger binary
 func DaggerBinary(c *dagger.Client) *dagger.File {
 	return GoBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"},
-		}).
+		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"}).
 		File("./bin/dagger")
 }
 
 // ClientGenBinary returns a compiled dagger binary
 func ClientGenBinary(c *dagger.Client) *dagger.File {
 	return GoBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"},
-		}).
+		WithExec([]string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"}).
 		File("./bin/client-gen")
 }
 
 func EngineSessionBinary(c *dagger.Client) *dagger.File {
 	return GoBase(c).
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"},
-		}).
+		WithExec([]string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"}).
 		File("./bin/dagger-engine-session")
 }
 
@@ -156,6 +148,8 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 			// include each engine-session bin for each arch too in case there is a
 			// client/server mismatch
 			for _, arch := range arches {
+				// FIXME: bootstrap API doesn't support `WithExec`
+				//nolint
 				builtBin := GoBase(c).
 					WithEnvVariable("GOOS", os).
 					WithEnvVariable("GOARCH", arch).
@@ -173,6 +167,8 @@ func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 		}
 
 		// build the shim binary
+		// FIXME: bootstrap API doesn't support `WithExec`
+		//nolint
 		shimBin := GoBase(c).
 			WithEnvVariable("GOOS", "linux").
 			WithEnvVariable("GOARCH", arch).

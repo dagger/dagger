@@ -63,7 +63,7 @@ This example demonstrates how to pull images for multiple different architecture
 
 As illustrated above, you can optionally initialize a `Container` with a specific platform. That platform will be used to pull images and execute any commands.
 
-If the platform of the `Container` does not match that of the host, then emulation will be used for any commands specified in `Exec`.
+If the platform of the `Container` does not match that of the host, then emulation will be used for any commands specified in `WithExec`.
 
 If you don't specify a platform, the `Container` will be initialized with a platform matching that of the host.
 

@@ -50,12 +50,10 @@ func main() {
 		// build the binary and put the result at the mounted output
 		// directory
 		ctr = ctr.WithWorkdir("/src")
-		ctr = ctr.Exec(dagger.ContainerExecOpts{
-			Args: []string{
-				"go", "build",
-				"-o", "/output/dagger",
-				"/src/cmd/dagger",
-			},
+		ctr = ctr.WithExec([]string{
+			"go", "build",
+			"-o", "/output/dagger",
+			"/src/cmd/dagger",
 		})
 
 		// select the output directory

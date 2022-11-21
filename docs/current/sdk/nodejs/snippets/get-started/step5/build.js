@@ -22,16 +22,16 @@ connect(async (client) => {
       .container(node.id)
       .withMountedDirectory("/src", source.id)
       .withWorkdir("/src")
-      .exec(["npm", "install"])
+      .withExec(["npm", "install"])
 
     // run tests
-    await runner.exec(["npm", "test", "--", "--watchAll=false"]).exitCode()
+    await runner.withExec(["npm", "test", "--", "--watchAll=false"]).exitCode()
 
     // highlight-start
     // build application using specified Node version
     // write the build output to the host
     await runner
-      .exec(["npm", "run", "build"])
+      .withExec(["npm", "run", "build"])
       .directory("build/")
       .export(`./build-node-${nodeVersion}`)
   }

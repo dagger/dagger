@@ -227,6 +227,8 @@ export class Container extends BaseClient {
 
   /**
    * This container after executing the specified command inside it
+   *
+   * @deprecated Replaced by withExec.
    */
   exec(
     args?: string[],
@@ -514,6 +516,34 @@ export class Container extends BaseClient {
         {
           operation: "withEnvVariable",
           args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * This container after executing the specified command inside it
+   */
+  withExec(
+    args: string[],
+    stdin?: string,
+    redirectStdout?: string,
+    redirectStderr?: string,
+    experimentalPrivilegedNesting?: boolean
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withExec",
+          args: {
+            args,
+            stdin,
+            redirectStdout,
+            redirectStderr,
+            experimentalPrivilegedNesting,
+          },
         },
       ],
       host: this.clientHost,

@@ -82,7 +82,7 @@ The revised `build()` function is the main workhorse here, so let's step through
   - The first argument is the target path in the container (here, `/src`).
   - The second argument is the directory to be mounted (here, the reference previously created in the `src` variable).
   It also changes the current working directory to the `/src` path of the container using the [`WithWorkdir()`](https://pkg.go.dev/dagger.io/dagger#Container.WithWorkdir) method and returns a revised `Container` with the results of these operations.
-- It uses the [`Exec()`](https://pkg.go.dev/dagger.io/dagger#Container.Exec) method to define the command to be executed in the container - in this case, the command `go build -o PATH`, where `PATH` refers to the `build/` directory in the container. The `Exec()` method returns a revised `Container` containing the results of command execution.
+- It uses the [`WithExec()`](https://pkg.go.dev/dagger.io/dagger#Container.WithExec) method to define the command to be executed in the container - in this case, the command `go build -o PATH`, where `PATH` refers to the `build/` directory in the container. The `WithExec()` method returns a revised `Container` containing the results of command execution.
 - It obtains a reference to the `build/` directory in the container with the [`Directory()`](https://pkg.go.dev/dagger.io/dagger#Directory) method.
 - It writes the `build/` directory from the container to the host using the `Directory.Export()` method.
 

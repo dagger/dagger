@@ -99,7 +99,7 @@ This Node.js stub imports the Dagger SDK and defines an asynchronous function. T
 
 - It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
 - It uses the client's `container().from()` method to initialize a new container from a base image. In this example, the base image is the `node:16` image. This method returns a `Container` representing an OCI-compatible container image.
-- It uses the `Container.exec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `exec()` method returns a revised `Container` with the results of command execution.
+- It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `withExec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
 
 Run the Node.js CI tool by executing the command below from the project directory:
@@ -156,14 +156,14 @@ The revised code now does the following:
 - It uses the client's `host().directory(".", ["node_modules/"]).id()` method to obtain a reference to the current directory on the host. This reference is stored in the `source` variable. It also will ignore the `node_modules` directory on the host since we passed that in as an excluded directory.
 - It uses the client's `container().from()` method to initialize a new container from a base image. This base image is the Node.js version to be tested against - the `node:16` image. This method returns a new `Container` object with the results.
 - It uses the `Container.withMountedDirectory()` method to mount the host directory into the container at the `/src` mount point, and the `Container.withWorkdir()` method to set the working directory in the container. The revised `Container` is stored in the `runner` constant.
-- It uses the `Container.exec()` method to define the command to run tests in the container - in this case, the command `npm test -- --watchAll=false`.
+- It uses the `Container.withExec()` method to define the command to run tests in the container - in this case, the command `npm test -- --watchAll=false`.
 - It uses the `Container.exitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
-- It invokes the `Container.exec()` method again, this time to define the build command `npm run build` in the container.
+- It invokes the `Container.withExec()` method again, this time to define the build command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
 - It writes the `build/` directory from the container to the host using the `Directory.export()` method.
 
 :::tip
-The `from()`, `withMountedDirectory()`, `withWorkdir()` and `exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
+The `from()`, `withMountedDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
 :::
 
 Run the Node.js CI tool by executing the command below:
