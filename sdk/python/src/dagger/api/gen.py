@@ -382,7 +382,7 @@ class Container(Type):
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
 
-    def with_fs(self, id: "DirectoryID") -> "Container":
+    def with_fs(self, id: "DirectoryID | Directory") -> "Container":
         """Initialize this container from this DirectoryID
 
         .. deprecated::
@@ -441,7 +441,7 @@ class Container(Type):
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, id: "DirectoryID") -> "Container":
+    def with_rootfs(self, id: "DirectoryID | Directory") -> "Container":
         """Initialize this container from this DirectoryID"""
         _args = [
             Arg("id", id),
@@ -971,7 +971,9 @@ class Client(Root):
         return CacheVolume(_ctx)
 
     def container(
-        self, id: "ContainerID | None" = None, platform: "Platform | None" = None
+        self,
+        id: "ContainerID | Container | None" = None,
+        platform: "Platform | None" = None,
     ) -> "Container":
         """Load a container from ID.
 
@@ -994,7 +996,7 @@ class Client(Root):
         _ctx = self._select("defaultPlatform", _args)
         return await _ctx.execute(Platform)
 
-    def directory(self, id: "DirectoryID | None" = None) -> "Directory":
+    def directory(self, id: "DirectoryID | Directory | None" = None) -> "Directory":
         """Load a directory by ID. No argument produces an empty directory."""
         _args = [
             Arg("id", id, None),
@@ -1002,7 +1004,7 @@ class Client(Root):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, id: "FileID") -> "File":
+    def file(self, id: "FileID | File") -> "File":
         """Load a file by ID"""
         _args = [
             Arg("id", id),
@@ -1041,7 +1043,7 @@ class Client(Root):
         _ctx = self._select("project", _args)
         return Project(_ctx)
 
-    def secret(self, id: "SecretID") -> "Secret":
+    def secret(self, id: "SecretID | Secret") -> "Secret":
         """Load a secret from its ID"""
         _args = [
             Arg("id", id),
