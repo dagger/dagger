@@ -127,11 +127,19 @@ def generate(schema: GraphQLSchema, sync: bool = False) -> Iterator[str]:
 
     all_types = sorted(schema.type_map.values(), key=sort_key)
 
+    names = []
     for handler, types in groupby(all_types, group_key):
         for t in types:
             if handler is None or t.name.startswith("__"):
                 continue
             yield handler.render(t)
+            names.append(t.name if t.name != "Query" else "Client")
+
+    yield textwrap.dedent(
+        f"""
+        __all__ = {repr(names)}
+        """
+    )
 
 
 # FIXME: these typeguards should be contributed upstream

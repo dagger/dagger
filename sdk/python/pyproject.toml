@@ -158,6 +158,7 @@ known_first_party = ["dagger"]
 quiet = true
 recursive = true
 expand-star-imports = true
+ignore-init-module-imports = true
 imports = ["graphql", "gql"]
 remove-all-unused-imports = true
 remove-duplicate-keys = true
