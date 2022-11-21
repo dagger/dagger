@@ -363,6 +363,23 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, res.Container.From.WithExec.Out.Contents, "hello\n")
 	require.Equal(t, res.Container.From.WithExec.Err.Contents, "goodbye\n")
 
+	c, ctx := connect(t)
+	defer c.Close()
+
+	execWithMount := c.Container().From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", c.Directory()).
+		WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
+			RedirectStdout: "/mnt/out",
+			RedirectStderr: "/mnt/err",
+		})
+
+	stdout, err := execWithMount.File("/mnt/out").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
+	stderr, err := execWithMount.File("/mnt/err").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "goodbye\n", stderr)
+
 	err = testutil.Query(
 		`{
 			container {
