@@ -1085,3 +1085,25 @@ class Secret(Type):
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
         return _ctx.execute_sync(str)
+
+
+__all__ = [
+    "CacheID",
+    "ContainerID",
+    "DirectoryID",
+    "FileID",
+    "Platform",
+    "SecretID",
+    "CacheVolume",
+    "Container",
+    "Directory",
+    "EnvVariable",
+    "File",
+    "GitRef",
+    "GitRepository",
+    "Host",
+    "HostVariable",
+    "Project",
+    "Client",
+    "Secret",
+]
