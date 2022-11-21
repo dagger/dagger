@@ -26,7 +26,7 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
+func dockerImageProvider(ctx context.Context, remote *url.URL, bindMounts []string) (string, error) {
 	imageRef := remote.Host + remote.Path
 
 	// NOTE: this isn't as robust as using the official docker parser, but
@@ -88,6 +88,6 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 }
 
 // Just connect to the container as provided, nothing fancy
-func dockerContainerProvider(ctx context.Context, remote *url.URL) (string, error) {
+func dockerContainerProvider(ctx context.Context, remote *url.URL, bindMounts []string) (string, error) {
 	return "docker-container://" + remote.Host + remote.Path, nil
 }

@@ -29,11 +29,11 @@ const (
 	// Long timeout to allow for slow image pulls of
 	// buildkitd while not blocking for infinity
 	lockTimeout = 10 * time.Minute
+	
 )
-
 // The old implementation of buildkitd that is still needed by cloak dev
 // for now
-func legacyBuildkitdProvider(ctx context.Context, u *url.URL) (string, error) {
+func legacyBuildkitdProvider(ctx context.Context, u *url.URL, bindMounts []string) (string, error) {
 	version, err := getBuildInfoVersion()
 	if err != nil {
 		return version, err
@@ -51,7 +51,7 @@ func legacyBuildkitdProvider(ctx context.Context, u *url.URL) (string, error) {
 	} else {
 		ref = mobyBuildkitImage + ":" + version
 	}
-	return startBuildkitdVersion(ctx, ref)
+	return startBuildkitdVersion(ctx, ref, bindMounts)
 }
 
 // NB: normally we take the version of Buildkit from our go.mod, e.g. v0.10.5,
@@ -135,12 +135,12 @@ func getGoModVersion() (string, error) {
 	return version, nil
 }
 
-func startBuildkitdVersion(ctx context.Context, imageRef string) (string, error) {
+func startBuildkitdVersion(ctx context.Context, imageRef string, bindMounts []string) (string, error) {
 	if imageRef == "" {
 		return "", errors.New("buildkitd image ref is empty")
 	}
 
-	if err := checkBuildkit(ctx, imageRef); err != nil {
+	if err := checkBuildkit(ctx, imageRef, bindMounts); err != nil {
 		return "", err
 	}
 
@@ -148,7 +148,7 @@ func startBuildkitdVersion(ctx context.Context, imageRef string) (string, error)
 }
 
 // ensure the buildkit is active and properly set up (e.g. connected to host and last version with moby/buildkit)
-func checkBuildkit(ctx context.Context, imageRef string) error {
+func checkBuildkit(ctx context.Context, imageRef string, bindMounts []string) error {
 	// acquire a file-based lock to ensure parallel dagger clients
 	// don't interfere with checking+creating the buildkitd container
 	lockFilePath, err := homedir.Expand(buildkitdLockPath)
@@ -181,7 +181,7 @@ func checkBuildkit(ctx context.Context, imageRef string) error {
 		fmt.Fprintln(os.Stderr, "No buildkitd container found, creating one...")
 
 		removeBuildkit(ctx)
-		if err := installBuildkit(ctx, imageRef); err != nil {
+		if err := installBuildkit(ctx, imageRef, bindMounts); err != nil {
 			return err
 		}
 		return nil
@@ -193,7 +193,7 @@ func checkBuildkit(ctx context.Context, imageRef string) error {
 		if err := removeBuildkit(ctx); err != nil {
 			return err
 		}
-		if err := installBuildkit(ctx, imageRef); err != nil {
+		if err := installBuildkit(ctx, imageRef, bindMounts); err != nil {
 			return err
 		}
 	}
@@ -243,7 +243,7 @@ func startBuildkit(ctx context.Context) error {
 
 // Pull and run the buildkit daemon with a proper configuration
 // If the buildkit daemon is already configured, use startBuildkit
-func installBuildkit(ctx context.Context, ref string) error {
+func installBuildkit(ctx context.Context, ref string, bindMounts []string) error {
 	// #nosec
 	cmd := exec.CommandContext(ctx, "docker", "pull", ref)
 	_, err := cmd.CombinedOutput()
@@ -251,18 +251,37 @@ func installBuildkit(ctx context.Context, ref string) error {
 		return err
 	}
 
-	// #nosec G204
-	cmd = exec.CommandContext(ctx,
-		"docker",
+	arguments := []string{
 		"run",
-		"-d",
-		"--restart", "always",
+		"-d", 
+		"--restart", 
+		"always", 
 		"-v", buildkitdVolumeName+":/var/lib/buildkit",
+		"--net", 
+		"host",
 		"--name", buildkitdContainerName,
 		"--privileged",
-		ref,
-		"--debug",
-	)
+	}
+
+	engineBindMountsViaEnvVar := os.Getenv("DAGGER_ENGINE_BIND_MOUNTS");
+
+	if engineBindMountsViaEnvVar != "" {
+		splitBinds := strings.Split(engineBindMountsViaEnvVar, ",")
+		for _, element := range splitBinds {
+			arguments = append(arguments, "-v", element)
+		}
+	} else {
+		for _, element := range bindMounts {
+			arguments = append(arguments, "-v", element)
+		}
+		
+	}
+
+	arguments = append(arguments, ref, "--debug")
+
+	// #nosec G204
+	cmd = exec.CommandContext(ctx, "docker", arguments...)
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// If the daemon failed to start because it's already running,

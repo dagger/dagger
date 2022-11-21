@@ -69,6 +69,14 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	args := []string{
 		"--remote", remote,
 	}
+
+
+	if len(cfg.BindMounts) > 0 {
+		for _, engineVolume := range cfg.BindMounts {
+			args = append(args, "--engine-bind-mount", engineVolume)
+		}
+	} 
+
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}

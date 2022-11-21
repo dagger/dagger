@@ -21,11 +21,13 @@ import (
 var (
 	configPath string
 	workdir    string
+	bindMounts []string
 	remote     string
 )
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "")
+	rootCmd.PersistentFlags().StringArrayVar(&bindMounts, "engine-bind-mount", []string{}, "")
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
 	rootCmd.PersistentFlags().StringVar(&remote, "remote", "", "")
 }
@@ -44,6 +46,7 @@ func EngineSession(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
 		Workdir:    workdir,
 		ConfigPath: configPath,
+		BindMounts: bindMounts,
 		LogOutput:  os.Stderr,
 		RemoteAddr: remote,
 	}
@@ -71,6 +74,7 @@ func EngineSession(cmd *cobra.Command, args []string) {
 	port := l.Addr().(*net.TCPAddr).Port
 
 	err = engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
+
 		srv := http.Server{
 			Handler:           r,
 			ReadHeaderTimeout: 30 * time.Second,

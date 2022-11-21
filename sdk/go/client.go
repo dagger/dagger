@@ -45,6 +45,12 @@ func WithWorkdir(path string) ClientOpt {
 	})
 }
 
+func WithBindMounts(volumes []string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.BindMounts = volumes
+	}) 
+}
+
 // WithConfigPath sets the engine config path
 func WithConfigPath(path string) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {

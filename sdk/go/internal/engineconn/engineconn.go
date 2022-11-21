@@ -20,7 +20,7 @@ type EngineConn interface {
 
 func Get(host string) (EngineConn, error) {
 	u, err := url.Parse(host)
-	if err != nil {
+ 	if err != nil {
 		return nil, err
 	}
 
@@ -35,6 +35,7 @@ func Get(host string) (EngineConn, error) {
 type Config struct {
 	Workdir      string
 	ConfigPath   string
+	BindMounts []string
 	NoExtensions bool
 	LogOutput    io.Writer
 }

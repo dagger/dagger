@@ -25,7 +25,7 @@ func init() {
 	logrus.StandardLogger().SetOutput(io.Discard)
 }
 
-type engineProviderFunc func(ctx context.Context, u *url.URL) (buildkitAddr string, err error)
+type engineProviderFunc func(ctx context.Context, u *url.URL, bindMounts []string) (buildkitAddr string, err error)
 
 var engineProviderHandler = map[string]engineProviderFunc{
 	DockerContainerProvider: dockerContainerProvider,
@@ -33,12 +33,13 @@ var engineProviderHandler = map[string]engineProviderFunc{
 	LegacyBuildkitdProvider: legacyBuildkitdProvider,
 }
 
-func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
+func Client(ctx context.Context, remote *url.URL, bindMounts []string) (*bkclient.Client, error) {
 	provider, found := engineProviderHandler[remote.Scheme]
 	if !found {
 		return nil, errors.Errorf("unknown engine provider: %s", remote.Scheme)
 	}
-	buildkitdHost, err := provider(ctx, remote)
+
+	buildkitdHost, err := provider(ctx, remote, bindMounts)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +47,7 @@ func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
 	if err := waitBuildkit(ctx, buildkitdHost); err != nil {
 		return nil, err
 	}
+
 
 	opts := []bkclient.ClientOpt{
 		bkclient.WithFailFast(),

@@ -39,7 +39,7 @@ type Config struct {
 	LogOutput     io.Writer
 	DisableHostRW bool
 	RemoteAddr    string
-
+	BindMounts []string
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
 	RawBuildkitStatus chan *bkclient.SolveStatus
@@ -61,7 +61,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	c, err := engine.Client(ctx, remote)
+	c, err := engine.Client(ctx, remote, startOpts.BindMounts)
 	if err != nil {
 		return err
 	}
@@ -136,6 +136,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			return err
 		})
 	}
+
 
 	eg.Go(func() error {
 		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
