@@ -16,7 +16,7 @@ async def test():
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get reference to the local project
-        src_id = await client.host().directory(".").id()
+        src = client.host().directory(".")
 
         # highlight-start
         for version in versions:
@@ -27,7 +27,7 @@ async def test():
                 .from_(f"python:{version}-slim-buster")
                 # highlight-end
                 # mount cloned repository into image
-                .with_mounted_directory("/src", src_id)
+                .with_mounted_directory("/src", src)
                 # set current working directory for next commands
                 .with_workdir("/src")
                 # install test dependencies

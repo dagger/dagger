@@ -23,7 +23,7 @@ async def build():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # get reference to the local project
-        src_id = await client.host().directory(".").id()
+        src = client.host().directory(".")
 
         # create empty directory to put build outputs
         outputs = client.directory()
@@ -33,7 +33,7 @@ async def build():
             client.container()
             .from_("golang:latest")
             # mount source code into `golang` image
-            .with_mounted_directory("/src", src_id)
+            .with_mounted_directory("/src", src)
             .with_workdir("/src")
         )
 
@@ -49,9 +49,8 @@ async def build():
                 .with_exec(["go", "build", "-o", path])
             )
 
-            # get reference to build output directory in container
-            dir_id = await build.directory(path).id()
-            outputs = outputs.with_directory(path, dir_id)
+            # add build to outputs
+            outputs = outputs.with_directory(path, build.directory(path))
 
         # write build artifacts to host
         await outputs.export(".")
