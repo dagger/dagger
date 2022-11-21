@@ -181,9 +181,11 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *
 	}
 	fs := utils.NewFS(dirID)
 
+	imgConfig, err := imageConfig(ctx, container)
+
 	return compiler.NewValue().FillFields(map[string]interface{}{
 		"output": fs,
-		// "config": ConvertImageConfig(image.Config),
+		"config": imgConfig,
 	})
 }
 
