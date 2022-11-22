@@ -38,18 +38,18 @@ export function queryBuilder(q: QueryTree[]) {
   return query.replace(/\s+/g, "")
 }
 
-export function queryFlatten(res: Record<string, any>): Record<string, any> {
-  if (res.errors) throw res.errors[0]
-  return Object.assign(
-    {},
-    ...(function _flatten(o): any {
-      return [].concat(
-        ...Object.keys(o).map((k: string) => {
-          if (typeof o[k] === "object" && !(o[k] instanceof Array))
-            return _flatten(o[k])
-          else return { [k]: o[k] }
-        })
-      )
-    })(res)
-  )
+/**
+ * Return a Graphql query result flattened
+ */
+let queryResult: any
+export function queryFlatten<T>(response: T): T {
+  for (const key in response) {
+    if (Object.prototype.toString.call(response[key]) === "[object Object]") {
+      queryFlatten(response[key])
+    } else {
+      queryResult = response[key]
+    }
+  }
+
+  return queryResult
 }

@@ -60,9 +60,9 @@ describe("NodeJS SDK api", function () {
       },
     }
 
-    assert.deepStrictEqual(queryFlatten(tree), {
-      stdout:
-        "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
-    })
+    assert.deepStrictEqual(
+      queryFlatten(tree),
+      "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz"
+    )
   })
 })
