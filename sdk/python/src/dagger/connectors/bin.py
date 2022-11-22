@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -26,7 +27,16 @@ class Engine:
             [f"{self.cfg.host.netloc}{self.cfg.host.path}" or "dagger-engine-session"]
         )
 
-    def _start(self, base_args: list[str]) -> None:
+    def _start(
+        self, base_args: list[str], default_dagger_runner_host: str = ""
+    ) -> None:
+        dagger_runner_host = os.environ.get(
+            "DAGGER_RUNNER_HOST", default_dagger_runner_host
+        )
+        env = os.environ.copy()
+        if dagger_runner_host != "":
+            env["DAGGER_RUNNER_HOST"] = dagger_runner_host
+
         if self.cfg.workdir:
             base_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
         if self.cfg.config_path:
@@ -48,6 +58,7 @@ class Engine:
                     stdout=subprocess.PIPE,
                     stderr=self.cfg.log_output or subprocess.PIPE,
                     encoding="utf-8",
+                    env=env,
                 )
             except FileNotFoundError as e:
                 raise ProvisionError(f"Could not find {e.filename} executable") from e

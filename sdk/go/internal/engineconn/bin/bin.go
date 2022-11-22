@@ -51,7 +51,7 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, c.path, args...)
+	addr, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (c *Bin) Close() error {
 	return nil
 }
 
-func StartEngineSession(ctx context.Context, stderr io.Writer, cmd string, args ...string) (string, io.Closer, error) {
+func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (string, io.Closer, error) {
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
 	// temporarily have the tmpbin fd that we closed earlier open still, and it
@@ -90,13 +90,21 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, cmd string, args 
 	// this retry approach should be fine. It can only happen when a new
 	// engine-session binary needs to be created and even then only if many
 	// threads within this process are trying to provision it at the same time.
+	daggerRunnerHost, ok := os.LookupEnv("DAGGER_RUNNER_HOST")
+	if !ok {
+		daggerRunnerHost = defaultDaggerRunnerHost
+	}
+	env := os.Environ()
+	if daggerRunnerHost != "" {
+		env = append(env, "DAGGER_RUNNER_HOST="+daggerRunnerHost)
+	}
 
 	var proc *exec.Cmd
 	var stdout io.ReadCloser
 	var childStdin io.WriteCloser
 	for i := 0; i < 10; i++ {
 		proc = exec.CommandContext(ctx, cmd, args...)
-		proc.Env = os.Environ()
+		proc.Env = env
 		proc.Stderr = stderr
 		setPlatformOpts(proc)
 

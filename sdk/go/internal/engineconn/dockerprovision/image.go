@@ -125,7 +125,8 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, engineSessionBinPath, args...)
+	defaultDaggerRunnerHost := "docker-image://" + c.imageRef
+	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, engineSessionBinPath, args...)
 	if err != nil {
 		return nil, err
 	}
