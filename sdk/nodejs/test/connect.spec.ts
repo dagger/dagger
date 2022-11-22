@@ -1,7 +1,7 @@
 import { connect } from "../connect.js"
 import assert from "assert"
 
-describe("NodeJS sdk", function () {
+describe("NodeJS sdk Connect", function () {
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 

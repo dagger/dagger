@@ -17,6 +17,8 @@ var (
 		"FormatInputType":   formatInputType,
 		"FormatOutputType":  formatOutputType,
 		"FormatName":        formatName,
+		"GetOptionalArgs":   getOptionalArgs,
+		"GetRequiredArgs":   getRequiredArgs,
 		"HasPrefix":         strings.HasPrefix,
 		"PascalCase":        pascalCase,
 		"IsArgOptional":     isArgOptional,
@@ -163,4 +165,24 @@ func isArgOptional(values introspection.InputValues) bool {
 		}
 	}
 	return true
+}
+
+func splitRequiredOptionalArgs(values introspection.InputValues) (required introspection.InputValues, optionals introspection.InputValues) {
+	for i, v := range values {
+		if v.TypeRef != nil && !v.TypeRef.IsOptional() {
+			continue
+		}
+		return values[:i], values[i:]
+	}
+	return values, nil
+}
+
+func getRequiredArgs(values introspection.InputValues) introspection.InputValues {
+	required, _ := splitRequiredOptionalArgs(values)
+	return required
+}
+
+func getOptionalArgs(values introspection.InputValues) introspection.InputValues {
+	_, optional := splitRequiredOptionalArgs(values)
+	return optional
 }

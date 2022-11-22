@@ -30,10 +30,6 @@ func TestArgs(t *testing.T) {
 			err := json.Unmarshal([]byte(jsonData), &elems)
 			require.NoError(t, err)
 
-			for _, elem := range elems {
-				t.Log("optional:", elem.Name, ":", elem.TypeRef.IsOptional())
-			}
-
 			var b bytes.Buffer
 			err = tmpl.ExecuteTemplate(&b, "args", elems)
 
