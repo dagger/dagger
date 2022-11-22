@@ -116,6 +116,10 @@ func EngineSessionBinary(c *dagger.Client) *dagger.File {
 
 // HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir
 func HostDockerDir(c *dagger.Client) *dagger.Directory {
+	if runtime.GOOS != "linux" {
+		// doesn't work on darwin, untested on windows
+		return c.Directory()
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return c.Directory()
