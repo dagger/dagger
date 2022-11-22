@@ -121,7 +121,10 @@ class EngineFromImage(Engine):
                 if bin != engine_session_bin_path:
                     bin.unlink()
 
-        self._start([engine_session_bin_path])
+        self._start(
+            [engine_session_bin_path],
+            default_dagger_runner_host=f"docker-image://{image.ref}",
+        )
 
 
 @register_connector("docker-image")

@@ -117,6 +117,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	fmt.Println("export DAGGER_HOST=docker-container://" + containerName)
+	fmt.Println("export DAGGER_RUNNER_HOST=docker-container://" + containerName)
 	return nil
 }
 
