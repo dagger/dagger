@@ -36,6 +36,24 @@
     </div>
   {{/if}}
 
+  <div class="doc-row">
+    <div class="doc-copy">
+      {{#if response}}
+        <div class="operation-response doc-copy-section">
+          <h5>Type</h5>
+          <p>
+            {{! If it's got items, then it's an array, and we don't care about the indefiniteArticle }}
+            {{!-- {{#unless response.isArray }}
+              {{ indefiniteArticle response.underlyingType.name }}
+            {{/unless}} --}}
+            {{~ md (mdTypeLink . codify=true) stripParagraph=true }}
+          </p>
+        </div>
+      {{/if}}
+      {{>graphql/_query-or-mutation-arguments}}
+    </div>
+  </div>
+
     <div class="doc-row">
       <div class="doc-copy">
         <div class="operation-example doc-copy-section">
@@ -46,23 +64,4 @@
         </div>
       </div>
     </div>
-
-  <div class="doc-row">
-    <div class="doc-copy">
-      {{#if response}}
-        <div class="operation-response doc-copy-section">
-          <h5>Response</h5>
-          <p>
-            Returns
-            {{! If it's got items, then it's an array, and we don't care about the indefiniteArticle }}
-            {{#unless response.isArray }}
-              {{ indefiniteArticle response.underlyingType.name }}
-            {{/unless}}
-            {{~ md (mdTypeLink . codify=true) stripParagraph=true }}
-          </p>
-        </div>
-      {{/if}}
-      {{>graphql/_query-or-mutation-arguments}}
-    </div>
-  </div>
 </section>
