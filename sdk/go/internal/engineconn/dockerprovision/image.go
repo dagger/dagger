@@ -15,6 +15,7 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	"dagger.io/dagger/internal/engineconn/bin"
 	"github.com/adrg/xdg"
+	"github.com/opencontainers/go-digest"
 	exec "golang.org/x/sys/execabs"
 )
 
@@ -42,9 +43,12 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	// our other SDKs don't have access to that, so this is simpler to
 	// replicate and keep consistent.
 	var id string
-	_, dgst, ok := strings.Cut(c.imageRef, ":")
+	_, dgst, ok := strings.Cut(c.imageRef, "@sha256:")
 	if !ok {
 		return nil, fmt.Errorf("invalid image reference %q", c.imageRef)
+	}
+	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
+		return nil, fmt.Errorf("invalid digest: %w", err)
 	}
 	id = dgst
 	id = id[:hashLen]
