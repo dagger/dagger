@@ -130,6 +130,7 @@ addopts = [
 ]
 markers = [
     "slow: mark test as slow (integration)",
+    "provision: mark provisioning tests",
 ]
 
 [tool.mypy]

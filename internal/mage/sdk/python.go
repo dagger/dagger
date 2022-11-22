@@ -83,7 +83,7 @@ func (t Python) Test(ctx context.Context) error {
 			eg.Go(func() error {
 				_, err := pythonBase(c, version).
 					WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-					WithExec([]string{"poe", "test", "--exitfirst"}, dagger.ContainerWithExecOpts{
+					WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}, dagger.ContainerWithExecOpts{
 						ExperimentalPrivilegedNesting: true,
 					}).ExitCode(gctx)
 				return err

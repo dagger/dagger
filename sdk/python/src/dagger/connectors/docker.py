@@ -58,7 +58,7 @@ class EngineFromImage(Engine):
 
         os_, arch = get_platform()
 
-        image = ImageRef(self.cfg.host.hostname + self.cfg.host.path)
+        image = ImageRef(self.cfg.host.netloc + self.cfg.host.path)
         engine_session_bin_path = (
             cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
         )
