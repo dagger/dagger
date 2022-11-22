@@ -24,7 +24,7 @@ func parseRef(tag string) error {
 			return fmt.Errorf("invalid semver tag: %s", tag)
 		}
 	}
-	return fmt.Errorf("invalid reference")
+	return nil
 }
 
 type Engine mg.Namespace
