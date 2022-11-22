@@ -26,9 +26,6 @@
               <li>
                 <a href="#introduction">Welcome</a>
               </li>
-              <li>
-                <a href="#introduction-item-0">Make</a>
-              </li>
             </ul>
           </div>
           <div class="nav-group">
@@ -136,46 +133,7 @@
         </div>
         <article id="content">
           <h1 class="doc-heading">Dagger GraphQL API Reference</h1>
-          <div id="introduction" data-traverse-target="introduction">
-            <div id="welcome" class="doc-row">
-              <div class="doc-copy">
-                <p>Welcome! This is the reference for interacting with Dagger through GraphQL.</p>
-              </div>
-              <div class="doc-examples">
-                <div class="example-section welcome-contact-section">
-                  <h5>Contact</h5>
-                  <p class="contact-name">API Support</p>
-                  <p class="contact-email">
-                    <a href="mailto:support@example.com">support@example.com</a>
-                  </p>
-                </div>
-                <div class="example-section welcome-license-section">
-                  <h5>License</h5>
-                  <p class="license-name">Apache 2.0</p>
-                  <p class="license-url">
-                    <a href="https://www.apache.org/licenses/LICENSE-2.0.html">https://www.apache.org/licenses/LICENSE-2.0.html</a>
-                  </p>
-                </div>
-                <div class="example-section welcome-tos-section">
-                  <h5>Terms of Service</h5>
-                  <p>
-                    <a href="https://www.example.com/terms">https://www.example.com/terms</a>
-                  </p>
-                </div>
-                <div class="example-section welcome-api-endpoints-section example-section-is-code">
-                  <h5>API Endpoints</h5> <pre><code>https://api.dagger.cloud/playgrounds</code></pre> </div>
-              </div>
-            </div>
-            <div id="introduction-item-0" class="introduction-item" data-traverse-target="introduction-item-0">
-              <h2 class="introduction-item-title">Make</h2>
-              <div class="doc-row">
-                <div class="doc-copy">
-                  <p>We are using a GraphQL server as the API to interact with our engine. This allows us to make interoperation between programming languages possible.</p>
-                </div>
-                <div class="doc-examples"> </div>
-              </div>
-            </div>
-          </div>
+          <div id="introduction" data-traverse-target="introduction"> </div>
           <h1 id="group-Queries" class="group-heading" data-traverse-target="group-Queries">Queries</h1>
           <section id="query-cacheVolume" class="operation operation-query" data-traverse-target="query-cacheVolume">
             <h2 class="operation-heading "> <code>cacheVolume</code> </h2>
@@ -223,37 +181,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> cacheVolume<span class="hljs-tag">(<span class="hljs-code">$key</span>:<span class="hljs-type"> String!</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">cacheVolume<span class="hljs-tag">(key: <span class="hljs-code">$key</span>)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"key"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span><span class="hljs-attr">"cacheVolume"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span><span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">CacheID</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -322,164 +249,6 @@
                   </table>
                 </div>
               </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> container<span class="hljs-tag">(
-  <span class="hljs-code">$id</span>:<span class="hljs-type"> ContainerID,</span>
-  <span class="hljs-code">$platform</span>:<span class="hljs-type"> Platform
-</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">container<span class="hljs-tag">(
-    id: <span class="hljs-code">$id</span>,
-    platform: <span class="hljs-code">$platform</span>
-  )</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-    <span class="hljs-symbol">platform</span>
-    <span class="hljs-symbol">from <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">build <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">fs <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withFS <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">directory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">file <span class="hljs-tag">{
-      <span class="hljs-type">...FileFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">user</span>
-    <span class="hljs-symbol">withUser <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">workdir</span>
-    <span class="hljs-symbol">withWorkdir <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">envVariables <span class="hljs-tag">{
-      <span class="hljs-type">...EnvVariableFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">envVariable</span>
-    <span class="hljs-symbol">withEnvVariable <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withSecretVariable <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withoutEnvVariable <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">entrypoint</span>
-    <span class="hljs-symbol">withEntrypoint <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">defaultArgs</span>
-    <span class="hljs-symbol">withDefaultArgs <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">mounts</span>
-    <span class="hljs-symbol">withMountedDirectory <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withMountedFile <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withMountedTemp <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withMountedCache <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withMountedSecret <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withoutMount <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">exec <span class="hljs-tag">{
-      <span class="hljs-type">...ContainerFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">exitCode</span>
-    <span class="hljs-symbol">stdout <span class="hljs-tag">{
-      <span class="hljs-type">...FileFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">stderr <span class="hljs-tag">{
-      <span class="hljs-type">...FileFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">publish</span>
-    <span class="hljs-symbol">export</span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">ContainerID</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"platform"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Platform</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"container"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">ContainerID</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"platform"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Platform</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"from"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"build"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"fs"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withFS"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"directory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"file"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"user"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withUser"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"workdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withWorkdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"envVariables"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">EnvVariable</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"envVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withEnvVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withSecretVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withoutEnvVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"entrypoint"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withEntrypoint"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"defaultArgs"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withDefaultArgs"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"mounts"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withMountedDirectory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withMountedFile"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withMountedTemp"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withMountedCache"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withMountedSecret"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withoutMount"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"exec"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"exitCode"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"stdout"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"stderr"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"publish"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-              </div>
             </div>
           </section>
           <section id="query-defaultPlatform" class="operation operation-query" data-traverse-target="query-defaultPlatform">
@@ -513,27 +282,6 @@
                   <p> Returns a
                     <a href="#definition-Platform"><code>Platform!</code></a>
                   </p>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> defaultPlatform <span class="hljs-tag">{
-  <span class="hljs-symbol">defaultPlatform</span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span><span class="hljs-attr">"defaultPlatform"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Platform</span><span class="hljs-punctuation">}</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -593,83 +341,6 @@
                   </table>
                 </div>
               </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> directory<span class="hljs-tag">(<span class="hljs-code">$id</span>:<span class="hljs-type"> DirectoryID)</span> {
-  directory(id: <span class="hljs-code">$id</span>)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-    <span class="hljs-symbol">entries</span>
-    <span class="hljs-symbol">file <span class="hljs-tag">{
-      <span class="hljs-type">...FileFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withFile <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withNewFile <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withoutFile <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">directory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withDirectory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withNewDirectory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">withoutDirectory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">diff <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">export</span>
-  }</span></span>
-}
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">DirectoryID</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"directory"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">DirectoryID</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"entries"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"file"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withFile"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withNewFile"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withoutFile"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"directory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withDirectory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withNewDirectory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"withoutDirectory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"diff"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-              </div>
             </div>
           </section>
           <section id="query-file" class="operation operation-query" data-traverse-target="query-file">
@@ -725,53 +396,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> file<span class="hljs-tag">(<span class="hljs-code">$id</span>:<span class="hljs-type"> FileID!</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">file<span class="hljs-tag">(id: <span class="hljs-code">$id</span>)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-    <span class="hljs-symbol">contents</span>
-    <span class="hljs-symbol">secret <span class="hljs-tag">{
-      <span class="hljs-type">...SecretFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">size</span>
-    <span class="hljs-symbol">export</span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">FileID</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"file"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">FileID</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"contents"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"secret"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Secret</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"size"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -840,63 +464,6 @@
                   </table>
                 </div>
               </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> git<span class="hljs-tag">(
-  <span class="hljs-code">$url</span>:<span class="hljs-type"> String!</span>,
-  <span class="hljs-code">$keepGitDir</span>:<span class="hljs-type"> Boolean
-</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">git<span class="hljs-tag">(
-    url: <span class="hljs-code">$url</span>,
-    keepGitDir: <span class="hljs-code">$keepGitDir</span>
-  )</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">branches</span>
-    <span class="hljs-symbol">branch <span class="hljs-tag">{
-      <span class="hljs-type">...GitRefFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">tags</span>
-    <span class="hljs-symbol">tag <span class="hljs-tag">{
-      <span class="hljs-type">...GitRefFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">commit <span class="hljs-tag">{
-      <span class="hljs-type">...GitRefFragment</span>
-    }</span></span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">"keepGitDir"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"git"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"branches"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"branch"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"tags"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"tag"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"commit"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-              </div>
             </div>
           </section>
           <section id="query-host" class="operation operation-query" data-traverse-target="query-host">
@@ -930,45 +497,6 @@
                   <p> Returns a
                     <a href="#definition-Host"><code>Host!</code></a>
                   </p>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> host <span class="hljs-tag">{
-  <span class="hljs-symbol">host <span class="hljs-tag">{
-    <span class="hljs-symbol">workdir <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">directory <span class="hljs-tag">{
-      <span class="hljs-type">...DirectoryFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">envVariable <span class="hljs-tag">{
-      <span class="hljs-type">...HostVariableFragment</span>
-    }</span></span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"host"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"workdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"directory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Directory</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"envVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">HostVariable</span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -1026,53 +554,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> http<span class="hljs-tag">(<span class="hljs-code">$url</span>:<span class="hljs-type"> String!</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">http<span class="hljs-tag">(url: <span class="hljs-code">$url</span>)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-    <span class="hljs-symbol">contents</span>
-    <span class="hljs-symbol">secret <span class="hljs-tag">{
-      <span class="hljs-type">...SecretFragment</span>
-    }</span></span>
-    <span class="hljs-symbol">size</span>
-    <span class="hljs-symbol">export</span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"url"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"http"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">FileID</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"contents"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"secret"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Secret</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"size"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -1134,45 +615,6 @@
                       </tr>
                     </tbody>
                   </table>
-                </div>
-              </div>
-              <div class="doc-examples">
-                <h4 class="example-heading">Example</h4>
-                <div class="example-section example-section-is-code operation-query-example">
-                  <h5>Query</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol"><span class="hljs-keyword">query</span> secret<span class="hljs-tag">(<span class="hljs-code">$id</span>:<span class="hljs-type"> SecretID!</span>)</span> <span class="hljs-tag">{
-  <span class="hljs-symbol">secret<span class="hljs-tag">(id: <span class="hljs-code">$id</span>)</span> <span class="hljs-tag">{
-    <span class="hljs-symbol">id</span>
-    <span class="hljs-symbol">plaintext</span>
-  }</span></span>
-}</span></span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-variables-example">
-                  <h5>Variables</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">SecretID</span><span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
-                </div>
-                <div class="example-section example-section-is-code operation-response-example">
-                  <h5>Response</h5>
-                  <html>
-                  <head></head>
-                  <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"data"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-    <span class="hljs-attr">"secret"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">{</span>
-      <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">SecretID</span><span class="hljs-punctuation">,</span>
-      <span class="hljs-attr">"plaintext"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
-    <span class="hljs-punctuation">}</span>
-  <span class="hljs-punctuation">}</span>
-<span class="hljs-punctuation">}</span>
-</code></pre> </body>
-                  </html>
                 </div>
               </div>
             </div>
@@ -2107,16 +1549,16 @@
   <span class="hljs-attr">"file"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"user"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withUser"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"workdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"workdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withWorkdir"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"envVariables"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">EnvVariable</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"envVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withEnvVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withSecretVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withoutEnvVariable"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"entrypoint"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"entrypoint"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withEntrypoint"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"defaultArgs"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"defaultArgs"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withDefaultArgs"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"mounts"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withMountedDirectory"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
@@ -2126,11 +1568,11 @@
   <span class="hljs-attr">"withMountedSecret"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"withoutMount"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"exec"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Container</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"exitCode"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"exitCode"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"stdout"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"stderr"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">File</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"publish"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">true</span></span>
+  <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
 <span class="hljs-punctuation">}</span>
 </code></pre> </body>
                   </html>
@@ -2620,7 +2062,7 @@
                   <html>
                   <head></head>
                   <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
-  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"name"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"value"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre> </body>
@@ -2725,8 +2167,8 @@
   <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">FileID</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"contents"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"secret"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">Secret</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"size"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">123</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">true</span></span>
+  <span class="hljs-attr">"size"</span><span class="hljs-punctuation">:</span> <span class="hljs-number">987</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"export"</span><span class="hljs-punctuation">:</span> <span class="hljs-literal"><span class="hljs-keyword">false</span></span>
 <span class="hljs-punctuation">}</span>
 </code></pre> </body>
                   </html>
@@ -2940,7 +2382,7 @@
                   <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
   <span class="hljs-attr">"branches"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"branch"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"tags"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"abc123"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
+  <span class="hljs-attr">"tags"</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">"xyz789"</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"tag"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span><span class="hljs-punctuation">,</span>
   <span class="hljs-attr">"commit"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">GitRef</span>
 <span class="hljs-punctuation">}</span>
@@ -3244,7 +2686,7 @@
                   <head></head>
                   <body><pre><code class="hljs language-json"><span class="hljs-punctuation">{</span>
   <span class="hljs-attr">"id"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">SecretID</span><span class="hljs-punctuation">,</span>
-  <span class="hljs-attr">"plaintext"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"abc123"</span>
+  <span class="hljs-attr">"plaintext"</span><span class="hljs-punctuation">:</span> <span class="hljs-string">"xyz789"</span>
 <span class="hljs-punctuation">}</span>
 </code></pre> </body>
                   </html>
@@ -3293,7 +2735,7 @@
                   <h5>Example</h5>
                   <html>
                   <head></head>
-                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"xyz789"</span>
+                  <body><pre><code class="hljs language-gql"><span class="hljs-symbol">"abc123"</span>
 </code></pre> </body>
                   </html>
                 </div>

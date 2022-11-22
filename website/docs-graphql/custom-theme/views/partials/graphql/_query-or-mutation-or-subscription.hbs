@@ -64,29 +64,5 @@
       {{/if}}
       {{>graphql/_query-or-mutation-arguments}}
     </div>
-
-    <div class="doc-examples">
-      {{#if (firstTruthy query mutation subscription)}}
-        <h4 class="example-heading">Example</h4>
-
-        <div class="example-section example-section-is-code operation-query-example">
-          <h5>Query</h5>
-          {{printGraphQL (firstTruthy query mutation subscription)}}
-        </div>
-
-        {{#if variables}}
-          <div class="example-section example-section-is-code operation-variables-example">
-            <h5>Variables</h5>
-            {{printJSON variables}}
-          </div>
-        {{/if}}
-        {{#if response.data}}
-          <div class="example-section example-section-is-code operation-response-example">
-            <h5>Response</h5>
-            {{printJSON response.data}}
-          </div>
-        {{/if}}
-      {{/if}}
-    </div>
   </div>
 </section>
