@@ -34,7 +34,7 @@ class Engine:
             "DAGGER_RUNNER_HOST", default_dagger_runner_host
         )
         env = os.environ.copy()
-        if dagger_runner_host != "":
+        if dagger_runner_host:
             env["DAGGER_RUNNER_HOST"] = dagger_runner_host
 
         if self.cfg.workdir:

@@ -53,6 +53,7 @@ typer = {version = ">=0.6.1", extras = ["all"]}
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.2.0"
 "pytest-mock" = ">=3.10.0"
+pytest-subprocess = "^1.4.2"
 
 [tool.poetry.group.lint.dependencies]
 autoflake = ">=1.3.1"
@@ -129,6 +130,7 @@ addopts = [
 ]
 markers = [
     "slow: mark test as slow (integration)",
+    "provision: mark provisioning tests",
 ]
 
 [tool.mypy]
