@@ -116,6 +116,10 @@ func EngineSessionBinary(c *dagger.Client) *dagger.File {
 
 // HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir
 func HostDockerDir(c *dagger.Client) *dagger.Directory {
+	if runtime.GOOS != "linux" {
+		// doesn't work on darwin, untested on windows
+		return c.Directory()
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return c.Directory()
@@ -208,8 +212,14 @@ func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
 		}
 		defer os.Remove(tmpfile.Name())
 
+		arches := []string{runtime.GOARCH}
+		oses := []string{runtime.GOOS}
+		if runtime.GOOS != "linux" {
+			oses = append(oses, "linux")
+		}
+
 		_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
-			PlatformVariants: DevEngineContainer(c, []string{runtime.GOARCH}, []string{runtime.GOOS}),
+			PlatformVariants: DevEngineContainer(c, arches, oses),
 		})
 		if err != nil {
 			devEngineErr = err
