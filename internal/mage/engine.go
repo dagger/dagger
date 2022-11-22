@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	EngineImageRef = "ghcr.io/dagger/engine"
+	engineImage = "ghcr.io/dagger/engine"
 )
 
 func parseRef(tag string) error {
-	if tag != "main" {
-		if ok := semver.IsValid(tag); !ok {
-			return fmt.Errorf("invalid semver tag: %s", tag)
-		}
+	if tag == "main" {
+		return nil
+	}
+	if ok := semver.IsValid(tag); !ok {
+		return fmt.Errorf("invalid semver tag: %s", tag)
 	}
 	return nil
 }
@@ -66,12 +67,12 @@ func (t Engine) Lint(ctx context.Context) error {
 	})
 }
 
-func (t Engine) Publish(ctx context.Context, refName, commitSHA string) error {
-	if err := parseRef(refName); err != nil {
+func (t Engine) Publish(ctx context.Context, version string) error {
+	if err := parseRef(version); err != nil {
 		return err
 	}
 
-	engineImageRef := fmt.Sprintf("%s:%s", EngineImageRef, commitSHA)
+	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -83,22 +84,22 @@ func (t Engine) Publish(ctx context.Context, refName, commitSHA string) error {
 		arches := []string{"amd64", "arm64"}
 		oses := []string{"linux", "darwin", "windows"}
 
-		_, err = c.Container().Publish(ctx, engineImageRef, dagger.ContainerPublishOpts{
+		digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
 			PlatformVariants: util.DevEngineContainer(c, arches, oses),
 		})
 		if err != nil {
 			return err
 		}
 
-		if semver.IsValid(refName) {
+		if semver.IsValid(version) {
 			sdks := sdk.All{}
-			if err := sdks.Bump(ctx, engineImageRef); err != nil {
+			if err := sdks.Bump(ctx, digest); err != nil {
 				return err
 			}
 		}
 
 		time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
-		fmt.Println("PUBLISHED IMAGE REF:", engineImageRef)
+		fmt.Println("PUBLISHED IMAGE REF:", digest)
 
 		return nil
 	})
