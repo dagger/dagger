@@ -42,6 +42,7 @@ jobs:
           author: Dagger CI <hello@dagger.io>
           commit-message: "sdk: Bump engine dependency to ${{ github.ref_name }}"
           signoff: true
+          base: main
           title: "sdk: Bump engine dependency to ${{ github.ref_name }}"
           body: |
             This PR was auto-generated.
