@@ -1,14 +1,40 @@
 {{ define "method_solve" }}
+	{{- $parentName := .ParentObject.Name }}
+	
+	{{- $required := GetRequiredArgs .Args }}
+	{{- $optionals := GetOptionalArgs .Args }}
+	{{- if $optionals }}
+		{{- if eq $parentName "Query" }}
+			{{- $parentName = "Client" }}
+		{{- end -}}
+	{{- end }}
+
 {{- template "method_comment" . }}
-{{- "" }}  async {{ .Name -}}({{- template "args" .Args -}}){{ template "return_solve" .TypeRef }} {
+{{- "" }}  async {{ .Name -}}(
+{{- with $required }}
+	{{- template "args" $required }}
+{{- end }}
+{{- if $optionals }}
+	{{- if $required }}, {{ end }}
+	{{- "" }}opts?: {{ $parentName | PascalCase }}{{ .Name | PascalCase }}Opts
+{{- end }}
+{{- "" }}){{ template "return_solve" .TypeRef }} {
 		{{- if .TypeRef }}
     const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await queryBuilder(
       [
       ...this._queryTree,
       {
       operation: '{{ .Name }}'
-			{{- if .Args }},
-      args: { {{- template "call_args" .Args -}} }
+			{{- if or $required $optionals }},
+      args: { {{""}}
+      				{{- with $required }}
+					{{- template "call_args" $required }}
+				{{- end }}
+      				{{- with $optionals }}
+      					{{- if $required }}, {{ end -}}
+				...opts
+				{{- end -}}
+{{""}} }
 			{{- end }}
       }
     ],
