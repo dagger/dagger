@@ -2,6 +2,7 @@ package bin
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"dagger.io/dagger/internal/engineconn"
@@ -77,7 +79,7 @@ func (c *Bin) Close() error {
 	return nil
 }
 
-func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (string, io.Closer, error) {
+func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (_ string, _ io.Closer, rerr error) {
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
 	// temporarily have the tmpbin fd that we closed earlier open still, and it
@@ -101,11 +103,11 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunn
 
 	var proc *exec.Cmd
 	var stdout io.ReadCloser
+	var stderrBuf *bytes.Buffer
 	var childStdin io.WriteCloser
 	for i := 0; i < 10; i++ {
 		proc = exec.CommandContext(ctx, cmd, args...)
 		proc.Env = env
-		proc.Stderr = stderr
 		setPlatformOpts(proc)
 
 		var err error
@@ -114,6 +116,23 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunn
 			return "", nil, err
 		}
 		defer stdout.Close() // don't need it after we read the port
+
+		stderrPipe, err := proc.StderrPipe()
+		if err != nil {
+			return "", nil, err
+		}
+		if logWriter == nil {
+			logWriter = io.Discard
+		}
+
+		// Write stderr to logWriter but also buffer it for the duration
+		// of this function so we can return it in the error if something
+		// goes wrong here. Otherwise the only error ends up being EOF and
+		// the user has to enable log output to see anything.
+		stderrBuf = bytes.NewBuffer(nil)
+		discardableBuf := &discardableWriter{w: stderrBuf}
+		go io.Copy(io.MultiWriter(logWriter, discardableBuf), stderrPipe)
+		defer discardableBuf.Discard()
 
 		// Open a stdin pipe with the child process. The engine-session shutsdown
 		// when it is closed. This is a platform-agnostic way of ensuring
@@ -129,6 +148,8 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunn
 				proc = nil
 				stdout.Close()
 				stdout = nil
+				stderrPipe.Close()
+				stderrBuf = nil
 				childStdin.Close()
 				childStdin = nil
 				continue
@@ -140,6 +161,14 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunn
 	if proc == nil {
 		return "", nil, fmt.Errorf("failed to start engine session")
 	}
+	defer func() {
+		if rerr != nil {
+			stderrContents := stderrBuf.String()
+			if stderrContents != "" {
+				rerr = fmt.Errorf("%s: %s", rerr, stderrContents)
+			}
+		}
+	}()
 
 	// Read the port to connect to from the engine-session's stdout.
 	portCh := make(chan string, 1)
@@ -173,4 +202,22 @@ func StartEngineSession(ctx context.Context, stderr io.Writer, defaultDaggerRunn
 	}
 
 	return fmt.Sprintf("localhost:%d", port), childStdin, nil
+}
+
+// a writer that can later be turned into io.Discard
+type discardableWriter struct {
+	mu sync.RWMutex
+	w  io.Writer
+}
+
+func (w *discardableWriter) Write(p []byte) (int, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.w.Write(p)
+}
+
+func (w *discardableWriter) Discard() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.w = io.Discard
 }

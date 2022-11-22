@@ -76,7 +76,9 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 			if output, err := exec.CommandContext(ctx,
 				"docker", "rm", "-fv", line,
 			).CombinedOutput(); err != nil {
-				fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
+				if !strings.Contains(string(output), fmt.Sprintf("removal of container %s is already in progress", line)) {
+					fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
+				}
 			}
 		}
 	}
