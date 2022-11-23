@@ -41,15 +41,24 @@ export function queryBuilder(q: QueryTree[]) {
 /**
  * Return a Graphql query result flattened
  */
-let queryResult: any
-export function queryFlatten<T>(response: T): T {
-  for (const key in response) {
-    if (Object.prototype.toString.call(response[key]) === "[object Object]") {
-      queryFlatten(response[key])
-    } else {
-      queryResult = response[key]
-    }
+export function queryFlatten<T>(response: any): T {
+  // Recursion break condition
+  // If our response is not an object or an array we assume we reached the value
+  if (!(response instanceof Object) || Array.isArray(response)) {
+    return response
   }
 
-  return queryResult
+  const keys = Object.keys(response)
+
+  if (keys.length != 1) {
+    // Dagger is currently expecting to only return one value
+    // If the response is nested in a way were more than one object is nested inside throw an error
+    // TODO Throw sensible Error
+    throw new Error("")
+  }
+
+  const nestedKey = keys[0]
+
+  return queryFlatten(response[nestedKey])
+}
 }
