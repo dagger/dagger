@@ -1,13 +1,7 @@
 name: publish-sdk-go
 on:
   push:
-    branches:
-      - main
-    tags:
-      - sdk/go/**
-    paths:
-      - "sdk/go/**"
-      - .github/workflows/publish-sdk-go.yml
+    tags: ["sdk/go/v**"]
 jobs:
   publish:
     runs-on: ubuntu-latest
