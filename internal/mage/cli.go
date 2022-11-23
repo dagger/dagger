@@ -11,6 +11,7 @@ import (
 
 type Cli mg.Namespace
 
+// Publish publishes dagger CLI using GoReleaser
 func (cl Cli) Publish(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
