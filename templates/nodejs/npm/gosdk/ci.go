@@ -26,7 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src := client.Host().Workdir()
+	src := client.Host().Directory(".")
 
 	// initialize new container from npm image
 	npm := client.Container().From("node")
@@ -35,17 +35,13 @@ func doCi() error {
 	npm = npm.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 	// execute npm install
-	npm = npm.Exec(dagger.ContainerExecOpts{
-		Args: []string{"npm", "install"},
-	})
+	npm = npm.WithExec([]string{"npm", "install"})
 
 	// execute npm test command
-	npm = npm.Exec(dagger.ContainerExecOpts{
-		Args: []string{"npm", "run", "test"},
-	})
+	npm = npm.WithExec([]string{"npm", "run", "test"})
 
 	// get test output
-	test, err := npm.Stdout().Contents(ctx)
+	test, err := npm.Stdout(ctx)
 	if err != nil {
 		return err
 	}
@@ -53,12 +49,10 @@ func doCi() error {
 	fmt.Println(test)
 
 	// execute build command
-	npm = npm.Exec(dagger.ContainerExecOpts{
-		Args: []string{"npm", "run", "build"},
-	})
+	npm = npm.WithExec([]string{"npm", "run", "build"})
 
 	// get build output
-	build, err := npm.Stdout().Contents(ctx)
+	build, err := npm.Stdout(ctx)
 	if err != nil {
 		return err
 	}

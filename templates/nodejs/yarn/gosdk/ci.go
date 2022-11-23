@@ -26,7 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src := client.Host().Workdir()
+	src := client.Host().Directory(".")
 
 	// initialize new container from yarn image
 	yarn := client.Container().From("yarnpkg/node-yarn")
@@ -35,12 +35,10 @@ func doCi() error {
 	yarn = yarn.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 	// execute yarn test command
-	yarn = yarn.Exec(dagger.ContainerExecOpts{
-		Args: []string{"yarn", "test"},
-	})
+	yarn = yarn.WithExec([]string{"yarn", "test"})
 
 	// get test output
-	test, err := yarn.Stdout().Contents(ctx)
+	test, err := yarn.Stdout(ctx)
 	if err != nil {
 		return err
 	}
@@ -48,12 +46,10 @@ func doCi() error {
 	fmt.Println(test)
 
 	// execute build command
-	yarn = yarn.Exec(dagger.ContainerExecOpts{
-		Args: []string{"yarn", "build"},
-	})
+	yarn = yarn.WithExec([]string{"yarn", "build"})
 
 	// get build output
-	build, err := yarn.Stdout().Contents(ctx)
+	build, err := yarn.Stdout(ctx)
 	if err != nil {
 		return err
 	}

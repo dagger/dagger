@@ -56,9 +56,7 @@ func build(ctx context.Context, repoURL string) error {
 				// set GOARCH and GOOS in the build environment
 				build := golang.WithEnvVariable("GOOS", goos).
 					WithEnvVariable("GOARCH", goarch).
-					Exec(dagger.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", path},
-					})
+					WithExec([]string{"go", "build", "-o", path})
 
 				// build application
 				outputDirectory = outputDirectory.WithDirectory(path, build.Directory(path))

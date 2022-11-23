@@ -26,7 +26,7 @@ func doCi() error {
 	defer client.Close()
 
 	// get the projects source directory
-	src := client.Host().Workdir()
+	src := client.Host().Directory(".")
 
 	// Build an gradle image with gradle and bash installed
 	gradle := client.Container().From("gradle:latest")
@@ -35,12 +35,10 @@ func doCi() error {
 	gradle = gradle.WithMountedDirectory("/src", src).WithWorkdir("/src")
 
 	// execute gradle build command
-	gradle = gradle.Exec(dagger.ContainerExecOpts{
-		Args: []string{"gradle", "build"},
-	})
+	gradle = gradle.WithExec([]string{"gradle", "build"})
 
 	// get gradle output
-	out, err := gradle.Stdout().Contents(ctx)
+	out, err := gradle.Stdout(ctx)
 	if err != nil {
 		return err
 	}
