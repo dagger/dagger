@@ -17,7 +17,7 @@ async def main(args: list[str]):
         )
 
         # run cowsay with requested message
-        result = await ctr.with_exec(args).stdout().contents()
+        result = await ctr.with_exec(args).stdout()
 
         print(result)
 
