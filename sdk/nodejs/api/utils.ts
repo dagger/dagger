@@ -61,4 +61,3 @@ export function queryFlatten<T>(response: any): T {
 
   return queryFlatten(response[nestedKey])
 }
-}

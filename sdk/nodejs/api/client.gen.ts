@@ -58,8 +58,7 @@ class BaseClient {
 
       return queryFlatten(computeQuery)
     } catch (error) {
-      console.error(JSON.stringify(error, undefined, 2))
-      process.exit(1)
+      throw Error(`Error: ${JSON.stringify(error, undefined, 2)}`)
     }
   }
 }
