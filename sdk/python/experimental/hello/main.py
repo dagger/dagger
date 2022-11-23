@@ -1,6 +1,7 @@
 import strawberry
 
 import dagger
+from dagger.server import Server
 
 
 @strawberry.type
@@ -32,4 +33,4 @@ class Query:
 
 schema = strawberry.Schema(query=Query)
 
-server = dagger.Server(schema, debug=True)
+server = Server(schema, debug=True)
