@@ -16,7 +16,7 @@ def main(args: list[str]):
         )
 
         # run cowsay with requested message
-        result = ctr.with_exec(args).stdout().contents()
+        result = ctr.with_exec(args).stdout()
 
         print(result)
 
