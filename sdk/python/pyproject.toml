@@ -48,8 +48,11 @@ anyio = ">=3.6.2"
 attrs = ">=22.1.0"
 cattrs = ">=22.2.0"
 gql = {version = ">=3.4.0", extras = ["aiohttp", "requests"]}
-"strawberry-graphql" = ">=0.133.5"
+strawberry-graphql = {version = ">=0.133.5", optional = true}
 typer = {version = ">=0.6.1", extras = ["all"]}
+
+[tool.poetry.extras]
+server = ["strawberry-graphql"]
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.2.0"
