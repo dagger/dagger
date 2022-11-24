@@ -4,12 +4,14 @@ go 1.18
 
 require (
 	dagger.io/dagger v0.4.1
+	github.com/adrg/xdg v0.4.0
 	github.com/containerd/containerd v1.6.10
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
 	github.com/dagger/graphql-go-tools v0.0.0-20221102001222-e68b44170936
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-openapi/runtime v0.24.2
 	github.com/gogo/protobuf v1.3.2
+	github.com/google/uuid v1.3.0
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/iancoleman/strcase v0.2.0
 	github.com/magefile/mage v1.14.0
@@ -43,7 +45,6 @@ require (
 	github.com/Azure/go-autorest/tracing v0.6.0 // indirect
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
-	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20210307081110-f21760c49a8d // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
