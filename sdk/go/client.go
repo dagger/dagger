@@ -9,7 +9,6 @@ import (
 	"dagger.io/dagger/internal/engineconn"
 	_ "dagger.io/dagger/internal/engineconn/bin"             // invoke engine-session binary
 	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine-session from docker
-	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
 	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"

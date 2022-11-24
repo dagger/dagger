@@ -81,7 +81,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
+				return net.Dial("unix", addr)
 			},
 		},
 	}, nil

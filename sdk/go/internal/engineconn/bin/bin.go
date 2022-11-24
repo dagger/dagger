@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -62,7 +61,7 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 	return &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
+				return net.Dial("unix", addr)
 			},
 		},
 	}, nil
@@ -115,7 +114,7 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		if err != nil {
 			return "", nil, err
 		}
-		defer stdout.Close() // don't need it after we read the port
+		defer stdout.Close() // don't need it after we read the sock
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
@@ -170,38 +169,32 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		}
 	}()
 
-	// Read the port to connect to from the engine-session's stdout.
-	portCh := make(chan string, 1)
-	var portErr error
+	// Read the sock to connect to from the engine-session's stdout.
+	sockCh := make(chan string, 1)
+	var sockErr error
 	go func() {
-		defer close(portCh)
-		portStr, err := bufio.NewReader(stdout).ReadString('\n')
+		defer close(sockCh)
+		sock, err := bufio.NewReader(stdout).ReadString('\n')
 		if err != nil {
-			portErr = err
+			sockErr = err
 			return
 		}
-		portCh <- portStr
+		sockCh <- strings.TrimSpace(sock)
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, 300*time.Second) // really long time to account for extensions that need to build, though that path should be optimized in future
 	defer cancel()
-	var port int
+	var sock string
 	select {
-	case portStr := <-portCh:
-		if portErr != nil {
-			return "", nil, portErr
-		}
-		portStr = strings.TrimSpace(portStr)
-		var err error
-		port, err = strconv.Atoi(portStr)
-		if err != nil {
-			return "", nil, err
+	case sock = <-sockCh:
+		if sockErr != nil {
+			return "", nil, sockErr
 		}
 	case <-ctx.Done():
 		return "", nil, ctx.Err()
 	}
 
-	return fmt.Sprintf("localhost:%d", port), childStdin, nil
+	return sock, childStdin, nil
 }
 
 // a writer that can later be turned into io.Discard
