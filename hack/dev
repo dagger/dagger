@@ -4,9 +4,11 @@ set -e -u -x
 
 DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
-cd $MAGEDIR
 
-go run main.go -w $DAGGER_SRC_ROOT engine:dev
+pushd $MAGEDIR
+GOWORK=off go run main.go -w $DAGGER_SRC_ROOT engine:dev
+popd
+
 export DAGGER_HOST=docker-container://test-dagger-engine
 export DAGGER_RUNNER_HOST=docker-container://test-dagger-engine
 

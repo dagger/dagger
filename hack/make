@@ -3,4 +3,6 @@
 set -e -u -x
 
 DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
+cd $MAGEDIR
 exec $DAGGER_SRC_ROOT/hack/dev go run main.go -w $DAGGER_SRC_ROOT "$@"

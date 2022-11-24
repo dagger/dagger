@@ -1,7 +1,5 @@
 module github.com/dagger/dagger
 
-replace dagger.io/dagger => ./sdk/go
-
 go 1.18
 
 require (
@@ -12,7 +10,9 @@ require (
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/go-openapi/runtime v0.24.2
 	github.com/gogo/protobuf v1.3.2
+	github.com/hexops/gotextdiff v1.0.3
 	github.com/iancoleman/strcase v0.2.0
+	github.com/magefile/mage v1.14.0
 	github.com/moby/buildkit v0.10.6
 	github.com/netlify/open-api/v2 v2.12.2
 	github.com/opencontainers/go-digest v1.0.0
@@ -27,6 +27,7 @@ require (
 	go.opentelemetry.io/otel v1.10.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
 	go.opentelemetry.io/otel/sdk v1.9.0
+	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 	golang.org/x/term v0.0.0-20220722155259-a9ba230a4035

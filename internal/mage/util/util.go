@@ -40,6 +40,8 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// modules
 			"**/go.mod",
 			"**/go.sum",
+			"**/go.work",
+			"**/go.work.sum",
 
 			// embedded files
 			"**/*.go.tmpl",
