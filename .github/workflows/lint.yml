@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/test ./hack/make engine:lint
+      - run: ./hack/make-prod engine:lint
 
   docs:
     runs-on: ubuntu-latest
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/test ./hack/make docs:lint
+      - run: ./hack/make-prod docs:lint
 
   sdk-go:
     name: "sdk / go"
@@ -39,7 +39,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/test ./hack/make sdk:go:lint
+      - run: ./hack/make-prod sdk:go:lint
 
   sdk-python:
     name: "sdk / python"
@@ -49,7 +49,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/test ./hack/make sdk:python:lint
+      - run: ./hack/make-prod sdk:python:lint
 
   sdk-nodejs:
     name: "sdk / nodejs"
@@ -59,4 +59,4 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/test ./hack/make sdk:nodejs:lint
+      - run: ./hack/make-prod sdk:nodejs:lint

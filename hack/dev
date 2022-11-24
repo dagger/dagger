@@ -2,10 +2,12 @@
 
 set -e -u -x
 
-ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
+cd $MAGEDIR
 
-$ROOTDIR/hack/bootstrap engine:dev
-
+go run main.go -w $DAGGER_SRC_ROOT engine:dev
 export DAGGER_HOST=docker-container://test-dagger-engine
+export DAGGER_RUNNER_HOST=docker-container://test-dagger-engine
 
-"$@"
+exec "$@"

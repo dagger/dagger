@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-set -e -u -x
-
-ROOTDIR="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
-
-$ROOTDIR/hack/dev $ROOTDIR/hack/make engine:test

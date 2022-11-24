@@ -5,8 +5,8 @@ package main
 
 import (
 	//mage:import
-	_ "github.com/dagger/dagger/magefiles/targets"
+	_ "github.com/dagger/dagger/internal/mage"
 
 	//mage:import sdk
-	_ "github.com/dagger/dagger/magefiles/sdk"
+	_ "github.com/dagger/dagger/internal/mage/sdk"
 )

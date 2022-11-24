@@ -18,9 +18,9 @@ jobs:
         with:
           go-version: 1.19
       - uses: actions/checkout@v3
-      - run: ./hack/dev ./hack/make engine:build
+      - run: ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: ./hack/test
+      - run: ./hack/make engine:test
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs test-dagger-engine
@@ -39,9 +39,9 @@ jobs:
         with:
           go-version: 1.19
       - uses: actions/checkout@v3
-      - run: ./hack/dev ./hack/make engine:build
+      - run: ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: ./hack/dev ./hack/make engine:testrace
+      - run: ./hack/make engine:testrace
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs test-dagger-engine
@@ -57,7 +57,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/dev ./hack/make sdk:go:test
+      - run: ./hack/make sdk:go:test
 
   sdk-python:
     name: "sdk / python"
@@ -67,7 +67,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/dev ./hack/make sdk:python:test
+      - run: ./hack/make sdk:python:test
 
   sdk-nodejs:
     name: "sdk / nodejs"
@@ -77,4 +77,4 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/dev ./hack/make sdk:nodejs:test
+      - run: ./hack/make sdk:nodejs:test
