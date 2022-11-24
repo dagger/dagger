@@ -46,21 +46,19 @@ class BaseClient {
   /**
    * @hidden
    */
-  protected async _compute<T>(): Promise<Record<string, T>> {
+  protected async _compute<T>(): Promise<T> {
     try {
       // run the query and return the result.
       const query = queryBuilder(this._queryTree)
-      const computeQuery: Awaited<Promise<Record<string, T>>> =
-        await this.client.request(
-          gql`
-            ${query}
-          `
-        )
+      const computeQuery: Awaited<T> = await this.client.request(
+        gql`
+          ${query}
+        `
+      )
 
       return queryFlatten(computeQuery)
     } catch (error) {
-      console.error(JSON.stringify(error, undefined, 2))
-      return {}
+      throw Error(`Error: ${JSON.stringify(error, undefined, 2)}`)
     }
   }
 }
@@ -109,7 +107,7 @@ export type SecretID = string
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
-  async id(): Promise<Record<string, CacheID>> {
+  async id(): Promise<CacheID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -117,7 +115,7 @@ export class CacheVolume extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, CacheID>> = await this._compute()
+    const response: Awaited<CacheID> = await this._compute()
 
     return response
   }
@@ -146,7 +144,7 @@ export class Container extends BaseClient {
   /**
    * Default arguments for future commands
    */
-  async defaultArgs(): Promise<Record<string, string[]>> {
+  async defaultArgs(): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -154,7 +152,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -178,7 +176,7 @@ export class Container extends BaseClient {
   /**
    * Entrypoint to be prepended to the arguments of all commands
    */
-  async entrypoint(): Promise<Record<string, string[]>> {
+  async entrypoint(): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -186,7 +184,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -194,7 +192,7 @@ export class Container extends BaseClient {
   /**
    * The value of the specified environment variable
    */
-  async envVariable(name: string): Promise<Record<string, string>> {
+  async envVariable(name: string): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -203,7 +201,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -211,7 +209,7 @@ export class Container extends BaseClient {
   /**
    * A list of environment variables passed to commands
    */
-  async envVariables(): Promise<Record<string, EnvVariable[]>> {
+  async envVariables(): Promise<EnvVariable[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -219,8 +217,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, EnvVariable[]>> =
-      await this._compute()
+    const response: Awaited<EnvVariable[]> = await this._compute()
 
     return response
   }
@@ -259,7 +256,7 @@ export class Container extends BaseClient {
    * Exit code of the last executed command. Zero means success.
    * Null if no command has been executed.
    */
-  async exitCode(): Promise<Record<string, number>> {
+  async exitCode(): Promise<number> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -267,7 +264,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, number>> = await this._compute()
+    const response: Awaited<number> = await this._compute()
 
     return response
   }
@@ -278,7 +275,7 @@ export class Container extends BaseClient {
   async export(
     path: string,
     platformVariants?: ContainerID[]
-  ): Promise<Record<string, boolean>> {
+  ): Promise<boolean> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -287,7 +284,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, boolean>> = await this._compute()
+    const response: Awaited<boolean> = await this._compute()
 
     return response
   }
@@ -344,7 +341,7 @@ export class Container extends BaseClient {
   /**
    * A unique identifier for this container
    */
-  async id(): Promise<Record<string, ContainerID>> {
+  async id(): Promise<ContainerID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -352,7 +349,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, ContainerID>> = await this._compute()
+    const response: Awaited<ContainerID> = await this._compute()
 
     return response
   }
@@ -360,7 +357,7 @@ export class Container extends BaseClient {
   /**
    * List of paths where a directory is mounted
    */
-  async mounts(): Promise<Record<string, string[]>> {
+  async mounts(): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -368,7 +365,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -376,7 +373,7 @@ export class Container extends BaseClient {
   /**
    * The platform this container executes and publishes as
    */
-  async platform(): Promise<Record<string, Platform>> {
+  async platform(): Promise<Platform> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -384,7 +381,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, Platform>> = await this._compute()
+    const response: Awaited<Platform> = await this._compute()
 
     return response
   }
@@ -395,7 +392,7 @@ export class Container extends BaseClient {
   async publish(
     address: string,
     platformVariants?: ContainerID[]
-  ): Promise<Record<string, string>> {
+  ): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -404,7 +401,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -428,7 +425,7 @@ export class Container extends BaseClient {
    * The error stream of the last executed command.
    * Null if no command has been executed.
    */
-  async stderr(): Promise<Record<string, string>> {
+  async stderr(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -436,7 +433,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -445,7 +442,7 @@ export class Container extends BaseClient {
    * The output stream of the last executed command.
    * Null if no command has been executed.
    */
-  async stdout(): Promise<Record<string, string>> {
+  async stdout(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -453,7 +450,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -461,7 +458,7 @@ export class Container extends BaseClient {
   /**
    * The user to be set for all commands
    */
-  async user(): Promise<Record<string, string>> {
+  async user(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -469,7 +466,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -751,7 +748,7 @@ export class Container extends BaseClient {
   /**
    * The working directory for all commands
    */
-  async workdir(): Promise<Record<string, string>> {
+  async workdir(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -759,7 +756,7 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -804,7 +801,7 @@ export class Directory extends BaseClient {
   /**
    * Return a list of files and directories at the given path
    */
-  async entries(path?: string): Promise<Record<string, string[]>> {
+  async entries(path?: string): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -813,7 +810,7 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -821,7 +818,7 @@ export class Directory extends BaseClient {
   /**
    * Write the contents of the directory to a path on the host
    */
-  async export(path: string): Promise<Record<string, boolean>> {
+  async export(path: string): Promise<boolean> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -830,7 +827,7 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, boolean>> = await this._compute()
+    const response: Awaited<boolean> = await this._compute()
 
     return response
   }
@@ -854,7 +851,7 @@ export class Directory extends BaseClient {
   /**
    * The content-addressed identifier of the directory
    */
-  async id(): Promise<Record<string, DirectoryID>> {
+  async id(): Promise<DirectoryID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -862,7 +859,7 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, DirectoryID>> = await this._compute()
+    const response: Awaited<DirectoryID> = await this._compute()
 
     return response
   }
@@ -992,7 +989,7 @@ export class EnvVariable extends BaseClient {
   /**
    * name is the environment variable name.
    */
-  async name(): Promise<Record<string, string>> {
+  async name(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1000,7 +997,7 @@ export class EnvVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1008,7 +1005,7 @@ export class EnvVariable extends BaseClient {
   /**
    * value is the environment variable value
    */
-  async value(): Promise<Record<string, string>> {
+  async value(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1016,7 +1013,7 @@ export class EnvVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1029,7 +1026,7 @@ export class File extends BaseClient {
   /**
    * The contents of the file
    */
-  async contents(): Promise<Record<string, string>> {
+  async contents(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1037,7 +1034,7 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1045,7 +1042,7 @@ export class File extends BaseClient {
   /**
    * Write the file to a file path on the host
    */
-  async export(path: string): Promise<Record<string, boolean>> {
+  async export(path: string): Promise<boolean> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1054,7 +1051,7 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, boolean>> = await this._compute()
+    const response: Awaited<boolean> = await this._compute()
 
     return response
   }
@@ -1062,7 +1059,7 @@ export class File extends BaseClient {
   /**
    * The content-addressed identifier of the file
    */
-  async id(): Promise<Record<string, FileID>> {
+  async id(): Promise<FileID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1070,7 +1067,7 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, FileID>> = await this._compute()
+    const response: Awaited<FileID> = await this._compute()
 
     return response
   }
@@ -1089,7 +1086,7 @@ export class File extends BaseClient {
   /**
    * The size of the file, in bytes
    */
-  async size(): Promise<Record<string, number>> {
+  async size(): Promise<number> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1097,7 +1094,7 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, number>> = await this._compute()
+    const response: Awaited<number> = await this._compute()
 
     return response
   }
@@ -1110,7 +1107,7 @@ export class GitRef extends BaseClient {
   /**
    * The digest of the current value of this ref
    */
-  async digest(): Promise<Record<string, string>> {
+  async digest(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1118,7 +1115,7 @@ export class GitRef extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1162,7 +1159,7 @@ export class GitRepository extends BaseClient {
   /**
    * List of branches on the repository
    */
-  async branches(): Promise<Record<string, string[]>> {
+  async branches(): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1170,7 +1167,7 @@ export class GitRepository extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -1210,7 +1207,7 @@ export class GitRepository extends BaseClient {
   /**
    * List of tags on the repository
    */
-  async tags(): Promise<Record<string, string[]>> {
+  async tags(): Promise<string[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1218,7 +1215,7 @@ export class GitRepository extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string[]>> = await this._compute()
+    const response: Awaited<string[]> = await this._compute()
 
     return response
   }
@@ -1301,7 +1298,7 @@ export class HostVariable extends BaseClient {
   /**
    * The value of this variable
    */
-  async value(): Promise<Record<string, string>> {
+  async value(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1309,7 +1306,7 @@ export class HostVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1322,7 +1319,7 @@ export class Project extends BaseClient {
   /**
    * extensions in this project
    */
-  async extensions(): Promise<Record<string, Project[]>> {
+  async extensions(): Promise<Project[]> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1330,7 +1327,7 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, Project[]>> = await this._compute()
+    const response: Awaited<Project[]> = await this._compute()
 
     return response
   }
@@ -1353,7 +1350,7 @@ export class Project extends BaseClient {
   /**
    * install the project's schema
    */
-  async install(): Promise<Record<string, boolean>> {
+  async install(): Promise<boolean> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1361,7 +1358,7 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, boolean>> = await this._compute()
+    const response: Awaited<boolean> = await this._compute()
 
     return response
   }
@@ -1369,7 +1366,7 @@ export class Project extends BaseClient {
   /**
    * name of the project
    */
-  async name(): Promise<Record<string, string>> {
+  async name(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1377,7 +1374,7 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1385,7 +1382,7 @@ export class Project extends BaseClient {
   /**
    * schema provided by the project
    */
-  async schema(): Promise<Record<string, string>> {
+  async schema(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1393,7 +1390,7 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1401,7 +1398,7 @@ export class Project extends BaseClient {
   /**
    * sdk used to generate code for and/or execute this project
    */
-  async sdk(): Promise<Record<string, string>> {
+  async sdk(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1409,7 +1406,7 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }
@@ -1453,7 +1450,7 @@ export default class Client extends BaseClient {
   /**
    * The default platform of the builder.
    */
-  async defaultPlatform(): Promise<Record<string, Platform>> {
+  async defaultPlatform(): Promise<Platform> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1461,7 +1458,7 @@ export default class Client extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, Platform>> = await this._compute()
+    const response: Awaited<Platform> = await this._compute()
 
     return response
   }
@@ -1585,7 +1582,7 @@ export class Secret extends BaseClient {
   /**
    * The identifier for this secret
    */
-  async id(): Promise<Record<string, SecretID>> {
+  async id(): Promise<SecretID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1593,7 +1590,7 @@ export class Secret extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, SecretID>> = await this._compute()
+    const response: Awaited<SecretID> = await this._compute()
 
     return response
   }
@@ -1601,7 +1598,7 @@ export class Secret extends BaseClient {
   /**
    * The value of this secret
    */
-  async plaintext(): Promise<Record<string, string>> {
+  async plaintext(): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -1609,7 +1606,7 @@ export class Secret extends BaseClient {
       },
     ]
 
-    const response: Awaited<Record<string, string>> = await this._compute()
+    const response: Awaited<string> = await this._compute()
 
     return response
   }

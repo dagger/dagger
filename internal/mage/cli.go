@@ -28,13 +28,13 @@ func (cl Cli) Publish(ctx context.Context) error {
 			WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 			WithWorkdir("/app").
 			WithMountedDirectory("/app", wd).
-			WithSecretVariable("GITHUB_TOKEN", c.Host().EnvVariable("GITHUB_TOKEN").Secret()).
-			WithSecretVariable("AWS_ACCESS_KEY_ID", c.Host().EnvVariable("AWS_ACCESS_KEY_ID").Secret()).
-			WithSecretVariable("AWS_SECRET_ACCESS_KEY", c.Host().EnvVariable("AWS_SECRET_ACCESS_KEY").Secret()).
-			WithSecretVariable("AWS_REGION", c.Host().EnvVariable("AWS_REGION").Secret()).
-			WithSecretVariable("AWS_BUCKET", c.Host().EnvVariable("AWS_BUCKET").Secret()).
-			WithSecretVariable("ARTEFACTS_FQDN", c.Host().EnvVariable("ARTEFACTS_FQDN").Secret()).
-			WithSecretVariable("HOMEBREW_TAP_OWNER", c.Host().EnvVariable("HOMEBREW_TAP_OWNER").Secret())
+			WithSecretVariable("GITHUB_TOKEN", util.WithSetHostVar(ctx, c.Host(), "GITHUB_TOKEN").Secret()).
+			WithSecretVariable("AWS_ACCESS_KEY_ID", util.WithSetHostVar(ctx, c.Host(), "AWS_ACCESS_KEY_ID").Secret()).
+			WithSecretVariable("AWS_SECRET_ACCESS_KEY", util.WithSetHostVar(ctx, c.Host(), "AWS_SECRET_ACCESS_KEY").Secret()).
+			WithSecretVariable("AWS_REGION", util.WithSetHostVar(ctx, c.Host(), "AWS_REGION").Secret()).
+			WithSecretVariable("AWS_BUCKET", util.WithSetHostVar(ctx, c.Host(), "AWS_BUCKET").Secret()).
+			WithSecretVariable("ARTEFACTS_FQDN", util.WithSetHostVar(ctx, c.Host(), "ARTEFACTS_FQDN").Secret()).
+			WithSecretVariable("HOMEBREW_TAP_OWNER", util.WithSetHostVar(ctx, c.Host(), "HOMEBREW_TAP_OWNER").Secret())
 
 		_, err := container.
 			WithExec([]string{"release", "--rm-dist", "--debug"}).

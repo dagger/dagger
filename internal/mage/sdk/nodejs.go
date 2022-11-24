@@ -2,7 +2,6 @@ package sdk
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -98,17 +97,9 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 
 	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
 		var (
-			version     = strings.TrimPrefix(tag, "sdk/nodejs/v")
-			tokenSecret = c.Host().EnvVariable("NPM_TOKEN").Secret()
+			version  = strings.TrimPrefix(tag, "sdk/nodejs/v")
+			token, _ = util.WithSetHostVar(ctx, c.Host(), "NPM_TOKEN").Secret().Plaintext(ctx)
 		)
-		token, err := tokenSecret.Plaintext(ctx)
-		if err != nil {
-			return err
-		}
-
-		if token == "" {
-			return errors.New("NPM_TOKEN environment variable must be set")
-		}
 
 		build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
 
@@ -116,7 +107,7 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 		npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-		if err := os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0600); err != nil {
+		if err = os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
 			return err
 		}
 

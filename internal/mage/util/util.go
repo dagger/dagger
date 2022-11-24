@@ -299,3 +299,12 @@ func WithDevEngine(ctx context.Context, c *dagger.Client, cb func(context.Contex
 	}
 	return cb(ctx, otherClient)
 }
+
+func WithSetHostVar(ctx context.Context, h *dagger.Host, varName string) *dagger.HostVariable {
+	hv := h.EnvVariable(varName)
+	if val, err := hv.Secret().Plaintext(ctx); err != nil || val == "" {
+		fmt.Fprintf(os.Stderr, "env var %s is empty", varName)
+		os.Exit(1)
+	}
+	return hv
+}

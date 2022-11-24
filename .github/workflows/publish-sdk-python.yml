@@ -1,8 +1,7 @@
 name: "Publish Python SDK"
 on:
   push:
-    tags:
-      - sdk/python/v**
+    tags: ["sdk/python/v**"]
 jobs:
   publish:
     runs-on: ubuntu-latest

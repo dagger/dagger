@@ -47,16 +47,19 @@ class BaseClient {
   /**
    * @hidden
    */
-  protected async _compute<T>() : Promise<Record<string, T>> {
+  protected async _compute<T>(): Promise<T> {
     try {
       // run the query and return the result.
       const query = queryBuilder(this._queryTree)
-      const computeQuery: Awaited<Promise<Record<string, T>>> =  await this.client.request(gql`${query}`)
+      const computeQuery: Awaited<T> = await this.client.request(
+        gql`
+          ${query}
+        `
+      )
 
       return queryFlatten(computeQuery)
     } catch (error) {
-      console.error(JSON.stringify(error, undefined, 2))
-      return {}
+      throw Error(`Error: ${JSON.stringify(error, undefined, 2)}`)
     }
   }
 }
