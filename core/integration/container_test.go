@@ -1391,12 +1391,8 @@ func TestContainerWithDirectory(t *testing.T) {
 	defer c.Close()
 
 	dir := c.Directory().
-		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		}).
-		WithNewFile("some-dir/sub-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "sub-content",
-		}).
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content").
 		Directory("some-dir")
 
 	ctr := c.Container().
@@ -1404,38 +1400,32 @@ func TestContainerWithDirectory(t *testing.T) {
 		WithWorkdir("/workdir").
 		WithDirectory("with-dir", dir)
 
-	contents, err := ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "with-dir/sub-file"},
-	}).Stdout().Contents(ctx)
+	contents, err := ctr.WithExec([]string{"cat", "with-dir/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "sub-content", contents)
 
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "/workdir/with-dir/sub-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/with-dir/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "sub-content", contents)
 
 	// Test with a mount
 	mount := c.Directory().
-		WithNewFile("mounted-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "mounted-content",
-		})
+		WithNewFile("mounted-file", "mounted-content")
 
 	ctr = c.Container().
 		From("alpine:3.16.2").
 		WithWorkdir("/workdir").
 		WithMountedDirectory("mnt/mount", mount).
 		WithDirectory("mnt/mount/dst/with-dir", dir)
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "mnt/mount/mounted-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "mnt/mount/mounted-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "mounted-content", contents)
 
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "mnt/mount/dst/with-dir/sub-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "mnt/mount/dst/with-dir/sub-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "sub-content", contents)
 
@@ -1446,13 +1436,10 @@ func TestContainerWithDirectory(t *testing.T) {
 		WithMountedDirectory("/mnt", mnt)
 	dir = c.Directory().
 		WithNewDirectory("/foo").
-		WithNewFile("/foo/some-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		})
+		WithNewFile("/foo/some-file", "some-content")
 	ctr = ctr.WithDirectory("/mnt/a/b/foo", dir)
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "/mnt/a/b/foo/foo/some-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "/mnt/a/b/foo/foo/some-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 }
@@ -1464,9 +1451,7 @@ func TestContainerWithFile(t *testing.T) {
 	defer c.Close()
 
 	file := c.Directory().
-		WithNewFile("some-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		}).
+		WithNewFile("some-file", "some-content").
 		File("some-file")
 
 	ctr := c.Container().
@@ -1474,15 +1459,13 @@ func TestContainerWithFile(t *testing.T) {
 		WithWorkdir("/workdir").
 		WithFile("target-file", file)
 
-	contents, err := ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "target-file"},
-	}).Stdout().Contents(ctx)
+	contents, err := ctr.WithExec([]string{"cat", "target-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "/workdir/target-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/target-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 }
@@ -1500,15 +1483,13 @@ func TestContainerWithNewFile(t *testing.T) {
 			Contents: "some-content",
 		})
 
-	contents, err := ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "some-file"},
-	}).Stdout().Contents(ctx)
+	contents, err := ctr.WithExec([]string{"cat", "some-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 
-	contents, err = ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "/workdir/some-file"},
-	}).Stdout().Contents(ctx)
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/some-file"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", contents)
 }
@@ -2520,15 +2501,11 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 		WithMountedDirectory("/mnt", mnt)
 
 	dir := c.Directory().
-		WithNewFile("/copied-file", dagger.DirectoryWithNewFileOpts{
-			Contents: "some-content",
-		})
+		WithNewFile("/copied-file", "some-content")
 
 	ctr = ctr.WithDirectory("/mnt/sub-dir/copied-dir", dir)
 
-	contents, err := ctr.Exec(dagger.ContainerExecOpts{
-		Args: []string{"find", "/mnt"},
-	}).Stdout().Contents(ctx)
+	contents, err := ctr.WithExec([]string{"find", "/mnt"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"/mnt",
