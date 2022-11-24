@@ -76,6 +76,9 @@ describe("NodeJS SDK api", function () {
       },
     }
 
-    assert.throws(() => queryFlatten(tree), Error(""))
+    assert.throws(
+      () => queryFlatten(tree),
+      Error("Too many Graphql nested objects")
+    )
   })
 })

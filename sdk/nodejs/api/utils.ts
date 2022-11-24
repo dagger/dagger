@@ -54,7 +54,7 @@ export function queryFlatten<T>(response: any): T {
     // Dagger is currently expecting to only return one value
     // If the response is nested in a way were more than one object is nested inside throw an error
     // TODO Throw sensible Error
-    throw new Error("")
+    throw new Error("Too many Graphql nested objects")
   }
 
   const nestedKey = keys[0]
