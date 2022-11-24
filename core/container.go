@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -340,19 +341,20 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 
 func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
 	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithDirectory(ctx, "", src, filter)
+		return dir.WithDirectory(ctx, ".", src, filter)
 	})
 }
 
 func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File) (*Container, error) {
 	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithFile(ctx, "", src)
+		return dir.WithFile(ctx, ".", src)
 	})
 }
 
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Container, error) {
-	return container.updateRootFS(ctx, gw, dest, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, gw, "", content)
+	dir, file := filepath.Split(dest)
+	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
+		return dir.WithNewFile(ctx, gw, file, content) // TODO(vito): doesn't this need a name...?
 	})
 }
 
@@ -665,7 +667,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, "/")
+	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {

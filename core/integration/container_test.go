@@ -2502,3 +2502,39 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
 }
+
+func TestContainerWithDirectoryToMount(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	mnt := c.Directory().
+		WithNewDirectory("/top/sub-dir/sub-file").
+		Directory("/top") // <-- the important part!
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", mnt)
+
+	dir := c.Directory().
+		WithNewFile("/copied-file", dagger.DirectoryWithNewFileOpts{
+			Contents: "some-content",
+		})
+
+	ctr = ctr.WithDirectory("/mnt/sub-dir/copied-dir", dir)
+
+	contents, err := ctr.Exec(dagger.ContainerExecOpts{
+		Args: []string{"find", "/mnt"},
+	}).Stdout().Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/mnt",
+		"/mnt/sub-dir",
+		"/mnt/sub-dir/sub-file",
+		"/mnt/sub-dir/copied-dir",
+		"/mnt/sub-dir/copied-dir/copied-file",
+	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
+}
