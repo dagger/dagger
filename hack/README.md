@@ -34,12 +34,6 @@ This will bootstrap your local engine code and then open a shell with env vars p
 
 Unlike `./hack/make`, this won't require always rebuilding the engine every time you run a command, which can sometimes be more convenient.
 
-## Just lint my code, even if my local engine code is broken
-
-`./hack/make-prod sdk:<go,python,nodejs>:lint`
-
-Using `make-prod` means that you won't first bootstrap a dev engine from local engine code and lint using that. This makes sense for linting and similar tasks since they typically don't need bleeding edge engine features. You can thus also run this if you are making engine changes and currently have a broken one locally.
-
 # Misc Hacks
 
 ## Bootstrapping
