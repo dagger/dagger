@@ -2,11 +2,9 @@
 slug: /1001/install/
 ---
 
-import CautionBanner from './\_caution-banner.md'
-
 # Install Dagger
 
-{@include: ../../partials/_caution-old-version.md}
+{@include: ../partials/_caution-old-version.md}
 
 :::caution Requirement
 
