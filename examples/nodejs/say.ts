@@ -7,7 +7,7 @@ connect(async (client: Client) => {
     .exec(["npm", "install", "-g", "cowsay"])
     .withEntrypoint(["cowsay"])
 
-  const result = await ctr.exec(process.argv.slice(2)).stdout().contents()
+  const contents = await ctr.exec(process.argv.slice(2)).stdout().contents()
 
-  console.log(result.contents)
+  console.log(contents)
 })
