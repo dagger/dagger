@@ -23,8 +23,8 @@ to = "https://api.amplitude.com"
 status = 200
 
 [[redirects]]
-from = "/graphql"
-to = "/graphql/"
+from = "/api/reference"
+to = "/api/reference/"
 status = 200
 
 [[redirects]]
