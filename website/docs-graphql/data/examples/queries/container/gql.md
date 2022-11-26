@@ -1,7 +1,14 @@
 ```gql
 query {
-    container(id: "alpine") {
-        id
+  container {
+    from(address: "alpine") {
+      defaultArgs
+      entrypoint
+      platform
+      rootfs {
+        entries
+      }
     }
+  }
 }
 ```

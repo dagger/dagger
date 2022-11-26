@@ -1,7 +1,8 @@
 ```gql
 query {
-    container(id: "alpine") {
-        id
-    }
+  http(url: "http://dagger.io") {
+    size
+    contents
+  }
 }
 ```

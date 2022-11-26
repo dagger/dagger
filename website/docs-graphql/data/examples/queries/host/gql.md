@@ -1,7 +1,11 @@
 ```gql
 query {
-    container(id: "alpine") {
-        id
+  host {
+    directory(path: ".") {
+      file(path: "README.md") {
+        contents
+      }
     }
+  }
 }
 ```
