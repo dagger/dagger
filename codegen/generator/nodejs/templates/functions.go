@@ -68,12 +68,12 @@ func formatDeprecation(s string) []string {
 // Example: `String` -> `string`
 // TODO: maybe delete and only use formatType?
 func formatInputType(r *introspection.TypeRef) string {
-	return formatType(r)
+	return formatType(r, true)
 }
 
 // TODO: maybe delete and only use formatType?
 func formatOutputType(r *introspection.TypeRef) string {
-	return formatType(r)
+	return formatType(r, false)
 }
 
 // isCustomScalar checks if the type is actually custom.
@@ -88,13 +88,18 @@ func isCustomScalar(t *introspection.Type) bool {
 
 // formatType formats a GraphQL type into TypeScript
 // Example: `String` -> `string`
-func formatType(r *introspection.TypeRef) (representation string) {
+func formatType(r *introspection.TypeRef, input bool) (representation string) {
+	var isList bool
 	for ref := r; ref != nil; ref = ref.OfType {
 		switch ref.Kind {
 		case introspection.TypeKindList:
+			isList = true
 			// add [] as suffix to the type
 			defer func() {
-				representation += "[]"
+				// dolanor: hackish way to handle this. Otherwise needs to refactor the whole loop logic.
+				if isList {
+					representation += "[]"
+				}
 			}()
 		case introspection.TypeKindScalar:
 			switch introspection.Scalar(ref.Name) {
@@ -109,7 +114,27 @@ func formatType(r *introspection.TypeRef) (representation string) {
 				return representation
 			default:
 				// Custom scalar
-				representation += ref.Name
+
+				// When used as an input, we're going to add objects as an alternative to ID scalars (e.g. `Container` and `ContainerID`)
+				// FIXME: do this dynamically rather than a hardcoded map.
+				rewrite := map[string]string{
+					"ContainerID": "Container",
+					"FileID":      "File",
+					"DirectoryID": "Directory",
+					"SecretID":    "Secret",
+					"CacheID":     "CacheVolume",
+				}
+				if alias, ok := rewrite[ref.Name]; ok && input {
+					listChars := "[]"
+					if isList {
+						representation += ref.Name + listChars + " | " + alias + listChars
+					} else {
+						representation += ref.Name + " | " + alias
+					}
+					isList = false
+				} else {
+					representation += ref.Name
+				}
 				return representation
 			}
 		case introspection.TypeKindObject:

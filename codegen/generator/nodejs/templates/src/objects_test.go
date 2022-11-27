@@ -45,7 +45,10 @@ export class CacheVolume extends BaseClient {
       }
     ]
 
-    const response: Awaited<CacheID> = await this._compute()
+    const response: Awaited<CacheID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
