@@ -115,7 +115,14 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
     }
 
     pre {
+        width: fit-content;
+        min-width: 400px;
         border-radius: 10px;
+
+        @media screen and (max-width: 650px) {
+            width: inherit;
+            min-width: inherit;
+        }
     }
 }
 
