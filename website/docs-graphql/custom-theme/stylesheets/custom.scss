@@ -140,3 +140,9 @@ div .welcome-api-endpoints-section.example-section-is-code {
         border-radius: 0px 0px 10px 10px !important;
     }
 }
+
+.definition.definition-scalar .doc-row .doc-copy,
+.definition.definition-object .doc-row .doc-copy {
+    width: 100% !important;
+    max-width: 85ch !important;
+}
