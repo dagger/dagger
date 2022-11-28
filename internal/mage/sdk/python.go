@@ -171,7 +171,7 @@ func (t Python) Bump(ctx context.Context, version string) error {
 ENGINE_IMAGE_REF = %q
 `, version)
 
-	return os.WriteFile("sdk/python/src/dagger/connectors/engine_version.py", []byte(engineReference), 0o600)
+	return os.WriteFile("sdk/python/src/dagger/_engine.py", []byte(engineReference), 0o600)
 }
 
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
