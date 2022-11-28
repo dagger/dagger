@@ -4,13 +4,13 @@ import pytest
 from pytest_subprocess.fake_process import FakeProcess
 
 import dagger
-from dagger.connectors.bin import Engine, ProvisionError
+from dagger.engine import bin
 
 
 def test_getting_port(fp: FakeProcess):
     fp.register(["dagger-engine-session"], stdout=["50004", ""])
 
-    with Engine(dagger.Config(host="bin://")) as engine:
+    with bin.Engine(dagger.Config(host="bin://")) as engine:
         assert engine.cfg.host.geturl() == "http://localhost:50004"
 
 
@@ -27,8 +27,8 @@ def test_buildkit_not_running(config_args: dict, fp: FakeProcess):
         returncode=1,
     )
 
-    engine = Engine(dagger.Config(host="bin://", **config_args))
-    with pytest.raises(ProvisionError) as exc_info:
-        engine.start()
+    engine = bin.Engine(dagger.Config(host="bin://", **config_args))
+    with pytest.raises(bin.ProvisionError) as exc_info:
+        engine.start_sync()
 
     assert "Dagger engine failed to start" in str(exc_info.value)

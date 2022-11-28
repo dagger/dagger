@@ -5,10 +5,12 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from attrs import Factory, define, field
+from attrs import define, field
 
-from .base import Config, register_connector
-from .bin import BinConnector, Engine, ProvisionError
+from dagger import Config
+
+from .base import ProvisionError, register_engine
+from .bin import Engine as BinEngine
 
 logger = logging.getLogger(__name__)
 
@@ -44,13 +46,14 @@ class ImageRef:
         self.id = id_[: self.DIGEST_LEN]
 
 
+@register_engine("docker-image")
 @define
-class EngineFromImage(Engine):
+class Engine(BinEngine):
     cfg: Config
 
     _proc: subprocess.Popen | None = field(default=None, init=False)
 
-    def start(self) -> None:
+    def start_sync(self) -> None:
         cache_dir = (
             Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser() / "dagger"
         )
@@ -125,13 +128,3 @@ class EngineFromImage(Engine):
             [engine_session_bin_path],
             default_dagger_runner_host=f"docker-image://{image.ref}",
         )
-
-
-@register_connector("docker-image")
-@define
-class DockerConnector(BinConnector):
-    """Provision dagger engine from an image with docker"""
-
-    engine: EngineFromImage = Factory(
-        lambda self: EngineFromImage(self.cfg), takes_self=True
-    )

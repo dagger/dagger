@@ -6,8 +6,8 @@ import pytest
 from pytest_subprocess.fake_process import FakeProcess
 
 import dagger
-from dagger.connectors import docker
-from dagger.connectors.engine_version import ENGINE_IMAGE_REF
+from dagger.config import DEFAULT_HOST
+from dagger.engine import docker
 
 
 @pytest.fixture(autouse=True)
@@ -66,9 +66,10 @@ def test_docker_cli_is_not_installed(fp: FakeProcess):
 
     fp.register(["docker", "run", fp.any()], callback=patched_subprocess_run)
 
-    engine = docker.EngineFromImage(dagger.Config(host=ENGINE_IMAGE_REF))
+    # force host to ignore DOCKER_HOST environment variable
+    engine = docker.Engine(dagger.Config(host=DEFAULT_HOST))
     with pytest.raises(docker.ProvisionError) as exc_info:
-        engine.start()
+        engine.start_sync()
 
     assert "Command 'docker' not found" in str(exc_info.value)
 
@@ -84,9 +85,10 @@ def test_tmp_files_are_removed_on_error(cache_dir: Path, fp: FakeProcess):
         callback=lambda _: 1 / 0,  # Raises ZeroDivisionError
     )
 
-    engine = docker.EngineFromImage(dagger.Config(host=ENGINE_IMAGE_REF))
+    # force host to ignore DOCKER_HOST environment variable
+    engine = docker.Engine(dagger.Config(host=DEFAULT_HOST))
     with pytest.raises(ZeroDivisionError):
-        engine.start()
+        engine.start_sync()
 
     assert not any(cache_dir.iterdir())
 
@@ -102,8 +104,9 @@ def test_docker_engine_is_not_running(fp: FakeProcess):
 
     fp.register(["docker", "run", fp.any()], callback=patched_subprocess_run)
 
-    engine = docker.EngineFromImage(dagger.Config(host=ENGINE_IMAGE_REF))
+    # force host to ignore DOCKER_HOST environment variable
+    engine = docker.Engine(dagger.Config(host=DEFAULT_HOST))
     with pytest.raises(docker.ProvisionError) as exc_info:
-        engine.start()
+        engine.start_sync()
 
     assert "Failed to copy" in str(exc_info.value)

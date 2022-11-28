@@ -5,24 +5,24 @@ import time
 from pathlib import Path
 
 import anyio
-from attrs import Factory, define, field
+from attrs import define, field
 
-from dagger import Client
-from dagger.exceptions import DaggerException
+import dagger
 
-from .base import Config, register_connector
-from .http import HTTPConnector
+from .base import Engine as BaseEngine
+from .base import ProvisionError, register_engine
 
 logger = logging.getLogger(__name__)
 
 
+@register_engine("bin")
 @define
-class Engine:
-    cfg: Config
+class Engine(BaseEngine):
+    cfg: dagger.Config
 
     _proc: subprocess.Popen | None = field(default=None, init=False)
 
-    def start(self) -> None:
+    def start_sync(self) -> None:
         self._start(
             [f"{self.cfg.host.netloc}{self.cfg.host.path}" or "dagger-engine-session"]
         )
@@ -97,59 +97,15 @@ class Engine:
         # TODO: verify port number is valid
         self.cfg.host = f"http://localhost:{port}"
 
-    def is_running(self) -> bool:
-        return self._proc is not None
+    def stop_sync(self, exc_type) -> None:
+        if self._proc:
+            self._proc.__exit__(exc_type, None, None)
+            self._proc = None
 
-    def stop(self, exc_type) -> None:
-        if not self.is_running():
-            return
-        self._proc.__exit__(exc_type, None, None)
-
-    def __enter__(self):
-        self.start()
-        return self
-
-    def __exit__(self, exc_type, *args, **kwargs):
-        self.stop(exc_type)
-
-
-@register_connector("bin")
-@define
-class BinConnector(HTTPConnector):
-    """Start engine session from a specified binary"""
-
-    engine: Engine = Factory(lambda self: Engine(self.cfg), takes_self=True)
-
-    @property
-    def query_url(self) -> str:
-        return f"{self.cfg.host.geturl()}/query"
-
-    async def connect(self) -> Client:
+    async def start(self) -> None:
         # FIXME: Create proper async provisioning later.
         # This is just to support sync faster.
-        await anyio.to_thread.run_sync(self.provision_sync)
-        return await super().connect()
+        await anyio.to_thread.run_sync(self.start_sync)
 
-    async def close(self, exc_type) -> None:
-        # FIXME: need exit stack?
-        await super().close(exc_type)
-        if self.engine.is_running():
-            await anyio.to_thread.run_sync(self.engine.stop, exc_type)
-
-    def connect_sync(self) -> Client:
-        self.provision_sync()
-        return super().connect_sync()
-
-    def provision_sync(self) -> None:
-        # FIXME: handle cancellation, retries and timeout
-        # FIXME: handle errors during provisioning
-        self.engine.start()
-
-    def close_sync(self, exc_type) -> None:
-        # FIXME: need exit stack?
-        super().close_sync(exc_type)
-        self.engine.stop(exc_type)
-
-
-class ProvisionError(DaggerException):
-    """Error while provisioning the Dagger engine."""
+    async def stop(self, exc_type) -> None:
+        await anyio.to_thread.run_sync(self.stop_sync, exc_type)
