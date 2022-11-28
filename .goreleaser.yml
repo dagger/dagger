@@ -42,7 +42,7 @@ brews:
   - tap:
       owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
       name: homebrew-tap
-    name: dagger@{{ .Major }}.{{ .Minor }}
+    name: dagger
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
