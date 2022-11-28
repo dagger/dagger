@@ -7,11 +7,12 @@ import dagger
 from dagger.engine import bin
 
 
-def test_getting_port(fp: FakeProcess):
-    fp.register(["dagger-engine-session"], stdout=["50004", ""])
+def test_getting_path(fp: FakeProcess, tmp_path):
+    fp.register(["dagger-engine-session"], stdout=[str(tmp_path), ""])
 
     with bin.Engine(dagger.Config(host="bin://")) as engine:
-        assert engine.cfg.host.geturl() == "http://localhost:50004"
+        assert engine.cfg.host.scheme == "unix"
+        assert engine.cfg.host.path == str(tmp_path)
 
 
 @pytest.mark.parametrize("config_args", [{"log_output": sys.stderr}, {}])

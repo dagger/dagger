@@ -75,27 +75,24 @@ class Engine(BaseEngine):
         else:
             raise ProvisionError("Failed to start engine session after retries.")
 
-        try:
-            # read port number from first line of stdout
-            port = int(self._proc.stdout.readline())
-        except ValueError as e:
-            # Check if the subprocess exited with an error.
-            if not self._proc.poll():
-                raise e
+        # read socket path from first line of stdout
+        path = self._proc.stdout.readline().strip()
 
+        if not path or not Path(path).exists():
             # FIXME: Duplicate writes into a buffer until end of provisioning
             # instead of reading directly from what the user may set in `log_output`
-            if self._proc.stderr is not None and self._proc.stderr.readable():
+            if (
+                self._proc.poll()
+                and self._proc.stderr is not None
+                and self._proc.stderr.readable()
+            ):
                 raise ProvisionError(
                     f"Dagger engine failed to start: {self._proc.stderr.readline()}"
-                ) from e
+                )
 
-            raise ProvisionError(
-                "Dagger engine failed to start, is docker running?"
-            ) from e
+            raise ProvisionError("Dagger engine failed to start, is docker running?")
 
-        # TODO: verify port number is valid
-        self.cfg.host = f"http://localhost:{port}"
+        self.cfg.host = f"unix://{path}"
 
     def stop_sync(self, exc_type) -> None:
         if self._proc:

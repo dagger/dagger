@@ -1,6 +1,7 @@
 import logging
 from typing import TypeVar
 
+import httpx
 from attrs import Factory, define
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
@@ -21,10 +22,6 @@ class Connector:
 
     cfg: Config = Factory(Config)
     client: Client | SyncClient | None = None
-
-    @property
-    def query_url(self) -> str:
-        return f"{self.cfg.host.geturl()}/query"
 
     async def connect(self) -> Client:
         transport = self.make_transport()
@@ -53,13 +50,25 @@ class Connector:
             self.client = None
 
     def make_transport(self) -> AsyncTransport:
-        return self._make_transport(HTTPXAsyncTransport)
+        return self._make_transport(HTTPXAsyncTransport, httpx.AsyncHTTPTransport)
 
     def make_sync_transport(self) -> Transport:
-        return self._make_transport(HTTPXTransport)
+        return self._make_transport(HTTPXTransport, httpx.HTTPTransport)
 
-    def _make_transport(self, cls: type[_T]) -> _T:
-        return cls(self.query_url, timeout=self.cfg.execute_timeout)
+    def _make_transport(
+        self,
+        gql_cls: type[_T],
+        httpx_cls: type[httpx.AsyncHTTPTransport | httpx.HTTPTransport],
+    ) -> _T:
+        if self.cfg.host.scheme not in ("unix",):
+            raise ValueError(f"Unsupported scheme {self.cfg.host.scheme}")
+        path = self.cfg.host.netloc + self.cfg.host.path
+        transport = httpx_cls(uds=path)
+        return gql_cls(
+            "http://dagger/query",
+            transport=transport,
+            timeout=self.cfg.execute_timeout,
+        )
 
     def make_graphql_client(
         self, transport: AsyncTransport | Transport
