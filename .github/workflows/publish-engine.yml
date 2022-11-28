@@ -31,7 +31,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
-      - run: ./hack/make-prod engine:publish ${{ github.ref_name }}
+      - run: ./hack/make-prod dagger:publish ${{ github.ref_name }}
 
       - name: Bump SDK Engine Dependencies
         uses: peter-evans/create-pull-request@v3

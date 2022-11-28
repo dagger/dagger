@@ -60,9 +60,25 @@ describe("NodeJS SDK api", function () {
       },
     }
 
-    assert.deepStrictEqual(queryFlatten(tree), {
-      stdout:
-        "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
-    })
+    assert.deepStrictEqual(
+      queryFlatten(tree),
+      "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz"
+    )
+  })
+
+  it("Return a error for Graphql object nested response", async function () {
+    const tree = {
+      container: {
+        from: "from",
+      },
+      host: {
+        directory: "directory",
+      },
+    }
+
+    assert.throws(
+      () => queryFlatten(tree),
+      Error("Too many Graphql nested objects")
+    )
   })
 })

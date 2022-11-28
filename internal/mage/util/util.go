@@ -1,6 +1,8 @@
 package util
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -126,4 +128,13 @@ func HostDockerDir(c *dagger.Client) *dagger.Directory {
 		return c.Directory()
 	}
 	return c.Host().Directory(path)
+}
+
+func WithSetHostVar(ctx context.Context, h *dagger.Host, varName string) *dagger.HostVariable {
+	hv := h.EnvVariable(varName)
+	if val, err := hv.Secret().Plaintext(ctx); err != nil || val == "" {
+		fmt.Fprintf(os.Stderr, "env var %s is empty", varName)
+		os.Exit(1)
+	}
+	return hv
 }

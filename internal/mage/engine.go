@@ -72,6 +72,7 @@ func (t Engine) Lint(ctx context.Context) error {
 	return err
 }
 
+// Publish builds and pushes Engine OCI image to a container registry
 func (t Engine) Publish(ctx context.Context, version string) error {
 	if err := parseRef(version); err != nil {
 		return err
@@ -139,10 +140,12 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	return nil
 }
 
+// Test runs Engine tests
 func (t Engine) Test(ctx context.Context) error {
 	return t.test(ctx, false)
 }
 
+// TestRace runs Engine tests with go race detector enabled
 func (t Engine) TestRace(ctx context.Context) error {
 	return t.test(ctx, true)
 }

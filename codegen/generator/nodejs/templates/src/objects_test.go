@@ -37,7 +37,7 @@ var wantObjects = `
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
-  async id(): Promise<Record<string, CacheID>> {
+  async id(): Promise<CacheID> {
     this._queryTree = [
       ...this._queryTree,
       {
@@ -45,7 +45,7 @@ export class CacheVolume extends BaseClient {
       }
     ]
 
-    const response: Awaited<Record<string, CacheID>> = await this._compute()
+    const response: Awaited<CacheID> = await this._compute()
 
     return response
   }

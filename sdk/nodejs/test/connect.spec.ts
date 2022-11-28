@@ -13,7 +13,7 @@ describe("NodeJS sdk", function () {
         .withExec(["curl", "https://dagger.io/"])
         .stdout()
 
-      assert.ok(result.stdout.length > 10000)
+      assert.ok(result.length > 10000)
     })
   })
 })

@@ -38,18 +38,26 @@ export function queryBuilder(q: QueryTree[]) {
   return query.replace(/\s+/g, "")
 }
 
-export function queryFlatten(res: Record<string, any>): Record<string, any> {
-  if (res.errors) throw res.errors[0]
-  return Object.assign(
-    {},
-    ...(function _flatten(o): any {
-      return [].concat(
-        ...Object.keys(o).map((k: string) => {
-          if (typeof o[k] === "object" && !(o[k] instanceof Array))
-            return _flatten(o[k])
-          else return { [k]: o[k] }
-        })
-      )
-    })(res)
-  )
+/**
+ * Return a Graphql query result flattened
+ */
+export function queryFlatten<T>(response: any): T {
+  // Recursion break condition
+  // If our response is not an object or an array we assume we reached the value
+  if (!(response instanceof Object) || Array.isArray(response)) {
+    return response
+  }
+
+  const keys = Object.keys(response)
+
+  if (keys.length != 1) {
+    // Dagger is currently expecting to only return one value
+    // If the response is nested in a way were more than one object is nested inside throw an error
+    // TODO Throw sensible Error
+    throw new Error("Too many Graphql nested objects")
+  }
+
+  const nestedKey = keys[0]
+
+  return queryFlatten(response[nestedKey])
 }
