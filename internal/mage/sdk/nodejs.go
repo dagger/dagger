@@ -25,19 +25,17 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = nodeJsBase(c).
-			WithExec([]string{"yarn", "lint"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			ExitCode(ctx)
-		if err != nil {
-			return err
-		}
-		return lintGeneratedCode(func() error {
-			return t.Generate(ctx)
-		}, nodejsGeneratedAPIPath)
-	})
+	_, err = nodeJsBase(c).
+		WithExec([]string{"yarn", "lint"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		ExitCode(ctx)
+	if err != nil {
+		return err
+	}
+	return lintGeneratedCode(func() error {
+		return t.Generate(ctx)
+	}, nodejsGeneratedAPIPath)
 }
 
 // Test tests the Node.js SDK
@@ -48,15 +46,13 @@ func (t Nodejs) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = nodeJsBase(c).
-			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-			WithExec([]string{"yarn", "test"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			ExitCode(ctx)
-		return err
-	})
+	_, err = nodeJsBase(c).
+		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithExec([]string{"yarn", "test"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		ExitCode(ctx)
+	return err
 }
 
 // Generate re-generates the SDK API
@@ -67,24 +63,22 @@ func (t Nodejs) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated, err := nodeJsBase(c).
-			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
-			WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			WithExec([]string{
-				"yarn",
-				"fmt",
-				nodejsGeneratedAPIPath,
-			}).
-			File(nodejsGeneratedAPIPath).
-			Contents(ctx)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
-	})
+	generated, err := nodeJsBase(c).
+		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
+		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		WithExec([]string{
+			"yarn",
+			"fmt",
+			nodejsGeneratedAPIPath,
+		}).
+		File(nodejsGeneratedAPIPath).
+		Contents(ctx)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(nodejsGeneratedAPIPath, []byte(generated), 0o600)
 }
 
 // Publish publishes the Node.js SDK
@@ -95,30 +89,28 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		var (
-			version  = strings.TrimPrefix(tag, "sdk/nodejs/v")
-			token, _ = util.WithSetHostVar(ctx, c.Host(), "NPM_TOKEN").Secret().Plaintext(ctx)
-		)
+	var (
+		version  = strings.TrimPrefix(tag, "sdk/nodejs/v")
+		token, _ = util.WithSetHostVar(ctx, c.Host(), "NPM_TOKEN").Secret().Plaintext(ctx)
+	)
 
-		build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
+	build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
 
-		// configure .npmrc
-		npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
+	// configure .npmrc
+	npmrc := fmt.Sprintf(`//registry.npmjs.org/:_authToken=%s
 registry=https://registry.npmjs.org/
 always-auth=true`, token)
-		if err = os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
-			return err
-		}
-
-		// set version & publish
-		_, err = build.
-			WithExec([]string{"npm", "version", version}).
-			WithExec([]string{"npm", "publish", "--access", "public"}).
-			ExitCode(ctx)
-
+	if err = os.WriteFile("sdk/nodejs/.npmrc", []byte(npmrc), 0o600); err != nil {
 		return err
-	})
+	}
+
+	// set version & publish
+	_, err = build.
+		WithExec([]string{"npm", "version", version}).
+		WithExec([]string{"npm", "publish", "--access", "public"}).
+		ExitCode(ctx)
+
+	return err
 }
 
 // Bump the Node.js SDK's Engine dependency

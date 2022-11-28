@@ -10,6 +10,6 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/make sdk:go:publish ${{ github.ref_name }}
+      - run: ./hack/make-prod sdk:go:publish ${{ github.ref_name }}
         env:
           GITHUB_PAT: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}

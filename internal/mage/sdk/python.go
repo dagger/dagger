@@ -7,8 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
+
+	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
 	"golang.org/x/sync/errgroup"
 )
@@ -33,37 +34,35 @@ func (t Python) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		eg, gctx := errgroup.WithContext(ctx)
+	eg, gctx := errgroup.WithContext(ctx)
 
-		base := pythonBase(c, pythonDefaultVersion)
+	base := pythonBase(c, pythonDefaultVersion)
 
-		eg.Go(func() error {
-			_, err = base.
-				WithExec([]string{"poe", "lint"}).
-				ExitCode(gctx)
-			return err
-		})
-
-		eg.Go(func() error {
-			workdir := util.Repository(c)
-			snippets := c.Directory().
-				WithDirectory("/", workdir.Directory("docs/current/sdk/python/snippets"))
-			_, err = base.
-				WithMountedDirectory("/snippets", snippets).
-				WithExec([]string{"poe", "lint", "/snippets"}).
-				ExitCode(gctx)
-			return err
-		})
-
-		eg.Go(func() error {
-			return lintGeneratedCode(func() error {
-				return t.Generate(ctx)
-			}, pythonGeneratedAPIPaths...)
-		})
-
-		return eg.Wait()
+	eg.Go(func() error {
+		_, err = base.
+			WithExec([]string{"poe", "lint"}).
+			ExitCode(gctx)
+		return err
 	})
+
+	eg.Go(func() error {
+		workdir := util.Repository(c)
+		snippets := c.Directory().
+			WithDirectory("/", workdir.Directory("docs/current/sdk/python/snippets"))
+		_, err = base.
+			WithMountedDirectory("/snippets", snippets).
+			WithExec([]string{"poe", "lint", "/snippets"}).
+			ExitCode(gctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		return lintGeneratedCode(func() error {
+			return t.Generate(ctx)
+		}, pythonGeneratedAPIPaths...)
+	})
+
+	return eg.Wait()
 }
 
 // Test tests the Python SDK
@@ -74,24 +73,22 @@ func (t Python) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		versions := []string{"3.10", "3.11"}
+	versions := []string{"3.10", "3.11"}
 
-		eg, gctx := errgroup.WithContext(ctx)
-		for _, version := range versions {
-			version := version
-			eg.Go(func() error {
-				_, err := pythonBase(c, version).
-					WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-					WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}, dagger.ContainerWithExecOpts{
-						ExperimentalPrivilegedNesting: true,
-					}).ExitCode(gctx)
-				return err
-			})
-		}
+	eg, gctx := errgroup.WithContext(ctx)
+	for _, version := range versions {
+		version := version
+		eg.Go(func() error {
+			_, err := pythonBase(c, version).
+				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+				WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}, dagger.ContainerWithExecOpts{
+					ExperimentalPrivilegedNesting: true,
+				}).ExitCode(gctx)
+			return err
+		})
+	}
 
-		return eg.Wait()
-	})
+	return eg.Wait()
 }
 
 // Generate re-generates the SDK API
@@ -102,23 +99,21 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated := pythonBase(c, pythonDefaultVersion).
-			WithExec([]string{"poe", "generate"}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			})
+	generated := pythonBase(c, pythonDefaultVersion).
+		WithExec([]string{"poe", "generate"}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		})
 
-		for _, f := range pythonGeneratedAPIPaths {
-			contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
-			if err != nil {
-				return err
-			}
-			if err := os.WriteFile(f, []byte(contents), 0o600); err != nil {
-				return err
-			}
+	for _, f := range pythonGeneratedAPIPaths {
+		contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
+		if err != nil {
+			return err
 		}
-		return nil
-	})
+		if err := os.WriteFile(f, []byte(contents), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Publish publishes the Python SDK
@@ -129,38 +124,36 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		var (
-			version = strings.TrimPrefix(tag, "sdk/python/v")
-			token   = os.Getenv("PYPI_TOKEN")
-			repo    = os.Getenv("PYPI_REPO")
-		)
+	var (
+		version = strings.TrimPrefix(tag, "sdk/python/v")
+		token   = os.Getenv("PYPI_TOKEN")
+		repo    = os.Getenv("PYPI_REPO")
+	)
 
-		if token == "" {
-			return errors.New("PYPI_TOKEN environment variable must be set")
-		}
+	if token == "" {
+		return errors.New("PYPI_TOKEN environment variable must be set")
+	}
 
-		build := pythonBase(c, pythonDefaultVersion).
-			WithEnvVariable("POETRY_DYNAMIC_VERSIONING_BYPASS", version).
-			WithExec([]string{"poetry-dynamic-versioning"}).
-			WithExec([]string{"poetry", "build"})
+	build := pythonBase(c, pythonDefaultVersion).
+		WithEnvVariable("POETRY_DYNAMIC_VERSIONING_BYPASS", version).
+		WithExec([]string{"poetry-dynamic-versioning"}).
+		WithExec([]string{"poetry", "build"})
 
-		args := []string{"poetry", "publish"}
+	args := []string{"poetry", "publish"}
 
-		if repo == "test" {
-			build = build.WithEnvVariable("POETRY_REPOSITORIES_TEST_URL", "https://test.pypi.org/legacy/")
-			args = append(args, "-r", "test")
-		} else {
-			repo = "pypi"
-		}
+	if repo == "test" {
+		build = build.WithEnvVariable("POETRY_REPOSITORIES_TEST_URL", "https://test.pypi.org/legacy/")
+		args = append(args, "-r", "test")
+	} else {
+		repo = "pypi"
+	}
 
-		_, err = build.
-			WithEnvVariable(fmt.Sprintf("POETRY_PYPI_TOKEN_%s", strings.ToUpper(repo)), token).
-			WithExec(args).
-			ExitCode(ctx)
+	_, err = build.
+		WithEnvVariable(fmt.Sprintf("POETRY_PYPI_TOKEN_%s", strings.ToUpper(repo)), token).
+		WithExec(args).
+		ExitCode(ctx)
 
-		return err
-	})
+	return err
 }
 
 // Bump the Python SDK's Engine dependency
