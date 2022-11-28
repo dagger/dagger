@@ -17,6 +17,9 @@ export class TooManyNestedObjectsError extends DaggerSDKError {
    */
   response: unknown
 
+  /**
+   * @hidden
+   */
   constructor(message: string, options: TooManyNestedObjectsErrorOptions) {
     super(message, options)
     this.response = options.response
