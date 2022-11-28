@@ -8,7 +8,7 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine")}}`
+      `{ container { from (address: "alpine") } }`
     )
   })
 
@@ -20,7 +20,7 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
+      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"]) }} }`
     )
   })
 
@@ -30,7 +30,7 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       queryBuilder(pkg.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
+      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"]) }} }`
     )
   })
 
@@ -39,12 +39,12 @@ describe("NodeJS SDK api", function () {
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       queryBuilder(a.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["echo","hello","world"])}}}`
+      `{ container { from (address: "alpine") { withExec (args: ["echo","hello","world"]) }} }`
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       queryBuilder(b.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["echo","foo","bar"])}}}`
+      `{ container { from (address: "alpine") { withExec (args: ["echo","foo","bar"]) }} }`
     )
   })
 
