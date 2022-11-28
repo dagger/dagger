@@ -1,21 +1,8 @@
-name: publish-engine
+name: publish
 on:
   push:
-    branches:
-      - main
-    tags:
-      - "v*"
-    paths:
-      - "cmd/**"
-      - "codegen/**"
-      - "core/**"
-      - "engine/**"
-      - "internal/engine/**"
-      - "project/**"
-      - "router/**"
-      - "secret/**"
-      - "tracing/**"
-      - go.mod
+    branches: ["main"]
+    tags: ["v**"]
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -33,7 +20,18 @@ jobs:
           password: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
       - run: ./hack/make-prod dagger:publish ${{ github.ref_name }}
 
-      - name: Bump SDK Engine Dependencies
+      - name: "Publish Engine & CLI"
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
+          AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
+          ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
+          HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
+        run: ./hack/make dagger:publish ${{ github.ref_name }}
+
+      - name: "Bump SDK Engine Dependencies"
         uses: peter-evans/create-pull-request@v3
         if: github.ref_name != 'main'
         with:
@@ -48,5 +46,3 @@ jobs:
             This PR was auto-generated.
           delete-branch: true
           branch: bump-engine
-
-      ## TODO add publish CLI workflow
