@@ -54,10 +54,7 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 		imageRef,
 		"--debug",
 	).CombinedOutput(); err != nil {
-		if !strings.Contains(
-			string(output),
-			fmt.Sprintf(`Conflict. The container name "/%s" is already in use by container`, containerName),
-		) {
+		if !isContainerAlreadyInUseOutput(string(output)) {
 			return "", errors.Wrapf(err, "failed to run container: %s", output)
 		}
 	}
@@ -80,7 +77,7 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 			if output, err := exec.CommandContext(ctx,
 				"docker", "rm", "-fv", line,
 			).CombinedOutput(); err != nil {
-				if !strings.Contains(string(output), fmt.Sprintf("removal of container %s is already in progress", line)) {
+				if !strings.Contains(string(output), "already in progress") {
 					fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
 				}
 			}
@@ -92,4 +89,16 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 // Just connect to the container as provided, nothing fancy
 func dockerContainerProvider(ctx context.Context, remote *url.URL) (string, error) {
 	return "docker-container://" + remote.Host + remote.Path, nil
+}
+
+func isContainerAlreadyInUseOutput(output string) bool {
+	switch {
+	// docker cli output
+	case strings.Contains(output, "is already in use"):
+		return true
+	// nerdctl cli output
+	case strings.Contains(output, "is already used"):
+		return true
+	}
+	return false
 }
