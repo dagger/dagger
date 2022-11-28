@@ -1,14 +1,17 @@
 import logging
+from typing import TypeVar
 
-from aiohttp import ClientTimeout
 from attrs import define
 from gql.transport import AsyncTransport, Transport
-from gql.transport.aiohttp import AIOHTTPTransport
-from gql.transport.requests import RequestsHTTPTransport
+
+from dagger.transport.httpx import HTTPXAsyncTransport, HTTPXTransport
 
 from .base import Connector, register_connector
 
 logger = logging.getLogger(__name__)
+
+
+_T = TypeVar("_T")
 
 
 @register_connector("http")
@@ -20,17 +23,11 @@ class HTTPConnector(Connector):
     def query_url(self) -> str:
         return f"{self.cfg.host.geturl()}/query"
 
+    def _make_transport(self, cls: type[_T]) -> _T:
+        return cls(self.query_url, timeout=self.cfg.execute_timeout)
+
     def make_transport(self) -> AsyncTransport:
-        session_timeout = self.cfg.execute_timeout
-        if isinstance(session_timeout, int):
-            session_timeout = float(session_timeout)
-        return AIOHTTPTransport(
-            self.query_url,
-            timeout=self.cfg.timeout,
-            client_session_args={"timeout": ClientTimeout(total=session_timeout)},
-        )
+        return self._make_transport(HTTPXAsyncTransport)
 
     def make_sync_transport(self) -> Transport:
-        return RequestsHTTPTransport(
-            self.query_url, timeout=self.cfg.timeout, retries=10
-        )
+        return self._make_transport(HTTPXTransport)
