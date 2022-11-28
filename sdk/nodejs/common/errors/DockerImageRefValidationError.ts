@@ -7,7 +7,7 @@ interface DockerImageRefValidationErrorOptions extends DaggerSDKErrorOptions {
 /**
  *  This error is thrown if the passed image reference does not pass validation and is not compliant with the
  *  DockerImage constructor.
- *  @see [DockerImageRefValidationError - Dagger.io](current/sdk/nodejs/reference/classes/common_errors.DockerImageRefValidationError)
+ *  @see [DockerImageRefValidationError - Dagger.io](https://docs.dagger.io/current/sdk/nodejs/reference/classes/common_errors.DockerImageRefValidationError)
  */
 export class DockerImageRefValidationError extends DaggerSDKError {
   name = "DockerImageRefValidationError"

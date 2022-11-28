@@ -6,7 +6,7 @@ interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
 
 /**
  *  Dagger only expects one response value from the engine. If the engine returns more than one value this error is thrown.
- *  @see [TooManyNestedObjectsError - Dagger.io](current/sdk/nodejs/reference/classes/common_errors.TooManyNestedObjectsError)
+ *  @see [TooManyNestedObjectsError - Dagger.io](https://docs.dagger.io/current/sdk/nodejs/reference/classes/common_errors.TooManyNestedObjectsError)
  */
 export class TooManyNestedObjectsError extends DaggerSDKError {
   name = "TooManyNestedObjectsError"
