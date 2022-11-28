@@ -9,7 +9,7 @@ import {
   DockerImageRefValidationError,
   EngineSessionPortParseError,
   InitEngineSessionBinaryError,
-} from "../../common/errors.js"
+} from "../../common/errors/index.js"
 
 /**
  * ImageRef is a simple abstraction of docker image reference.

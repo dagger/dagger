@@ -1,7 +1,7 @@
 import assert from "assert"
 import Client, { connect } from "../../index.js"
 import { queryFlatten, buildQuery } from "../utils.js"
-import { TooManyNestedObjectsError } from "../../common/errors.js"
+import { TooManyNestedObjectsError } from "../../common/errors"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 

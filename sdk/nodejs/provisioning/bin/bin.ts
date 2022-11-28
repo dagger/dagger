@@ -2,7 +2,7 @@ import { ConnectOpts, EngineConn } from "../engineconn.js"
 import readline from "readline"
 import { execaCommand, ExecaChildProcess } from "execa"
 import Client from "../../api/client.gen.js"
-import { EngineSessionPortParseError } from "../../common/errors.js"
+import { EngineSessionPortParseError } from "../../common/errors/index.js"
 
 /**
  * Bin runs an engine session from a specified binary

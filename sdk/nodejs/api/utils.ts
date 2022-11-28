@@ -4,7 +4,7 @@ import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
   UnknownDaggerError,
-} from "../common/errors.js"
+} from "../common/errors"
 import { QueryTree } from "./client.gen.js"
 
 function buildArgs(item: any): string {
@@ -135,7 +135,7 @@ export async function compute<T>(
   client: GraphQLClient
 ): Promise<T> {
   try {
-    const computeQuery: Awaited<T> = await client.request(
+    const computeQuery = await client.request(
       gql`
         ${query}
       `
