@@ -23,6 +23,7 @@ jobs:
       - name: "Publish Engine & CLI"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
+          DAGGER_ENGINE_IMAGE: ${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}
           AWS_ACCESS_KEY_ID: ${{ secrets.RELEASE_AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.RELEASE_AWS_SECRET_ACCESS_KEY }}
           AWS_REGION: ${{ secrets.RELEASE_AWS_REGION }}
