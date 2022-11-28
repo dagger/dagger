@@ -4,8 +4,10 @@
  * Do not make direct changes to the file.
  */
 
+import axios from "axios"
 import { GraphQLClient, gql } from "graphql-request";
 import { queryBuilder, queryFlatten } from "./utils.js"
+import { Headers, Response } from "cross-fetch"
 
 /**
  * @hidden
@@ -34,7 +36,32 @@ class BaseClient {
   constructor({queryTree, host}: ClientConfig = {}) {
     this._queryTree = queryTree || []
     this.clientHost = host || "127.0.0.1:8080"
-		this.client = new GraphQLClient(`http://${host}/query`);
+    const url = `http://dagger/query`
+    this.client = new GraphQLClient(url, {
+      fetch: function (
+        input: RequestInfo,
+        init?: RequestInit
+      ): Promise<Response> {
+        return axios({
+          method: init?.method,
+          url: url,
+          headers: init?.headers as Record<string, string>,
+          data: init?.body,
+          socketPath: host,
+          responseType: "stream",
+        }).then((res) => {
+          const headers = new Headers()
+          for (const [key, value] of Object.entries(res.headers)) {
+            headers.append(key, value as string)
+          }
+          return new Response(res.data, {
+            status: res.status,
+            statusText: res.statusText,
+            headers: headers,
+          })
+        })
+      },
+    });
   }
 
   /**
