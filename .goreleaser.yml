@@ -86,9 +86,7 @@ publishers:
 
 # https://goreleaser.com/customization/release/
 release:
-  prerelease: "true"
   footer: |
-    **Full Changelog**: https://github.com/dagger/dagger/compare/{{ .PreviousTag }}...{{ .Tag }}
     ## What to do next?
     - Read the [documentation](https://docs.dagger.io)
     - Join our [Discord server](https://discord.gg/dagger-io)
