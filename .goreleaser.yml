@@ -37,27 +37,6 @@ checksum:
 snapshot:
   name_template: "{{ .Tag }}-next"
 
-changelog:
-  use: github
-  sort: asc
-  filters:
-    exclude:
-      - "^doc"
-      - "^test"
-      - "^ci"
-      - "^website"
-      - "^infra"
-      - "^chore"
-      - "^build"
-      - "^Merge"
-      - "^sdk"
-  groups:
-    - title: Breaking Changes
-      regexp: "^.*!:+.*$"
-      order: 0
-    - title: Changes
-      order: 999
-
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
