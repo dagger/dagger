@@ -1,7 +1,10 @@
 ```gql
 query {
-    container(id: "alpine") {
-        id
-    }
+  file(id: "eyJsbGIiOnsiZGVmIjpbIklqWVNOQWovLy8vLy8vLy8vLzhCRVAvLy8vLy8vLy8vL3dFcUhBb0VMMlp2YnhDa0F4b0dTR1ZzYkc4aEtQLy8vLy8vLy8vLy93RlNBRm9BIiwiQ2trS1IzTm9ZVEkxTmpwak1EQTVPV1U1TURrNFpEVmlObUkyWVdWaFpXWXpObVpsTnpsaU9UUTVOVEF4TnpoalptRmpPRGxsWVdKbE5XRmtZbUprTkdZeFptWXdNV0l3TkdWbSJdLCJtZXRhZGF0YSI6eyJzaGEyNTY6NWNjOGQ1M2VkZTRjYzUyODQ0OTIyYWFhZDlhYjIzMzc3MzY3NWMwMDJjOTM5NGZhYTk0OTg1OTZmNGFjMWRiNiI6eyJjYXBzIjp7ImNvbnN0cmFpbnRzIjp0cnVlLCJwbGF0Zm9ybSI6dHJ1ZX19LCJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6eyJjYXBzIjp7ImZpbGUuYmFzZSI6dHJ1ZX19fSwiU291cmNlIjp7ImxvY2F0aW9ucyI6eyJzaGEyNTY6YzAwOTllOTA5OGQ1YjZiNmFlYWVmMzZmZTc5Yjk0OTUwMTc4Y2ZhYzg5ZWFiZTVhZGJiZDRmMWZmMDFiMDRlZiI6e319fX0sImZpbGUiOiJmb28iLCJwbGF0Zm9ybSI6eyJhcmNoaXRlY3R1cmUiOiIiLCJvcyI6IiJ9fQ==") {
+  	contents
+    export(path: "greeting")
+  }
 }
 ```
+
+<a href="https://play.dagger.cloud/playground/yWn-k9dPw0s" target="_blank">Try it in the API Playground!</a>
