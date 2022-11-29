@@ -3,7 +3,6 @@ package dockerprovision
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -72,7 +71,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}
 
 	defaultDaggerRunnerHost := "docker-container://" + c.containerName
-	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, tmpbin.Name(), args...)
+	dial, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, tmpbin.Name(), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -80,9 +79,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 
 	return &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", addr)
-			},
+			DialContext: dial,
 		},
 	}, nil
 }

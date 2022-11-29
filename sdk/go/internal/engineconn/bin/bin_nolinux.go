@@ -2,9 +2,7 @@
 
 package bin
 
-import (
-	"os/exec"
-)
+import "os/exec"
 
 func setPlatformOpts(proc *exec.Cmd) {
 	// no-op

@@ -52,7 +52,7 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 		args = append(args, "--project", cfg.ConfigPath)
 	}
 
-	addr, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
+	dial, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -60,9 +60,7 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 
 	return &http.Client{
 		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("unix", addr)
-			},
+			DialContext: dial,
 		},
 	}, nil
 }
@@ -78,7 +76,7 @@ func (c *Bin) Close() error {
 	return nil
 }
 
-func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (_ string, _ io.Closer, rerr error) {
+func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (_ Dialer, _ io.Closer, rerr error) {
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
 	// temporarily have the tmpbin fd that we closed earlier open still, and it
@@ -112,13 +110,13 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		var err error
 		stdout, err = proc.StdoutPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 		defer stdout.Close() // don't need it after we read the sock
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 		if logWriter == nil {
 			logWriter = io.Discard
@@ -138,7 +136,7 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		// we don't leak child processes even if this process is SIGKILL'd.
 		childStdin, err = proc.StdinPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 
 		if err := proc.Start(); err != nil {
@@ -153,12 +151,12 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 				childStdin = nil
 				continue
 			}
-			return "", nil, err
+			return nil, nil, err
 		}
 		break
 	}
 	if proc == nil {
-		return "", nil, fmt.Errorf("failed to start engine session")
+		return nil, nil, fmt.Errorf("failed to start engine session")
 	}
 	defer func() {
 		if rerr != nil {
@@ -188,13 +186,13 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 	select {
 	case sock = <-sockCh:
 		if sockErr != nil {
-			return "", nil, sockErr
+			return nil, nil, sockErr
 		}
 	case <-ctx.Done():
-		return "", nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 
-	return sock, childStdin, nil
+	return dialer(sock), childStdin, nil
 }
 
 // a writer that can later be turned into io.Discard
@@ -214,3 +212,5 @@ func (w *discardableWriter) Discard() {
 	defer w.mu.Unlock()
 	w.w = io.Discard
 }
+
+type Dialer func(context.Context, string, string) (net.Conn, error)

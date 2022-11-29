@@ -1,4 +1,5 @@
 go 1.18
 
 use .
+
 use ./sdk/go

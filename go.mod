@@ -4,7 +4,7 @@ go 1.18
 
 require (
 	dagger.io/dagger v0.4.1
-	github.com/Microsoft/go-winio v0.5.2
+	github.com/Microsoft/go-winio v0.6.0
 	github.com/adrg/xdg v0.4.0
 	github.com/containerd/containerd v1.6.10
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
@@ -106,6 +106,7 @@ require (
 	golang.org/x/net v0.0.0-20220811182439-13a9a731de15 // indirect
 	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9 // indirect
+	golang.org/x/tools v0.1.12 // indirect
 	google.golang.org/genproto v0.0.0-20220810155839-1856144b1d9c // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
