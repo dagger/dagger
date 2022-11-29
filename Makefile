@@ -17,7 +17,7 @@ help: # Show how to get started & what targets are available
 
 .PHONY: dagger
 dagger: # Build a dev dagger binary
-	CGO_ENABLED=0 go build -o ./cmd/dagger/ -ldflags '-s -w' ./cmd/dagger/
+	CGO_ENABLED=0 go build -o ./cmd/dagger/dagger-cue -ldflags '-s -w' ./cmd/dagger/
 
 .PHONY: dagger-debug
 dagger-debug: # Build a debug version of the dev dagger binary

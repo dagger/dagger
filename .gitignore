@@ -46,3 +46,5 @@ ci/build
 
 # Telemetry log events
 telemetry.*.log
+Makefile
+cmd/dagger/dagger-cue
