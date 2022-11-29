@@ -12,8 +12,11 @@ type Host {
   "Access a directory on the host"
   directory(path: String!, exclude: [String!], include: [String!]): Directory!
 
-  "Lookup the value of an environment variable. Null if the variable is not available."
+  "Access an environment variable on the host"
   envVariable(name: String!): HostVariable
+
+  "Access a Unix socket on the host"
+  unixSocket(path: String!): Socket!
 }
 
 "An environment variable on the host environment"

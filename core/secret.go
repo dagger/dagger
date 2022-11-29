@@ -38,6 +38,8 @@ func NewSecretFromHostEnv(name string) (*Secret, error) {
 // SecretID is an opaque value representing a content-addressed secret.
 type SecretID string
 
+func (id SecretID) String() string { return string(id) }
+
 // secretIDPayload is the inner content of a SecretID.
 type secretIDPayload struct {
 	FromFile    FileID `json:"file,omitempty"`

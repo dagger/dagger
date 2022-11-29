@@ -111,6 +111,9 @@ type Container {
   """
   withoutMount(path: String!): Container!
 
+  "This container plus a socket forwarded to the given Unix socket path"
+  withUnixSocket(path: String!, source: SocketID!): Container!
+
   "This container after executing the specified command inside it"
   withExec(
     "Command to run instead of the container's default command"

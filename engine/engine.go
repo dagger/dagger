@@ -93,10 +93,13 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	router := router.New()
 	secretStore := secret.NewStore()
 
-	socketProviders := MergedSocketProviders{
-		core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
-		project.SessionProxySockName: project.NewSessionProxy(router),
+	socketProviders := SocketProvider{
+		Named: NamedSocketProviders{
+			core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
+			project.SessionProxySockName: project.NewSessionProxy(router),
+		},
 	}
+
 	var sshAuthSockID string
 	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
 		sshAuthHandler, err := sshAuthSockHandler()
@@ -105,8 +108,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		}
 		// using env key as the socket ID too for now
 		sshAuthSockID = sshAuthSockEnv
-		socketProviders[sshAuthSockID] = sshAuthHandler
+		socketProviders.Named[sshAuthSockID] = sshAuthHandler
 	}
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),

@@ -29,6 +29,7 @@ def id_map():
         "CacheID": "CacheVolume",
         "FileID": "File",
         "SecretID": "Secret",
+        "SocketID": "Socket",
     }
 
 

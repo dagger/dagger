@@ -28,3 +28,6 @@ var Host string
 
 //go:embed platform.graphqls
 var Platform string
+
+//go:embed socket.graphqls
+var Socket string

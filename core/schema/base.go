@@ -46,6 +46,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		},
 		&httpSchema{base},
 		&platformSchema{base},
+		&socketSchema{base, host},
 	)
 }
 

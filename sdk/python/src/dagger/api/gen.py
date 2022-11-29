@@ -24,6 +24,10 @@ SecretID = NewType("SecretID", str)
 """A unique identifier for a secret"""
 
 
+SocketID = NewType("SocketID", str)
+"""A content-addressed socket identifier"""
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs"""
 
@@ -458,6 +462,15 @@ class Container(Type):
         _ctx = self._select("withSecretVariable", _args)
         return Container(_ctx)
 
+    def with_unix_socket(self, path: str, source: "Socket") -> "Container":
+        """This container plus a socket forwarded to the given Unix socket path"""
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withUnixSocket", _args)
+        return Container(_ctx)
+
     def with_user(self, name: str) -> "Container":
         """This container but with a different command user"""
         _args = [
@@ -842,14 +855,20 @@ class Host(Type):
         return Directory(_ctx)
 
     def env_variable(self, name: str) -> "HostVariable":
-        """Lookup the value of an environment variable. Null if the variable is
-        not available.
-        """
+        """Access an environment variable on the host"""
         _args = [
             Arg("name", name),
         ]
         _ctx = self._select("envVariable", _args)
         return HostVariable(_ctx)
+
+    def unix_socket(self, path: str) -> "Socket":
+        """Access a Unix socket on the host"""
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("unixSocket", _args)
+        return Socket(_ctx)
 
     def workdir(
         self, exclude: list[str] | None = None, include: list[str] | None = None
@@ -1051,6 +1070,14 @@ class Client(Root):
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
+    def socket(self, id: "SocketID | Socket | None" = None) -> "Socket":
+        """Load a socket by ID"""
+        _args = [
+            Arg("id", id, None),
+        ]
+        _ctx = self._select("socket", _args)
+        return Socket(_ctx)
+
 
 class Secret(Type):
     """A reference to a secret value, which can be handled more safely
@@ -1087,6 +1114,24 @@ class Secret(Type):
         return await _ctx.execute(str)
 
 
+class Socket(Type):
+    async def id(self) -> SocketID:
+        """The content-addressed identifier of the socket
+
+        Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        SocketID
+            A content-addressed socket identifier
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(SocketID)
+
+
 __all__ = [
     "CacheID",
     "ContainerID",
@@ -1094,6 +1139,7 @@ __all__ = [
     "FileID",
     "Platform",
     "SecretID",
+    "SocketID",
     "CacheVolume",
     "Container",
     "Directory",
@@ -1106,4 +1152,5 @@ __all__ = [
     "Project",
     "Client",
     "Secret",
+    "Socket",
 ]

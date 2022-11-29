@@ -1,0 +1,12 @@
+extend type Query {
+  "Load a socket by ID"
+  socket(id: SocketID): Socket!
+}
+
+"A content-addressed socket identifier"
+scalar SocketID
+
+type Socket {
+  "The content-addressed identifier of the socket"
+  id: SocketID!
+}

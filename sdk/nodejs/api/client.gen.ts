@@ -104,6 +104,12 @@ export type Platform = string
 export type SecretID = string
 
 /**
+ * A content-addressed socket identifier
+ * @hidden
+ */
+export type SocketID = string
+
+/**
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
@@ -682,6 +688,22 @@ export class Container extends BaseClient {
   }
 
   /**
+   * This container plus a socket forwarded to the given Unix socket path
+   */
+  withUnixSocket(path: string, source: SocketID): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withUnixSocket",
+          args: { path, source },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * This container but with a different command user
    */
   withUser(name: string): Container {
@@ -1242,7 +1264,7 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Lookup the value of an environment variable. Null if the variable is not available.
+   * Access an environment variable on the host
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({
@@ -1251,6 +1273,22 @@ export class Host extends BaseClient {
         {
           operation: "envVariable",
           args: { name },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * Access a Unix socket on the host
+   */
+  unixSocket(path: string): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "unixSocket",
+          args: { path },
         },
       ],
       host: this.clientHost,
@@ -1573,6 +1611,22 @@ export default class Client extends BaseClient {
       host: this.clientHost,
     })
   }
+
+  /**
+   * Load a socket by ID
+   */
+  socket(id?: SocketID): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "socket",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
 }
 
 /**
@@ -1607,6 +1661,24 @@ export class Secret extends BaseClient {
     ]
 
     const response: Awaited<string> = await this._compute()
+
+    return response
+  }
+}
+
+export class Socket extends BaseClient {
+  /**
+   * The content-addressed identifier of the socket
+   */
+  async id(): Promise<SocketID> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: "id",
+      },
+    ]
+
+    const response: Awaited<SocketID> = await this._compute()
 
     return response
   }
