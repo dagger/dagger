@@ -9,17 +9,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
-	"github.com/adrg/xdg"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/tracing"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"golang.org/x/sys/unix"
 )
 
 var (
@@ -39,10 +36,10 @@ var rootCmd = &cobra.Command{
 		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
 		return err
 	},
-	Run: EngineSession,
+	RunE: EngineSession,
 }
 
-func EngineSession(cmd *cobra.Command, args []string) {
+func EngineSession(cmd *cobra.Command, args []string) error {
 	startOpts := &engine.Config{
 		Workdir:    workdir,
 		ConfigPath: configPath,
@@ -51,18 +48,17 @@ func EngineSession(cmd *cobra.Command, args []string) {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 
-	randomUuid, err := uuid.NewRandom()
+	randomUUID, err := uuid.NewRandom()
 	if err != nil {
-		panic(err)
+		return err
 	}
-	sessionId := randomUuid.String()
+	sessionID := randomUUID.String()
 
-	sockPath := filepath.Join(runtimeDir(), "dagger-session-"+sessionId+".sock")
-	l, err := createListener(sockPath)
+	l, sockName, cleanupListener, err := createListener(sessionID)
 	if err != nil {
-		panic(err)
+		return err
 	}
-	defer os.Remove(sockPath)
+	defer cleanupListener()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -88,7 +84,7 @@ func EngineSession(cmd *cobra.Command, args []string) {
 		}
 
 		go func() {
-			if _, err := fmt.Fprintf(os.Stdout, "%s\n", sockPath); err != nil {
+			if _, err := fmt.Fprintf(os.Stdout, "%s\n", sockName); err != nil {
 				panic(err)
 			}
 		}()
@@ -101,37 +97,9 @@ func EngineSession(cmd *cobra.Command, args []string) {
 		return nil
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return err
 	}
-}
-
-func runtimeDir() string {
-	// Try to use the proper runtime dir
-	runtimeDir := xdg.RuntimeDir
-	if err := os.MkdirAll(runtimeDir, 0700); err == nil {
-		return runtimeDir
-	}
-	// Sometimes systems are misconfigured such that the runtime dir
-	// doesn't exist but also can't be created by non-root users, so
-	// fallback to a tmp dir
-	return os.TempDir()
-}
-
-func createListener(sockPath string) (net.Listener, error) {
-	// TODO: use named pipe on Windows
-
-	// the permissions of the socket file are governed by umask, so we assume
-	// that nothing else is writing files right now and set umask such that
-	// the socket starts without any group or other permissions
-	oldMask := unix.Umask(0077)
-	defer unix.Umask(oldMask)
-
-	l, err := net.Listen("unix", sockPath)
-	if err != nil {
-		panic(err)
-	}
-	return l, nil
+	return nil
 }
 
 func main() {
