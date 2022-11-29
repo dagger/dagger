@@ -545,6 +545,17 @@ class Directory(Type):
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
+    def docker_build(
+        self, dockerfile: str | None = None, platform: "Platform | None" = None
+    ) -> "Container":
+        """Build a new Docker container from this directory"""
+        _args = [
+            Arg("dockerfile", dockerfile, None),
+            Arg("platform", platform, None),
+        ]
+        _ctx = self._select("dockerBuild", _args)
+        return Container(_ctx)
+
     def entries(self, path: str | None = None) -> list[str]:
         """Return a list of files and directories at the given path
 
