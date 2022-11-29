@@ -103,6 +103,8 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		if err := sdks.Bump(ctx, digest); err != nil {
 			return err
 		}
+	} else {
+		fmt.Printf("'%s' is not a semver version, skipping image bump in SDKs", version)
 	}
 
 	time.Sleep(3 * time.Second) // allow buildkit logs to flush, to minimize potential confusion with interleaving
