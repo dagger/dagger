@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"runtime"
+	"strings"
 
 	"dagger.io/dagger/internal/engineconn"
 	"dagger.io/dagger/internal/engineconn/bin"
@@ -69,6 +70,9 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}
 	if cfg.ConfigPath != "" {
 		args = append(args, "--project", cfg.ConfigPath)
+	}
+	if cfg.AllowedLocalDirs != nil {
+		args = append(args, "--allowed-local-dirs="+strings.Join(cfg.AllowedLocalDirs, ","))
 	}
 
 	defaultDaggerRunnerHost := "docker-container://" + c.containerName

@@ -52,6 +52,9 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 	if cfg.ConfigPath != "" {
 		args = append(args, "--project", cfg.ConfigPath)
 	}
+	if cfg.AllowedLocalDirs != nil {
+		args = append(args, "--allowed-local-dirs="+strings.Join(cfg.AllowedLocalDirs, ","))
+	}
 
 	addr, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
 	if err != nil {

@@ -33,10 +33,11 @@ func Get(host string) (EngineConn, error) {
 }
 
 type Config struct {
-	Workdir      string
-	ConfigPath   string
-	NoExtensions bool
-	LogOutput    io.Writer
+	Workdir          string
+	ConfigPath       string
+	NoExtensions     bool
+	LogOutput        io.Writer
+	AllowedLocalDirs []string
 }
 
 // Register registers new connectionhelper for scheme

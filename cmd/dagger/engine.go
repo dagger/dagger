@@ -11,6 +11,7 @@ import (
 func withEngine(
 	ctx context.Context,
 	sessionToken string,
+	allowedLocalDirs []string,
 	cb engine.StartCallback,
 ) error {
 	var runnerHost string
@@ -21,10 +22,11 @@ func withEngine(
 	}
 
 	engineConf := &engine.Config{
-		Workdir:      workdir,
-		ConfigPath:   configPath,
-		SessionToken: sessionToken,
-		RunnerHost:   runnerHost,
+		Workdir:          workdir,
+		ConfigPath:       configPath,
+		SessionToken:     sessionToken,
+		RunnerHost:       runnerHost,
+		AllowedLocalDirs: allowedLocalDirs,
 	}
 	if debugLogs {
 		engineConf.LogOutput = os.Stderr

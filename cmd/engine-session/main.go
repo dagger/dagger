@@ -19,8 +19,9 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
+	configPath       string
+	workdir          string
+	allowedLocalDirs []string
 )
 
 func init() {
@@ -40,10 +41,11 @@ var rootCmd = &cobra.Command{
 
 func EngineSession(cmd *cobra.Command, args []string) {
 	startOpts := &engine.Config{
-		Workdir:    workdir,
-		ConfigPath: configPath,
-		LogOutput:  os.Stderr,
-		RunnerHost: os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"),
+		Workdir:          workdir,
+		ConfigPath:       configPath,
+		LogOutput:        os.Stderr,
+		RunnerHost:       os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"),
+		AllowedLocalDirs: []string{"/"},
 	}
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)

@@ -10,7 +10,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var listenAddress string
+const outputPrefix = "==> server listening on "
+
+var (
+	listenAddress   string
+	listenLocalDirs []string
+)
 
 var listenCmd = &cobra.Command{
 	Use:     "listen",
@@ -22,15 +27,16 @@ var listenCmd = &cobra.Command{
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
-		fmt.Fprintf(os.Stderr, "==> server listening on %s\n", listenAddress)
+	if err := withEngine(ctx, "", listenLocalDirs, func(ctx context.Context, r *router.Router) error {
+		fmt.Fprintf(cmd.OutOrStderr(), "%s %s\n", outputPrefix, listenAddress)
 		return http.ListenAndServe(listenAddress, r)
 	}); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func init() {
 	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", ":8080", "Listen on network address ADDR")
+	listenCmd.Flags().StringSliceVar(&listenLocalDirs, "local-dirs", []string{}, "local directories to allow for syncing into containers")
 }

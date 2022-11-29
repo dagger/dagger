@@ -67,6 +67,15 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 	})
 }
 
+// WithAllowedLocalDirs sets the allowed local directories. If nil,
+// then all directories are allowed by default. If an empty non-nil slice,
+// no directories will be allowed.
+func WithAllowedLocalDirs(dirs []string) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.AllowedLocalDirs = dirs
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	defer func() {

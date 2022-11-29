@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
@@ -35,11 +36,12 @@ type Config struct {
 	Workdir    string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions  bool
-	LogOutput     io.Writer
-	DisableHostRW bool
-	RunnerHost    string
-	SessionToken  string
+	NoExtensions     bool
+	LogOutput        io.Writer
+	DisableHostRW    bool
+	RunnerHost       string
+	SessionToken     string
+	AllowedLocalDirs []string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
@@ -105,7 +107,10 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	if !startOpts.DisableHostRW {
-		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
+		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AllowedDirSource{
+			allowedDirs: startOpts.AllowedLocalDirs,
+			workdir:     startOpts.Workdir,
+		}))
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
@@ -262,9 +267,40 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 	return &res.Core.Directory.LoadProject, nil
 }
 
-type AnyDirSource struct{}
+type AllowedDirSource struct {
+	allowedDirs []string
+	workdir     string
+}
 
-func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
+func (s AllowedDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
+	var allowed bool
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(s.workdir, name)
+	}
+	evalName, err := filepath.EvalSymlinks(name)
+	if err != nil {
+		return filesync.SyncedDir{}, false
+	}
+	for _, allowedDir := range s.allowedDirs {
+		if filepath.Clean(allowedDir) == "/" {
+			allowed = true
+			break
+		}
+		if !filepath.IsAbs(allowedDir) {
+			allowedDir = filepath.Join(s.workdir, allowedDir)
+		}
+		evalAllowedDir, err := filepath.EvalSymlinks(allowedDir)
+		if err != nil {
+			return filesync.SyncedDir{}, false
+		}
+		if evalName == evalAllowedDir || strings.HasPrefix(evalName, evalAllowedDir+"/") {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return filesync.SyncedDir{}, false
+	}
 	return filesync.SyncedDir{
 		Dir: name,
 		Map: func(p string, st *fstypes.Stat) bool {

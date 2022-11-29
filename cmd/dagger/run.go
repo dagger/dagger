@@ -48,7 +48,7 @@ func Run(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		listening <- fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port)
-		if err := withEngine(ctx, sessionToken.String(), func(ctx context.Context, r *router.Router) error {
+		if err := withEngine(ctx, sessionToken.String(), []string{"/"}, func(ctx context.Context, r *router.Router) error {
 			return http.Serve(l, r)
 		}); err != nil {
 			panic(err)
