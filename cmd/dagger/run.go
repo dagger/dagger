@@ -16,7 +16,7 @@ import (
 
 var runCmd = &cobra.Command{
 	Use:                   "run [command]",
-	Aliases:               []string{"x"},
+	Aliases:               []string{"r"},
 	DisableFlagsInUseLine: true,
 	Long:                  "Runs the specified command in a Dagger session\n\nDAGGER_SESSION_URL will be convieniently injected automatically.",
 	Short:                 "Runs a command in a Dagger session",
