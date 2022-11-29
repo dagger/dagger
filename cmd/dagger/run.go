@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -20,15 +23,20 @@ var runCmd = &cobra.Command{
 	Example: `
 dagger run -- sh -c 'curl \
 -H "content-type:application/json" \
--d "{\"query\":\"{container{id}}\"}" \
-http://$DAGGER_SESSION_URL/query'`,
+-d "{\"query\":\"{container{id}}\"}" $DAGGER_SESSION_URL'`,
 	Run:  Run,
 	Args: cobra.MinimumNArgs(1),
 }
 
 func Run(cmd *cobra.Command, args []string) {
+	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
-	if err := setupServer(ctx); err != nil {
+	randPath, err := uuid.NewRandom()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		os.Exit(1)
+	}
+	if err := setupServer(ctx, randPath.String()); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -46,7 +54,7 @@ func Run(cmd *cobra.Command, args []string) {
 	}()
 
 	listenPort := <-listening
-	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s", listenPort))
+	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s/%s", listenPort, randPath))
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 	c.Stdout = os.Stdout
