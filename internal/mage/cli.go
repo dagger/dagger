@@ -36,7 +36,7 @@ func (cl Cli) Publish(ctx context.Context) error {
 		WithSecretVariable("HOMEBREW_TAP_OWNER", util.WithSetHostVar(ctx, c.Host(), "HOMEBREW_TAP_OWNER").Secret())
 
 	_, err = container.
-		WithExec([]string{"release", "--rm-dist", "--debug"}).
+		WithExec([]string{"release", "--rm-dist", "--skip-validate", "--debug"}).
 		ExitCode(ctx)
 	return err
 }

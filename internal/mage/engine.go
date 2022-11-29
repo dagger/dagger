@@ -23,8 +23,6 @@ const (
 	shimBinName          = "dagger-shim"
 	buildkitRepo         = "github.com/moby/buildkit"
 	buildkitBranch       = "v0.10.5"
-
-	engineImage = "ghcr.io/dagger/engine"
 )
 
 func parseRef(tag string) error {
@@ -78,13 +76,17 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	ref := fmt.Sprintf("%s:%s", engineImage, version)
-
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
 	defer c.Close()
+
+	engineImage, err := util.WithSetHostVar(ctx, c.Host(), "DAGGER_ENGINE_IMAGE").Value(ctx)
+	if err != nil {
+		return err
+	}
+	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
 	arches := []string{"amd64", "arm64"}
 	oses := []string{"linux", "darwin", "windows"}
