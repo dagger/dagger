@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,7 +54,7 @@ func TestImageProvision(t *testing.T) {
 		t.Fatalf("failed to create container: %s", output)
 	}
 
-	parallelism := 5
+	parallelism := runtime.NumCPU()
 	start := make(chan struct{})
 	var eg errgroup.Group
 	for i := 0; i < parallelism; i++ {
