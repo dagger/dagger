@@ -24,7 +24,7 @@ var listenCmd = &cobra.Command{
 }
 
 func Listen(cmd *cobra.Command, args []string) {
-	if err := setupServer(context.Background()); err != nil {
+	if err := setupServer(context.Background(), ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -36,7 +36,7 @@ func Listen(cmd *cobra.Command, args []string) {
 	}
 }
 
-func setupServer(ctx context.Context) error {
+func setupServer(ctx context.Context, path string) error {
 	opts := []dagger.ClientOpt{
 		dagger.WithWorkdir(workdir),
 		dagger.WithConfigPath(configPath),
@@ -51,7 +51,7 @@ func setupServer(ctx context.Context) error {
 		return err
 	}
 
-	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/"+path, func(rw http.ResponseWriter, r *http.Request) {
 		res := make(map[string]interface{})
 		resp := &dagger.Response{Data: &res}
 
