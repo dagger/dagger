@@ -164,7 +164,7 @@ func (t *dockerfileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *
 				return nil, err
 			}
 			filename = "Dockerfile"
-			buildcontext = buildcontext.WithNewFile(filename, dagger.DirectoryWithNewFileOpts{Contents: contents})
+			buildcontext = buildcontext.WithNewFile(filename, contents)
 			if err != nil {
 				return nil, err
 			}

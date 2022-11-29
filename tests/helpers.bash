@@ -4,7 +4,7 @@ common_setup() {
 
     TESTDIR="$( cd "$( dirname "$BATS_TEST_FILENAME" )" >/dev/null 2>&1 && pwd )"
 
-    DAGGER="${DAGGER_BINARY:-$TESTDIR/../cmd/dagger/dagger}"
+    DAGGER="${DAGGER_BINARY:-$TESTDIR/../cmd/dagger/dagger-cue}"
     export DAGGER
 
     DAGGER_LOG_FORMAT="plain"

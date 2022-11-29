@@ -19,7 +19,7 @@ func (s *Solver) NewSecret(plaintext string) *dagger.Secret {
 		panic(err)
 	}
 
-	return s.Client.Directory().WithNewFile(env, dagger.DirectoryWithNewFileOpts{Contents: plaintext}).File(env).Secret()
+	return s.Client.Directory().WithNewFile(env, plaintext).File(env).Secret()
 }
 
 func hashID(values ...string) string {

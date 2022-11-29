@@ -57,7 +57,7 @@ require (
 require github.com/google/go-cmp v0.5.9
 
 require (
-	dagger.io/dagger v0.4.1-0.20221115125729-579ada95545d
+	dagger.io/dagger v0.4.1
 	github.com/dagger/cuelsp v0.3.4
 	github.com/olekukonko/tablewriter v0.0.5
 	github.com/tliron/kutil v0.1.62

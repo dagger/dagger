@@ -57,9 +57,7 @@ func (t *writeFileTask) Run(ctx context.Context, pctx *plancontext.Context, _ *s
 		return nil, err
 	}
 
-	newFSID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).WithNewFile(path, dagger.DirectoryWithNewFileOpts{
-		Contents: str,
-	}).ID(ctx)
+	newFSID, err := dgr.Directory(dagger.DirectoryOpts{ID: dagger.DirectoryID(fsid)}).WithNewFile(path, str).ID(ctx)
 
 	if err != nil {
 		return nil, err

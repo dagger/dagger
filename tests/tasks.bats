@@ -221,9 +221,9 @@ setup() {
     "$DAGGER" "do" -p ./tasks/scratch/scratch.cue exec
 }
 
-@test "task: #Scratch build" {
-    "$DAGGER" "do" -p ./tasks/scratch/scratch_build_scratch.cue build
-}
+# @test "task: #Scratch build" {
+#     "$DAGGER" "do" -p ./tasks/scratch/scratch_build_scratch.cue build
+# }
 
 @test "task: #Scratch writefile" {
     "$DAGGER" "do" -p ./tasks/scratch/scratch_writefile.cue readfile

@@ -86,7 +86,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver
 		case m.secretMount != nil:
 			ctr = ctr.WithMountedSecret(m.dest, dgr.Secret(dagger.SecretID(m.secretMount.id)))
 		case m.fileMount != nil:
-			file := dgr.Directory().WithNewFile("/file", dagger.DirectoryWithNewFileOpts{Contents: m.fileMount.contents}).File("/file")
+			file := dgr.Directory().WithNewFile("/file", m.fileMount.contents).File("/file")
 			ctr = ctr.WithMountedFile(m.dest, file)
 		default:
 		}
@@ -102,7 +102,7 @@ func (t *execTask) Run(ctx context.Context, pctx *plancontext.Context, _ *solver
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := exec.Stdout().Contents(ctx)
+	stdout, err := exec.Stdout(ctx)
 	if err != nil {
 		return nil, err
 	}
