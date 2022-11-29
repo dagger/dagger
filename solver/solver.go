@@ -3,7 +3,6 @@ package solver
 import (
 	"crypto/sha256"
 	"fmt"
-	"os"
 
 	"dagger.io/dagger"
 )
@@ -13,13 +12,9 @@ type Solver struct {
 }
 
 func (s *Solver) NewSecret(plaintext string) *dagger.Secret {
-	env := hashID(plaintext)
-	err := os.Setenv(env, plaintext)
-	if err != nil {
-		panic(err)
-	}
+	secretid := hashID(plaintext)
 
-	return s.Client.Directory().WithNewFile(env, plaintext).File(env).Secret()
+	return s.Client.Directory().WithNewFile(secretid, plaintext).File(secretid).Secret()
 }
 
 func hashID(values ...string) string {
