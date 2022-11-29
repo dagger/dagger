@@ -1,4 +1,4 @@
-name: provision-macos
+name: provision
 on:
   # Enable manual trigger for easy debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -13,15 +13,14 @@ on:
     action: ["updated"]
 
 jobs:
-  build:
+  macos:
     runs-on: macos-latest
     steps:
-      - name: "Install Docker on MacOS"
-        if: runner.os == 'macos'
+      - name: "Install Docker"
         run: |
           echo "Install docker CLI..."
           brew install docker
-          echo "Start docker daemon via Colima..."
+          echo "Start Docker daemon via Colima..."
           echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
           colima start --mount-type 9p
 
@@ -41,11 +40,11 @@ jobs:
           python-version: "3.10"
 
         # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
-      - name: "Bootstrap poetry"
+      - name: "Bootstrap Poetry"
         run: |
           curl -sL https://install.python-poetry.org | python - -y
 
-      - name: "Add poetry deps to PATH"
+      - name: "Add Poetry & deps to PATH"
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: "Test Engine provisioning for Python SDK"
@@ -56,7 +55,7 @@ jobs:
 
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
-        run: docker logs test-dagger-engine || docker ps
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
 
       - name: "ALWAYS print kernel logs - especially useful on failure"
         if: always()
