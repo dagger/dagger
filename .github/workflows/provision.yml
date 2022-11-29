@@ -1,0 +1,62 @@
+name: provision
+on:
+  # Enable manual trigger for easy debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+
+  # We want to trigger this workflow when our engine package gets updated:
+  # https://github.com/dagger/dagger/pkgs/container/engine
+  registry_package:
+    # ⚠️ Differs to the official docs:
+    # ✅ https://github.com/orgs/community/discussions/25123
+    # ❌ https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#registry_package
+    action: ["updated"]
+
+jobs:
+  macos:
+    runs-on: macos-latest
+    steps:
+      - name: "Install Docker"
+        run: |
+          echo "Install docker CLI..."
+          brew install docker
+          echo "Start Docker daemon via Colima..."
+          echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
+          colima start --mount-type 9p
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "1.19"
+
+      - name: "Test Engine provisioning for Go SDK"
+        run: |
+          cd sdk/go
+          go test -run="TestImageProvision" -v ./...
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+        # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
+      - name: "Bootstrap Poetry"
+        run: |
+          curl -sL https://install.python-poetry.org | python - -y
+
+      - name: "Add Poetry & deps to PATH"
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: "Test Engine provisioning for Python SDK"
+        run: |
+          cd sdk/python
+          poetry install
+          poetry run poe test -xm provision
+
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg

@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -39,7 +40,7 @@ async def test_docker_image_provision(cache_dir: Path):
         async with dagger.Connection() as client:
             assert await client.container().from_("alpine:3.16.2").id()
 
-    concurrency = 30
+    concurrency = os.cpu_count()
     async with anyio.create_task_group() as tg:
         for _ in range(concurrency):
             tg.start_soon(connect_once)
