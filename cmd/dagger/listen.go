@@ -19,6 +19,7 @@ var listenCmd = &cobra.Command{
 	Use:     "listen",
 	Aliases: []string{"l"},
 	Run:     Listen,
+	Hidden:  true,
 	Short:   "Starts the engine server",
 }
 

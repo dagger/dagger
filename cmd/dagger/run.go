@@ -11,22 +11,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var execCmd = &cobra.Command{
-	Use:                   "exec [command]",
+var runCmd = &cobra.Command{
+	Use:                   "run [command]",
 	Aliases:               []string{"x"},
 	DisableFlagsInUseLine: true,
-	Long:                  "Executes the specified command in a Dagger session\n\nDAGGER_SESSION_URL will be convieniently injected automatically.",
-	Short:                 "Executes a command in a Dagger session",
+	Long:                  "Runs the specified command in a Dagger session\n\nDAGGER_SESSION_URL will be convieniently injected automatically.",
+	Short:                 "Runs a command in a Dagger session",
 	Example: `
-dagger exec -- sh -c 'curl \
+dagger run -- sh -c 'curl \
 -H "content-type:application/json" \
 -d "{\"query\":\"{container{id}}\"}" \
 http://$DAGGER_SESSION_URL/query'`,
-	Run:  Exec,
+	Run:  Run,
 	Args: cobra.MinimumNArgs(1),
 }
 
-func Exec(cmd *cobra.Command, args []string) {
+func Run(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 	if err := setupServer(ctx); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
