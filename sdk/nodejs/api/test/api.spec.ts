@@ -2,13 +2,15 @@ import assert from "assert"
 import Client from "../client.gen.js"
 import { queryBuilder, queryFlatten } from "../utils.js"
 
+const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
+
 describe("NodeJS SDK api", function () {
   it("Build correctly a query with one argument", async function () {
     const tree = new Client().container().from("alpine")
 
     assert.strictEqual(
-      queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine")}}`
+      querySanitizer(queryBuilder(tree.queryTree)),
+      `{ container { from (address: "alpine") } }`
     )
   })
 
@@ -19,8 +21,8 @@ describe("NodeJS SDK api", function () {
       .withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
-      queryBuilder(tree.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
+      querySanitizer(queryBuilder(tree.queryTree)),
+      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"]) }} }`
     )
   })
 
@@ -29,8 +31,8 @@ describe("NodeJS SDK api", function () {
     const pkg = image.withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
-      queryBuilder(pkg.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["apk","add","curl"])}}}`
+      querySanitizer(queryBuilder(pkg.queryTree)),
+      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"]) }} }`
     )
   })
 
@@ -38,13 +40,13 @@ describe("NodeJS SDK api", function () {
     const image = new Client().container().from("alpine")
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
-      queryBuilder(a.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["echo","hello","world"])}}}`
+      querySanitizer(queryBuilder(a.queryTree)),
+      `{ container { from (address: "alpine") { withExec (args: ["echo","hello","world"]) }} }`
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
-      queryBuilder(b.queryTree),
-      `{container{from(address:"alpine"){withExec(args:["echo","foo","bar"])}}}`
+      querySanitizer(queryBuilder(b.queryTree)),
+      `{ container { from (address: "alpine") { withExec (args: ["echo","foo","bar"]) }} }`
     )
   })
 
