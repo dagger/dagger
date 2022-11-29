@@ -106,10 +106,10 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
         border: 0;
         border-radius: 50px;
         transition: background 0.25s ease;
+        white-space: nowrap;
 
         &:hover {
             background: rgba($color: #3D66FF, $alpha: 0.8);
-            // color: var(grey) !important;
             cursor: pointer;
         }
     }
@@ -118,6 +118,7 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
         width: fit-content;
         min-width: 400px;
         border-radius: 10px;
+        max-width: 75ch;
 
         @media screen and (max-width: 650px) {
             width: inherit;
@@ -126,20 +127,6 @@ $font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans
     }
 }
 
-div .operation-variables-example,
-div .operation-query-example,
-div .operation-response-example,
-div .welcome-api-endpoints-section.example-section-is-code {
-    border-radius: 10px !important;
-
-    h5 {
-        border-radius: 10px 10px 0px 0px !important;
-    }
-
-    pre {
-        border-radius: 0px 0px 10px 10px !important;
-    }
-}
 
 .definition.definition-scalar .doc-row .doc-copy,
 .definition.definition-object .doc-row .doc-copy {
