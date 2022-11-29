@@ -35,7 +35,7 @@ export function queryBuilder(q: QueryTree[]) {
   })
   query += "}"
 
-  return query.replace(/\s+/g, " ")
+  return query
 }
 
 /**
