@@ -1,4 +1,4 @@
-name: provision
+name: provision-macos
 on:
   # Enable manual trigger for easy debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -14,23 +14,31 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        # Windows runners don't support linux containers yet
-        # https://github.com/actions/virtual-environments/issues/1143
-        os: ["macos-latest"]
-        python-version: ["3.10"]
+    runs-on: macos-latest
     steps:
+      - name: "Install Docker on MacOS"
+        if: runner.os == 'macos'
+        run: |
+          echo "Install docker CLI..."
+          brew install docker
+          echo "Start docker daemon via Colima..."
+          echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
+          colima start --mount-type 9p
+
       - uses: actions/checkout@v3
 
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: "1.19"
+
+      - name: "Test Engine provisioning for Go SDK"
+        run: |
+          cd sdk/go
+          go test -run="TestImageProvision" -v ./...
 
       - uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.10"
 
         # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
       - name: "Bootstrap poetry"
@@ -40,29 +48,16 @@ jobs:
       - name: "Add poetry deps to PATH"
         run: echo "$HOME/.local/bin" >> $GITHUB_PATH
 
-      - name: "Install Docker on MacOS"
-        if: runner.os == 'macos'
-        run: |
-          brew install docker
-          echo "Use mount-type 9p so that launched containers launched can chown"
-          echo "https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
-          colima start --mount-type 9p
-
-      - name: "Test Engine provisioning for Go SDK"
-        run: |
-          cd sdk/go
-          go test -run="TestImageProvision" -v ./...
-
       - name: "Test Engine provisioning for Python SDK"
         run: |
           cd sdk/python
           poetry install
           poetry run poe test -xm provision
 
-      - name: "ALWAYS print engine logs - especialy useful on failure"
+      - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
-        run: docker logs test-dagger-engine
+        run: docker logs test-dagger-engine || docker ps
 
-      - name: "ALWAYS print kernel logs - especialy useful on failure"
+      - name: "ALWAYS print kernel logs - especially useful on failure"
         if: always()
         run: sudo dmesg
