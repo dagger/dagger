@@ -53,6 +53,8 @@ gql = ">=3.4.0"
 httpx = ">=0.23.1"
 strawberry-graphql = {version = ">=0.133.5", optional = true}
 typer = {version = ">=0.6.1", extras = ["all"]}
+pywin32 = {version = "^305", platform = "win32"}
+httpcore = "^0.16.2"
 
 [tool.poetry.extras]
 server = ["strawberry-graphql"]

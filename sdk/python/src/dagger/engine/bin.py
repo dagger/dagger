@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import subprocess
 import time
 from pathlib import Path
@@ -78,7 +79,11 @@ class Engine(BaseEngine):
         # read socket path from first line of stdout
         path = self._proc.stdout.readline().strip()
 
-        if not path or not Path(path).exists():
+        path_exists = True
+        # On windows the path is a named pipe, so we can't check it exists
+        if platform.uname().system.lower() != "windows":
+            path_exists = Path(path).exists()
+        if not path or not path_exists:
             # FIXME: Duplicate writes into a buffer until end of provisioning
             # instead of reading directly from what the user may set in `log_output`
             if (

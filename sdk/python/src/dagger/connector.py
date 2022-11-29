@@ -1,4 +1,5 @@
 import logging
+import platform
 from typing import TypeVar
 
 import httpx
@@ -9,6 +10,7 @@ from gql.transport import AsyncTransport, Transport
 from dagger import Client, Config, SyncClient
 
 from .transport.httpx import HTTPXAsyncTransport, HTTPXTransport
+from .transport.namedpipe import NamedPipeAsyncTransport, NamedPipeSyncTransport
 
 logger = logging.getLogger(__name__)
 
@@ -50,15 +52,26 @@ class Connector:
             self.client = None
 
     def make_transport(self) -> AsyncTransport:
-        return self._make_transport(HTTPXAsyncTransport, httpx.AsyncHTTPTransport)
+        httpx_cls = httpx.AsyncHTTPTransport
+        if platform.uname().system.lower() == "windows":
+            httpx_cls = NamedPipeAsyncTransport
+        return self._make_transport(HTTPXAsyncTransport, httpx_cls)
 
     def make_sync_transport(self) -> Transport:
-        return self._make_transport(HTTPXTransport, httpx.HTTPTransport)
+        httpx_cls = httpx.HTTPTransport
+        if platform.uname().system.lower() == "windows":
+            httpx_cls = NamedPipeSyncTransport
+        return self._make_transport(HTTPXTransport, httpx_cls)
 
     def _make_transport(
         self,
         gql_cls: type[_T],
-        httpx_cls: type[httpx.AsyncHTTPTransport | httpx.HTTPTransport],
+        httpx_cls: type[
+            httpx.AsyncHTTPTransport
+            | httpx.HTTPTransport
+            | NamedPipeAsyncTransport
+            | NamedPipeSyncTransport
+        ],
     ) -> _T:
         if self.cfg.host.scheme not in ("unix",):
             raise ValueError(f"Unsupported scheme {self.cfg.host.scheme}")
