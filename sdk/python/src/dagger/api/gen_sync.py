@@ -773,9 +773,11 @@ class GitRef(Type):
         _ctx = self._select("digest", _args)
         return _ctx.execute_sync(str)
 
-    def tree(self) -> "Directory":
+    def tree(self, ssh_auth_socket: "Socket | None" = None) -> "Directory":
         """The filesystem tree at this ref"""
-        _args: list[Arg] = []
+        _args = [
+            Arg("sshAuthSocket", ssh_auth_socket, None),
+        ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
 

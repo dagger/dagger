@@ -933,9 +933,21 @@ func (r *GitRef) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// GitRefTreeOpts contains options for GitRef.Tree
+type GitRefTreeOpts struct {
+	SSHAuthSocket *Socket
+}
+
 // The filesystem tree at this ref
-func (r *GitRef) Tree() *Directory {
+func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.q.Select("tree")
+	// `sshAuthSocket` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
+			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
