@@ -153,7 +153,10 @@ sleep infinity
 		for {
 			c, err := l.Accept()
 			if err != nil {
-				t.Logf("agent accept: %s", err)
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
 				break
 			}
 
@@ -162,8 +165,7 @@ sleep infinity
 			err = agent.ServeAgent(sshAgent, c)
 			if err != nil && !errors.Is(err, io.EOF) {
 				t.Logf("serve agent: %s", err)
-				t.Fail()
-				break
+				panic(err)
 			}
 		}
 	}()

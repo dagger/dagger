@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -2397,13 +2398,17 @@ func TestContainerWithUnixSocket(t *testing.T) {
 		for {
 			c, err := l.Accept()
 			if err != nil {
-				t.Logf("accept: %s", err)
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
 				return
 			}
 
 			n, err := io.Copy(c, c)
 			if err != nil {
 				t.Logf("hello: %s", err)
+				panic(err)
 			}
 
 			t.Logf("copied %d bytes", n)
@@ -2411,6 +2416,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 			err = c.Close()
 			if err != nil {
 				t.Logf("close: %s", err)
+				panic(err)
 			}
 		}
 	}()
