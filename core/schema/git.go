@@ -107,13 +107,17 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 	return nil, ErrNotImplementedYet
 }
 
-func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args any) (*core.Directory, error) {
+type gitTreeArgs struct {
+	SshAuthSocket core.SocketID
+}
+
+func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
 	var opts []llb.GitOption
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
-	if s.sshAuthSockID != "" {
-		opts = append(opts, llb.MountSSHSock(s.sshAuthSockID))
+	if args.SshAuthSocket != "" {
+		opts = append(opts, llb.MountSSHSock(args.SshAuthSocket.LLBID()))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
 	return core.NewDirectory(ctx, st, "", s.platform)

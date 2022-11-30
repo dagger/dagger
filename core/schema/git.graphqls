@@ -22,5 +22,5 @@ type GitRef {
     "The digest of the current value of this ref"
     digest: String!
     "The filesystem tree at this ref"
-    tree: Directory!
+    tree(sshAuthSocket: SocketID): Directory!
 }
