@@ -6764,7 +6764,7 @@ grunt-sass@^3.0.2:
   resolved "https://registry.yarnpkg.com/grunt-sass/-/grunt-sass-3.1.0.tgz#a5936cc2a80ec08092d9f31c101dc307d1e4f71c"
   integrity sha512-90s27H7FoCDcA8C8+R0GwC+ntYD3lG6S/jqcavWm3bn9RiJTmSfOvfbFa1PXx4NbBWuiGQMLfQTj/JvvqT5w6A==
 
-grunt@^1.4.1:
+grunt@^1.5.3:
   version "1.5.3"
   resolved "https://registry.yarnpkg.com/grunt/-/grunt-1.5.3.tgz#3214101d11257b7e83cf2b38ea173b824deab76a"
   integrity sha512-mKwmo4X2d8/4c/BmcOETHek675uOqw0RuA/zy12jaspWqvTp4+ZeQF1W+OTpcbncnaBsfbQJ6l0l4j+Sn/GmaQ==
@@ -8342,15 +8342,10 @@ markdown-escapes@^1.0.0:
   resolved "https://registry.npmjs.org/markdown-escapes/-/markdown-escapes-1.0.4.tgz"
   integrity sha512-8z4efJYk43E0upd0NbVXwgSTQs6cT3T06etieCMEg7dRbzCbxUCK/GHlX8mhHRDcp+OLlHkPKsvqQTCvsRl2cg==
 
-marked@^4.0.12:
+marked@^4.0.12, marked@^4.0.19:
   version "4.2.3"
   resolved "https://registry.yarnpkg.com/marked/-/marked-4.2.3.tgz#bd76a5eb510ff1d8421bc6c3b2f0b93488c15bea"
   integrity sha512-slWRdJkbTZ+PjkyJnE30Uid64eHwbwa1Q25INCAYfZlK4o6ylagBy/Le9eWntqJFoFT93ikUKMv47GZ4gTwHkw==
-
-marked@^4.0.19:
-  version "4.2.2"
-  resolved "https://registry.yarnpkg.com/marked/-/marked-4.2.2.tgz#1d2075ad6cdfe42e651ac221c32d949a26c0672a"
-  integrity sha512-JjBTFTAvuTgANXx82a5vzK9JLSMoV6V3LBVn4Uhdso6t7vXrGx7g1Cd2r6NYSsxrYbQGFCMqBDhFHyK5q2UvcQ==
 
 maxmin@^3.0.0:
   version "3.0.0"
@@ -10950,19 +10945,10 @@ sass-loader@^10.1.1:
     schema-utils "^3.0.0"
     semver "^7.3.2"
 
-sass@^1.32.13:
+sass@^1.32.13, sass@^1.56.0:
   version "1.56.1"
   resolved "https://registry.yarnpkg.com/sass/-/sass-1.56.1.tgz#94d3910cd468fd075fa87f5bb17437a0b617d8a7"
   integrity sha512-VpEyKpyBPCxE7qGDtOcdJ6fFbcpOM+Emu7uZLxVrkX8KVU/Dp5UF7WLvzqRuUhB6mqqQt1xffLoG+AndxTZrCQ==
-  dependencies:
-    chokidar ">=3.0.0 <4.0.0"
-    immutable "^4.0.0"
-    source-map-js ">=0.6.2 <2.0.0"
-
-sass@^1.56.0:
-  version "1.56.0"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.56.0.tgz#134032075a3223c8d49cb5c35e091e5ba1de8e0a"
-  integrity sha512-WFJ9XrpkcnqZcYuLRJh5qiV6ibQOR4AezleeEjTjMsCocYW59dEG19U3fwTTXxzi2Ed3yjPBp727hbbj53pHFw==
   dependencies:
     chokidar ">=3.0.0 <4.0.0"
     immutable "^4.0.0"
@@ -11424,10 +11410,10 @@ spdy@^4.0.2:
     select-hose "^2.0.0"
     spdy-transport "^3.0.0"
 
-spectaql@^1.5.6:
-  version "1.5.8"
-  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-1.5.8.tgz#865c482318c80e993f9bb57fdb4520f9ed139e15"
-  integrity sha512-naSg6DTTvTG6Dx3w7sPt/p1e8ydAscfffSDqBt6QdvAEINQhO8N+hmrOYF6fbQfqUDHLl6oUFE6BYCHH8B3Tgg==
+spectaql@^1.5.9:
+  version "1.5.9"
+  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-1.5.9.tgz#397b099c2245226d985c10e302767cf1cd69b607"
+  integrity sha512-8vmnqtEvTTUn9nZGq7weQWwOcWYPbdJfaJt+ckKUW5L3urMQSXP4bQSCOr/PDVvSbFbuh0DkkElSl3EzBNgYBQ==
   dependencies:
     "@anvilco/apollo-server-plugin-introspection-metadata" "^1.2.0"
     "@anvilco/grunt-embed" "^0.0.1"
@@ -11441,7 +11427,7 @@ spectaql@^1.5.6:
     foundation-sites "^6.7.2"
     graphql "^16.3.0"
     graphql-scalars "^1.15.0"
-    grunt "^1.4.1"
+    grunt "^1.5.3"
     grunt-compile-handlebars "^2.0.2"
     grunt-contrib-clean "^2.0.0"
     grunt-contrib-concat "^2.1.0"
