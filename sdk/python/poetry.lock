@@ -47,6 +47,7 @@ python-versions = ">=3.7"
 
 [package.dependencies]
 pyflakes = ">=1.1.0,<3"
+tomli = {version = ">=2.0.1", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "babel"
@@ -80,6 +81,7 @@ click = ">=8.0.0"
 mypy-extensions = ">=0.4.3"
 pathspec = ">=0.9.0"
 platformdirs = ">=2"
+tomli = {version = ">=1.1.0", markers = "python_full_version < \"3.11.0a7\""}
 
 [package.extras]
 colorama = ["colorama (>=0.4.3)"]
@@ -97,6 +99,7 @@ python-versions = ">=3.7"
 
 [package.dependencies]
 attrs = ">=20"
+exceptiongroup = {version = "*", markers = "python_version < \"3.11\""}
 
 [[package]]
 name = "certifi"
@@ -162,6 +165,17 @@ description = "Removes commented-out code."
 category = "dev"
 optional = false
 python-versions = "*"
+
+[[package]]
+name = "exceptiongroup"
+version = "1.0.4"
+description = "Backport of PEP 654 (exception groups)"
+category = "main"
+optional = false
+python-versions = ">=3.7"
+
+[package.extras]
+test = ["pytest (>=6)"]
 
 [[package]]
 name = "flake8"
@@ -398,6 +412,7 @@ python-versions = ">=3.7"
 
 [package.dependencies]
 mypy-extensions = ">=0.4.3"
+tomli = {version = ">=1.1.0", markers = "python_version < \"3.11\""}
 typing-extensions = ">=3.10"
 
 [package.extras]
@@ -529,9 +544,11 @@ python-versions = ">=3.7"
 [package.dependencies]
 attrs = ">=19.2.0"
 colorama = {version = "*", markers = "sys_platform == \"win32\""}
+exceptiongroup = {version = ">=1.0.0rc8", markers = "python_version < \"3.11\""}
 iniconfig = "*"
 packaging = "*"
 pluggy = ">=0.12,<2.0"
+tomli = {version = ">=1.0.0", markers = "python_version < \"3.11\""}
 
 [package.extras]
 testing = ["argcomplete", "hypothesis (>=3.56)", "mock", "nose", "pygments (>=2.7.2)", "requests", "xmlschema"]
@@ -874,7 +891,7 @@ server = ["strawberry-graphql"]
 
 [metadata]
 lock-version = "1.1"
-python-versions = "~3.11"
+python-versions = "^3.10"
 content-hash = "7816efa32fe9013eaea911ea32fed3ed312520fb9e84142213b0d538e5c5d3a1"
 
 [metadata.files]
@@ -956,6 +973,10 @@ docutils = [
 eradicate = [
     {file = "eradicate-2.1.0-py3-none-any.whl", hash = "sha256:8bfaca181db9227dc88bdbce4d051a9627604c2243e7d85324f6d6ce0fd08bb2"},
     {file = "eradicate-2.1.0.tar.gz", hash = "sha256:aac7384ab25b1bf21c4c012de9b4bf8398945a14c98c911545b2ea50ab558014"},
+]
+exceptiongroup = [
+    {file = "exceptiongroup-1.0.4-py3-none-any.whl", hash = "sha256:542adf9dea4055530d6e1279602fa5cb11dab2395fa650b8674eaec35fc4a828"},
+    {file = "exceptiongroup-1.0.4.tar.gz", hash = "sha256:bd14967b79cd9bdb54d97323216f8fdf533e278df937aa2a90089e7d6e06e5ec"},
 ]
 flake8 = [
     {file = "flake8-5.0.4-py2.py3-none-any.whl", hash = "sha256:7a1cf6b73744f5806ab95e526f6f0d8c01c66d7bbe349562d22dfca20610b248"},
