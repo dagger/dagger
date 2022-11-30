@@ -2433,10 +2433,27 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hello\n", stdout)
 
-	without := ctr.WithoutUnixSocket("/tmp/test.sock").
-		WithExec([]string{"ls", "/tmp"})
+	t.Run("socket can be removed", func(t *testing.T) {
+		without := ctr.WithoutUnixSocket("/tmp/test.sock").
+			WithExec([]string{"ls", "/tmp"})
 
-	stdout, err = without.Stdout(ctx)
-	require.NoError(t, err)
-	require.Empty(t, stdout)
+		stdout, err = without.Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, stdout)
+	})
+
+	t.Run("replaces existing socket at same path", func(t *testing.T) {
+		repeated := ctr.WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock))
+
+		stdout, err := repeated.Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "hello\n", stdout)
+
+		without := repeated.WithoutUnixSocket("/tmp/test.sock").
+			WithExec([]string{"ls", "/tmp"})
+
+		stdout, err = without.Stdout(ctx)
+		require.NoError(t, err)
+		require.Empty(t, stdout)
+	})
 }

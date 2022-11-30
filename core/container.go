@@ -499,10 +499,23 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 
 	target = absPath(payload.Config.WorkingDir, target)
 
-	payload.Sockets = append(payload.Sockets, ContainerSocket{
+	newSocket := ContainerSocket{
 		Socket:   source.ID,
 		UnixPath: target,
-	})
+	}
+
+	var replaced bool
+	for i, sock := range payload.Sockets {
+		if sock.UnixPath == target {
+			payload.Sockets[i] = newSocket
+			replaced = true
+			break
+		}
+	}
+
+	if !replaced {
+		payload.Sockets = append(payload.Sockets, newSocket)
+	}
 
 	id, err := payload.Encode()
 	if err != nil {
