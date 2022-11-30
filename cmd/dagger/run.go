@@ -31,12 +31,12 @@ dagger run -- sh -c 'curl \
 func Run(cmd *cobra.Command, args []string) {
 	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
-	randPath, err := uuid.NewRandom()
+	sessionID, err := uuid.NewRandom()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-	if err := setupServer(ctx, randPath.String()); err != nil {
+	if err := setupServer(ctx, sessionID.String()); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -54,7 +54,8 @@ func Run(cmd *cobra.Command, args []string) {
 	}()
 
 	listenPort := <-listening
-	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s/%s", listenPort, randPath))
+	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s", listenPort))
+	os.Setenv("DAGGER_SESSION_TOKEN", sessionID.String())
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 	c.Stdout = os.Stdout
