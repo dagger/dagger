@@ -54,10 +54,31 @@ export type ContainerBuildOpts = {
 }
 
 export type ContainerExecOpts = {
+  /**
+   * Command to run instead of the container's default command
+   */
   args?: string[]
+
+  /**
+   * Content to write to the command's standard input before closing
+   */
   stdin?: string
+
+  /**
+   * Redirect the command's standard output to a file in the container
+   */
   redirectStdout?: string
+
+  /**
+   * Redirect the command's standard error to a file in the container
+   */
   redirectStderr?: string
+
+  /**
+   * Provide dagger access to the executed command
+   * Do not use this option unless you trust the command being executed
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   */
   experimentalPrivilegedNesting?: boolean
 }
 
@@ -79,9 +100,26 @@ export type ContainerWithDirectoryOpts = {
 }
 
 export type ContainerWithExecOpts = {
+  /**
+   * Content to write to the command's standard input before closing
+   */
   stdin?: string
+
+  /**
+   * Redirect the command's standard output to a file in the container
+   */
   redirectStdout?: string
+
+  /**
+   * Redirect the command's standard error to a file in the container
+   */
   redirectStderr?: string
+
+  /**
+   * Provide dagger access to the executed command
+   * Do not use this option unless you trust the command being executed
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   */
   experimentalPrivilegedNesting?: boolean
 }
 
@@ -311,6 +349,8 @@ export class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    *
+   * @param opts optional params for exec
+   *
    * @deprecated Replaced by withExec.
    */
   exec(opts?: ContainerExecOpts): Container {
@@ -396,6 +436,7 @@ export class Container extends BaseClient {
 
   /**
    * This container's root filesystem. Mounts are not included.
+   *
    *
    * @deprecated Replaced by rootfs.
    */
@@ -634,6 +675,7 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from this DirectoryID
+   *
    *
    * @deprecated Replaced by withRootfs.
    */
@@ -1456,6 +1498,8 @@ export class Host extends BaseClient {
 
   /**
    * The current working directory on the host
+   *
+   * @param opts optional params for workdir
    *
    * @deprecated Use directory with path set to '.' instead.
    */

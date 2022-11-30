@@ -2,6 +2,8 @@
   {{- if .Description -}}
     {{- $commentLines := CommentToLines .Description }}
     {{- /* we split the comment string into a string slice of one line per element */ -}}
+    {{- $required := GetRequiredArgs .Args -}}
+    {{- $optionals := GetOptionalArgs .Args -}}
     {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 {{""}}
 {{""}}
@@ -10,6 +12,15 @@
    * {{ . }}
   {{- end }}
   {{- if .IsDeprecated }}
+   *
+  {{- range $required }}
+    {{- if .Description }}
+   * @param {{ .Description }}
+    {{- end }}
+  {{- end }}
+  {{- if $optionals }}
+   * @param opts optional params for {{ .Name | FormatName }}
+  {{- end }}
    *
   {{- range $deprecationLines }}
    * {{ . }}

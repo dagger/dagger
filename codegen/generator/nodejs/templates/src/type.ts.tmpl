@@ -20,6 +20,9 @@ export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
 					{{- if .TypeRef.IsOptional }}
 						{{- $opt = "?" -}}
 					{{- end }}
+					{{- if .Description }}
+{{ template "type_field_comment" .Description }}
+					{{- end }}
   {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
 				{{- end }}
 };
