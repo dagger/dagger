@@ -1,5 +1,5 @@
 ---
-slug: /api/concepts
+slug: /api/975146/concepts
 ---
 
 import LinkPlayground from "@site/src/components/atoms/linkPlayground.js";
