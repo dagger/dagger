@@ -22,7 +22,7 @@ var runCmd = &cobra.Command{
 	Short:                 "Runs a command in a Dagger session",
 	Example: `
 dagger run -- sh -c 'curl \
--u $DAGGER_SESSION_TOKEN \
+-u $DAGGER_SESSION_TOKEN: \
 -H "content-type:application/json" \
 -d "{\"query\":\"{container{id}}\"}" $DAGGER_SESSION_URL'`,
 	Run:  Run,
