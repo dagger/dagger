@@ -108,6 +108,7 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 }
 
 type gitTreeArgs struct {
+	SSHKnownHosts string        `json:"sshKnownHosts"`
 	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
 }
 
@@ -115,6 +116,9 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 	var opts []llb.GitOption
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
+	}
+	if args.SSHKnownHosts != "" {
+		opts = append(opts, llb.KnownSSHHosts(args.SSHKnownHosts))
 	}
 	if args.SSHAuthSocket != "" {
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))

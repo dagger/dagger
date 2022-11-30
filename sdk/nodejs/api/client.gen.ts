@@ -1145,13 +1145,13 @@ export class GitRef extends BaseClient {
   /**
    * The filesystem tree at this ref
    */
-  tree(sshAuthSocket?: SocketID): Directory {
+  tree(sshKnownHosts?: string, sshAuthSocket?: SocketID): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
-          args: { sshAuthSocket },
+          args: { sshKnownHosts, sshAuthSocket },
         },
       ],
       host: this.clientHost,

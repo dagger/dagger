@@ -935,12 +935,21 @@ func (r *GitRef) Digest(ctx context.Context) (string, error) {
 
 // GitRefTreeOpts contains options for GitRef.Tree
 type GitRefTreeOpts struct {
+	SSHKnownHosts string
+
 	SSHAuthSocket *Socket
 }
 
 // The filesystem tree at this ref
 func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.q.Select("tree")
+	// `sshKnownHosts` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
+			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
+			break
+		}
+	}
 	// `sshAuthSocket` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
