@@ -61,6 +61,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
 			"withUnixSocket":       router.ToResolver(s.withUnixSocket),
+			"withoutUnixSocket":    router.ToResolver(s.withoutUnixSocket),
 			"withoutMount":         router.ToResolver(s.withoutMount),
 			"withExec":             router.ToResolver(s.withExec),
 			"exec":                 router.ToResolver(s.withExec), // deprecated
@@ -435,6 +436,14 @@ type containerWithUnixSocketArgs struct {
 
 func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
 	return parent.WithUnixSocket(ctx, args.Path, core.NewSocket(args.Source))
+}
+
+type containerWithoutUnixSocketArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutUnixSocket(ctx *router.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
+	return parent.WithoutUnixSocket(ctx, args.Path)
 }
 
 func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {

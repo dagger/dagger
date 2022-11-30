@@ -2432,4 +2432,11 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	stdout, err := ctr.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello\n", stdout)
+
+	without := ctr.WithoutUnixSocket("/tmp/test.sock").
+		WithExec([]string{"ls", "/tmp"})
+
+	stdout, err = without.Stdout(ctx)
+	require.NoError(t, err)
+	require.Empty(t, stdout)
 }

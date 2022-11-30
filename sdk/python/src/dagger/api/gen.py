@@ -503,6 +503,14 @@ class Container(Type):
         _ctx = self._select("withoutMount", _args)
         return Container(_ctx)
 
+    def without_unix_socket(self, path: str) -> "Container":
+        """This container with a previously added Unix socket removed"""
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("withoutUnixSocket", _args)
+        return Container(_ctx)
+
     async def workdir(self) -> str | None:
         """The working directory for all commands
 

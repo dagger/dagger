@@ -625,6 +625,17 @@ func (r *Container) WithoutMount(path string) *Container {
 	}
 }
 
+// This container with a previously added Unix socket removed
+func (r *Container) WithoutUnixSocket(path string) *Container {
+	q := r.q.Select("withoutUnixSocket")
+	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // The working directory for all commands
 func (r *Container) Workdir(ctx context.Context) (string, error) {
 	q := r.q.Select("workdir")

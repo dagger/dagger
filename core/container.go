@@ -512,6 +512,29 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	return &Container{ID: id}, nil
 }
 
+func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	for i, sock := range payload.Sockets {
+		if sock.UnixPath == target {
+			payload.Sockets = append(payload.Sockets[:i], payload.Sockets[i+1:]...)
+			break
+		}
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
 func (container *Container) WithSecretVariable(ctx context.Context, name string, secret *Secret) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {

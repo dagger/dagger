@@ -768,6 +768,22 @@ export class Container extends BaseClient {
   }
 
   /**
+   * This container with a previously added Unix socket removed
+   */
+  withoutUnixSocket(path: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutUnixSocket",
+          args: { path },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * The working directory for all commands
    */
   async workdir(): Promise<string> {
