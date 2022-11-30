@@ -55,7 +55,7 @@ dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 
 ## dagger run
 
-Executes the specified command in a Dagger session. `DAGGER_SESSION_URL` will be injected automatically.
+Executes the specified command in a Dagger session. `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` will be injected automatically.
 
 ### Usage
 
@@ -69,9 +69,10 @@ Make an HTTP request using `curl`:
 
 ```shell
 dagger run -- sh -c 'curl \
+  -u $DAGGER_SESSION_TOKEN: \
   -H "content-type:application/json" \
   -d "{\"query\":\"{container{id}}\"}" \
-  http://$DAGGER_SESSION_URL/query'
+  $DAGGER_SESSION_URL'
 ```
 
 ## dagger help

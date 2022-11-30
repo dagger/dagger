@@ -9,3 +9,6 @@ displayed_sidebar: "current"
 ---
 
 ## Modules
+
+- [api/client.gen](modules/api_client_gen.md)
+- [connect](modules/connect.md)
