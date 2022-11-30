@@ -493,3 +493,97 @@ func TestDirectoryExport(t *testing.T) {
 		require.False(t, ok)
 	})
 }
+
+func TestDirectoryDockerBuild(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	contextDir := c.Directory().
+		WithNewFile("main.go",
+			`package main
+import "fmt"
+import "os"
+func main() {
+	for _, env := range os.Environ() {
+		fmt.Println(env)
+	}
+}`)
+
+	t.Run("default Dockerfile location", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		env, err := src.DockerBuild().WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("custom Dockerfile location", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		env, err := src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "subdir/Dockerfile.whee",
+		}).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("subdirectory with default Dockerfile location", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
+
+		env, err := sub.DockerBuild().WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+
+	t.Run("subdirectory with custom Dockerfile location", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("subdir/Dockerfile.whee",
+				`FROM golang:1.18.2-alpine
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=bar
+CMD goenv
+`)
+
+		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
+
+		env, err := sub.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Dockerfile: "subdir/Dockerfile.whee",
+		}).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+	})
+}
