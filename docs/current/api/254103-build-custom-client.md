@@ -43,6 +43,7 @@ cargo init
 cargo add gql_client@1.0.7
 cargo add serde_json@1.0.89
 cargo add tokio@1.22.0 -F full
+cargo add base64@0.13.1
 ```
 
 </TabItem>
@@ -88,7 +89,7 @@ This code listing initializes the client library and defines the Dagger pipeline
 - The result of the query is a JSON object, which is processed and printed to the output device.
 
 :::info
-The API endpoint URL for the GraphQL client is not statically defined, but must be retrieved at run-time from the special `DAGGER_SESSION_URL` environment variable. This is explained in more detail in the next section.
+The API endpoint and the auth token for the GraphQL client are not statically defined, they must be retrieved at run-time from the special `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables. This is explained in more detail in the next section.
 :::
 
 ## Step 3: Run the API client
@@ -97,6 +98,7 @@ To run the pipeline, the API client in the previous step needs to communicate wi
 
 :::note
 The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is exposed in the `DAGGER_SESSION_URL` environment variable, and can be directly read from the environment in your client code.
+It additionally protects the exposed API with a basic auth token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
 :::
 
 Run the API client using the Dagger CLI as follows:
@@ -111,7 +113,7 @@ dagger run cargo run
 This command:
 
 - initializes a new Dagger Engine session
-- sets the `DAGGER_SESSION_URL` environment variable to the GraphQL API endpoint
+- sets the `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables.
 - executes the `cargo run` command in that session
 
 </TabItem>
@@ -124,13 +126,14 @@ dagger run php client.php
 This command:
 
 - initializes a new Dagger Engine session
-- sets the `DAGGER_SESSION_URL` environment variable to the GraphQL API endpoint
+- sets the `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables.
 - executes the `php client.php` command in that session
 
 </TabItem>
 </Tabs>
 
-The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_URL` environment variable, and executes the GraphQL query. Here is an example of the output:
+The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_URL` environment variable, sets
+a basic auth token with `DAGGER_SESSION_TOKEN` and executes the GraphQL query. Here is an example of the output:
 
 ```shell
 buildkitsandbox 5.15.0-53-generic unknown Linux
