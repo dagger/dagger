@@ -52,11 +52,13 @@ func setupServer(ctx context.Context, sessionID string) error {
 	}
 
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		username, _, ok := r.BasicAuth()
-		if !ok || username != sessionID {
-			rw.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
-			rw.WriteHeader(http.StatusUnauthorized)
-			return
+		if sessionID != "" {
+			username, _, ok := r.BasicAuth()
+			if !ok || username != sessionID {
+				rw.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+				rw.WriteHeader(http.StatusUnauthorized)
+				return
+			}
 		}
 
 		res := make(map[string]interface{})
