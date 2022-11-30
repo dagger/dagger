@@ -25,7 +25,7 @@ We assume that you have [Homebrew](https://brew.sh/) installed.
 If you do, you can install `dagger-cue` with a single command:
 
 ```shell
-brew install dagger-cue
+brew install dagger/tap/dagger-cue
 ```
 
 This installs `dagger-cue` in:

@@ -1,6 +1,6 @@
 ---
 id: "modules"
-title: "@dagger.io/dagger"
+title: "Dagger NodeJS SDK"
 sidebar_label: "Reference"
 sidebar_position: 0.5
 hide_table_of_contents: true
