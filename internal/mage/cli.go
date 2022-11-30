@@ -2,17 +2,24 @@ package mage
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
+	"golang.org/x/mod/semver"
 )
 
 type Cli mg.Namespace
 
 // Publish publishes dagger CLI using GoReleaser
-func (cl Cli) Publish(ctx context.Context) error {
+func (cl Cli) Publish(ctx context.Context, version string) error {
+	if !semver.IsValid(version) {
+		fmt.Printf("'%s' is not a semver version, skipping CLI publish", version)
+		return nil
+	}
+
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err

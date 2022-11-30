@@ -15,7 +15,7 @@ func (Dagger) Publish(ctx context.Context, version string) error {
 		return err
 	}
 
-	err = Cli{}.Publish(ctx)
+	err = Cli{}.Publish(ctx, version)
 
 	if err != nil {
 		return err
