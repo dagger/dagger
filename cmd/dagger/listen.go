@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 
@@ -28,8 +29,15 @@ var listenCmd = &cobra.Command{
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 	if err := withEngine(ctx, "", listenLocalDirs, func(ctx context.Context, r *router.Router) error {
+		l, err := net.Listen("tcp", listenAddress)
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
+			os.Exit(1)
+		}
+		listenAddress = l.Addr().(*net.TCPAddr).String() // handles case where port is :0 and selected automatically
+
 		fmt.Fprintf(cmd.OutOrStderr(), "%s %s\n", outputPrefix, listenAddress)
-		return http.ListenAndServe(listenAddress, r)
+		return http.Serve(l, r)
 	}); err != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
 		os.Exit(1)

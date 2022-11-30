@@ -25,7 +25,7 @@ func TestAllowedLocalDirs(t *testing.T) {
 	cmd := rootCmd
 	cmd.SetArgs([]string{
 		"listen",
-		"--listen", "localhost:12345",
+		"--listen", "localhost:0",
 		"--local-dirs", strings.Join([]string{allowedDir1, allowedDir2}, ","),
 		"--local-dirs", allowedDir3,
 	})
