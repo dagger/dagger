@@ -1,0 +1,25 @@
+# https://github.com/anvilco/spectaql/blob/main/config-example.yml
+# https://www.useanvil.com/blog/engineering/building-a-spectaql-theme-for-your-graphql-documentation/
+
+spectaql:
+  logoFile: ../website/static/img/dagger-logo-dark.png
+  faviconFile: ../website/static/img/favicon.png
+  themeDir: ./docs-graphql/custom-theme/
+
+introspection:
+  removeTrailingPeriodFromDescriptions: false
+  schemaFile: ../core/schema/*.graphqls
+  fieldExpansionDepth: 1
+  metadatas: true
+  hideMutationsWithUndocumentedReturnType: false
+  hideUnusedTypes: false
+
+extensions:
+  graphqlScalarExamples: true
+
+info:
+  title: Dagger GraphQL API Reference
+  # x-introItems:
+  #   - title: Welcome! 
+  #     description: We are using a GraphQL server as the API to interact with our engine. This allows us to make interoperation between programming languages possible.
+  x-url: https://api.dagger.cloud/playgrounds

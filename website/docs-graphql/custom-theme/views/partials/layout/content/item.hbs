@@ -1,0 +1,25 @@
+{{#unless hideInContent }}
+  {{#if makeContentSection }}
+    <h1 id="group-{{./htmlId}}" class="group-heading" data-traverse-target="group-{{./htmlId}}">{{name}}</h1>
+    {{#if description}}
+      <div class="group-description doc-row">
+        <div class="doc-copy">
+          {{md (interpolateReferences description)}}
+        </div>
+      </div>
+    {{/if}}
+  {{else}}
+  {{/if}}
+  {{#if isQuery }}
+    {{>graphql/query}}
+  {{else if isMutation }}
+    {{>graphql/mutation}}
+  {{else if isSubscription }}
+    {{>graphql/subscription}}
+  {{else if isType }}
+    {{>graphql/type}}
+  {{/if}}
+{{/unless}}
+{{#each items}}
+  {{>layout/content/item}}
+{{/each}}

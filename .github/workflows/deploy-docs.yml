@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - "docs/**"
+      - "core/schema/**"
       - '.github/workflows/deploy-docs.yml'
 
   # Allows you to run this workflow manually from the Actions tab
