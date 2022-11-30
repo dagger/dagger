@@ -16,7 +16,7 @@ type Cli mg.Namespace
 // Publish publishes dagger CLI using GoReleaser
 func (cl Cli) Publish(ctx context.Context, version string) error {
 	if !semver.IsValid(version) {
-		fmt.Printf("'%s' is not a semver version, skipping image bump in SDKs", version)
+		fmt.Printf("'%s' is not a semver version, skipping CLI publish", version)
 		return nil
 	}
 
