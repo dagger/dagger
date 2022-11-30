@@ -11,7 +11,6 @@ import (
 
 type InitializeArgs struct {
 	Router        *router.Router
-	SSHAuthSockID string
 	Workdir       string
 	Gateway       bkgw.Client
 	BKClient      *bkclient.Client
@@ -23,13 +22,12 @@ type InitializeArgs struct {
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
-		router:        params.Router,
-		gw:            params.Gateway,
-		bkClient:      params.BKClient,
-		solveOpts:     params.SolveOpts,
-		solveCh:       params.SolveCh,
-		platform:      params.Platform,
-		sshAuthSockID: params.SSHAuthSockID,
+		router:    params.Router,
+		gw:        params.Gateway,
+		bkClient:  params.BKClient,
+		solveOpts: params.SolveOpts,
+		solveCh:   params.SolveCh,
+		platform:  params.Platform,
 	}
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
@@ -51,11 +49,10 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 }
 
 type baseSchema struct {
-	router        *router.Router
-	gw            bkgw.Client
-	bkClient      *bkclient.Client
-	solveOpts     bkclient.SolveOpt
-	solveCh       chan *bkclient.SolveStatus
-	platform      specs.Platform
-	sshAuthSockID string
+	router    *router.Router
+	gw        bkgw.Client
+	bkClient  *bkclient.Client
+	solveOpts bkclient.SolveOpt
+	solveCh   chan *bkclient.SolveStatus
+	platform  specs.Platform
 }

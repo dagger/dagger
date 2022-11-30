@@ -793,7 +793,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 		runOpts = append(runOpts,
 			llb.AddSSHSocket(
-				llb.SSHID("socket:"+socket.Socket.String()),
+				llb.SSHID(socket.Socket.LLBID()),
 				llb.SSHSocketTarget(socket.UnixPath),
 			))
 	}

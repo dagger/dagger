@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 
@@ -15,6 +16,7 @@ type Socket struct {
 type SocketID string
 
 func (id SocketID) String() string { return string(id) }
+func (id SocketID) LLBID() string  { return fmt.Sprintf("socket:%s", id) }
 
 type socketIDPayload struct {
 	HostPath string `json:"host_path,omitempty"`

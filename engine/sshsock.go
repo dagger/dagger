@@ -6,7 +6,6 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/moby/buildkit/session/sshforward/sshprovider"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -64,20 +63,4 @@ func (m SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	}
 
 	return h.ForwardAgent(stream)
-}
-
-const (
-	sshAuthSockEnv = "SSH_AUTH_SOCK"
-)
-
-func sshAuthSockHandler() (sshforward.SSHServer, error) {
-	agentProvider, err := sshprovider.NewSSHAgentProvider([]sshprovider.AgentConfig{{ID: sshAuthSockEnv}})
-	if err != nil {
-		return nil, err
-	}
-	handler, ok := agentProvider.(sshforward.SSHServer)
-	if !ok {
-		return nil, status.Errorf(codes.Internal, "invalid agent provider type: %T", agentProvider)
-	}
-	return handler, nil
 }

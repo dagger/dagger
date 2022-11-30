@@ -108,7 +108,7 @@ func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, erro
 }
 
 type gitTreeArgs struct {
-	SshAuthSocket core.SocketID
+	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
 }
 
 func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
@@ -116,8 +116,8 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
-	if args.SshAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(args.SshAuthSocket.LLBID()))
+	if args.SSHAuthSocket != "" {
+		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
 	return core.NewDirectory(ctx, st, "", s.platform)
