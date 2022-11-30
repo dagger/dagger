@@ -23,19 +23,6 @@ func withRunOpts(runOpts ...llb.RunOption) llb.RunOption {
 	})
 }
 
-func withSSHAuthSock(id, path string) llb.RunOption {
-	if id == "" {
-		return runOptionFunc(nil)
-	}
-	return withRunOpts(
-		llb.AddSSHSocket(
-			llb.SSHID(id),
-			llb.SSHSocketTarget(path),
-		),
-		llb.AddEnv("SSH_AUTH_SOCK", path),
-	)
-}
-
 func withGithubSSHKnownHosts() (llb.RunOption, error) {
 	knownHosts, err := sshutil.SSHKeyScan("github.com")
 	if err != nil {

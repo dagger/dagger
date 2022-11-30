@@ -11,7 +11,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
 	// TODO(vito): handle platform?
 	payload, err := p.workdir.ID.Decode()
 	if err != nil {
@@ -59,7 +59,6 @@ exec dagger-py "$@"
 					llb.Scratch(),
 					llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
 				),
-				withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 				addSSHKnownHosts,
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),

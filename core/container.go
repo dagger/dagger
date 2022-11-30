@@ -80,6 +80,9 @@ type containerIDPayload struct {
 
 	// Secrets to expose to the container.
 	Secrets []ContainerSecret `json:"secret_env,omitempty"`
+
+	// Sockets to expose to the container.
+	Sockets []ContainerSocket `json:"sockets,omitempty"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -88,6 +91,13 @@ type ContainerSecret struct {
 	Secret    SecretID `json:"secret"`
 	EnvName   string   `json:"env,omitempty"`
 	MountPath string   `json:"path,omitempty"`
+}
+
+// ContainerSocket configures a socket to expose, currently as a Unix socket,
+// but potentially as a TCP or UDP address in the future.
+type ContainerSocket struct {
+	Socket   SocketID `json:"socket"`
+	UnixPath string   `json:"unix_path,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -481,6 +491,63 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
+func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	newSocket := ContainerSocket{
+		Socket:   source.ID,
+		UnixPath: target,
+	}
+
+	var replaced bool
+	for i, sock := range payload.Sockets {
+		if sock.UnixPath == target {
+			payload.Sockets[i] = newSocket
+			replaced = true
+			break
+		}
+	}
+
+	if !replaced {
+		payload.Sockets = append(payload.Sockets, newSocket)
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	target = absPath(payload.Config.WorkingDir, target)
+
+	for i, sock := range payload.Sockets {
+		if sock.UnixPath == target {
+			payload.Sockets = append(payload.Sockets[:i], payload.Sockets[i+1:]...)
+			break
+		}
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
 func (container *Container) WithSecretVariable(ctx context.Context, name string, secret *Secret) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -739,7 +806,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	}
 
 	for i, secret := range payload.Secrets {
-		secretOpts := []llb.SecretOption{llb.SecretID(string(secret.Secret))}
+		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
 
 		var secretDest string
 		switch {
@@ -753,6 +820,18 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 		}
 
 		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
+	}
+
+	for _, socket := range payload.Sockets {
+		if socket.UnixPath == "" {
+			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
+		}
+
+		runOpts = append(runOpts,
+			llb.AddSSHSocket(
+				llb.SSHID(socket.Socket.LLBID()),
+				llb.SSHSocketTarget(socket.UnixPath),
+			))
 	}
 
 	fsSt, err := payload.FSState()

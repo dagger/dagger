@@ -11,7 +11,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
 	payload, err := p.workdir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -34,7 +34,6 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 			llb.Scratch(),
 			llb.AsPersistentCacheDir("yarn", llb.CacheMountLocked),
 		),
-		withSSHAuthSock(sshAuthSockID, "/ssh-agent.sock"),
 		addSSHKnownHosts,
 	)
 

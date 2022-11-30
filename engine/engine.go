@@ -93,20 +93,13 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	router := router.New()
 	secretStore := secret.NewStore()
 
-	socketProviders := MergedSocketProviders{
-		core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
-		project.SessionProxySockName: project.NewSessionProxy(router),
+	socketProviders := SocketProvider{
+		Named: NamedSocketProviders{
+			core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
+			project.SessionProxySockName: project.NewSessionProxy(router),
+		},
 	}
-	var sshAuthSockID string
-	if _, ok := os.LookupEnv(sshAuthSockEnv); ok {
-		sshAuthHandler, err := sshAuthSockHandler()
-		if err != nil {
-			return err
-		}
-		// using env key as the socket ID too for now
-		sshAuthSockID = sshAuthSockEnv
-		socketProviders[sshAuthSockID] = sshAuthHandler
-	}
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
@@ -150,7 +143,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
-				SSHAuthSockID: sshAuthSockID,
 				Workdir:       startOpts.Workdir,
 				Gateway:       gw,
 				BKClient:      c,

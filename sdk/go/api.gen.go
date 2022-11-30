@@ -25,6 +25,9 @@ type Platform string
 // A unique identifier for a secret
 type SecretID string
 
+// A content-addressed socket identifier
+type SocketID string
+
 // A directory whose contents persist across runs
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -566,6 +569,18 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
+// This container plus a socket forwarded to the given Unix socket path
+func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
+	q := r.q.Select("withUnixSocket")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This container but with a different command user
 func (r *Container) WithUser(name string) *Container {
 	q := r.q.Select("withUser")
@@ -602,6 +617,17 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 // This container after unmounting everything at the given path.
 func (r *Container) WithoutMount(path string) *Container {
 	q := r.q.Select("withoutMount")
+	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// This container with a previously added Unix socket removed
+func (r *Container) WithoutUnixSocket(path string) *Container {
+	q := r.q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
 
 	return &Container{
@@ -918,9 +944,30 @@ func (r *GitRef) Digest(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// GitRefTreeOpts contains options for GitRef.Tree
+type GitRefTreeOpts struct {
+	SSHKnownHosts string
+
+	SSHAuthSocket *Socket
+}
+
 // The filesystem tree at this ref
-func (r *GitRef) Tree() *Directory {
+func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.q.Select("tree")
+	// `sshKnownHosts` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
+			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
+			break
+		}
+	}
+	// `sshAuthSocket` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
+			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
@@ -1023,12 +1070,23 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
-// Lookup the value of an environment variable. Null if the variable is not available.
+// Access an environment variable on the host
 func (r *Host) EnvVariable(name string) *HostVariable {
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
 
 	return &HostVariable{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Access a Unix socket on the host
+func (r *Host) UnixSocket(path string) *Socket {
+	q := r.q.Select("unixSocket")
+	q = q.Arg("path", path)
+
+	return &Socket{
 		q: q,
 		c: r.c,
 	}
@@ -1310,6 +1368,28 @@ func (r *Query) Secret(id SecretID) *Secret {
 	}
 }
 
+// SocketOpts contains options for Query.Socket
+type SocketOpts struct {
+	ID SocketID
+}
+
+// Load a socket by ID
+func (r *Query) Socket(opts ...SocketOpts) *Socket {
+	q := r.q.Select("socket")
+	// `id` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+			break
+		}
+	}
+
+	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A reference to a secret value, which can be handled more safely than the value itself
 type Secret struct {
 	q *querybuilder.Selection
@@ -1346,4 +1426,32 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+type Socket struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The content-addressed identifier of the socket
+func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+	q := r.q.Select("id")
+
+	var response SocketID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Socket) XXX_GraphQLType() string {
+	return "Socket"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
