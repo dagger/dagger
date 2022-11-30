@@ -36,7 +36,7 @@ func Listen(cmd *cobra.Command, args []string) {
 	}
 }
 
-func setupServer(ctx context.Context, path string) error {
+func setupServer(ctx context.Context, sessionID string) error {
 	opts := []dagger.ClientOpt{
 		dagger.WithWorkdir(workdir),
 		dagger.WithConfigPath(configPath),
@@ -51,7 +51,16 @@ func setupServer(ctx context.Context, path string) error {
 		return err
 	}
 
-	http.HandleFunc("/"+path, func(rw http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		if sessionID != "" {
+			username, _, ok := r.BasicAuth()
+			if !ok || username != sessionID {
+				rw.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+				rw.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+
 		res := make(map[string]interface{})
 		resp := &dagger.Response{Data: &res}
 
