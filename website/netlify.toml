@@ -23,11 +23,6 @@ to = "https://api.amplitude.com"
 status = 200
 
 [[redirects]]
-from = "/api/reference"
-to = "/api/reference/"
-status = 200
-
-[[redirects]]
 from = "/reference"
 to = "/reference/alpine"
 status = 302
