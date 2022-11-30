@@ -121,14 +121,30 @@ def test_input_field_param(cls, name, args, expected, id_map):
 @pytest.mark.parametrize(
     "name, args, expected",
     [
-        ("context", (NonNull(Scalar("DirectoryID")),), "Arg('context', context),"),
-        ("secret", (Scalar("SecretID"),), "Arg('secret', secret, None),"),
-        ("lines", (Int, 1), "Arg('lines', lines, 1),"),
-        ("from", (String, None), "Arg('from', from_, None),"),
+        (
+            "context",
+            (NonNull(Scalar("DirectoryID")),),
+            "Arg('context', 'context', context, DirectoryID),",
+        ),
+        (
+            "secret",
+            (Scalar("SecretID"),),
+            "Arg('secret', 'secret', secret, Secret | None, None),",
+        ),
+        (
+            "lines",
+            (Int, 1),
+            "Arg('lines', 'lines', lines, int | None, 1),",
+        ),
+        (
+            "from",
+            (String, None),
+            "Arg('from_', 'from', from_, str | None, None),",
+        ),
         (
             "configPath",
             (NonNull(String), "/dagger.json"),
-            "Arg('configPath', config_path, '/dagger.json'),",
+            "Arg('config_path', 'configPath', config_path, str, '/dagger.json'),",
         ),
     ],
 )
