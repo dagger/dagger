@@ -321,6 +321,8 @@ export class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    *
+   * @param opts optional params for exec
+   *
    * @deprecated Replaced by withExec.
    */
   exec(opts?: ContainerExecOpts): Container {
@@ -410,6 +412,7 @@ export class Container extends BaseClient {
 
   /**
    * This container's root filesystem. Mounts are not included.
+   *
    *
    * @deprecated Replaced by rootfs.
    */
@@ -662,6 +665,7 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from this DirectoryID
+   *
    *
    * @deprecated Replaced by withRootfs.
    */
@@ -1510,6 +1514,8 @@ export class Host extends BaseClient {
 
   /**
    * The current working directory on the host
+   *
+   * @param opts optional params for workdir
    *
    * @deprecated Use directory with path set to '.' instead.
    */
