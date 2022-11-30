@@ -10,5 +10,5 @@ connect(async (client) => {
   let version = await node.stdout()
 
   // print output
-  console.log("Hello from Dagger and Node " + version.contents)
+  console.log("Hello from Dagger and Node " + version)
 })
