@@ -89,16 +89,19 @@ This code listing initializes the client library and defines the Dagger pipeline
 - The result of the query is a JSON object, which is processed and printed to the output device.
 
 :::info
-The API endpoint and the auth token for the GraphQL client are not statically defined, they must be retrieved at run-time from the special `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables. This is explained in more detail in the next section.
+The API endpoint and the HTTP authentication token for the GraphQL client are not statically defined, they must be retrieved at run-time from the special `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables. This is explained in more detail in the next section.
 :::
 
 ## Step 3: Run the API client
 
 To run the pipeline, the API client in the previous step needs to communicate with the Dagger Engine, which is responsible for accepting the query, executing it and returning the result. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
 
-:::note
-The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is exposed in the `DAGGER_SESSION_URL` environment variable, and can be directly read from the environment in your client code.
-It additionally protects the exposed API with a basic auth token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
+:::info
+The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is exposed in the `DAGGER_SESSION_URL` environment variable, and can be directly read from the environment in your client code. It additionally protects the exposed API with an HTTP Basic authentication token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
+:::
+
+:::warning
+Treat the `DAGGER_SESSION_TOKEN` value as you would any other sensitive credential. Store it securely and avoid passing it to, or over, insecure applications and networks.
 :::
 
 Run the API client using the Dagger CLI as follows:
@@ -132,8 +135,7 @@ This command:
 </TabItem>
 </Tabs>
 
-The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_URL` environment variable, sets
-a basic auth token with `DAGGER_SESSION_TOKEN` and executes the GraphQL query. Here is an example of the output:
+The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_URL` environment variable, sets an HTTP Basic authentication  token with `DAGGER_SESSION_TOKEN` and executes the GraphQL query. Here is an example of the output:
 
 ```shell
 buildkitsandbox 5.15.0-53-generic unknown Linux
