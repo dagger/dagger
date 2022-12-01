@@ -245,3 +245,53 @@ func TestHostVariable(t *testing.T) {
 
 	require.Contains(t, env, "SECRET=hello")
 }
+
+func TestHostTCPSocket(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+
+	l := echoServer(t, "tcp", "127.0.0.1:0")
+	defer l.Close()
+
+	addr := l.Addr().String()
+
+	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
+
+	ctr := c.Container().
+		From("golang:1.18.2-alpine").
+		WithMountedFile("/src/main.go", echo).
+		WithUnixSocket("/tmp/test.sock", c.Host().TCPSocket(addr)).
+		WithExec([]string{"go", "run", "/src/main.go", "unix", "/tmp/test.sock", "hello"})
+
+	stdout, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
+}
+
+func TestHostUDPSocket(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+
+	l := echoServerUDP(t, "127.0.0.1:0")
+	defer l.Close()
+
+	addr := l.LocalAddr().String()
+
+	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
+
+	ctr := c.Container().
+		From("golang:1.18.2-alpine").
+		WithMountedFile("/src/main.go", echo).
+		WithUnixSocket("/tmp/test.sock", c.Host().UDPSocket(addr)).
+		WithExec([]string{"go", "run", "/src/main.go", "unix", "/tmp/test.sock", "hello"})
+
+	stdout, err := ctr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
+}

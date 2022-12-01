@@ -19,7 +19,8 @@ func (id SocketID) String() string { return string(id) }
 func (id SocketID) LLBID() string  { return fmt.Sprintf("socket:%s", id) }
 
 type socketIDPayload struct {
-	HostPath string `json:"host_path,omitempty"`
+	HostNetwork string `json:"host_network,omitempty"`
+	HostAddr    string `json:"host_addr,omitempty"`
 }
 
 func (id SocketID) decode() (*socketIDPayload, error) {
@@ -44,9 +45,10 @@ func NewSocket(id SocketID) *Socket {
 	return &Socket{id}
 }
 
-func NewHostSocket(absPath string) (*Socket, error) {
+func NewHostSocket(network, addr string) (*Socket, error) {
 	payload := socketIDPayload{
-		HostPath: absPath,
+		HostNetwork: network,
+		HostAddr:    addr,
 	}
 
 	return payload.ToSocket()
@@ -58,7 +60,7 @@ func (socket *Socket) IsHost() (bool, error) {
 		return false, err
 	}
 
-	return payload.HostPath != "", nil
+	return payload.HostNetwork != "", nil
 }
 
 func (socket *Socket) Server() (sshforward.SSHServer, error) {
@@ -69,7 +71,7 @@ func (socket *Socket) Server() (sshforward.SSHServer, error) {
 
 	return &socketProxy{
 		dial: func() (io.ReadWriteCloser, error) {
-			return net.Dial("unix", payload.HostPath)
+			return net.Dial(payload.HostNetwork, payload.HostAddr)
 		},
 	}, nil
 }

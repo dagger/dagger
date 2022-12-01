@@ -3,9 +3,6 @@ package core
 import (
 	"context"
 	_ "embed"
-	"errors"
-	"io"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2524,6 +2521,8 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 var echoSocketSrc string
 
 func TestContainerWithUnixSocket(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
@@ -2531,37 +2530,8 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
 
-	l, err := net.Listen("unix", sock)
-	require.NoError(t, err)
-
+	l := echoServer(t, "unix", sock)
 	defer l.Close()
-
-	go func() {
-		for {
-			c, err := l.Accept()
-			if err != nil {
-				if !errors.Is(err, net.ErrClosed) {
-					t.Logf("accept: %s", err)
-					panic(err)
-				}
-				return
-			}
-
-			n, err := io.Copy(c, c)
-			if err != nil {
-				t.Logf("hello: %s", err)
-				panic(err)
-			}
-
-			t.Logf("copied %d bytes", n)
-
-			err = c.Close()
-			if err != nil {
-				t.Logf("close: %s", err)
-				panic(err)
-			}
-		}
-	}()
 
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
@@ -2569,7 +2539,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 		From("golang:1.18.2-alpine").
 		WithMountedFile("/src/main.go", echo).
 		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
-		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
+		WithExec([]string{"go", "run", "/src/main.go", "unix", "/tmp/test.sock", "hello"})
 
 	stdout, err := ctr.Stdout(ctx)
 	require.NoError(t, err)

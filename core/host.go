@@ -84,7 +84,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	return NewDirectory(ctx, st, "", platform)
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
+func (host *Host) UnixSocket(ctx context.Context, sockPath string) (*Socket, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -106,7 +106,15 @@ func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) 
 		return nil, fmt.Errorf("eval symlinks: %w", err)
 	}
 
-	return NewHostSocket(absPath)
+	return NewHostSocket("unix", absPath)
+}
+
+func (host *Host) PortSocket(ctx context.Context, network, addr string) (*Socket, error) {
+	if host.DisableRW {
+		return nil, ErrHostRWDisabled
+	}
+
+	return NewHostSocket(network, addr)
 }
 
 func (host *Host) Export(

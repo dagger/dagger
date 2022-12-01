@@ -17,6 +17,12 @@ type Host {
 
   "Access a Unix socket on the host"
   unixSocket(path: String!): Socket!
+
+  "Access a TCP host:port address via the host network"
+  tcpSocket(address: String!): Socket!
+
+  "Access a UDP host:port address via the host network"
+  udpSocket(address: String!): Socket!
 }
 
 "An environment variable on the host environment"

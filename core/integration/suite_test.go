@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"testing"
 
@@ -191,4 +192,72 @@ func tarEntries(t *testing.T, path string) []string {
 	}
 
 	return entries
+}
+
+func echoServer(t *testing.T, network, addr string) net.Listener {
+	l, err := net.Listen(network, addr)
+	require.NoError(t, err)
+
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			n, err := io.Copy(c, c)
+			if err != nil {
+				t.Logf("hello: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+
+			err = c.Close()
+			if err != nil {
+				t.Logf("close: %s", err)
+				panic(err)
+			}
+		}
+	}()
+
+	return l
+}
+
+func echoServerUDP(t *testing.T, addr string) *net.UDPConn {
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	require.NoError(t, err)
+
+	conn, err := net.ListenUDP("udp", udpAddr)
+	require.NoError(t, err)
+
+	go func() {
+		for {
+			buf := make([]byte, 1024)
+			n, remoteAddr, err := conn.ReadFromUDP(buf)
+			if err != nil {
+				if !errors.Is(err, net.ErrClosed) {
+					t.Logf("accept: %s", err)
+					panic(err)
+				}
+				return
+			}
+
+			msg := buf[0:n]
+
+			n, err = conn.WriteToUDP(msg, remoteAddr)
+			if err != nil {
+				t.Logf("hello: %s", err)
+				panic(err)
+			}
+
+			t.Logf("copied %d bytes", n)
+		}
+	}()
+
+	return conn
 }

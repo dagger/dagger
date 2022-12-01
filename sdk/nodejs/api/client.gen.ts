@@ -1424,6 +1424,38 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Access a TCP host:port address via the host network
+   */
+  tcpSocket(address: string): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "tcpSocket",
+          args: { address },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * Access a UDP host:port address via the host network
+   */
+  udpSocket(address: string): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "udpSocket",
+          args: { address },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * Access a Unix socket on the host
    */
   unixSocket(path: string): Socket {

@@ -7,20 +7,20 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: %s <socket> <message>", os.Args[0])
+	if len(os.Args) != 4 {
+		fmt.Fprintln(os.Stderr, "usage: %s <network> <addr> <message>", os.Args[0])
 		os.Exit(1)
 		return
 	}
 
-	c, err := net.Dial("unix", os.Args[1])
+	c, err := net.Dial(os.Args[1], os.Args[2])
 	if err != nil {
 		panic(err)
 	}
 
 	defer c.Close()
 
-	_, err = fmt.Fprintln(c, os.Args[2])
+	_, err = fmt.Fprintln(c, os.Args[3])
 	if err != nil {
 		panic(err)
 	}

@@ -1180,6 +1180,28 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 	}
 }
 
+// Access a TCP host:port address via the host network
+func (r *Host) TCPSocket(address string) *Socket {
+	q := r.q.Select("tcpSocket")
+	q = q.Arg("address", address)
+
+	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Access a UDP host:port address via the host network
+func (r *Host) UDPSocket(address string) *Socket {
+	q := r.q.Select("udpSocket")
+	q = q.Arg("address", address)
+
+	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Access a Unix socket on the host
 func (r *Host) UnixSocket(path string) *Socket {
 	q := r.q.Select("unixSocket")

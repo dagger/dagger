@@ -32,7 +32,9 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"workdir":     router.ToResolver(s.workdir),
 			"directory":   router.ToResolver(s.directory),
 			"envVariable": router.ToResolver(s.envVariable),
-			"unixSocket":  router.ToResolver(s.socket),
+			"unixSocket":  router.ToResolver(s.unixSocket),
+			"tcpSocket":   router.ToResolver(s.tcpSocket),
+			"udpSocket":   router.ToResolver(s.udpSocket),
 		},
 		"HostVariable": router.ObjectResolver{
 			"value":  router.ToResolver(s.envVariableValue),
@@ -81,10 +83,26 @@ func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirecto
 	return s.host.Directory(ctx, args.Path, s.platform, args.CopyFilter)
 }
 
-type hostSocketArgs struct {
+type hostUnixSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx *router.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
-	return s.host.Socket(ctx, args.Path)
+func (s *hostSchema) unixSocket(ctx *router.Context, parent any, args hostUnixSocketArgs) (*core.Socket, error) {
+	return s.host.UnixSocket(ctx, args.Path)
+}
+
+type hostTCPSocketArgs struct {
+	Address string
+}
+
+func (s *hostSchema) tcpSocket(ctx *router.Context, parent any, args hostTCPSocketArgs) (*core.Socket, error) {
+	return s.host.PortSocket(ctx, "tcp", args.Address)
+}
+
+type hostUDPSocketArgs struct {
+	Address string
+}
+
+func (s *hostSchema) udpSocket(ctx *router.Context, parent any, args hostUDPSocketArgs) (*core.Socket, error) {
+	return s.host.PortSocket(ctx, "udp", args.Address)
 }

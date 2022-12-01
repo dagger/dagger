@@ -925,6 +925,22 @@ class Host(Type):
         _ctx = self._select("envVariable", _args)
         return HostVariable(_ctx)
 
+    def tcp_socket(self, address: str) -> "Socket":
+        """Access a TCP host:port address via the host network"""
+        _args = [
+            Arg("address", address),
+        ]
+        _ctx = self._select("tcpSocket", _args)
+        return Socket(_ctx)
+
+    def udp_socket(self, address: str) -> "Socket":
+        """Access a UDP host:port address via the host network"""
+        _args = [
+            Arg("address", address),
+        ]
+        _ctx = self._select("udpSocket", _args)
+        return Socket(_ctx)
+
     def unix_socket(self, path: str) -> "Socket":
         """Access a Unix socket on the host"""
         _args = [
