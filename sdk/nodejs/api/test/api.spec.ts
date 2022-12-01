@@ -71,6 +71,7 @@ describe("NodeJS SDK api", function () {
   })
 
   it("Pass a client with an implicit ID as a parameter", async function () {
+    this.timeout(60000)
     connect(async (client: Client) => {
       const image = await client
         .container(
