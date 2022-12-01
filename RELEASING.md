@@ -1,6 +1,9 @@
 # Releasing
 
 > **Warning**
+> It's important to always do an engine release prior to releasing any SDK. This will ensure that all the APIs in the SDK are also available in the engine it depends on.
+
+> **Warning**
 > Currently, if any SDK bumps an engine dependency, we should bump the engine dependency of all other SDKs concurrently. This helps ensure that users running multiple SDKs from a single machine all use the same engine. This is important as currently our automatic provisioning code enforces the existence of a single engine running at a time.
 
 ## Engine
@@ -24,6 +27,8 @@ When published a PR will be opened automatically to bump the engine dependency i
 the various SDKs. **Merge it** as soon as the tests pass.
 
 ## Go SDK
+
+If not already performed, do an engine release to ensure the engine the SDK depends on is up to date with the latest APIs supported in the SDK.
 
 Ensure that all checks on the `main` branch are green. Pay special attention
 to `lint / sdk / go` & `test / sdk / go` checks. Ensure that these
@@ -52,6 +57,8 @@ git push origin sdk/go/${SDK_VERSION}
 ```
 
 ## Python SDK
+
+If not already performed, do an engine release to ensure the engine the SDK depends on is up to date with the latest APIs supported in the SDK.
 
 Ensure that all checks on the `main` branch are green. Pay special attention
 to `lint / sdk / python` & `test / sdk / python` checks. Ensure that these
@@ -146,6 +153,8 @@ If there is a video in this blog post, you may want to add it to the release
 notes (see **3/4.**).
 
 ## Node.js SDK
+
+If not already performed, do an engine release to ensure the engine the SDK depends on is up to date with the latest APIs supported in the SDK.
 
 Ensure that all checks on the `main` branch are green. Pay special attention
 to `lint / sdk / nodejs` & `test / sdk / nodejs` checks. Ensure that these
