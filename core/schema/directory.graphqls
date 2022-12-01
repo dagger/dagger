@@ -48,4 +48,7 @@ type Directory {
 
   "Write the contents of the directory to a path on the host"
   export(path: String!): Boolean!
+
+  "Build a new Docker container from this directory"
+  dockerBuild(dockerfile: String, platform: Platform): Container!
 }

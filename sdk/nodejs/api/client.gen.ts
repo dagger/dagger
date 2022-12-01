@@ -837,6 +837,22 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Build a new Docker container from this directory
+   */
+  dockerBuild(dockerfile?: string, platform?: Platform): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "dockerBuild",
+          args: { dockerfile, platform },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * Return a list of files and directories at the given path
    */
   async entries(path?: string): Promise<string[]> {

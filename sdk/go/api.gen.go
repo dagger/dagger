@@ -673,6 +673,37 @@ func (r *Directory) Directory(path string) *Directory {
 	}
 }
 
+// DirectoryDockerBuildOpts contains options for Directory.DockerBuild
+type DirectoryDockerBuildOpts struct {
+	Dockerfile string
+
+	Platform Platform
+}
+
+// Build a new Docker container from this directory
+func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
+	q := r.q.Select("dockerBuild")
+	// `dockerfile` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
+			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+	// `platform` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Platform) {
+			q = q.Arg("platform", opts[i].Platform)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // DirectoryEntriesOpts contains options for Directory.Entries
 type DirectoryEntriesOpts struct {
 	Path string

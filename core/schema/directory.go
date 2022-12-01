@@ -3,6 +3,7 @@ package schema
 import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type directorySchema struct {
@@ -41,6 +42,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"withoutDirectory": router.ToResolver(s.withoutDirectory),
 			"diff":             router.ToResolver(s.diff),
 			"export":           router.ToResolver(s.export),
+			"dockerBuild":      router.ToResolver(s.dockerBuild),
 		},
 	}
 }
@@ -155,4 +157,21 @@ func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, ar
 	}
 
 	return true, nil
+}
+
+type dirDockerBuildArgs struct {
+	Platform   *specs.Platform
+	Dockerfile string
+}
+
+func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
+	platform := s.baseSchema.platform
+	if args.Platform != nil {
+		platform = *args.Platform
+	}
+	ctr, err := core.NewContainer("", platform)
+	if err != nil {
+		return ctr, err
+	}
+	return ctr.Build(ctx, s.gw, parent, args.Dockerfile)
 }
