@@ -1803,7 +1803,10 @@ export class Socket extends BaseClient {
       },
     ]
 
-    const response: Awaited<SocketID> = await this._compute()
+    const response: Awaited<SocketID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
