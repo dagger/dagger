@@ -2,7 +2,7 @@
 slug: /api/282105/playground
 ---
 
-# Playground
+# API Playground
 
 The API Playground is an in-browser tool for testing, running and sharing Dagger GraphQL API queries.
 
