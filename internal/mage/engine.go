@@ -17,8 +17,6 @@ import (
 )
 
 const (
-	testContainerName = "test-dagger-engine"
-
 	engineSessionBinName = "dagger-engine-session"
 	shimBinName          = "dagger-shim"
 	buildkitRepo         = "github.com/moby/buildkit"
@@ -133,9 +131,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithWorkdir("/app").
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-		WithExec(args, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec(args).
 		Stdout(ctx)
 	if err != nil {
 		return err
@@ -206,7 +202,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	if output, err := exec.CommandContext(ctx, "docker",
 		"rm",
 		"-fv",
-		testContainerName,
+		util.TestContainerName,
 	).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker rm: %w: %s", err, output)
 	}
@@ -216,7 +212,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		"--rm",
 		"-v", volumeName+":/var/lib/buildkit",
-		"--name", testContainerName,
+		"--name", util.TestContainerName,
 		"--privileged",
 		imageName,
 		"--debug",
@@ -224,8 +220,8 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
-	fmt.Println("export DAGGER_HOST=docker-container://" + testContainerName)
-	fmt.Println("export DAGGER_RUNNER_HOST=docker-container://" + testContainerName)
+	fmt.Println("export DAGGER_HOST=docker-container://" + util.TestContainerName)
+	fmt.Println("export DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
 	return nil
 }
 

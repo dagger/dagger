@@ -57,9 +57,7 @@ func (t Go) Test(ctx context.Context) error {
 	output, err := util.GoBase(c).
 		WithWorkdir("sdk/go").
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-		WithExec([]string{"go", "test", "-v", "./..."}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
 	if err != nil {
 		err = fmt.Errorf("test failed: %w\n%s", err, output)
@@ -79,9 +77,7 @@ func (t Go) Generate(ctx context.Context) error {
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 		WithWorkdir("sdk/go").
-		WithExec([]string{"go", "generate", "-v", "./..."}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec([]string{"go", "generate", "-v", "./..."}).
 		File(path.Base(goGeneratedAPIPath)).
 		Contents(ctx)
 	if err != nil {
