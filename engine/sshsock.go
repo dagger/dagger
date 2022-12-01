@@ -15,6 +15,8 @@ import (
 // Map of id -> handler for that id.
 type SocketProvider struct {
 	Named NamedSocketProviders
+
+	EnableHostNetworkAccess bool
 }
 
 type NamedSocketProviders map[string]sshforward.SSHServer
@@ -50,7 +52,14 @@ func (m SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if key, socketID, ok := strings.Cut(id, ":"); key == "socket" && ok {
 		socket := core.NewSocket(core.SocketID(socketID))
 
-		var err error
+		isHost, err := socket.IsHost()
+		if err != nil {
+			return err
+		}
+		if isHost && !m.EnableHostNetworkAccess {
+			return status.Errorf(codes.PermissionDenied, "host network access is disabled")
+		}
+
 		h, err = socket.Server()
 		if err != nil {
 			return err

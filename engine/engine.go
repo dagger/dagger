@@ -98,6 +98,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
 			project.SessionProxySockName: project.NewSessionProxy(router),
 		},
+		EnableHostNetworkAccess: !startOpts.DisableHostRW,
 	}
 
 	solveOpts := bkclient.SolveOpt{

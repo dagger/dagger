@@ -52,6 +52,15 @@ func NewHostSocket(absPath string) (*Socket, error) {
 	return payload.ToSocket()
 }
 
+func (socket *Socket) IsHost() (bool, error) {
+	payload, err := socket.ID.decode()
+	if err != nil {
+		return false, err
+	}
+
+	return payload.HostPath != "", nil
+}
+
 func (socket *Socket) Server() (sshforward.SSHServer, error) {
 	payload, err := socket.ID.decode()
 	if err != nil {
