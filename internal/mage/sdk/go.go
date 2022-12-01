@@ -92,6 +92,11 @@ func (t Go) Generate(ctx context.Context) error {
 
 // Publish publishes the Go SDK
 func (t Go) Publish(ctx context.Context, tag string) error {
+	// lint first to ensure generated apis are consistent w/ the engine
+	if err := t.Lint(ctx); err != nil {
+		return err
+	}
+
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err

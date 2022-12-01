@@ -83,6 +83,11 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 // Publish publishes the Node.js SDK
 func (t Nodejs) Publish(ctx context.Context, tag string) error {
+	// lint first to ensure generated apis are consistent w/ the engine
+	if err := t.Lint(ctx); err != nil {
+		return err
+	}
+
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
