@@ -514,7 +514,7 @@ export class Container extends BaseClient {
    */
   withDirectory(
     path: string,
-    directory: DirectoryID,
+    directory: DirectoryID | Directory,
     exclude?: string[],
     include?: string[]
   ): Container {
@@ -611,7 +611,7 @@ export class Container extends BaseClient {
   /**
    * This container plus the contents of the given file copied to the given path
    */
-  withFile(path: string, source: FileID): Container {
+  withFile(path: string, source: FileID | File): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
