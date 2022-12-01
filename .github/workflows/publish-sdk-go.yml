@@ -1,6 +1,7 @@
-name: publish-sdk-go
+name: "Publish Go SDK"
 on:
   push:
+    branches: ["main"]
     tags: ["sdk/go/v**"]
 jobs:
   publish:
