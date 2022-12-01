@@ -46,25 +46,21 @@ class BaseClient {
 
 /**
  * A global cache volume identifier
- * @hidden
  */
 export type CacheID = string
 
 /**
  * A unique container identifier. Null designates an empty container (scratch).
- * @hidden
  */
 export type ContainerID = string
 
 /**
  * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
- * @hidden
  */
 export type DateTime = string
 
 /**
  * A content-addressed directory identifier
- * @hidden
  */
 export type DirectoryID = string
 
@@ -72,7 +68,6 @@ export type FileID = string
 
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
- * @hidden
  */
 export type ID = string
 
@@ -80,13 +75,11 @@ export type Platform = string
 
 /**
  * A unique identifier for a secret
- * @hidden
  */
 export type SecretID = string
 
 /**
  * A content-addressed socket identifier
- * @hidden
  */
 export type SocketID = string
 
