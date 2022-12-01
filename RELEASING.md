@@ -136,9 +136,8 @@ gh release create sdk/python/${SDK_VERSION} --generate-notes --notes-start-tag s
   📝 https://dagger.io/blog/python-sdk
 - If there is a video (see **4/4.**) add a link to it, e.g.
   🎬 https://www.youtube.com/watch?v=c0bLWmi2B-4
-- Click through each pull request and remove all the ones that don't change any
-  Python SDK files. Some pull requests are prefixed with `sdk: python:`, which
-  makes this process quicker.
+- Click through each pull request and remove all the ones that don't change any SDK files.  
+  Some pull requests are prefixed with `sdk: {SDK_NAME}:`, which makes this process quicker.
 
 > 💡 TIP: An approach that works is to open a dozen or so pull requests in new
 > tabs, click on **Preview** and remove all the ones that don't affect this
@@ -153,9 +152,9 @@ gh release create sdk/python/${SDK_VERSION} --generate-notes --notes-start-tag s
 - ⚠️ De-select **Set as the latest release** (only used for Engine/CLI releases)
 - Click on **Publish release**
 
-#### 4/4. Update blog post
+#### 4/4. Update blog post (Optional)
 
-This is an optional step. We sometimes publish a blog post when a new SDK
+We sometimes publish a blog post when a new SDK
 release goes out. When that happens, we tend to include a link to the release
 notes. Here is an example for the [Python SDK v0.1.1 release blog
 post](https://dagger.io/blog/python-sdk).
