@@ -1,6 +1,7 @@
+import { Writable } from "node:stream"
+
 import Client from "./api/client.gen.js"
 import { getProvisioner, DEFAULT_HOST } from "./provisioning/index.js"
-import { Writable } from "node:stream"
 
 /**
  * ConnectOpts defines option used to connect to an engine.

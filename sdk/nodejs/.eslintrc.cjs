@@ -9,4 +9,18 @@ module.exports = {
   parser: "@typescript-eslint/parser",
   plugins: ["@typescript-eslint"],
   root: true,
+
+  // Custom rules definitions
+  rules: {
+    // Override 'no unused var' rules to allow unused arguments if it's
+    // named '_'.
+    "no-unused-vars": "off",
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "_",
+      },
+    ]
+  }
+
 }

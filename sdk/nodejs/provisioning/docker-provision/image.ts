@@ -1,15 +1,16 @@
-import { ConnectOpts, EngineConn } from "../engineconn.js"
-import * as path from "path"
+import { execaCommandSync } from "execa"
 import * as fs from "fs"
 import * as os from "os"
-import readline from "readline"
-import { execaCommandSync, execaCommand, ExecaChildProcess } from "execa"
+import * as path from "path"
+
 import Client from "../../api/client.gen.js"
 import {
   DockerImageRefValidationError,
   EngineSessionPortParseError,
   InitEngineSessionBinaryError,
 } from "../../common/errors/index.js"
+import { Bin } from "../bin/bin.js"
+import { ConnectOpts, EngineConn } from "../engineconn.js"
 
 /**
  * ImageRef is a simple abstraction of docker image reference.
@@ -78,7 +79,7 @@ export class DockerImage implements EngineConn {
 
   private readonly ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session"
 
-  private subProcess?: ExecaChildProcess
+  private binProcess?: Bin
 
   constructor(u: URL) {
     this.imageRef = new ImageRef(u.host + u.pathname)
@@ -209,10 +210,11 @@ export class DockerImage implements EngineConn {
     }
 
     // Remove all temporary binary files
-    // Ignore current engine session binary or other files that have not be
+    // Ignore current engine session binary or other files that have not been
     // created by this SDK.
     try {
       const files = fs.readdirSync(this.cacheDir)
+
       files.forEach((file) => {
         const filePath = `${this.cacheDir}/${file}`
         if (
@@ -238,72 +240,19 @@ export class DockerImage implements EngineConn {
     engineSessionBinPath: string,
     opts: ConnectOpts
   ): Promise<Client> {
-    const env = process.env
-    if (!env._EXPERIMENTAL_DAGGER_RUNNER_HOST) {
-      env._EXPERIMENTAL_DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
+    // Set DAGGER_RUNNER_HOST in environment if it's not set.
+    if (!process.env._EXPERIMENTAL_DAGGER_RUNNER_HOST) {
+      process.env._EXPERIMENTAL_DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
     }
 
-    const engineSessionArgs = [engineSessionBinPath]
+    this.binProcess = new Bin(new URL(`bin://${engineSessionBinPath}`))
 
-    if (opts.Workdir) {
-      engineSessionArgs.push("--workdir", opts.Workdir)
-    }
-    if (opts.Project) {
-      engineSessionArgs.push("--project", opts.Project)
-    }
-
-    this.subProcess = execaCommand(engineSessionArgs.join(" "), {
-      stderr: opts.LogOutput || "ignore",
-
-      // Kill the process if parent exit.
-      cleanup: true,
-
-      env: env,
-    })
-
-    const stdoutReader = readline.createInterface({
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      input: this.subProcess.stdout!,
-    })
-
-    const port = await Promise.race([
-      this.readPort(stdoutReader),
-      new Promise((_, reject) => {
-        setTimeout(() => {
-          reject(
-            new EngineSessionPortParseError(
-              "timeout reading port from engine session"
-            )
-          )
-        }, 300000).unref() // long timeout to account for extensions, though that should be optimized in future
-      }),
-    ])
-
-    return new Client({ host: `127.0.0.1:${port}` })
-  }
-
-  private async readPort(stdoutReader: readline.Interface): Promise<number> {
-    for await (const line of stdoutReader) {
-      // Read line as a port number
-      const port = parseInt(line)
-      if (isNaN(port)) {
-        throw new EngineSessionPortParseError(
-          `failed to parse port from engine session while parsing: ${line}`,
-          { parsedLine: line }
-        )
-      }
-      return port
-    }
-    throw new EngineSessionPortParseError(
-      "No line was found to parse the engine port"
-    )
+    return this.binProcess.Connect(opts)
   }
 
   async Close(): Promise<void> {
-    if (this.subProcess?.pid) {
-      this.subProcess.kill("SIGTERM", {
-        forceKillAfterTimeout: 2000,
-      })
+    if (this.binProcess) {
+      await this.binProcess.Close()
     }
   }
 }

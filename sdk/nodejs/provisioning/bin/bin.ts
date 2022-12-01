@@ -1,8 +1,9 @@
-import { ConnectOpts, EngineConn } from "../engineconn.js"
+import { ExecaChildProcess, execaCommand } from "execa"
 import readline from "readline"
-import { execaCommand, ExecaChildProcess } from "execa"
+
 import Client from "../../api/client.gen.js"
 import { EngineSessionPortParseError } from "../../common/errors/index.js"
+import { ConnectOpts, EngineConn } from "../engineconn.js"
 
 /**
  * Bin runs an engine session from a specified binary
@@ -10,7 +11,7 @@ import { EngineSessionPortParseError } from "../../common/errors/index.js"
 export class Bin implements EngineConn {
   private subProcess?: ExecaChildProcess
 
-  private path: string
+  private readonly path: string
 
   constructor(u: URL) {
     this.path = u.host + u.pathname
@@ -31,7 +32,6 @@ export class Bin implements EngineConn {
   /**
    * runEngineSession execute the engine binary and set up a GraphQL client that
    * target this engine.
-   * TODO:(sipsma) dedupe this with equivalent code in image.ts
    */
   private async runEngineSession(
     engineSessionBinPath: string,
@@ -51,6 +51,7 @@ export class Bin implements EngineConn {
 
       // Kill the process if parent exit.
       cleanup: true,
+      env: process.env,
     })
 
     const stdoutReader = readline.createInterface({

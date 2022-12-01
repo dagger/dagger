@@ -1,7 +1,7 @@
-import { EngineConn } from "./engineconn.js"
-import { DockerImage } from "./docker-provision/image.js"
-import { HTTP } from "./http/http.js"
 import { Bin } from "./bin/bin.js"
+import { DockerImage } from "./docker-provision/image.js"
+import { EngineConn } from "./engineconn.js"
+import { HTTP } from "./http/http.js"
 
 type ProvisionerFunc = (u: URL) => EngineConn
 

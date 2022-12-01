@@ -32,6 +32,7 @@
     "fmt": "yarn eslint --fix"
   },
   "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^4.0.0",
     "@types/mocha": "latest",
     "@types/node": "~16",
     "@typescript-eslint/eslint-plugin": "^5.45.1",

@@ -1,6 +1,7 @@
 import assert from "assert"
-import { getProvisioner } from "../provisioner.js"
+
 import { DEFAULT_HOST } from "../default.js"
+import { getProvisioner } from "../provisioner.js"
 
 describe("Provisioner", function () {
   describe("Docker Image", function () {

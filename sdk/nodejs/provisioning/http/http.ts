@@ -1,5 +1,5 @@
-import { ConnectOpts, EngineConn } from "../engineconn.js"
 import Client from "../../api/client.gen.js"
+import { ConnectOpts, EngineConn } from "../engineconn.js"
 
 /**
  * HTTP is an implementation of EngineConn to connect to an existing
@@ -16,8 +16,7 @@ export class HTTP implements EngineConn {
     return this.url.toString()
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async Connect(opts: ConnectOpts): Promise<Client> {
+  async Connect(_: ConnectOpts): Promise<Client> {
     return new Client({ host: this.url.host })
   }
 
