@@ -19,6 +19,7 @@ extensions:
 
 info:
   title: Dagger GraphQL API Reference
+  docs-url: https://docs.dagger.io 
   # x-introItems:
   #   - title: Welcome! 
   #     description: We are using a GraphQL server as the API to interact with our engine. This allows us to make interoperation between programming languages possible.
