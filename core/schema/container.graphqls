@@ -111,6 +111,20 @@ type Container {
   """
   withoutMount(path: String!): Container!
 
+  "This container plus the contents of the given file copied to the given path"
+  withFile(path: String!, source: FileID!): Container!
+
+  "This container plus a new file written at the given path"
+  withNewFile(path: String!, contents: String): Container!
+
+  "This container plus a directory written at the given path"
+  withDirectory(
+    path: String!
+    directory: DirectoryID!
+    exclude: [String!]
+    include: [String!]
+  ): Container!
+
   "This container plus a socket forwarded to the given Unix socket path"
   withUnixSocket(path: String!, source: SocketID!): Container!
 

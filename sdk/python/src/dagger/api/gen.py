@@ -333,6 +333,23 @@ class Container(Type):
         _ctx = self._select("withDefaultArgs", _args)
         return Container(_ctx)
 
+    def with_directory(
+        self,
+        path: str,
+        directory: "Directory",
+        exclude: list[str] | None = None,
+        include: list[str] | None = None,
+    ) -> "Container":
+        """This container plus a directory written at the given path"""
+        _args = [
+            Arg("path", path),
+            Arg("directory", directory),
+            Arg("exclude", exclude, None),
+            Arg("include", include, None),
+        ]
+        _ctx = self._select("withDirectory", _args)
+        return Container(_ctx)
+
     def with_entrypoint(self, args: list[str]) -> "Container":
         """This container but with a different command entrypoint"""
         _args = [
@@ -398,6 +415,17 @@ class Container(Type):
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
 
+    def with_file(self, path: str, source: "File") -> "Container":
+        """This container plus the contents of the given file copied to the given
+        path
+        """
+        _args = [
+            Arg("path", path),
+            Arg("source", source),
+        ]
+        _ctx = self._select("withFile", _args)
+        return Container(_ctx)
+
     def with_mounted_cache(
         self, path: str, cache: "CacheVolume", source: "Directory | None" = None
     ) -> "Container":
@@ -443,6 +471,15 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withMountedTemp", _args)
+        return Container(_ctx)
+
+    def with_new_file(self, path: str, contents: str | None = None) -> "Container":
+        """This container plus a new file written at the given path"""
+        _args = [
+            Arg("path", path),
+            Arg("contents", contents, None),
+        ]
+        _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
 
     def with_rootfs(self, id: "DirectoryID | Directory") -> "Container":

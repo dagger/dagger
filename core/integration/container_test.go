@@ -1388,6 +1388,116 @@ func TestContainerWithMountedTemp(t *testing.T) {
 	require.Contains(t, execRes.Container.From.WithMountedTemp.WithExec.Stdout, "tmpfs /mnt/tmp tmpfs")
 }
 
+func TestContainerWithDirectory(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	dir := c.Directory().
+		WithNewFile("some-file", "some-content").
+		WithNewFile("some-dir/sub-file", "sub-content").
+		Directory("some-dir")
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithDirectory("with-dir", dir)
+
+	contents, err := ctr.WithExec([]string{"cat", "with-dir/sub-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", contents)
+
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/with-dir/sub-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", contents)
+
+	// Test with a mount
+	mount := c.Directory().
+		WithNewFile("mounted-file", "mounted-content")
+
+	ctr = c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithMountedDirectory("mnt/mount", mount).
+		WithDirectory("mnt/mount/dst/with-dir", dir)
+	contents, err = ctr.WithExec([]string{"cat", "mnt/mount/mounted-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "mounted-content", contents)
+
+	contents, err = ctr.WithExec([]string{"cat", "mnt/mount/dst/with-dir/sub-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "sub-content", contents)
+
+	// Test with a relative mount
+	mnt := c.Directory().WithNewDirectory("/a/b/c")
+	ctr = c.Container().
+		From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", mnt)
+	dir = c.Directory().
+		WithNewDirectory("/foo").
+		WithNewFile("/foo/some-file", "some-content")
+	ctr = ctr.WithDirectory("/mnt/a/b/foo", dir)
+	contents, err = ctr.WithExec([]string{"cat", "/mnt/a/b/foo/foo/some-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
+func TestContainerWithFile(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	file := c.Directory().
+		WithNewFile("some-file", "some-content").
+		File("some-file")
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithFile("target-file", file)
+
+	contents, err := ctr.WithExec([]string{"cat", "target-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/target-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
+func TestContainerWithNewFile(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithWorkdir("/workdir").
+		WithNewFile("some-file", dagger.ContainerWithNewFileOpts{
+			Contents: "some-content",
+		})
+
+	contents, err := ctr.WithExec([]string{"cat", "some-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+
+	contents, err = ctr.WithExec([]string{"cat", "/workdir/some-file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", contents)
+}
+
 func TestContainerMountsWithoutMount(t *testing.T) {
 	t.Parallel()
 
@@ -2376,6 +2486,38 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
+}
+
+func TestContainerWithDirectoryToMount(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	mnt := c.Directory().
+		WithNewDirectory("/top/sub-dir/sub-file").
+		Directory("/top") // <-- the important part!
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", mnt)
+
+	dir := c.Directory().
+		WithNewFile("/copied-file", "some-content")
+
+	ctr = ctr.WithDirectory("/mnt/sub-dir/copied-dir", dir)
+
+	contents, err := ctr.WithExec([]string{"find", "/mnt"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/mnt",
+		"/mnt/sub-dir",
+		"/mnt/sub-dir/sub-file",
+		"/mnt/sub-dir/copied-dir",
+		"/mnt/sub-dir/copied-dir/copied-file",
+	}, strings.Split(strings.Trim(contents, "\n"), "\n"))
 }
 
 //go:embed testdata/socket-echo.go

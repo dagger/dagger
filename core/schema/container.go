@@ -63,6 +63,9 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withUnixSocket":       router.ToResolver(s.withUnixSocket),
 			"withoutUnixSocket":    router.ToResolver(s.withoutUnixSocket),
 			"withoutMount":         router.ToResolver(s.withoutMount),
+			"withFile":             router.ToResolver(s.withFile),
+			"withNewFile":          router.ToResolver(s.withNewFile),
+			"withDirectory":        router.ToResolver(s.withDirectory),
 			"withExec":             router.ToResolver(s.withExec),
 			"exec":                 router.ToResolver(s.withExec), // deprecated
 			"exitCode":             router.ToResolver(s.exitCode),
@@ -427,6 +430,18 @@ type containerWithMountedSecretArgs struct {
 
 func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
 	return parent.WithMountedSecret(ctx, args.Path, core.NewSecret(args.Source))
+}
+
+func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args withDirectoryArgs) (*core.Container, error) {
+	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
+}
+
+func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args withFileArgs) (*core.Container, error) {
+	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source})
+}
+
+func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args withNewFileArgs) (*core.Container, error) {
+	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
 }
 
 type containerWithUnixSocketArgs struct {

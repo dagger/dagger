@@ -386,6 +386,39 @@ func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Conta
 	}
 }
 
+// ContainerWithDirectoryOpts contains options for Container.WithDirectory
+type ContainerWithDirectoryOpts struct {
+	Exclude []string
+
+	Include []string
+}
+
+// This container plus a directory written at the given path
+func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+	q := r.q.Select("withDirectory")
+	q = q.Arg("path", path)
+	q = q.Arg("directory", directory)
+	// `exclude` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Exclude) {
+			q = q.Arg("exclude", opts[i].Exclude)
+			break
+		}
+	}
+	// `include` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Include) {
+			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This container but with a different command entrypoint
 func (r *Container) WithEntrypoint(args []string) *Container {
 	q := r.q.Select("withEntrypoint")
@@ -475,6 +508,18 @@ func (r *Container) WithFS(id *Directory) *Container {
 	}
 }
 
+// This container plus the contents of the given file copied to the given path
+func (r *Container) WithFile(path string, source *File) *Container {
+	q := r.q.Select("withFile")
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
 	Source *Directory
@@ -539,6 +584,29 @@ func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
 func (r *Container) WithMountedTemp(path string) *Container {
 	q := r.q.Select("withMountedTemp")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithNewFileOpts contains options for Container.WithNewFile
+type ContainerWithNewFileOpts struct {
+	Contents string
+}
+
+// This container plus a new file written at the given path
+func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+	q := r.q.Select("withNewFile")
+	q = q.Arg("path", path)
+	// `contents` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Contents) {
+			q = q.Arg("contents", opts[i].Contents)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
