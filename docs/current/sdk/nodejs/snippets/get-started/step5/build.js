@@ -8,19 +8,19 @@ connect(async (client) => {
   // highlight-end
 
   // get reference to the local project
-  const source = await client.host().directory(".", ["node_modules/"]).id()
+  const source = client.host().directory(".", ["node_modules/"])
 
   // highlight-start
   // for each Node version
   for (const nodeVersion of nodeVersions) {
     // get Node image
-    const node = await client.container().from(`node:${nodeVersion}`).id()
+    const node = client.container().from(`node:${nodeVersion}`)
     // highlight-end
 
     // mount cloned repository into Node image
     const runner = client
-      .container(node.id)
-      .withMountedDirectory("/src", source.id)
+      .container(node)
+      .withMountedDirectory("/src", source)
       .withWorkdir("/src")
       .withExec(["npm", "install"])
 

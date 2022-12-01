@@ -4,15 +4,15 @@ import { connect } from "@dagger.io/dagger"
 connect(async (client) => {
   // highlight-start
   // get reference to the local project
-  const source = await client.host().directory(".", ["node_modules/"]).id()
+  const source = client.host().directory(".", ["node_modules/"])
 
   // get Node image
-  const node = await client.container().from("node:16").id()
+  const node = client.container().from("node:16")
 
   // mount cloned repository into Node image
   const runner = client
-    .container(node.id)
-    .withMountedDirectory("/src", source.id)
+    .container(node)
+    .withMountedDirectory("/src", source)
     .withWorkdir("/src")
     .withExec(["npm", "install"])
 

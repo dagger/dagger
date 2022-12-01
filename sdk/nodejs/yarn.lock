@@ -198,6 +198,11 @@
     debug "^4.3.4"
     tsutils "^3.21.0"
 
+"@typescript-eslint/types@5.43.0":
+  version "5.43.0"
+  resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-5.43.0.tgz#e4ddd7846fcbc074325293515fa98e844d8d2578"
+  integrity sha512-jpsbcD0x6AUvV7tyOlyvon0aUsQpF8W+7TpJntfCUWU1qaIKu2K34pMwQKSzQH8ORgUrGYY6pVIh1Pi8TNeteg==
+
 "@typescript-eslint/types@5.44.0":
   version "5.44.0"
   resolved "https://registry.yarnpkg.com/@typescript-eslint/types/-/types-5.44.0.tgz#f3f0b89aaff78f097a2927fe5688c07e786a0241"
