@@ -27,7 +27,6 @@ archives:
   - name_template: "{{ .ProjectName }}_{{ .Tag }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
     files:
       - LICENSE
-      - examples/**/*
     format_overrides:
       - goos: windows
         format: zip
@@ -38,33 +37,12 @@ checksum:
 snapshot:
   name_template: "{{ .Tag }}-next"
 
-changelog:
-  use: github
-  sort: asc
-  filters:
-    exclude:
-      - "^doc"
-      - "^test"
-      - "^ci"
-      - "^website"
-      - "^infra"
-      - "^chore"
-      - "^build"
-      - "^Merge"
-      - "^sdk"
-  groups:
-    - title: Breaking Changes
-      regexp: "^.*!:+.*$"
-      order: 0
-    - title: Changes
-      order: 999
-
 # https://goreleaser.com/customization/homebrew/
 brews:
   - tap:
       owner: "{{ .Env.HOMEBREW_TAP_OWNER }}"
       name: homebrew-tap
-    name: dagger@{{ .Major }}.{{ .Minor }}
+    name: dagger
     commit_author:
       name: dagger-bot
       email: noreply@dagger.io
@@ -81,23 +59,22 @@ blobs:
     folder: "dagger/releases/{{ .Version }}"
 
 publishers:
-  # TODO: uncomment publishers below 👇 when we are finished publishing pre-releases.
-  # - name: publish-latest-version
-  #   cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/latest_version"
-  #   env:
-  #     - PATH={{ .Env.PATH }}
-  #     - AWS_EC2_METADATA_DISABLED=true
-  #     - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-  #     - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-  #     - AWS_REGION={{ .Env.AWS_REGION }}
-  # - name: publish-latest
-  #   cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/latest"
-  #   env:
-  #     - PATH={{ .Env.PATH }}
-  #     - AWS_EC2_METADATA_DISABLED=true
-  #     - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
-  #     - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
-  #     - AWS_REGION={{ .Env.AWS_REGION }}
+  - name: publish-latest-version
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/latest_version"
+    env:
+      - PATH={{ .Env.PATH }}
+      - AWS_EC2_METADATA_DISABLED=true
+      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
+      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
+      - AWS_REGION={{ .Env.AWS_REGION }}
+  - name: publish-latest
+    cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/latest"
+    env:
+      - PATH={{ .Env.PATH }}
+      - AWS_EC2_METADATA_DISABLED=true
+      - AWS_ACCESS_KEY_ID={{ .Env.AWS_ACCESS_KEY_ID }}
+      - AWS_SECRET_ACCESS_KEY={{ .Env.AWS_SECRET_ACCESS_KEY }}
+      - AWS_REGION={{ .Env.AWS_REGION }}
   - name: publish-latest-major-minor
     cmd: sh -c "echo {{ .Version }} | aws s3 cp - s3://{{ .Env.AWS_BUCKET }}/dagger/versions/{{ .Major }}.{{ .Minor }}"
     env:
@@ -109,9 +86,7 @@ publishers:
 
 # https://goreleaser.com/customization/release/
 release:
-  prerelease: "true"
   footer: |
-    **Full Changelog**: https://github.com/dagger/dagger/compare/{{ .PreviousTag }}...{{ .Tag }}
     ## What to do next?
     - Read the [documentation](https://docs.dagger.io)
     - Join our [Discord server](https://discord.gg/dagger-io)

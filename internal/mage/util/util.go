@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
-	"sync"
 
 	"dagger.io/dagger"
 )
@@ -45,6 +42,8 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// modules
 			"**/go.mod",
 			"**/go.sum",
+			"**/go.work",
+			"**/go.work.sum",
 
 			// embedded files
 			"**/*.go.tmpl",
@@ -131,179 +130,10 @@ func HostDockerDir(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(path)
 }
 
-const (
-	engineSessionBinName = "dagger-engine-session"
-	shimBinName          = "dagger-shim"
-	buildkitRepo         = "github.com/moby/buildkit"
-	buildkitBranch       = "v0.10.5"
-)
-
-func DevEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
-	buildkitRepo := c.Git(buildkitRepo).Branch(buildkitBranch).Tree()
-
-	platformVariants := make([]*dagger.Container, 0, len(arches))
-	for _, arch := range arches {
-		buildkitBase := c.Container(dagger.ContainerOpts{
-			Platform: dagger.Platform("linux/" + arch),
-		}).Build(buildkitRepo)
-
-		// build engine-session bins
-		for _, os := range oses {
-			// include each engine-session bin for each arch too in case there is a
-			// client/server mismatch
-			for _, arch := range arches {
-				// FIXME: bootstrap API doesn't support `WithExec`
-				//nolint
-				builtBin := GoBase(c).
-					WithEnvVariable("GOOS", os).
-					WithEnvVariable("GOARCH", arch).
-					Exec(dagger.ContainerExecOpts{
-						Args: []string{"go", "build", "-o", "./bin/" + engineSessionBinName, "-ldflags", "-s -w", "/app/cmd/engine-session"},
-					}).
-					File("./bin/" + engineSessionBinName)
-				// FIXME: the code below is part of "bootstrap" and using the LATEST
-				// released engine, which does not contain `WithRootfs`
-				//nolint
-				buildkitBase = buildkitBase.WithFS(
-					buildkitBase.FS().WithFile("/usr/bin/"+engineSessionBinName+"-"+os+"-"+arch, builtBin),
-				)
-			}
-		}
-
-		// build the shim binary
-		// FIXME: bootstrap API doesn't support `WithExec`
-		//nolint
-		shimBin := GoBase(c).
-			WithEnvVariable("GOOS", "linux").
-			WithEnvVariable("GOARCH", arch).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"go", "build", "-o", "./bin/" + shimBinName, "-ldflags", "-s -w", "/app/cmd/shim"},
-			}).
-			File("./bin/" + shimBinName)
-		//nolint
-		buildkitBase = buildkitBase.WithFS(
-			buildkitBase.FS().WithFile("/usr/bin/"+shimBinName, shimBin),
-		)
-
-		// setup entrypoint
-		buildkitBase = buildkitBase.WithEntrypoint([]string{
-			"buildkitd",
-			"--oci-worker-binary", "/usr/bin/" + shimBinName,
-		})
-
-		platformVariants = append(platformVariants, buildkitBase)
-	}
-
-	return platformVariants
-}
-
-var (
-	devEngineOnce          sync.Once
-	devEngineContainerName string
-	devEngineErr           error
-)
-
-func DevEngine(ctx context.Context, c *dagger.Client) (string, error) {
-	devEngineOnce.Do(func() {
-		tmpfile, err := os.CreateTemp("", "dagger-engine-export")
-		if err != nil {
-			devEngineErr = err
-			return
-		}
-		defer os.Remove(tmpfile.Name())
-
-		arches := []string{runtime.GOARCH}
-		oses := []string{runtime.GOOS}
-		if runtime.GOOS != "linux" {
-			oses = append(oses, "linux")
-		}
-
-		_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
-			PlatformVariants: DevEngineContainer(c, arches, oses),
-		})
-		if err != nil {
-			devEngineErr = err
-			return
-		}
-
-		containerName := "test-dagger-engine"
-		volumeName := "test-dagger-engine"
-		imageName := "localhost/test-dagger-engine:latest"
-
-		// #nosec
-		loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
-		output, err := loadCmd.CombinedOutput()
-		if err != nil {
-			devEngineErr = fmt.Errorf("docker load failed: %w: %s", err, output)
-			return
-		}
-		_, imageID, ok := strings.Cut(string(output), "sha256:")
-		if !ok {
-			devEngineErr = fmt.Errorf("unexpected output from docker load: %s", output)
-			return
-		}
-		imageID = strings.TrimSpace(imageID)
-
-		if output, err := exec.CommandContext(ctx, "docker",
-			"tag",
-			imageID,
-			imageName,
-		).CombinedOutput(); err != nil {
-			devEngineErr = fmt.Errorf("docker tag: %w: %s", err, output)
-			return
-		}
-
-		if output, err := exec.CommandContext(ctx, "docker",
-			"rm",
-			"-fv",
-			containerName,
-		).CombinedOutput(); err != nil {
-			devEngineErr = fmt.Errorf("docker rm: %w: %s", err, output)
-			return
-		}
-
-		if output, err := exec.CommandContext(ctx, "docker",
-			"run",
-			"-d",
-			"--rm",
-			"-v", volumeName+":/var/lib/buildkit",
-			"--name", containerName,
-			"--privileged",
-			imageName,
-			"--debug",
-		).CombinedOutput(); err != nil {
-			devEngineErr = fmt.Errorf("docker run: %w: %s", err, output)
-			return
-		}
-		devEngineContainerName = containerName
-	})
-	return devEngineContainerName, devEngineErr
-}
-
-func WithDevEngine(ctx context.Context, c *dagger.Client, cb func(context.Context, *dagger.Client) error) error {
-	containerName, err := DevEngine(ctx, c)
-	if err != nil {
-		return err
-	}
-
-	// TODO: not thread safe.... only other option is to put dagger host in dagger.Client
-	os.Setenv("DAGGER_HOST", "docker-container://"+containerName)
-	defer os.Unsetenv("DAGGER_HOST")
-
-	os.Setenv("DAGGER_RUNNER_HOST", "docker-container://"+containerName)
-	defer os.Unsetenv("DAGGER_RUNNER_HOST")
-
-	otherClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
-	if err != nil {
-		return err
-	}
-	return cb(ctx, otherClient)
-}
-
 func WithSetHostVar(ctx context.Context, h *dagger.Host, varName string) *dagger.HostVariable {
 	hv := h.EnvVariable(varName)
-	if val, err := hv.Secret().Plaintext(ctx); err != nil || val == "" {
-		fmt.Fprintf(os.Stderr, "env var %s is empty", varName)
+	if val, _ := hv.Secret().Plaintext(ctx); val == "" {
+		fmt.Fprintf(os.Stderr, "env var %s must be set", varName)
 		os.Exit(1)
 	}
 	return hv

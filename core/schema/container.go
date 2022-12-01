@@ -60,6 +60,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
 			"withMountedCache":     router.ToResolver(s.withMountedCache),
 			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
+			"withUnixSocket":       router.ToResolver(s.withUnixSocket),
+			"withoutUnixSocket":    router.ToResolver(s.withoutUnixSocket),
 			"withoutMount":         router.ToResolver(s.withoutMount),
 			"withFile":             router.ToResolver(s.withFile),
 			"withNewFile":          router.ToResolver(s.withNewFile),
@@ -440,6 +442,23 @@ func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, 
 
 func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args withNewFileArgs) (*core.Container, error) {
 	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+}
+
+type containerWithUnixSocketArgs struct {
+	Path   string
+	Source core.SocketID
+}
+
+func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
+	return parent.WithUnixSocket(ctx, args.Path, core.NewSocket(args.Source))
+}
+
+type containerWithoutUnixSocketArgs struct {
+	Path string
+}
+
+func (s *containerSchema) withoutUnixSocket(ctx *router.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
+	return parent.WithoutUnixSocket(ctx, args.Path)
 }
 
 func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {

@@ -19,11 +19,12 @@ var listenCmd = &cobra.Command{
 	Use:     "listen",
 	Aliases: []string{"l"},
 	Run:     Listen,
+	Hidden:  true,
 	Short:   "Starts the engine server",
 }
 
 func Listen(cmd *cobra.Command, args []string) {
-	if err := setupServer(context.Background()); err != nil {
+	if err := setupServer(context.Background(), ""); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -35,7 +36,7 @@ func Listen(cmd *cobra.Command, args []string) {
 	}
 }
 
-func setupServer(ctx context.Context) error {
+func setupServer(ctx context.Context, sessionID string) error {
 	opts := []dagger.ClientOpt{
 		dagger.WithWorkdir(workdir),
 		dagger.WithConfigPath(configPath),
@@ -51,6 +52,15 @@ func setupServer(ctx context.Context) error {
 	}
 
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		if sessionID != "" {
+			username, _, ok := r.BasicAuth()
+			if !ok || username != sessionID {
+				rw.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+				rw.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+
 		res := make(map[string]interface{})
 		resp := &dagger.Response{Data: &res}
 

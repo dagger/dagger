@@ -2,4 +2,4 @@
 
 package dagger
 
-const engineImageRef = "ghcr.io/dagger/engine:v0.3.5@sha256:41f71f0036167fcc8b926792b079d840c52066eec093f3e177881468fd122c83"
+const engineImageRef = "ghcr.io/dagger/engine:v0.3.6@sha256:d124de285773409fd83d203d3f46364e20149ee46842c50eec6cc51c50fffb62"

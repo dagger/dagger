@@ -84,6 +84,31 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	return NewDirectory(ctx, st, "", platform)
 }
 
+func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
+	if host.DisableRW {
+		return nil, ErrHostRWDisabled
+	}
+
+	var absPath string
+	var err error
+	if filepath.IsAbs(sockPath) {
+		absPath = sockPath
+	} else {
+		absPath = filepath.Join(host.Workdir, sockPath)
+
+		if !strings.HasPrefix(absPath, host.Workdir) {
+			return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", sockPath)
+		}
+	}
+
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("eval symlinks: %w", err)
+	}
+
+	return NewHostSocket(absPath)
+}
+
 func (host *Host) Export(
 	ctx context.Context,
 	export bkclient.ExportEntry,

@@ -1,6 +1,6 @@
 [build]
   publish = "build/"
-  command = "yarn build"
+  command = "yarn run graphql-docs && yarn run docusaurus build"
   environment = { NODE_VERSION = "16.14" }
 
 [context.production]
@@ -20,6 +20,11 @@
 [[redirects]]
 from = "/t"
 to = "https://api.amplitude.com"
+status = 200
+
+[[redirects]]
+from = "/api/reference"
+to = "/api/reference/"
 status = 200
 
 [[redirects]]

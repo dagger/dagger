@@ -1,45 +1,97 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { gql, GraphQLClient } from "graphql-request"
 import { QueryTree } from "./client.gen.js"
 
-export function queryBuilder(q: QueryTree[]) {
-  const args = (item: any) => {
-    const regex = /\{"[a-zA-Z]+"/gi
-
-    const entries = Object.entries(item.args)
-      .filter((value) => value[1] !== undefined)
-      .map((value) => {
-        if (typeof value[1] === "object") {
-          return `${value[0]}: ${JSON.stringify(value[1]).replace(
-            regex,
-            (str) => str.replace(/"/g, "")
-          )}`
-        }
-        if (typeof value[1] === "number") {
-          return `${value[0]}: ${value[1]}`
-        }
-        return `${value[0]}: "${value[1]}"`
-      })
-    if (entries.length === 0) {
-      return ""
-    }
-    return "(" + entries + ")"
+function buildArgs(item: any): string {
+  const entries = Object.entries(item.args)
+    .filter((value) => value[1] !== undefined)
+    .map((value) => {
+      return `${value[0]}: ${JSON.stringify(value[1]).replace(
+        /\{"[a-zA-Z]+"/gi,
+        (str) => str.replace(/"/g, "")
+      )}`
+    })
+  if (entries.length === 0) {
+    return ""
   }
+  return "(" + entries + ")"
+}
 
+/**
+ * Find querytree, convert them into GraphQl query
+ * then compute and return the result to the appropriate field
+ */
+async function computeNestedQuery(
+  query: QueryTree[],
+  client: GraphQLClient
+): Promise<void> {
+  /**
+   * Check if there is a nested queryTree to be executed
+   */
+  const isQueryTree = (value: any) =>
+    Object.keys(value).find((val) => val === "_queryTree")
+
+  for (const q of query) {
+    if (q.args !== undefined) {
+      await Promise.all(
+        Object.entries(q.args).map(async (val: any) => {
+          if (val[1] instanceof Object && isQueryTree(val[1])) {
+            // push an id that will be used by the container
+            val[1]["_queryTree"].push({ operation: "id" })
+            const getQueryTree = buildQuery(val[1]["_queryTree"])
+            const result = await compute(getQueryTree, client)
+            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+            //@ts-ignore
+            q.args[val[0]] = result
+          }
+        })
+      )
+    }
+  }
+}
+
+/**
+ * Convert the queryTree into a GraphQL query
+ * @param q
+ * @returns
+ */
+export function buildQuery(q: QueryTree[]): string {
   let query = "{"
   q.forEach((item: QueryTree, index: number) => {
     query += `
-        ${item.operation} ${item.args ? `${args(item)}` : ""} ${
+        ${item.operation} ${item.args ? `${buildArgs(item)}` : ""} ${
       q.length - 1 !== index ? "{" : "}".repeat(q.length - 1)
     }
       `
   })
   query += "}"
 
-  return query.replace(/\s+/g, "")
+  return query
+}
+
+/**
+ * Convert querytree into a Graphql query then compute it
+ * @param q | QueryTree[]
+ * @param client | GraphQLClient
+ * @returns
+ */
+export async function queryBuilder<T>(
+  q: QueryTree[],
+  client: GraphQLClient
+): Promise<T> {
+  await computeNestedQuery(q, client)
+
+  const query = buildQuery(q)
+
+  const result: Awaited<T> = await compute(query, client)
+
+  return result
 }
 
 /**
  * Return a Graphql query result flattened
+ * @param response any
+ * @returns
  */
 export function queryFlatten<T>(response: any): T {
   // Recursion break condition
@@ -60,4 +112,22 @@ export function queryFlatten<T>(response: any): T {
   const nestedKey = keys[0]
 
   return queryFlatten(response[nestedKey])
+}
+
+/**
+ * Send a GraphQL document to the server
+ * return a flatten result
+ * @hidden
+ */
+export async function compute<T>(
+  query: string,
+  client: GraphQLClient
+): Promise<T> {
+  const computeQuery: Awaited<T> = await client.request(
+    gql`
+      ${query}
+    `
+  )
+
+  return queryFlatten(computeQuery)
 }

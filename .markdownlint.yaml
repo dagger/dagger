@@ -14,3 +14,10 @@ MD033: false
 
 # MD041 - Display Caution block before a top-level heading
 MD041: false
+
+MD024:
+  siblings_only: true
+  allow_different_nesting: true
+
+# MD025 - Allow multiple top-level headings in the same document for typedoc generated index
+MD025: false

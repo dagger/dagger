@@ -4,7 +4,7 @@
   "description": "Very simple example using the nodejs SDK querybuilder",
   "type": "module",
   "repository": "https://github.com/dagger/dagger",
-  "author": "Jean-François Farge",
+  "author": "hello@dagger.io",
   "license": "MIT",
   "devDependencies": {
     "@dagger.io/dagger": "^0.1.0",

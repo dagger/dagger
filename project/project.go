@@ -98,7 +98,7 @@ func (p *State) SDK() string {
 	return p.config.SDK
 }
 
-func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (string, error) {
+func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platform) (string, error) {
 	var rerr error
 	p.schemaOnce.Do(func() {
 		if p.config.SDK == "" {
@@ -117,7 +117,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		}
 
 		// otherwise go ask the extension for its schema
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, gw, platform)
 		if err != nil {
 			rerr = err
 			return
@@ -188,7 +188,6 @@ func (p *State) Extensions(
 	cacheMu *sync.RWMutex,
 	gw bkgw.Client,
 	platform specs.Platform,
-	sshAuthSockID string,
 ) ([]*State, error) {
 	var rerr error
 	p.extensionsOnce.Do(func() {
@@ -204,11 +203,7 @@ func (p *State) Extensions(
 				}
 				p.extensions = append(p.extensions, depState)
 			case dep.Git != nil:
-				var opts []llb.GitOption
-				if sshAuthSockID != "" {
-					opts = append(opts, llb.MountSSHSock(sshAuthSockID))
-				}
-				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref, opts...), "", platform)
+				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref), "", platform)
 				if err != nil {
 					rerr = err
 					return
@@ -232,7 +227,6 @@ func (p *State) Resolvers(
 	ctx context.Context,
 	gw bkgw.Client,
 	platform specs.Platform,
-	sshAuthSockID string,
 ) (router.Resolvers, error) {
 	var rerr error
 	p.resolversOnce.Do(func() {
@@ -240,12 +234,12 @@ func (p *State) Resolvers(
 			return
 		}
 
-		runtimeFS, err := p.Runtime(ctx, gw, platform, sshAuthSockID)
+		runtimeFS, err := p.Runtime(ctx, gw, platform)
 		if err != nil {
 			rerr = err
 			return
 		}
-		schema, err := p.Schema(ctx, gw, platform, sshAuthSockID)
+		schema, err := p.Schema(ctx, gw, platform)
 		if err != nil {
 			rerr = err
 			return

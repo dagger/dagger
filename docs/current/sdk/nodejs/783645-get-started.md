@@ -153,7 +153,7 @@ Replace the `build.js` file from the previous step with the version below (highl
 The revised code now does the following:
 
 - It creates a Dagger client with `connect()` as before.
-- It uses the client's `host().directory(".", ["node_modules/"]).id()` method to obtain a reference to the current directory on the host. This reference is stored in the `source` variable. It also will ignore the `node_modules` directory on the host since we passed that in as an excluded directory.
+- It uses the client's `host().directory(".", ["node_modules/"])` method to obtain a reference to the current directory on the host. This reference is stored in the `source` variable. It also will ignore the `node_modules` directory on the host since we passed that in as an excluded directory.
 - It uses the client's `container().from()` method to initialize a new container from a base image. This base image is the Node.js version to be tested against - the `node:16` image. This method returns a new `Container` object with the results.
 - It uses the `Container.withMountedDirectory()` method to mount the host directory into the container at the `/src` mount point, and the `Container.withWorkdir()` method to set the working directory in the container. The revised `Container` is stored in the `runner` constant.
 - It uses the `Container.withExec()` method to define the command to run tests in the container - in this case, the command `npm test -- --watchAll=false`.

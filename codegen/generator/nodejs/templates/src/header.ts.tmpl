@@ -4,8 +4,8 @@
  * Do not make direct changes to the file.
  */
 
-import { GraphQLClient, gql } from "graphql-request";
-import { queryBuilder, queryFlatten } from "./utils.js"
+import { GraphQLClient } from "graphql-request";
+import { queryBuilder } from "./utils.js"
 
 /**
  * @hidden
@@ -22,7 +22,7 @@ interface ClientConfig {
 
 class BaseClient {
   protected _queryTree:  QueryTree[]
-	private client: GraphQLClient;
+	protected client: GraphQLClient;
   /**
    * @defaultValue `127.0.0.1:8080`
    */
@@ -42,25 +42,6 @@ class BaseClient {
    */
   get queryTree() {
     return this._queryTree;
-  }
-
-  /**
-   * @hidden
-   */
-  protected async _compute<T>(): Promise<T> {
-    try {
-      // run the query and return the result.
-      const query = queryBuilder(this._queryTree)
-      const computeQuery: Awaited<T> = await this.client.request(
-        gql`
-          ${query}
-        `
-      )
-
-      return queryFlatten(computeQuery)
-    } catch (error) {
-      throw Error(`Error: ${JSON.stringify(error, undefined, 2)}`)
-    }
   }
 }
 {{- end }}

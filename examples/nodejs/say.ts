@@ -4,10 +4,10 @@ connect(async (client: Client) => {
   const ctr = client
     .container()
     .from("node")
-    .exec(["npm", "install", "-g", "cowsay"])
+    .withExec(["npm", "install", "-g", "cowsay"])
     .withEntrypoint(["cowsay"])
 
-  const result = await ctr.exec(process.argv.slice(2)).stdout().contents()
+  const result = await ctr.withExec(process.argv.slice(2)).stdout()
 
-  console.log(result.contents)
+  console.log(result)
 })

@@ -1,11 +1,9 @@
 module github.com/dagger/dagger
 
-replace dagger.io/dagger => ./sdk/go
-
 go 1.18
 
 require (
-	dagger.io/dagger v0.3.0-alpha.4
+	dagger.io/dagger v0.4.1
 	github.com/containerd/containerd v1.6.10
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
 	github.com/dagger/graphql-go-tools v0.0.0-20221102001222-e68b44170936
@@ -29,7 +27,7 @@ require (
 	go.opentelemetry.io/otel v1.10.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.4.1
 	go.opentelemetry.io/otel/sdk v1.9.0
-	golang.org/x/mod v0.7.0
+	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 	golang.org/x/term v0.0.0-20220722155259-a9ba230a4035

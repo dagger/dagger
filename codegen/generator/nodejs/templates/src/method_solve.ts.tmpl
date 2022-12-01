@@ -12,7 +12,10 @@
       }
     ]
 
-    const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await this._compute()
+    const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }

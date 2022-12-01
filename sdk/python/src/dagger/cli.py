@@ -4,10 +4,10 @@ from typing import Optional
 import rich
 import typer
 
+import dagger
 from dagger import codegen
-from dagger.connectors import Config, get_connector
-from dagger.connectors.bin import Engine
-from dagger.connectors.docker import EngineFromImage
+from dagger.connector import Connector
+from dagger.engine import get_engine
 
 app = typer.Typer()
 
@@ -30,16 +30,19 @@ def generate(
     # not using `dagger.Connection` because codegen is
     # generating the client that it returns
 
-    cfg = Config()
+    cfg = dagger.Config()
 
-    if cfg.host.scheme == "docker-image":
-        with EngineFromImage(cfg) as engine:
-            code = generate_code(engine.cfg, sync)
-    elif cfg.host.scheme == "bin":
-        with Engine(cfg) as engine:
-            code = generate_code(engine.cfg, sync)
-    else:
-        code = generate_code(cfg, sync)
+    with get_engine(cfg):
+        connector = Connector(cfg)
+        gql_transport = connector.make_sync_transport()
+        gql_client = connector.make_graphql_client(gql_transport)
+
+        with gql_client as session:
+            if session.client.schema is None:
+                raise typer.BadParameter(
+                    "Schema not initialized. Make sure the dagger engine is running."
+                )
+            code = codegen.generate(session.client.schema, sync)
 
     if output:
         output.write_text(code)
@@ -47,18 +50,6 @@ def generate(
         rich.print(f"[green]Client generated successfully to[/green] {output} :rocket:")
     else:
         rich.print(code)
-
-
-def generate_code(cfg: Config, sync: bool) -> str:
-    connector = get_connector(cfg)
-    transport = connector.make_sync_transport()
-
-    with connector.make_graphql_client(transport) as session:
-        if session.client.schema is None:
-            raise typer.BadParameter(
-                "Schema not initialized. Make sure the dagger engine is running."
-            )
-        return codegen.generate(session.client.schema, sync)
 
 
 def _update_gitattributes(output: Path) -> None:

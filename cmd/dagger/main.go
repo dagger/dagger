@@ -24,7 +24,7 @@ func init() {
 		listenCmd,
 		versionCmd,
 		queryCmd,
-		execCmd,
+		runCmd,
 	)
 }
 

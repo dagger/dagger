@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/make engine:lint
+      - run: ./hack/make-prod engine:lint
 
   docs:
     runs-on: ubuntu-latest
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/make docs:lint
+      - run: ./hack/make-prod docs:lint
 
   sdk-go:
     name: "sdk / go"

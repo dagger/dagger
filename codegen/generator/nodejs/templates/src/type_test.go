@@ -24,7 +24,6 @@ func TestType(t *testing.T) {
 var expectedFieldArgsType = `
 /**
  * Hola
- * @hidden
  */
 export type Container = string;
 `

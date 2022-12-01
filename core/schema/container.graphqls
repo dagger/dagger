@@ -125,6 +125,12 @@ type Container {
     include: [String!]
   ): Container!
 
+  "This container plus a socket forwarded to the given Unix socket path"
+  withUnixSocket(path: String!, source: SocketID!): Container!
+
+  "This container with a previously added Unix socket removed"
+  withoutUnixSocket(path: String!): Container!
+
   "This container after executing the specified command inside it"
   withExec(
     "Command to run instead of the container's default command"

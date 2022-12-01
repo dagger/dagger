@@ -62,7 +62,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	if _, err := os.Stat(engineSessionBinPath); os.IsNotExist(err) {
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+engineSessionBinName)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to create temp file: %w", err)
 		}
 		defer tmpbin.Close()
 		defer os.Remove(tmpbin.Name())
@@ -89,16 +89,16 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 		}
 
 		if err := tmpbin.Close(); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to close temporary file: %w", err)
 		}
 
 		// TODO: verify checksum?
 		// Cache the bin for future runs.
 		if err := os.Rename(tmpbin.Name(), engineSessionBinPath); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to rename %q to %q: %w", tmpbin.Name(), engineSessionBinPath, err)
 		}
 	} else if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to stat %q: %w", engineSessionBinPath, err)
 	}
 
 	entries, err := os.ReadDir(cacheDir)
@@ -132,7 +132,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	defaultDaggerRunnerHost := "docker-image://" + c.imageRef
 	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, engineSessionBinPath, args...)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to start engine session bin: %w", err)
 	}
 	c.childStdin = childStdin
 

@@ -12,16 +12,16 @@ import (
 // TODO:(sipsma) SDKs should be pluggable extensions, not hardcoded LLB here. The implementation here is a temporary bridge from the previous hardcoded Dockerfiles to the sdk-as-extension model.
 
 // return the FS with the executable extension code, ready to be invoked by dagger
-func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Platform, sshAuthSockID string) (*core.Directory, error) {
+func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
 	var runtimeFS *core.Directory
 	var err error
 	switch p.config.SDK {
 	case "go":
 		runtimeFS, err = p.goRuntime(ctx, "/", gw, platform)
 	case "ts":
-		runtimeFS, err = p.tsRuntime(ctx, "/", gw, platform, sshAuthSockID)
+		runtimeFS, err = p.tsRuntime(ctx, "/", gw, platform)
 	case "python":
-		runtimeFS, err = p.pythonRuntime(ctx, "/", gw, platform, sshAuthSockID)
+		runtimeFS, err = p.pythonRuntime(ctx, "/", gw, platform)
 	case "dockerfile":
 		runtimeFS, err = p.dockerfileRuntime(ctx, "/", gw, platform)
 	default:

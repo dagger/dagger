@@ -3,8 +3,8 @@
  * Do not make direct changes to the file.
  */
 
-import { GraphQLClient, gql } from "graphql-request"
-import { queryBuilder, queryFlatten } from "./utils.js"
+import { GraphQLClient } from "graphql-request"
+import { queryBuilder } from "./utils.js"
 
 /**
  * @hidden
@@ -21,7 +21,7 @@ interface ClientConfig {
 
 class BaseClient {
   protected _queryTree: QueryTree[]
-  private client: GraphQLClient
+  protected client: GraphQLClient
   /**
    * @defaultValue `127.0.0.1:8080`
    */
@@ -42,48 +42,25 @@ class BaseClient {
   get queryTree() {
     return this._queryTree
   }
-
-  /**
-   * @hidden
-   */
-  protected async _compute<T>(): Promise<T> {
-    try {
-      // run the query and return the result.
-      const query = queryBuilder(this._queryTree)
-      const computeQuery: Awaited<T> = await this.client.request(
-        gql`
-          ${query}
-        `
-      )
-
-      return queryFlatten(computeQuery)
-    } catch (error) {
-      throw Error(`Error: ${JSON.stringify(error, undefined, 2)}`)
-    }
-  }
 }
 
 /**
  * A global cache volume identifier
- * @hidden
  */
 export type CacheID = string
 
 /**
  * A unique container identifier. Null designates an empty container (scratch).
- * @hidden
  */
 export type ContainerID = string
 
 /**
  * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
- * @hidden
  */
 export type DateTime = string
 
 /**
  * A content-addressed directory identifier
- * @hidden
  */
 export type DirectoryID = string
 
@@ -91,7 +68,6 @@ export type FileID = string
 
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
- * @hidden
  */
 export type ID = string
 
@@ -99,9 +75,13 @@ export type Platform = string
 
 /**
  * A unique identifier for a secret
- * @hidden
  */
 export type SecretID = string
+
+/**
+ * A content-addressed socket identifier
+ */
+export type SocketID = string
 
 /**
  * A directory whose contents persist across runs
@@ -115,7 +95,10 @@ export class CacheVolume extends BaseClient {
       },
     ]
 
-    const response: Awaited<CacheID> = await this._compute()
+    const response: Awaited<CacheID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -128,7 +111,7 @@ export class Container extends BaseClient {
   /**
    * Initialize this container from a Dockerfile build
    */
-  build(context: DirectoryID, dockerfile?: string): Container {
+  build(context: DirectoryID | Directory, dockerfile?: string): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -152,7 +135,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -184,7 +170,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -201,7 +190,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -217,7 +209,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<EnvVariable[]> = await this._compute()
+    const response: Awaited<EnvVariable[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -264,7 +259,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<number> = await this._compute()
+    const response: Awaited<number> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -274,7 +272,7 @@ export class Container extends BaseClient {
    */
   async export(
     path: string,
-    platformVariants?: ContainerID[]
+    platformVariants?: ContainerID[] | Container[]
   ): Promise<boolean> {
     this._queryTree = [
       ...this._queryTree,
@@ -284,7 +282,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<boolean> = await this._compute()
+    const response: Awaited<boolean> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -349,7 +350,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<ContainerID> = await this._compute()
+    const response: Awaited<ContainerID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -365,7 +369,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -381,7 +388,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<Platform> = await this._compute()
+    const response: Awaited<Platform> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -391,7 +401,7 @@ export class Container extends BaseClient {
    */
   async publish(
     address: string,
-    platformVariants?: ContainerID[]
+    platformVariants?: ContainerID[] | Container[]
   ): Promise<string> {
     this._queryTree = [
       ...this._queryTree,
@@ -401,7 +411,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -433,7 +446,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -450,7 +466,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -466,7 +485,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -573,7 +595,7 @@ export class Container extends BaseClient {
    *
    * @deprecated Replaced by withRootfs.
    */
-  withFS(id: DirectoryID): Container {
+  withFS(id: DirectoryID | Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -607,8 +629,8 @@ export class Container extends BaseClient {
    */
   withMountedCache(
     path: string,
-    cache: CacheID,
-    source?: DirectoryID
+    cache: CacheID | CacheVolume,
+    source?: DirectoryID | Directory
   ): Container {
     return new Container({
       queryTree: [
@@ -625,7 +647,10 @@ export class Container extends BaseClient {
   /**
    * This container plus a directory mounted at the given path
    */
-  withMountedDirectory(path: string, source: DirectoryID): Container {
+  withMountedDirectory(
+    path: string,
+    source: DirectoryID | Directory
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -641,7 +666,7 @@ export class Container extends BaseClient {
   /**
    * This container plus a file mounted at the given path
    */
-  withMountedFile(path: string, source: FileID): Container {
+  withMountedFile(path: string, source: FileID | File): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -657,7 +682,7 @@ export class Container extends BaseClient {
   /**
    * This container plus a secret mounted into a file at the given path
    */
-  withMountedSecret(path: string, source: SecretID): Container {
+  withMountedSecret(path: string, source: SecretID | Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -705,7 +730,7 @@ export class Container extends BaseClient {
   /**
    * Initialize this container from this DirectoryID
    */
-  withRootfs(id: DirectoryID): Container {
+  withRootfs(id: DirectoryID | Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -721,13 +746,29 @@ export class Container extends BaseClient {
   /**
    * This container plus an env variable containing the given secret
    */
-  withSecretVariable(name: string, secret: SecretID): Container {
+  withSecretVariable(name: string, secret: SecretID | Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withSecretVariable",
           args: { name, secret },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * This container plus a socket forwarded to the given Unix socket path
+   */
+  withUnixSocket(path: string, source: SocketID): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withUnixSocket",
+          args: { path, source },
         },
       ],
       host: this.clientHost,
@@ -799,6 +840,22 @@ export class Container extends BaseClient {
   }
 
   /**
+   * This container with a previously added Unix socket removed
+   */
+  withoutUnixSocket(path: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutUnixSocket",
+          args: { path },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * The working directory for all commands
    */
   async workdir(): Promise<string> {
@@ -809,7 +866,10 @@ export class Container extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -822,7 +882,7 @@ export class Directory extends BaseClient {
   /**
    * The difference between this directory and an another directory
    */
-  diff(other: DirectoryID): Directory {
+  diff(other: DirectoryID | Directory): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -852,6 +912,22 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Build a new Docker container from this directory
+   */
+  dockerBuild(dockerfile?: string, platform?: Platform): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "dockerBuild",
+          args: { dockerfile, platform },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * Return a list of files and directories at the given path
    */
   async entries(path?: string): Promise<string[]> {
@@ -863,7 +939,10 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -880,7 +959,10 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<boolean> = await this._compute()
+    const response: Awaited<boolean> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -912,7 +994,10 @@ export class Directory extends BaseClient {
       },
     ]
 
-    const response: Awaited<DirectoryID> = await this._compute()
+    const response: Awaited<DirectoryID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -938,7 +1023,7 @@ export class Directory extends BaseClient {
    */
   withDirectory(
     path: string,
-    directory: DirectoryID,
+    directory: DirectoryID | Directory,
     exclude?: string[],
     include?: string[]
   ): Directory {
@@ -957,7 +1042,7 @@ export class Directory extends BaseClient {
   /**
    * This directory plus the contents of the given file copied to the given path
    */
-  withFile(path: string, source: FileID): Directory {
+  withFile(path: string, source: FileID | File): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1050,7 +1135,10 @@ export class EnvVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1066,7 +1154,10 @@ export class EnvVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1087,7 +1178,10 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1104,7 +1198,10 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<boolean> = await this._compute()
+    const response: Awaited<boolean> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1120,7 +1217,10 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<FileID> = await this._compute()
+    const response: Awaited<FileID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1147,7 +1247,10 @@ export class File extends BaseClient {
       },
     ]
 
-    const response: Awaited<number> = await this._compute()
+    const response: Awaited<number> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1168,7 +1271,10 @@ export class GitRef extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1176,12 +1282,13 @@ export class GitRef extends BaseClient {
   /**
    * The filesystem tree at this ref
    */
-  tree(): Directory {
+  tree(sshKnownHosts?: string, sshAuthSocket?: SocketID): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
+          args: { sshKnownHosts, sshAuthSocket },
         },
       ],
       host: this.clientHost,
@@ -1220,7 +1327,10 @@ export class GitRepository extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1268,7 +1378,10 @@ export class GitRepository extends BaseClient {
       },
     ]
 
-    const response: Awaited<string[]> = await this._compute()
+    const response: Awaited<string[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1295,7 +1408,7 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Lookup the value of an environment variable. Null if the variable is not available.
+   * Access an environment variable on the host
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({
@@ -1304,6 +1417,22 @@ export class Host extends BaseClient {
         {
           operation: "envVariable",
           args: { name },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * Access a Unix socket on the host
+   */
+  unixSocket(path: string): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "unixSocket",
+          args: { path },
         },
       ],
       host: this.clientHost,
@@ -1359,7 +1488,10 @@ export class HostVariable extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1380,7 +1512,10 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<Project[]> = await this._compute()
+    const response: Awaited<Project[]> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1411,7 +1546,10 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<boolean> = await this._compute()
+    const response: Awaited<boolean> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1427,7 +1565,10 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1443,7 +1584,10 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1459,7 +1603,10 @@ export class Project extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1487,7 +1634,7 @@ export default class Client extends BaseClient {
    * Null ID returns an empty container (scratch).
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
    */
-  container(id?: ContainerID, platform?: Platform): Container {
+  container(id?: ContainerID | Container, platform?: Platform): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1511,7 +1658,10 @@ export default class Client extends BaseClient {
       },
     ]
 
-    const response: Awaited<Platform> = await this._compute()
+    const response: Awaited<Platform> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1519,7 +1669,7 @@ export default class Client extends BaseClient {
   /**
    * Load a directory by ID. No argument produces an empty directory.
    */
-  directory(id?: DirectoryID): Directory {
+  directory(id?: DirectoryID | Directory): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1535,7 +1685,7 @@ export default class Client extends BaseClient {
   /**
    * Load a file by ID
    */
-  file(id: FileID): File {
+  file(id: FileID | File): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -1614,12 +1764,28 @@ export default class Client extends BaseClient {
   /**
    * Load a secret from its ID
    */
-  secret(id: SecretID): Secret {
+  secret(id: SecretID | Secret): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,
         {
           operation: "secret",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
+   * Load a socket by ID
+   */
+  socket(id?: SocketID): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "socket",
           args: { id },
         },
       ],
@@ -1643,7 +1809,10 @@ export class Secret extends BaseClient {
       },
     ]
 
-    const response: Awaited<SecretID> = await this._compute()
+    const response: Awaited<SecretID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }
@@ -1659,7 +1828,31 @@ export class Secret extends BaseClient {
       },
     ]
 
-    const response: Awaited<string> = await this._compute()
+    const response: Awaited<string> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
+
+    return response
+  }
+}
+
+export class Socket extends BaseClient {
+  /**
+   * The content-addressed identifier of the socket
+   */
+  async id(): Promise<SocketID> {
+    this._queryTree = [
+      ...this._queryTree,
+      {
+        operation: "id",
+      },
+    ]
+
+    const response: Awaited<SocketID> = await queryBuilder(
+      this._queryTree,
+      this.client
+    )
 
     return response
   }

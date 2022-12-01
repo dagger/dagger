@@ -1,8 +1,5 @@
-import logging
-
-from .connectors import Config, get_connector
-
-logger = logging.getLogger(__name__)
+from .connector import Config, Connector
+from .engine import get_engine
 
 
 class Connection:
@@ -33,16 +30,24 @@ class Connection:
     def __init__(self, config: Config = None) -> None:
         if config is None:
             config = Config()
-        self.connector = get_connector(config)
+        self.engine = get_engine(config)
+        self.connector = Connector(config)
 
     async def __aenter__(self):
-        return await self.connector.connect()
+        # FIXME: handle cancellation, retries and timeout properly
+        # FIXME: handle errors during provisioning
+        await self.engine.__aenter__()
+        return await self.connector.__aenter__()
 
-    async def __aexit__(self, exc_type, *args, **kwargs) -> None:
-        await self.connector.close(exc_type)
+    async def __aexit__(self, *args, **kwargs) -> None:
+        # FIXME: need exit stack?
+        await self.connector.__aexit__(*args, **kwargs)
+        await self.engine.__aexit__(*args, **kwargs)
 
     def __enter__(self):
-        return self.connector.connect_sync()
+        self.engine.__enter__()
+        return self.connector.__enter__()
 
-    def __exit__(self, exc_type, *args, **kwargs) -> None:
-        self.connector.close_sync(exc_type)
+    def __exit__(self, *args, **kwargs) -> None:
+        self.connector.__exit__(*args, **kwargs)
+        self.engine.__exit__(*args, **kwargs)

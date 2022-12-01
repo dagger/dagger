@@ -100,6 +100,47 @@ module.exports = {
     },
     {
       type: "category",
+      label: "GraphQL API",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/api/index",
+        },
+        "current/api/concepts",
+        "current/api/playground",
+        "current/api/build-custom-client",
+        {
+          type: "link",
+          label: "Reference",
+          href: "https://docs.dagger.io/api/reference",
+        },
+      ],
+    },
+    {
+      type: "category",
+      label: "CLI",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        {
+          type: "doc",
+          label: "Overview",
+          id: "current/cli/index",
+        },
+        "current/cli/install",
+        "current/cli/run-pipelines-cli",
+        {
+          type: "doc",
+          label: "Reference",
+          id: "current/cli/reference",
+        },
+      ],
+    },
+    {
+      type: "category",
       label: "CUE SDK",
       collapsible: false,
       collapsed: false,

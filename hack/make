@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-set -e
+set -e -u -x
 
-ROOTDIR="$(dirname "${BASH_SOURCE[0]}")/.."
-
-cd "$ROOTDIR"
-go run internal/mage/main.go $@
+DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
+cd $MAGEDIR
+exec $DAGGER_SRC_ROOT/hack/dev go run main.go -w $DAGGER_SRC_ROOT "$@"

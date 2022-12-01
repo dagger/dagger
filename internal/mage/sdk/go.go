@@ -9,8 +9,9 @@ import (
 	"path"
 	"strings"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
+
+	"dagger.io/dagger"
 	"github.com/magefile/mage/mg"
 )
 
@@ -30,21 +31,19 @@ func (t Go) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		_, err = c.Container().
-			From("golangci/golangci-lint:v1.48").
-			WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
-			WithWorkdir("/app/sdk/go").
-			WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-			ExitCode(ctx)
-		if err != nil {
-			return err
-		}
+	_, err = c.Container().
+		From("golangci/golangci-lint:v1.48").
+		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
+		WithWorkdir("/app/sdk/go").
+		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
+		ExitCode(ctx)
+	if err != nil {
+		return err
+	}
 
-		return lintGeneratedCode(func() error {
-			return t.Generate(ctx)
-		}, goGeneratedAPIPath)
-	})
+	return lintGeneratedCode(func() error {
+		return t.Generate(ctx)
+	}, goGeneratedAPIPath)
 }
 
 // Test tests the Go SDK
@@ -55,19 +54,17 @@ func (t Go) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		output, err := util.GoBase(c).
-			WithWorkdir("sdk/go").
-			WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-			WithExec([]string{"go", "test", "-v", "./..."}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			Stdout(ctx)
-		if err != nil {
-			err = fmt.Errorf("test failed: %w\n%s", err, output)
-		}
-		return err
-	})
+	output, err := util.GoBase(c).
+		WithWorkdir("sdk/go").
+		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithExec([]string{"go", "test", "-v", "./..."}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	if err != nil {
+		err = fmt.Errorf("test failed: %w\n%s", err, output)
+	}
+	return err
 }
 
 // Generate re-generates the SDK API
@@ -78,21 +75,19 @@ func (t Go) Generate(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		generated, err := util.GoBase(c).
-			WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
-			WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
-			WithWorkdir("sdk/go").
-			WithExec([]string{"go", "generate", "-v", "./..."}, dagger.ContainerWithExecOpts{
-				ExperimentalPrivilegedNesting: true,
-			}).
-			File(path.Base(goGeneratedAPIPath)).
-			Contents(ctx)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0o600)
-	})
+	generated, err := util.GoBase(c).
+		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
+		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
+		WithWorkdir("sdk/go").
+		WithExec([]string{"go", "generate", "-v", "./..."}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		File(path.Base(goGeneratedAPIPath)).
+		Contents(ctx)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(goGeneratedAPIPath, []byte(generated), 0o600)
 }
 
 // Publish publishes the Go SDK
@@ -103,63 +98,61 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 	}
 	defer c.Close()
 
-	return util.WithDevEngine(ctx, c, func(ctx context.Context, c *dagger.Client) error {
-		var targetTag = strings.TrimPrefix(tag, "sdk/go/")
+	var targetTag = strings.TrimPrefix(tag, "sdk/go/")
 
-		var targetRepo = os.Getenv("TARGET_REPO")
-		if targetRepo == "" {
-			targetRepo = "https://github.com/dagger/dagger-go-sdk.git"
-		}
+	var targetRepo = os.Getenv("TARGET_REPO")
+	if targetRepo == "" {
+		targetRepo = "https://github.com/dagger/dagger-go-sdk.git"
+	}
 
-		var pat = os.Getenv("GITHUB_PAT")
-		if pat == "" {
-			return errors.New("GITHUB_PAT environment variable must be set")
-		}
-		encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
+	var pat = os.Getenv("GITHUB_PAT")
+	if pat == "" {
+		return errors.New("GITHUB_PAT environment variable must be set")
+	}
+	encodedPAT := base64.URLEncoding.EncodeToString([]byte("pat:" + pat))
 
-		var gitUserName = os.Getenv("GIT_USER_NAME")
-		if gitUserName == "" {
-			gitUserName = "dagger-ci"
-		}
+	var gitUserName = os.Getenv("GIT_USER_NAME")
+	if gitUserName == "" {
+		gitUserName = "dagger-ci"
+	}
 
-		var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
-		if gitUserEmail == "" {
-			gitUserEmail = "hellog@dagger.io"
-		}
+	var gitUserEmail = os.Getenv("GIT_USER_EMAIL")
+	if gitUserEmail == "" {
+		gitUserEmail = "hellog@dagger.io"
+	}
 
-		git := util.GoBase(c).
-			WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
-			WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
-			WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
-			WithExec([]string{"git", "config", "--global",
-				"http.https://github.com/.extraheader",
-				fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT),
-			})
+	git := util.GoBase(c).
+		WithExec([]string{"apk", "add", "-U", "--no-cache", "git"}).
+		WithExec([]string{"git", "config", "--global", "user.name", gitUserName}).
+		WithExec([]string{"git", "config", "--global", "user.email", gitUserEmail}).
+		WithExec([]string{"git", "config", "--global",
+			"http.https://github.com/.extraheader",
+			fmt.Sprintf("AUTHORIZATION: Basic %s", encodedPAT),
+		})
 
-		repository := git.
-			WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
-			WithWorkdir("/src/dagger")
+	repository := git.
+		WithExec([]string{"git", "clone", "https://github.com/dagger/dagger.git", "/src/dagger"}).
+		WithWorkdir("/src/dagger")
 
-		filtered := repository.
-			WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
-			WithExec([]string{
-				"git", "filter-branch", "-f", "--prune-empty",
-				"--subdirectory-filter", "sdk/go",
-				"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
-				"--", tag,
-			})
+	filtered := repository.
+		WithEnvVariable("FILTER_BRANCH_SQUELCH_WARNING", "1").
+		WithExec([]string{
+			"git", "filter-branch", "-f", "--prune-empty",
+			"--subdirectory-filter", "sdk/go",
+			"--tree-filter", "if [ -f go.mod ]; then go mod edit -dropreplace github.com/dagger/dagger; fi",
+			"--", tag,
+		})
 
-		// Push
-		_, err = filtered.WithExec([]string{
-			"git",
-			"push",
-			"-f",
-			targetRepo,
-			fmt.Sprintf("%s:%s", tag, targetTag),
-		}).ExitCode(ctx)
+	// Push
+	_, err = filtered.WithExec([]string{
+		"git",
+		"push",
+		"-f",
+		targetRepo,
+		fmt.Sprintf("%s:%s", tag, targetTag),
+	}).ExitCode(ctx)
 
-		return err
-	})
+	return err
 }
 
 // Bump the Go SDK's Engine dependency
