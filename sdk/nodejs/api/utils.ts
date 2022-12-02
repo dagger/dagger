@@ -134,15 +134,14 @@ export async function compute<T>(
   query: string,
   client: GraphQLClient
 ): Promise<T> {
+  let computeQuery: Awaited<T>
   try {
-    const computeQuery = await client.request(
+    computeQuery = await client.request(
       gql`
         ${query}
       `
     )
-
-    return queryFlatten(computeQuery)
-  } catch (e) {
+  } catch (e: any) {
     if (e instanceof ClientError) {
       throw new GraphQLRequestError("Error message", {
         request: e.request,
@@ -157,4 +156,6 @@ export async function compute<T>(
       { cause: e as Error }
     )
   }
+
+  return queryFlatten(computeQuery)
 }
