@@ -37,8 +37,12 @@ async function computeNestedQuery(
         Object.entries(q.args).map(async (val: any) => {
           if (val[1] instanceof Object && isQueryTree(val[1])) {
             // push an id that will be used by the container
-            val[1]["_queryTree"].push({ operation: "id" })
-            const getQueryTree = buildQuery(val[1]["_queryTree"])
+            const getQueryTree = buildQuery([
+              ...val[1]["_queryTree"],
+              {
+                operation: "id",
+              },
+            ])
             const result = await compute(getQueryTree, client)
             // eslint-disable-next-line @typescript-eslint/ban-ts-comment
             //@ts-ignore
