@@ -38,15 +38,13 @@ var wantObjects = `
  */
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
-    this._queryTree = [
+    const response: Awaited<CacheID> = await queryBuilder(
+      [
       ...this._queryTree,
       {
       operation: 'id'
       }
-    ]
-
-    const response: Awaited<CacheID> = await queryBuilder(
-      this._queryTree,
+    ],
       this.client
     )
 

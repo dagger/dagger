@@ -99,6 +99,22 @@ describe("NodeJS SDK api", function () {
     )
   })
 
+  it("Test awaited Field Immutability", async function () {
+    this.timeout(60000)
+    await connect(async (client: Client) => {
+      const image = client
+        .container()
+        .from("alpine")
+        .withExec(["echo", "hello", "world"])
+
+      const a = await image.exitCode()
+      assert.strictEqual(a, 0)
+
+      const b = await image.stdout()
+      assert.strictEqual(b, "hello world\n")
+    })
+  })
+
   it("Return a flatten Graphql response", function () {
     const tree = {
       container: {
