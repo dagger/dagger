@@ -30,11 +30,8 @@ func main() {
 	// highlight-start
 	// Publish binary on Alpine base
 	prodImage := client.Container().
-		From("alpine")
-	prodImage = prodImage.WithRootfs(
-		prodImage.Rootfs().WithFile("/bin/myapp",
-			builder.File("/src/myapp"),
-		)).
+		From("alpine").
+		WithFile("/bin/myapp", builder.File("/src/myapp")).
 		WithEntrypoint([]string{"/bin/myapp"})
 	// highlight-end
 

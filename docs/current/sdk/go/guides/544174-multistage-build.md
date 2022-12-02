@@ -35,7 +35,7 @@ This code listing starts by creating a Dagger client and loading the project to 
 Next, in the highlighted section, the multi-stage build is achieved by transferring the build artifact from the builder image to a runtime image based on `alpine`. The steps are:
 
 - Create a new container image which will be used as the runtime image, using `From("alpine")`.
-- Transfer the build artifact from the builder image to the new container image by replacing the container image's filesystem with the original filesystem plus the build artifact.
+- Transfer the build artifact from the builder image to the new container image using `WithFile`.
 - Set the container entrypoint to the application so that it is executed by default when the container runs.
 
 The final optimized image can now be pushed to a registry and deployed!
