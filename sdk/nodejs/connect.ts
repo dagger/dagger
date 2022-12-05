@@ -11,7 +11,7 @@ export interface ConnectOpts {
   LogOutput?: Writable
 }
 
-type CallbackFct = (client: Client) => Promise<void>
+export type CallbackFct = (client: Client) => Promise<void>
 
 /**
  * connect runs GraphQL server and initializes a
