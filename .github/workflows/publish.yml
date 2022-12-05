@@ -29,7 +29,7 @@ jobs:
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
           HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
-        run: ./hack/make-prod dagger:publish ${{ github.ref_name }}
+        run: ./hack/make dagger:publish ${{ github.ref_name }}
 
       - name: "Bump SDK Engine Dependencies"
         uses: peter-evans/create-pull-request@v3

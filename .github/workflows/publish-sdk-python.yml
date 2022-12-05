@@ -10,7 +10,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/make-prod sdk:python:publish ${{ github.ref_name }}
+      - run: ./hack/make sdk:python:publish ${{ github.ref_name }}
         env:
           PYPI_REPO: ${{ secrets.RELEASE_PYPI_REPO }}
           PYPI_TOKEN: ${{ secrets.RELEASE_PYPI_TOKEN }}

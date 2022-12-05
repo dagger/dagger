@@ -26,9 +26,7 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	defer c.Close()
 
 	_, err = nodeJsBase(c).
-		WithExec([]string{"yarn", "lint"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec([]string{"yarn", "lint"}).
 		ExitCode(ctx)
 	if err != nil {
 		return err
@@ -48,9 +46,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 
 	_, err = nodeJsBase(c).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-		WithExec([]string{"yarn", "test"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec([]string{"yarn", "test"}).
 		ExitCode(ctx)
 	return err
 }
@@ -65,9 +61,7 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 	generated, err := nodeJsBase(c).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
-		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		}).
+		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}).
 		WithExec([]string{
 			"yarn",
 			"fmt",
@@ -145,5 +139,5 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 			WithDirectory("/workdir", workdir),
 	)
 
-	return src
+	return util.WithDevEngine(c, src)
 }

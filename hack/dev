@@ -6,7 +6,7 @@ DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
 
 pushd $MAGEDIR
-GOWORK=off go run main.go -w $DAGGER_SRC_ROOT engine:dev
+go run main.go -w $DAGGER_SRC_ROOT engine:dev
 popd
 
 export DAGGER_HOST=docker-container://test-dagger-engine

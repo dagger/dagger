@@ -81,9 +81,8 @@ func (t Python) Test(ctx context.Context) error {
 		eg.Go(func() error {
 			_, err := pythonBase(c, version).
 				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-				WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}, dagger.ContainerWithExecOpts{
-					ExperimentalPrivilegedNesting: true,
-				}).ExitCode(gctx)
+				WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}).
+				ExitCode(gctx)
 			return err
 		})
 	}
@@ -100,9 +99,7 @@ func (t Python) Generate(ctx context.Context) error {
 	defer c.Close()
 
 	generated := pythonBase(c, pythonDefaultVersion).
-		WithExec([]string{"poe", "generate"}, dagger.ContainerWithExecOpts{
-			ExperimentalPrivilegedNesting: true,
-		})
+		WithExec([]string{"poe", "generate"})
 
 	for _, f := range pythonGeneratedAPIPaths {
 		contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
@@ -202,7 +199,9 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithRootfs(base.Rootfs().WithFile("/app/requirements.txt", requirements)).
 		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
 
-	return deps.
+	deps = deps.
 		WithRootfs(deps.Rootfs().WithDirectory("/app", src)).
 		WithExec([]string{"poetry", "install", "--without", "docs"})
+
+	return util.WithDevEngine(c, deps)
 }

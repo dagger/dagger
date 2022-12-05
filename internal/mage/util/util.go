@@ -10,6 +10,10 @@ import (
 	"dagger.io/dagger"
 )
 
+const (
+	TestContainerName = "test-dagger-engine"
+)
+
 // Repository with common set of exclude filters to speed up upload
 func Repository(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(".", dagger.HostDirectoryOpts{
@@ -53,18 +57,33 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 
 			// misc
 			".golangci.yml",
-			"**/Dockerfile", // needed for shim TODO: just build shim directly
-			"**/README.md",  // needed for examples test
+			"**/README.md", // needed for examples test
 		},
 	})
 }
 
-// GoBase is a standardized base image for running Go, cache optimized for the layout
-// of this repository
-//
-// NOTE: this function is a shared util ONLY because it's used both by the Engine
-// and the Go SDK. Other languages shouldn't have a common helper.
-func GoBase(c *dagger.Client) *dagger.Container {
+func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
+	// the cli bin is statically linked, can just mount it in anywhere
+	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
+
+	engineSessionBinPath := "/.dagger-engine-session"
+	return ctr.
+		// Mount in the docker cli + socket, this will be used to connect to the dev engine
+		// container
+		WithUnixSocket("/var/run/docker.sock", c.Host().UnixSocket("/var/run/docker.sock")).
+		WithMountedFile("/usr/bin/docker", dockerCli).
+		// Also mount in the engine session binary.
+		// FIXME: this shouldn't be necessary, but provisioning the engine session binary
+		// with a mounted in docker socket doesn't work (always results in an empty file
+		// even though the docker run command succeeds). This will be fixed by switching
+		// to provisioning via downloading the CLI.
+		WithMountedFile(engineSessionBinPath, EngineSessionBinary(c)).
+		// Point the SDKs to use the dev engine via these env vars
+		WithEnvVariable("DAGGER_HOST", "bin://"+engineSessionBinPath).
+		WithEnvVariable("DAGGER_RUNNER_HOST", "docker-container://"+TestContainerName)
+}
+
+func goBase(c *dagger.Client) *dagger.Container {
 	repo := RepositoryGoCodeOnly(c)
 
 	// Create a directory containing only `go.{mod,sum}` files.
@@ -73,8 +92,6 @@ func GoBase(c *dagger.Client) *dagger.Container {
 		goMods = goMods.WithFile(f, repo.File(f))
 	}
 
-	// FIXME: bootstrap API doesn't support `WithExec`
-	//nolint
 	return c.Container().
 		From("golang:1.19-alpine").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
@@ -82,33 +99,40 @@ func GoBase(c *dagger.Client) *dagger.Container {
 		WithEnvVariable("CGO_ENABLED", "0").
 		// adding the git CLI to inject vcs info
 		// into the go binaries
-		Exec(dagger.ContainerExecOpts{
-			Args: []string{"apk", "add", "git"},
-		}).
+		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithMountedDirectory("/app", goMods).
-		Exec(dagger.ContainerExecOpts{Args: []string{"go", "mod", "download"}}).
+		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
 		WithMountedDirectory("/app", repo)
 }
 
+// GoBase is a standardized base image for running Go, cache optimized for the layout
+// of this repository
+//
+// NOTE: this function is a shared util ONLY because it's used both by the Engine
+// and the Go SDK. Other languages shouldn't have a common helper.
+func GoBase(c *dagger.Client) *dagger.Container {
+	return WithDevEngine(c, goBase(c))
+}
+
 // DaggerBinary returns a compiled dagger binary
 func DaggerBinary(c *dagger.Client) *dagger.File {
-	return GoBase(c).
+	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"}).
 		File("./bin/dagger")
 }
 
 // ClientGenBinary returns a compiled dagger binary
 func ClientGenBinary(c *dagger.Client) *dagger.File {
-	return GoBase(c).
+	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"}).
 		File("./bin/client-gen")
 }
 
 func EngineSessionBinary(c *dagger.Client) *dagger.File {
-	return GoBase(c).
+	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"}).
 		File("./bin/dagger-engine-session")
 }
