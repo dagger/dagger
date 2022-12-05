@@ -800,7 +800,7 @@ test = ["pytest"]
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.142.3"
+version = "0.146.0"
 description = "A library for creating GraphQL APIs"
 category = "main"
 optional = true
@@ -816,14 +816,15 @@ aiohttp = ["aiohttp (>=3.7.4.post0,<4.0.0)"]
 asgi = ["python-multipart (>=0.0.5,<0.0.6)", "starlette (>=0.13.6)"]
 chalice = ["chalice (>=1.22,<2.0)"]
 channels = ["asgiref (>=3.2,<4.0)", "channels (>=3.0.5)"]
-cli = ["click (>=7.0,<9.0)", "pygments (>=2.3,<3.0)"]
-debug-server = ["click (>=7.0,<9.0)", "pygments (>=2.3,<3.0)", "python-multipart (>=0.0.5,<0.0.6)", "starlette (>=0.13.6)", "uvicorn (>=0.11.6,<0.20.0)"]
+cli = ["click (>=7.0,<9.0)", "libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "rich (>=12.0.0)"]
+debug = ["libcst (>=0.4.7)", "rich (>=12.0.0)"]
+debug-server = ["click (>=7.0,<9.0)", "libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "python-multipart (>=0.0.5,<0.0.6)", "rich (>=12.0.0)", "starlette (>=0.13.6)", "uvicorn (>=0.11.6,<0.21.0)"]
 django = ["Django (>=3.2)", "asgiref (>=3.2,<4.0)"]
 fastapi = ["fastapi (>=0.65.2)", "python-multipart (>=0.0.5,<0.0.6)"]
 flask = ["flask (>=1.1)"]
 opentelemetry = ["opentelemetry-api (<2)", "opentelemetry-sdk (<2)"]
 pydantic = ["pydantic (<2)"]
-sanic = ["sanic (>=20.12.2,<22.0.0)"]
+sanic = ["sanic (>=20.12.2)"]
 
 [[package]]
 name = "tomli"
@@ -1302,8 +1303,8 @@ sphinxcontrib-serializinghtml = [
     {file = "sphinxcontrib_serializinghtml-1.1.5-py2.py3-none-any.whl", hash = "sha256:352a9a00ae864471d3a7ead8d7d79f5fc0b57e8b3f95e9867eb9eb28999b92fd"},
 ]
 strawberry-graphql = [
-    {file = "strawberry_graphql-0.142.3-py3-none-any.whl", hash = "sha256:3631b45a655ecc2767b5ed9e4286cce018ba8edea065b00b4ff49cd883620a3b"},
-    {file = "strawberry_graphql-0.142.3.tar.gz", hash = "sha256:41a6b57b602b37445f10e202ae6ebd1f513ef6f48190d9917ca0f9c846bb6871"},
+    {file = "strawberry_graphql-0.146.0-py3-none-any.whl", hash = "sha256:30f5cf82001eb816a73ade4431fb8df902ed361d12a2697a4dd574c3e8f22315"},
+    {file = "strawberry_graphql-0.146.0.tar.gz", hash = "sha256:bfea6b0b873e3365a1a47c30f577f21be4c2eb40dd0e62ece840d5c44525230a"},
 ]
 tomli = [
     {file = "tomli-2.0.1-py3-none-any.whl", hash = "sha256:939de3e7a6161af0c887ef91b7d41a53e7c5a1ca976325f429cb46ea9bc30ecc"},
