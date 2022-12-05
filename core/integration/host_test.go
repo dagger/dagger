@@ -76,16 +76,15 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	})
 
 	t.Run("exclude directory", func(t *testing.T) {
-		wd := c.Host().Workdir(dagger.HostWorkdirOpts{
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
 			Exclude: []string{"subdir"},
 		})
 
 		contents, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedDirectory("/host", wd).
-			Exec(dagger.ContainerExecOpts{
-				Args: []string{"ls", "/host"},
-			}).Stdout().Contents(ctx)
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, "a.txt\nb.txt\nc.txt.rar\n", contents)
 	})
