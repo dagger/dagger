@@ -4,7 +4,7 @@ import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
   UnknownDaggerError,
-} from "../common/errors"
+} from "../common/errors/index.js"
 import { QueryTree } from "./client.gen.js"
 
 function buildArgs(item: any): string {
