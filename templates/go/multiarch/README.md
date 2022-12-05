@@ -1,6 +1,5 @@
 # Multiarch go builder
 
 1. `go build`
-2. `./multiarch`
+2. `./multiarch <any go proj's git repo http(s):// url>`
 3. `tree build`
-4. `./multiarch https://github.com/<any git repo>.git`
