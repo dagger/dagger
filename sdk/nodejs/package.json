@@ -17,7 +17,7 @@
   "main": "dist/index.js",
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.1",
-    "axios": "^1.2.0",
+    "axios": "^1.2.1",
     "execa": "^6.1.0",
     "graphql": "^16.5.0",
     "graphql-request": "^5.0.0",
