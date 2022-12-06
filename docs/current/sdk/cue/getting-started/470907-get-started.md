@@ -305,7 +305,7 @@ workflows:
 .dagger:
   extends: [.docker]
   variables:
-    DAGGER_VERSION: 0.2.25
+    DAGGER_VERSION: 0.2.232
     DAGGER_LOG_FORMAT: plain
     DAGGER_CACHE_PATH: .dagger-cache
 
@@ -318,7 +318,7 @@ workflows:
     - |
       # install dagger
       cd /usr/local
-      wget -O - https://dl.dagger.io/dagger/install.sh | sh
+      wget -O - https://dl.dagger.io/dagger-cue/install.sh | VERSION="$DAGGER_VERSION" sh
       cd -
 
       dagger-cue version
