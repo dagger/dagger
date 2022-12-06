@@ -136,7 +136,7 @@ async function createConfig() {
       [
         "docusaurus-plugin-typedoc",
         {
-          entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts'],
+          entryPoints: ['../sdk/nodejs/connect.ts', '../sdk/nodejs/api/client.gen.ts', '../sdk/nodejs/common/errors/index.ts'],
           tsconfig: '../sdk/nodejs/tsconfig.json',
           out: '../../docs/current/sdk/nodejs/reference/',
           excludeProtected: true,

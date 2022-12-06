@@ -1,5 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { gql, GraphQLClient } from "graphql-request"
+import { ClientError, gql, GraphQLClient } from "graphql-request"
+import {
+  GraphQLRequestError,
+  TooManyNestedObjectsError,
+  UnknownDaggerError,
+} from "../common/errors/index.js"
 import { QueryTree } from "./client.gen.js"
 
 function buildArgs(item: any): string {
@@ -109,8 +114,10 @@ export function queryFlatten<T>(response: any): T {
   if (keys.length != 1) {
     // Dagger is currently expecting to only return one value
     // If the response is nested in a way were more than one object is nested inside throw an error
-    // TODO Throw sensible Error
-    throw new Error("Too many Graphql nested objects")
+    throw new TooManyNestedObjectsError(
+      "Too many nested objects inside graphql response",
+      { response: response }
+    )
   }
 
   const nestedKey = keys[0]
@@ -127,11 +134,28 @@ export async function compute<T>(
   query: string,
   client: GraphQLClient
 ): Promise<T> {
-  const computeQuery: Awaited<T> = await client.request(
-    gql`
-      ${query}
-    `
-  )
+  let computeQuery: Awaited<T>
+  try {
+    computeQuery = await client.request(
+      gql`
+        ${query}
+      `
+    )
+  } catch (e: any) {
+    if (e instanceof ClientError) {
+      throw new GraphQLRequestError("Error message", {
+        request: e.request,
+        response: e.response,
+        cause: e,
+      })
+    }
+
+    // Just throw the unknown error
+    throw new UnknownDaggerError(
+      "Encountered an unknown error while requesting data via graphql",
+      { cause: e as Error }
+    )
+  }
 
   return queryFlatten(computeQuery)
 }

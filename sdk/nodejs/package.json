@@ -22,6 +22,7 @@
     "graphql": "^16.5.0",
     "graphql-request": "^5.0.0",
     "graphql-tag": "^2.12.6",
+    "node-color-log": "^10.0.2",
     "node-fetch": "^3.3.0"
   },
   "scripts": {

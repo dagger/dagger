@@ -1,6 +1,7 @@
 import assert from "assert"
 import Client, { connect } from "../../index.js"
 import { queryFlatten, buildQuery } from "../utils.js"
+import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
@@ -143,9 +144,6 @@ describe("NodeJS SDK api", function () {
       },
     }
 
-    assert.throws(
-      () => queryFlatten(tree),
-      Error("Too many Graphql nested objects")
-    )
+    assert.throws(() => queryFlatten(tree), TooManyNestedObjectsError)
   })
 })
