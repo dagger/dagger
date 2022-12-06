@@ -916,6 +916,17 @@ func (r *Directory) WithNewFile(path string, contents string) *Directory {
 	}
 }
 
+// This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+func (r *Directory) WithTimestamps(timestamp int) *Directory {
+	q := r.q.Select("withTimestamps")
+	q = q.Arg("timestamp", timestamp)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This directory with the directory at the given path removed
 func (r *Directory) WithoutDirectory(path string) *Directory {
 	q := r.q.Select("withoutDirectory")

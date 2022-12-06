@@ -1052,6 +1052,22 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+   */
+  withTimestamps(timestamp: number): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withTimestamps",
+          args: { timestamp },
+        },
+      ],
+      host: this.clientHost,
+    })
+  }
+
+  /**
    * This directory with the directory at the given path removed
    */
   withoutDirectory(path: string): Directory {

@@ -38,6 +38,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"withoutFile":      router.ToResolver(s.withoutFile),
 			"directory":        router.ToResolver(s.subdirectory),
 			"withDirectory":    router.ToResolver(s.withDirectory),
+			"withTimestamps":   router.ToResolver(s.withTimestamps),
 			"withNewDirectory": router.ToResolver(s.withNewDirectory),
 			"withoutDirectory": router.ToResolver(s.withoutDirectory),
 			"diff":             router.ToResolver(s.diff),
@@ -86,6 +87,14 @@ type withDirectoryArgs struct {
 
 func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
 	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
+}
+
+type withTimestampsArgs struct {
+	Timestamp int
+}
+
+func (s *directorySchema) withTimestamps(ctx *router.Context, parent *core.Directory, args withTimestampsArgs) (*core.Directory, error) {
+	return parent.WithTimestamps(ctx, args.Timestamp)
 }
 
 type entriesArgs struct {

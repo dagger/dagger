@@ -51,4 +51,7 @@ type Directory {
 
   "Build a new Docker container from this directory"
   dockerBuild(dockerfile: String, platform: Platform): Container!
+
+  "This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch"
+  withTimestamps(timestamp: Int!): Directory!
 }
