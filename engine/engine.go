@@ -38,7 +38,7 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
-	RemoteAddr    string
+	RunnerHost    string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
@@ -52,13 +52,10 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		startOpts = &Config{}
 	}
 
-	if startOpts.RemoteAddr == "" {
-		// TODO: names are highly inconsistent
-		if v, ok := os.LookupEnv("DAGGER_RUNNER_HOST"); ok {
-			startOpts.RemoteAddr = v
-		}
+	if startOpts.RunnerHost == "" {
+		return fmt.Errorf("runner address required")
 	}
-	remote, err := url.Parse(startOpts.RemoteAddr)
+	remote, err := url.Parse(startOpts.RunnerHost)
 	if err != nil {
 		return err
 	}

@@ -31,11 +31,11 @@ class Engine(BaseEngine):
         self, base_args: list[str], default_dagger_runner_host: str = ""
     ) -> None:
         dagger_runner_host = os.environ.get(
-            "DAGGER_RUNNER_HOST", default_dagger_runner_host
+            "_EXPERIMENTAL_DAGGER_RUNNER_HOST", default_dagger_runner_host
         )
         env = os.environ.copy()
         if dagger_runner_host:
-            env["DAGGER_RUNNER_HOST"] = dagger_runner_host
+            env["_EXPERIMENTAL_DAGGER_RUNNER_HOST"] = dagger_runner_host
 
         if self.cfg.workdir:
             base_args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])

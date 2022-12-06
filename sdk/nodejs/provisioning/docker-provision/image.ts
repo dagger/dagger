@@ -239,8 +239,8 @@ export class DockerImage implements EngineConn {
     opts: ConnectOpts
   ): Promise<Client> {
     const env = process.env
-    if (!env.DAGGER_RUNNER_HOST) {
-      env.DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
+    if (!env._EXPERIMENTAL_DAGGER_RUNNER_HOST) {
+      env._EXPERIMENTAL_DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
     }
 
     const engineSessionArgs = [engineSessionBinPath]

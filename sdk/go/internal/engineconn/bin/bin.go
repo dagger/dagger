@@ -92,13 +92,13 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 	// this retry approach should be fine. It can only happen when a new
 	// engine-session binary needs to be created and even then only if many
 	// threads within this process are trying to provision it at the same time.
-	daggerRunnerHost, ok := os.LookupEnv("DAGGER_RUNNER_HOST")
+	daggerRunnerHost, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 	if !ok {
 		daggerRunnerHost = defaultDaggerRunnerHost
 	}
 	env := os.Environ()
 	if daggerRunnerHost != "" {
-		env = append(env, "DAGGER_RUNNER_HOST="+daggerRunnerHost)
+		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+daggerRunnerHost)
 	}
 
 	var proc *exec.Cmd

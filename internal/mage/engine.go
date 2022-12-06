@@ -221,7 +221,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	fmt.Println("export DAGGER_HOST=docker-container://" + util.TestContainerName)
-	fmt.Println("export DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
+	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
 	return nil
 }
 

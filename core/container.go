@@ -794,7 +794,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts,
 			llb.AddEnv("DAGGER_HOST", "bin:///.dagger_engine_session"),
-			llb.AddEnv("DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
+			llb.AddEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 		)
 	}
