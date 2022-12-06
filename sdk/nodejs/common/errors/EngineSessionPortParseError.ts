@@ -10,7 +10,6 @@ interface EngineSessionPortParseErrorOptions extends DaggerSDKErrorOptions {
  * - Reading the port times out after 30 seconds
  * - The parsed port is not a number
  * - the reader does not read a single line
- * @see [EngineSessionPortParseError - Dagger.io](https://docs.dagger.io/current/sdk/nodejs/reference/classes/common_errors.EngineSessionPortParseError)
  */
 export class EngineSessionPortParseError extends DaggerSDKError {
   name = "EngineSessionPortError"

@@ -11,7 +11,6 @@ interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
 
 /**
  *  This error originates from the dagger engine. It means that some error was thrown and sent back via GraphQL.
- *  @see [GraphQLRequestError - Dagger.io](https://docs.dagger.io/current/sdk/nodejs/reference/classes/common_errors.GraphQLRequestError)
  */
 export class GraphQLRequestError extends DaggerSDKError {
   public name = "GraphQLRequestError"

@@ -6,7 +6,6 @@ export interface DaggerSDKErrorOptions {
 
 /**
  * The base error. Every other error inherits this error.
- * @see [DaggerSDKError - Dagger.io](https://docs.dagger.io/current/sdk/nodejs/reference/classes/common_errors.DaggerSDKError)
  */
 export abstract class DaggerSDKError extends Error {
   /**
