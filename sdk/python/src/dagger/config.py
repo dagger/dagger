@@ -29,8 +29,7 @@ class Config:
         The maximum time in seconds for establishing a connection to the server.
     execute_timeout:
         The maximum time in seconds for the execution of a request before a TimeoutError
-        is raised. Only used for async transport.
-        Passing None results in waiting forever for a response.
+        is raised. Passing None results in waiting forever for a response.
     reconnecting:
         If True, create a permanent reconnecting session. Only used for async transport.
     """

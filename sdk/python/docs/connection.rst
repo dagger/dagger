@@ -1,5 +1,8 @@
 Connection
 ==========
 
-.. automodule:: dagger
+.. automodule:: dagger.config
+   :members:
+
+.. automodule:: dagger.connection
    :members:
