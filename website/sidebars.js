@@ -369,7 +369,7 @@ module.exports = {
     {
       type: "link",
       label: "Dagger 0.2 ➡️",
-      href: "/",
+      href: "/0.2",
     },
   ],
 };
