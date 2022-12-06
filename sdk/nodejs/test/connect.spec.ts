@@ -10,8 +10,8 @@ describe("NodeJS sdk", function () {
       const result = await client
         .container()
         .from("alpine")
-        .exec(["apk", "add", "curl"])
-        .exec(["curl", "https://dagger.io/"])
+        .withExec(["apk", "add", "curl"])
+        .withExec(["curl", "https://dagger.io/"])
         .exitCode()
 
       assert.ok(result === 0)
