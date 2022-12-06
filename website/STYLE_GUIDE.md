@@ -20,5 +20,6 @@ Code
 
 Text
 - Avoid using `you`, `we`, `our` and other personal pronouns. Alternatives are (e.g. instead of `this is where you will deploy the application`):
-  - Rewrite the sentence using passive voice e.g. `this is where the application will be deployed`   - Rewrite the sentence to personify the subject e.g. `the application will be deployed here`
+  - Rewrite the sentence using passive voice e.g. `this is where the application will be deployed`   
+  - Rewrite the sentence to personify the subject e.g. `the application will be deployed here`
   - Rewrite the sentence using active voice and a verb e.g. `deploy the application to...`
