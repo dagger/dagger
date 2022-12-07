@@ -2,8 +2,9 @@ module replace-dockerfile
 
 go 1.19
 
+require dagger.io/dagger v0.4.2
+
 require (
-	dagger.io/dagger v0.4.2 // indirect
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
