@@ -1194,6 +1194,10 @@ export class File extends BaseClient {
 
     return response
   }
+
+  /**
+   * A secret referencing the contents of this file
+   */
   secret(): Secret {
     return new Secret({
       queryTree: [
@@ -1221,6 +1225,22 @@ export class File extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+   */
+  withTimestamps(timestamp: number): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withTimestamps",
+          args: { timestamp },
+        },
+      ],
+      host: this.clientHost,
+    })
   }
 }
 

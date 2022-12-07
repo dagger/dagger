@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -167,4 +169,26 @@ func TestFileExport(t *testing.T) {
 		require.Error(t, err)
 		require.False(t, ok)
 	})
+}
+
+func TestFileWithTimestamps(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
+
+	file := c.Directory().
+		WithNewFile("sub-dir/sub-file", "sub-content").
+		File("sub-dir/sub-file").
+		WithTimestamps(int(reallyImportantTime.Unix()))
+
+	ls, err := c.Container().
+		From("alpine:3.16.2").
+		WithMountedFile("/file", file).
+		WithEnvVariable("RANDOM", identity.NewID()).
+		WithExec([]string{"stat", "/file"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, ls, "Access: 1985-10-26 08:15:00.000000000 +0000")
+	require.Contains(t, ls, "Modify: 1985-10-26 08:15:00.000000000 +0000")
 }

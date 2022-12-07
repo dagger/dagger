@@ -30,10 +30,11 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 			"file": router.ToResolver(s.file),
 		},
 		"File": router.ObjectResolver{
-			"contents": router.ToResolver(s.contents),
-			"secret":   router.ToResolver(s.secret),
-			"size":     router.ToResolver(s.size),
-			"export":   router.ToResolver(s.export),
+			"contents":       router.ToResolver(s.contents),
+			"secret":         router.ToResolver(s.secret),
+			"size":           router.ToResolver(s.size),
+			"export":         router.ToResolver(s.export),
+			"withTimestamps": router.ToResolver(s.withTimestamps),
 		},
 	}
 }
@@ -85,4 +86,12 @@ func (s *fileSchema) export(ctx *router.Context, parent *core.File, args fileExp
 	}
 
 	return true, nil
+}
+
+type fileWithTimestampsArgs struct {
+	Timestamp int
+}
+
+func (s *fileSchema) withTimestamps(ctx *router.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
+	return parent.WithTimestamps(ctx, args.Timestamp)
 }

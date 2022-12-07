@@ -89,11 +89,11 @@ func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Direct
 	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
 }
 
-type withTimestampsArgs struct {
+type dirWithTimestampsArgs struct {
 	Timestamp int
 }
 
-func (s *directorySchema) withTimestamps(ctx *router.Context, parent *core.Directory, args withTimestampsArgs) (*core.Directory, error) {
+func (s *directorySchema) withTimestamps(ctx *router.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
 	return parent.WithTimestamps(ctx, args.Timestamp)
 }
 

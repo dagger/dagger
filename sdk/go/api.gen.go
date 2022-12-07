@@ -1021,6 +1021,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+// A secret referencing the contents of this file
 func (r *File) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -1037,6 +1038,17 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	var response int
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+func (r *File) WithTimestamps(timestamp int) *File {
+	q := r.q.Select("withTimestamps")
+	q = q.Arg("timestamp", timestamp)
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A git ref (tag or branch)
