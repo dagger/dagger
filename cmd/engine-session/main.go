@@ -43,6 +43,7 @@ func EngineSession(cmd *cobra.Command, args []string) {
 		Workdir:    workdir,
 		ConfigPath: configPath,
 		LogOutput:  os.Stderr,
+		RunnerHost: os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"),
 	}
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)

@@ -97,7 +97,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	if err != nil {
 		return nil, err
 	}
-	c.gql = errorWrappedClient{graphql.NewClient(c.conn.Addr()+"/query", client)}
+	c.gql = errorWrappedClient{graphql.NewClient(c.conn.Addr(), client)}
 	c.Query = Query{
 		q: querybuilder.Query(),
 		c: c.gql,

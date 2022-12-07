@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/opencontainers/go-digest"
+	"github.com/google/go-containerregistry/pkg/authn"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/pkg/errors"
 )
 
@@ -26,25 +28,36 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
-	imageRef := remote.Host + remote.Path
+func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, error) {
+	imageRef := runnerHost.Host + runnerHost.Path
 
-	// NOTE: this isn't as robust as using the official docker parser, but
-	// our other SDKs don't have access to that, so this is simpler to
-	// replicate and keep consistent.
+	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
-	_, dgst, ok := strings.Cut(imageRef, "@sha256:")
+	ref, err := name.ParseReference(imageRef)
+	if err != nil {
+		return "", errors.Wrap(err, "parsing image reference")
+	}
+	if d, ok := ref.(name.Digest); ok {
+		// We already have the digest as part of the image ref
+		id = d.DigestStr()
+	} else {
+		// We only have a tag in the image ref, so resolve it to a digest. The default
+		// auth keychain parses the same docker credentials as used by the buildkit
+		// session attachable.
+		img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
+		if err != nil {
+			return "", errors.Wrap(err, "resolving image digest")
+		}
+		id = img.Digest.String()
+	}
+	_, id, ok := strings.Cut(id, "sha256:")
 	if !ok {
 		return "", errors.Errorf("invalid image reference %q", imageRef)
 	}
-	if err := digest.Digest("sha256:" + dgst).Validate(); err != nil {
-		return "", errors.Wrap(err, "invalid digest")
-	}
-	id = dgst
 	id = id[:hashLen]
 
+	// run the container using that id in the name
 	containerName := containerNamePrefix + id
-
 	if output, err := exec.CommandContext(ctx,
 		"docker", "run",
 		"--name", containerName,
@@ -58,6 +71,10 @@ func dockerImageProvider(ctx context.Context, remote *url.URL) (string, error) {
 			return "", errors.Wrapf(err, "failed to run container: %s", output)
 		}
 	}
+
+	// garbage collect any other containers with the same name pattern, which
+	// we assume to be leftover from previous runs of the engine using an older
+	// version
 	if output, err := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",

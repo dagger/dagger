@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -32,12 +33,8 @@ dagger run -- sh -c 'curl \
 func Run(cmd *cobra.Command, args []string) {
 	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
-	sessionID, err := uuid.NewRandom()
+	sessionToken, err := uuid.NewRandom()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
-	}
-	if err := setupServer(ctx, sessionID.String()); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
@@ -51,12 +48,16 @@ func Run(cmd *cobra.Command, args []string) {
 			os.Exit(1)
 		}
 		listening <- fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port)
-		http.Serve(l, nil)
+		if err := withEngine(ctx, sessionToken.String(), func(ctx context.Context, r *router.Router) error {
+			return http.Serve(l, r)
+		}); err != nil {
+			panic(err)
+		}
 	}()
 
 	listenPort := <-listening
 	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s", listenPort))
-	os.Setenv("DAGGER_SESSION_TOKEN", sessionID.String())
+	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 	c.Stdout = os.Stdout

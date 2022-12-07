@@ -24,7 +24,7 @@ class Connector:
 
     @property
     def query_url(self) -> str:
-        return f"{self.cfg.host.geturl()}/query"
+        return f"{self.cfg.host.geturl()}"
 
     async def connect(self) -> Client:
         transport = self.make_transport()

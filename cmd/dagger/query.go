@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"dagger.io/dagger"
+	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -89,42 +89,18 @@ func Query(cmd *cobra.Command, args []string) {
 }
 
 func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
-	opts := []dagger.ClientOpt{
-		dagger.WithWorkdir(workdir),
-		dagger.WithConfigPath(configPath),
-	}
-
-	if debugLogs {
-		opts = append(opts, dagger.WithLogOutput(os.Stderr))
-	}
-	c, err := dagger.Connect(ctx, opts...)
-	if err != nil {
-		return nil, err
-	}
-	defer c.Close()
-
 	res := make(map[string]interface{})
-	resp := &dagger.Response{Data: &res}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query:     query,
-			Variables: vars,
-			OpName:    op,
-		},
-		resp,
-	)
+	err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
+		_, err := r.Do(ctx, query, op, vars, &res)
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.Errors) > 0 {
-		return nil, resp.Errors
-	}
-
 	result, err := json.MarshalIndent(res, "", "    ")
 	if err != nil {
 		return nil, err
 	}
-
 	return result, nil
 }
 
