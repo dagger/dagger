@@ -49,6 +49,88 @@ class BaseClient {
  */
 export type CacheID = string
 
+export type ContainerBuildOpts = {
+  dockerfile?: string
+}
+
+export type ContainerExecOpts = {
+  /**
+   * Command to run instead of the container's default command
+   */
+  args?: string[]
+
+  /**
+   * Content to write to the command's standard input before closing
+   */
+  stdin?: string
+
+  /**
+   * Redirect the command's standard output to a file in the container
+   */
+  redirectStdout?: string
+
+  /**
+   * Redirect the command's standard error to a file in the container
+   */
+  redirectStderr?: string
+
+  /**
+   * Provide dagger access to the executed command
+   * Do not use this option unless you trust the command being executed
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   */
+  experimentalPrivilegedNesting?: boolean
+}
+
+export type ContainerExportOpts = {
+  platformVariants?: ContainerID[] | Container[]
+}
+
+export type ContainerPublishOpts = {
+  platformVariants?: ContainerID[] | Container[]
+}
+
+export type ContainerWithDefaultArgsOpts = {
+  args?: string[]
+}
+
+export type ContainerWithDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+}
+
+export type ContainerWithExecOpts = {
+  /**
+   * Content to write to the command's standard input before closing
+   */
+  stdin?: string
+
+  /**
+   * Redirect the command's standard output to a file in the container
+   */
+  redirectStdout?: string
+
+  /**
+   * Redirect the command's standard error to a file in the container
+   */
+  redirectStderr?: string
+
+  /**
+   * Provide dagger access to the executed command
+   * Do not use this option unless you trust the command being executed
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   */
+  experimentalPrivilegedNesting?: boolean
+}
+
+export type ContainerWithMountedCacheOpts = {
+  source?: DirectoryID | Directory
+}
+
+export type ContainerWithNewFileOpts = {
+  contents?: string
+}
+
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
@@ -59,6 +141,20 @@ export type ContainerID = string
  */
 export type DateTime = string
 
+export type DirectoryDockerBuildOpts = {
+  dockerfile?: string
+  platform?: Platform
+}
+
+export type DirectoryEntriesOpts = {
+  path?: string
+}
+
+export type DirectoryWithDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+}
+
 /**
  * A content-addressed directory identifier
  */
@@ -66,12 +162,44 @@ export type DirectoryID = string
 
 export type FileID = string
 
+export type GitRefTreeOpts = {
+  sshKnownHosts?: string
+  sshAuthSocket?: SocketID
+}
+
+export type HostDirectoryOpts = {
+  exclude?: string[]
+  include?: string[]
+}
+
+export type HostWorkdirOpts = {
+  exclude?: string[]
+  include?: string[]
+}
+
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
 export type ID = string
 
 export type Platform = string
+
+export type ClientContainerOpts = {
+  id?: ContainerID | Container
+  platform?: Platform
+}
+
+export type ClientDirectoryOpts = {
+  id?: DirectoryID | Directory
+}
+
+export type ClientGitOpts = {
+  keepGitDir?: boolean
+}
+
+export type ClientSocketOpts = {
+  id?: SocketID
+}
 
 /**
  * A unique identifier for a secret
@@ -82,6 +210,14 @@ export type SecretID = string
  * A content-addressed socket identifier
  */
 export type SocketID = string
+
+export type __TypeEnumValuesOpts = {
+  includeDeprecated?: boolean
+}
+
+export type __TypeFieldsOpts = {
+  includeDeprecated?: boolean
+}
 
 /**
  * A directory whose contents persist across runs
@@ -109,13 +245,16 @@ export class Container extends BaseClient {
   /**
    * Initialize this container from a Dockerfile build
    */
-  build(context: DirectoryID | Directory, dockerfile?: string): Container {
+  build(
+    context: DirectoryID | Directory,
+    opts?: ContainerBuildOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "build",
-          args: { context, dockerfile },
+          args: { context, ...opts },
         },
       ],
       host: this.clientHost,
@@ -210,27 +349,17 @@ export class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    *
+   * @param opts optional params for exec
+   *
    * @deprecated Replaced by withExec.
    */
-  exec(
-    args?: string[],
-    stdin?: string,
-    redirectStdout?: string,
-    redirectStderr?: string,
-    experimentalPrivilegedNesting?: boolean
-  ): Container {
+  exec(opts?: ContainerExecOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "exec",
-          args: {
-            args,
-            stdin,
-            redirectStdout,
-            redirectStderr,
-            experimentalPrivilegedNesting,
-          },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -258,16 +387,13 @@ export class Container extends BaseClient {
   /**
    * Write the container as an OCI tarball to the destination file path on the host
    */
-  async export(
-    path: string,
-    platformVariants?: ContainerID[] | Container[]
-  ): Promise<boolean> {
+  async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await queryBuilder(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path, platformVariants },
+          args: { path, ...opts },
         },
       ],
       this.client
@@ -310,6 +436,7 @@ export class Container extends BaseClient {
 
   /**
    * This container's root filesystem. Mounts are not included.
+   *
    *
    * @deprecated Replaced by rootfs.
    */
@@ -379,16 +506,13 @@ export class Container extends BaseClient {
   /**
    * Publish this container as a new image, returning a fully qualified ref
    */
-  async publish(
-    address: string,
-    platformVariants?: ContainerID[] | Container[]
-  ): Promise<string> {
+  async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await queryBuilder(
       [
         ...this._queryTree,
         {
           operation: "publish",
-          args: { address, platformVariants },
+          args: { address, ...opts },
         },
       ],
       this.client
@@ -468,13 +592,13 @@ export class Container extends BaseClient {
   /**
    * Configures default arguments for future commands
    */
-  withDefaultArgs(args?: string[]): Container {
+  withDefaultArgs(opts?: ContainerWithDefaultArgsOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDefaultArgs",
-          args: { args },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -487,15 +611,14 @@ export class Container extends BaseClient {
   withDirectory(
     path: string,
     directory: DirectoryID | Directory,
-    exclude?: string[],
-    include?: string[]
+    opts?: ContainerWithDirectoryOpts
   ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDirectory",
-          args: { path, directory, exclude, include },
+          args: { path, directory, ...opts },
         },
       ],
       host: this.clientHost,
@@ -537,25 +660,13 @@ export class Container extends BaseClient {
   /**
    * This container after executing the specified command inside it
    */
-  withExec(
-    args: string[],
-    stdin?: string,
-    redirectStdout?: string,
-    redirectStderr?: string,
-    experimentalPrivilegedNesting?: boolean
-  ): Container {
+  withExec(args: string[], opts?: ContainerWithExecOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withExec",
-          args: {
-            args,
-            stdin,
-            redirectStdout,
-            redirectStderr,
-            experimentalPrivilegedNesting,
-          },
+          args: { args, ...opts },
         },
       ],
       host: this.clientHost,
@@ -564,6 +675,7 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from this DirectoryID
+   *
    *
    * @deprecated Replaced by withRootfs.
    */
@@ -602,14 +714,14 @@ export class Container extends BaseClient {
   withMountedCache(
     path: string,
     cache: CacheID | CacheVolume,
-    source?: DirectoryID | Directory
+    opts?: ContainerWithMountedCacheOpts
   ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withMountedCache",
-          args: { path, cache, source },
+          args: { path, cache, ...opts },
         },
       ],
       host: this.clientHost,
@@ -686,13 +798,13 @@ export class Container extends BaseClient {
   /**
    * This container plus a new file written at the given path
    */
-  withNewFile(path: string, contents?: string): Container {
+  withNewFile(path: string, opts?: ContainerWithNewFileOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewFile",
-          args: { path, contents },
+          args: { path, ...opts },
         },
       ],
       host: this.clientHost,
@@ -884,13 +996,13 @@ export class Directory extends BaseClient {
   /**
    * Build a new Docker container from this directory
    */
-  dockerBuild(dockerfile?: string, platform?: Platform): Container {
+  dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "dockerBuild",
-          args: { dockerfile, platform },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -900,13 +1012,13 @@ export class Directory extends BaseClient {
   /**
    * Return a list of files and directories at the given path
    */
-  async entries(path?: string): Promise<string[]> {
+  async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await queryBuilder(
       [
         ...this._queryTree,
         {
           operation: "entries",
-          args: { path },
+          args: { ...opts },
         },
       ],
       this.client
@@ -988,15 +1100,14 @@ export class Directory extends BaseClient {
   withDirectory(
     path: string,
     directory: DirectoryID | Directory,
-    exclude?: string[],
-    include?: string[]
+    opts?: DirectoryWithDirectoryOpts
   ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withDirectory",
-          args: { path, directory, exclude, include },
+          args: { path, directory, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1232,13 +1343,13 @@ export class GitRef extends BaseClient {
   /**
    * The filesystem tree at this ref
    */
-  tree(sshKnownHosts?: string, sshAuthSocket?: SocketID): Directory {
+  tree(opts?: GitRefTreeOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "tree",
-          args: { sshKnownHosts, sshAuthSocket },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -1340,13 +1451,13 @@ export class Host extends BaseClient {
   /**
    * Access a directory on the host
    */
-  directory(path: string, exclude?: string[], include?: string[]): Directory {
+  directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { path, exclude, include },
+          args: { path, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1388,15 +1499,17 @@ export class Host extends BaseClient {
   /**
    * The current working directory on the host
    *
+   * @param opts optional params for workdir
+   *
    * @deprecated Use directory with path set to '.' instead.
    */
-  workdir(exclude?: string[], include?: string[]): Directory {
+  workdir(opts?: HostWorkdirOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "workdir",
-          args: { exclude, include },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -1568,13 +1681,13 @@ export default class Client extends BaseClient {
    * Null ID returns an empty container (scratch).
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
    */
-  container(id?: ContainerID | Container, platform?: Platform): Container {
+  container(opts?: ClientContainerOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "container",
-          args: { id, platform },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -1601,13 +1714,13 @@ export default class Client extends BaseClient {
   /**
    * Load a directory by ID. No argument produces an empty directory.
    */
-  directory(id?: DirectoryID | Directory): Directory {
+  directory(opts?: ClientDirectoryOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { id },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,
@@ -1633,13 +1746,13 @@ export default class Client extends BaseClient {
   /**
    * Query a git repository
    */
-  git(url: string, keepGitDir?: boolean): GitRepository {
+  git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
       queryTree: [
         ...this._queryTree,
         {
           operation: "git",
-          args: { url, keepGitDir },
+          args: { url, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1712,13 +1825,13 @@ export default class Client extends BaseClient {
   /**
    * Load a socket by ID
    */
-  socket(id?: SocketID): Socket {
+  socket(opts?: ClientSocketOpts): Socket {
     return new Socket({
       queryTree: [
         ...this._queryTree,
         {
           operation: "socket",
-          args: { id },
+          args: { ...opts },
         },
       ],
       host: this.clientHost,

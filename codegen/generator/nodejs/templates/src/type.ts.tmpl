@@ -1,7 +1,32 @@
 {{ define "type" -}}
+	{{- $typeName := .Name }}
+	{{- if  eq $typeName "Query" }}
+		{{- $typeName = "Client" -}}
+	{{- end -}}
+
 	{{- if IsCustomScalar . }}
 {{ template "object_comment" .Description }}
 export type {{ .Name }} = string;
 {{ "" }}
+	{{- end }}
+	{{- with .Fields }}
+		{{- range . -}}
+			{{- $optionals := GetOptionalArgs .Args }}
+			{{- $argsLen := len $optionals }}
+			{{- if gt $argsLen 0 }}
+export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
+				{{- range $optionals }}
+					{{- $opt := "" -}}
+					{{- if .TypeRef.IsOptional }}
+						{{- $opt = "?" -}}
+					{{- end }}
+					{{- if .Description }}
+{{ template "type_field_comment" .Description }}
+					{{- end }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
+				{{- end }}
+};
+{{ "" }}		{{- end }}
+		{{- end }}
 	{{- end }}
 {{- end }}

@@ -62,12 +62,12 @@ export class Host extends BaseClient {
   /**
    * Access a directory on the host
    */
-  directory(path: string, exclude?: string[], include?: string[]): Directory {
+  directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'directory',
-      args: {path, exclude, include}
+      args: { path, ...opts }
       }
     ], host: this.clientHost})
   }
@@ -81,7 +81,7 @@ export class Host extends BaseClient {
       ...this._queryTree,
       {
       operation: 'envVariable',
-      args: {name}
+      args: { name }
       }
     ], host: this.clientHost})
   }
@@ -90,12 +90,12 @@ export class Host extends BaseClient {
   /**
    * The current working directory on the host
    */
-  workdir(exclude?: string[], include?: string[]): Directory {
+  workdir(opts?: HostWorkdirOpts): Directory {
     return new Directory({queryTree: [
       ...this._queryTree,
       {
       operation: 'workdir',
-      args: {exclude, include}
+      args: { ...opts }
       }
     ], host: this.clientHost})
   }

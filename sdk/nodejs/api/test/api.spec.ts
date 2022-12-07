@@ -23,7 +23,7 @@ describe("NodeJS SDK api", function () {
       `{ container { from (address: "alpine") } }`
     )
 
-    const tree2 = new Client().git("fake_url", true)
+    const tree2 = new Client().git("fake_url", { keepGitDir: true })
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree2.queryTree)),
@@ -75,9 +75,12 @@ describe("NodeJS SDK api", function () {
     this.timeout(60000)
     connect(async (client: Client) => {
       const image = await client
-        .container(
-          client.container().from("alpine").withExec(["apk", "add", "yarn"])
-        )
+        .container({
+          id: client
+            .container()
+            .from("alpine")
+            .withExec(["apk", "add", "yarn"]),
+        })
         .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
         .withExec(["echo", "foo bar"])
         .stdout()
@@ -86,7 +89,19 @@ describe("NodeJS SDK api", function () {
     })
   })
 
-  it("Test Field Immutability", function () {
+  it("Build a query with positionnal and optionals arguments", function () {
+    const image = new Client().container().from("alpine")
+    const pkg = image.withExec(["apk", "add", "curl"], {
+      experimentalPrivilegedNesting: true,
+    })
+
+    assert.strictEqual(
+      querySanitizer(buildQuery(pkg.queryTree)),
+      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`
+    )
+  })
+
+  it("Test Field Immutability", async function () {
     const image = new Client().container().from("alpine")
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
