@@ -8,7 +8,7 @@ connect(async (client) => {
   // highlight-end
 
   // get reference to the local project
-  const source = client.host().directory(".", ["node_modules/"])
+  const source = client.host().directory(".", { exclude: ["node_modules/"] })
 
   // highlight-start
   // for each Node version
