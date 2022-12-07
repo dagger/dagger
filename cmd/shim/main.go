@@ -263,10 +263,10 @@ func toggleNesting(spec specs.Spec) (specs.Spec, error) {
 			if err != nil {
 				return specs.Spec{}, fmt.Errorf("error parsing DAGGER_HOST: %w", err)
 			}
-		case strings.HasPrefix(env, "DAGGER_RUNNER_HOST="):
-			daggerRunnerHost, err = url.Parse(strings.TrimPrefix(env, "DAGGER_RUNNER_HOST="))
+		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="):
+			daggerRunnerHost, err = url.Parse(strings.TrimPrefix(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="))
 			if err != nil {
-				return specs.Spec{}, fmt.Errorf("error parsing DAGGER_RUNNER_HOST: %w", err)
+				return specs.Spec{}, fmt.Errorf("error parsing _EXPERIMENTAL_DAGGER_RUNNER_HOST: %w", err)
 			}
 		}
 	}

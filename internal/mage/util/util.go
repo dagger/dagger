@@ -80,7 +80,7 @@ func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 		WithMountedFile(engineSessionBinPath, EngineSessionBinary(c)).
 		// Point the SDKs to use the dev engine via these env vars
 		WithEnvVariable("DAGGER_HOST", "bin://"+engineSessionBinPath).
-		WithEnvVariable("DAGGER_RUNNER_HOST", "docker-container://"+TestContainerName)
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+TestContainerName)
 }
 
 func goBase(c *dagger.Client) *dagger.Container {

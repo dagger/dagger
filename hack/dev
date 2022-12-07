@@ -10,6 +10,6 @@ go run main.go -w $DAGGER_SRC_ROOT engine:dev
 popd
 
 export DAGGER_HOST=docker-container://test-dagger-engine
-export DAGGER_RUNNER_HOST=docker-container://test-dagger-engine
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://test-dagger-engine
 
 exec "$@"

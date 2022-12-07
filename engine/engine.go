@@ -38,7 +38,8 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	DisableHostRW bool
-	RemoteAddr    string
+	RunnerHost    string
+	SessionToken  string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
@@ -48,17 +49,11 @@ type Config struct {
 type StartCallback func(context.Context, *router.Router) error
 
 func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
-	if startOpts == nil {
-		startOpts = &Config{}
+	if startOpts == nil || startOpts.RunnerHost == "" {
+		return fmt.Errorf("must specify runner host")
 	}
 
-	if startOpts.RemoteAddr == "" {
-		// TODO: names are highly inconsistent
-		if v, ok := os.LookupEnv("DAGGER_RUNNER_HOST"); ok {
-			startOpts.RemoteAddr = v
-		}
-	}
-	remote, err := url.Parse(startOpts.RemoteAddr)
+	remote, err := url.Parse(startOpts.RunnerHost)
 	if err != nil {
 		return err
 	}
@@ -90,7 +85,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	router := router.New()
+	router := router.New(startOpts.SessionToken)
 	secretStore := secret.NewStore()
 
 	socketProviders := SocketProvider{
@@ -254,6 +249,7 @@ func installExtensions(ctx context.Context, r *router.Router, configPath string)
 					}
 				}
 			}`,
+		"LoadProject",
 		map[string]any{
 			"configPath": configPath,
 		},

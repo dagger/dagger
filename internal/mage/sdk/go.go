@@ -157,7 +157,7 @@ func (t Go) Bump(ctx context.Context, version string) error {
 
 package dagger
 
-const engineImageRef = %q
+const EngineImageRef = %q
 `, version)
 
 	return os.WriteFile("sdk/go/engine.gen.go", []byte(versionFile), 0o600)

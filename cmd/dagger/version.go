@@ -10,6 +10,7 @@ import (
 
 const (
 	developmentVersion = "devel"
+	engineImageRepo    = "ghcr.io/dagger/engine"
 )
 
 var versionCmd = &cobra.Command{
@@ -49,4 +50,13 @@ func short() string {
 
 func long() string {
 	return fmt.Sprintf("%s %s/%s", short(), runtime.GOOS, runtime.GOARCH)
+}
+
+func engineImageRef() string {
+	// if this is a release, use the release image
+	if version != developmentVersion {
+		return fmt.Sprintf("%s:v%s", engineImageRepo, version)
+	}
+	// fallback to using the latest image from main
+	return fmt.Sprintf("%s:main", engineImageRepo)
 }

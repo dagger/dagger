@@ -18,16 +18,18 @@ import (
 )
 
 type Router struct {
-	schemas map[string]ExecutableSchema
+	schemas      map[string]ExecutableSchema
+	sessionToken string
 
 	s *graphql.Schema
 	h *handler.Handler
 	l sync.RWMutex
 }
 
-func New() *Router {
+func New(sessionToken string) *Router {
 	r := &Router{
-		schemas: make(map[string]ExecutableSchema),
+		schemas:      make(map[string]ExecutableSchema),
+		sessionToken: sessionToken,
 	}
 
 	if err := r.Add(&rootSchema{}); err != nil {
@@ -38,7 +40,7 @@ func New() *Router {
 }
 
 // Do executes a query directly in the server
-func (r *Router) Do(ctx context.Context, query string, variables map[string]any, data any) (*graphql.Result, error) {
+func (r *Router) Do(ctx context.Context, query string, opName string, variables map[string]any, data any) (*graphql.Result, error) {
 	r.l.RLock()
 	schema := *r.s
 	r.l.RUnlock()
@@ -48,6 +50,7 @@ func (r *Router) Do(ctx context.Context, query string, variables map[string]any,
 		Schema:         schema,
 		RequestString:  query,
 		VariableValues: variables,
+		OperationName:  opName,
 	}
 	result := graphql.Do(params)
 	if result.HasErrors() {
@@ -130,6 +133,15 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.l.RLock()
 	h := r.h
 	r.l.RUnlock()
+
+	if r.sessionToken != "" {
+		username, _, ok := req.BasicAuth()
+		if !ok || username != r.sessionToken {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
 
 	defer func() {
 		if v := recover(); v != nil {
