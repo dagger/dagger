@@ -54,9 +54,10 @@ The following example shows how to obtain a reference to the host working direct
 ```go file=../snippets/work-with-host-filesystem/list-dir-exclude/main.go
 ```
 
-:::note
-The `Exclude` pattern overrides the `Include` pattern, but not vice-versa.
-:::
+The `Exclude` pattern overrides the `Include` pattern, but not vice-versa. The following example demonstrates by obtaining a reference to the host working directory containing all files except `*.rar` files:
+
+```go file=../snippets/work-with-host-filesystem/list-dir-exclude-include/main.go
+```
 
 ## Mount a host directory in a container
 
