@@ -17,7 +17,7 @@ import (
 
 func connect(t *testing.T) (*dagger.Client, context.Context) {
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	return client, ctx
 }
