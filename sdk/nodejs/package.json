@@ -28,7 +28,6 @@
   "scripts": {
     "build": "tsc",
     "test": "mocha",
-    "gen:typedoc": "yarn typedoc",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix"
   },
@@ -43,9 +42,6 @@
     "mocha": "^10.1.0",
     "prettier": "^2.8.0",
     "ts-node": "^10.9.1",
-    "typedoc": "^0.23.21",
-    "typedoc-plugin-markdown": "^3.14.0",
-    "typedoc-plugin-missing-exports": "^1.0.0",
     "typescript": "^4.9.3"
   }
 }
