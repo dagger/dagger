@@ -6,7 +6,6 @@ import * as path from "path"
 import Client from "../../api/client.gen.js"
 import {
   DockerImageRefValidationError,
-  EngineSessionPortParseError,
   InitEngineSessionBinaryError,
 } from "../../common/errors/index.js"
 import { Bin } from "../bin/bin.js"

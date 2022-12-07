@@ -1,6 +1,6 @@
 import assert, { AssertionError } from "assert"
-import { GraphQLRequestError } from "../common/errors/index.js"
 
+import { GraphQLRequestError } from "../common/errors/index.js"
 import { connect } from "../connect.js"
 
 describe("NodeJS sdk Connect", function () {

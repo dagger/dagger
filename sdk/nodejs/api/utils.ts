@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ClientError, gql, GraphQLClient } from "graphql-request"
+
 import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
@@ -7,23 +8,33 @@ import {
 } from "../common/errors/index.js"
 import { QueryTree } from "./client.gen.js"
 
-function buildArgs(item: any): string {
-  const entries = Object.entries(item.args)
-    .filter((value) => value[1] !== undefined)
-    .map((value) => {
-      return `${value[0]}: ${JSON.stringify(value[1]).replace(
-        /\{"[a-zA-Z]+"/gi,
-        (str) => str.replace(/"/g, "")
-      )}`
-    })
+/**
+ * Format argument into a GraphQL compliant arguments format.
+ */
+function buildArgs(args: any): string {
+  // Remove unwanted quotes
+  const formatValue = (v: string) =>
+    JSON.stringify(v).replace(/\{"[a-zA-Z]+"/gi, (str) => str.replace(/"/g, ""))
+
+  const entries = Object.entries(args).reduce((acc: any, cur) => {
+    const [key, value] = cur
+
+    if (value) {
+      acc.push(`${key}: ${formatValue(value as string)}`)
+    }
+
+    return acc
+  }, [])
+
   if (entries.length === 0) {
     return ""
   }
-  return "(" + entries + ")"
+
+  return `(${entries})`
 }
 
 /**
- * Find querytree, convert them into GraphQl query
+ * Find QueryTree, convert them into GraphQl query
  * then compute and return the result to the appropriate field
  */
 async function computeNestedQuery(
@@ -33,29 +44,27 @@ async function computeNestedQuery(
   /**
    * Check if there is a nested queryTree to be executed
    */
-  const isQueryTree = (value: any) =>
-    Object.keys(value).find((val) => val === "_queryTree")
+  const isQueryTree = (value: any) => value["_queryTree"] !== undefined
 
-  for (const q of query) {
-    if (q.args !== undefined) {
-      await Promise.all(
-        Object.entries(q.args).map(async (val: any) => {
-          if (val[1] instanceof Object && isQueryTree(val[1])) {
-            // push an id that will be used by the container
-            const getQueryTree = buildQuery([
-              ...val[1]["_queryTree"],
-              {
-                operation: "id",
-              },
-            ])
-            const result = await compute(getQueryTree, client)
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            //@ts-ignore
-            q.args[val[0]] = result
-          }
-        })
-      )
-    }
+  // Remove all undefined args and assert args is defined
+  const queryToExec = query.filter((q): q is Required<QueryTree> => !!q.args)
+
+  for (const q of queryToExec) {
+    await Promise.all(
+      Object.entries(q.args).map(async ([key, value]: any) => {
+        if (value instanceof Object && isQueryTree(value)) {
+          // push an id that will be used by the container
+          const getQueryTree = buildQuery([
+            ...value["_queryTree"],
+            {
+              operation: "id",
+            },
+          ])
+
+          q.args[key] = await compute(getQueryTree, client)
+        }
+      })
+    )
   }
 }
 
@@ -65,21 +74,22 @@ async function computeNestedQuery(
  * @returns
  */
 export function buildQuery(q: QueryTree[]): string {
-  let query = "{"
-  q.forEach((item: QueryTree, index: number) => {
-    query += `
-        ${item.operation} ${item.args ? `${buildArgs(item)}` : ""} ${
-      q.length - 1 !== index ? "{" : "}".repeat(q.length - 1)
-    }
-      `
-  })
-  query += "}"
+  const query = q.reduce((acc, { operation, args }, i) => {
+    const qLen = q.length
 
-  return query
+    acc += ` ${operation} ${args ? `${buildArgs(args)}` : ""} ${
+      qLen - 1 !== i ? "{" : "}".repeat(qLen - 1)
+    }`
+
+    return acc
+  }, "")
+
+  return `{${query} }`
 }
 
 /**
- * Convert querytree into a Graphql query then compute it
+ * Convert QueryTree into a Graphql query then compute it
+ *
  * @param q | QueryTree[]
  * @param client | GraphQLClient
  * @returns
@@ -92,9 +102,7 @@ export async function queryBuilder<T>(
 
   const query = buildQuery(q)
 
-  const result: Awaited<T> = await compute(query, client)
-
-  return result
+  return await compute(query, client)
 }
 
 /**
@@ -127,7 +135,7 @@ export function queryFlatten<T>(response: any): T {
 
 /**
  * Send a GraphQL document to the server
- * return a flatten result
+ * return a flatted result
  * @hidden
  */
 export async function compute<T>(
@@ -135,6 +143,7 @@ export async function compute<T>(
   client: GraphQLClient
 ): Promise<T> {
   let computeQuery: Awaited<T>
+
   try {
     computeQuery = await client.request(
       gql`
