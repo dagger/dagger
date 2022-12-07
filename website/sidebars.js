@@ -173,6 +173,11 @@ module.exports = {
       type: "doc",
       id: "current/faq",
     },
+
+    {
+      type: "doc",
+      id: "current/contributing",
+    },
   ],
   0.2: [
     {
