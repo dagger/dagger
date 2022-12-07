@@ -56,7 +56,7 @@ func Run(cmd *cobra.Command, args []string) {
 	}()
 
 	listenPort := <-listening
-	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s", listenPort))
+	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s/query", listenPort))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec

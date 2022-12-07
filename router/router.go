@@ -171,7 +171,7 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	mux := http.NewServeMux()
-	mux.Handle("/", h)
+	mux.Handle("/query", h)
 	mux.ServeHTTP(w, req)
 }
 

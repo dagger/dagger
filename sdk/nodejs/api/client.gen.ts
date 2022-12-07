@@ -33,7 +33,7 @@ class BaseClient {
   constructor({ queryTree, host }: ClientConfig = {}) {
     this._queryTree = queryTree || []
     this.clientHost = host || "127.0.0.1:8080"
-    this.client = new GraphQLClient(`http://${host}`)
+    this.client = new GraphQLClient(`http://${host}/query`)
   }
 
   /**
