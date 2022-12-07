@@ -6,6 +6,7 @@ import (
 	"path"
 	"reflect"
 	"strings"
+	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -271,6 +272,26 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 	}
 
 	return destPayload.ToDirectory()
+}
+
+func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := payload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	t := time.Unix(int64(unix), 0)
+
+	stamped := llb.Scratch().File(
+		llb.Copy(st, payload.Dir, ".", llb.WithCreatedTime(t)),
+	)
+
+	return NewDirectory(ctx, stamped, "", payload.Platform)
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string) (*Directory, error) {

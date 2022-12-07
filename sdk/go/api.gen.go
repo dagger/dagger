@@ -916,6 +916,17 @@ func (r *Directory) WithNewFile(path string, contents string) *Directory {
 	}
 }
 
+// This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+func (r *Directory) WithTimestamps(timestamp int) *Directory {
+	q := r.q.Select("withTimestamps")
+	q = q.Arg("timestamp", timestamp)
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
 // This directory with the directory at the given path removed
 func (r *Directory) WithoutDirectory(path string) *Directory {
 	q := r.q.Select("withoutDirectory")
@@ -1010,6 +1021,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+// A secret referencing the contents of this file
 func (r *File) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -1026,6 +1038,17 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	var response int
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+func (r *File) WithTimestamps(timestamp int) *File {
+	q := r.q.Select("withTimestamps")
+	q = q.Arg("timestamp", timestamp)
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
 }
 
 // A git ref (tag or branch)

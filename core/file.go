@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
+	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -100,6 +102,26 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 	return ref.StatFile(ctx, bkgw.StatRequest{
 		Path: payload.File,
 	})
+}
+
+func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
+	payload, err := file.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	st, err := payload.State()
+	if err != nil {
+		return nil, err
+	}
+
+	t := time.Unix(int64(unix), 0)
+
+	stamped := llb.Scratch().File(
+		llb.Copy(st, payload.File, ".", llb.WithCreatedTime(t)),
+	)
+
+	return NewFile(ctx, stamped, path.Base(payload.File), payload.Platform)
 }
 
 func (file *File) Export(

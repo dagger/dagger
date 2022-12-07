@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -316,6 +318,46 @@ func TestDirectoryWithFile(t *testing.T) {
 		File("sub-dir/target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)
+}
+
+func TestDirectoryWithTimestamps(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
+
+	dir := c.Directory().
+		WithNewFile("some-file", "some-content").
+		WithNewFile("sub-dir/sub-file", "sub-content").
+		WithTimestamps(int(reallyImportantTime.Unix()))
+
+	t.Run("changes file and directory timestamps recursively", func(t *testing.T) {
+		ls, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/dir", dir).
+			WithEnvVariable("RANDOM", identity.NewID()).
+			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, ls, "-rw-r--r--    1 root     root            12 Oct 26  1985 some-file")
+		require.Contains(t, ls, "drwxr-xr-x    2 root     root          4096 Oct 26  1985 sub-dir")
+		require.Contains(t, ls, "-rw-r--r--    1 root     root            11 Oct 26  1985 sub-file")
+	})
+
+	t.Run("results in stable tar archiving", func(t *testing.T) {
+		content, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/dir", dir).
+			WithEnvVariable("RANDOM", identity.NewID()).
+			// NB: there's a gotcha here: we need to tar * and not . because the
+			// directory itself has an unstable timestamp. :(
+			WithExec([]string{"sh", "-c", "tar -cf - -C /dir * | sha256sum -"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, content, "5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef")
+	})
 }
 
 func TestDirectoryWithoutDirectoryWithoutFile(t *testing.T) {

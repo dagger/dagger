@@ -7,18 +7,21 @@ scalar FileID
 
 "A file"
 type File {
-    "The content-addressed identifier of the file"
-    id: FileID!
+  "The content-addressed identifier of the file"
+  id: FileID!
 
-    "The contents of the file"
-    contents: String!
+  "The contents of the file"
+  contents: String!
 
-    # "A secret referencing the contents of this file"
-    secret: Secret!
+  "A secret referencing the contents of this file"
+  secret: Secret!
 
-    "The size of the file, in bytes"
-    size: Int!
+  "The size of the file, in bytes"
+  size: Int!
 
-    "Write the file to a file path on the host"
-    export(path: String!): Boolean!
+  "Write the file to a file path on the host"
+  export(path: String!): Boolean!
+
+  "This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch"
+  withTimestamps(timestamp: Int!): File!
 }

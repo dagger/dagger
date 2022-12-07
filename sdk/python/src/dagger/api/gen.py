@@ -700,6 +700,16 @@ class Directory(Type):
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
 
+    def with_timestamps(self, timestamp: int) -> "Directory":
+        """This directory with all file/dir timestamps set to the given time, in
+        seconds from the Unix epoch
+        """
+        _args = [
+            Arg("timestamp", timestamp),
+        ]
+        _ctx = self._select("withTimestamps", _args)
+        return Directory(_ctx)
+
     def without_directory(self, path: str) -> "Directory":
         """This directory with the directory at the given path removed"""
         _args = [
@@ -793,6 +803,7 @@ class File(Type):
         return await _ctx.execute(FileID)
 
     def secret(self) -> "Secret":
+        """A secret referencing the contents of this file"""
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
@@ -810,6 +821,16 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
         return await _ctx.execute(int)
+
+    def with_timestamps(self, timestamp: int) -> "File":
+        """This file with its created/modified timestamps set to the given time,
+        in seconds from the Unix epoch
+        """
+        _args = [
+            Arg("timestamp", timestamp),
+        ]
+        _ctx = self._select("withTimestamps", _args)
+        return File(_ctx)
 
 
 class GitRef(Type):
