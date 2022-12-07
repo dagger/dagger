@@ -64,6 +64,11 @@ module.exports = {
         },
         {
           type: "doc",
+          label: "Guides",
+          id: "current/sdk/nodejs/guides",
+        },
+        {
+          type: "doc",
           label: "Reference",
           id: "current/sdk/nodejs/reference/modules",
         },
