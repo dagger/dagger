@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/tracing"
 	"github.com/spf13/cobra"
@@ -43,7 +44,7 @@ func EngineSession(cmd *cobra.Command, args []string) {
 		Workdir:    workdir,
 		ConfigPath: configPath,
 		LogOutput:  os.Stderr,
-		RunnerHost: os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"),
+		RunnerHost: internalengine.RunnerHost(),
 	}
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)

@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/dagger/dagger/engine"
+	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 )
 
@@ -13,18 +14,11 @@ func withEngine(
 	sessionToken string,
 	cb engine.StartCallback,
 ) error {
-	var runnerHost string
-	if v, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST"); ok {
-		runnerHost = v
-	} else {
-		runnerHost = "docker-image://" + engineImageRef()
-	}
-
 	engineConf := &engine.Config{
 		Workdir:      workdir,
 		ConfigPath:   configPath,
 		SessionToken: sessionToken,
-		RunnerHost:   runnerHost,
+		RunnerHost:   internalengine.RunnerHost(),
 	}
 	if debugLogs {
 		engineConf.LogOutput = os.Stderr
