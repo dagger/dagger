@@ -19,9 +19,8 @@ import (
 )
 
 var (
-	configPath       string
-	workdir          string
-	allowedLocalDirs []string
+	configPath string
+	workdir    string
 )
 
 func init() {

@@ -15,19 +15,21 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var runCmd = &cobra.Command{
-	Use:                   "run [command]",
-	Aliases:               []string{"r"},
-	DisableFlagsInUseLine: true,
-	Long:                  "Runs the specified command in a Dagger session\n\nDAGGER_SESSION_URL and DAGGER_SESSION_TOKEN will be convieniently injected automatically.",
-	Short:                 "Runs a command in a Dagger session",
-	Example: `
+func runCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:                   "run [command]",
+		Aliases:               []string{"r"},
+		DisableFlagsInUseLine: true,
+		Long:                  "Runs the specified command in a Dagger session\n\nDAGGER_SESSION_URL and DAGGER_SESSION_TOKEN will be convieniently injected automatically.",
+		Short:                 "Runs a command in a Dagger session",
+		Example: `
 dagger run -- sh -c 'curl \
 -u $DAGGER_SESSION_TOKEN: \
 -H "content-type:application/json" \
 -d "{\"query\":\"{container{id}}\"}" $DAGGER_SESSION_URL'`,
-	Run:  Run,
-	Args: cobra.MinimumNArgs(1),
+		Run:  Run,
+		Args: cobra.MinimumNArgs(1),
+	}
 }
 
 func Run(cmd *cobra.Command, args []string) {
@@ -60,8 +62,8 @@ func Run(cmd *cobra.Command, args []string) {
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
+	c.Stdout = cmd.OutOrStdout()
+	c.Stderr = cmd.ErrOrStderr()
 	c.Stdin = os.Stdin
 	c.Run()
 }

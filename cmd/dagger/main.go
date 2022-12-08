@@ -16,31 +16,33 @@ var (
 	debugLogs bool
 )
 
-func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
+func rootCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use: "dagger",
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			var err error
+			workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
+			return err
+		},
+	}
 
-	rootCmd.AddCommand(
-		listenCmd,
-		doCmd,
-		versionCmd,
-		queryCmd,
-		runCmd,
+	cmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
+	cmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
+
+	cmd.AddCommand(
+		listenCmd(),
+		doCmd(),
+		versionCmd(),
+		queryCmd(),
+		runCmd(),
 	)
-}
 
-var rootCmd = &cobra.Command{
-	Use: "dagger",
-	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		var err error
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		return err
-	},
+	return cmd
 }
 
 func main() {
 	closer := tracing.Init()
-	if err := rootCmd.Execute(); err != nil {
+	if err := rootCmd().Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		closer.Close()
 		os.Exit(1)

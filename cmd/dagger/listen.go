@@ -18,12 +18,19 @@ var (
 	listenLocalDirs []string
 )
 
-var listenCmd = &cobra.Command{
-	Use:     "listen",
-	Aliases: []string{"l"},
-	Run:     Listen,
-	Hidden:  true,
-	Short:   "Starts the engine server",
+func listenCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:     "listen",
+		Aliases: []string{"l"},
+		Run:     Listen,
+		Hidden:  true,
+		Short:   "Starts the engine server",
+	}
+
+	cmd.Flags().StringVarP(&listenAddress, "listen", "", ":8080", "Listen on network address ADDR")
+	cmd.Flags().StringSliceVar(&listenLocalDirs, "local-dirs", []string{}, "local directories to allow for syncing into containers")
+
+	return cmd
 }
 
 func Listen(cmd *cobra.Command, args []string) {
@@ -42,9 +49,4 @@ func Listen(cmd *cobra.Command, args []string) {
 		fmt.Fprintf(cmd.ErrOrStderr(), "Error: %v\n", err)
 		os.Exit(1)
 	}
-}
-
-func init() {
-	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", ":8080", "Listen on network address ADDR")
-	listenCmd.Flags().StringSliceVar(&listenLocalDirs, "local-dirs", []string{}, "local directories to allow for syncing into containers")
 }

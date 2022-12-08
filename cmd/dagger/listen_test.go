@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"context"
 	"io"
-	"os"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
-	"dagger.io/dagger"
+	"github.com/Khan/genqlient/graphql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +22,7 @@ func TestAllowedLocalDirs(t *testing.T) {
 	allowedDir3 := t.TempDir()
 	notAllowedDir := t.TempDir()
 
-	cmd := rootCmd
+	cmd := rootCmd()
 	cmd.SetArgs([]string{
 		"listen",
 		"--listen", "localhost:0",
@@ -54,22 +54,24 @@ func TestAllowedLocalDirs(t *testing.T) {
 		_, addr, ok = strings.Cut(out, outputPrefix)
 		require.True(t, ok, "expected output to start with %q: %q", outputPrefix, out)
 		addr = strings.TrimSpace(addr)
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("timeout waiting for output")
 	}
 
-	origDaggerHost := os.Getenv("DAGGER_HOST")
-	os.Setenv("DAGGER_HOST", "http://"+addr)
-	defer os.Setenv("DAGGER_HOST", origDaggerHost)
-
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
+	gql := graphql.NewClient("http://"+addr+"/query", &http.Client{})
 
 	for _, allowedDir := range []string{allowedDir1, allowedDir2, allowedDir3} {
-		_, err := c.Host().Directory(allowedDir).Entries(ctx)
+		req := graphql.Request{Query: `{host{directory(path:"` + allowedDir + `"){entries}}}`}
+		data := map[string]any{}
+		resp := graphql.Response{Data: &data}
+		err := gql.MakeRequest(ctx, &req, &resp)
 		require.NoError(t, err)
+		require.Empty(t, resp.Errors)
 	}
 
-	_, err = c.Host().Directory(notAllowedDir).Entries(ctx)
+	req := graphql.Request{Query: `{host{directory(path:"` + notAllowedDir + `"){entries}}}`}
+	data := map[string]any{}
+	resp := graphql.Response{Data: &data}
+	err := gql.MakeRequest(ctx, &req, &resp)
 	require.ErrorContains(t, err, "no access allowed")
 }
