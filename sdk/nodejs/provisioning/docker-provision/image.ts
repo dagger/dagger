@@ -242,6 +242,10 @@ export class DockerImage implements EngineConn {
     // Set DAGGER_RUNNER_HOST in environment if it's not set.
     if (!process.env._EXPERIMENTAL_DAGGER_RUNNER_HOST) {
       process.env._EXPERIMENTAL_DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
+
+      // TODO(TomChv): Remove this line when DEFAULT_HOST will be updated to
+      // a version that support _EXPERIMENTAL environment variables
+      process.env.DAGGER_RUNNER_HOST = `docker-image://${this.imageRef.Ref}`
     }
 
     this.binProcess = new Bin(new URL(`bin://${engineSessionBinPath}`))
