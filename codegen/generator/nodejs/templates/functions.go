@@ -50,6 +50,11 @@ func subtract(a, b int) int {
 
 // commentToLines split a string by line breaks to be used in comments
 func commentToLines(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{}
+	}
+
 	split := strings.Split(s, "\n")
 	return split
 }

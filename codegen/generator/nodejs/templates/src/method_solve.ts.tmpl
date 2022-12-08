@@ -22,11 +22,11 @@
 		{{- if .TypeRef }}
     const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await computeQuery(
       [
-      ...this._queryTree,
-      {
-      operation: '{{ .Name }}'
-			{{- if or $required $optionals }},
-      args: { {{""}}
+        ...this._queryTree,
+        {
+          operation: "{{ .Name }}",
+			{{- if or $required $optionals }}
+          args: { {{""}}
       				{{- with $required }}
 					{{- template "call_args" $required }}
 				{{- end }}
@@ -34,10 +34,10 @@
       					{{- if $required }}, {{ end -}}
 				...opts
 				{{- end -}}
-{{""}} }
+{{""}} },
 			{{- end }}
-      }
-    ],
+        },
+      ],
       this.client
     )
 

@@ -37,6 +37,7 @@ var wantObjects = `
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
+
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
       [
@@ -58,9 +59,10 @@ export class CacheVolume extends BaseClient {
 export class Host extends BaseClient {
 
 
-
   /**
    * Access a directory on the host
+   *
+   * @param opts optional params for directory
    */
   directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({queryTree: [
@@ -72,9 +74,9 @@ export class Host extends BaseClient {
     ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 
-
   /**
    * Lookup the value of an environment variable. Null if the variable is not available.
+   *
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({queryTree: [
@@ -86,9 +88,10 @@ export class Host extends BaseClient {
     ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 
-
   /**
    * The current working directory on the host
+   *
+   * @param opts optional params for workdir
    */
   workdir(opts?: HostWorkdirOpts): Directory {
     return new Directory({queryTree: [

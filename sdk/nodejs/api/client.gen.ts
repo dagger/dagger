@@ -276,6 +276,8 @@ export class CacheVolume extends BaseClient {
 export class Container extends BaseClient {
   /**
    * Initialize this container from a Dockerfile build
+   *
+   * @param opts optional params for build
    */
   build(
     context: DirectoryID | Directory,
@@ -313,6 +315,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieve a directory at the given path. Mounts are included.
+   *
    */
   directory(path: string): Directory {
     return new Directory({
@@ -347,6 +350,7 @@ export class Container extends BaseClient {
 
   /**
    * The value of the specified environment variable
+   *
    */
   async envVariable(name: string): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -421,6 +425,8 @@ export class Container extends BaseClient {
 
   /**
    * Write the container as an OCI tarball to the destination file path on the host
+   *
+   * @param opts optional params for export
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -439,6 +445,7 @@ export class Container extends BaseClient {
 
   /**
    * Retrieve a file at the given path. Mounts are included.
+   *
    */
   file(path: string): File {
     return new File({
@@ -456,6 +463,7 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from the base image published at the given address
+   *
    */
   from(address: string): Container {
     return new Container({
@@ -473,7 +481,6 @@ export class Container extends BaseClient {
 
   /**
    * This container's root filesystem. Mounts are not included.
-   *
    *
    * @deprecated Replaced by rootfs.
    */
@@ -543,6 +550,8 @@ export class Container extends BaseClient {
 
   /**
    * Publish this container as a new image, returning a fully qualified ref
+   *
+   * @param opts optional params for publish
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -630,6 +639,8 @@ export class Container extends BaseClient {
 
   /**
    * Configures default arguments for future commands
+   *
+   * @param opts optional params for withDefaultArgs
    */
   withDefaultArgs(opts?: ContainerWithDefaultArgsOpts): Container {
     return new Container({
@@ -647,6 +658,8 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a directory written at the given path
+   *
+   * @param opts optional params for withDirectory
    */
   withDirectory(
     path: string,
@@ -668,6 +681,7 @@ export class Container extends BaseClient {
 
   /**
    * This container but with a different command entrypoint
+   *
    */
   withEntrypoint(args: string[]): Container {
     return new Container({
@@ -685,6 +699,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus the given environment variable
+   *
    */
   withEnvVariable(name: string, value: string): Container {
     return new Container({
@@ -702,6 +717,9 @@ export class Container extends BaseClient {
 
   /**
    * This container after executing the specified command inside it
+   *
+   * @param args Command to run instead of the container's default command
+   * @param opts optional params for withExec
    */
   withExec(args: string[], opts?: ContainerWithExecOpts): Container {
     return new Container({
@@ -739,6 +757,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus the contents of the given file copied to the given path
+   *
    */
   withFile(
     path: string,
@@ -760,6 +779,8 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a cache volume mounted at the given path
+   *
+   * @param opts optional params for withMountedCache
    */
   withMountedCache(
     path: string,
@@ -781,6 +802,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a directory mounted at the given path
+   *
    */
   withMountedDirectory(
     path: string,
@@ -801,6 +823,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a file mounted at the given path
+   *
    */
   withMountedFile(path: string, source: FileID | File): Container {
     return new Container({
@@ -818,6 +841,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a secret mounted into a file at the given path
+   *
    */
   withMountedSecret(path: string, source: SecretID | Secret): Container {
     return new Container({
@@ -835,6 +859,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a temporary directory mounted at the given path
+   *
    */
   withMountedTemp(path: string): Container {
     return new Container({
@@ -852,6 +877,8 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a new file written at the given path
+   *
+   * @param opts optional params for withNewFile
    */
   withNewFile(path: string, opts?: ContainerWithNewFileOpts): Container {
     return new Container({
@@ -869,6 +896,7 @@ export class Container extends BaseClient {
 
   /**
    * Initialize this container from this DirectoryID
+   *
    */
   withRootfs(id: DirectoryID | Directory): Container {
     return new Container({
@@ -886,6 +914,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus an env variable containing the given secret
+   *
    */
   withSecretVariable(name: string, secret: SecretID | Secret): Container {
     return new Container({
@@ -903,6 +932,7 @@ export class Container extends BaseClient {
 
   /**
    * This container plus a socket forwarded to the given Unix socket path
+   *
    */
   withUnixSocket(path: string, source: SocketID): Container {
     return new Container({
@@ -920,6 +950,7 @@ export class Container extends BaseClient {
 
   /**
    * This container but with a different command user
+   *
    */
   withUser(name: string): Container {
     return new Container({
@@ -937,6 +968,7 @@ export class Container extends BaseClient {
 
   /**
    * This container but with a different working directory
+   *
    */
   withWorkdir(path: string): Container {
     return new Container({
@@ -954,6 +986,7 @@ export class Container extends BaseClient {
 
   /**
    * This container minus the given environment variable
+   *
    */
   withoutEnvVariable(name: string): Container {
     return new Container({
@@ -971,6 +1004,7 @@ export class Container extends BaseClient {
 
   /**
    * This container after unmounting everything at the given path.
+   *
    */
   withoutMount(path: string): Container {
     return new Container({
@@ -988,6 +1022,7 @@ export class Container extends BaseClient {
 
   /**
    * This container with a previously added Unix socket removed
+   *
    */
   withoutUnixSocket(path: string): Container {
     return new Container({
@@ -1027,6 +1062,7 @@ export class Container extends BaseClient {
 export class Directory extends BaseClient {
   /**
    * The difference between this directory and an another directory
+   *
    */
   diff(other: DirectoryID | Directory): Directory {
     return new Directory({
@@ -1044,6 +1080,7 @@ export class Directory extends BaseClient {
 
   /**
    * Retrieve a directory at the given path
+   *
    */
   directory(path: string): Directory {
     return new Directory({
@@ -1061,6 +1098,8 @@ export class Directory extends BaseClient {
 
   /**
    * Build a new Docker container from this directory
+   *
+   * @param opts optional params for dockerBuild
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({
@@ -1078,6 +1117,8 @@ export class Directory extends BaseClient {
 
   /**
    * Return a list of files and directories at the given path
+   *
+   * @param opts optional params for entries
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1096,6 +1137,7 @@ export class Directory extends BaseClient {
 
   /**
    * Write the contents of the directory to a path on the host
+   *
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1114,6 +1156,7 @@ export class Directory extends BaseClient {
 
   /**
    * Retrieve a file at the given path
+   *
    */
   file(path: string): File {
     return new File({
@@ -1148,6 +1191,7 @@ export class Directory extends BaseClient {
 
   /**
    * load a project's metadata
+   *
    */
   loadProject(configPath: string): Project {
     return new Project({
@@ -1165,6 +1209,8 @@ export class Directory extends BaseClient {
 
   /**
    * This directory plus a directory written at the given path
+   *
+   * @param opts optional params for withDirectory
    */
   withDirectory(
     path: string,
@@ -1186,6 +1232,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory plus the contents of the given file copied to the given path
+   *
    */
   withFile(
     path: string,
@@ -1207,6 +1254,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory plus a new directory created at the given path
+   *
    */
   withNewDirectory(
     path: string,
@@ -1227,6 +1275,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory plus a new file written at the given path
+   *
    */
   withNewFile(
     path: string,
@@ -1248,6 +1297,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+   *
    */
   withTimestamps(timestamp: number): Directory {
     return new Directory({
@@ -1265,6 +1315,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory with the directory at the given path removed
+   *
    */
   withoutDirectory(path: string): Directory {
     return new Directory({
@@ -1282,6 +1333,7 @@ export class Directory extends BaseClient {
 
   /**
    * This directory with the file at the given path removed
+   *
    */
   withoutFile(path: string): Directory {
     return new Directory({
@@ -1360,6 +1412,7 @@ export class File extends BaseClient {
 
   /**
    * Write the file to a file path on the host
+   *
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1428,6 +1481,7 @@ export class File extends BaseClient {
 
   /**
    * This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+   *
    */
   withTimestamps(timestamp: number): File {
     return new File({
@@ -1467,6 +1521,8 @@ export class GitRef extends BaseClient {
 
   /**
    * The filesystem tree at this ref
+   *
+   * @param opts optional params for tree
    */
   tree(opts?: GitRefTreeOpts): Directory {
     return new Directory({
@@ -1489,6 +1545,7 @@ export class GitRef extends BaseClient {
 export class GitRepository extends BaseClient {
   /**
    * Details on one branch
+   *
    */
   branch(name: string): GitRef {
     return new GitRef({
@@ -1523,6 +1580,7 @@ export class GitRepository extends BaseClient {
 
   /**
    * Details on one commit
+   *
    */
   commit(id: string): GitRef {
     return new GitRef({
@@ -1540,6 +1598,7 @@ export class GitRepository extends BaseClient {
 
   /**
    * Details on one tag
+   *
    */
   tag(name: string): GitRef {
     return new GitRef({
@@ -1579,6 +1638,8 @@ export class GitRepository extends BaseClient {
 export class Host extends BaseClient {
   /**
    * Access a directory on the host
+   *
+   * @param opts optional params for directory
    */
   directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({
@@ -1596,6 +1657,7 @@ export class Host extends BaseClient {
 
   /**
    * Access an environment variable on the host
+   *
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({
@@ -1613,6 +1675,7 @@ export class Host extends BaseClient {
 
   /**
    * Access a Unix socket on the host
+   *
    */
   unixSocket(path: string): Socket {
     return new Socket({
@@ -1797,6 +1860,7 @@ export class Project extends BaseClient {
 export default class Client extends BaseClient {
   /**
    * Construct a cache volume for a given cache key
+   *
    */
   cacheVolume(key: string): CacheVolume {
     return new CacheVolume({
@@ -1816,6 +1880,8 @@ export default class Client extends BaseClient {
    * Load a container from ID.
    * Null ID returns an empty container (scratch).
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+   *
+   * @param opts optional params for container
    */
   container(opts?: ClientContainerOpts): Container {
     return new Container({
@@ -1850,6 +1916,8 @@ export default class Client extends BaseClient {
 
   /**
    * Load a directory by ID. No argument produces an empty directory.
+   *
+   * @param opts optional params for directory
    */
   directory(opts?: ClientDirectoryOpts): Directory {
     return new Directory({
@@ -1867,6 +1935,7 @@ export default class Client extends BaseClient {
 
   /**
    * Load a file by ID
+   *
    */
   file(id: FileID | File): File {
     return new File({
@@ -1884,6 +1953,8 @@ export default class Client extends BaseClient {
 
   /**
    * Query a git repository
+   *
+   * @param opts optional params for git
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -1917,6 +1988,7 @@ export default class Client extends BaseClient {
 
   /**
    * An http remote
+   *
    */
   http(url: string): File {
     return new File({
@@ -1934,6 +2006,7 @@ export default class Client extends BaseClient {
 
   /**
    * Look up a project by name
+   *
    */
   project(name: string): Project {
     return new Project({
@@ -1951,6 +2024,7 @@ export default class Client extends BaseClient {
 
   /**
    * Load a secret from its ID
+   *
    */
   secret(id: SecretID | Secret): Secret {
     return new Secret({
@@ -1968,6 +2042,8 @@ export default class Client extends BaseClient {
 
   /**
    * Load a socket by ID
+   *
+   * @param opts optional params for socket
    */
   socket(opts?: ClientSocketOpts): Socket {
     return new Socket({

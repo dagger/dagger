@@ -1,32 +1,41 @@
 {{ define "method_comment" }}
-  {{- if .Description -}}
-    {{- $commentLines := CommentToLines .Description }}
-    {{- /* we split the comment string into a string slice of one line per element */ -}}
-    {{- $required := GetRequiredArgs .Args -}}
-    {{- $optionals := GetOptionalArgs .Args -}}
-    {{- $deprecationLines := FormatDeprecation .DeprecationReason }}
+	{{- $required := GetRequiredArgs .Args -}}
+	{{- $optionals := GetOptionalArgs .Args -}}
+	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
+	{{- if or .Description .Args .IsDeprecated -}}
+		{{- $commentLines := CommentToLines .Description }}
+		{{- /* we split the comment string into a string slice of one line per element */ -}}
 {{""}}
 {{""}}
   /**
-  {{- range $commentLines }}
+		{{- range $commentLines }}
    * {{ . }}
-  {{- end }}
-  {{- if .IsDeprecated }}
+		{{- end }}
+	{{- end }}
+
+	{{- if and .Description .Args }}
    *
-  {{- range $required }}
-    {{- if .Description }}
-   * @param {{ .Description }}
-    {{- end }}
-  {{- end }}
-  {{- if $optionals }}
+	{{- end }}
+
+	{{- range $required }}
+		{{- if .Description }}
+   * @param {{ .Name }} {{ .Description }}
+		{{- end }}
+	{{- end }}
+
+	{{- if $optionals }}
    * @param opts optional params for {{ .Name | FormatName }}
-  {{- end }}
+	{{- end }}
+
+	{{- if .IsDeprecated }}
    *
-  {{- range $deprecationLines }}
+		{{- range $deprecationLines }}
    * {{ . }}
-  {{- end }}
-  {{- end }}
+		{{- end }}
+	{{- end }}
+
+	{{- if or .Description .Args .IsDeprecated }}
    */
+	{{- end }}
 {{ "" -}}
-  {{- end }}
 {{- end }}
