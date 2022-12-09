@@ -18,20 +18,21 @@ connect(async (client: Client) => {
     // highlight-end
 
     // mount cloned repository into Node image
-    const runner = client
-      .container({ id: node })
+    const runner = node
       .withMountedDirectory("/src", source)
       .withWorkdir("/src")
-      .withExec(["npm", "install"])
+      .withExec({ args: ["npm", "install"] })
 
     // run tests
-    await runner.withExec(["npm", "test", "--", "--watchAll=false"]).exitCode()
+    await runner
+      .withExec({ args: ["npm", "test", "--", "--watchAll=false"] })
+      .exitCode()
 
     // highlight-start
     // build application using specified Node version
     // write the build output to the host
     await runner
-      .withExec(["npm", "run", "build"])
+      .withExec({ args: ["npm", "run", "build"] })
       .directory("build/")
       .export(`./build-node-${nodeVersion}`)
   }
