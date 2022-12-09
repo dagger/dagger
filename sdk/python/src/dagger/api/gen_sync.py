@@ -357,6 +357,7 @@ class Container(Type):
         directory: "Directory",
         exclude: list[str] | None = None,
         include: list[str] | None = None,
+        permissions: int | None = None,
     ) -> "Container":
         """This container plus a directory written at the given path"""
         _args = [
@@ -364,6 +365,7 @@ class Container(Type):
             Arg("directory", "directory", directory, Directory),
             Arg("exclude", "exclude", exclude, list[str] | None, None),
             Arg("include", "include", include, list[str] | None, None),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -439,13 +441,16 @@ class Container(Type):
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
 
-    def with_file(self, path: str, source: "File") -> "Container":
+    def with_file(
+        self, path: str, source: "File", permissions: int | None = None
+    ) -> "Container":
         """This container plus the contents of the given file copied to the given
         path
         """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -497,11 +502,14 @@ class Container(Type):
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
 
-    def with_new_file(self, path: str, contents: str | None = None) -> "Container":
+    def with_new_file(
+        self, path: str, contents: str | None = None, permissions: int | None = None
+    ) -> "Container":
         """This container plus a new file written at the given path"""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str | None, None),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -685,6 +693,7 @@ class Directory(Type):
         directory: "Directory",
         exclude: list[str] | None = None,
         include: list[str] | None = None,
+        permissions: int | None = None,
     ) -> "Directory":
         """This directory plus a directory written at the given path"""
         _args = [
@@ -692,34 +701,44 @@ class Directory(Type):
             Arg("directory", "directory", directory, Directory),
             Arg("exclude", "exclude", exclude, list[str] | None, None),
             Arg("include", "include", include, list[str] | None, None),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
 
-    def with_file(self, path: str, source: "File") -> "Directory":
+    def with_file(
+        self, path: str, source: "File", permissions: int | None = None
+    ) -> "Directory":
         """This directory plus the contents of the given file copied to the given
         path
         """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
 
-    def with_new_directory(self, path: str) -> "Directory":
+    def with_new_directory(
+        self, path: str, permissions: int | None = None
+    ) -> "Directory":
         """This directory plus a new directory created at the given path"""
         _args = [
             Arg("path", "path", path, str),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
 
-    def with_new_file(self, path: str, contents: str) -> "Directory":
+    def with_new_file(
+        self, path: str, contents: str, permissions: int | None = None
+    ) -> "Directory":
         """This directory plus a new file written at the given path"""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str),
+            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)

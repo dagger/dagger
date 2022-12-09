@@ -105,6 +105,7 @@ export type ContainerWithDefaultArgsOpts = {
 export type ContainerWithDirectoryOpts = {
   exclude?: string[]
   include?: string[]
+  permissions?: number
 }
 
 export type ContainerWithExecOpts = {
@@ -131,12 +132,17 @@ export type ContainerWithExecOpts = {
   experimentalPrivilegedNesting?: boolean
 }
 
+export type ContainerWithFileOpts = {
+  permissions?: number
+}
+
 export type ContainerWithMountedCacheOpts = {
   source?: DirectoryID | Directory
 }
 
 export type ContainerWithNewFileOpts = {
   contents?: string
+  permissions?: number
 }
 
 /**
@@ -161,6 +167,19 @@ export type DirectoryEntriesOpts = {
 export type DirectoryWithDirectoryOpts = {
   exclude?: string[]
   include?: string[]
+  permissions?: number
+}
+
+export type DirectoryWithFileOpts = {
+  permissions?: number
+}
+
+export type DirectoryWithNewDirectoryOpts = {
+  permissions?: number
+}
+
+export type DirectoryWithNewFileOpts = {
+  permissions?: number
 }
 
 /**
@@ -716,13 +735,17 @@ export class Container extends BaseClient {
   /**
    * This container plus the contents of the given file copied to the given path
    */
-  withFile(path: string, source: FileID | File): Container {
+  withFile(
+    path: string,
+    source: FileID | File,
+    opts?: ContainerWithFileOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withFile",
-          args: { path, source },
+          args: { path, source, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1159,13 +1182,17 @@ export class Directory extends BaseClient {
   /**
    * This directory plus the contents of the given file copied to the given path
    */
-  withFile(path: string, source: FileID | File): Directory {
+  withFile(
+    path: string,
+    source: FileID | File,
+    opts?: DirectoryWithFileOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withFile",
-          args: { path, source },
+          args: { path, source, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1176,13 +1203,16 @@ export class Directory extends BaseClient {
   /**
    * This directory plus a new directory created at the given path
    */
-  withNewDirectory(path: string): Directory {
+  withNewDirectory(
+    path: string,
+    opts?: DirectoryWithNewDirectoryOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewDirectory",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1193,13 +1223,17 @@ export class Directory extends BaseClient {
   /**
    * This directory plus a new file written at the given path
    */
-  withNewFile(path: string, contents: string): Directory {
+  withNewFile(
+    path: string,
+    contents: string,
+    opts?: DirectoryWithNewFileOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withNewFile",
-          args: { path, contents },
+          args: { path, contents, ...opts },
         },
       ],
       host: this.clientHost,
