@@ -433,15 +433,15 @@ func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Co
 }
 
 func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args withDirectoryArgs) (*core.Container, error) {
-	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
+	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Permissions)
 }
 
 func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args withFileArgs) (*core.Container, error) {
-	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source})
+	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Permissions)
 }
 
 func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args withNewFileArgs) (*core.Container, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions)
 }
 
 type containerWithUnixSocketArgs struct {

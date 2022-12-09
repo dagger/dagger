@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -345,22 +344,22 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
+func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, permissions os.FileMode) (*Container, error) {
 	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithDirectory(ctx, ".", src, filter, fs.FileMode(0))
+		return dir.WithDirectory(ctx, ".", src, filter, permissions)
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions os.FileMode) (*Container, error) {
 	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithFile(ctx, ".", src, fs.FileMode(0))
+		return dir.WithFile(ctx, ".", src, permissions)
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions os.FileMode) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, gw, file, content, 0) // TODO(vito): doesn't this need a name...?
+		return dir.WithNewFile(ctx, gw, file, content, permissions) // TODO(vito): doesn't this need a name...?
 	})
 }
 

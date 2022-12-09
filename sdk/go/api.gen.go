@@ -391,6 +391,8 @@ type ContainerWithDirectoryOpts struct {
 	Exclude []string
 
 	Include []string
+
+	Permissions int
 }
 
 // This container plus a directory written at the given path
@@ -409,6 +411,13 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 			break
 		}
 	}
@@ -508,11 +517,23 @@ func (r *Container) WithFS(id *Directory) *Container {
 	}
 }
 
+// ContainerWithFileOpts contains options for Container.WithFile
+type ContainerWithFileOpts struct {
+	Permissions int
+}
+
 // This container plus the contents of the given file copied to the given path
-func (r *Container) WithFile(path string, source *File) *Container {
+func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -594,6 +615,8 @@ func (r *Container) WithMountedTemp(path string) *Container {
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
 	Contents string
+
+	Permissions int
 }
 
 // This container plus a new file written at the given path
@@ -604,6 +627,13 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Contents) {
 			q = q.Arg("contents", opts[i].Contents)
+			break
+		}
+	}
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 			break
 		}
 	}
