@@ -1,0 +1,19 @@
+.docker:
+  image: golang:1.19-alpine
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '20.10.16'
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add docker-cli
+build:
+  extends: [.dagger]
+  script:
+    - go run main.go
