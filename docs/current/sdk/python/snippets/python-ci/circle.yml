@@ -1,0 +1,22 @@
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/python:3.11
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Install deps
+          command: |
+            python -m pip install --upgrade pip
+            if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+            pip install dagger-io
+      - run:
+          name: Dagger Pipeline
+          command: python main.py
+workflows:
+  dagger:
+    jobs:
+      - build
