@@ -853,6 +853,8 @@ type DirectoryWithDirectoryOpts struct {
 	Exclude []string
 
 	Include []string
+
+	Permissions int
 }
 
 // This directory plus a directory written at the given path
@@ -874,29 +876,60 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 			break
 		}
 	}
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
 		c: r.c,
 	}
+}
+
+// DirectoryWithFileOpts contains options for Directory.WithFile
+type DirectoryWithFileOpts struct {
+	Permissions int
 }
 
 // This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithFile(path string, source *File) *Directory {
+func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
 		c: r.c,
 	}
+}
+
+// DirectoryWithNewDirectoryOpts contains options for Directory.WithNewDirectory
+type DirectoryWithNewDirectoryOpts struct {
+	Permissions int
 }
 
 // This directory plus a new directory created at the given path
-func (r *Directory) WithNewDirectory(path string) *Directory {
+func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
 	q := r.q.Select("withNewDirectory")
 	q = q.Arg("path", path)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
@@ -904,11 +937,23 @@ func (r *Directory) WithNewDirectory(path string) *Directory {
 	}
 }
 
+// DirectoryWithNewFileOpts contains options for Directory.WithNewFile
+type DirectoryWithNewFileOpts struct {
+	Permissions int
+}
+
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, contents string) *Directory {
+func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,

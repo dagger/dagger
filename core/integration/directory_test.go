@@ -295,6 +295,13 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
 		require.Error(t, err)
 	})
+
+	dir2 := c.Directory().WithNewDirectory("permissions-test", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0444})
+	ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir2)
+	stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test"}).Stdout(ctx)
+
+	require.NoError(t, err)
+	require.Contains(t, stdout2, "dr--r--r--")
 }
 
 func TestDirectoryWithFile(t *testing.T) {
@@ -318,6 +325,27 @@ func TestDirectoryWithFile(t *testing.T) {
 		File("sub-dir/target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)
+
+	dir := c.Directory().
+		WithNewFile(
+			"file-with-permissions",
+			"this should have rwxrwxrwx permissions",
+			dagger.DirectoryWithNewFileOpts{Permissions: 0777})
+
+	ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+
+	stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "rwxrwxrwx")
+
+	dir2 := c.Directory().
+		WithNewFile(
+			"file-with-permissions",
+			"this should have rw-r--r-- permissions")
+	ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir2)
+	stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout2, "rw-r--r--")
 }
 
 func TestDirectoryWithTimestamps(t *testing.T) {

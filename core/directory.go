@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"fmt"
+	"io/fs"
+	"os"
 	"path"
 	"reflect"
 	"strings"
@@ -179,10 +181,14 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	return paths, nil
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions os.FileMode) (*Directory, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
+	}
+
+	if permissions == 0 {
+		permissions = 0o644
 	}
 
 	// be sure to create the file under the working directory
@@ -201,7 +207,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 	st = st.File(
 		llb.Mkfile(
 			dest,
-			0644, // TODO(vito): expose, issue: #3167
+			permissions, // TODO(vito): expose, issue: #3167
 			content,
 		),
 	)
@@ -238,7 +244,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}).ToFile()
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, permissions fs.FileMode) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -259,11 +265,17 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
+	var perm *fs.FileMode = nil
+	if permissions != 0 {
+		perm = &permissions
+	}
+
 	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath:      true,
 		CopyDirContentsOnly: true,
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
+		Mode:                perm,
 	}))
 
 	err = destPayload.SetState(ctx, st)
@@ -294,7 +306,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 	return NewDirectory(ctx, stamped, "", payload.Platform)
 }
 
-func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string) (*Directory, error) {
+func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string, permissions fs.FileMode) (*Directory, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -313,7 +325,11 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 		return nil, err
 	}
 
-	st = st.File(llb.Mkdir(dest, 0755, llb.WithParents(true)))
+	if permissions == 0 {
+		permissions = 0755
+	}
+
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
 
 	err = payload.SetState(ctx, st)
 	if err != nil {
@@ -323,7 +339,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File) (*Directory, error) {
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -344,8 +360,15 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File) (*
 		return nil, err
 	}
 
+	var perm *fs.FileMode = nil
+
+	if permissions != 0 {
+		perm = &permissions
+	}
+
 	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
+		Mode:           perm,
 	}))
 
 	err = destPayload.SetState(ctx, st)

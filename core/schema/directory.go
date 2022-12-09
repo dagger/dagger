@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"io/fs"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -71,11 +73,12 @@ func (s *directorySchema) subdirectory(ctx *router.Context, parent *core.Directo
 }
 
 type withNewDirectoryArgs struct {
-	Path string
+	Path        string
+	Permissions fs.FileMode
 }
 
 func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, s.gw, args.Path)
+	return parent.WithNewDirectory(ctx, s.gw, args.Path, args.Permissions)
 }
 
 type withDirectoryArgs struct {
@@ -83,10 +86,11 @@ type withDirectoryArgs struct {
 	Directory core.DirectoryID
 
 	core.CopyFilter
+	Permissions fs.FileMode
 }
 
 func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
+	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Permissions)
 }
 
 type dirWithTimestampsArgs struct {
@@ -114,21 +118,23 @@ func (s *directorySchema) file(ctx *router.Context, parent *core.Directory, args
 }
 
 type withNewFileArgs struct {
-	Path     string
-	Contents string
+	Path        string
+	Contents    string
+	Permissions fs.FileMode
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents))
+	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions)
 }
 
 type withFileArgs struct {
-	Path   string
-	Source core.FileID
+	Path        string
+	Source      core.FileID
+	Permissions fs.FileMode
 }
 
 func (s *directorySchema) withFile(ctx *router.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
-	return parent.WithFile(ctx, args.Path, &core.File{ID: args.Source})
+	return parent.WithFile(ctx, args.Path, &core.File{ID: args.Source}, args.Permissions)
 }
 
 type withoutDirectoryArgs struct {
