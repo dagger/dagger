@@ -11,7 +11,7 @@ builds:
     binary: dagger
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
+      - -X github.com/dagger/dagger/internal/engine.Version={{.Version}}
     goos:
       - linux
       - windows

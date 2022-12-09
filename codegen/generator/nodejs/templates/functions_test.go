@@ -4,9 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
+	"github.com/dagger/dagger/engine"
+	internalengine "github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/router"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,17 +16,23 @@ var currentSchema *introspection.Schema
 
 func init() {
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx)
-	if err != nil {
-		panic(err)
-	}
-	defer client.Close()
 
-	currentSchema, err = generator.Introspect(ctx, client)
+	engineConf := &engine.Config{
+		RunnerHost:   internalengine.RunnerHost(),
+		NoExtensions: true,
+	}
+	err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
+		var err error
+		currentSchema, err = generator.Introspect(ctx, r)
+		if err != nil {
+			panic(err)
+		}
+		generator.SetSchemaParents(currentSchema)
+		return nil
+	})
 	if err != nil {
 		panic(err)
 	}
-	generator.SetSchemaParents(currentSchema)
 }
 
 func getField(t *introspection.Type, name string) *introspection.Field {

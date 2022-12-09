@@ -5,12 +5,8 @@ import (
 	"runtime"
 	"runtime/debug"
 
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/spf13/cobra"
-)
-
-const (
-	developmentVersion = "devel"
-	engineImageRepo    = "ghcr.io/dagger/engine"
 )
 
 var versionCmd = &cobra.Command{
@@ -24,9 +20,6 @@ var versionCmd = &cobra.Command{
 		fmt.Println(long())
 	},
 }
-
-// version holds the complete version number. Filled in at linking time.
-var version = developmentVersion
 
 // revision returns the VCS revision being used to build or empty string
 // if none.
@@ -45,18 +38,9 @@ func revision() string {
 }
 
 func short() string {
-	return fmt.Sprintf("dagger %s (%s)", version, revision())
+	return fmt.Sprintf("dagger %s (%s)", engine.Version, revision())
 }
 
 func long() string {
 	return fmt.Sprintf("%s %s/%s", short(), runtime.GOOS, runtime.GOARCH)
-}
-
-func engineImageRef() string {
-	// if this is a release, use the release image
-	if version != developmentVersion {
-		return fmt.Sprintf("%s:v%s", engineImageRepo, version)
-	}
-	// fallback to using the latest image from main
-	return fmt.Sprintf("%s:main", engineImageRepo)
 }
