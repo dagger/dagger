@@ -5,3 +5,5 @@ export { EngineSessionConnectParamsParseError } from "./EngineSessionConnectPara
 export { GraphQLRequestError } from "./GraphQLRequestError.js"
 export { InitEngineSessionBinaryError } from "./InitEngineSessionBinaryError.js"
 export { TooManyNestedObjectsError } from "./TooManyNestedObjectsError.js"
+export { EngineSessionEOFError } from "./EngineSessionEOFErrorOptions.js"
+export { EngineSessionConnectionTimeoutError } from "./EngineSessionConnectionTimeoutError.js"

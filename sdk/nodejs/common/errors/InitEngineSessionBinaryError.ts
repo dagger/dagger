@@ -5,7 +5,7 @@ import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
  */
 export class InitEngineSessionBinaryError extends DaggerSDKError {
   name = "InitEngineSessionBinaryError"
-  code = "D105"
+  code = "D106"
 
   /**
    *  @hidden
