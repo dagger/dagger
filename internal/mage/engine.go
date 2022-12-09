@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	engineSessionBinName = "dagger-engine-session"
-	shimBinName          = "dagger-shim"
-	buildkitRepo         = "github.com/moby/buildkit"
-	buildkitBranch       = "v0.10.5"
+	daggerCliBinName = "dagger"
+	shimBinName      = "dagger-shim"
+	buildkitRepo     = "github.com/moby/buildkit"
+	buildkitBranch   = "v0.10.5"
 )
 
 func parseRef(tag string) error {
@@ -244,13 +244,13 @@ func devEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 					WithEnvVariable("GOARCH", arch).
 					WithExec([]string{
 						"go", "build",
-						"-o", "./bin/" + engineSessionBinName,
+						"-o", "./bin/" + daggerCliBinName,
 						"-ldflags", "-s -w",
-						"/app/cmd/engine-session",
+						"/app/cmd/dagger",
 					}).
-					File("./bin/" + engineSessionBinName)
+					File("./bin/" + daggerCliBinName)
 				buildkitBase = buildkitBase.WithRootfs(
-					buildkitBase.Rootfs().WithFile("/usr/bin/"+engineSessionBinName+"-"+os+"-"+arch, builtBin),
+					buildkitBase.Rootfs().WithFile("/usr/bin/"+daggerCliBinName+"-"+os+"-"+arch, builtBin),
 				)
 			}
 		}

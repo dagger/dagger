@@ -6,16 +6,19 @@ describe("NodeJS sdk Connect", function () {
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 
-    await connect(async (client) => {
-      const result = await client
-        .container()
-        .from("alpine")
-        .withExec(["apk", "add", "curl"])
-        .withExec(["curl", "https://dagger.io/"])
-        .exitCode()
+    await connect(
+      async (client) => {
+        const result = await client
+          .container()
+          .from("alpine")
+          .withExec(["apk", "add", "curl"])
+          .withExec(["curl", "https://dagger.io/"])
+          .exitCode()
 
-      assert.ok(result === 0)
-    })
+        assert.ok(result === 0)
+      },
+      { LogOutput: process.stderr }
+    )
   })
 
   it("throws error", async function () {

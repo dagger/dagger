@@ -18,6 +18,6 @@ const (
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen                         = 16
 	containerNamePrefix             = "dagger-engine-"
-	engineSessionBinPrefix          = "dagger-engine-session-"
-	containerEngineSessionBinPrefix = "/usr/bin/" + engineSessionBinPrefix
+	daggerCLIBinPrefix              = "dagger-"
+	containerEngineSessionBinPrefix = "/usr/bin/" + daggerCLIBinPrefix
 )

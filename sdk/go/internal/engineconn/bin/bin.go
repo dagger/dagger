@@ -4,14 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +26,7 @@ func New(u *url.URL) (engineconn.EngineConn, error) {
 	path := u.Host + u.Path
 	var err error
 	if path == "" {
-		path = "dagger-engine-session"
+		path = "dagger"
 	}
 	path, err = exec.LookPath(path)
 	if err != nil {
@@ -45,27 +44,17 @@ type Bin struct {
 }
 
 func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
-	args := []string{}
+	args := []string{"session"}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
-	if cfg.ConfigPath != "" {
-		args = append(args, "--project", cfg.ConfigPath)
-	}
 
-	addr, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
+	httpClient, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
 	if err != nil {
 		return nil, err
 	}
 	c.childStdin = childStdin
-
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
-			},
-		},
-	}, nil
+	return httpClient, nil
 }
 
 func (c *Bin) Addr() string {
@@ -79,7 +68,16 @@ func (c *Bin) Close() error {
 	return nil
 }
 
-func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (_ string, _ io.Closer, rerr error) {
+func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerRunnerHost string, cmd string, args ...string) (httpClient *http.Client, childStdin io.Closer, rerr error) {
+	daggerRunnerHost, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	if !ok {
+		daggerRunnerHost = defaultDaggerRunnerHost
+	}
+	env := os.Environ()
+	if daggerRunnerHost != "" {
+		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+daggerRunnerHost)
+	}
+
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
 	// temporarily have the tmpbin fd that we closed earlier open still, and it
@@ -90,21 +88,11 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 	// We workaround this the same way suggested in the issue, by sleeping
 	// and retrying the exec a few times. This is such an obscure case that
 	// this retry approach should be fine. It can only happen when a new
-	// engine-session binary needs to be created and even then only if many
+	// dagger binary needs to be created and even then only if many
 	// threads within this process are trying to provision it at the same time.
-	daggerRunnerHost, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
-	if !ok {
-		daggerRunnerHost = defaultDaggerRunnerHost
-	}
-	env := os.Environ()
-	if daggerRunnerHost != "" {
-		env = append(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="+daggerRunnerHost)
-	}
-
 	var proc *exec.Cmd
 	var stdout io.ReadCloser
 	var stderrBuf *bytes.Buffer
-	var childStdin io.WriteCloser
 	for i := 0; i < 10; i++ {
 		proc = exec.CommandContext(ctx, cmd, args...)
 		proc.Env = env
@@ -113,13 +101,13 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		var err error
 		stdout, err = proc.StdoutPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 		defer stdout.Close() // don't need it after we read the port
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 		if logWriter == nil {
 			logWriter = io.Discard
@@ -139,7 +127,7 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		// we don't leak child processes even if this process is SIGKILL'd.
 		childStdin, err = proc.StdinPipe()
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 
 		if err := proc.Start(); err != nil {
@@ -154,12 +142,12 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 				childStdin = nil
 				continue
 			}
-			return "", nil, err
+			return nil, nil, err
 		}
 		break
 	}
 	if proc == nil {
-		return "", nil, fmt.Errorf("failed to start engine session")
+		return nil, nil, fmt.Errorf("failed to start dagger session")
 	}
 	defer func() {
 		if rerr != nil {
@@ -170,38 +158,33 @@ func StartEngineSession(ctx context.Context, logWriter io.Writer, defaultDaggerR
 		}
 	}()
 
-	// Read the port to connect to from the engine-session's stdout.
-	portCh := make(chan string, 1)
-	var portErr error
+	// Read the connect params from stdout.
+	paramCh := make(chan error, 1)
+	var params engineconn.ConnectParams
 	go func() {
-		defer close(portCh)
-		portStr, err := bufio.NewReader(stdout).ReadString('\n')
+		defer close(paramCh)
+		paramBytes, err := bufio.NewReader(stdout).ReadBytes('\n')
 		if err != nil {
-			portErr = err
+			paramCh <- err
 			return
 		}
-		portCh <- portStr
+		if err := json.Unmarshal(paramBytes, &params); err != nil {
+			paramCh <- err
+		}
 	}()
 
 	ctx, cancel := context.WithTimeout(ctx, 300*time.Second) // really long time to account for extensions that need to build, though that path should be optimized in future
 	defer cancel()
-	var port int
 	select {
-	case portStr := <-portCh:
-		if portErr != nil {
-			return "", nil, portErr
-		}
-		portStr = strings.TrimSpace(portStr)
-		var err error
-		port, err = strconv.Atoi(portStr)
+	case err := <-paramCh:
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 	case <-ctx.Done():
-		return "", nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
 
-	return fmt.Sprintf("localhost:%d", port), childStdin, nil
+	return engineconn.DefaultHTTPClient(params), childStdin, nil
 }
 
 // a writer that can later be turned into io.Discard

@@ -49,23 +49,6 @@ class Engine(abc.ABC):
         self.stop_sync(exc_type)
 
 
-class NoopEngine(Engine):
-    """A no op to make implementation simpler by assuming there's
-    always a provisioner."""
-
-    async def start(self) -> None:
-        ...
-
-    async def stop(self, exc_type) -> None:
-        ...
-
-    def start_sync(self) -> None:
-        ...
-
-    def stop_sync(self, exc_type) -> None:
-        ...
-
-
 _RT = TypeVar("_RT", bound=type)
 
 
@@ -104,3 +87,21 @@ def get_engine(cfg: Config) -> Engine:
 
 class ProvisionError(DaggerError):
     """Error while provisioning the Dagger engine."""
+
+
+@register_engine("http")
+class NoopEngine(Engine):
+    """A no op to make implementation simpler by assuming there's
+    always a provisioner."""
+
+    async def start(self) -> None:
+        ...
+
+    async def stop(self, exc_type) -> None:
+        ...
+
+    def start_sync(self) -> None:
+        ...
+
+    def stop_sync(self, exc_type) -> None:
+        ...

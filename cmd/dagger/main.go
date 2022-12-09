@@ -26,6 +26,7 @@ func init() {
 		versionCmd,
 		queryCmd,
 		runCmd,
+		sessionCmd(),
 	)
 }
 

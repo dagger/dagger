@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,7 +52,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	id = dgst
 	id = id[:hashLen]
 
-	engineSessionBinName := engineSessionBinPrefix + id
+	engineSessionBinName := daggerCLIBinPrefix + id
 	if runtime.GOOS == "windows" {
 		engineSessionBinName += ".exe"
 	}
@@ -81,7 +80,7 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 			cmd.Stderr = cfg.LogOutput
 		}
 		if err := cmd.Run(); err != nil {
-			return nil, fmt.Errorf("failed to transfer dagger-engine-session bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
+			return nil, fmt.Errorf("failed to transfer dagger bin with command %q: %w", strings.Join(dockerRunArgs, " "), err)
 		}
 
 		if err := tmpbin.Chmod(0o700); err != nil {
@@ -111,38 +110,29 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 			if entry.Name() == engineSessionBinName {
 				continue
 			}
-			if strings.HasPrefix(entry.Name(), engineSessionBinPrefix) {
+			if strings.HasPrefix(entry.Name(), daggerCLIBinPrefix) {
 				if err := os.Remove(filepath.Join(cacheDir, entry.Name())); err != nil {
 					if cfg.LogOutput != nil {
-						fmt.Fprintf(cfg.LogOutput, "failed to remove old engine session bin: %v", err)
+						fmt.Fprintf(cfg.LogOutput, "failed to remove old dagger bin: %v", err)
 					}
 				}
 			}
 		}
 	}
 
-	args := []string{}
+	args := []string{"session"}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
-	if cfg.ConfigPath != "" {
-		args = append(args, "--project", cfg.ConfigPath)
-	}
 
 	defaultDaggerRunnerHost := "docker-image://" + c.imageRef
-	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, engineSessionBinPath, args...)
+	httpClient, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, engineSessionBinPath, args...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start engine session bin: %w", err)
+		return nil, fmt.Errorf("failed to start dagger bin: %w", err)
 	}
 	c.childStdin = childStdin
 
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
-			},
-		},
-	}, nil
+	return httpClient, nil
 }
 
 func (c *DockerImage) Addr() string {
