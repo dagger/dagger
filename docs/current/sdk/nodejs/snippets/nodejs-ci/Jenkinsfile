@@ -1,0 +1,14 @@
+pipeline {
+  agent { label 'dagger' }
+
+  stages {
+    stage("dagger") {
+      steps {
+        sh '''
+            npm ci
+            node main.mjs
+        '''
+      }
+    }
+  }
+}
