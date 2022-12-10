@@ -23,7 +23,7 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:    params.Router,
-		gw:        params.Gateway,
+		gw:        &core.GatewayClient{Client: params.Gateway},
 		bkClient:  params.BKClient,
 		solveOpts: params.SolveOpts,
 		solveCh:   params.SolveCh,

@@ -116,8 +116,8 @@ func (payload *containerIDPayload) FSState() (llb.State, error) {
 	return defToState(payload.FS)
 }
 
-// metaMount is the special path that the shim writes metadata to.
-const metaMount = "/.dagger_meta_mount"
+// metaMountDestPath is the special path that the shim writes metadata to.
+const metaMountDestPath = "/.dagger_meta_mount"
 
 // metaSourcePath is a world-writable directory created and mounted to /dagger.
 const metaSourcePath = "meta"
@@ -803,7 +803,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
-		llb.AddMount(metaMount,
+		llb.AddMount(metaMountDestPath,
 			llb.Scratch().File(meta),
 			llb.SourcePath(metaSourcePath)))
 
@@ -833,6 +833,11 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 		if name == "_DAGGER_ENABLE_NESTING" && !opts.ExperimentalPrivilegedNesting {
 			// don't pass this through to the container when manually set, this is internal only
+			continue
+		}
+		if name == DebugFailedExecEnv {
+			// don't pass this through either, should only be set by out code used for obtaining
+			// output after a failed exec
 			continue
 		}
 
@@ -916,7 +921,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	payload.FS = execDef.ToPB()
 
-	metaDef, err := execSt.GetMount(metaMount).Marshal(ctx, llb.Platform(platform))
+	metaDef, err := execSt.GetMount(metaMountDestPath).Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, fmt.Errorf("get meta mount: %w", err)
 	}
