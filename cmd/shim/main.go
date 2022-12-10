@@ -266,7 +266,7 @@ checkenv:
 			if err != nil {
 				return specs.Spec{}, fmt.Errorf("error generating session token: %w", err)
 			}
-			l, err := net.Listen("tcp", "localhost:0")
+			l, err := net.Listen("tcp", "127.0.0.1:0")
 			if err != nil {
 				return specs.Spec{}, fmt.Errorf("error listening on session socket: %w", err)
 			}
@@ -284,7 +284,7 @@ checkenv:
 				}
 			}()
 
-			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_URL=http://localhost:%d", l.Addr().(*net.TCPAddr).Port))
+			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_URL=http://127.0.0.1:%d", l.Addr().(*net.TCPAddr).Port))
 			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String()))
 
 			break checkenv

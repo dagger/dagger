@@ -42,7 +42,7 @@ func Run(cmd *cobra.Command, args []string) {
 	listening := make(chan string)
 	go func() {
 		// allocate the next available port
-		l, err := net.Listen("tcp", "localhost:0")
+		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -56,7 +56,7 @@ func Run(cmd *cobra.Command, args []string) {
 	}()
 
 	listenPort := <-listening
-	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://localhost:%s/query", listenPort))
+	os.Setenv("DAGGER_SESSION_URL", fmt.Sprintf("http://127.0.0.1:%s/query", listenPort))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
 	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
