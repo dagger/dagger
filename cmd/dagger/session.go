@@ -50,7 +50,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 
-	l, err := net.Listen("tcp", "localhost:0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return err
 	}
@@ -76,7 +76,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 
 		paramBytes, err := json.Marshal(connectParams{
-			Host:         "localhost:" + strconv.Itoa(port),
+			Host:         "127.0.0.1:" + strconv.Itoa(port),
 			SessionToken: sessionToken.String(),
 		})
 		if err != nil {
