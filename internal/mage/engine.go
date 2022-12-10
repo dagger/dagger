@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -220,7 +221,11 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
-	fmt.Println("export DAGGER_HOST=docker-container://" + util.TestContainerName)
+	// build the CLI and export locally so it can be used to connect to the engine
+	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
+	util.DaggerBinary(c).Export(ctx, binDest)
+
+	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
 	return nil
 }

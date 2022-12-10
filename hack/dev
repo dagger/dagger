@@ -9,7 +9,7 @@ pushd $MAGEDIR
 go run main.go -w $DAGGER_SRC_ROOT engine:dev
 popd
 
-export DAGGER_HOST=docker-container://test-dagger-engine
+export _EXPERIMENTAL_DAGGER_CLI_BIN=$DAGGER_SRC_ROOT/bin/dagger
 export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://test-dagger-engine
 
 exec "$@"
