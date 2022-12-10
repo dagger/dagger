@@ -1,0 +1,32 @@
+"Networking protocols which can be forwarded in a tunnel"
+enum TunnelProtocol {
+  TCP
+  UDP
+  UNIX
+}
+
+extend type Container {
+  """
+  Forward traffic from this container to the host
+    Frontend address is configurable but defaults to backend address
+    Example: withOutboundTunnel(protocol: UNIX, backend: "/var/run/docker.sock")
+  """
+  withOutboundTunnel(protocol: TunnelProtocol=TCP, backend: String!, frontend: String): Container!
+}
+
+
+extend type Service {
+  """
+  Forward traffic from the host to this service
+    Frontend address is configurable but defaults to backend address
+    Example: withInboundTunnel(backend: "localhost:80", frontend: "0.0.0.0:3000")
+  """
+  withInboundTunnel(protocol: TunnelProtocol=TCP, backend: String!, frontend: String): Service!
+
+"""
+  Forward traffic from this service to the host
+    Frontend address is configurable but defaults to backend address
+    Example: withOutboundTunnel(backend: "localhost:3306")
+  """
+  withOutboundTunnel(protocol: TunnelProtocol=TCP, backend: String!, frontend: String): Service!
+}

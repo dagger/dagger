@@ -17,6 +17,13 @@ type Container {
   "A unique identifier for this container"
   id: ContainerID!
 
+  """
+  Forward traffic from this container to the host
+    Frontend address is configurable but defaults to backend address
+    Example: withOutboundTunnel(protocol: UNIX, backend: "/var/run/docker.sock")
+  """
+  withOutboundTunnel(protocol: TunnelProtocol=TCP, backend: String!, frontend: String): Container!
+
   "The platform this container executes and publishes as"
   platform: Platform!
 
