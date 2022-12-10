@@ -66,6 +66,9 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
+	if cfg.ConfigPath != "" {
+		args = append(args, "--project", cfg.ConfigPath)
+	}
 
 	defaultDaggerRunnerHost := "docker-container://" + c.containerName
 	httpClient, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, tmpbin.Name(), args...)

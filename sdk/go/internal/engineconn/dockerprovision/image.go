@@ -124,6 +124,9 @@ func (c *DockerImage) Connect(ctx context.Context, cfg *engineconn.Config) (*htt
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
+	if cfg.ConfigPath != "" {
+		args = append(args, "--project", cfg.ConfigPath)
+	}
 
 	defaultDaggerRunnerHost := "docker-image://" + c.imageRef
 	httpClient, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, engineSessionBinPath, args...)

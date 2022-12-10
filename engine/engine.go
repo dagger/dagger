@@ -9,11 +9,9 @@ import (
 	"path/filepath"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
@@ -57,7 +55,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	c, buildkitdHost, err := engine.Client(ctx, remote)
+	c, err := engine.Client(ctx, remote)
 	if err != nil {
 		return err
 	}
@@ -89,10 +87,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	secretStore := secret.NewStore()
 
 	socketProviders := SocketProvider{
-		Named: NamedSocketProviders{
-			core.RunnerProxySockName:     core.NewRunnerProxy(buildkitdHost),
-			project.SessionProxySockName: project.NewSessionProxy(router),
-		},
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
 	}
 

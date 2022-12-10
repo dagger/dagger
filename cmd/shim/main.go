@@ -1,18 +1,22 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"syscall"
 
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/router"
+	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
@@ -110,6 +114,9 @@ func shim() int {
 }
 
 func setupBundle() int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Figure out the path to the bundle dir, in which we can obtain the
 	// oci runtime config.json
 	var bundleDir string
@@ -170,25 +177,25 @@ func setupBundle() int {
 			Options:     []string{"rbind", "ro"},
 		})
 
-		spec, err = toggleNesting(spec)
-		if err != nil {
-			fmt.Printf("Error toggling nesting: %v\n", err)
-			return 1
-		}
-
 		// update the args to specify the shim as the init process
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
+	}
 
-		// write the updated config
-		configBytes, err = json.Marshal(spec)
-		if err != nil {
-			fmt.Printf("Error marshaling config.json: %v\n", err)
-			return 1
-		}
-		if err := os.WriteFile(configPath, configBytes, 0600); err != nil {
-			fmt.Printf("Error writing config.json: %v\n", err)
-			return 1
-		}
+	spec, err = toggleNesting(ctx, spec)
+	if err != nil {
+		fmt.Printf("Error toggling nesting: %v\n", err)
+		return 1
+	}
+
+	// write the updated config
+	configBytes, err = json.Marshal(spec)
+	if err != nil {
+		fmt.Printf("Error marshaling config.json: %v\n", err)
+		return 1
+	}
+	if err := os.WriteFile(configPath, configBytes, 0600); err != nil {
+		fmt.Printf("Error writing config.json: %v\n", err)
+		return 1
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config
@@ -246,51 +253,43 @@ func internalEnv(name string) (string, bool) {
 	return val, true
 }
 
-func toggleNesting(spec specs.Spec) (specs.Spec, error) {
-	// Setup engine session and runner socket mounts if requested based on env vars
-	var enableNesting bool
-	var daggerHost *url.URL
-	var daggerRunnerHost *url.URL
-	var err error
+func toggleNesting(ctx context.Context, spec specs.Spec) (specs.Spec, error) {
+checkenv:
 	for i, env := range spec.Process.Env {
 		switch {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
-			enableNesting = true
 			// hide it from the container
 			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
-		case strings.HasPrefix(env, "DAGGER_HOST="):
-			daggerHost, err = url.Parse(strings.TrimPrefix(env, "DAGGER_HOST="))
+
+			// setup a session and associated env vars for the container
+			sessionToken, err := uuid.NewRandom()
 			if err != nil {
-				return specs.Spec{}, fmt.Errorf("error parsing DAGGER_HOST: %w", err)
+				return specs.Spec{}, fmt.Errorf("error generating session token: %w", err)
 			}
-		case strings.HasPrefix(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="):
-			daggerRunnerHost, err = url.Parse(strings.TrimPrefix(env, "_EXPERIMENTAL_DAGGER_RUNNER_HOST="))
+			l, err := net.Listen("tcp", "localhost:0")
 			if err != nil {
-				return specs.Spec{}, fmt.Errorf("error parsing _EXPERIMENTAL_DAGGER_RUNNER_HOST: %w", err)
+				return specs.Spec{}, fmt.Errorf("error listening on session socket: %w", err)
 			}
+			engineConf := &engine.Config{
+				SessionToken: sessionToken.String(),
+				RunnerHost:   "unix:///run/buildkit/buildkitd.sock",
+				LogOutput:    os.Stderr,
+			}
+			go func() {
+				err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
+					return http.Serve(l, r)
+				})
+				if err != nil {
+					fmt.Printf("Error starting engine: %v\n", err)
+				}
+			}()
+
+			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_URL=http://localhost:%d", l.Addr().(*net.TCPAddr).Port))
+			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String()))
+
+			break checkenv
 		}
 	}
-	if enableNesting {
-		if daggerHost != nil && daggerHost.Scheme == "bin" {
-			engineBinDest := daggerHost.Host + daggerHost.Path
-			engineBinSource := "/usr/bin/dagger-engine-session-linux-" + runtime.GOARCH
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: engineBinDest,
-				Type:        "bind",
-				Source:      engineBinSource,
-				Options:     []string{"rbind", "ro"},
-			})
-		}
-		if daggerRunnerHost != nil && daggerRunnerHost.Scheme == "unix" {
-			runnerSocketDest := daggerRunnerHost.Host + daggerRunnerHost.Path
-			runnerSocketSource := "/run/buildkit/buildkitd.sock"
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: runnerSocketDest,
-				Type:        "bind",
-				Source:      runnerSocketSource,
-				Options:     []string{"rbind", "ro"},
-			})
-		}
-	}
+
 	return spec, nil
 }

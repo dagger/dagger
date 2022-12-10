@@ -13,7 +13,8 @@ func TestExtensionMount(t *testing.T) {
 	ctx := context.Background()
 	c, err := dagger.Connect(
 		ctx,
-		dagger.WithWorkdir("testdata/extension"),
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("testdata/extension/dagger.json"),
 		dagger.WithLogOutput(os.Stdout),
 	)
 	require.NoError(t, err)
@@ -79,7 +80,8 @@ func TestCodeToSchema(t *testing.T) {
 	ctx := context.Background()
 	c, err := dagger.Connect(
 		ctx,
-		dagger.WithWorkdir("testdata/codetoschema"),
+		dagger.WithWorkdir("../../"),
+		dagger.WithConfigPath("testdata/codetoschema/dagger.json"),
 		dagger.WithLogOutput(os.Stdout),
 	)
 	require.NoError(t, err)

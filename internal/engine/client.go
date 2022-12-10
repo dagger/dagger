@@ -37,18 +37,18 @@ var engineProviderHandler = map[string]engineProviderFunc{
 	"unix":                  passthroughEngineProvider,
 }
 
-func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, string, error) {
+func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
 	provider, found := engineProviderHandler[remote.Scheme]
 	if !found {
-		return nil, "", errors.Errorf("unknown engine provider: %s", remote.Scheme)
+		return nil, errors.Errorf("unknown engine provider: %s", remote.Scheme)
 	}
 	buildkitdHost, err := provider(ctx, remote)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	if err := waitBuildkit(ctx, buildkitdHost); err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	opts := []bkclient.ClientOpt{
@@ -58,7 +58,7 @@ func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, string, err
 
 	exp, err := detect.Exporter()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	if td, ok := exp.(bkclient.TracerDelegate); ok {
@@ -67,9 +67,9 @@ func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, string, err
 
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
-		return nil, "", fmt.Errorf("buildkit client: %w", err)
+		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
-	return c, buildkitdHost, nil
+	return c, nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.

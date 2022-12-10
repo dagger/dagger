@@ -48,6 +48,9 @@ func (c *Bin) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
+	if cfg.ConfigPath != "" {
+		args = append(args, "--project", cfg.ConfigPath)
+	}
 
 	httpClient, childStdin, err := StartEngineSession(ctx, cfg.LogOutput, "", c.path, args...)
 	if err != nil {
