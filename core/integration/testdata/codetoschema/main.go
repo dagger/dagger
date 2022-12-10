@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"dagger.io/dagger"
 )
@@ -72,7 +73,7 @@ func (s SubResolver) SubField(ctx context.Context, str string) (string, error) {
 }
 
 func (Test) ReturnDirectory(ctx context.Context, ref string) (*dagger.Directory, error) {
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	if err != nil {
 		return nil, err
 	}

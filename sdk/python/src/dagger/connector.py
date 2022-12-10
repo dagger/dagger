@@ -1,3 +1,4 @@
+import base64
 import logging
 from typing import TypeVar
 
@@ -59,7 +60,14 @@ class Connector:
         return self._make_transport(HTTPXTransport)
 
     def _make_transport(self, cls: type[_T]) -> _T:
-        return cls(self.query_url, timeout=self.cfg.execute_timeout)
+        creds = base64.b64encode(f"{self.cfg.session_token}:".encode()).decode()
+        return cls(
+            self.query_url,
+            timeout=self.cfg.execute_timeout,
+            headers={
+                "Authorization": f"Basic {creds}",
+            },
+        )
 
     def make_graphql_client(
         self, transport: AsyncTransport | Transport

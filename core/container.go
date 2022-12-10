@@ -24,11 +24,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const (
-	RunnerProxySockName = "dagger-runner-sock"
-	RunnerProxySockPath = "/dagger-runner.sock"
-)
-
 // Container is a content-addressed container.
 type Container struct {
 	ID ContainerID `json:"id"`
@@ -793,8 +788,6 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		runOpts = append(runOpts,
-			llb.AddEnv("DAGGER_HOST", "bin:///.dagger_engine_session"),
-			llb.AddEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix://"+RunnerProxySockPath),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 		)
 	}

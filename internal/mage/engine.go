@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -17,10 +18,10 @@ import (
 )
 
 const (
-	engineSessionBinName = "dagger-engine-session"
-	shimBinName          = "dagger-shim"
-	buildkitRepo         = "github.com/moby/buildkit"
-	buildkitBranch       = "v0.10.5"
+	daggerCliBinName = "dagger"
+	shimBinName      = "dagger-shim"
+	buildkitRepo     = "github.com/moby/buildkit"
+	buildkitBranch   = "v0.10.5"
 )
 
 func parseRef(tag string) error {
@@ -220,7 +221,11 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
-	fmt.Println("export DAGGER_HOST=docker-container://" + util.TestContainerName)
+	// build the CLI and export locally so it can be used to connect to the engine
+	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
+	util.DaggerBinary(c).Export(ctx, binDest)
+
+	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
 	return nil
 }
@@ -244,13 +249,13 @@ func devEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 					WithEnvVariable("GOARCH", arch).
 					WithExec([]string{
 						"go", "build",
-						"-o", "./bin/" + engineSessionBinName,
+						"-o", "./bin/" + daggerCliBinName,
 						"-ldflags", "-s -w",
-						"/app/cmd/engine-session",
+						"/app/cmd/dagger",
 					}).
-					File("./bin/" + engineSessionBinName)
+					File("./bin/" + daggerCliBinName)
 				buildkitBase = buildkitBase.WithRootfs(
-					buildkitBase.Rootfs().WithFile("/usr/bin/"+engineSessionBinName+"-"+os+"-"+arch, builtBin),
+					buildkitBase.Rootfs().WithFile("/usr/bin/"+daggerCliBinName+"-"+os+"-"+arch, builtBin),
 				)
 			}
 		}

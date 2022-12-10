@@ -5,9 +5,10 @@ import * as os from "os"
 import readline from "readline"
 import { execaCommandSync, execaCommand, ExecaChildProcess } from "execa"
 import Client from "../../api/client.gen.js"
+import { ConnectParams } from "../../connect.js"
 import {
   DockerImageRefValidationError,
-  EngineSessionPortParseError,
+  EngineSessionConnectParamsParseError,
   InitEngineSessionBinaryError,
 } from "../../common/errors/index.js"
 
@@ -76,7 +77,7 @@ export class DockerImage implements EngineConn {
     "dagger"
   )
 
-  private readonly ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session"
+  private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
 
   private subProcess?: ExecaChildProcess
 
@@ -119,13 +120,13 @@ export class DockerImage implements EngineConn {
   }
 
   /**
-   * buildBinPath create a path to output engine session binary.
+   * buildBinPath create a path to output dagger cli binary.
    *
    * It will store it in the cache directory with a name composed
    * of the base engine session as constant and the engine identifier.
    */
   private buildBinPath(): string {
-    const binPath = `${this.cacheDir}/${this.ENGINE_SESSION_BINARY_PREFIX}-${this.imageRef.ID}`
+    const binPath = `${this.cacheDir}/${this.DAGGER_CLI_BIN_PREFIX}-${this.imageRef.ID}`
 
     switch (this.normalizedOS()) {
       case "windows":
@@ -169,7 +170,7 @@ export class DockerImage implements EngineConn {
     // Create a temporary bin file path
     const tmpBinPath = path.join(
       this.cacheDir,
-      `temp-${this.ENGINE_SESSION_BINARY_PREFIX}-${this.getRandomId()}`
+      `temp-${this.DAGGER_CLI_BIN_PREFIX}-${this.getRandomId()}`
     )
 
     const dockerRunArgs = [
@@ -180,7 +181,7 @@ export class DockerImage implements EngineConn {
       "/bin/cat",
       this.imageRef.Ref,
       `/usr/bin/${
-        this.ENGINE_SESSION_BINARY_PREFIX
+        this.DAGGER_CLI_BIN_PREFIX
       }-${this.normalizedOS()}-${this.normalizedArch()}`,
     ]
 
@@ -203,13 +204,13 @@ export class DockerImage implements EngineConn {
     } catch (e) {
       fs.rmSync(tmpBinPath)
       throw new InitEngineSessionBinaryError(
-        `failed to copy engine session binary: ${e}`,
+        `failed to copy dagger cli binary: ${e}`,
         { cause: e as Error }
       )
     }
 
     // Remove all temporary binary files
-    // Ignore current engine session binary or other files that have not be
+    // Ignore current dagger cli or other files that have not be
     // created by this SDK.
     try {
       const files = fs.readdirSync(this.cacheDir)
@@ -217,7 +218,7 @@ export class DockerImage implements EngineConn {
         const filePath = `${this.cacheDir}/${file}`
         if (
           filePath === engineSessionBinPath ||
-          !file.startsWith(this.ENGINE_SESSION_BINARY_PREFIX)
+          !file.startsWith(this.DAGGER_CLI_BIN_PREFIX)
         ) {
           return
         }
@@ -266,36 +267,40 @@ export class DockerImage implements EngineConn {
       input: this.subProcess.stdout!,
     })
 
-    const port = await Promise.race([
-      this.readPort(stdoutReader),
+    const connectParams: ConnectParams = (await Promise.race([
+      this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
-            new EngineSessionPortParseError(
-              "timeout reading port from engine session"
+            new EngineSessionConnectParamsParseError(
+              "timeout reading connect params from engine session"
             )
           )
         }, 300000).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
-    ])
+    ])) as ConnectParams
 
-    return new Client({ host: `127.0.0.1:${port}` })
+    return new Client({
+      host: connectParams.host,
+      sessionToken: connectParams.session_token,
+    })
   }
 
-  private async readPort(stdoutReader: readline.Interface): Promise<number> {
+  private async readConnectParams(
+    stdoutReader: readline.Interface
+  ): Promise<ConnectParams> {
     for await (const line of stdoutReader) {
-      // Read line as a port number
-      const port = parseInt(line)
-      if (isNaN(port)) {
-        throw new EngineSessionPortParseError(
-          `failed to parse port from engine session while parsing: ${line}`,
-          { parsedLine: line }
-        )
+      // parse the the line as json-encoded connect params
+      const connectParams = JSON.parse(line) as ConnectParams
+      if (connectParams.host && connectParams.session_token) {
+        return connectParams
       }
-      return port
+      throw new EngineSessionConnectParamsParseError(
+        `invalid connect params: ${line}`
+      )
     }
-    throw new EngineSessionPortParseError(
-      "No line was found to parse the engine port"
+    throw new EngineSessionConnectParamsParseError(
+      "No line was found to parse the engine connect params"
     )
   }
 

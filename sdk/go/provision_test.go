@@ -28,6 +28,10 @@ func TestImageProvision(t *testing.T) {
 			t.Skip("DAGGER_HOST is not set to docker-image://")
 		}
 	}
+	// TODO: this extra check can go away once we switch to downloading the CLI from s3
+	if _, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN"); ok {
+		t.Skip("test needs to default to docker-image://")
+	}
 
 	tmpdir := t.TempDir()
 	os.Setenv("XDG_CACHE_HOME", tmpdir)
@@ -38,7 +42,7 @@ func TestImageProvision(t *testing.T) {
 	// create some garbage for the image provisioner to collect
 	err := os.MkdirAll(cacheDir, 0700)
 	require.NoError(t, err)
-	f, err := os.Create(filepath.Join(cacheDir, "dagger-engine-session-gcme"))
+	f, err := os.Create(filepath.Join(cacheDir, "dagger-gcme"))
 	require.NoError(t, err)
 	f.Close()
 
@@ -81,8 +85,8 @@ func TestImageProvision(t *testing.T) {
 	require.Len(t, entries, 1)
 	entry := entries[0]
 	require.True(t, entry.Type().IsRegular())
-	require.True(t, strings.HasPrefix(entry.Name(), "dagger-engine-session-"))
-	shortSha := entry.Name()[len("dagger-engine-session-"):]
+	require.True(t, strings.HasPrefix(entry.Name(), "dagger-"))
+	shortSha := entry.Name()[len("dagger-"):]
 	require.Len(t, shortSha, 16)
 
 	output, err := exec.CommandContext(ctx,

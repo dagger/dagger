@@ -66,7 +66,7 @@ func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 	// the cli bin is statically linked, can just mount it in anywhere
 	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
 
-	engineSessionBinPath := "/.dagger-engine-session"
+	cliBinPath := "/.dagger-cli"
 	return ctr.
 		// Mount in the docker cli + socket, this will be used to connect to the dev engine
 		// container
@@ -77,9 +77,9 @@ func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 		// with a mounted in docker socket doesn't work (always results in an empty file
 		// even though the docker run command succeeds). This will be fixed by switching
 		// to provisioning via downloading the CLI.
-		WithMountedFile(engineSessionBinPath, EngineSessionBinary(c)).
+		WithMountedFile(cliBinPath, DaggerBinary(c)).
 		// Point the SDKs to use the dev engine via these env vars
-		WithEnvVariable("DAGGER_HOST", "bin://"+engineSessionBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+TestContainerName)
 }
 
@@ -129,12 +129,6 @@ func ClientGenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"}).
 		File("./bin/client-gen")
-}
-
-func EngineSessionBinary(c *dagger.Client) *dagger.File {
-	return goBase(c).
-		WithExec([]string{"go", "build", "-o", "./bin/dagger-engine-session", "-ldflags", "-s -w", "./cmd/engine-session"}).
-		File("./bin/dagger-engine-session")
 }
 
 // HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir

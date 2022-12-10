@@ -29,10 +29,10 @@ def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.provision
 async def test_docker_image_provision(cache_dir: Path):
     # make some garbage for the image provisioner to collect
-    garbage_path = cache_dir / "dagger-engine-session-gcme"
+    garbage_path = cache_dir / "dagger-gcme"
     garbage_path.touch()
 
-    # clean up of existing containers is handled in engine-session binary
+    # clean up of existing containers is handled in dagger binary
     # and is already tested in go, skipping coverage here
 
     # run a bunch of provisions concurrently
@@ -45,10 +45,10 @@ async def test_docker_image_provision(cache_dir: Path):
         for _ in range(concurrency):
             tg.start_soon(connect_once)
 
-    # assert that there's only one engine-session binary in the cache
+    # assert that there's only one dagger binary in the cache
     files = cache_dir.iterdir()
     bin_ = next(files)
-    assert bin_.name.startswith("dagger-engine-session-")
+    assert bin_.name.startswith("dagger-")
     with pytest.raises(StopIteration):
         next(files)
     # assert the garbage was cleaned up

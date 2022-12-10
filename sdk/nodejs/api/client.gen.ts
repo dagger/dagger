@@ -17,6 +17,7 @@ export type QueryTree = {
 interface ClientConfig {
   queryTree?: QueryTree[]
   host?: string
+  sessionToken?: string
 }
 
 class BaseClient {
@@ -26,14 +27,21 @@ class BaseClient {
    * @defaultValue `127.0.0.1:8080`
    */
   public clientHost: string
+  public sessionToken: string
 
   /**
    * @hidden
    */
-  constructor({ queryTree, host }: ClientConfig = {}) {
+  constructor({ queryTree, host, sessionToken }: ClientConfig = {}) {
     this._queryTree = queryTree || []
     this.clientHost = host || "127.0.0.1:8080"
-    this.client = new GraphQLClient(`http://${host}/query`)
+    this.sessionToken = sessionToken || ""
+    this.client = new GraphQLClient(`http://${host}/query`, {
+      headers: {
+        Authorization:
+          "Basic " + Buffer.from(sessionToken + ":").toString("base64"),
+      },
+    })
   }
 
   /**
@@ -258,6 +266,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -291,6 +300,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -363,6 +373,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -415,6 +426,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -431,6 +443,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -449,6 +462,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -533,6 +547,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -602,6 +617,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -622,6 +638,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -638,6 +655,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -654,6 +672,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -670,6 +689,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -689,6 +709,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -705,6 +726,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -725,6 +747,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -744,6 +767,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -760,6 +784,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -776,6 +801,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -792,6 +818,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -808,6 +835,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -824,6 +852,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -840,6 +869,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -856,6 +886,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -872,6 +903,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -888,6 +920,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -904,6 +937,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -920,6 +954,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -936,6 +971,7 @@ export class Container extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -974,6 +1010,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -990,6 +1027,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1006,6 +1044,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1058,6 +1097,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1091,6 +1131,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1111,6 +1152,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1127,6 +1169,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1143,6 +1186,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1159,6 +1203,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1175,6 +1220,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1191,6 +1237,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1207,6 +1254,7 @@ export class Directory extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 }
@@ -1318,6 +1366,7 @@ export class File extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1351,6 +1400,7 @@ export class File extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 }
@@ -1389,6 +1439,7 @@ export class GitRef extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 }
@@ -1410,6 +1461,7 @@ export class GitRepository extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1443,6 +1495,7 @@ export class GitRepository extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1459,6 +1512,7 @@ export class GitRepository extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1497,6 +1551,7 @@ export class Host extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1513,6 +1568,7 @@ export class Host extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1529,6 +1585,7 @@ export class Host extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1549,6 +1606,7 @@ export class Host extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 }
@@ -1569,6 +1627,7 @@ export class HostVariable extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1623,6 +1682,7 @@ export class Project extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1709,6 +1769,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1727,6 +1788,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1760,6 +1822,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1776,6 +1839,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1792,6 +1856,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1807,6 +1872,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1823,6 +1889,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1839,6 +1906,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1855,6 +1923,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 
@@ -1871,6 +1940,7 @@ export default class Client extends BaseClient {
         },
       ],
       host: this.clientHost,
+      sessionToken: this.sessionToken,
     })
   }
 }

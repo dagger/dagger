@@ -3,7 +3,6 @@ package dockerprovision
 import (
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -33,7 +32,7 @@ type DockerContainer struct {
 }
 
 func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (*http.Client, error) {
-	tmpbinName := "temp-dagger-engine-session" + c.containerName + "*"
+	tmpbinName := "temp-dagger-" + c.containerName + "*"
 	if runtime.GOOS == "windows" {
 		tmpbinName += ".exe"
 	}
@@ -52,7 +51,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		c.containerName+":"+containerEngineSessionBinPrefix+runtime.GOOS+"-"+runtime.GOARCH,
 		tmpbin.Name(),
 	).CombinedOutput(); err != nil {
-		return nil, errors.Wrapf(err, "failed to copy dagger-engine-session bin: %s", output)
+		return nil, errors.Wrapf(err, "failed to copy dagger bin: %s", output)
 	}
 
 	if err := tmpbin.Chmod(0o700); err != nil {
@@ -63,7 +62,7 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 		return nil, err
 	}
 
-	args := []string{}
+	args := []string{"session"}
 	if cfg.Workdir != "" {
 		args = append(args, "--workdir", cfg.Workdir)
 	}
@@ -72,19 +71,13 @@ func (c *DockerContainer) Connect(ctx context.Context, cfg *engineconn.Config) (
 	}
 
 	defaultDaggerRunnerHost := "docker-container://" + c.containerName
-	addr, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, tmpbin.Name(), args...)
+	httpClient, childStdin, err := bin.StartEngineSession(ctx, cfg.LogOutput, defaultDaggerRunnerHost, tmpbin.Name(), args...)
 	if err != nil {
 		return nil, err
 	}
 	c.childStdin = childStdin
 
-	return &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-				return net.Dial("tcp", addr)
-			},
-		},
-	}, nil
+	return httpClient, nil
 }
 
 func (c *DockerContainer) Addr() string {

@@ -30,9 +30,6 @@ const (
 
 	outputMountPath = "/outputs"
 	outputFile      = "/dagger.json"
-
-	SessionProxySockName = "dagger-session"
-	sessionProxySockPath = "/dagger.sock"
 )
 
 type State struct {
@@ -315,11 +312,7 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
-			llb.AddEnv("DAGGER_HOST", "unix://"+sessionProxySockPath),
-			llb.AddSSHSocket(
-				llb.SSHID(SessionProxySockName),
-				llb.SSHSocketTarget(sessionProxySockPath),
-			),
+			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 			llb.AddMount(inputMountPath, input, llb.Readonly),
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
 			llb.ReadonlyRootFS(),

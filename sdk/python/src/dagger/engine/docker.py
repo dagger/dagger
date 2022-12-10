@@ -15,7 +15,7 @@ from .bin import Engine as BinEngine
 logger = logging.getLogger(__name__)
 
 
-ENGINE_SESSION_BINARY_PREFIX = "dagger-engine-session-"
+DAGGER_CLI_BIN_PREFIX = "dagger-"
 
 
 def get_platform() -> tuple[str, str]:
@@ -62,15 +62,13 @@ class Engine(BinEngine):
         os_, arch = get_platform()
 
         image = ImageRef(self.cfg.host.netloc + self.cfg.host.path)
-        engine_session_bin_path = (
-            cache_dir / f"{ENGINE_SESSION_BINARY_PREFIX}{image.id}"
-        )
+        dagger_cli_bin_path = cache_dir / f"{DAGGER_CLI_BIN_PREFIX}{image.id}"
         if os_ == "windows":
-            engine_session_bin_path = engine_session_bin_path.with_suffix(".exe")
+            dagger_cli_bin_path = dagger_cli_bin_path.with_suffix(".exe")
 
-        if not engine_session_bin_path.exists():
+        if not dagger_cli_bin_path.exists():
             tempfile_args = {
-                "prefix": f"temp-{ENGINE_SESSION_BINARY_PREFIX}",
+                "prefix": f"temp-{DAGGER_CLI_BIN_PREFIX}",
                 "dir": cache_dir,
                 "delete": False,
             }
@@ -88,7 +86,7 @@ class Engine(BinEngine):
                     "--entrypoint",
                     "/bin/cat",
                     image.ref,
-                    f"/usr/bin/{ENGINE_SESSION_BINARY_PREFIX}{os_}-{arch}",
+                    f"/usr/bin/{DAGGER_CLI_BIN_PREFIX}{os_}-{arch}",
                 ]
                 try:
                     subprocess.run(
@@ -104,7 +102,7 @@ class Engine(BinEngine):
                     ) from e
                 except subprocess.CalledProcessError as e:
                     raise ProvisionError(
-                        f"Failed to copy engine session binary: {e.stderr}"
+                        f"Failed to copy dagger cli binary: {e.stderr}"
                     ) from e
                 else:
                     # Flake8 Ignores
@@ -117,14 +115,14 @@ class Engine(BinEngine):
                 tmp_bin_path = Path(tmp_bin.name)
                 tmp_bin_path.chmod(0o700)
 
-                engine_session_bin_path = tmp_bin_path.rename(engine_session_bin_path)
+                dagger_cli_bin_path = tmp_bin_path.rename(dagger_cli_bin_path)
 
             # garbage collection of old engine_session binaries
-            for bin in cache_dir.glob(f"{ENGINE_SESSION_BINARY_PREFIX}*"):
-                if bin != engine_session_bin_path:
+            for bin in cache_dir.glob(f"{DAGGER_CLI_BIN_PREFIX}*"):
+                if bin != dagger_cli_bin_path:
                     bin.unlink()
 
         self._start(
-            [engine_session_bin_path],
+            [dagger_cli_bin_path, "session"],
             default_dagger_runner_host=f"docker-image://{image.ref}",
         )

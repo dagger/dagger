@@ -2,7 +2,8 @@ import { ConnectOpts, EngineConn } from "../engineconn.js"
 import readline from "readline"
 import { execaCommand, ExecaChildProcess } from "execa"
 import Client from "../../api/client.gen.js"
-import { EngineSessionPortParseError } from "../../common/errors/index.js"
+import { ConnectParams } from "../../connect.js"
+import { EngineSessionConnectParamsParseError } from "../../common/errors/index.js"
 
 /**
  * Bin runs an engine session from a specified binary
@@ -16,7 +17,7 @@ export class Bin implements EngineConn {
     this.path = u.host + u.pathname
     if (this.path == "") {
       // this results in execa looking for it in the $PATH
-      this.path = "dagger-engine-session"
+      this.path = "dagger"
     }
   }
 
@@ -37,7 +38,7 @@ export class Bin implements EngineConn {
     engineSessionBinPath: string,
     opts: ConnectOpts
   ): Promise<Client> {
-    const engineSessionArgs = [engineSessionBinPath]
+    const engineSessionArgs = [engineSessionBinPath, "session"]
 
     if (opts.Workdir) {
       engineSessionArgs.push("--workdir", opts.Workdir)
@@ -58,36 +59,40 @@ export class Bin implements EngineConn {
       input: this.subProcess.stdout!,
     })
 
-    const port = await Promise.race([
-      this.readPort(stdoutReader),
+    const connectParams: ConnectParams = (await Promise.race([
+      this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
-            new EngineSessionPortParseError(
-              "timeout reading port from engine session"
+            new EngineSessionConnectParamsParseError(
+              "timeout reading connect params from engine session"
             )
           )
         }, 300000).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
-    ])
+    ])) as ConnectParams
 
-    return new Client({ host: `127.0.0.1:${port}` })
+    return new Client({
+      host: connectParams.host,
+      sessionToken: connectParams.session_token,
+    })
   }
 
-  private async readPort(stdoutReader: readline.Interface): Promise<number> {
+  private async readConnectParams(
+    stdoutReader: readline.Interface
+  ): Promise<ConnectParams> {
     for await (const line of stdoutReader) {
-      // Read line as a port number
-      const port = parseInt(line)
-      if (isNaN(port)) {
-        throw new EngineSessionPortParseError(
-          `failed to parse port from engine session while parsing: ${line}`,
-          { parsedLine: line }
-        )
+      // parse the the line as json-encoded connect params
+      const connectParams = JSON.parse(line) as ConnectParams
+      if (connectParams.host && connectParams.session_token) {
+        return connectParams
       }
-      return port
+      throw new EngineSessionConnectParamsParseError(
+        `invalid connect params: ${line}`
+      )
     }
-    throw new EngineSessionPortParseError(
-      "No line was found to parse the engine port"
+    throw new EngineSessionConnectParamsParseError(
+      "No line was found to parse the engine connect params"
     )
   }
 

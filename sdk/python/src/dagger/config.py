@@ -11,6 +11,16 @@ from ._engine import ENGINE_IMAGE_REF
 DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
 
 
+def host_factory():
+    session_url = os.environ.get("DAGGER_SESSION_URL")
+    if session_url:
+        return session_url
+    cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
+    if cli_bin:
+        return f"bin://{cli_bin}"
+    return os.environ.get("DAGGER_HOST", DEFAULT_HOST)
+
+
 @define
 class Config:
     """Options for connecting to the Dagger engine.
@@ -35,9 +45,10 @@ class Config:
     """
 
     host: ParsedURL = field(
-        factory=lambda: os.environ.get("DAGGER_HOST", DEFAULT_HOST),
+        factory=host_factory,
         converter=urlparse,
     )
+    session_token: str | None = os.environ.get("DAGGER_SESSION_TOKEN")
     workdir: Path | str = ""
     config_path: Path | str = ""
     log_output: TextIO | None = None

@@ -69,7 +69,7 @@ export class Host extends BaseClient {
       operation: 'directory',
       args: { path, ...opts }
       }
-    ], host: this.clientHost})
+    ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 
 
@@ -83,7 +83,7 @@ export class Host extends BaseClient {
       operation: 'envVariable',
       args: { name }
       }
-    ], host: this.clientHost})
+    ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 
 
@@ -97,7 +97,7 @@ export class Host extends BaseClient {
       operation: 'workdir',
       args: { ...opts }
       }
-    ], host: this.clientHost})
+    ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 }
 `

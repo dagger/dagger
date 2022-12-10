@@ -7,11 +7,15 @@ import dagger
 from dagger.engine import bin
 
 
-def test_getting_port(fp: FakeProcess):
-    fp.register(["dagger-engine-session"], stdout=["50004", ""])
+def test_getting_connect_params(fp: FakeProcess):
+    fp.register(
+        ["dagger", "session"],
+        stdout=['{"host":"localhost:50004","session_token":"abc"}', ""],
+    )
 
     with bin.Engine(dagger.Config(host="bin://")) as engine:
         assert engine.cfg.host.geturl() == "http://localhost:50004"
+        assert engine.cfg.session_token == "abc"
 
 
 @pytest.mark.parametrize("config_args", [{"log_output": sys.stderr}, {}])
@@ -22,7 +26,7 @@ def test_buildkit_not_running(config_args: dict, fp: FakeProcess):
     """
 
     fp.register(
-        ["dagger-engine-session"],
+        ["dagger", "session"],
         stderr=["Error: buildkit failed to respond", ""],
         returncode=1,
     )

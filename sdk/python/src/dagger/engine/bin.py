@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import subprocess
@@ -24,7 +25,10 @@ class Engine(BaseEngine):
 
     def start_sync(self) -> None:
         self._start(
-            [f"{self.cfg.host.netloc}{self.cfg.host.path}" or "dagger-engine-session"]
+            [
+                f"{self.cfg.host.netloc}{self.cfg.host.path}" or "dagger",
+                "session",
+            ]
         )
 
     def _start(
@@ -76,8 +80,8 @@ class Engine(BaseEngine):
             raise ProvisionError("Failed to start engine session after retries.")
 
         try:
-            # read port number from first line of stdout
-            port = int(self._proc.stdout.readline())
+            # read connect params from first line of stdout
+            connect_params = json.loads(self._proc.stdout.readline())
         except ValueError as e:
             # Check if the subprocess exited with an error.
             if not self._proc.poll():
@@ -94,8 +98,8 @@ class Engine(BaseEngine):
                 "Dagger engine failed to start, is docker running?"
             ) from e
 
-        # TODO: verify port number is valid
-        self.cfg.host = f"http://localhost:{port}"
+        self.cfg.host = f"http://{connect_params['host']}"
+        self.cfg.session_token = connect_params["session_token"]
 
     def stop_sync(self, exc_type) -> None:
         if self._proc:

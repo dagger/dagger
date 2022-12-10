@@ -18,6 +18,7 @@ export type QueryTree = {
 interface ClientConfig {
   queryTree?: QueryTree[],
   host?: string
+  sessionToken?: string
 }
 
 class BaseClient {
@@ -27,14 +28,21 @@ class BaseClient {
    * @defaultValue `127.0.0.1:8080`
    */
   public clientHost: string
+  public sessionToken: string
 
   /**
    * @hidden
    */
-  constructor({queryTree, host}: ClientConfig = {}) {
+  constructor({queryTree, host, sessionToken}: ClientConfig = {}) {
     this._queryTree = queryTree || []
     this.clientHost = host || "127.0.0.1:8080"
-		this.client = new GraphQLClient(`http://${host}/query`);
+    this.sessionToken = sessionToken || ""
+    this.client = new GraphQLClient(`http://${host}/query`, {
+      headers: {
+        Authorization:
+          "Basic " + Buffer.from(sessionToken + ":").toString("base64"),
+      },
+    })
   }
 
   /**

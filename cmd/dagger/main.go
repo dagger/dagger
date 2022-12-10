@@ -20,12 +20,16 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
 
+	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
+	rootCmd.PersistentFlags().MarkHidden("project")
+
 	rootCmd.AddCommand(
 		listenCmd,
 		doCmd,
 		versionCmd,
 		queryCmd,
 		runCmd,
+		sessionCmd(),
 	)
 }
 

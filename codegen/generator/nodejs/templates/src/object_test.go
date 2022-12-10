@@ -33,7 +33,7 @@ export class Container extends BaseClient {
       operation: 'exec',
       args: { ...opts }
       }
-    ], host: this.clientHost})
+    ], host: this.clientHost, sessionToken: this.sessionToken});
   }
 }
 `
