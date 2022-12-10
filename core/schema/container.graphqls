@@ -125,11 +125,57 @@ type Container {
     include: [String!]
   ): Container!
 
+  """
+  Declare a dependency from this container to another service.
+
+  When a command or service is executed in this container, its dependencies are processed as follows
+
+    1. The command/service is configured such that the dependency alias can be looked up by DNS, and the corresponding IP is routable.
+
+    2. A basic socket-level health check is performed on each exposed port of each dependency. Failure of a health check will result in failure of the exec or start operation.
+
+    3. The client process is executed *after* the following steps have completed.
+  """
+  withServiceDependency(
+    "The service to depend on"
+    service: ServiceID!,
+    "Service alias. To be used for DNS lookup inside the container"
+    alias: String!
+  ): Container!
+
+  """
+  Expose a network port.
+
+  Exposed ports serve two purposes:
+
+    - For health checks and introspection, when running services
+    - For setting the EXPOSE OCI field when publishing the container
+  """
+  withExposedPort(
+    "Type of port to expose (TCP or UDP)"
+    protocol: NetworkProtocol=TCP,
+    "Port number to expose"
+    port: Integer,
+    "Optional port description"
+    description: String
+    ): Container!
+
+  "Un-expose a network port"
+  withoutExposedPort(protocol: NetworkProtocol=TCP, port: int): Container!
+
   "This container plus a socket forwarded to the given Unix socket path"
   withUnixSocket(path: String!, source: SocketID!): Container!
 
   "This container with a previously added Unix socket removed"
   withoutUnixSocket(path: String!): Container!
+
+  "Start a long-running service from this container"
+  start(
+    "Command-line arguments to execute"
+    args: [String!]!,
+    "Wait for exposed ports to pass health check"
+    wait Boolean=true
+    ): Service!
 
   "This container after executing the specified command inside it"
   withExec(

@@ -17,6 +17,31 @@ type Host {
 
   "Access a Unix socket on the host"
   unixSocket(path: String!): Socket!
+
+  "Start a proxy service to allow connecting to host ports from containers"
+  proxy([...ProxyPort!]!): Service!
+}
+
+"A port to expose on a host proxy service"
+input ProxyPort {
+  "Type of port to expose (TCP or UDP)"
+  protocol: NetworkProtocol=TCP
+  "Port number to expose"
+  port: Integer!
+
+
+  """
+  (optional) The network protocol to forward traffic to.
+  Defaults to the same protocol as the exposed port.
+  """
+  backendProtocol: NetworkProtocol
+  
+  """
+  (optional) The network address to forward traffic to.
+  Defaults to "localhost:$port" where $port is the value
+  of the 'port' field
+  """
+  backendAddress: String
 }
 
 "An environment variable on the host environment"

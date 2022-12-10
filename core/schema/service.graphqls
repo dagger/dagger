@@ -1,0 +1,29 @@
+scalar ServiceID
+
+enum NetworkProtocol {
+    TCP
+    UDP
+}
+
+type Service {
+    "The service ID"
+    id: ServiceID
+
+    "Stop the service"
+    stop(
+        "Seconds to wait for stop before killing it"
+        wait: Int = 10
+    ): Service!
+
+    "Service exit code"
+    exitCode: Int!
+
+    "Command-line arguments to start the service"
+    args: [String!]!
+
+    "Is the service currently running?"
+ 	running: Boolean!
+
+    "The container from which this service was started"
+    container: Container!
+}
