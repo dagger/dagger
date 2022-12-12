@@ -10,7 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var listenAddress string
+var (
+	listenAddress string
+	disableHostRW bool
+)
 
 var listenCmd = &cobra.Command{
 	Use:     "listen",
@@ -33,4 +36,5 @@ func Listen(cmd *cobra.Command, args []string) {
 
 func init() {
 	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", ":8080", "Listen on network address ADDR")
+	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 }

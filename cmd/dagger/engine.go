@@ -15,10 +15,11 @@ func withEngine(
 	cb engine.StartCallback,
 ) error {
 	engineConf := &engine.Config{
-		Workdir:      workdir,
-		ConfigPath:   configPath,
-		SessionToken: sessionToken,
-		RunnerHost:   internalengine.RunnerHost(),
+		Workdir:       workdir,
+		ConfigPath:    configPath,
+		SessionToken:  sessionToken,
+		RunnerHost:    internalengine.RunnerHost(),
+		DisableHostRW: disableHostRW,
 	}
 	if debugLogs {
 		engineConf.LogOutput = os.Stderr
