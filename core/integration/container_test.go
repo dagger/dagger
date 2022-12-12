@@ -3,7 +3,9 @@ package core
 import (
 	"context"
 	_ "embed"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -2597,5 +2599,50 @@ func TestContainerWithUnixSocket(t *testing.T) {
 		stdout, err = without.Stdout(ctx)
 		require.NoError(t, err)
 		require.Empty(t, stdout)
+	})
+}
+
+func TestContainerExecError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+
+	outMsg := "THIS SHOULD GO TO STDOUT"
+	encodedOutMsg := base64.StdEncoding.EncodeToString([]byte(outMsg))
+	errMsg := "THIS SHOULD GO TO STDERR"
+	encodedErrMsg := base64.StdEncoding.EncodeToString([]byte(errMsg))
+
+	t.Run("includes output of failed exec in error", func(t *testing.T) {
+		_, err = c.Container().
+			From("alpine:3.16.2").
+			WithExec([]string{"sh", "-c", fmt.Sprintf(
+				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
+			)}).
+			ExitCode(ctx)
+		require.Error(t, err)
+
+		require.Contains(t, err.Error(), outMsg)
+		require.Contains(t, err.Error(), errMsg)
+	})
+
+	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
+		_, err = c.Container().
+			From("alpine:3.16.2").
+			WithExec(
+				[]string{"sh", "-c", fmt.Sprintf(
+					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
+				)},
+				dagger.ContainerWithExecOpts{
+					RedirectStdout: "/out",
+					RedirectStderr: "/err",
+				},
+			).
+			ExitCode(ctx)
+		require.Error(t, err)
+
+		require.Contains(t, err.Error(), outMsg)
+		require.Contains(t, err.Error(), errMsg)
 	})
 }

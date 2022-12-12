@@ -14,6 +14,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
@@ -79,17 +80,39 @@ func shim() int {
 		stdoutPath = stdoutRedirect
 	}
 
+	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+	if found {
+		stderrPath = stderrRedirect
+	}
+
+	if _, found := internalEnv(core.DebugFailedExecEnv); found {
+		// if we are being requested to just obtain the output of a previously failed exec,
+		// do that and exit
+		stdoutFile, err := os.Open(stdoutPath)
+		if err != nil && !os.IsNotExist(err) {
+			panic(err)
+		}
+		_, err = io.Copy(os.Stdout, stdoutFile)
+		if err != nil {
+			panic(err)
+		}
+		stderrFile, err := os.Open(stderrPath)
+		if err != nil && !os.IsNotExist(err) {
+			panic(err)
+		}
+		_, err = io.Copy(os.Stderr, stderrFile)
+		if err != nil {
+			panic(err)
+		}
+		return 0
+	}
+
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stdoutFile.Close()
 	cmd.Stdout = io.MultiWriter(stdoutFile, os.Stdout)
-
-	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-	if found {
-		stderrPath = stderrRedirect
-	}
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
