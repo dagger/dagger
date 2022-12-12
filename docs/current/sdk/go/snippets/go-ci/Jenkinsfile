@@ -1,0 +1,13 @@
+pipeline {
+  agent { label 'dagger' }
+
+  stages {
+    stage("dagger") {
+      steps {
+        sh '''
+            go run main.go
+        '''
+      }
+    }
+  }
+}

@@ -1,0 +1,19 @@
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/node:lts
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Install deps
+          command: npm ci
+      - run:
+          name: Dagger Pipeline
+          command: node main.mjs
+workflows:
+  dagger:
+    jobs:
+      - build

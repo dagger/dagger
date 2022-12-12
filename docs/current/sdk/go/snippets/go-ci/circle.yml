@@ -1,0 +1,16 @@
+version: 2.1
+jobs:
+  build:
+    docker:
+      - image: cimg/go:1.19
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Dagger Pipeline
+          command: go run main.go
+workflows:
+  dagger:
+    jobs:
+      - build

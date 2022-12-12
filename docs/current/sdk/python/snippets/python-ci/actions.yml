@@ -1,0 +1,21 @@
+name: dagger
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - uses: actions/checkout@v3
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install dagger-io
+      - name: Run Dagger pipeline
+        run: python main.py
