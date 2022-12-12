@@ -8,14 +8,14 @@ const GCR_PUBLISH_ADDRESS = 'gcr.io/PROJECT/myapp'
 // initialize Dagger client
 connect(async (daggerClient) => {
   // get reference to the project directory
-  const source = await daggerClient.host().directory(".", { exclude: ["node_modules/", "ci/"] })
+  const source = daggerClient.host().directory(".", { exclude: ["node_modules/", "ci/"] })
 
   // get Node image
-  const node = await daggerClient.container().from("node:16")
+  const node = daggerClient.container().from("node:16")
 
   // mount cloned repository into Node image
   // install dependencies
-  const c = await node
+  const c = node
     .withMountedDirectory("/src", source)
     .withWorkdir("/src")
     .withExec(["cp", "-R", ".", "/home/node"])
@@ -28,7 +28,7 @@ connect(async (daggerClient) => {
     .publish(GCR_PUBLISH_ADDRESS)
 
   // print ref
-  console.log(`Published at: ${gcrContainerPublishResponse.publish}`)
+  console.log(`Published at: ${gcrContainerPublishResponse}`)
 
   // initialize Google Cloud Run client
   const gcrClient = new ServicesClient();
