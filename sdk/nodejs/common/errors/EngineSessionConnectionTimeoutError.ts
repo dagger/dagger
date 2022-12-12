@@ -13,7 +13,7 @@ export class EngineSessionConnectionTimeoutError extends DaggerSDKError {
   code = "D104"
 
   /**
-   * The duration until the timeout occoured in ms.
+   * The duration until the timeout occurred in ms.
    */
   timeOutDuration: number
 
