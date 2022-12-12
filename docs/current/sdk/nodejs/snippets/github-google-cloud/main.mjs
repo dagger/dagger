@@ -39,7 +39,7 @@ connect(async (daggerClient) => {
     template: {
       containers: [
         {
-          image: `${gcr.publish}`,
+          image: gcrContainerPublishResponse,
           ports: [
             {
               name: "http1",
