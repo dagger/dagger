@@ -207,7 +207,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 	st = st.File(
 		llb.Mkfile(
 			dest,
-			permissions, // TODO(vito): expose, issue: #3167
+			permissions,
 			content,
 		),
 	)
