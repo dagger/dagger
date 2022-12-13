@@ -12,7 +12,7 @@ jobs:
           command: npm ci
       - run:
           name: Dagger Pipeline
-          command: node main.mjs
+          command: node index.mjs
 workflows:
   dagger:
     jobs:
