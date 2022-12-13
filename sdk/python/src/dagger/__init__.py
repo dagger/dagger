@@ -1,3 +1,4 @@
+from ._version import CLI_VERSION
 from .api.gen import *
 from .api.gen_sync import Client as SyncClient
 from .config import Config as Config

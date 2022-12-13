@@ -6,9 +6,7 @@ from urllib.parse import urlparse
 
 from attrs import define, field
 
-from ._engine import ENGINE_IMAGE_REF
-
-DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
+from ._version import CLI_VERSION
 
 
 def host_factory():
@@ -18,7 +16,9 @@ def host_factory():
     cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
     if cli_bin:
         return f"bin://{cli_bin}"
-    return os.environ.get("DAGGER_HOST", DEFAULT_HOST)
+    # TODO: download-bin is not the way we want to model this, it's just an
+    # easier stepstone than refactoring all the connector code at once
+    return f"download-bin://{CLI_VERSION}"
 
 
 @define
