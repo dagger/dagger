@@ -18,31 +18,77 @@ type Host {
   "Access a Unix socket on the host"
   unixSocket(path: String!): Socket!
 
-  "Start a proxy service to allow connecting to host ports from containers"
-  proxy([...ProxyPort!]!): Service!
+  "Start a proxy service to forward network connections between host and containers"
+  proxy(
+    """
+    Inbound port forwarding: forward ports from containers to the host.
+    This is conceptually equivalent to 'ssh -R'
+
+      - Listen on ports in the proxy container namespace
+      - Forward to ports in the host machine's namespace
+    """
+    inbound: [...PortForward!],
+  
+    """
+    Outbound port forwarding: forward ports from the host to containers.
+    
+    This is conceptually equivalent to 'ssh -L':
+
+      - Listen on ports in the host machine's namespace
+      - Forward to ports in the proxy container's namespace
+    
+    Use in conjunction with 'serviceDependencies'
+    """
+    outbound: [...PortForward!],
+
+    """
+    Service dependencies for this proxy.
+
+    Combined with `outboundRules`, this allows host-to-container networking (h2c), by using the service alias as a forwardAddress for the outbound rule.    
+    """
+    #FIXME: slight duplication of Container{withServiceDependency}, to share the Service type. Good tradeoff for now.
+    serviceDependencies: [...ServiceDependency!]
+  ): Service!
 }
 
-"A port to expose on a host proxy service"
-input ProxyPort {
-  "Type of port to expose (TCP or UDP)"
-  protocol: NetworkProtocol=TCP
-  "Port number to expose"
-  port: Integer!
+"""
+A TCP/UDP port forwarding configuration
+"""
+input PortForward {
+  """
+  The port number to listen on.
 
+    Example: 80
+  """
+  listenPort: Integer!
 
   """
-  (optional) The network protocol to forward traffic to.
-  Defaults to the same protocol as the exposed port.
+  The network protocol to listen on (TCP or UDP)
   """
-  backendProtocol: NetworkProtocol
+  listenProtocol: NetworkProtocol=TCP
+
+  """
+  The host address to listen on. Default to "0.0.0.0"
+  """
+  listenHost: String="0.0.0.0"
+
+  """
+  The network protocol to forward traffic to (optional).
+  Defaults to the value of listenProtocol
+  """
+  forwardProtocol: NetworkProtocol
   
   """
-  (optional) The network address to forward traffic to.
-  Defaults to "localhost:$port" where $port is the value
-  of the 'port' field
+  The network host address to forward to. Defaults to "localhost"
   """
-  backendAddress: String
+  forwardHost: String="localhost"
+  
+  """
+  The port number to forward to. Defaults to the value of listenPort
+  """
+  forwardPort: Integer
 }
+
 
 "An environment variable on the host environment"
 type HostVariable {
