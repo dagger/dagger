@@ -46,7 +46,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(addr)
+	fmt.Printf("published to %s", addr)
 }
 
 func setDependencies(container *dagger.Container) *dagger.Container {
