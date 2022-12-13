@@ -56,6 +56,6 @@ connect(async (daggerClient) => {
   const [gcrServiceUpdateResponse] = await gcrServiceUpdateRequest.promise();
 
   // print ref
-  console.log(`Deployment for image ${gcrContainerPublishResponse.publish} now available at ${gcrServiceUpdateResponse.uri}`)
+  console.log(`Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`)
 
 }, {LogOutput: process.stdout})
