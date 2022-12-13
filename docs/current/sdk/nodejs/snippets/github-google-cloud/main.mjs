@@ -31,7 +31,7 @@ connect(async (daggerClient) => {
   console.log(`Published at: ${gcrContainerPublishResponse}`)
 
   // initialize Google Cloud Run client
-  const gcrClient = new v2.ServicesClient();
+  const gcrClient = new ServicesClient();
 
   // define service request
   const gcrServiceUpdateRequest = {
