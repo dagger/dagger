@@ -216,8 +216,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0444}).
 			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0444}).
 			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0444})
-		// containingDir := c.Directory().WithDirectory("dir", dir, dagger.DirectoryWithDirectoryOpts{Permissions: 0777})
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir) //, dagger.ContainerWithDirectoryOpts{Permissions: 0777})
+		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
 
