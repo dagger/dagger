@@ -265,7 +265,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	var perm *fs.FileMode = nil
+	var perm *fs.FileMode
 	if permissions != 0 {
 		perm = &permissions
 	}
