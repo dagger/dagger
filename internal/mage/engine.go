@@ -223,7 +223,10 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	// build the CLI and export locally so it can be used to connect to the engine
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
-	util.DaggerBinary(c).Export(ctx, binDest)
+	_, err = util.HostDaggerBinary(c).Export(ctx, binDest)
+	if err != nil {
+		return err
+	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
