@@ -117,11 +117,27 @@ func GoBase(c *dagger.Client) *dagger.Container {
 	return WithDevEngine(c, goBase(c))
 }
 
-// DaggerBinary returns a compiled dagger binary
-func DaggerBinary(c *dagger.Client) *dagger.File {
-	return goBase(c).
+func daggerBinary(c *dagger.Client, goos, goarch string) *dagger.File {
+	base := goBase(c)
+	if goos != "" {
+		base = base.WithEnvVariable("GOOS", goos)
+	}
+	if goarch != "" {
+		base = base.WithEnvVariable("GOARCH", goarch)
+	}
+	return base.
 		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"}).
 		File("./bin/dagger")
+}
+
+// DaggerBinary returns a compiled dagger binary
+func DaggerBinary(c *dagger.Client) *dagger.File {
+	return daggerBinary(c, "", "")
+}
+
+// HostDaggerBinary returns a dagger binary compiled to target the host's OS+arch
+func HostDaggerBinary(c *dagger.Client) *dagger.File {
+	return daggerBinary(c, runtime.GOOS, runtime.GOARCH)
 }
 
 // ClientGenBinary returns a compiled dagger binary
