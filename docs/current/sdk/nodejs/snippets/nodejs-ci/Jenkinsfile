@@ -6,7 +6,7 @@ pipeline {
       steps {
         sh '''
             npm ci
-            node main.mjs
+            node index.mjs
         '''
       }
     }

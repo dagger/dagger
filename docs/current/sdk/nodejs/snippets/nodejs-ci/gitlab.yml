@@ -17,4 +17,4 @@ build:
   extends: [.dagger]
   script:
     - npm ci
-    - node main.mjs
+    - node index.mjs
