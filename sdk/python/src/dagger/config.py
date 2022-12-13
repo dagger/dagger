@@ -20,15 +20,16 @@ class Config:
     timeout:
         The maximum time in seconds for establishing a connection to the server.
     execute_timeout:
-        The maximum time in seconds for the execution of a request before a TimeoutError
-        is raised. Passing None results in waiting forever for a response.
+        The maximum time in seconds for the execution of a request before an
+        ExecuteTimeoutError is raised. Passing None results in waiting forever for a
+        response (default).
     """
 
     workdir: pathlib.Path | str = ""
     config_path: pathlib.Path | str = ""
     log_output: typing.TextIO | None = None
     timeout: int = 10
-    execute_timeout: int | float | None = 60 * 5
+    execute_timeout: int | float | None = None
 
 
 def _host_converter(value: str) -> httpx.URL:

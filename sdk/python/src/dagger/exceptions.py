@@ -12,3 +12,7 @@ class ClientError(DaggerError):
 
 class InvalidQueryError(ClientError):
     """Misuse of the query builder."""
+
+
+class ExecuteTimeoutError(ClientError):
+    """Timeout while executing a query."""
