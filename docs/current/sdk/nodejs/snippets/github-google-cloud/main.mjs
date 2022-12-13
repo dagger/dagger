@@ -31,29 +31,31 @@ connect(async (daggerClient) => {
   console.log(`Published at: ${gcrContainerPublishResponse}`)
 
   // initialize Google Cloud Run client
-  const gcrClient = new ServicesClient();
+  const gcrClient = new v2.ServicesClient();
 
-  // define service
-  const gcrService = {
-    name: GCR_SERVICE_URL,
-    template: {
-      containers: [
-        {
-          image: gcrContainerPublishResponse,
-          ports: [
-            {
-              name: "http1",
-              containerPort: 3000
-            }
-          ]
-        }
-      ],
-    },
-   }
+  // define service request
+  const gcrServiceUpdateRequest = {
+    service: {
+      name: GCR_SERVICE_URL,
+      template: {
+        containers: [
+          {
+            image: gcrContainerPublishResponse,
+            ports: [
+              {
+                name: "http1",
+                containerPort: 3000
+              }
+            ]
+          }
+        ],
+      },
+     }
+  };
 
   // update service
-  const [gcrServiceUpdateRequest] = await gcrClient.updateService({gcrService});
-  const [gcrServiceUpdateResponse] = await gcrServiceUpdateRequest.promise();
+  const [gcrServiceUpdateOperation] = await gcrClient.updateService(gcrServiceUpdateRequest);
+  const [gcrServiceUpdateResponse] = await gcrServiceUpdateOperation.promise();
 
   // print ref
   console.log(`Deployment for image ${gcrContainerPublishResponse} now available at ${gcrServiceUpdateResponse.uri}`)
