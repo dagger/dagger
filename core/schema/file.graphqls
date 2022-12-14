@@ -16,6 +16,7 @@ type File {
 
   "Retrieves a secret referencing the contents of this file."
   secret: Secret!
+    @deprecated(reason: "This operation is considered unsafe. See https://github.com/dagger/dagger/issues/4403")
 
   "Gets the size of the file, in bytes."
   size: Int!
