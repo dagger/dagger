@@ -290,7 +290,7 @@ class _InputField:
 
     def as_arg(self) -> str:
         """As a Arg object for the query builder."""
-        params = [f"'{self.graphql_name}'", self.name]
+        params = [f"'{self.name}', '{self.graphql_name}'", self.name, self.type]
         if self.has_default:
             params.append(repr(self.default_value))
         return f"Arg({', '.join(params)}),"
