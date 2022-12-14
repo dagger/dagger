@@ -36,9 +36,7 @@ export async function connect(
   }
 
   let client
-  let close = () => {
-    return
-  }
+  let close: null | (() => void) = null
 
   // Prefer DAGGER_SESSION_URL if set
   const daggerSessionURL = process.env["DAGGER_SESSION_URL"]
