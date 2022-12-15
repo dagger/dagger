@@ -1,4 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { errorCodes } from "./errors-codes.js"
 
 interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
   response: unknown
@@ -9,7 +10,7 @@ interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
  */
 export class TooManyNestedObjectsError extends DaggerSDKError {
   name = "TooManyNestedObjectsError"
-  code = "D102"
+  code = errorCodes.TooManyNestedObjectsError
 
   /**
    *  the response containing more than one value.

@@ -1,4 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { errorCodes } from "./errors-codes.js"
 
 type EngineSessionEOFErrorOptions = DaggerSDKErrorOptions
 
@@ -8,7 +9,7 @@ type EngineSessionEOFErrorOptions = DaggerSDKErrorOptions
  */
 export class EngineSessionEOFError extends DaggerSDKError {
   name = "EngineSessionEOFError"
-  code = "D105"
+  code = errorCodes.EngineSessionEOFError
 
   /**
    * @hidden
