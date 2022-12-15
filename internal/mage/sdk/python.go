@@ -81,7 +81,7 @@ func (t Python) Test(ctx context.Context) error {
 		eg.Go(func() error {
 			_, err := pythonBase(c, version).
 				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
-				WithExec([]string{"poe", "test", "--exitfirst", "-m", "not provision"}).
+				WithExec([]string{"poe", "test", "--exitfirst"}).
 				ExitCode(gctx)
 			return err
 		})

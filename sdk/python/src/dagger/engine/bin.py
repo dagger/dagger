@@ -212,7 +212,7 @@ def cli_archive_url(cli_version: str):
 
 
 def cli_checksum_url(cli_version: str):
-    return f"{CLI_SCHEME}https://{CLI_HOST}/dagger/releases/{cli_version}/checksums.txt"
+    return f"{CLI_SCHEME}://{CLI_HOST}/dagger/releases/{cli_version}/checksums.txt"
 
 
 # returns a dict of CLI archive name -> checksum for that archive
