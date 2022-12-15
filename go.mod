@@ -32,7 +32,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.9.0
 	golang.org/x/crypto v0.1.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.1.0
+	golang.org/x/sys v0.3.0
 	golang.org/x/term v0.1.0
 	google.golang.org/grpc v1.51.0
 )
