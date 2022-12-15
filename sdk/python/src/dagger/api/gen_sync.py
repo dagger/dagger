@@ -427,14 +427,14 @@ class Container(Type):
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
 
-    def with_fs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_fs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID
 
         .. deprecated::
             Replaced by :py:meth:`with_rootfs`.
         """
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
@@ -506,10 +506,10 @@ class Container(Type):
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_rootfs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID"""
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
@@ -1100,9 +1100,7 @@ class Client(Root):
         return CacheVolume(_ctx)
 
     def container(
-        self,
-        id: "ContainerID | Container | None" = None,
-        platform: "Platform | None" = None,
+        self, id: "ContainerID | None" = None, platform: "Platform | None" = None
     ) -> "Container":
         """Load a container from ID.
 
@@ -1113,7 +1111,7 @@ class Client(Root):
         host.
         """
         _args = [
-            Arg("id", "id", id, ContainerID | Container | None, None),
+            Arg("id", "id", id, ContainerID | None, None),
             Arg("platform", "platform", platform, Platform | None, None),
         ]
         _ctx = self._select("container", _args)
@@ -1125,18 +1123,18 @@ class Client(Root):
         _ctx = self._select("defaultPlatform", _args)
         return _ctx.execute_sync(Platform)
 
-    def directory(self, id: "DirectoryID | Directory | None" = None) -> "Directory":
+    def directory(self, id: "DirectoryID | None" = None) -> "Directory":
         """Load a directory by ID. No argument produces an empty directory."""
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory | None, None),
+            Arg("id", "id", id, DirectoryID | None, None),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, id: "FileID | File") -> "File":
+    def file(self, id: "FileID") -> "File":
         """Load a file by ID"""
         _args = [
-            Arg("id", "id", id, FileID | File),
+            Arg("id", "id", id, FileID),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -1172,18 +1170,18 @@ class Client(Root):
         _ctx = self._select("project", _args)
         return Project(_ctx)
 
-    def secret(self, id: "SecretID | Secret") -> "Secret":
+    def secret(self, id: "SecretID") -> "Secret":
         """Load a secret from its ID"""
         _args = [
-            Arg("id", "id", id, SecretID | Secret),
+            Arg("id", "id", id, SecretID),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
-    def socket(self, id: "SocketID | Socket | None" = None) -> "Socket":
+    def socket(self, id: "SocketID | None" = None) -> "Socket":
         """Load a socket by ID"""
         _args = [
-            Arg("id", "id", id, SocketID | Socket | None, None),
+            Arg("id", "id", id, SocketID | None, None),
         ]
         _ctx = self._select("socket", _args)
         return Socket(_ctx)
