@@ -233,7 +233,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -255,6 +255,10 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
 	} else {
 		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
+	}
+
+	for _, buildArg := range buildArgs {
+		opts["build-arg:"+buildArg.Name] = buildArg.Value
 	}
 
 	inputs := map[string]*pb.Definition{
@@ -1243,4 +1247,9 @@ type ContainerExecOpts struct {
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 	ExperimentalPrivilegedNesting bool
+}
+
+type BuildArg struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
 }

@@ -171,6 +171,7 @@ func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, ar
 type dirDockerBuildArgs struct {
 	Platform   *specs.Platform
 	Dockerfile string
+	BuildArgs  []core.BuildArg
 }
 
 func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
@@ -182,5 +183,5 @@ func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Director
 	if err != nil {
 		return ctr, err
 	}
-	return ctr.Build(ctx, s.gw, parent, args.Dockerfile)
+	return ctr.Build(ctx, s.gw, parent, args.Dockerfile, args.BuildArgs)
 }

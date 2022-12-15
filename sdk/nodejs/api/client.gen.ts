@@ -59,6 +59,7 @@ export type CacheID = string
 
 export type ContainerBuildOpts = {
   dockerfile?: string
+  buildArgs?: BuildArg[]
 }
 
 export type ContainerExecOpts = {
@@ -152,6 +153,7 @@ export type DateTime = string
 export type DirectoryDockerBuildOpts = {
   dockerfile?: string
   platform?: Platform
+  buildArgs?: BuildArg[]
 }
 
 export type DirectoryEntriesOpts = {
