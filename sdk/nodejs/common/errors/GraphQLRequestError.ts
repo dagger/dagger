@@ -3,7 +3,7 @@ import {
   GraphQLResponse,
 } from "graphql-request/dist/types"
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { errorCodes } from "./errors-codes.js"
+import { ERROR_CODES } from "./errors-codes.js"
 
 interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
   response: GraphQLResponse
@@ -15,7 +15,7 @@ interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
  */
 export class GraphQLRequestError extends DaggerSDKError {
   public name = "GraphQLRequestError"
-  public code = errorCodes.GraphQLRequestError
+  public code = ERROR_CODES.GraphQLRequestError
 
   /**
    *  The query and variables, which caused the error.

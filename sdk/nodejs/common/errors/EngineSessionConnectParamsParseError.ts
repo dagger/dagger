@@ -1,5 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { errorCodes } from "./errors-codes.js"
+import { ERROR_CODES } from "./errors-codes.js"
 
 interface EngineSessionConnectParamsParseErrorOptions
   extends DaggerSDKErrorOptions {
@@ -11,7 +11,7 @@ interface EngineSessionConnectParamsParseErrorOptions
  */
 export class EngineSessionConnectParamsParseError extends DaggerSDKError {
   name = "EngineSessionConnectParamsParseError"
-  code = errorCodes.EngineSessionConnectParamsParseError
+  code = ERROR_CODES.EngineSessionConnectParamsParseError
 
   /**
    *  the line, which caused the error during parsing, if the error was caused because of parsing.
