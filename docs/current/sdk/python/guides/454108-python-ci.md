@@ -3,7 +3,7 @@ slug: /454108/python-ci
 displayed_sidebar: "current"
 ---
 
-# Dagger Python SDK in CI
+# Use the Dagger Python SDK in CI
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 

@@ -3,7 +3,7 @@ slug: /114934/nodejs-ci
 displayed_sidebar: "current"
 ---
 
-# Dagger Node.js SDK in CI
+# Use the Dagger Node.js SDK in CI
 
 import Tabs from '@theme/Tabs'; import TabItem from '@theme/TabItem';
 
