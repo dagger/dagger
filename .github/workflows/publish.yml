@@ -122,8 +122,8 @@ jobs:
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          poetry install
-          poetry run poe test -xm provision
+          poetry install --only main,test
+          poetry run pytest -xm provision
 
       - uses: actions/setup-node@v2
         with:
@@ -218,8 +218,8 @@ jobs:
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          poetry install
-          poetry run poe test -xm provision
+          poetry install --only main,test
+          poetry run pytest -xm provision
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
