@@ -51,15 +51,11 @@ describe("NodeJS sdk Connect", function () {
 
   describe("Automatic Provisioned CLI Binary", function () {
     let oldEnv: string
-    let oldCLIHost: string
-    let oldCLIScheme: string
     let tempDir: string
     let cacheDir: string
 
     before(() => {
       oldEnv = JSON.stringify(process.env)
-      oldCLIHost = bin._cliHost()
-      oldCLIScheme = bin._cliScheme()
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-"))
       cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-cache"))
       process.env.XDG_CACHE_HOME = cacheDir
@@ -71,8 +67,22 @@ describe("NodeJS sdk Connect", function () {
       // ignore DAGGER_SESSION_URL
       delete process.env.DAGGER_SESSION_URL
 
+      // If explicitly requested to test against a certain URL, use that
+      const cliURL = process.env._INTERNAL_DAGGER_TEST_CLI_URL
+      if (cliURL) {
+        bin._overrideCLIURL(cliURL)
+        const checksumsUrl = process.env._INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL
+        if (!checksumsUrl) {
+          throw new Error(
+            "Missing override checksums URL when overriding CLI URL"
+          )
+        }
+        bin._overrideCLIChecksumsURL(checksumsUrl)
+      }
+
+      // Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
       const cliBin = process.env._EXPERIMENTAL_DAGGER_CLI_BIN
-      if (cliBin) {
+      if (cliBin && !cliURL) {
         delete process.env._EXPERIMENTAL_DAGGER_CLI_BIN
         // create a temporary dir and write a tar.gz with the cli_bin in it
         const tempArchivePath = path.join(tempDir, "cli.tar.gz")
@@ -118,8 +128,12 @@ describe("NodeJS sdk Connect", function () {
           server
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
-              bin._overrideCLIHost(addr.address + ":" + addr.port)
-              bin._overrideCLIScheme("http")
+              bin._overrideCLIURL(
+                `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`
+              )
+              bin._overrideCLIChecksumsURL(
+                `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`
+              )
               resolve()
             })
             .unref()
@@ -136,8 +150,8 @@ describe("NodeJS sdk Connect", function () {
 
     after(() => {
       process.env = JSON.parse(oldEnv)
-      bin._overrideCLIHost(oldCLIHost)
-      bin._overrideCLIScheme(oldCLIScheme)
+      bin._overrideCLIURL("")
+      bin._overrideCLIChecksumsURL("")
       fs.rmSync(tempDir, { recursive: true })
       fs.rmSync(cacheDir, { recursive: true })
     })

@@ -1,0 +1,14 @@
+includes:
+  - from_file:
+      path: ./.goreleaser.common.yml
+
+nightly:
+  # name_template will override .Version for nightly builds:
+  # https://goreleaser.com/customization/nightlies/#how-it-works
+  name_template: "{{ .FullCommit }}"
+
+blobs:
+  - provider: s3
+    region: "{{ .Env.AWS_REGION }}"
+    bucket: "{{ .Env.AWS_BUCKET }}"
+    folder: "dagger/releases/{{ .Version }}"
