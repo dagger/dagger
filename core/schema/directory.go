@@ -86,11 +86,10 @@ type withDirectoryArgs struct {
 	Directory core.DirectoryID
 
 	core.CopyFilter
-	Permissions fs.FileMode
 }
 
 func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Permissions)
+	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
 }
 
 type dirWithTimestampsArgs struct {

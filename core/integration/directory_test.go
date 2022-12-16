@@ -238,57 +238,6 @@ func TestDirectoryWithDirectory(t *testing.T) {
 		require.NoError(t, err)
 		require.Contains(t, stdout, "-r--r--r--")
 
-		t.Run("permissions apply to whole directory", func(t *testing.T) {
-			dir := c.Directory().
-				WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0444}).
-				WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0444}).
-				WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0444}).
-				WithNewFile("sub/sub/sub/file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0444})
-			containingDir := c.Directory().WithDirectory("dir", dir, dagger.DirectoryWithDirectoryOpts{Permissions: 0777}).WithNewFile("test", "test")
-			ctr := c.Container().From("alpine").WithDirectory("/permissions-test", containingDir)
-
-			stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "drwxr-xr-x")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "drwxr-xr-x")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/test"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rw-r--r--")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir/some-file"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rwxrwxrwx")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir/sub/sub/sub/file"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rwxrwxrwx")
-
-			ctr = c.Container().From("alpine").WithDirectory("/permissions-test", containingDir, dagger.ContainerWithDirectoryOpts{Permissions: 0666})
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "drwxr-xr-x")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "drw-rw-rw")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/test"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rw-rw-rw")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir/some-file"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rw-rw-rw")
-
-			stdout, err = ctr.WithExec([]string{"ls", "-ld", "/permissions-test/dir/sub/sub/sub/file"}).Stdout(ctx)
-			require.NoError(t, err)
-			require.Contains(t, stdout, "-rw-rw-rw")
-		})
 	})
 }
 
@@ -374,15 +323,6 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 	t.Run("does not permit creating directory outside of root", func(t *testing.T) {
 		_, err := dir.Directory("b").WithNewDirectory("../c").ID(ctx)
 		require.Error(t, err)
-	})
-
-	t.Run("respects permissions", func(t *testing.T) {
-		dir := c.Directory().WithNewDirectory("permissions-test")
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir, dagger.ContainerWithDirectoryOpts{Permissions: 0444})
-		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test"}).Stdout(ctx)
-
-		require.NoError(t, err)
-		require.Contains(t, stdout, "dr--r--r--")
 	})
 }
 

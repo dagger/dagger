@@ -105,7 +105,6 @@ export type ContainerWithDefaultArgsOpts = {
 export type ContainerWithDirectoryOpts = {
   exclude?: string[]
   include?: string[]
-  permissions?: number
 }
 
 export type ContainerWithExecOpts = {
@@ -167,7 +166,6 @@ export type DirectoryEntriesOpts = {
 export type DirectoryWithDirectoryOpts = {
   exclude?: string[]
   include?: string[]
-  permissions?: number
 }
 
 export type DirectoryWithFileOpts = {

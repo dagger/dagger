@@ -357,7 +357,6 @@ class Container(Type):
         directory: "Directory",
         exclude: list[str] | None = None,
         include: list[str] | None = None,
-        permissions: int | None = None,
     ) -> "Container":
         """This container plus a directory written at the given path"""
         _args = [
@@ -365,7 +364,6 @@ class Container(Type):
             Arg("directory", "directory", directory, Directory),
             Arg("exclude", "exclude", exclude, list[str] | None, None),
             Arg("include", "include", include, list[str] | None, None),
-            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -450,7 +448,7 @@ class Container(Type):
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
-            Arg("permissions", permissions, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -509,7 +507,7 @@ class Container(Type):
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str | None, None),
-            Arg("permissions", permissions, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -693,7 +691,6 @@ class Directory(Type):
         directory: "Directory",
         exclude: list[str] | None = None,
         include: list[str] | None = None,
-        permissions: int | None = None,
     ) -> "Directory":
         """This directory plus a directory written at the given path"""
         _args = [
@@ -701,7 +698,6 @@ class Directory(Type):
             Arg("directory", "directory", directory, Directory),
             Arg("exclude", "exclude", exclude, list[str] | None, None),
             Arg("include", "include", include, list[str] | None, None),
-            Arg("permissions", permissions, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -715,7 +711,7 @@ class Directory(Type):
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
-            Arg("permissions", permissions, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
@@ -726,7 +722,7 @@ class Directory(Type):
         """This directory plus a new directory created at the given path"""
         _args = [
             Arg("path", "path", path, str),
-            Arg("permissions", permissions, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
@@ -738,7 +734,7 @@ class Directory(Type):
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str),
-            Arg("permissions", permissions, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)

@@ -35,7 +35,6 @@ type Directory {
     directory: DirectoryID!
     exclude: [String!]
     include: [String!]
-    permissions: Int
   ): Directory!
 
   "This directory plus a new directory created at the given path"

@@ -391,8 +391,6 @@ type ContainerWithDirectoryOpts struct {
 	Exclude []string
 
 	Include []string
-
-	Permissions int
 }
 
 // This container plus a directory written at the given path
@@ -411,13 +409,6 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
-		}
-	}
-	// `permissions` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 			break
 		}
 	}
@@ -883,8 +874,6 @@ type DirectoryWithDirectoryOpts struct {
 	Exclude []string
 
 	Include []string
-
-	Permissions int
 }
 
 // This directory plus a directory written at the given path
@@ -903,13 +892,6 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
-		}
-	}
-	// `permissions` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Permissions) {
-			q = q.Arg("permissions", opts[i].Permissions)
 			break
 		}
 	}

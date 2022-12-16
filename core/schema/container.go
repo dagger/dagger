@@ -433,7 +433,7 @@ func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Co
 }
 
 func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args withDirectoryArgs) (*core.Container, error) {
-	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Permissions)
+	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
 }
 
 func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args withFileArgs) (*core.Container, error) {

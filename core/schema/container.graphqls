@@ -123,7 +123,6 @@ type Container {
     directory: DirectoryID!
     exclude: [String!]
     include: [String!]
-    permissions: Int
   ): Container!
 
   "This container plus a socket forwarded to the given Unix socket path"
