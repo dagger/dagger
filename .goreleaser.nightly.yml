@@ -11,4 +11,4 @@ blobs:
   - provider: s3
     region: "{{ .Env.AWS_REGION }}"
     bucket: "{{ .Env.AWS_BUCKET }}"
-    folder: "dagger/releases/{{ .Version }}"
+    folder: "dagger/main/{{ .Version }}"

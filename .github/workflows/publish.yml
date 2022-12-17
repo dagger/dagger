@@ -83,8 +83,8 @@ jobs:
               CLI_VERSION=${GITHUB_REF_NAME:1}
               ENGINE_VERSION=$GITHUB_REF_NAME
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/dagger_${CLI_VERSION}_darwin_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_darwin_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
           fi
         shell: bash
@@ -163,8 +163,8 @@ jobs:
               CLI_VERSION=${GITHUB_REF_NAME:1}
               ENGINE_VERSION=$GITHUB_REF_NAME
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
           fi
         shell: bash
@@ -202,8 +202,8 @@ jobs:
               CLI_VERSION=${GITHUB_REF_NAME:1}
               ENGINE_VERSION=$GITHUB_REF_NAME
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
           fi
         shell: bash
@@ -247,8 +247,8 @@ jobs:
               CLI_VERSION=${GITHUB_REF_NAME:1}
               ENGINE_VERSION=$GITHUB_REF_NAME
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/releases/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
             echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
           fi
         shell: bash
