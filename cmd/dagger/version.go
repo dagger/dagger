@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"runtime"
-	"runtime/debug"
 
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/spf13/cobra"
@@ -21,24 +20,8 @@ var versionCmd = &cobra.Command{
 	},
 }
 
-// revision returns the VCS revision being used to build or empty string
-// if none.
-func revision() string {
-	bi, ok := debug.ReadBuildInfo()
-	if !ok {
-		return ""
-	}
-	for _, s := range bi.Settings {
-		if s.Key == "vcs.revision" {
-			return s.Value[:9]
-		}
-	}
-
-	return ""
-}
-
 func short() string {
-	return fmt.Sprintf("dagger %s (%s)", engine.Version, revision())
+	return fmt.Sprintf("dagger %s", engine.Version)
 }
 
 func long() string {
