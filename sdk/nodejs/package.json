@@ -23,7 +23,8 @@
     "graphql-request": "^5.0.0",
     "graphql-tag": "^2.12.6",
     "node-color-log": "^10.0.2",
-    "node-fetch": "^3.3.0"
+    "node-fetch": "^3.3.0",
+    "tar": "^6.1.13"
   },
   "scripts": {
     "build": "tsc",
@@ -35,6 +36,7 @@
     "@types/mocha": "latest",
     "@types/node": "~16",
     "@typescript-eslint/eslint-plugin": "^5.46.1",
+    "@types/tar": "^6.1.3",
     "@typescript-eslint/parser": "^5.46.0",
     "eslint": "^8.29.0",
     "eslint-config-prettier": "^8.5.0",

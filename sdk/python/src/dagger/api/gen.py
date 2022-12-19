@@ -52,8 +52,8 @@ class Container(Type):
     def build(self, context: "Directory", dockerfile: str | None = None) -> "Container":
         """Initialize this container from a Dockerfile build"""
         _args = [
-            Arg("context", context),
-            Arg("dockerfile", dockerfile, None),
+            Arg("context", "context", context, Directory),
+            Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -75,7 +75,7 @@ class Container(Type):
     def directory(self, path: str) -> "Directory":
         """Retrieve a directory at the given path. Mounts are included."""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -105,7 +105,7 @@ class Container(Type):
             GraphQL to represent free-form human-readable text.
         """
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("envVariable", _args)
         return await _ctx.execute(str | None)
@@ -146,11 +146,17 @@ class Container(Type):
             HOST FILESYSTEM
         """
         _args = [
-            Arg("args", args, None),
-            Arg("stdin", stdin, None),
-            Arg("redirectStdout", redirect_stdout, None),
-            Arg("redirectStderr", redirect_stderr, None),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("args", "args", args, list[str] | None, None),
+            Arg("stdin", "stdin", stdin, str | None, None),
+            Arg("redirect_stdout", "redirectStdout", redirect_stdout, str | None, None),
+            Arg("redirect_stderr", "redirectStderr", redirect_stderr, str | None, None),
+            Arg(
+                "experimental_privileged_nesting",
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+                bool | None,
+                None,
+            ),
         ]
         _ctx = self._select("exec", _args)
         return Container(_ctx)
@@ -183,8 +189,14 @@ class Container(Type):
             The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
-            Arg("path", path),
-            Arg("platformVariants", platform_variants, None),
+            Arg("path", "path", path, str),
+            Arg(
+                "platform_variants",
+                "platformVariants",
+                platform_variants,
+                list[Container] | None,
+                None,
+            ),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -192,7 +204,7 @@ class Container(Type):
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path. Mounts are included."""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -202,7 +214,7 @@ class Container(Type):
         address
         """
         _args = [
-            Arg("address", address),
+            Arg("address", "address", address, str),
         ]
         _ctx = self._select("from", _args)
         return Container(_ctx)
@@ -267,8 +279,14 @@ class Container(Type):
             GraphQL to represent free-form human-readable text.
         """
         _args = [
-            Arg("address", address),
-            Arg("platformVariants", platform_variants, None),
+            Arg("address", "address", address, str),
+            Arg(
+                "platform_variants",
+                "platformVariants",
+                platform_variants,
+                list[Container] | None,
+                None,
+            ),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -328,7 +346,7 @@ class Container(Type):
     def with_default_args(self, args: list[str] | None = None) -> "Container":
         """Configures default arguments for future commands"""
         _args = [
-            Arg("args", args, None),
+            Arg("args", "args", args, list[str] | None, None),
         ]
         _ctx = self._select("withDefaultArgs", _args)
         return Container(_ctx)
@@ -342,10 +360,10 @@ class Container(Type):
     ) -> "Container":
         """This container plus a directory written at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("directory", directory),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("path", "path", path, str),
+            Arg("directory", "directory", directory, Directory),
+            Arg("exclude", "exclude", exclude, list[str] | None, None),
+            Arg("include", "include", include, list[str] | None, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -353,7 +371,7 @@ class Container(Type):
     def with_entrypoint(self, args: list[str]) -> "Container":
         """This container but with a different command entrypoint"""
         _args = [
-            Arg("args", args),
+            Arg("args", "args", args, list[str]),
         ]
         _ctx = self._select("withEntrypoint", _args)
         return Container(_ctx)
@@ -361,8 +379,8 @@ class Container(Type):
     def with_env_variable(self, name: str, value: str) -> "Container":
         """This container plus the given environment variable"""
         _args = [
-            Arg("name", name),
-            Arg("value", value),
+            Arg("name", "name", name, str),
+            Arg("value", "value", value, str),
         ]
         _ctx = self._select("withEnvVariable", _args)
         return Container(_ctx)
@@ -394,23 +412,29 @@ class Container(Type):
             HOST FILESYSTEM
         """
         _args = [
-            Arg("args", args),
-            Arg("stdin", stdin, None),
-            Arg("redirectStdout", redirect_stdout, None),
-            Arg("redirectStderr", redirect_stderr, None),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("args", "args", args, list[str]),
+            Arg("stdin", "stdin", stdin, str | None, None),
+            Arg("redirect_stdout", "redirectStdout", redirect_stdout, str | None, None),
+            Arg("redirect_stderr", "redirectStderr", redirect_stderr, str | None, None),
+            Arg(
+                "experimental_privileged_nesting",
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+                bool | None,
+                None,
+            ),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
 
-    def with_fs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_fs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID
 
         .. deprecated::
             Replaced by :py:meth:`with_rootfs`.
         """
         _args = [
-            Arg("id", id),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
@@ -420,8 +444,8 @@ class Container(Type):
         path
         """
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, File),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -431,9 +455,9 @@ class Container(Type):
     ) -> "Container":
         """This container plus a cache volume mounted at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("cache", cache),
-            Arg("source", source, None),
+            Arg("path", "path", path, str),
+            Arg("cache", "cache", cache, CacheVolume),
+            Arg("source", "source", source, Directory | None, None),
         ]
         _ctx = self._select("withMountedCache", _args)
         return Container(_ctx)
@@ -441,8 +465,8 @@ class Container(Type):
     def with_mounted_directory(self, path: str, source: "Directory") -> "Container":
         """This container plus a directory mounted at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, Directory),
         ]
         _ctx = self._select("withMountedDirectory", _args)
         return Container(_ctx)
@@ -450,8 +474,8 @@ class Container(Type):
     def with_mounted_file(self, path: str, source: "File") -> "Container":
         """This container plus a file mounted at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, File),
         ]
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
@@ -459,8 +483,8 @@ class Container(Type):
     def with_mounted_secret(self, path: str, source: "Secret") -> "Container":
         """This container plus a secret mounted into a file at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, Secret),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
@@ -468,7 +492,7 @@ class Container(Type):
     def with_mounted_temp(self, path: str) -> "Container":
         """This container plus a temporary directory mounted at the given path"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
@@ -476,16 +500,16 @@ class Container(Type):
     def with_new_file(self, path: str, contents: str | None = None) -> "Container":
         """This container plus a new file written at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("contents", contents, None),
+            Arg("path", "path", path, str),
+            Arg("contents", "contents", contents, str | None, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_rootfs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID"""
         _args = [
-            Arg("id", id),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
@@ -493,8 +517,8 @@ class Container(Type):
     def with_secret_variable(self, name: str, secret: "Secret") -> "Container":
         """This container plus an env variable containing the given secret"""
         _args = [
-            Arg("name", name),
-            Arg("secret", secret),
+            Arg("name", "name", name, str),
+            Arg("secret", "secret", secret, Secret),
         ]
         _ctx = self._select("withSecretVariable", _args)
         return Container(_ctx)
@@ -502,8 +526,8 @@ class Container(Type):
     def with_unix_socket(self, path: str, source: "Socket") -> "Container":
         """This container plus a socket forwarded to the given Unix socket path"""
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, Socket),
         ]
         _ctx = self._select("withUnixSocket", _args)
         return Container(_ctx)
@@ -511,7 +535,7 @@ class Container(Type):
     def with_user(self, name: str) -> "Container":
         """This container but with a different command user"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("withUser", _args)
         return Container(_ctx)
@@ -519,7 +543,7 @@ class Container(Type):
     def with_workdir(self, path: str) -> "Container":
         """This container but with a different working directory"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withWorkdir", _args)
         return Container(_ctx)
@@ -527,7 +551,7 @@ class Container(Type):
     def without_env_variable(self, name: str) -> "Container":
         """This container minus the given environment variable"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("withoutEnvVariable", _args)
         return Container(_ctx)
@@ -535,7 +559,7 @@ class Container(Type):
     def without_mount(self, path: str) -> "Container":
         """This container after unmounting everything at the given path."""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withoutMount", _args)
         return Container(_ctx)
@@ -543,7 +567,7 @@ class Container(Type):
     def without_unix_socket(self, path: str) -> "Container":
         """This container with a previously added Unix socket removed"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withoutUnixSocket", _args)
         return Container(_ctx)
@@ -569,7 +593,7 @@ class Directory(Type):
     def diff(self, other: "Directory") -> "Directory":
         """The difference between this directory and an another directory"""
         _args = [
-            Arg("other", other),
+            Arg("other", "other", other, Directory),
         ]
         _ctx = self._select("diff", _args)
         return Directory(_ctx)
@@ -577,7 +601,7 @@ class Directory(Type):
     def directory(self, path: str) -> "Directory":
         """Retrieve a directory at the given path"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -587,8 +611,8 @@ class Directory(Type):
     ) -> "Container":
         """Build a new Docker container from this directory"""
         _args = [
-            Arg("dockerfile", dockerfile, None),
-            Arg("platform", platform, None),
+            Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
+            Arg("platform", "platform", platform, Platform | None, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -604,7 +628,7 @@ class Directory(Type):
             GraphQL to represent free-form human-readable text.
         """
         _args = [
-            Arg("path", path, None),
+            Arg("path", "path", path, str | None, None),
         ]
         _ctx = self._select("entries", _args)
         return await _ctx.execute(list[str])
@@ -618,7 +642,7 @@ class Directory(Type):
             The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -626,7 +650,7 @@ class Directory(Type):
     def file(self, path: str) -> "File":
         """Retrieve a file at the given path"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -650,7 +674,7 @@ class Directory(Type):
     def load_project(self, config_path: str) -> "Project":
         """load a project's metadata"""
         _args = [
-            Arg("configPath", config_path),
+            Arg("config_path", "configPath", config_path, str),
         ]
         _ctx = self._select("loadProject", _args)
         return Project(_ctx)
@@ -664,10 +688,10 @@ class Directory(Type):
     ) -> "Directory":
         """This directory plus a directory written at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("directory", directory),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("path", "path", path, str),
+            Arg("directory", "directory", directory, Directory),
+            Arg("exclude", "exclude", exclude, list[str] | None, None),
+            Arg("include", "include", include, list[str] | None, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
@@ -677,8 +701,8 @@ class Directory(Type):
         path
         """
         _args = [
-            Arg("path", path),
-            Arg("source", source),
+            Arg("path", "path", path, str),
+            Arg("source", "source", source, File),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
@@ -686,7 +710,7 @@ class Directory(Type):
     def with_new_directory(self, path: str) -> "Directory":
         """This directory plus a new directory created at the given path"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
@@ -694,8 +718,8 @@ class Directory(Type):
     def with_new_file(self, path: str, contents: str) -> "Directory":
         """This directory plus a new file written at the given path"""
         _args = [
-            Arg("path", path),
-            Arg("contents", contents),
+            Arg("path", "path", path, str),
+            Arg("contents", "contents", contents, str),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
@@ -705,7 +729,7 @@ class Directory(Type):
         seconds from the Unix epoch
         """
         _args = [
-            Arg("timestamp", timestamp),
+            Arg("timestamp", "timestamp", timestamp, int),
         ]
         _ctx = self._select("withTimestamps", _args)
         return Directory(_ctx)
@@ -713,7 +737,7 @@ class Directory(Type):
     def without_directory(self, path: str) -> "Directory":
         """This directory with the directory at the given path removed"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withoutDirectory", _args)
         return Directory(_ctx)
@@ -721,7 +745,7 @@ class Directory(Type):
     def without_file(self, path: str) -> "Directory":
         """This directory with the file at the given path removed"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("withoutFile", _args)
         return Directory(_ctx)
@@ -786,7 +810,7 @@ class File(Type):
             The `Boolean` scalar type represents `true` or `false`.
         """
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -827,7 +851,7 @@ class File(Type):
         in seconds from the Unix epoch
         """
         _args = [
-            Arg("timestamp", timestamp),
+            Arg("timestamp", "timestamp", timestamp, int),
         ]
         _ctx = self._select("withTimestamps", _args)
         return File(_ctx)
@@ -857,8 +881,10 @@ class GitRef(Type):
     ) -> "Directory":
         """The filesystem tree at this ref"""
         _args = [
-            Arg("sshKnownHosts", ssh_known_hosts, None),
-            Arg("sshAuthSocket", ssh_auth_socket, None),
+            Arg("ssh_known_hosts", "sshKnownHosts", ssh_known_hosts, str | None, None),
+            Arg(
+                "ssh_auth_socket", "sshAuthSocket", ssh_auth_socket, Socket | None, None
+            ),
         ]
         _ctx = self._select("tree", _args)
         return Directory(_ctx)
@@ -870,7 +896,7 @@ class GitRepository(Type):
     def branch(self, name: str) -> "GitRef":
         """Details on one branch"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("branch", _args)
         return GitRef(_ctx)
@@ -892,7 +918,7 @@ class GitRepository(Type):
     def commit(self, id: str) -> "GitRef":
         """Details on one commit"""
         _args = [
-            Arg("id", id),
+            Arg("id", "id", id, str),
         ]
         _ctx = self._select("commit", _args)
         return GitRef(_ctx)
@@ -900,7 +926,7 @@ class GitRepository(Type):
     def tag(self, name: str) -> "GitRef":
         """Details on one tag"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
@@ -931,9 +957,9 @@ class Host(Type):
     ) -> "Directory":
         """Access a directory on the host"""
         _args = [
-            Arg("path", path),
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("path", "path", path, str),
+            Arg("exclude", "exclude", exclude, list[str] | None, None),
+            Arg("include", "include", include, list[str] | None, None),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -941,7 +967,7 @@ class Host(Type):
     def env_variable(self, name: str) -> "HostVariable":
         """Access an environment variable on the host"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("envVariable", _args)
         return HostVariable(_ctx)
@@ -949,7 +975,7 @@ class Host(Type):
     def unix_socket(self, path: str) -> "Socket":
         """Access a Unix socket on the host"""
         _args = [
-            Arg("path", path),
+            Arg("path", "path", path, str),
         ]
         _ctx = self._select("unixSocket", _args)
         return Socket(_ctx)
@@ -963,8 +989,8 @@ class Host(Type):
             Use :py:meth:`directory` with path set to '.' instead.
         """
         _args = [
-            Arg("exclude", exclude, None),
-            Arg("include", include, None),
+            Arg("exclude", "exclude", exclude, list[str] | None, None),
+            Arg("include", "include", include, list[str] | None, None),
         ]
         _ctx = self._select("workdir", _args)
         return Directory(_ctx)
@@ -1068,15 +1094,13 @@ class Client(Root):
     def cache_volume(self, key: str) -> "CacheVolume":
         """Construct a cache volume for a given cache key"""
         _args = [
-            Arg("key", key),
+            Arg("key", "key", key, str),
         ]
         _ctx = self._select("cacheVolume", _args)
         return CacheVolume(_ctx)
 
     def container(
-        self,
-        id: "ContainerID | Container | None" = None,
-        platform: "Platform | None" = None,
+        self, id: "ContainerID | None" = None, platform: "Platform | None" = None
     ) -> "Container":
         """Load a container from ID.
 
@@ -1087,8 +1111,8 @@ class Client(Root):
         host.
         """
         _args = [
-            Arg("id", id, None),
-            Arg("platform", platform, None),
+            Arg("id", "id", id, ContainerID | None, None),
+            Arg("platform", "platform", platform, Platform | None, None),
         ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
@@ -1099,18 +1123,18 @@ class Client(Root):
         _ctx = self._select("defaultPlatform", _args)
         return await _ctx.execute(Platform)
 
-    def directory(self, id: "DirectoryID | Directory | None" = None) -> "Directory":
+    def directory(self, id: "DirectoryID | None" = None) -> "Directory":
         """Load a directory by ID. No argument produces an empty directory."""
         _args = [
-            Arg("id", id, None),
+            Arg("id", "id", id, DirectoryID | None, None),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, id: "FileID | File") -> "File":
+    def file(self, id: "FileID") -> "File":
         """Load a file by ID"""
         _args = [
-            Arg("id", id),
+            Arg("id", "id", id, FileID),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -1118,8 +1142,8 @@ class Client(Root):
     def git(self, url: str, keep_git_dir: bool | None = None) -> "GitRepository":
         """Query a git repository"""
         _args = [
-            Arg("url", url),
-            Arg("keepGitDir", keep_git_dir, None),
+            Arg("url", "url", url, str),
+            Arg("keep_git_dir", "keepGitDir", keep_git_dir, bool | None, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -1133,7 +1157,7 @@ class Client(Root):
     def http(self, url: str) -> "File":
         """An http remote"""
         _args = [
-            Arg("url", url),
+            Arg("url", "url", url, str),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
@@ -1141,23 +1165,23 @@ class Client(Root):
     def project(self, name: str) -> "Project":
         """Look up a project by name"""
         _args = [
-            Arg("name", name),
+            Arg("name", "name", name, str),
         ]
         _ctx = self._select("project", _args)
         return Project(_ctx)
 
-    def secret(self, id: "SecretID | Secret") -> "Secret":
+    def secret(self, id: "SecretID") -> "Secret":
         """Load a secret from its ID"""
         _args = [
-            Arg("id", id),
+            Arg("id", "id", id, SecretID),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
-    def socket(self, id: "SocketID | Socket | None" = None) -> "Socket":
+    def socket(self, id: "SocketID | None" = None) -> "Socket":
         """Load a socket by ID"""
         _args = [
-            Arg("id", id, None),
+            Arg("id", "id", id, SocketID | None, None),
         ]
         _ctx = self._select("socket", _args)
         return Socket(_ctx)

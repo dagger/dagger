@@ -26,7 +26,7 @@ var listenCmd = &cobra.Command{
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 	if err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
-		fmt.Fprintf(os.Stderr, "==> server listening on %s\n", listenAddress)
+		fmt.Fprintf(os.Stderr, "==> server listening on http://%s/query\n", listenAddress)
 		return http.ListenAndServe(listenAddress, r)
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -35,6 +35,6 @@ func Listen(cmd *cobra.Command, args []string) {
 }
 
 func init() {
-	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", ":8080", "Listen on network address ADDR")
+	listenCmd.Flags().StringVarP(&listenAddress, "listen", "", "127.0.0.1:8080", "Listen on network address ADDR")
 	listenCmd.Flags().BoolVar(&disableHostRW, "disable-host-read-write", false, "disable host read/write access")
 }

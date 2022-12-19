@@ -88,10 +88,9 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
 	arches := []string{"amd64", "arm64"}
-	oses := []string{"linux", "darwin", "windows"}
 
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: devEngineContainer(c, arches, oses),
+		PlatformVariants: devEngineContainer(c, arches),
 	})
 	if err != nil {
 		return err
@@ -99,7 +98,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 
 	if semver.IsValid(version) {
 		sdks := sdk.All{}
-		if err := sdks.Bump(ctx, digest); err != nil {
+		if err := sdks.Bump(ctx, version); err != nil {
 			return err
 		}
 	} else {
@@ -165,13 +164,9 @@ func (t Engine) Dev(ctx context.Context) error {
 	defer os.Remove(tmpfile.Name())
 
 	arches := []string{runtime.GOARCH}
-	oses := []string{runtime.GOOS}
-	if runtime.GOOS != "linux" {
-		oses = append(oses, "linux")
-	}
 
 	_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
-		PlatformVariants: devEngineContainer(c, arches, oses),
+		PlatformVariants: devEngineContainer(c, arches),
 	})
 	if err != nil {
 		return err
@@ -223,14 +218,17 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	// build the CLI and export locally so it can be used to connect to the engine
 	binDest := filepath.Join(os.Getenv("DAGGER_SRC_ROOT"), "bin", "dagger")
-	util.DaggerBinary(c).Export(ctx, binDest)
+	_, err = util.HostDaggerBinary(c).Export(ctx, binDest)
+	if err != nil {
+		return err
+	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
 	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
 	return nil
 }
 
-func devEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Container {
+func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	buildkitRepo := c.Git(buildkitRepo, dagger.GitOpts{KeepGitDir: true}).Branch(buildkitBranch).Tree()
 
 	platformVariants := make([]*dagger.Container, 0, len(arches))
@@ -238,27 +236,6 @@ func devEngineContainer(c *dagger.Client, arches, oses []string) []*dagger.Conta
 		buildkitBase := c.Container(dagger.ContainerOpts{
 			Platform: dagger.Platform("linux/" + arch),
 		}).Build(buildkitRepo)
-
-		// build engine-session bins
-		for _, os := range oses {
-			// include each engine-session bin for each arch too in case there is a
-			// client/server mismatch
-			for _, arch := range arches {
-				builtBin := util.GoBase(c).
-					WithEnvVariable("GOOS", os).
-					WithEnvVariable("GOARCH", arch).
-					WithExec([]string{
-						"go", "build",
-						"-o", "./bin/" + daggerCliBinName,
-						"-ldflags", "-s -w",
-						"/app/cmd/dagger",
-					}).
-					File("./bin/" + daggerCliBinName)
-				buildkitBase = buildkitBase.WithRootfs(
-					buildkitBase.Rootfs().WithFile("/usr/bin/"+daggerCliBinName+"-"+os+"-"+arch, builtBin),
-				)
-			}
-		}
 
 		// build the shim binary
 		shimBin := util.GoBase(c).
