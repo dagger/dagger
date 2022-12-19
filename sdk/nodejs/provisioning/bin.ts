@@ -14,8 +14,9 @@ import {
 } from "../common/errors/index.js"
 import fetch from "node-fetch"
 
-let CLI_HOST = "dl.dagger.io"
-let CLI_SCHEME = "https"
+const CLI_HOST = "dl.dagger.io"
+let OVERRIDE_CLI_URL: string
+let OVERRIDE_CHECKSUMS_URL: string
 
 /**
  * Bin runs an engine session from a specified binary
@@ -235,19 +236,28 @@ export class Bin implements EngineConn {
   }
 
   private cliArchiveName(): string {
-    return `dagger_v${
+    if (OVERRIDE_CLI_URL) {
+      return path.basename(new URL(OVERRIDE_CLI_URL).pathname)
+    }
+    return `dagger_${
       this.cliVersion
     }_${this.normalizedOS()}_${this.normalizedArch()}.tar.gz`
   }
 
   private cliArchiveURL(): string {
-    return `${CLI_SCHEME}://${CLI_HOST}/dagger/releases/${
+    if (OVERRIDE_CLI_URL) {
+      return OVERRIDE_CLI_URL
+    }
+    return `https://${CLI_HOST}/dagger/releases/${
       this.cliVersion
     }/${this.cliArchiveName()}`
   }
 
   private cliChecksumURL(): string {
-    return `${CLI_SCHEME}://${CLI_HOST}/dagger/releases/${this.cliVersion}/checksums.txt`
+    if (OVERRIDE_CHECKSUMS_URL) {
+      return OVERRIDE_CHECKSUMS_URL
+    }
+    return `https://${CLI_HOST}/dagger/releases/${this.cliVersion}/checksums.txt`
   }
 
   private async checksumMap(): Promise<Map<string, string>> {
@@ -323,18 +333,10 @@ export class Bin implements EngineConn {
 }
 
 // Only meant for tests
-export function _cliHost(): string {
-  return CLI_HOST
+export function _overrideCLIURL(url: string): void {
+  OVERRIDE_CLI_URL = url
 }
 // Only meant for tests
-export function _overrideCLIHost(host: string): void {
-  CLI_HOST = host
-}
-// Only meant for tests
-export function _cliScheme(): string {
-  return CLI_SCHEME
-}
-// Only meant for tests
-export function _overrideCLIScheme(scheme: string): void {
-  CLI_SCHEME = scheme
+export function _overrideCLIChecksumsURL(url: string): void {
+  OVERRIDE_CHECKSUMS_URL = url
 }

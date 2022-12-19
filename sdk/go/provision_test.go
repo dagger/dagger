@@ -47,31 +47,35 @@ func TestProvision(t *testing.T) {
 	}
 	os.Unsetenv("DAGGER_SESSION_URL")
 
-	// Setup a test server if _EXPERIMENTAL_DAGGER_CLI_BIN is set
-	binPath, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN")
-	if ok {
+	if cliURL := os.Getenv("_INTERNAL_DAGGER_TEST_CLI_URL"); cliURL != "" {
+		// If explicitly requested to test against a certain URL, use that
+		engineconn.OverrideCLIArchiveURL = cliURL
+		engineconn.OverrideChecksumsURL = os.Getenv("_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL")
+		defer func() {
+			engineconn.OverrideCLIArchiveURL = ""
+			engineconn.OverrideChecksumsURL = ""
+		}()
+	} else if binPath, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN"); ok {
+		// Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
 		defer os.Setenv("_EXPERIMENTAL_DAGGER_CLI_BIN", binPath)
 		os.Unsetenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
 
-		originalBaseURL := engineconn.DefaultCLIHost
-		defer func() {
-			engineconn.DefaultCLIHost = originalBaseURL
-		}()
-		originalScheme := engineconn.DefaultCLIScheme
-		defer func() {
-			engineconn.DefaultCLIScheme = originalScheme
-		}()
-		engineconn.DefaultCLIScheme = "http"
+		archiveName := fmt.Sprintf("dagger_v%s_%s_%s.tar.gz", engineconn.CLIVersion, runtime.GOOS, runtime.GOARCH)
 
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		require.NoError(t, err)
 		defer l.Close()
-		engineconn.DefaultCLIHost = l.Addr().String()
+
+		engineconn.OverrideCLIArchiveURL = fmt.Sprintf("http://%s/dagger/releases/%s/%s", l.Addr().String(), engineconn.CLIVersion, archiveName)
+		engineconn.OverrideChecksumsURL = fmt.Sprintf("http://%s/dagger/releases/%s/checksums.txt", l.Addr().String(), engineconn.CLIVersion)
+		defer func() {
+			engineconn.OverrideCLIArchiveURL = ""
+			engineconn.OverrideChecksumsURL = ""
+		}()
 
 		basePath := fmt.Sprintf("dagger/releases/%s/", engineconn.CLIVersion)
 
 		archiveBytes := createCLIArchive(t, binPath)
-		archiveName := fmt.Sprintf("dagger_v%s_%s_%s.tar.gz", engineconn.CLIVersion, runtime.GOOS, runtime.GOARCH)
 		archivePath := path.Join(basePath, archiveName)
 
 		checksum := sha256.Sum256(archiveBytes.Bytes())
