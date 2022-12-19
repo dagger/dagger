@@ -266,10 +266,10 @@
   dependencies:
     "@jridgewell/trace-mapping" "^0.3.0"
 
-"@anvilco/apollo-server-plugin-introspection-metadata@^1.2.0":
-  version "1.2.1"
-  resolved "https://registry.yarnpkg.com/@anvilco/apollo-server-plugin-introspection-metadata/-/apollo-server-plugin-introspection-metadata-1.2.1.tgz#d1d7a01b541c3d440654ef3462bfe46becc79d36"
-  integrity sha512-h8pjIhi+bfhCBs7fmcDgCCjaprpDsl9ETeIc1hkPTcnUola/h+DFg/vNLA01UxCdLDhSV6J05yFmY/eh/hRCFA==
+"@anvilco/apollo-server-plugin-introspection-metadata@^2.0.0":
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/@anvilco/apollo-server-plugin-introspection-metadata/-/apollo-server-plugin-introspection-metadata-2.0.0.tgz#03770be0c3b2383087c44da1eb61eb3a5f8a8cb0"
+  integrity sha512-8P6GWO/eZqFjJNNt5FRFTkg00qfJJjR1PZsiWBzjB27rEZ5V4CV3KUQlQyJkT+1YjF1eFfhCHIGo5F+yJRmx6A==
   dependencies:
     lodash.get "^4.4.2"
     lodash.set "^4.3.2"
@@ -8189,10 +8189,10 @@ methods@~1.1.2:
   resolved "https://registry.npmjs.org/methods/-/methods-1.1.2.tgz"
   integrity sha1-VSmk1nZUE07cxSZmVoNbD4Ua/O4=
 
-microfiber@^1.3.1:
-  version "1.3.1"
-  resolved "https://registry.yarnpkg.com/microfiber/-/microfiber-1.3.1.tgz#0ad185301fd4eb27ed312642a2002e257a51f75b"
-  integrity sha512-0yMqNUD/SDSCg/NHj2MPQvFo8s9RQCoerMkT2odgvUkXqf5c/giC9Jed2g2oPGFW+TJIk926/SUjiS5gO8a+Sg==
+microfiber@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/microfiber/-/microfiber-2.0.0.tgz#2b754a7bc9e8d72285ef175a66bea39aa477c13e"
+  integrity sha512-DpCCQFUHhalmWkbpxohp8KkDCuQDyXVA/Om7c4sxXwZNEk/f379O+t03GGVsJwYnnjcF2aqGxLmairlPdqmUEg==
   dependencies:
     lodash.defaults "^4.2.0"
     lodash.get "^4.4.2"
@@ -11110,12 +11110,12 @@ spdy@^4.0.2:
     select-hose "^2.0.0"
     spdy-transport "^3.0.0"
 
-spectaql@^2.0.2:
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.2.tgz#d41cc6d5abaa31a483bfe94c7ba10eb5778b2973"
-  integrity sha512-D0NQuxPCRpiw0l5t1JImuk5gw1FFm4oR5VfBBmFw3ogbNSDLpmlFvEep1QKaWvIePz9i4O/F6XXXvV05+xwg0A==
+spectaql@^2.0.3:
+  version "2.0.3"
+  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.3.tgz#20152a01b08b9bc7ce757c67f599e9b556f2bb44"
+  integrity sha512-PwKzifjzgo7GPkrOcf3uBpnii4YbXJtxlOWmNDatqGE6gW9tsuzryuttKPVML+twKCOEZxZv8PBCB0P7gWuYIw==
   dependencies:
-    "@anvilco/apollo-server-plugin-introspection-metadata" "^1.2.0"
+    "@anvilco/apollo-server-plugin-introspection-metadata" "^2.0.0"
     "@graphql-tools/load-files" "^6.3.2"
     "@graphql-tools/merge" "^8.1.2"
     "@graphql-tools/schema" "^9.0.1"
@@ -11146,7 +11146,7 @@ spectaql@^2.0.2:
     json5 "^2.2.0"
     lodash "^4.17.21"
     marked "^4.0.12"
-    microfiber "^1.3.1"
+    microfiber "^2.0.0"
     postcss "^8.4.19"
     sass "^1.32.13"
     sync-request "^6.1.0"
