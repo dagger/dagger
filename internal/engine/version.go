@@ -3,14 +3,16 @@ package engine
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"golang.org/x/mod/semver"
 )
 
 const (
-	DevelopmentVersion = "devel"
-	EngineImageRepo    = "ghcr.io/dagger/engine"
+	EngineImageRepo = "ghcr.io/dagger/engine"
 )
+
+var DevelopmentVersion = fmt.Sprintf("devel (%s)", vcsRevision())
 
 // Version holds the complete version number. Filled in at linking time.
 var Version = DevelopmentVersion
@@ -42,4 +44,20 @@ func RunnerHost() string {
 		runnerHost = "docker-image://" + ImageRef()
 	}
 	return runnerHost
+}
+
+// revision returns the VCS revision being used to build or empty string
+// if none.
+func vcsRevision() string {
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+	for _, s := range bi.Settings {
+		if s.Key == "vcs.revision" {
+			return s.Value[:9]
+		}
+	}
+
+	return ""
 }

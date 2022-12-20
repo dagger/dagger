@@ -36,13 +36,13 @@
     "react-dom": "^17.0.1",
     "react-social-login-buttons": "^3.6.1",
     "remark-code-import": "^1.1.1",
-    "sass": "^1.56.2",
+    "sass": "^1.57.0",
     "typedoc": "^0.23.23",
     "typedoc-plugin-markdown": "^3.14.0",
     "typescript": "^4.9.4",
     "url-loader": "^4.1.1",
     "chalk": "4.1.2",
-    "spectaql": "^2.0.2"
+    "spectaql": "^2.0.3"
   },
   "browserslist": {
     "production": [

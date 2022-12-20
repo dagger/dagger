@@ -9,7 +9,9 @@ import { execaCommand, ExecaChildProcess } from "execa"
 import Client from "../api/client.gen.js"
 import { ConnectParams } from "../connect.js"
 import {
+  EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
+  EngineSessionEOFError,
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
 import fetch from "node-fetch"
@@ -137,16 +139,19 @@ export class Bin implements EngineConn {
       input: this.subProcess.stdout!,
     })
 
+    const timeOutDuration = 300000
+
     const connectParams: ConnectParams = (await Promise.race([
       this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
-            new EngineSessionConnectParamsParseError(
-              "timeout reading connect params from engine session"
+            new EngineSessionConnectionTimeoutError(
+              "timeout reading connect params from engine session",
+              { timeOutDuration }
             )
           )
-        }, 300000).unref() // long timeout to account for extensions, though that should be optimized in future
+        }, timeOutDuration).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
     ])) as ConnectParams
 
@@ -166,10 +171,11 @@ export class Bin implements EngineConn {
         return connectParams
       }
       throw new EngineSessionConnectParamsParseError(
-        `invalid connect params: ${line}`
+        `invalid connect params: ${line}`,
+        { parsedLine: line }
       )
     }
-    throw new EngineSessionConnectParamsParseError(
+    throw new EngineSessionEOFError(
       "No line was found to parse the engine connect params"
     )
   }
