@@ -1,6 +1,6 @@
 //go:build linux
 
-package bin
+package engineconn
 
 import (
 	"os/exec"

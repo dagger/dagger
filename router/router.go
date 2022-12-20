@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router/internal/handler"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
@@ -133,6 +134,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	r.l.RLock()
 	h := r.h
 	r.l.RUnlock()
+
+	w.Header().Add("x-dagger-engine", engine.Version)
 
 	if r.sessionToken != "" {
 		username, _, ok := req.BasicAuth()

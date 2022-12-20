@@ -9,6 +9,7 @@ import cattrs
 import gql
 import graphql
 from attrs import define
+from beartype.door import is_bearable
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
@@ -37,12 +38,6 @@ class Field:
 
 @runtime_checkable
 class IDType(Protocol):
-    async def id(self) -> str:
-        ...
-
-
-@runtime_checkable
-class SyncIDType(Protocol):
     def id(self) -> str:
         ...
 
@@ -113,7 +108,7 @@ class Context:
     def resolve_ids_sync(self) -> None:
         for sel in self.selections:
             for k, v in sel.args.items():
-                if isinstance(v, (Type, SyncIDType)):
+                if isinstance(v, (Type, IDType)):
                     sel.args[k] = v.id()
 
     def _get_value(self, value: dict[str, Any] | None, return_type: type[_T]) -> _T:
@@ -136,9 +131,14 @@ class Context:
 
 
 class Arg(NamedTuple):
+    py_name: str
     name: str
     value: Any
+    type_: type
     default: Any = attr.NOTHING
+
+    def is_valid(self) -> bool:
+        return is_bearable(self.value, self.type_)
 
 
 @define
@@ -150,11 +150,30 @@ class Type:
         return self.__class__.__name__
 
     def _select(self, field_name: str, args: Sequence[Arg]) -> Context:
-        # The use of Arg class here is just to make it easy to pass a
-        # dict of arguments without having to be limited to a single
-        # `args: dict` parameter in the GraphQL object fields.
-        _args = {k: v for k, v, d in args if v is not d}
-        return self._ctx.select(self.graphql_name, field_name, _args)
+        return self._ctx.select(
+            self.graphql_name,
+            field_name,
+            self._convert_args(args),
+        )
+
+    def _convert_args(self, source: Sequence[Arg]) -> dict[str, Any]:
+        args = {}
+        for arg in source:
+            if arg.value is arg.default:
+                continue
+
+            # FIXME: use an exception group
+            if not arg.is_valid():
+                exp_type = (
+                    arg.type_ if typing.get_origin(arg.type_) else arg.type_.__name__
+                )
+                raise TypeError(
+                    f"Wrong type for '{arg.py_name}' parameter. "
+                    f"Expected a '{exp_type}' instead."
+                )
+
+            args[arg.name] = arg.value
+        return args
 
 
 class Root(Type):

@@ -2,35 +2,17 @@ package engineconn
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/url"
+
+	"github.com/Khan/genqlient/graphql"
 )
 
-type RegisterFunc func(*url.URL) (EngineConn, error)
-
-var helpers = map[string]RegisterFunc{}
-
 type EngineConn interface {
-	Addr() string
-	Connect(ctx context.Context, cfg *Config) (*http.Client, error)
+	graphql.Doer
+	Host() string
 	Close() error
-}
-
-func Get(host string) (EngineConn, error) {
-	u, err := url.Parse(host)
-	if err != nil {
-		return nil, err
-	}
-
-	fn, ok := helpers[u.Scheme]
-	if !ok {
-		return nil, fmt.Errorf("invalid dagger host %q", host)
-	}
-
-	return fn(u)
 }
 
 type Config struct {
@@ -40,17 +22,39 @@ type Config struct {
 	LogOutput    io.Writer
 }
 
-// Register registers new connectionhelper for scheme
-func Register(scheme string, fn RegisterFunc) {
-	helpers[scheme] = fn
-}
-
 type ConnectParams struct {
 	Host         string `json:"host"`
 	SessionToken string `json:"session_token"`
 }
 
-func DefaultHTTPClient(p ConnectParams) *http.Client {
+func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
+	// Prefer DAGGER_SESSION_URL if set
+	conn, ok, err := FromSessionEnv()
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return conn, nil
+	}
+
+	// Try _EXPERIMENTAL_DAGGER_CLI_BIN next
+	conn, ok, err = FromLocalCLI(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if ok {
+		return conn, nil
+	}
+
+	// Fallback to downloading the CLI
+	conn, err = FromDownloadedCLI(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return conn, nil
+}
+
+func defaultHTTPClient(p *ConnectParams) *http.Client {
 	return &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			r.SetBasicAuth(p.SessionToken, "")

@@ -1,4 +1,4 @@
-from . import bin, docker  # noqa
+from . import bin  # noqa
 from .base import ProvisionError, get_engine
 
 __all__ = [
