@@ -39,3 +39,7 @@ export const ERROR_CODES = {
    */
   DockerImageRefValidationError: "D107",
 } as const
+
+type ErrorCodesType = typeof ERROR_CODES
+export type ErrorNames = keyof ErrorCodesType
+export type ErrorCodes = ErrorCodesType[ErrorNames]

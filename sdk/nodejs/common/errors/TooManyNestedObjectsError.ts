@@ -9,8 +9,8 @@ interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
  *  Dagger only expects one response value from the engine. If the engine returns more than one value this error is thrown.
  */
 export class TooManyNestedObjectsError extends DaggerSDKError {
-  name = "TooManyNestedObjectsError"
-  code = ERROR_CODES.TooManyNestedObjectsError
+  readonly name = "TooManyNestedObjectsError"
+  readonly code = ERROR_CODES.TooManyNestedObjectsError
 
   /**
    *  the response containing more than one value.

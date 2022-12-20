@@ -8,8 +8,8 @@ type EngineSessionEOFErrorOptions = DaggerSDKErrorOptions
  * This usually happens if no connection can be established.
  */
 export class EngineSessionEOFError extends DaggerSDKError {
-  name = "EngineSessionEOFError"
-  code = ERROR_CODES.EngineSessionEOFError
+  readonly name = "EngineSessionEOFError"
+  readonly code = ERROR_CODES.EngineSessionEOFError
 
   /**
    * @hidden
