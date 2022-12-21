@@ -20,6 +20,9 @@ type DirectoryID string
 
 type FileID string
 
+// The platform config OS and architecture in a
+// Container.
+// The format is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
 type Platform string
 
 // A unique identifier for a secret
@@ -70,12 +73,14 @@ type Container struct {
 
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
+	// Path to the Dockerfile to use.
+	// Default to './Dockerfile'.
 	Dockerfile string
 
 	BuildArgs []BuildArg
 }
 
-// Initialize this container from a Dockerfile build
+// Initialize this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	q := r.q.Select("build")
 	q = q.Arg("context", context)
@@ -223,10 +228,13 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
+	// Identifiers of other container's platform.
+	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
 
-// Write the container as an OCI tarball to the destination file path on the host
+// Write the container as an OCI tarball to the destination file path on the host.
+// Return true on success.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
@@ -254,7 +262,7 @@ func (r *Container) File(path string) *File {
 	}
 }
 
-// Initialize this container from the base image published at the given address
+// Initialize this container from the base image published at the given address.
 func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
@@ -277,7 +285,7 @@ func (r *Container) FS() *Directory {
 	}
 }
 
-// A unique identifier for this container
+// A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
 
@@ -309,7 +317,7 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The platform this container executes and publishes as
+// The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("platform")
 
@@ -320,6 +328,8 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 
 // ContainerPublishOpts contains options for Container.Publish
 type ContainerPublishOpts struct {
+	// Identifiers of other container's platform.
+	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
 
@@ -779,6 +789,8 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
+	// Path to the Dockerfile to use.
+	// Default to './Dockerfile'.
 	Dockerfile string
 
 	Platform Platform
@@ -895,8 +907,11 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
+	// Exclude artifacts from the written directory that matches the given pattern.
+	// (e.g. ["node_modules/", ".git*"])
 	Exclude []string
-
+	// Include only those artifacts from the written directory that matches the given pattern.
+	// (e.g. ["app/", "package.*"])
 	Include []string
 }
 

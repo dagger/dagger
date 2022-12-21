@@ -63,6 +63,10 @@ export type BuildArg = {
 export type CacheID = string
 
 export type ContainerBuildOpts = {
+  /**
+   * Path to the Dockerfile to use.
+   * Default to './Dockerfile'.
+   */
   dockerfile?: string
   buildArgs?: BuildArg[]
 }
@@ -97,10 +101,18 @@ export type ContainerExecOpts = {
 }
 
 export type ContainerExportOpts = {
+  /**
+   * Identifiers of other container's platform.
+   * Used for multi-platform image.
+   */
   platformVariants?: ContainerID[] | Container[]
 }
 
 export type ContainerPublishOpts = {
+  /**
+   * Identifiers of other container's platform.
+   * Used for multi-platform image.
+   */
   platformVariants?: ContainerID[] | Container[]
 }
 
@@ -161,6 +173,10 @@ export type ContainerID = string
 export type DateTime = string
 
 export type DirectoryDockerBuildOpts = {
+  /**
+   * Path to the Dockerfile to use.
+   * Default to './Dockerfile'.
+   */
   dockerfile?: string
   platform?: Platform
   buildArgs?: BuildArg[]
@@ -171,7 +187,16 @@ export type DirectoryEntriesOpts = {
 }
 
 export type DirectoryWithDirectoryOpts = {
+  /**
+   * Exclude artifacts from the written directory that matches the given pattern.
+   * (e.g. ["node_modules/", ".git*"])
+   */
   exclude?: string[]
+
+  /**
+   * Include only those artifacts from the written directory that matches the given pattern.
+   * (e.g. ["app/", "package.*"])
+   */
   include?: string[]
 }
 
@@ -214,6 +239,11 @@ export type HostWorkdirOpts = {
  */
 export type ID = string
 
+/**
+ * The platform config OS and architecture in a
+ * Container.
+ * The format is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
+ */
 export type Platform = string
 
 export type ClientContainerOpts = {
@@ -275,7 +305,7 @@ export class CacheVolume extends BaseClient {
  */
 export class Container extends BaseClient {
   /**
-   * Initialize this container from a Dockerfile build
+   * Initialize this container from a Dockerfile build.
    */
   build(
     context: DirectoryID | Directory,
@@ -424,7 +454,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Write the container as an OCI tarball to the destination file path on the host
+   * Write the container as an OCI tarball to the destination file path on the host.
+   * Return true on success.
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -459,7 +490,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Initialize this container from the base image published at the given address
+   * Initialize this container from the base image published at the given address.
    */
   from(address: string): Container {
     return new Container({
@@ -493,7 +524,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * A unique identifier for this container
+   * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
     const response: Awaited<ContainerID> = await computeQuery(
@@ -527,7 +558,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * The platform this container executes and publishes as
+   * The platform this container executes and publishes as.
    */
   async platform(): Promise<Platform> {
     const response: Awaited<Platform> = await computeQuery(

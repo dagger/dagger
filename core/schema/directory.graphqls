@@ -33,7 +33,15 @@ type Directory {
   withDirectory(
     path: String!
     directory: DirectoryID!
+    """
+    Exclude artifacts from the written directory that matches the given pattern.
+    (e.g. ["node_modules/", ".git*"])
+    """
     exclude: [String!]
+    """
+    Include only those artifacts from the written directory that matches the given pattern.
+    (e.g. ["app/", "package.*"])
+    """
     include: [String!]
   ): Directory!
 
@@ -50,7 +58,15 @@ type Directory {
   export(path: String!): Boolean!
 
   "Build a new Docker container from this directory"
-  dockerBuild(dockerfile: String, platform: Platform, buildArgs: [BuildArg!]): Container!
+  dockerBuild(
+    """
+    Path to the Dockerfile to use.
+    Default to './Dockerfile'.
+    """
+    dockerfile: String,
+    platform: Platform,
+    buildArgs: [BuildArg!]
+  ): Container!
 
   "This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch"
   withTimestamps(timestamp: Int!): Directory!
