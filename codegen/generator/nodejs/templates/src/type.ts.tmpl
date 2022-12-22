@@ -9,6 +9,7 @@
 export type {{ .Name }} = string;
 {{ "" }}
 	{{- end }}
+
 	{{- with .Fields }}
 		{{- range . -}}
 			{{- $optionals := GetOptionalArgs .Args }}
@@ -29,4 +30,24 @@ export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
 {{ "" }}		{{- end }}
 		{{- end }}
 	{{- end }}
+
+{{- /* Generate input GraphQL type */ -}}
+	{{- with .InputFields }}
+export type {{ $typeName }} = {
+    {{- range . -}}
+    {{- $opt := "" -}}
+    {{ if .TypeRef.IsOptional }}
+        {{- $opt = "?" -}}
+    {{- end }}
+    {{- if .Description }}
+{{ template "type_field_comment" .Description }}
+    {{- end }}
+  {{ .Name  }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
+
+
+    {{- end }}
+};
+{{ "" }}
+	{{- end }}
+
 {{- end }}

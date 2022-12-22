@@ -36,6 +36,64 @@ export type Container = string;
 		require.Equal(t, want, b.String())
 	})
 
+	t.Run("input", func(t *testing.T) {
+		var expectedInputType = `
+export type BuildArg = {
+  name: string;
+  value: string;
+};
+`
+
+		var fieldInputTypeJSON = `
+	{
+		"kind": "INPUT_OBJECT",
+		"name": "BuildArg",
+		"description": "foo",
+		"inputFields": [
+		  {
+		    "name": "name",
+		    "description": "",
+		    "defaultValue": null,
+		    "type": {
+		      "kind": "NON_NULL",
+		      "name": null,
+		      "ofType": {
+				"kind": "SCALAR",
+				"name": "String",
+				"ofType": null
+			  }
+		    }
+		  },
+		  {
+		    "name": "value",
+		    "description": "",
+		    "defaultValue": null,
+		    "type": {
+		      "kind": "NON_NULL",
+		      "name": null,
+		      "ofType": {
+				"kind": "SCALAR",
+				"name": "String",
+				"ofType": null
+			  }
+		    }
+		  }
+		]
+	}
+`
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, fieldInputTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := expectedInputType
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
 	t.Run("args", func(t *testing.T) {
 		var expectedFieldArgsType = `
 export type ContainerExecOpts = {
