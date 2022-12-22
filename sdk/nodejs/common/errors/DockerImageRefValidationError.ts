@@ -1,4 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { ERROR_CODES } from "./errors-codes.js"
 
 interface DockerImageRefValidationErrorOptions extends DaggerSDKErrorOptions {
   ref: string
@@ -9,8 +10,8 @@ interface DockerImageRefValidationErrorOptions extends DaggerSDKErrorOptions {
  *  DockerImage constructor.
  */
 export class DockerImageRefValidationError extends DaggerSDKError {
-  name = "DockerImageRefValidationError"
-  code = "D104"
+  readonly name = "DockerImageRefValidationError"
+  readonly code = ERROR_CODES.DockerImageRefValidationError
 
   /**
    *  The docker image reference, which caused the error.

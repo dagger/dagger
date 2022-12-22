@@ -8,6 +8,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import IO
@@ -25,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 DAGGER_CLI_BIN_PREFIX = "dagger-"
 CLI_HOST = "dl.dagger.io"
-CLI_SCHEME = "https"
+OVERRIDE_CLI_ARCHIVE_URL = ""
+OVERRIDE_CLI_CHECKSUMS_URL = ""
 
 
 @register_engine("bin")
@@ -200,19 +202,27 @@ def get_platform() -> tuple[str, str]:
 
 
 def cli_archive_name(cli_version: str):
+    if OVERRIDE_CLI_ARCHIVE_URL:
+        return Path(urllib.parse.urlparse(OVERRIDE_CLI_ARCHIVE_URL).path).name
     os_, arch = get_platform()
-    return f"dagger_v{cli_version}_{os_}_{arch}.tar.gz"
+    return f"dagger_{cli_version}_{os_}_{arch}.tar.gz"
 
 
 def cli_archive_url(cli_version: str):
+    if OVERRIDE_CLI_ARCHIVE_URL:
+        return OVERRIDE_CLI_ARCHIVE_URL
+
     return (
-        f"{CLI_SCHEME}://{CLI_HOST}/dagger/releases/{cli_version}"
+        f"https://{CLI_HOST}/dagger/releases/{cli_version}"
         f"/{cli_archive_name(cli_version)}"
     )
 
 
 def cli_checksum_url(cli_version: str):
-    return f"{CLI_SCHEME}://{CLI_HOST}/dagger/releases/{cli_version}/checksums.txt"
+    if OVERRIDE_CLI_CHECKSUMS_URL:
+        return OVERRIDE_CLI_CHECKSUMS_URL
+
+    return f"https://{CLI_HOST}/dagger/releases/{cli_version}/checksums.txt"
 
 
 # returns a dict of CLI archive name -> checksum for that archive

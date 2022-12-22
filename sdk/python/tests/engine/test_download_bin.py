@@ -27,6 +27,19 @@ def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 async def temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
     # ignore DAGGER_SESSION_URL
     monkeypatch.delenv("DAGGER_SESSION_URL", raising=False)
+
+    # If explicitly requested to test against a certain URL, use that
+    override_cli_url = os.environ.get("_INTERNAL_DAGGER_TEST_CLI_URL")
+    if override_cli_url:
+        monkeypatch.setattr(bin, "OVERRIDE_CLI_ARCHIVE_URL", override_cli_url)
+        monkeypatch.setattr(
+            bin,
+            "OVERRIDE_CLI_CHECKSUMS_URL",
+            os.environ.get("_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL"),
+        )
+        yield
+        return
+
     # if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a temporary http server for it
     cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
     if cli_bin:
@@ -71,13 +84,24 @@ async def temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
         # create a listener on a random localhost port and start the server
         httpd = HTTPServer(("127.0.0.1", 0), RequestHandler)
         address = httpd.socket.getsockname()
-        monkeypatch.setattr(bin, "CLI_HOST", f"{address[0]}:{address[1]}")
-        monkeypatch.setattr(bin, "CLI_SCHEME", "http")
+        monkeypatch.setattr(
+            bin,
+            "OVERRIDE_CLI_ARCHIVE_URL",
+            f"http://{address[0]}:{address[1]}/{base_path}/{archive_name}",
+        )
+        monkeypatch.setattr(
+            bin,
+            "OVERRIDE_CLI_CHECKSUMS_URL",
+            f"http://{address[0]}:{address[1]}/{base_path}/checksums.txt",
+        )
         with anyio.start_blocking_portal() as portal:
             server = portal.start_task_soon(httpd.serve_forever)
             yield
             httpd.shutdown()
             server.cancel()
+            return
+
+    yield
 
 
 @pytest.mark.anyio
