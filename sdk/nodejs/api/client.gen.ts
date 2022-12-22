@@ -53,8 +53,8 @@ class BaseClient {
 }
 
 export type BuildArg = {
-  value: string
   name: string
+  value: string
 }
 
 /**
