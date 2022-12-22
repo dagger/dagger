@@ -53,7 +53,7 @@ DEPRECATION_RE = re.compile(r"`([a-zA-Z\d_]+)`")
 logger = logging.getLogger(__name__)
 
 indent = partial(textwrap.indent, prefix=" " * 4)
-wrap = partial(textwrap.wrap, drop_whitespace=False, replace_whitespace=False)
+wrap = textwrap.wrap
 wrap_indent = partial(wrap, initial_indent=" " * 4, subsequent_indent=" " * 4)
 
 
