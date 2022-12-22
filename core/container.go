@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -350,16 +351,16 @@ func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, s
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode) (*Container, error) {
 	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithFile(ctx, ".", src)
+		return dir.WithFile(ctx, ".", src, permissions)
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, gw, file, content) // TODO(vito): doesn't this need a name...?
+		return dir.WithNewFile(ctx, gw, file, content, permissions) // TODO(vito): doesn't this need a name...?
 	})
 }
 
