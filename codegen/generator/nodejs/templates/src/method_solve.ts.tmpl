@@ -20,7 +20,7 @@
 {{- end }}
 {{- "" }}){{ template "return_solve" .TypeRef }} {
 		{{- if .TypeRef }}
-    const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await queryBuilder(
+    const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await computeQuery(
       [
       ...this._queryTree,
       {

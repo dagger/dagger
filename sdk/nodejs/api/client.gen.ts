@@ -4,7 +4,7 @@
  */
 
 import { GraphQLClient } from "graphql-request"
-import { queryBuilder } from "./utils.js"
+import { computeQuery } from "./utils.js"
 
 /**
  * @hidden
@@ -256,7 +256,7 @@ export type __TypeFieldsOpts = {
  */
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
-    const response: Awaited<CacheID> = await queryBuilder(
+    const response: Awaited<CacheID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -298,7 +298,7 @@ export class Container extends BaseClient {
    * Default arguments for future commands
    */
   async defaultArgs(): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -332,7 +332,7 @@ export class Container extends BaseClient {
    * Entrypoint to be prepended to the arguments of all commands
    */
   async entrypoint(): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -349,7 +349,7 @@ export class Container extends BaseClient {
    * The value of the specified environment variable
    */
   async envVariable(name: string): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -367,7 +367,7 @@ export class Container extends BaseClient {
    * A list of environment variables passed to commands
    */
   async envVariables(): Promise<EnvVariable[]> {
-    const response: Awaited<EnvVariable[]> = await queryBuilder(
+    const response: Awaited<EnvVariable[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -406,7 +406,7 @@ export class Container extends BaseClient {
    * Null if no command has been executed.
    */
   async exitCode(): Promise<number> {
-    const response: Awaited<number> = await queryBuilder(
+    const response: Awaited<number> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -423,7 +423,7 @@ export class Container extends BaseClient {
    * Write the container as an OCI tarball to the destination file path on the host
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
-    const response: Awaited<boolean> = await queryBuilder(
+    const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -494,7 +494,7 @@ export class Container extends BaseClient {
    * A unique identifier for this container
    */
   async id(): Promise<ContainerID> {
-    const response: Awaited<ContainerID> = await queryBuilder(
+    const response: Awaited<ContainerID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -511,7 +511,7 @@ export class Container extends BaseClient {
    * List of paths where a directory is mounted
    */
   async mounts(): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -528,7 +528,7 @@ export class Container extends BaseClient {
    * The platform this container executes and publishes as
    */
   async platform(): Promise<Platform> {
-    const response: Awaited<Platform> = await queryBuilder(
+    const response: Awaited<Platform> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -545,7 +545,7 @@ export class Container extends BaseClient {
    * Publish this container as a new image, returning a fully qualified ref
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -580,7 +580,7 @@ export class Container extends BaseClient {
    * Null if no command has been executed.
    */
   async stderr(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -598,7 +598,7 @@ export class Container extends BaseClient {
    * Null if no command has been executed.
    */
   async stdout(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -615,7 +615,7 @@ export class Container extends BaseClient {
    * The user to be set for all commands
    */
   async user(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1007,7 +1007,7 @@ export class Container extends BaseClient {
    * The working directory for all commands
    */
   async workdir(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1080,7 +1080,7 @@ export class Directory extends BaseClient {
    * Return a list of files and directories at the given path
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1098,7 +1098,7 @@ export class Directory extends BaseClient {
    * Write the contents of the directory to a path on the host
    */
   async export(path: string): Promise<boolean> {
-    const response: Awaited<boolean> = await queryBuilder(
+    const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1133,7 +1133,7 @@ export class Directory extends BaseClient {
    * The content-addressed identifier of the directory
    */
   async id(): Promise<DirectoryID> {
-    const response: Awaited<DirectoryID> = await queryBuilder(
+    const response: Awaited<DirectoryID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1306,7 +1306,7 @@ export class EnvVariable extends BaseClient {
    * name is the environment variable name.
    */
   async name(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1323,7 +1323,7 @@ export class EnvVariable extends BaseClient {
    * value is the environment variable value
    */
   async value(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1345,7 +1345,7 @@ export class File extends BaseClient {
    * The contents of the file
    */
   async contents(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1362,7 +1362,7 @@ export class File extends BaseClient {
    * Write the file to a file path on the host
    */
   async export(path: string): Promise<boolean> {
-    const response: Awaited<boolean> = await queryBuilder(
+    const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1380,7 +1380,7 @@ export class File extends BaseClient {
    * The content-addressed identifier of the file
    */
   async id(): Promise<FileID> {
-    const response: Awaited<FileID> = await queryBuilder(
+    const response: Awaited<FileID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1413,7 +1413,7 @@ export class File extends BaseClient {
    * The size of the file, in bytes
    */
   async size(): Promise<number> {
-    const response: Awaited<number> = await queryBuilder(
+    const response: Awaited<number> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1452,7 +1452,7 @@ export class GitRef extends BaseClient {
    * The digest of the current value of this ref
    */
   async digest(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1508,7 +1508,7 @@ export class GitRepository extends BaseClient {
    * List of branches on the repository
    */
   async branches(): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1559,7 +1559,7 @@ export class GitRepository extends BaseClient {
    * List of tags on the repository
    */
   async tags(): Promise<string[]> {
-    const response: Awaited<string[]> = await queryBuilder(
+    const response: Awaited<string[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1674,7 +1674,7 @@ export class HostVariable extends BaseClient {
    * The value of this variable
    */
   async value(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1696,7 +1696,7 @@ export class Project extends BaseClient {
    * extensions in this project
    */
   async extensions(): Promise<Project[]> {
-    const response: Awaited<Project[]> = await queryBuilder(
+    const response: Awaited<Project[]> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1729,7 +1729,7 @@ export class Project extends BaseClient {
    * install the project's schema
    */
   async install(): Promise<boolean> {
-    const response: Awaited<boolean> = await queryBuilder(
+    const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1746,7 +1746,7 @@ export class Project extends BaseClient {
    * name of the project
    */
   async name(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1763,7 +1763,7 @@ export class Project extends BaseClient {
    * schema provided by the project
    */
   async schema(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1780,7 +1780,7 @@ export class Project extends BaseClient {
    * sdk used to generate code for and/or execute this project
    */
   async sdk(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1835,7 +1835,7 @@ export default class Client extends BaseClient {
    * The default platform of the builder.
    */
   async defaultPlatform(): Promise<Platform> {
-    const response: Awaited<Platform> = await queryBuilder(
+    const response: Awaited<Platform> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -1992,7 +1992,7 @@ export class Secret extends BaseClient {
    * The identifier for this secret
    */
   async id(): Promise<SecretID> {
-    const response: Awaited<SecretID> = await queryBuilder(
+    const response: Awaited<SecretID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -2009,7 +2009,7 @@ export class Secret extends BaseClient {
    * The value of this secret
    */
   async plaintext(): Promise<string> {
-    const response: Awaited<string> = await queryBuilder(
+    const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -2028,7 +2028,7 @@ export class Socket extends BaseClient {
    * The content-addressed identifier of the socket
    */
   async id(): Promise<SocketID> {
-    const response: Awaited<SocketID> = await queryBuilder(
+    const response: Awaited<SocketID> = await computeQuery(
       [
         ...this._queryTree,
         {

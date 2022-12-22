@@ -38,7 +38,7 @@ var wantObjects = `
  */
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
-    const response: Awaited<CacheID> = await queryBuilder(
+    const response: Awaited<CacheID> = await computeQuery(
       [
       ...this._queryTree,
       {
