@@ -20,7 +20,7 @@
     "axios": "^1.2.1",
     "execa": "^6.1.0",
     "graphql": "^16.5.0",
-    "graphql-request": "^5.0.0",
+    "graphql-request": "^5.1.0",
     "graphql-tag": "^2.12.6",
     "node-color-log": "^10.0.2",
     "node-fetch": "^3.3.0",
