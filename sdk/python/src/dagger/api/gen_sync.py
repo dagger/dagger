@@ -29,8 +29,8 @@ SocketID = NewType("SocketID", str)
 
 
 class BuildArg(Type):
-    value: str
     name: str
+    value: str
 
 
 class CacheVolume(Type):
