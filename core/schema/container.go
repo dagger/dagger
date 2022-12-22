@@ -109,10 +109,11 @@ func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args
 type containerBuildArgs struct {
 	Context    core.DirectoryID
 	Dockerfile string
+	BuildArgs  []core.BuildArg
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile)
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs)
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {

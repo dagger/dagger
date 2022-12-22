@@ -24,7 +24,7 @@ type Container {
   from(address: String!): Container!
 
   "Initialize this container from a Dockerfile build"
-  build(context: DirectoryID!, dockerfile: String): Container!
+  build(context: DirectoryID!, dockerfile: String, buildArgs: [BuildArg!]): Container!
 
   "This container's root filesystem. Mounts are not included."
   rootfs: Directory!
@@ -206,5 +206,10 @@ type EnvVariable {
   """
   value is the environment variable value
   """
+  value: String!
+}
+
+input BuildArg {
+  name: String!
   value: String!
 }

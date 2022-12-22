@@ -501,10 +501,11 @@ class ObjectHandler(Handler[_O], Generic[_O]):
     def _render_body(self, t: _O) -> str:
         if t.description:
             yield from wrap(doc(t.description))
-        yield from (
-            str(self.field_class(*args, id_map=self.id_map))
-            for args in t.fields.items()
+        fields = sorted(
+            (self.field_class(*args, id_map=self.id_map) for args in t.fields.items()),
+            key=attrgetter("graphql_name"),
         )
+        yield from map(str, fields)
 
 
 class Input(ObjectHandler[GraphQLInputObjectType]):

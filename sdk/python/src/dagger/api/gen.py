@@ -28,6 +28,11 @@ SocketID = NewType("SocketID", str)
 """A content-addressed socket identifier"""
 
 
+class BuildArg(Type):
+    name: str
+    value: str
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs"""
 
@@ -49,11 +54,17 @@ class CacheVolume(Type):
 class Container(Type):
     """An OCI-compatible container, also known as a docker container"""
 
-    def build(self, context: "Directory", dockerfile: str | None = None) -> "Container":
+    def build(
+        self,
+        context: "Directory",
+        dockerfile: str | None = None,
+        build_args: list[BuildArg] | None = None,
+    ) -> "Container":
         """Initialize this container from a Dockerfile build"""
         _args = [
             Arg("context", "context", context, Directory),
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
+            Arg("build_args", "buildArgs", build_args, list[BuildArg] | None, None),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -613,12 +624,16 @@ class Directory(Type):
         return Directory(_ctx)
 
     def docker_build(
-        self, dockerfile: str | None = None, platform: "Platform | None" = None
+        self,
+        dockerfile: str | None = None,
+        platform: "Platform | None" = None,
+        build_args: list[BuildArg] | None = None,
     ) -> "Container":
         """Build a new Docker container from this directory"""
         _args = [
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
             Arg("platform", "platform", platform, Platform | None, None),
+            Arg("build_args", "buildArgs", build_args, list[BuildArg] | None, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -1263,6 +1278,7 @@ __all__ = [
     "Platform",
     "SecretID",
     "SocketID",
+    "BuildArg",
     "CacheVolume",
     "Container",
     "Directory",

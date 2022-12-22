@@ -28,6 +28,12 @@ type SecretID string
 // A content-addressed socket identifier
 type SocketID string
 
+type BuildArg struct {
+	Name string `json:"name"`
+
+	Value string `json:"value"`
+}
+
 // A directory whose contents persist across runs
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -65,6 +71,8 @@ type Container struct {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	Dockerfile string
+
+	BuildArgs []BuildArg
 }
 
 // Initialize this container from a Dockerfile build
@@ -75,6 +83,13 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+	// `buildArgs` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 			break
 		}
 	}
@@ -767,6 +782,8 @@ type DirectoryDockerBuildOpts struct {
 	Dockerfile string
 
 	Platform Platform
+
+	BuildArgs []BuildArg
 }
 
 // Build a new Docker container from this directory
@@ -783,6 +800,13 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
+			break
+		}
+	}
+	// `buildArgs` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 			break
 		}
 	}

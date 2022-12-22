@@ -679,4 +679,26 @@ CMD goenv
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
+
+	t.Run("with build args", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+ARG FOOARG=bar
+WORKDIR /src
+COPY main.go .
+RUN go mod init hello
+RUN go build -o /usr/bin/goenv main.go
+ENV FOO=$FOOARG
+CMD goenv
+`)
+
+		env, err := c.Container().Build(src).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=bar\n")
+
+		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, env, "FOO=barbar\n")
+	})
 }
