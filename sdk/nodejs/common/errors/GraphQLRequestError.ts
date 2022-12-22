@@ -14,8 +14,8 @@ interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
  *  This error originates from the dagger engine. It means that some error was thrown and sent back via GraphQL.
  */
 export class GraphQLRequestError extends DaggerSDKError {
-  public name = "GraphQLRequestError"
-  public code = ERROR_CODES.GraphQLRequestError
+  readonly name = "GraphQLRequestError"
+  readonly code = ERROR_CODES.GraphQLRequestError
 
   /**
    *  The query and variables, which caused the error.

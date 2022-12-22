@@ -1,4 +1,5 @@
 import { log } from "../utils.js"
+import { ErrorCodes, ErrorNames } from "./errors-codes"
 
 export interface DaggerSDKErrorOptions {
   cause?: Error
@@ -11,13 +12,13 @@ export abstract class DaggerSDKError extends Error {
   /**
    * The name of the dagger error.
    */
-  abstract name: string
+  abstract readonly name: ErrorNames
 
   /**
    * The dagger specific error code.
    * Use this to identify dagger errors programmatically.
    */
-  abstract code: string
+  abstract readonly code: ErrorCodes
 
   /**
    * The original error, which caused the DaggerSDKError.
