@@ -1,8 +1,11 @@
-from .connector import Config, Connector
-from .engine import get_engine
+from dagger import Client, Config, SyncClient
+
+from .context import ResourceManager, SyncResourceManager
+from .engine import Engine
+from .session import Session
 
 
-class Connection:
+class Connection(ResourceManager, SyncResourceManager):
     """
     Connect to a Dagger Engine.
 
@@ -31,27 +34,18 @@ class Connection:
         anyio.run(main)
     """
 
-    def __init__(self, config: Config = None) -> None:
-        if config is None:
-            config = Config()
-        self.engine = get_engine(config)
-        self.connector = Connector(config)
+    def __init__(self, config: Config | None = None) -> None:
+        super().__init__()
+        self.cfg = config or Config()
 
-    async def __aenter__(self):
-        # FIXME: handle cancellation, retries and timeout properly
-        # FIXME: handle errors during provisioning
-        await self.engine.__aenter__()
-        return await self.connector.__aenter__()
+    async def __aenter__(self) -> Client:
+        async with self.get_stack() as stack:
+            conn = await stack.enter_async_context(Engine(self.cfg))
+            session = await stack.enter_async_context(Session(conn, self.cfg))
+        return Client.from_session(session)
 
-    async def __aexit__(self, *args, **kwargs) -> None:
-        # FIXME: need exit stack?
-        await self.connector.__aexit__(*args, **kwargs)
-        await self.engine.__aexit__(*args, **kwargs)
-
-    def __enter__(self):
-        self.engine.__enter__()
-        return self.connector.__enter__()
-
-    def __exit__(self, *args, **kwargs) -> None:
-        self.connector.__exit__(*args, **kwargs)
-        self.engine.__exit__(*args, **kwargs)
+    def __enter__(self) -> SyncClient:
+        with self.get_sync_stack() as stack:
+            conn = stack.enter_context(Engine(self.cfg))
+            session = stack.enter_context(Session(conn, self.cfg))
+        return SyncClient.from_session(session)

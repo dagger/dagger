@@ -8,7 +8,7 @@ on:
   pull_request:
     paths:
       - sdk/go/internal/engineconn/version.gen.go
-      - sdk/python/src/dagger/_version.py
+      - sdk/python/src/dagger/engine/_version.py
       - sdk/nodejs/provisioning/default.ts
 
 jobs:
