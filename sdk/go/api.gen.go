@@ -20,8 +20,7 @@ type DirectoryID string
 
 type FileID string
 
-// The platform config OS and architecture in a
-// Container.
+// The platform config OS and architecture in a Container.
 // The format is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
 type Platform string
 
@@ -74,7 +73,7 @@ type Container struct {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
-	// Default to './Dockerfile'.
+	// Defaults to './Dockerfile'.
 	Dockerfile string
 
 	BuildArgs []BuildArg
@@ -228,7 +227,7 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
-	// Identifiers of other container's platform.
+	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
@@ -328,12 +327,12 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 
 // ContainerPublishOpts contains options for Container.Publish
 type ContainerPublishOpts struct {
-	// Identifiers of other container's platform.
+	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
 
-// Publish this container as a new image, returning a fully qualified ref
+// Publish this container as a new image, returning a fully qualified ref.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
@@ -790,7 +789,7 @@ func (r *Directory) Directory(path string) *Directory {
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
 	// Path to the Dockerfile to use.
-	// Default to './Dockerfile'.
+	// Defaults to './Dockerfile'.
 	Dockerfile string
 
 	Platform Platform
@@ -907,10 +906,10 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
-	// Exclude artifacts from the written directory that matches the given pattern.
+	// Exclude artifacts that match the given pattern.
 	// (e.g. ["node_modules/", ".git*"])
 	Exclude []string
-	// Include only those artifacts from the written directory that matches the given pattern.
+	// Include only artifacts that match the given pattern.
 	// (e.g. ["app/", "package.*"])
 	Include []string
 }

@@ -65,7 +65,7 @@ export type CacheID = string
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
-   * Default to './Dockerfile'.
+   * Defaults to './Dockerfile'.
    */
   dockerfile?: string
   buildArgs?: BuildArg[]
@@ -102,7 +102,7 @@ export type ContainerExecOpts = {
 
 export type ContainerExportOpts = {
   /**
-   * Identifiers of other container's platform.
+   * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
   platformVariants?: ContainerID[] | Container[]
@@ -110,7 +110,7 @@ export type ContainerExportOpts = {
 
 export type ContainerPublishOpts = {
   /**
-   * Identifiers of other container's platform.
+   * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
   platformVariants?: ContainerID[] | Container[]
@@ -175,7 +175,7 @@ export type DateTime = string
 export type DirectoryDockerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
-   * Default to './Dockerfile'.
+   * Defaults to './Dockerfile'.
    */
   dockerfile?: string
   platform?: Platform
@@ -188,13 +188,13 @@ export type DirectoryEntriesOpts = {
 
 export type DirectoryWithDirectoryOpts = {
   /**
-   * Exclude artifacts from the written directory that matches the given pattern.
+   * Exclude artifacts that match the given pattern.
    * (e.g. ["node_modules/", ".git*"])
    */
   exclude?: string[]
 
   /**
-   * Include only those artifacts from the written directory that matches the given pattern.
+   * Include only artifacts that match the given pattern.
    * (e.g. ["app/", "package.*"])
    */
   include?: string[]
@@ -240,8 +240,7 @@ export type HostWorkdirOpts = {
 export type ID = string
 
 /**
- * The platform config OS and architecture in a
- * Container.
+ * The platform config OS and architecture in a Container.
  * The format is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
  */
 export type Platform = string
@@ -575,7 +574,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Publish this container as a new image, returning a fully qualified ref
+   * Publish this container as a new image, returning a fully qualified ref.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
