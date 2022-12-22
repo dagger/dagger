@@ -5,8 +5,7 @@ extend type Query {
   "Construct a cache volume for a given cache key"
   cacheVolume(
     """
-    A string identifier to target this cache volume.
-    (e.g. "myapp-cache")
+    A string identifier to target this cache volume (e.g. "myapp-cache").
     """
     key: String!
   ): CacheVolume!

@@ -34,12 +34,12 @@ type Directory {
     path: String!
     directory: DirectoryID!
     """
-    Exclude artifacts from the written directory that matches the given pattern.
+    Exclude artifacts that match the given pattern.
     (e.g. ["node_modules/", ".git*"])
     """
     exclude: [String!]
     """
-    Include only those artifacts from the written directory that matches the given pattern.
+    Include only artifacts that match the given pattern.
     (e.g. ["app/", "package.*"])
     """
     include: [String!]
@@ -61,7 +61,7 @@ type Directory {
   dockerBuild(
     """
     Path to the Dockerfile to use.
-    Default to './Dockerfile'.
+    Defaults to './Dockerfile'.
     """
     dockerfile: String,
     platform: Platform,

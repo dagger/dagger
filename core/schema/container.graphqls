@@ -35,7 +35,7 @@ type Container {
     context: DirectoryID!,
     """
     Path to the Dockerfile to use.
-    Default to './Dockerfile'.
+    Defaults to './Dockerfile'.
     """
     dockerfile: String,
     "Additional build arguments"
@@ -204,7 +204,7 @@ type Container {
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.
   """
-  Publish this container as a new image, returning a fully qualified ref
+  Publish this container as a new image, returning a fully qualified ref.
   """
   publish(
     """
@@ -213,7 +213,7 @@ type Container {
     """
     address: String!,
     """
-    Identifiers of other container's platform.
+    Identifiers for other platform specific containers.
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!]
@@ -230,7 +230,7 @@ type Container {
       """
       path: String!,
       """
-      Identifiers of other container's platform.
+      Identifiers for other platform specific containers.
       Used for multi-platform image.
       """
       platformVariants: [ContainerID!]
