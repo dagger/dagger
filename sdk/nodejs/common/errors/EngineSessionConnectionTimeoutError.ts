@@ -10,8 +10,8 @@ interface EngineSessionConnectionTimeoutErrorOptions
  * This error is thrown if the EngineSession does not manage to parse the required port successfully because the sessions connection timed out.
  */
 export class EngineSessionConnectionTimeoutError extends DaggerSDKError {
-  name = "EngineSessionConnectionTimeoutError"
-  code = ERROR_CODES.EngineSessionConnectionTimeoutError
+  readonly name = "EngineSessionConnectionTimeoutError"
+  readonly code = ERROR_CODES.EngineSessionConnectionTimeoutError
 
   /**
    * The duration until the timeout occurred in ms.
