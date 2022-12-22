@@ -1,6 +1,7 @@
 # Releasing
 
 This document describes how to release:
+
 - 🚙 Engine & CLI `v0.3.x`
 - 🐹 Go SDK
 - 🐍 Python SDK
@@ -43,7 +44,6 @@ At the end of this workflow, a new PR will automatically be created to bump the
 Engine version in the various SDKs.
 
 👉 **Merge this PR** as soon as all checks pass.
-
 
 ## 🐹 Go SDK
 
@@ -106,6 +106,14 @@ gh release create sdk/go/${SDK_VERSION} --generate-notes --notes-start-tag sdk/g
 
 #### 2/5. Clean up release notes
 
+- Add this line to the top so SDK users can easily know which CLI+Runner version is compatible with the SDK:
+
+```
+This SDK is compatible with CLI+Runner version $ENGINE_VERSION
+```
+
+Replacing `$ENGINE_VERSION` with the value in `sdk/go/internal/engineconn/version.gen.go`.
+
 - Add link to pkg.go.dev, e.g. `🐹 https://pkg.go.dev/dagger.io/dagger@v0.3.0`
 - If there is a blog post (see **4/5.**) add a link to it, e.g.
   `📝 https://dagger.io/blog/go-sdk`
@@ -147,7 +155,6 @@ notes (see **3/5.**).
 #### 5/5. Help promote the release
 
 👉 DM release link to [@mircubed](https://github.com/mircubed).
-
 
 ## 🐍 Python SDK
 
@@ -211,9 +218,16 @@ gh release create sdk/python/${SDK_VERSION} --generate-notes --notes-start-tag s
 
 #### 2/5. Clean up release notes
 
+- Add this line to the top so SDK users can easily know which CLI+Runner version is compatible with the SDK:
+
+```
+This SDK is compatible with CLI+Runner version $ENGINE_VERSION
+```
+
+Replacing `$ENGINE_VERSION` with the value in `sdk/python/src/dagger/engine/_version.py`.
+
 - Add link to PyPI, e.g. `🐍 https://pypi.org/project/dagger-io/0.1.1/`
-- Add link to ReadTheDocs, e.g. `📖
-  https://dagger-io.readthedocs.io/en/sdk-python-v0.1.1/`
+- Add link to ReadTheDocs, e.g. `📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.1.1/`
 - If there is a blog post (see **4/5.**) add a link to it, e.g.
   `📝 https://dagger.io/blog/python-sdk`
 - If there is a video (see **4/5.**) add a link to it, e.g.
@@ -253,7 +267,6 @@ notes (see **3/5.**).
 #### 5/5. Help promote the release
 
 👉 DM release link to [@mircubed](https://github.com/mircubed).
-
 
 ## ⬡ Node.js SDK
 
@@ -316,6 +329,14 @@ gh release create sdk/nodejs/${SDK_VERSION} --generate-notes --notes-start-tag s
 ```
 
 #### 2/5. Clean up release notes
+
+- Add this line to the top so SDK users can easily know which CLI+Runner version is compatible with the SDK:
+
+```
+This SDK is compatible with CLI+Runner version $ENGINE_VERSION
+```
+
+Replacing `$ENGINE_VERSION` with the value in `sdk/nodejs/provisioning/default.ts`.
 
 - Add link to NPMJS, e.g. `⬡ https://www.npmjs.com/package/@dagger.io/dagger`
 - If there is a blog post (see **4/5.**) add a link to it, e.g.
