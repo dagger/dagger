@@ -52,6 +52,11 @@ class BaseClient {
   }
 }
 
+export type BuildArg = {
+  value: string
+  name: string
+}
+
 /**
  * A global cache volume identifier
  */
