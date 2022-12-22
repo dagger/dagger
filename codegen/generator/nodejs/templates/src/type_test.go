@@ -39,6 +39,10 @@ export type Container = string;
 	t.Run("input", func(t *testing.T) {
 		var expectedInputType = `
 export type BuildArg = {
+
+  /**
+   * Name description.
+   */
   name: string;
   value: string;
 };
@@ -52,7 +56,7 @@ export type BuildArg = {
 		"inputFields": [
 		  {
 		    "name": "name",
-		    "description": "",
+		    "description": "Name description.",
 		    "defaultValue": null,
 		    "type": {
 		      "kind": "NON_NULL",
