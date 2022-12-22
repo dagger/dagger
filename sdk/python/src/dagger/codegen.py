@@ -455,16 +455,20 @@ class Handler(ABC, Generic[_H]):
     predicate: ClassVar[Predicate] = staticmethod(lambda _: True)
     """Does this handler render the given type?"""
 
+    @joiner
     def render(self, t: _H) -> str:
-        return f"{self.render_head(t)}\n{self.render_body(t)}"
+        yield self.render_head(t)
+        yield self.render_body(t)
 
     @abstractmethod
     def render_head(self, t: _H) -> str:
         ...
 
+    @joiner
     def render_body(self, t: _H) -> str:
-        return f"{doc(t.description)}\n\n" if t.description else ""
-
+        if t.description:
+            yield from wrap(doc(t.description))
+            yield from ["", ""]
 
 @attrs.define
 class Scalar(Handler[GraphQLScalarType]):
