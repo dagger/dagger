@@ -33,7 +33,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, group Group, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -55,9 +55,17 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 		return nil, fmt.Errorf("eval symlinks: %w", err)
 	}
 
+	localGroup := group.Add(fmt.Sprintf("host.directory %s", absPath))
+
 	localID := fmt.Sprintf("host:%s", absPath)
 
 	localOpts := []llb.LocalOption{
+		// Inject group ID
+		localGroup.LLBOpt(),
+
+		// Custom name
+		llb.WithCustomNamef("upload %s", absPath),
+
 		// synchronize concurrent filesyncs for the same path
 		llb.SharedKeyHint(localID),
 
@@ -79,9 +87,21 @@ func (host *Host) Directory(ctx context.Context, dirPath string, platform specs.
 	// which makes it unable to reused, which in turn creates cache invalidations
 	// TODO: this should be optional, the above issue can also be avoided w/ readonly
 	// mount when possible
-	st := llb.Scratch().File(llb.Copy(llb.Local(absPath, localOpts...), "/", "/"))
+	st := llb.Scratch().File(
+		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
+		localGroup.LLBOpt(),
+		llb.WithCustomNamef("copy %s", absPath),
+	)
 
-	return NewDirectory(ctx, st, "", platform)
+	dir, err := NewDirectory(ctx, st, "", platform)
+	if err != nil {
+		return nil, err
+	}
+	dir, err = dir.Group(ctx, group...)
+	if err != nil {
+		return nil, err
+	}
+	return dir, nil
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

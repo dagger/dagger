@@ -66,6 +66,9 @@ type containerIDPayload struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
+	// Group
+	Group Group `json:"group"`
+
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
 
@@ -197,6 +200,10 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	}
 	platform := payload.Platform
 
+	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
+	// We create a progress group to encapsulate both.
+	group := payload.Group.Add(fmt.Sprintf("from %s", addr))
+
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, err
@@ -207,6 +214,9 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
+		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
+		// the group in the vertex name.
+		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Group: group}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -217,7 +227,12 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	dir, err := NewDirectory(ctx, llb.Image(addr), "/", platform)
+	dir, err := NewDirectory(ctx,
+		llb.Image(addr,
+			llb.WithCustomNamef("pull %s", ref),
+			group.LLBOpt(),
+		),
+		"/", platform)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +313,16 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
+	}
+
+	// Override the progress group of every LLB vertex in the DAG.
+	// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+	// allow overriding the metadata of DefinitionOp. See this PR and comment:
+	// https://github.com/moby/buildkit/pull/2819
+	group := payload.Group.Add("docker build")
+	for dgst, metadata := range def.Metadata {
+		metadata.ProgressGroup = group.ProgressGroup()
+		def.Metadata[dgst] = metadata
 	}
 
 	payload.FS = def.ToPB()
@@ -723,6 +748,21 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return nil, err
 	}
 
+	containerPayload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	dirPayload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	dirPayload.Group = containerPayload.Group
+
+	dir, err = dirPayload.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+
 	dir, err = fn(dir)
 	if err != nil {
 		return nil, err
@@ -733,7 +773,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return container.WithRootFS(ctx, dir)
 	}
 
-	dirPayload, err := dir.ID.Decode()
+	dirPayload, err = dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -757,6 +797,22 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	}
 
 	payload.Config = updateFn(payload.Config)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) Group(ctx context.Context, name ...string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, fmt.Errorf("decode id: %w", err)
+	}
+
+	payload.Group = payload.Group.Add(name...)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -792,6 +848,8 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
+		payload.Group.LLBOpt(),
+		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -813,7 +871,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta),
+			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Group.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {

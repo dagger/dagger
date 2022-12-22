@@ -113,7 +113,10 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 
 func PassthroughResolver(p graphql.ResolveParams) (any, error) {
 	return ToResolver(func(ctx *Context, parent any, args any) (any, error) {
-		return struct{}{}, nil
+		if parent == nil {
+			parent = struct{}{}
+		}
+		return parent, nil
 	})(p)
 }
 

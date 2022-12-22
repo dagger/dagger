@@ -294,6 +294,16 @@ func (r *Container) FS() *Directory {
 	}
 }
 
+func (r *Container) Group(name string) *Container {
+	q := r.q.Select("group")
+	q = q.Arg("name", name)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
@@ -852,7 +862,7 @@ type DirectoryEntriesOpts struct {
 	Path string
 }
 
-// Returns a list of files and directories at the given path.
+// Returns a list of files and directories at the given path
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
 	q := r.q.Select("entries")
 	// `path` optional argument
@@ -884,6 +894,16 @@ func (r *Directory) File(path string) *File {
 	q = q.Arg("path", path)
 
 	return &File{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Directory) Group(name string) *Directory {
+	q := r.q.Select("group")
+	q = q.Arg("name", name)
+
+	return &Directory{
 		q: q,
 		c: r.c,
 	}
@@ -1556,6 +1576,16 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 
 	return &GitRepository{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Query) Group(name string) *Query {
+	q := r.q.Select("group")
+	q = q.Arg("name", name)
+
+	return &Query{
 		q: q,
 		c: r.c,
 	}

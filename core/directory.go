@@ -30,6 +30,7 @@ type directoryIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
+	Group    Group          `json:"group"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -93,6 +94,15 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 
 	payload.LLB = def.ToPB()
 
+	return payload.ToDirectory()
+}
+
+func (dir *Directory) Group(ctx context.Context, name ...string) (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	payload.Group = payload.Group.Add(name...)
 	return payload.ToDirectory()
 }
 
@@ -209,6 +219,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 			permissions,
 			content,
 		),
+		payload.Group.LLBOpt(),
 	)
 
 	err = payload.SetState(ctx, st)
@@ -269,7 +280,9 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		CopyDirContentsOnly: true,
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
-	}))
+	}),
+		destPayload.Group.LLBOpt(),
+	)
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -322,7 +335,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), payload.Group.LLBOpt())
 
 	err = payload.SetState(ctx, st)
 	if err != nil {
@@ -362,7 +375,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
 		Mode:           perm,
-	}))
+	}), destPayload.Group.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {

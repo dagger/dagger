@@ -36,6 +36,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
+			"group":                router.ToResolver(s.group),
 			"fs":                   router.ToResolver(s.rootfs), // deprecated
 			"withRootfs":           router.ToResolver(s.withRootfs),
 			"withFS":               router.ToResolver(s.withRootfs), // deprecated
@@ -87,7 +88,7 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *router.Context, parent any, args containerArgs) (*core.Container, error) {
+func (s *containerSchema) container(ctx *router.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
 	platform := s.baseSchema.platform
 	if args.Platform != nil {
 		if args.ID != "" {
@@ -95,7 +96,14 @@ func (s *containerSchema) container(ctx *router.Context, parent any, args contai
 		}
 		platform = *args.Platform
 	}
-	return core.NewContainer(args.ID, platform)
+	ctr, err := core.NewContainer(args.ID, platform)
+	if err != nil {
+		return nil, err
+	}
+	if parent != nil {
+		ctr, err = ctr.Group(ctx, parent.Context.Group...)
+	}
+	return ctr, err
 }
 
 type containerFromArgs struct {
@@ -124,6 +132,14 @@ func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container
 	}
 
 	return ctr, nil
+}
+
+type containerGroupArgs struct {
+	Name string
+}
+
+func (s *containerSchema) group(ctx *router.Context, parent *core.Container, args containerGroupArgs) (*core.Container, error) {
+	return parent.Group(ctx, args.Name)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {

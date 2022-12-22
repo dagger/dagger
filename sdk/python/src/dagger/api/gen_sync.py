@@ -289,6 +289,14 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
+    def group(self, name: str) -> "Container":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("group", _args)
+        return Container(_ctx)
+
+    @typecheck
     def id(self) -> ContainerID:
         """A unique identifier for this container.
 
@@ -760,7 +768,7 @@ class Directory(Type):
 
     @typecheck
     def entries(self, path: Optional[str] = None) -> list[str]:
-        """Returns a list of files and directories at the given path.
+        """Returns a list of files and directories at the given path
 
         Returns
         -------
@@ -798,6 +806,14 @@ class Directory(Type):
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
+
+    @typecheck
+    def group(self, name: str) -> "Directory":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("group", _args)
+        return Directory(_ctx)
 
     @typecheck
     def id(self) -> DirectoryID:
@@ -1376,6 +1392,14 @@ class Client(Root):
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
+
+    @typecheck
+    def group(self, name: str) -> Query:
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("group", _args)
+        return Query(_ctx)
 
     @typecheck
     def host(self) -> Host:

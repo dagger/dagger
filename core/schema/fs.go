@@ -2,6 +2,9 @@ package schema
 
 import _ "embed"
 
+//go:embed group.graphqls
+var Group string
+
 //go:embed git.graphqls
 var Git string
 

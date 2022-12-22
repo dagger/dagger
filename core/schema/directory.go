@@ -33,6 +33,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"directory": router.ToResolver(s.directory),
 		},
 		"Directory": router.ObjectResolver{
+			"group":            router.ToResolver(s.group),
 			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
 			"withFile":         router.ToResolver(s.withFile),
@@ -58,10 +59,19 @@ type directoryArgs struct {
 	ID core.DirectoryID
 }
 
-func (s *directorySchema) directory(ctx *router.Context, parent any, args directoryArgs) (*core.Directory, error) {
-	return &core.Directory{
+func (s *directorySchema) group(ctx *router.Context, parent *core.Directory, args containerGroupArgs) (*core.Directory, error) {
+	return parent.Group(ctx, args.Name)
+}
+
+func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
+	dir := &core.Directory{
 		ID: args.ID,
-	}, nil
+	}
+	var err error
+	if parent != nil {
+		dir, err = dir.Group(ctx, parent.Context.Group...)
+	}
+	return dir, err
 }
 
 type subdirectoryArgs struct {

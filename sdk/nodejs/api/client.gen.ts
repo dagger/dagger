@@ -554,6 +554,19 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
       sessionToken: this.sessionToken,
     })
   }
+  group(name: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "group",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * A unique identifier for this container.
@@ -1153,7 +1166,7 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Returns a list of files and directories at the given path.
+   * Returns a list of files and directories at the given path
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1198,6 +1211,19 @@ Defaults to './Dockerfile'.
         {
           operation: "file",
           args: { path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  group(name: string): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "group",
+          args: { name },
         },
       ],
       host: this.clientHost,
@@ -1970,6 +1996,19 @@ export default class Client extends BaseClient {
         {
           operation: "git",
           args: { url, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  group(name: string): Query {
+    return new Query({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "group",
+          args: { name },
         },
       ],
       host: this.clientHost,
