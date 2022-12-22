@@ -237,7 +237,6 @@ func TestDirectoryWithDirectory(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Contains(t, stdout, "-r--r--r--")
-
 	})
 }
 
