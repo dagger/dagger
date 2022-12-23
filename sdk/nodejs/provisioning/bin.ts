@@ -15,6 +15,7 @@ import {
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
 import fetch from "node-fetch"
+import envPaths from "env-paths"
 
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string
@@ -29,10 +30,7 @@ export class Bin implements EngineConn {
   private binPath?: string
   private cliVersion?: string
 
-  private readonly cacheDir = path.join(
-    process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"),
-    "dagger"
-  )
+  private readonly cacheDir = envPaths("dagger", { suffix: "" }).cache
 
   private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
 
@@ -192,8 +190,8 @@ export class Bin implements EngineConn {
    * createCacheDir will create a cache directory on user
    * host to store dagger binary.
    *
-   * If set, it will use XDG directory, if not, it will use `$HOME/.cache`
-   * as base path.
+   * If set, it will use envPaths to determine system's cache directory,
+   * if not, it will use `$HOME/.cache` as base path.
    * Nothing happens if the directory already exists.
    */
   private createCacheDir(): void {
