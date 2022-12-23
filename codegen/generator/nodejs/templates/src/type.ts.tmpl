@@ -34,7 +34,8 @@ export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
 {{- /* Generate input GraphQL type */ -}}
 	{{- with .InputFields }}
 export type {{ $typeName }} = {
-    {{- range . -}}
+    {{- $sortedField := SortInputFields .  }}
+    {{- range $sortedField -}}
     {{- $opt := "" -}}
     {{ if .TypeRef.IsOptional }}
         {{- $opt = "?" -}}

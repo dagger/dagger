@@ -2,6 +2,7 @@ package templates
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -23,6 +24,7 @@ var (
 		"PascalCase":        pascalCase,
 		"IsArgOptional":     isArgOptional,
 		"IsCustomScalar":    isCustomScalar,
+		"SortInputFields":   sortInputFields,
 		"Solve":             solve,
 		"Subtract":          subtract,
 	}
@@ -185,4 +187,11 @@ func getRequiredArgs(values introspection.InputValues) introspection.InputValues
 func getOptionalArgs(values introspection.InputValues) introspection.InputValues {
 	_, optional := splitRequiredOptionalArgs(values)
 	return optional
+}
+
+func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
+	sort.SliceStable(s, func(i, j int) bool {
+		return s[i].Name < s[j].Name
+	})
+	return s
 }
