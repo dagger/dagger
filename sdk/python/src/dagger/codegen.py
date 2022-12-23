@@ -21,7 +21,7 @@ from typing import (
     TypeVar,
 )
 
-from attrs import Factory, define
+import attrs
 from graphql import (
     GraphQLArgument,
     GraphQLField,
@@ -444,12 +444,12 @@ class Predicate(Protocol):
         ...
 
 
-@define
+@attrs.define
 class Handler(ABC, Generic[_H]):
     sync: bool = False
     """Sync or async."""
 
-    id_map: IDMap = Factory(dict)
+    id_map: IDMap = attrs.Factory(dict)
     """Map to convert ids (custom scalars) to corresponding types."""
 
     predicate: ClassVar[Predicate] = staticmethod(lambda _: True)
@@ -466,7 +466,7 @@ class Handler(ABC, Generic[_H]):
         return f"{doc(t.description)}\n\n" if t.description else ""
 
 
-@define
+@attrs.define
 class Scalar(Handler[GraphQLScalarType]):
     predicate: ClassVar[Predicate] = staticmethod(is_custom_scalar_type)
 

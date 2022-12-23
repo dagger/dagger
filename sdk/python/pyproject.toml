@@ -153,9 +153,9 @@ pretty = true
 show_column_numbers = true
 warn_no_return = false
 warn_unused_ignores = true
-plugins = [
-    "strawberry.ext.mypy_plugin",
-]
+# plugins = [
+#     "strawberry.ext.mypy_plugin",
+# ]
 
 [tool.black]
 include = '\.pyi?$'
