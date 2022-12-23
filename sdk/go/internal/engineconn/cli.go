@@ -233,7 +233,7 @@ func defaultCLIArchiveName() string {
 		return filepath.Base(url.Path)
 	}
 	// TODO:(sipsma) fix this for windows
-	return fmt.Sprintf("dagger_%s_%s_%s.tar.gz",
+	return fmt.Sprintf("dagger_v%s_%s_%s.tar.gz",
 		CLIVersion,
 		runtime.GOOS,
 		runtime.GOARCH,

@@ -23,13 +23,5 @@ builds:
     goarm:
       - "7"
 
-archives:
-  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
-    files:
-      - LICENSE
-    format_overrides:
-      - goos: windows
-        format: zip
-
 checksum:
   name_template: "checksums.txt"

@@ -205,7 +205,7 @@ def cli_archive_name(cli_version: str):
     if OVERRIDE_CLI_ARCHIVE_URL:
         return Path(urllib.parse.urlparse(OVERRIDE_CLI_ARCHIVE_URL).path).name
     os_, arch = get_platform()
-    return f"dagger_{cli_version}_{os_}_{arch}.tar.gz"
+    return f"dagger_v{cli_version}_{os_}_{arch}.tar.gz"
 
 
 def cli_archive_url(cli_version: str):
