@@ -243,7 +243,7 @@ export class Bin implements EngineConn {
     if (OVERRIDE_CLI_URL) {
       return path.basename(new URL(OVERRIDE_CLI_URL).pathname)
     }
-    return `dagger_${
+    return `dagger_v${
       this.cliVersion
     }_${this.normalizedOS()}_${this.normalizedArch()}.tar.gz`
   }
