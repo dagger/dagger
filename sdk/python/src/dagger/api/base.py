@@ -7,12 +7,13 @@ import anyio
 import attrs
 import cattrs
 import graphql
+import httpx
 from beartype.door import is_bearable
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 
-from dagger.exceptions import InvalidQueryError
+from dagger.exceptions import ExecuteTimeoutError, InvalidQueryError
 
 _T = TypeVar("_T")
 
@@ -80,14 +81,26 @@ class Context:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
-        result = await self.session.execute(query, get_execution_result=True)
+        try:
+            result = await self.session.execute(query, get_execution_result=True)
+        except httpx.TimeoutException as e:
+            raise ExecuteTimeoutError(
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            ) from e
         return self._get_value(result.data, return_type)
 
     def execute_sync(self, return_type: type[_T]) -> _T:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
-        result = self.session.execute(query, get_execution_result=True)
+        try:
+            result = self.session.execute(query, get_execution_result=True)
+        except httpx.TimeoutException as e:
+            raise ExecuteTimeoutError(
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            ) from e
         return self._get_value(result.data, return_type)
 
     async def resolve_ids(self) -> None:

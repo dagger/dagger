@@ -1,9 +1,11 @@
+import uuid
 from datetime import datetime
 from textwrap import dedent
 
 import pytest
 
 import dagger
+from dagger.exceptions import ExecuteTimeoutError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -113,3 +115,14 @@ async def test_host_directory():
     async with dagger.Connection() as client:
         readme = await client.host().directory(".").file("README.md").contents()
         assert "Dagger" in readme
+
+
+async def test_execute_timeout():
+    async with dagger.Connection(dagger.Config(execute_timeout=0.5)) as client:
+        alpine = client.container().from_("alpine:3.16.2")
+        with pytest.raises(ExecuteTimeoutError):
+            await (
+                alpine.with_env_variable("_NO_CACHE", str(uuid.uuid4()))
+                .with_exec(["sleep", "2"])
+                .stdout()
+            )

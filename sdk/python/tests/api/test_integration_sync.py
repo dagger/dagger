@@ -1,9 +1,11 @@
+import uuid
 from datetime import datetime
 from textwrap import dedent
 
 import pytest
 
 import dagger
+from dagger.exceptions import ExecuteTimeoutError
 
 pytestmark = [
     pytest.mark.slow,
@@ -67,3 +69,14 @@ def test_container_with_mounted_cache():
             ).stdout()
 
         assert out == "0\n1\n2\n3\n4\n"
+
+
+def test_execute_timeout():
+    with dagger.Connection(dagger.Config(execute_timeout=0.5)) as client:
+        alpine = client.container().from_("alpine:3.16.2")
+        with pytest.raises(ExecuteTimeoutError):
+            (
+                alpine.with_env_variable("_NO_CACHE", str(uuid.uuid4()))
+                .with_exec(["sleep", "2"])
+                .stdout()
+            )
