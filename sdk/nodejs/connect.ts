@@ -1,5 +1,5 @@
 import Client from "./api/client.gen.js"
-import { getProvisioner, DEFAULT_HOST } from "./provisioning/index.js"
+import { Bin, CLI_VERSION } from "./provisioning/index.js"
 import { Writable } from "node:stream"
 
 /**
@@ -36,9 +36,7 @@ export async function connect(
   }
 
   let client
-  let close = () => {
-    return
-  }
+  let close: null | (() => void) = null
 
   // Prefer DAGGER_SESSION_URL if set
   const daggerSessionURL = process.env["DAGGER_SESSION_URL"]
@@ -50,20 +48,14 @@ export async function connect(
       )
     }
     const url = new URL(daggerSessionURL)
-    client = new Client({ host: url.host })
+    client = new Client({ host: url.host, sessionToken: sessionToken })
   } else {
-    // Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN.
-    // TODO: the fallback should be to pull from S3, but until then we fallback to the
-    // legacy DAGGER_HOST behavior. At that time we can get rid of the registered engineconn
-    // stuff and simplify this code
-    let host = process.env["DAGGER_HOST"] || DEFAULT_HOST
+    // Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN, with fallback behavior of
+    // downloading the CLI and using that as the bin.
     const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
-    if (cliBin) {
-      host = "bin://" + cliBin
-    }
-    const provisioner = getProvisioner(host)
-    client = await provisioner.Connect(_config)
-    close = () => provisioner.Close()
+    const engineConn = new Bin(cliBin, CLI_VERSION)
+    client = await engineConn.Connect(_config)
+    close = () => engineConn.Close()
   }
 
   await cb(client).finally(async () => {

@@ -66,3 +66,46 @@ func TestSplitRequiredOptionalArgs(t *testing.T) {
 		require.Equal(t, execField.Args[1:], optional)
 	})
 }
+
+func TestSortInputFields(t *testing.T) {
+	genInput := func(names []string) []introspection.InputValue {
+		var iv []introspection.InputValue
+		for _, i := range names {
+			iv = append(iv, introspection.InputValue{
+				Name: i,
+			})
+		}
+		return iv
+	}
+
+	t.Run("name, value", func(t *testing.T) {
+		names := []string{"name", "value"}
+
+		iv := genInput(names)
+
+		want := make([]introspection.InputValue, len(iv))
+		copy(want, iv)
+
+		got := sortInputFields(want)
+		require.Equal(t, want, got)
+	})
+	t.Run("value, name", func(t *testing.T) {
+		names := []string{"value", "name"}
+		iv := genInput(names)
+
+		want := genInput([]string{"name", "value"})
+
+		got := sortInputFields(iv)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("a, z, b, t, l", func(t *testing.T) {
+		names := []string{"a", "z", "b", "t", "l"}
+		iv := genInput(names)
+
+		want := genInput([]string{"a", "b", "l", "t", "z"})
+
+		got := sortInputFields(iv)
+		require.Equal(t, want, got)
+	})
+}

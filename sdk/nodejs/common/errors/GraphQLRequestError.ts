@@ -3,6 +3,7 @@ import {
   GraphQLResponse,
 } from "graphql-request/dist/types"
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { ERROR_CODES } from "./errors-codes.js"
 
 interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
   response: GraphQLResponse
@@ -13,8 +14,8 @@ interface GraphQLRequestErrorOptions extends DaggerSDKErrorOptions {
  *  This error originates from the dagger engine. It means that some error was thrown and sent back via GraphQL.
  */
 export class GraphQLRequestError extends DaggerSDKError {
-  public name = "GraphQLRequestError"
-  public code = "D100"
+  readonly name = "GraphQLRequestError"
+  readonly code = ERROR_CODES.GraphQLRequestError
 
   /**
    *  The query and variables, which caused the error.

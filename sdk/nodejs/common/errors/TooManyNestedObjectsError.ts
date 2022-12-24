@@ -1,4 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
+import { ERROR_CODES } from "./errors-codes.js"
 
 interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
   response: unknown
@@ -8,8 +9,8 @@ interface TooManyNestedObjectsErrorOptions extends DaggerSDKErrorOptions {
  *  Dagger only expects one response value from the engine. If the engine returns more than one value this error is thrown.
  */
 export class TooManyNestedObjectsError extends DaggerSDKError {
-  name = "TooManyNestedObjectsError"
-  code = "D102"
+  readonly name = "TooManyNestedObjectsError"
+  readonly code = ERROR_CODES.TooManyNestedObjectsError
 
   /**
    *  the response containing more than one value.

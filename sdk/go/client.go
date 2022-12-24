@@ -3,23 +3,12 @@ package dagger
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"net/url"
-	"os"
 
 	"dagger.io/dagger/internal/engineconn"
-	_ "dagger.io/dagger/internal/engineconn/bin"             // invoke engine-session binary
-	_ "dagger.io/dagger/internal/engineconn/dockerprovision" // provision engine-session from docker
-	_ "dagger.io/dagger/internal/engineconn/http"            // http connection
-	_ "dagger.io/dagger/internal/engineconn/unix"            // unix connection
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
-)
-
-const (
-	defaultHost = "docker-image://" + engineImageRef
 )
 
 // Client is the Dagger Engine Client
@@ -83,55 +72,20 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		o.setClientOpt(cfg)
 	}
 
-	c := &Client{}
-
-	// Prefer DAGGER_SESSION_URL if set
-	if urlStr, ok := os.LookupEnv("DAGGER_SESSION_URL"); ok {
-		sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
-		if sessionToken == "" {
-			return nil, fmt.Errorf("DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_URL")
-		}
-		url, err := url.Parse(urlStr)
-		if err != nil {
-			return nil, fmt.Errorf("invalid DAGGER_SESSION_URL: %w", err)
-		}
-		httpClient := engineconn.DefaultHTTPClient(engineconn.ConnectParams{
-			Host:         url.Host,
-			SessionToken: sessionToken,
-		})
-		url.Path = "/query"
-		c.gql = errorWrappedClient{graphql.NewClient(url.String(), httpClient)}
-	} else {
-		// Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN.
-		// TODO: the fallback should be to pull from S3, but until then we fallback to the
-		// legacy DAGGER_HOST behavior. At that time we can get rid of the registered engineconn
-		// stuff and simplify this code
-
-		host := defaultHost
-		if h := os.Getenv("DAGGER_HOST"); h != "" {
-			host = h
-		}
-		if binPath, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CLI_BIN"); ok {
-			host = "bin://" + binPath
-		}
-
-		conn, err := engineconn.Get(host)
-		if err != nil {
-			return nil, err
-		}
-		c.conn = conn
-		client, err := c.conn.Connect(ctx, cfg)
-		if err != nil {
-			return nil, err
-		}
-		c.gql = errorWrappedClient{graphql.NewClient(c.conn.Addr()+"/query", client)}
+	conn, err := engineconn.Get(ctx, cfg)
+	if err != nil {
+		return nil, err
 	}
+	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
-	c.Query = Query{
-		q: querybuilder.Query(),
-		c: c.gql,
-	}
-	return c, nil
+	return &Client{
+		gql:  gql,
+		conn: conn,
+		Query: Query{
+			q: querybuilder.Query(),
+			c: gql,
+		},
+	}, nil
 }
 
 // Close the engine connection

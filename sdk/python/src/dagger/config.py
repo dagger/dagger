@@ -1,34 +1,16 @@
-import os
-from pathlib import Path
-from typing import TextIO
-from urllib.parse import ParseResult as ParsedURL
-from urllib.parse import urlparse
+import pathlib
+import typing
 
-from attrs import define, field
-
-from ._engine import ENGINE_IMAGE_REF
-
-DEFAULT_HOST = f"docker-image://{ENGINE_IMAGE_REF}"
+import attrs
+import httpx
 
 
-def host_factory():
-    session_url = os.environ.get("DAGGER_SESSION_URL")
-    if session_url:
-        return session_url
-    cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
-    if cli_bin:
-        return f"bin://{cli_bin}"
-    return os.environ.get("DAGGER_HOST", DEFAULT_HOST)
-
-
-@define
+@attrs.define
 class Config:
     """Options for connecting to the Dagger engine.
 
     Parameters
     ----------
-    host:
-        Address to connect to the engine.
     workdir:
         The host workdir loaded into dagger.
     config_path:
@@ -38,20 +20,37 @@ class Config:
     timeout:
         The maximum time in seconds for establishing a connection to the server.
     execute_timeout:
-        The maximum time in seconds for the execution of a request before a TimeoutError
-        is raised. Passing None results in waiting forever for a response.
-    reconnecting:
-        If True, create a permanent reconnecting session. Only used for async transport.
+        The maximum time in seconds for the execution of a request before an
+        ExecuteTimeoutError is raised. Passing None results in waiting forever for a
+        response (default).
     """
 
-    host: ParsedURL = field(
-        factory=host_factory,
-        converter=urlparse,
-    )
-    session_token: str | None = os.environ.get("DAGGER_SESSION_TOKEN")
-    workdir: Path | str = ""
-    config_path: Path | str = ""
-    log_output: TextIO | None = None
+    workdir: pathlib.Path | str = ""
+    config_path: pathlib.Path | str = ""
+    log_output: typing.TextIO | None = None
     timeout: int = 10
-    execute_timeout: int | float | None = 60 * 5
-    reconnecting: bool = True
+    execute_timeout: int | float | None = None
+
+
+def _host_converter(value: str) -> httpx.URL:
+    # Soon host will be replaced by just a port which is much simpler to validate.
+    # Just do some basic checks in the meantime, not meant to be exhaustive.
+    if "://" not in value:
+        value = f"http://{value}"
+    try:
+        url = httpx.URL(value)
+    except httpx.InvalidURL as e:
+        raise ValueError(f"Invalid host: {value}") from e
+    if url.scheme != "http":
+        raise ValueError(f"Unsupported scheme in host: {value}. Expected http.")
+    if not url.port:
+        raise ValueError(f"No port found in host: {value}")
+    return url
+
+
+@attrs.define
+class ConnectParams:
+    """Options for making a session connection. For internal use only."""
+
+    host: httpx.URL = attrs.field(converter=_host_converter)
+    session_token: str

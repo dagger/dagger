@@ -3,11 +3,12 @@ from typing import Optional
 
 import rich
 import typer
+from graphql import GraphQLSchema
 
 import dagger
 from dagger import codegen
-from dagger.connector import Connector
-from dagger.engine import get_engine
+from dagger.engine import Engine
+from dagger.session import Session
 
 app = typer.Typer()
 
@@ -30,19 +31,8 @@ def generate(
     # not using `dagger.Connection` because codegen is
     # generating the client that it returns
 
-    cfg = dagger.Config()
-
-    with get_engine(cfg):
-        connector = Connector(cfg)
-        gql_transport = connector.make_sync_transport()
-        gql_client = connector.make_graphql_client(gql_transport)
-
-        with gql_client as session:
-            if session.client.schema is None:
-                raise typer.BadParameter(
-                    "Schema not initialized. Make sure the dagger engine is running."
-                )
-            code = codegen.generate(session.client.schema, sync)
+    schema = _get_schema()
+    code = codegen.generate(schema, sync)
 
     if output:
         output.write_text(code)
@@ -50,6 +40,17 @@ def generate(
         rich.print(f"[green]Client generated successfully to[/green] {output} :rocket:")
     else:
         rich.print(code)
+
+
+def _get_schema() -> GraphQLSchema:
+    cfg = dagger.Config()
+    with Engine(cfg) as conn:
+        with Session(conn, cfg) as session:
+            if not session.client.schema:
+                raise typer.BadParameter(
+                    "Schema not initialized. Make sure the dagger engine is running."
+                )
+            return session.client.schema
 
 
 def _update_gitattributes(output: Path) -> None:

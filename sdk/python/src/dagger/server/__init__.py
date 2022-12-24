@@ -2,7 +2,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from attrs import define
+import attrs
 from cattrs.preconf.json import JsonConverter
 from strawberry import Schema
 from strawberry.utils.await_maybe import await_maybe
@@ -16,14 +16,14 @@ outputs_path = Path("/outputs/dagger.json")
 schema_path = Path("/outputs/schema.graphql")
 
 
-@define
+@attrs.define
 class Inputs:
     resolver: str
     args: dict[str, Any]
     parent: dict[str, Any] | None
 
 
-@define
+@attrs.define
 class Server:
     schema: Schema
     converter: JsonConverter = json_converter

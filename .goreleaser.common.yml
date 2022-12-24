@@ -1,0 +1,27 @@
+project_name: dagger
+
+before:
+  hooks:
+    - go mod download
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    main: ./cmd/dagger
+    binary: dagger
+    ldflags:
+      - -s -w
+      - -X github.com/dagger/dagger/internal/engine.Version={{.Version}}
+    goos:
+      - linux
+      - windows
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+
+checksum:
+  name_template: "checksums.txt"

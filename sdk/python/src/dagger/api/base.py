@@ -4,17 +4,16 @@ from collections import deque
 from typing import Any, NamedTuple, Protocol, Sequence, TypeVar, runtime_checkable
 
 import anyio
-import attr
+import attrs
 import cattrs
-import gql
 import graphql
-from attrs import define
+import httpx
 from beartype.door import is_bearable
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 
-from dagger.exceptions import DaggerError
+from dagger.exceptions import ExecuteTimeoutError, InvalidQueryError
 
 _T = TypeVar("_T")
 
@@ -24,7 +23,7 @@ def is_optional(t):
     return is_union and type(None) in typing.get_args(t)
 
 
-@define
+@attrs.define
 class Field:
     type_name: str
     name: str
@@ -42,12 +41,12 @@ class IDType(Protocol):
         ...
 
 
-@define
+@attrs.define
 class Context:
     session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
-    selections: deque[Field] = attr.ib(factory=deque)
-    converter: cattrs.Converter = attr.ib(factory=make_converter)
+    selections: deque[Field] = attrs.field(factory=deque)
+    converter: cattrs.Converter = attrs.field(factory=make_converter)
 
     def select(
         self,
@@ -60,7 +59,7 @@ class Context:
         selections = self.selections.copy()
         selections.append(field)
 
-        return attr.evolve(self, selections=selections)
+        return attrs.evolve(self, selections=selections)
 
     def build(self) -> DSLSelectable:
         if not self.selections:
@@ -82,14 +81,26 @@ class Context:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
-        result = await self.session.execute(query, get_execution_result=True)
+        try:
+            result = await self.session.execute(query, get_execution_result=True)
+        except httpx.TimeoutException as e:
+            raise ExecuteTimeoutError(
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            ) from e
         return self._get_value(result.data, return_type)
 
     def execute_sync(self, return_type: type[_T]) -> _T:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
-        result = self.session.execute(query, get_execution_result=True)
+        try:
+            result = self.session.execute(query, get_execution_result=True)
+        except httpx.TimeoutException as e:
+            raise ExecuteTimeoutError(
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            ) from e
         return self._get_value(result.data, return_type)
 
     async def resolve_ids(self) -> None:
@@ -135,13 +146,13 @@ class Arg(NamedTuple):
     name: str
     value: Any
     type_: type
-    default: Any = attr.NOTHING
+    default: Any = attrs.NOTHING
 
     def is_valid(self) -> bool:
         return is_bearable(self.value, self.type_)
 
 
-@define
+@attrs.define
 class Type:
     _ctx: Context
 
@@ -189,23 +200,3 @@ class Root(Type):
     @property
     def graphql_name(self) -> str:
         return "Query"
-
-    @property
-    def _session(self) -> AsyncClientSession:
-        return self._ctx.session
-
-    @property
-    def _gql_client(self) -> gql.Client:
-        return self._session.client
-
-    @property
-    def _schema(self) -> graphql.GraphQLSchema:
-        return self._ctx.schema._schema
-
-
-class ClientError(DaggerError):
-    """Base class for client errors."""
-
-
-class InvalidQueryError(ClientError):
-    """Misuse of the query builder."""

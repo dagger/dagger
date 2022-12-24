@@ -28,6 +28,12 @@ type SecretID string
 // A content-addressed socket identifier
 type SocketID string
 
+type BuildArg struct {
+	Name string `json:"name"`
+
+	Value string `json:"value"`
+}
+
 // A directory whose contents persist across runs
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -65,6 +71,8 @@ type Container struct {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	Dockerfile string
+
+	BuildArgs []BuildArg
 }
 
 // Initialize this container from a Dockerfile build
@@ -75,6 +83,13 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
+			break
+		}
+	}
+	// `buildArgs` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 			break
 		}
 	}
@@ -508,11 +523,23 @@ func (r *Container) WithFS(id *Directory) *Container {
 	}
 }
 
+// ContainerWithFileOpts contains options for Container.WithFile
+type ContainerWithFileOpts struct {
+	Permissions int
+}
+
 // This container plus the contents of the given file copied to the given path
-func (r *Container) WithFile(path string, source *File) *Container {
+func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -594,6 +621,8 @@ func (r *Container) WithMountedTemp(path string) *Container {
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
 	Contents string
+
+	Permissions int
 }
 
 // This container plus a new file written at the given path
@@ -604,6 +633,13 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Contents) {
 			q = q.Arg("contents", opts[i].Contents)
+			break
+		}
+	}
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
 			break
 		}
 	}
@@ -746,6 +782,8 @@ type DirectoryDockerBuildOpts struct {
 	Dockerfile string
 
 	Platform Platform
+
+	BuildArgs []BuildArg
 }
 
 // Build a new Docker container from this directory
@@ -762,6 +800,13 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
+			break
+		}
+	}
+	// `buildArgs` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
+			q = q.Arg("buildArgs", opts[i].BuildArgs)
 			break
 		}
 	}
@@ -881,22 +926,46 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 	}
 }
 
+// DirectoryWithFileOpts contains options for Directory.WithFile
+type DirectoryWithFileOpts struct {
+	Permissions int
+}
+
 // This directory plus the contents of the given file copied to the given path
-func (r *Directory) WithFile(path string, source *File) *Directory {
+func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
 		c: r.c,
 	}
+}
+
+// DirectoryWithNewDirectoryOpts contains options for Directory.WithNewDirectory
+type DirectoryWithNewDirectoryOpts struct {
+	Permissions int
 }
 
 // This directory plus a new directory created at the given path
-func (r *Directory) WithNewDirectory(path string) *Directory {
+func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
 	q := r.q.Select("withNewDirectory")
 	q = q.Arg("path", path)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,
@@ -904,11 +973,23 @@ func (r *Directory) WithNewDirectory(path string) *Directory {
 	}
 }
 
+// DirectoryWithNewFileOpts contains options for Directory.WithNewFile
+type DirectoryWithNewFileOpts struct {
+	Permissions int
+}
+
 // This directory plus a new file written at the given path
-func (r *Directory) WithNewFile(path string, contents string) *Directory {
+func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
+	// `permissions` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Permissions) {
+			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
 
 	return &Directory{
 		q: q,

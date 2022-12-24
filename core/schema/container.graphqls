@@ -24,7 +24,7 @@ type Container {
   from(address: String!): Container!
 
   "Initialize this container from a Dockerfile build"
-  build(context: DirectoryID!, dockerfile: String): Container!
+  build(context: DirectoryID!, dockerfile: String, buildArgs: [BuildArg!]): Container!
 
   "This container's root filesystem. Mounts are not included."
   rootfs: Directory!
@@ -112,10 +112,10 @@ type Container {
   withoutMount(path: String!): Container!
 
   "This container plus the contents of the given file copied to the given path"
-  withFile(path: String!, source: FileID!): Container!
+  withFile(path: String!, source: FileID!, permissions: Int): Container!
 
   "This container plus a new file written at the given path"
-  withNewFile(path: String!, contents: String): Container!
+  withNewFile(path: String!, contents: String, permissions: Int): Container!
 
   "This container plus a directory written at the given path"
   withDirectory(
@@ -206,5 +206,10 @@ type EnvVariable {
   """
   value is the environment variable value
   """
+  value: String!
+}
+
+input BuildArg {
+  name: String!
   value: String!
 }

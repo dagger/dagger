@@ -1,6 +1,6 @@
 ```gql
 query {
-  socket(id: "eyJob3N0X3BhdGgiOiIvcnVuL2RvY2tlci5zb2NrIn0=") {
+  socket(id: "eyJob3N0X3BhdGgiOiIvdmFyL3J1bi9kb2NrZXIuc29jayJ9") {
     id
   }
 }

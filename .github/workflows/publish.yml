@@ -1,11 +1,21 @@
-name: publish
+name: Publish CLI & Engine
 on:
   push:
     branches: ["main"]
     tags: ["v**"]
+
+  # Run tests in a PR when an SDK has a default CLI version bump
+  pull_request:
+    paths:
+      - sdk/go/internal/engineconn/version.gen.go
+      - sdk/python/src/dagger/engine/_version.py
+      - sdk/nodejs/provisioning/default.ts
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # only run this on push events, not in PRs
+    if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v3
 
@@ -29,6 +39,7 @@ jobs:
           AWS_BUCKET: ${{ secrets.RELEASE_AWS_BUCKET }}
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
           HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
+          GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
         run: ./hack/make dagger:publish ${{ github.ref_name }}
 
       - name: "Bump SDK Engine Dependencies"
@@ -46,3 +57,212 @@ jobs:
             This PR was auto-generated.
           delete-branch: true
           branch: bump-engine
+
+  test-provision-macos:
+    name: "Test SDK Provision / macos"
+    # We want to test the SDKs in a CLI dependency bump PR, in which case publish
+    # has to be skipped, AND after every push to main/tags, in which case publish
+    # must run first. This is unfortunately quite annoying to express in yaml...
+    # https://github.com/actions/runner/issues/491#issuecomment-850884422
+    needs: [publish]
+    if: |
+      always() &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: macos-latest
+    env:
+      _INTERNAL_DAGGER_TEST_CLI_URL: ${{ needs.publish.outputs.baseurl }}/dagger_${{ needs.publish.outputs.version }}_darwin_amd64.tar.gz
+    steps:
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              CLI_VERSION=$GITHUB_SHA
+              ENGINE_VERSION='main'
+            else
+              # this is a tag push, trim the leading v from vx.y.z
+              CLI_VERSION=${GITHUB_REF_NAME:1}
+              ENGINE_VERSION=$GITHUB_REF_NAME
+            fi
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_darwin_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+          fi
+        shell: bash
+      - name: "Install Docker"
+        run: |
+          echo "Install docker CLI..."
+          brew install docker
+          echo "Start Docker daemon via Colima..."
+          echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
+          colima start --mount-type 9p
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "1.19"
+
+      - name: "Test Go SDK"
+        run: |
+          cd sdk/go
+          go test -v -run TestProvision ./...
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+        # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
+      - name: "Bootstrap Poetry"
+        run: |
+          curl -sL https://install.python-poetry.org | python - -y
+
+      - name: "Add Poetry & deps to PATH"
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: "Test Python SDK"
+        run: |
+          cd sdk/python
+          poetry install --only main,test
+          poetry run pytest -xm provision
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+
+      - name: "Test NodeJS SDK"
+        run: |
+          cd sdk/nodejs
+          yarn install
+          yarn test -g 'Automatic Provisioned CLI Binary'
+
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg
+
+  test-provision-go-linux:
+    name: "Test SDK Provision / go / linux"
+    needs: [publish]
+    if: |
+      always() &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              CLI_VERSION=$GITHUB_SHA
+              ENGINE_VERSION='main'
+            else
+              # this is a tag push, trim the leading v from vx.y.z
+              CLI_VERSION=${GITHUB_REF_NAME:1}
+              ENGINE_VERSION=$GITHUB_REF_NAME
+            fi
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+          fi
+        shell: bash
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - name: "Test Go SDK"
+        run: |
+          cd sdk/go
+          go test -v -run TestProvision ./...
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg
+
+  test-provision-python-linux:
+    name: "Test SDK Provision / python / linux"
+    needs: [publish]
+    if: |
+      always() &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              CLI_VERSION=$GITHUB_SHA
+              ENGINE_VERSION='main'
+            else
+              # this is a tag push, trim the leading v from vx.y.z
+              CLI_VERSION=${GITHUB_REF_NAME:1}
+              ENGINE_VERSION=$GITHUB_REF_NAME
+            fi
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+          fi
+        shell: bash
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+      - name: "Bootstrap Poetry"
+        run: |
+          curl -sL https://install.python-poetry.org | python - -y
+      - name: "Add Poetry & deps to PATH"
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+      - name: "Test Python SDK"
+        run: |
+          cd sdk/python
+          poetry install --only main,test
+          poetry run pytest -xm provision
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg
+
+  test-provision-nodejs-linux:
+    name: "Test SDK Provision / nodejs / linux"
+    needs: [publish]
+    if: |
+      always() &&
+      (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: "Set CLI Test URL"
+        run: |
+          if [ ${{ github.event_name }} == 'push' ]; then
+            if [ $GITHUB_REF_NAME == 'main' ]; then
+              CLI_VERSION=$GITHUB_SHA
+              ENGINE_VERSION='main'
+            else
+              # this is a tag push, trim the leading v from vx.y.z
+              CLI_VERSION=${GITHUB_REF_NAME:1}
+              ENGINE_VERSION=$GITHUB_REF_NAME
+            fi
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+          fi
+        shell: bash
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+      - name: "Test NodeJS SDK"
+        run: |
+          cd sdk/nodejs
+          yarn install
+          yarn test -g 'Automatic Provisioned CLI Binary'
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg

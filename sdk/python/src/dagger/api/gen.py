@@ -28,6 +28,11 @@ SocketID = NewType("SocketID", str)
 """A content-addressed socket identifier"""
 
 
+class BuildArg(Type):
+    name: str
+    value: str
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs"""
 
@@ -49,11 +54,17 @@ class CacheVolume(Type):
 class Container(Type):
     """An OCI-compatible container, also known as a docker container"""
 
-    def build(self, context: "Directory", dockerfile: str | None = None) -> "Container":
+    def build(
+        self,
+        context: "Directory",
+        dockerfile: str | None = None,
+        build_args: list[BuildArg] | None = None,
+    ) -> "Container":
         """Initialize this container from a Dockerfile build"""
         _args = [
             Arg("context", "context", context, Directory),
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
+            Arg("build_args", "buildArgs", build_args, list[BuildArg] | None, None),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -427,25 +438,28 @@ class Container(Type):
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
 
-    def with_fs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_fs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID
 
         .. deprecated::
             Replaced by :py:meth:`with_rootfs`.
         """
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withFS", _args)
         return Container(_ctx)
 
-    def with_file(self, path: str, source: "File") -> "Container":
+    def with_file(
+        self, path: str, source: "File", permissions: int | None = None
+    ) -> "Container":
         """This container plus the contents of the given file copied to the given
         path
         """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -497,19 +511,22 @@ class Container(Type):
         _ctx = self._select("withMountedTemp", _args)
         return Container(_ctx)
 
-    def with_new_file(self, path: str, contents: str | None = None) -> "Container":
+    def with_new_file(
+        self, path: str, contents: str | None = None, permissions: int | None = None
+    ) -> "Container":
         """This container plus a new file written at the given path"""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str | None, None),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
 
-    def with_rootfs(self, id: "DirectoryID | Directory") -> "Container":
+    def with_rootfs(self, id: "Directory") -> "Container":
         """Initialize this container from this DirectoryID"""
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory),
+            Arg("id", "id", id, Directory),
         ]
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)
@@ -607,12 +624,16 @@ class Directory(Type):
         return Directory(_ctx)
 
     def docker_build(
-        self, dockerfile: str | None = None, platform: "Platform | None" = None
+        self,
+        dockerfile: str | None = None,
+        platform: "Platform | None" = None,
+        build_args: list[BuildArg] | None = None,
     ) -> "Container":
         """Build a new Docker container from this directory"""
         _args = [
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
             Arg("platform", "platform", platform, Platform | None, None),
+            Arg("build_args", "buildArgs", build_args, list[BuildArg] | None, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
@@ -696,30 +717,39 @@ class Directory(Type):
         _ctx = self._select("withDirectory", _args)
         return Directory(_ctx)
 
-    def with_file(self, path: str, source: "File") -> "Directory":
+    def with_file(
+        self, path: str, source: "File", permissions: int | None = None
+    ) -> "Directory":
         """This directory plus the contents of the given file copied to the given
         path
         """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withFile", _args)
         return Directory(_ctx)
 
-    def with_new_directory(self, path: str) -> "Directory":
+    def with_new_directory(
+        self, path: str, permissions: int | None = None
+    ) -> "Directory":
         """This directory plus a new directory created at the given path"""
         _args = [
             Arg("path", "path", path, str),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewDirectory", _args)
         return Directory(_ctx)
 
-    def with_new_file(self, path: str, contents: str) -> "Directory":
+    def with_new_file(
+        self, path: str, contents: str, permissions: int | None = None
+    ) -> "Directory":
         """This directory plus a new file written at the given path"""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str),
+            Arg("permissions", "permissions", permissions, int | None, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Directory(_ctx)
@@ -1100,9 +1130,7 @@ class Client(Root):
         return CacheVolume(_ctx)
 
     def container(
-        self,
-        id: "ContainerID | Container | None" = None,
-        platform: "Platform | None" = None,
+        self, id: "ContainerID | None" = None, platform: "Platform | None" = None
     ) -> "Container":
         """Load a container from ID.
 
@@ -1113,7 +1141,7 @@ class Client(Root):
         host.
         """
         _args = [
-            Arg("id", "id", id, ContainerID | Container | None, None),
+            Arg("id", "id", id, ContainerID | None, None),
             Arg("platform", "platform", platform, Platform | None, None),
         ]
         _ctx = self._select("container", _args)
@@ -1125,18 +1153,18 @@ class Client(Root):
         _ctx = self._select("defaultPlatform", _args)
         return await _ctx.execute(Platform)
 
-    def directory(self, id: "DirectoryID | Directory | None" = None) -> "Directory":
+    def directory(self, id: "DirectoryID | None" = None) -> "Directory":
         """Load a directory by ID. No argument produces an empty directory."""
         _args = [
-            Arg("id", "id", id, DirectoryID | Directory | None, None),
+            Arg("id", "id", id, DirectoryID | None, None),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
 
-    def file(self, id: "FileID | File") -> "File":
+    def file(self, id: "FileID") -> "File":
         """Load a file by ID"""
         _args = [
-            Arg("id", "id", id, FileID | File),
+            Arg("id", "id", id, FileID),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -1172,18 +1200,18 @@ class Client(Root):
         _ctx = self._select("project", _args)
         return Project(_ctx)
 
-    def secret(self, id: "SecretID | Secret") -> "Secret":
+    def secret(self, id: "SecretID") -> "Secret":
         """Load a secret from its ID"""
         _args = [
-            Arg("id", "id", id, SecretID | Secret),
+            Arg("id", "id", id, SecretID),
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
-    def socket(self, id: "SocketID | Socket | None" = None) -> "Socket":
+    def socket(self, id: "SocketID | None" = None) -> "Socket":
         """Load a socket by ID"""
         _args = [
-            Arg("id", "id", id, SocketID | Socket | None, None),
+            Arg("id", "id", id, SocketID | None, None),
         ]
         _ctx = self._select("socket", _args)
         return Socket(_ctx)
@@ -1250,6 +1278,7 @@ __all__ = [
     "Platform",
     "SecretID",
     "SocketID",
+    "BuildArg",
     "CacheVolume",
     "Container",
     "Directory",
