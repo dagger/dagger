@@ -219,7 +219,7 @@ checkenv:
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/run/buildkit/buildkitd.sock",
+				Destination: "/.runner.sock",
 				Type:        "bind",
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
@@ -307,7 +307,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 		}
 		engineConf := &engine.Config{
 			SessionToken: sessionToken.String(),
-			RunnerHost:   "unix:///run/buildkit/buildkitd.sock",
+			RunnerHost:   "unix:///.runner.sock",
 			LogOutput:    os.Stderr,
 		}
 		go func() {

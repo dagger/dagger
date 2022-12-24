@@ -13,13 +13,9 @@ func TestDIND(t *testing.T) {
 	var res struct {
 		Container struct {
 			From struct {
-				WithWorkDir struct {
+				WithExec struct {
 					WithExec struct {
-						WithNewFile struct {
-							WithExec struct {
-								Stdout string
-							}
-						}
+						Stdout string
 					}
 				}
 			}
@@ -30,53 +26,27 @@ func TestDIND(t *testing.T) {
 		`
 {
   container {
-    from(address: "golang") {
-      withWorkdir(path: "/usr/src/app") {
-        withExec(args: ["sh", "-c", "go mod init test && go get dagger.io/dagger@main"]) {
-          withNewFile(
-            contents: """
-package main
+    from(address: "alpine") {
+      withExec(args: ["apk", "add", "curl"]) {
+        withExec(args: ["sh", "-c", """
 
-import (
-	"context"
-	"fmt"
-	"os"
+touch /root/1 /root/2
 
-	"dagger.io/dagger"
-)
-
-func main() {
-	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	if err != nil {
-		panic(err)
-	}
-	defer client.Close()
-
-	entries, err := client.Host().Directory(".").Entries(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	// print output to console
-	fmt.Println(entries)
-}
-
-            """
-            path: "main.go"
-          ) {
-            withExec(args: ["go", "run", "main.go"], experimentalPrivilegedNesting: true) {
-              stdout
-            }
-          }
+curl \
+-u $DAGGER_SESSION_TOKEN: \
+-H "content-type:application/json" \
+-d '{"query":"{host{directory(path:\"/root\"){entries}}}"}' $DAGGER_SESSION_URL/query
+        """], experimentalPrivilegedNesting: true) {
+          stdout
         }
-      }
+        }
     }
   }
 }
 
+
                 `, &res, nil)
 	require.NoError(t, err)
-	require.NotEmpty(t, res.Container.From.WithWorkDir.WithExec.WithNewFile.WithExec.Stdout)
-	require.Equal(t, "[go.mod go.sum main.go]\n", res.Container.From.WithWorkDir.WithExec.WithNewFile.WithExec.Stdout)
+	require.NotEmpty(t, res.Container.From.WithExec.WithExec.Stdout)
+	require.Equal(t, "{\"data\":{\"host\":{\"directory\":{\"entries\":[\"1\",\"2\"]}}}}", res.Container.From.WithExec.WithExec.Stdout)
 }
