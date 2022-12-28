@@ -68,6 +68,10 @@ export type ContainerBuildOpts = {
    * Defaults to './Dockerfile'.
    */
   dockerfile?: string
+
+  /**
+   * Additional build arguments
+   */
   buildArgs?: BuildArg[]
 }
 

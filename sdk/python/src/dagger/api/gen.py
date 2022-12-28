@@ -9,7 +9,8 @@ CacheID = NewType("CacheID", str)
 
 
 ContainerID = NewType("ContainerID", str)
-"""A unique container identifier. Null designates an empty container (scratch)."""
+"""A unique container identifier. Null designates an empty container
+(scratch)."""
 
 
 DirectoryID = NewType("DirectoryID", str)
@@ -19,6 +20,10 @@ DirectoryID = NewType("DirectoryID", str)
 FileID = NewType("FileID", str)
 
 Platform = NewType("Platform", str)
+"""The platform config OS and architecture in a Container. The format
+is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64,
+linux/arm64). """
+
 
 SecretID = NewType("SecretID", str)
 """A unique identifier for a secret"""
@@ -60,7 +65,18 @@ class Container(Type):
         dockerfile: str | None = None,
         build_args: list[BuildArg] | None = None,
     ) -> "Container":
-        """Initialize this container from a Dockerfile build"""
+        """Initialize this container from a Dockerfile build.
+
+        Parameters
+        ----------
+        context:
+            Directory context used by the Dockerfile.
+        dockerfile:
+            Path to the Dockerfile to use.
+            Defaults to './Dockerfile'.
+        build_args:
+            Additional build arguments
+        """
         _args = [
             Arg("context", "context", context, Directory),
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
@@ -192,7 +208,18 @@ class Container(Type):
         self, path: str, platform_variants: "list[Container] | None" = None
     ) -> bool:
         """Write the container as an OCI tarball to the destination file path on
-        the host
+        the host.
+
+        Return true on success.
+
+        Parameters
+        ----------
+        path:
+            Host's destination path.
+            Path can be relative to the engine's workdir or absolute.
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
 
         Returns
         -------
@@ -222,7 +249,14 @@ class Container(Type):
 
     def from_(self, address: str) -> "Container":
         """Initialize this container from the base image published at the given
-        address
+        address.
+
+        Parameters
+        ----------
+        address:
+            Image's address from its registry.
+            Formatted as <host/user/repo:tag> (e.g.
+            docker.io/dagger/dagger:main).
         """
         _args = [
             Arg("address", "address", address, str),
@@ -241,7 +275,7 @@ class Container(Type):
         return Directory(_ctx)
 
     async def id(self) -> ContainerID:
-        """A unique identifier for this container
+        """A unique identifier for this container.
 
         Note
         ----
@@ -272,7 +306,15 @@ class Container(Type):
         return await _ctx.execute(list[str])
 
     async def platform(self) -> Platform:
-        """The platform this container executes and publishes as"""
+        """The platform this container executes and publishes as.
+
+        Returns
+        -------
+        Platform
+            The platform config OS and architecture in a Container. The format
+            is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64,
+            linux/arm64).
+        """
         _args: list[Arg] = []
         _ctx = self._select("platform", _args)
         return await _ctx.execute(Platform)
@@ -280,7 +322,18 @@ class Container(Type):
     async def publish(
         self, address: str, platform_variants: "list[Container] | None" = None
     ) -> str:
-        """Publish this container as a new image, returning a fully qualified ref
+        """Publish this container as a new image, returning a fully qualified
+        ref.
+
+        Parameters
+        ----------
+        address:
+            Registry's address to publish the image to.
+            Formatted as <host/user/repo:tag> (e.g.
+            docker.io/dagger/dagger:main).
+        platform_variants:
+            Identifiers for other platform specific containers.
+            Used for multi-platform image.
 
         Returns
         -------
@@ -629,7 +682,16 @@ class Directory(Type):
         platform: "Platform | None" = None,
         build_args: list[BuildArg] | None = None,
     ) -> "Container":
-        """Build a new Docker container from this directory"""
+        """Build a new Docker container from this directory
+
+        Parameters
+        ----------
+        dockerfile:
+            Path to the Dockerfile to use.
+            Defaults to './Dockerfile'.
+        platform:
+        build_args:
+        """
         _args = [
             Arg("dockerfile", "dockerfile", dockerfile, str | None, None),
             Arg("platform", "platform", platform, Platform | None, None),
@@ -707,7 +769,19 @@ class Directory(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> "Directory":
-        """This directory plus a directory written at the given path"""
+        """This directory plus a directory written at the given path
+
+        Parameters
+        ----------
+        path:
+        directory:
+        exclude:
+            Exclude artifacts that match the given pattern.
+            (e.g. ["node_modules/", ".git*"])
+        include:
+            Include only artifacts that match the given pattern.
+            (e.g. ["app/", "package.*"])
+        """
         _args = [
             Arg("path", "path", path, str),
             Arg("directory", "directory", directory, Directory),
@@ -1122,7 +1196,14 @@ class Project(Type):
 
 class Client(Root):
     def cache_volume(self, key: str) -> "CacheVolume":
-        """Construct a cache volume for a given cache key"""
+        """Construct a cache volume for a given cache key
+
+        Parameters
+        ----------
+        key:
+            A string identifier to target this cache volume (e.g. "myapp-
+            cache").
+        """
         _args = [
             Arg("key", "key", key, str),
         ]
@@ -1148,7 +1229,15 @@ class Client(Root):
         return Container(_ctx)
 
     async def default_platform(self) -> Platform:
-        """The default platform of the builder."""
+        """The default platform of the builder.
+
+        Returns
+        -------
+        Platform
+            The platform config OS and architecture in a Container. The format
+            is <os>/<platform>/<version> (e.g. darwin/arm64/v7, windows/amd64,
+            linux/arm64).
+        """
         _args: list[Arg] = []
         _ctx = self._select("defaultPlatform", _args)
         return await _ctx.execute(Platform)

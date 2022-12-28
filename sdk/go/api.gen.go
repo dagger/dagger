@@ -75,7 +75,7 @@ type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
 	// Defaults to './Dockerfile'.
 	Dockerfile string
-
+	// Additional build arguments
 	BuildArgs []BuildArg
 }
 
