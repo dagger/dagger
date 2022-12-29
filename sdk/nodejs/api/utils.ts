@@ -84,7 +84,7 @@ export function buildQuery(q: QueryTree[]): string {
  * @param client | GraphQLClient
  * @returns
  */
-export async function queryBuilder<T>(
+export async function computeQuery<T>(
   q: QueryTree[],
   client: GraphQLClient
 ): Promise<T> {
