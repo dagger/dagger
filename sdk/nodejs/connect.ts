@@ -8,11 +8,13 @@ import { Bin, CLI_VERSION } from "./provisioning/index.js"
  */
 export interface ConnectOpts {
   /**
-   * Use to override Dagger workdir
+   * Use to overwrite Dagger workdir
+   * @defaultValue process.cwd()
    */
   Workdir?: string
   /**
-   * Use to override Dagger config
+   * Use to overwrite Dagger config
+   * @defaultValue dagger.json
    */
   ConfigPath?: string
   /**
