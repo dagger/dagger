@@ -132,6 +132,39 @@ describe("NodeJS SDK api", function () {
     })
   })
 
+  it("Recursively solve sub queries", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const image = client.directory().withNewFile(
+        "Dockerfile",
+        `
+            FROM alpine    
+        `
+      )
+
+      const builder = client
+        .container()
+        .build(image)
+        .withWorkdir("/")
+        .withEntrypoint(["sh", "-c"])
+        .withExec(["echo htrshtrhrthrts > file.txt"])
+        .withExec(["cat file.txt"])
+
+      const copiedFile = await client
+        .container()
+        .from("alpine")
+        .withWorkdir("/")
+        .withFile("/copied-file.txt", builder.file("/file.txt"))
+        .withEntrypoint(["sh", "-c"])
+        .withExec(["cat copied-file.txt"])
+        .file("copied-file.txt")
+        .contents()
+
+      assert.strictEqual(copiedFile, "htrshtrhrthrts\n")
+    })
+  })
+
   it("Return a flatten Graphql response", function () {
     const tree = {
       container: {

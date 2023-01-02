@@ -42,6 +42,11 @@ async function computeNestedQuery(
       await Promise.all(
         Object.entries(q.args).map(async (val: any) => {
           if (val[1] instanceof Object && isQueryTree(val[1])) {
+            // Resolve sub queries if operation's args is a subquery
+            for (const op of val[1]["_queryTree"]) {
+              await computeNestedQuery([op], client)
+            }
+
             // push an id that will be used by the container
             const getQueryTree = buildQuery([
               ...val[1]["_queryTree"],
