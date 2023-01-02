@@ -52,22 +52,17 @@ You must also update your `tsconfig.json` to use `NodeNext` as `module`.
 
 3. Import Dagger local module
 
-The simplest part, jump to the Dagger NodeSDK module and tip `yarn link`.
+Go to the Dagger nodejs SDK directory and do the following :
 
 ```shell
+cd path/to/dagger/sdk/nodejs
 yarn link
-yarn link v1.22.19
-success Registered "@dagger.io/dagger".
-info You can now run `yarn link "@dagger.io/dagger"` in the projects where you want to use this package and it will be used instead.
 ```
 
-Go back to your local project and tip `yarn link @dagger.io/dagger`.
+Go back to the root directory of your local project to link the nodejs sdk.
 
 ```shell
 yarn link @dagger.io/dagger  
-yarn link v1.22.19
-success Using linked package for "@dagger.io/dagger".
-✨  Done in 0.02s.
 ```
 
 4. Use Dagger
