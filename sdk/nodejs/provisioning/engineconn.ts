@@ -1,5 +1,6 @@
-import Client from "../api/client.gen.js"
 import { Writable } from "node:stream"
+
+import Client from "../api/client.gen.js"
 
 export interface ConnectOpts {
   Workdir?: string

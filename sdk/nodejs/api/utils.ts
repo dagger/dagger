@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ClientError, gql, GraphQLClient } from "graphql-request"
+
 import {
   GraphQLRequestError,
   TooManyNestedObjectsError,

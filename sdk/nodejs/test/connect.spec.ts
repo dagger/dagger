@@ -1,17 +1,16 @@
+import assert, { AssertionError } from "assert"
 import * as crypto from "crypto"
 import * as fs from "fs"
 import * as http from "http"
+import { AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
-import { AddressInfo } from "net"
-
-import { connect } from "../connect.js"
-import assert, { AssertionError } from "assert"
 import { GraphQLRequestError } from "../common/errors/index.js"
-import { CLI_VERSION } from "../provisioning/default.js"
+import { connect } from "../connect.js"
 import * as bin from "../provisioning/bin.js"
+import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("NodeJS sdk Connect", function () {
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {

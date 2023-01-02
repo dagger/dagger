@@ -1,21 +1,22 @@
-import { ConnectOpts, EngineConn } from "./engineconn.js"
 import * as crypto from "crypto"
-import * as path from "path"
-import * as fs from "fs"
-import * as os from "os"
-import * as tar from "tar"
-import readline from "readline"
+import envPaths from "env-paths"
 import { execaCommand, ExecaChildProcess } from "execa"
+import * as fs from "fs"
+import fetch from "node-fetch"
+import * as os from "os"
+import * as path from "path"
+import readline from "readline"
+import * as tar from "tar"
+
 import Client from "../api/client.gen.js"
-import { ConnectParams } from "../connect.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
   EngineSessionEOFError,
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
-import fetch from "node-fetch"
-import envPaths from "env-paths"
+import { ConnectParams } from "../connect.js"
+import { ConnectOpts, EngineConn } from "./engineconn.js"
 
 const CLI_HOST = "dl.dagger.io"
 let OVERRIDE_CLI_URL: string
@@ -340,6 +341,7 @@ export class Bin implements EngineConn {
 export function _overrideCLIURL(url: string): void {
   OVERRIDE_CLI_URL = url
 }
+
 // Only meant for tests
 export function _overrideCLIChecksumsURL(url: string): void {
   OVERRIDE_CHECKSUMS_URL = url
