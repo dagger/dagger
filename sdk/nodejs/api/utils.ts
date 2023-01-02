@@ -13,8 +13,10 @@ import { QueryTree } from "./client.gen.js"
  */
 function buildArgs(args: any): string {
   // Remove unwanted quotes
-  const formatValue = (v: string) =>
-    JSON.stringify(v).replace(/\{"[a-zA-Z]+"/gi, (str) => str.replace(/"/g, ""))
+  const formatValue = (value: string) =>
+    JSON.stringify(value).replace(/\{"[a-zA-Z]+"/gi, (str) =>
+      str.replace(/"/g, "")
+    )
 
   const formattedArgs = Object.entries(args).reduce(
     (acc: any, [key, value]) => {
