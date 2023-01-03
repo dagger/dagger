@@ -2,7 +2,6 @@ import logging
 import os
 
 import anyio
-import httpx
 
 from dagger.config import Config, ConnectParams
 from dagger.context import SyncResourceManager
@@ -22,20 +21,17 @@ class Engine(SyncResourceManager):
         self.cfg = cfg
 
     def from_env(self) -> ConnectParams | None:
-        if not (session_port := os.environ.get("DAGGER_SESSION_PORT")):
+        if not (port := os.environ.get("DAGGER_SESSION_PORT")):
             return None
-        session_url = f"http://127.0.0.1:{session_port}/query"
-        if not (session_token := os.environ.get("DAGGER_SESSION_TOKEN")):
+        if not (token := os.environ.get("DAGGER_SESSION_TOKEN")):
             raise ProvisionError(
                 "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
             )
         try:
-            conn = ConnectParams(session_url, session_token)
-        except httpx.InvalidURL as e:
-            raise ProvisionError(f"Invalid DAGGER_SESSION_PORT: {session_port}") from e
-
-        logger.debug(f"Using '{conn.host}' from DAGGER_SESSION_PORT")
-        return conn
+            return ConnectParams(port, token)
+        except ValueError as e:
+            # only port is validated
+            raise ProvisionError(f"Invalid DAGGER_SESSION_PORT: {port}") from e
 
     def from_cli(self) -> ConnectParams:
         cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")

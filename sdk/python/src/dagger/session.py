@@ -35,7 +35,7 @@ class Session(ResourceManager, SyncResourceManager):
 
     def _make_transport(self, cls: type[_T]) -> _T:
         return cls(
-            self.conn.host.copy_with(path="/query"),
+            self.conn.url,
             timeout=self.cfg.execute_timeout,
             auth=(self.conn.session_token, ""),
         )
