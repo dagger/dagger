@@ -13,20 +13,21 @@ import (
 
 var (
 	funcMap = template.FuncMap{
-		"CommentToLines":    commentToLines,
-		"FormatDeprecation": formatDeprecation,
-		"FormatInputType":   formatInputType,
-		"FormatOutputType":  formatOutputType,
-		"FormatName":        formatName,
-		"GetOptionalArgs":   getOptionalArgs,
-		"GetRequiredArgs":   getRequiredArgs,
-		"HasPrefix":         strings.HasPrefix,
-		"PascalCase":        pascalCase,
-		"IsArgOptional":     isArgOptional,
-		"IsCustomScalar":    isCustomScalar,
-		"SortInputFields":   sortInputFields,
-		"Solve":             solve,
-		"Subtract":          subtract,
+		"CommentToLines":      commentToLines,
+		"FormatDeprecation":   formatDeprecation,
+		"FormatInputType":     formatInputType,
+		"FormatOutputType":    formatOutputType,
+		"FormatName":          formatName,
+		"GetOptionalArgs":     getOptionalArgs,
+		"GetRequiredArgs":     getRequiredArgs,
+		"HasPrefix":           strings.HasPrefix,
+		"PascalCase":          pascalCase,
+		"IsArgOptional":       isArgOptional,
+		"IsCustomScalar":      isCustomScalar,
+		"ArgsHaveDescription": argsHaveDescription,
+		"SortInputFields":     sortInputFields,
+		"Solve":               solve,
+		"Subtract":            subtract,
 	}
 )
 
@@ -199,4 +200,14 @@ func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+func argsHaveDescription(values introspection.InputValues) bool {
+	for _, o := range values {
+		if strings.TrimSpace(o.Description) != "" {
+			return true
+		}
+	}
+
+	return false
 }

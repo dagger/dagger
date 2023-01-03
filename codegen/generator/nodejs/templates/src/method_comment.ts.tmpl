@@ -1,8 +1,9 @@
 {{ define "method_comment" }}
-	{{- $required := GetRequiredArgs .Args -}}
-	{{- $optionals := GetOptionalArgs .Args -}}
+	{{- $required := GetRequiredArgs .Args }}
+	{{- $optionals := GetOptionalArgs .Args }}
+	{{- $argsDesc := ArgsHaveDescription .Args }}
 	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
-	{{- if or .Description .Args .IsDeprecated -}}
+	{{- if or .Description $argsDesc .IsDeprecated }}
 		{{- $commentLines := CommentToLines .Description }}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
 {{""}}
@@ -19,10 +20,12 @@
 		{{- end }}
 	{{- end }}
 
-	{{- range $optionals }}
-		{{- if .Description }}
+	{{- if ArgsHaveDescription $optionals }}
+		{{- range $optionals }}
+			{{- if .Description }}
    * @param opts.{{ .Name }} {{ .Description }} 
-   		{{- end }}
+			{{- end }}
+		{{- end }}
 	{{- end }}
 
 	{{- if .IsDeprecated }}
@@ -31,7 +34,7 @@
 		{{- end }}
 	{{- end }}
 
-	{{- if or .Description .Args .IsDeprecated }}
+	{{- if or .Description $argsDesc .IsDeprecated }}
    */
 	{{- end }}
 {{ "" -}}
