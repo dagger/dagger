@@ -470,6 +470,7 @@ class Handler(ABC, Generic[_H]):
             yield from wrap(doc(t.description))
             yield from ["", ""]
 
+
 @attrs.define
 class Scalar(Handler[GraphQLScalarType]):
     predicate: ClassVar[Predicate] = staticmethod(is_custom_scalar_type)
