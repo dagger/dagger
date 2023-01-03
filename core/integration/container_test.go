@@ -1552,16 +1552,18 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 	execRes := struct {
 		Container struct {
 			From struct {
-				WithMountedTemp struct {
-					Mounts               []string
-					WithMountedDirectory struct {
-						Mounts   []string
-						WithExec struct {
-							Stdout       string
-							WithoutMount struct {
-								Mounts   []string
-								WithExec struct {
-									Stdout string
+				WithDirectory struct {
+					WithMountedTemp struct {
+						Mounts               []string
+						WithMountedDirectory struct {
+							Mounts   []string
+							WithExec struct {
+								Stdout       string
+								WithoutMount struct {
+									Mounts   []string
+									WithExec struct {
+										Stdout string
+									}
 								}
 							}
 						}
@@ -1574,16 +1576,18 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 		`query Test($id: DirectoryID!) {
 			container {
 				from(address: "alpine:3.16.2") {
-					withMountedTemp(path: "/mnt/tmp") {
-						mounts
-						withMountedDirectory(path: "/mnt/dir", source: $id) {
+					withDirectory(path: "/mnt/dir", directory: "") {
+						withMountedTemp(path: "/mnt/tmp") {
 							mounts
-							withExec(args: ["ls", "/mnt/dir"]) {
-								stdout
-								withoutMount(path: "/mnt/dir") {
-									mounts
-									withExec(args: ["ls", "/mnt/dir"]) {
-										stdout
+							withMountedDirectory(path: "/mnt/dir", source: $id) {
+								mounts
+								withExec(args: ["ls", "/mnt/dir"]) {
+									stdout
+									withoutMount(path: "/mnt/dir") {
+										mounts
+										withExec(args: ["ls", "/mnt/dir"]) {
+											stdout
+										}
 									}
 								}
 							}
@@ -1595,11 +1599,11 @@ func TestContainerMountsWithoutMount(t *testing.T) {
 			"id": id,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.Mounts)
-	require.Equal(t, []string{"/mnt/tmp", "/mnt/dir"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.Mounts)
-	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithMountedTemp.WithMountedDirectory.WithExec.Stdout)
-	require.Equal(t, "", execRes.Container.From.WithMountedTemp.WithMountedDirectory.WithExec.WithoutMount.WithExec.Stdout)
-	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithMountedTemp.WithMountedDirectory.WithExec.WithoutMount.Mounts)
+	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithDirectory.WithMountedTemp.Mounts)
+	require.Equal(t, []string{"/mnt/tmp", "/mnt/dir"}, execRes.Container.From.WithDirectory.WithMountedTemp.WithMountedDirectory.Mounts)
+	require.Equal(t, "some-dir\nsome-file\n", execRes.Container.From.WithDirectory.WithMountedTemp.WithMountedDirectory.WithExec.Stdout)
+	require.Equal(t, "", execRes.Container.From.WithDirectory.WithMountedTemp.WithMountedDirectory.WithExec.WithoutMount.WithExec.Stdout)
+	require.Equal(t, []string{"/mnt/tmp"}, execRes.Container.From.WithDirectory.WithMountedTemp.WithMountedDirectory.WithExec.WithoutMount.Mounts)
 }
 
 func TestContainerReplacedMounts(t *testing.T) {
