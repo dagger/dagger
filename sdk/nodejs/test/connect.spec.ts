@@ -63,8 +63,8 @@ describe("NodeJS sdk Connect", function () {
     it("Should download and unpack the CLI binary automatically", async function () {
       this.timeout(30000)
 
-      // ignore DAGGER_SESSION_URL
-      delete process.env.DAGGER_SESSION_URL
+      // ignore DAGGER_SESSION_PORT
+      delete process.env.DAGGER_SESSION_PORT
 
       // If explicitly requested to test against a certain URL, use that
       const cliURL = process.env._INTERNAL_DAGGER_TEST_CLI_URL

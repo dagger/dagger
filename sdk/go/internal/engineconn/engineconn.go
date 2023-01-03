@@ -28,7 +28,7 @@ type ConnectParams struct {
 }
 
 func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
-	// Prefer DAGGER_SESSION_URL if set
+	// Prefer DAGGER_SESSION_PORT if set
 	conn, ok, err := FromSessionEnv()
 	if err != nil {
 		return nil, err

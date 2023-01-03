@@ -318,7 +318,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 				fmt.Printf("Error starting engine: %v\n", err)
 			}
 		}()
-		return []string{fmt.Sprintf("DAGGER_SESSION_URL=http://127.0.0.1:%d", l.Addr().(*net.TCPAddr).Port), fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String())}, nil
+		return []string{fmt.Sprintf("DAGGER_SESSION_PORT=%d", l.Addr().(*net.TCPAddr).Port), fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String())}, nil
 	}
 	return []string{}, nil
 }
