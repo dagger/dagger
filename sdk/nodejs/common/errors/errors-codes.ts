@@ -43,3 +43,11 @@ export const ERROR_CODES = {
 type ErrorCodesType = typeof ERROR_CODES
 export type ErrorNames = keyof ErrorCodesType
 export type ErrorCodes = ErrorCodesType[ErrorNames]
+
+type ErrorNamesMap = { readonly [Key in ErrorNames]: Key }
+export const ERROR_NAMES: ErrorNamesMap = (
+  Object.keys(ERROR_CODES) as Array<ErrorNames>
+).reduce<ErrorNamesMap>(
+  (obj, item) => ({ ...obj, [item]: item }),
+  {} as ErrorNamesMap
+)
