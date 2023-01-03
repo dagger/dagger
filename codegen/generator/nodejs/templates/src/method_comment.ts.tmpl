@@ -19,12 +19,13 @@
 		{{- end }}
 	{{- end }}
 
-	{{- if $optionals }}
-   * @param opts optional params for {{ .Name | FormatName }}
+	{{- range $optionals }}
+		{{- if .Description }}
+   * @param opts.{{ .Name }} {{ .Description }} 
+   		{{- end }}
 	{{- end }}
 
 	{{- if .IsDeprecated }}
-   *
 		{{- range $deprecationLines }}
    * {{ . }}
 		{{- end }}
