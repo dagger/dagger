@@ -13,10 +13,6 @@
 		{{- end }}
 	{{- end }}
 
-	{{- if and .Description .Args }}
-   *
-	{{- end }}
-
 	{{- range $required }}
 		{{- if .Description }}
    * @param {{ .Name }} {{ .Description }}
