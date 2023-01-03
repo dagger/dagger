@@ -8,60 +8,69 @@ import {
 } from "../common/errors/index.js"
 import { QueryTree } from "./client.gen.js"
 
-function buildArgs(item: any): string {
-  const entries = Object.entries(item.args)
-    .filter((value) => value[1] !== undefined)
-    .map((value) => {
-      return `${value[0]}: ${JSON.stringify(value[1]).replace(
-        /\{"[a-zA-Z]+"/gi,
-        (str) => str.replace(/"/g, "")
-      )}`
-    })
-  if (entries.length === 0) {
+/**
+ * Format argument into GraphQL query format.
+ */
+function buildArgs(args: any): string {
+  // Remove unwanted quotes
+  const formatValue = (value: string) =>
+    JSON.stringify(value).replace(/\{"[a-zA-Z]+"/gi, (str) =>
+      str.replace(/"/g, "")
+    )
+
+  const formattedArgs = Object.entries(args).reduce(
+    (acc: any, [key, value]) => {
+      if (value) {
+        acc.push(`${key}: ${formatValue(value as string)}`)
+      }
+
+      return acc
+    },
+    []
+  )
+
+  if (formattedArgs.length === 0) {
     return ""
   }
-  return "(" + entries + ")"
+
+  return `(${formattedArgs})`
 }
 
 /**
- * Find querytree, convert them into GraphQl query
+ * Find QueryTree, convert them into GraphQl query
  * then compute and return the result to the appropriate field
  */
 async function computeNestedQuery(
   query: QueryTree[],
   client: GraphQLClient
 ): Promise<void> {
-  /**
-   * Check if there is a nested queryTree to be executed
-   */
-  const isQueryTree = (value: any) =>
-    Object.keys(value).find((val) => val === "_queryTree")
+  // Check if there is a nested queryTree to be executed
+  const isQueryTree = (value: any) => value["_queryTree"] !== undefined
 
-  for (const q of query) {
-    if (q.args !== undefined) {
-      await Promise.all(
-        Object.entries(q.args).map(async (val: any) => {
-          if (val[1] instanceof Object && isQueryTree(val[1])) {
-            // Resolve sub queries if operation's args is a subquery
-            for (const op of val[1]["_queryTree"]) {
-              await computeNestedQuery([op], client)
-            }
+  // Remove all undefined args and assert args type
+  const queryToExec = query.filter((q): q is Required<QueryTree> => !!q.args)
 
-            // push an id that will be used by the container
-            const getQueryTree = buildQuery([
-              ...val[1]["_queryTree"],
-              {
-                operation: "id",
-              },
-            ])
-            const result = await compute(getQueryTree, client)
-            // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-            //@ts-ignore
-            q.args[val[0]] = result
+  for (const q of queryToExec) {
+    await Promise.all(
+      Object.entries(q.args).map(async ([key, value]: any) => {
+        if (value instanceof Object && isQueryTree(value)) {
+          // Resolve sub queries if operation's args is a subquery
+          for (const op of value["_queryTree"]) {
+            await computeNestedQuery([op], client)
           }
-        })
-      )
-    }
+
+          // push an id that will be used by the container
+          const getQueryTree = buildQuery([
+            ...value["_queryTree"],
+            {
+              operation: "id",
+            },
+          ])
+
+          q.args[key] = await compute(getQueryTree, client)
+        }
+      })
+    )
   }
 }
 
@@ -71,17 +80,17 @@ async function computeNestedQuery(
  * @returns
  */
 export function buildQuery(q: QueryTree[]): string {
-  let query = "{"
-  q.forEach((item: QueryTree, index: number) => {
-    query += `
-        ${item.operation} ${item.args ? `${buildArgs(item)}` : ""} ${
-      q.length - 1 !== index ? "{" : "}".repeat(q.length - 1)
-    }
-      `
-  })
-  query += "}"
+  const query = q.reduce((acc, { operation, args }, i) => {
+    const qLen = q.length
 
-  return query
+    acc += ` ${operation} ${args ? `${buildArgs(args)}` : ""} ${
+      qLen - 1 !== i ? "{" : "}".repeat(qLen - 1)
+    }`
+
+    return acc
+  }, "")
+
+  return `{${query} }`
 }
 
 /**
@@ -98,9 +107,7 @@ export async function computeQuery<T>(
 
   const query = buildQuery(q)
 
-  const result: Awaited<T> = await compute(query, client)
-
-  return result
+  return await compute(query, client)
 }
 
 /**
