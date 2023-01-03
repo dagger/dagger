@@ -55,6 +55,8 @@ func main() {
 }
 
 func shim() int {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
 		return 1
@@ -65,8 +67,18 @@ func shim() int {
 	if len(os.Args) > 2 {
 		args = os.Args[2:]
 	}
+
+	env, err := toggleNesting(ctx)
+	if err != nil {
+		fmt.Printf("Error toggling nesting: %v\n", err)
+		return 1
+	}
+
 	cmd := exec.Command(name, args...)
 	cmd.Env = os.Environ()
+
+	// append nesting envs if any
+	cmd.Env = append(cmd.Env, env...)
 
 	if stdinFile, err := os.Open(stdinPath); err == nil {
 		defer stdinFile.Close()
@@ -129,7 +141,7 @@ func shim() int {
 		}
 	}
 
-	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0600); err != nil {
+	if err := os.WriteFile(exitCodePath, []byte(fmt.Sprintf("%d", exitCode)), 0o600); err != nil {
 		panic(err)
 	}
 
@@ -137,9 +149,6 @@ func shim() int {
 }
 
 func setupBundle() int {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// Figure out the path to the bundle dir, in which we can obtain the
 	// oci runtime config.json
 	var bundleDir string
@@ -204,10 +213,19 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	spec, err = toggleNesting(ctx, spec)
-	if err != nil {
-		fmt.Printf("Error toggling nesting: %v\n", err)
-		return 1
+checkenv:
+	for _, env := range spec.Process.Env {
+		switch {
+		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
+			// mount buildkit sock since it's nesting
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/.runner.sock",
+				Type:        "bind",
+				Options:     []string{"rbind"},
+				Source:      "/run/buildkit/buildkitd.sock",
+			})
+			break checkenv
+		}
 	}
 
 	// write the updated config
@@ -216,7 +234,7 @@ func setupBundle() int {
 		fmt.Printf("Error marshaling config.json: %v\n", err)
 		return 1
 	}
-	if err := os.WriteFile(configPath, configBytes, 0600); err != nil {
+	if err := os.WriteFile(configPath, configBytes, 0o600); err != nil {
 		fmt.Printf("Error writing config.json: %v\n", err)
 		return 1
 	}
@@ -276,43 +294,31 @@ func internalEnv(name string) (string, bool) {
 	return val, true
 }
 
-func toggleNesting(ctx context.Context, spec specs.Spec) (specs.Spec, error) {
-checkenv:
-	for i, env := range spec.Process.Env {
-		switch {
-		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
-			// hide it from the container
-			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
-
-			// setup a session and associated env vars for the container
-			sessionToken, err := uuid.NewRandom()
-			if err != nil {
-				return specs.Spec{}, fmt.Errorf("error generating session token: %w", err)
-			}
-			l, err := net.Listen("tcp", "127.0.0.1:0")
-			if err != nil {
-				return specs.Spec{}, fmt.Errorf("error listening on session socket: %w", err)
-			}
-			engineConf := &engine.Config{
-				SessionToken: sessionToken.String(),
-				RunnerHost:   "unix:///run/buildkit/buildkitd.sock",
-				LogOutput:    os.Stderr,
-			}
-			go func() {
-				err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-					return http.Serve(l, r)
-				})
-				if err != nil {
-					fmt.Printf("Error starting engine: %v\n", err)
-				}
-			}()
-
-			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_URL=http://127.0.0.1:%d", l.Addr().(*net.TCPAddr).Port))
-			spec.Process.Env = append(spec.Process.Env, fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String()))
-
-			break checkenv
+func toggleNesting(ctx context.Context) ([]string, error) {
+	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); found {
+		// setup a session and associated env vars for the container
+		sessionToken, err := uuid.NewRandom()
+		if err != nil {
+			return nil, fmt.Errorf("error generating session token: %w", err)
 		}
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return nil, fmt.Errorf("error listening on session socket: %w", err)
+		}
+		engineConf := &engine.Config{
+			SessionToken: sessionToken.String(),
+			RunnerHost:   "unix:///.runner.sock",
+			LogOutput:    os.Stderr,
+		}
+		go func() {
+			err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
+				return http.Serve(l, r)
+			})
+			if err != nil {
+				fmt.Printf("Error starting engine: %v\n", err)
+			}
+		}()
+		return []string{fmt.Sprintf("DAGGER_SESSION_URL=http://127.0.0.1:%d", l.Addr().(*net.TCPAddr).Port), fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String())}, nil
 	}
-
-	return spec, nil
+	return []string{}, nil
 }
