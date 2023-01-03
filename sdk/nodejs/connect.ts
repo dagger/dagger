@@ -15,7 +15,7 @@ export interface ConnectOpts {
 export type CallbackFct = (client: Client) => Promise<void>
 
 export interface ConnectParams {
-  host: string
+  port: number
   session_token: string
 }
 

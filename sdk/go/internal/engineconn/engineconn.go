@@ -2,6 +2,7 @@ package engineconn
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -23,7 +24,7 @@ type Config struct {
 }
 
 type ConnectParams struct {
-	Host         string `json:"host"`
+	Port         int    `json:"port"`
 	SessionToken string `json:"session_token"`
 }
 
@@ -60,7 +61,7 @@ func defaultHTTPClient(p *ConnectParams) *http.Client {
 			r.SetBasicAuth(p.SessionToken, "")
 			return (&http.Transport{
 				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("tcp", p.Host)
+					return net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port))
 				},
 			}).RoundTrip(r)
 		}),
