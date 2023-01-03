@@ -38,9 +38,9 @@ export type BuildArg = {
   /**
    * Name description.
    */
-  name: string;
-  value: string;
-};
+  name: string
+  value: string
+}
 `
 
 		var fieldInputTypeJSON = `

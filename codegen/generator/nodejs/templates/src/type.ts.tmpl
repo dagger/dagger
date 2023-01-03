@@ -43,11 +43,11 @@ export type {{ $typeName }} = {
     {{- if .Description }}
 {{ template "type_field_comment" .Description }}
     {{- end }}
-  {{ .Name  }}{{ $opt }}: {{ .TypeRef | FormatInputType }};
+  {{ .Name  }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
 
 
     {{- end }}
-};
+}
 {{ "" }}
 	{{- end }}
 
