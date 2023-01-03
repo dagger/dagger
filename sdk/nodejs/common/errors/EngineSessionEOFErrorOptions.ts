@@ -1,5 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { ERROR_CODES } from "./errors-codes.js"
+import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
 type EngineSessionEOFErrorOptions = DaggerSDKErrorOptions
 
@@ -8,8 +8,8 @@ type EngineSessionEOFErrorOptions = DaggerSDKErrorOptions
  * This usually happens if no connection can be established.
  */
 export class EngineSessionEOFError extends DaggerSDKError {
-  readonly name = "EngineSessionEOFError"
-  readonly code = ERROR_CODES.EngineSessionEOFError
+  name = ERROR_NAMES.EngineSessionEOFError
+  code = ERROR_CODES.EngineSessionEOFError
 
   /**
    * @hidden

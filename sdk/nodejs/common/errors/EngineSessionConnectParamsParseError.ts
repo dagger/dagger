@@ -1,5 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { ERROR_CODES } from "./errors-codes.js"
+import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
 interface EngineSessionConnectParamsParseErrorOptions
   extends DaggerSDKErrorOptions {
@@ -10,8 +10,8 @@ interface EngineSessionConnectParamsParseErrorOptions
  * This error is thrown if the EngineSession does not manage to parse the required connection parameters from the session binary
  */
 export class EngineSessionConnectParamsParseError extends DaggerSDKError {
-  readonly name = "EngineSessionConnectParamsParseError"
-  readonly code = ERROR_CODES.EngineSessionConnectParamsParseError
+  name = ERROR_NAMES.EngineSessionConnectParamsParseError
+  code = ERROR_CODES.EngineSessionConnectParamsParseError
 
   /**
    *  the line, which caused the error during parsing, if the error was caused because of parsing.
