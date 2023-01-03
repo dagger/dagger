@@ -13,7 +13,7 @@ async function createConfig() {
     organizationName: "Dagger",
     projectName: "Dagger",
     stylesheets: [
-      "https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400&display=swap",
+      "https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=Source+Code+Pro:wght@400&display=swap",
     ],
     customFields: {
       AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID,
@@ -151,6 +151,7 @@ async function createConfig() {
             title: "Dagger NodeJS SDK"
           },
           hideMembersSymbol: true,
+          requiredToBeDocumented: ["Class"]
         },
       ]
     ],
