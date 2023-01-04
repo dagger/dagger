@@ -38,10 +38,10 @@ npx tsc --init
 Dagger exports its SDK using type module so you will need to also update
 your `package.json` to the same type.
 
-Add or update the field `type` in your `package.json`
+Add or update the field `type` in your `package.json` from your project root directory:
 
 ```json
-"type": "module"
+npm pkg set type=module
 ```
 
 You must also update your `tsconfig.json` to use `NodeNext` as `module`.
