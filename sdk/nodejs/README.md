@@ -40,7 +40,7 @@ your `package.json` to the same type.
 
 Add or update the field `type` in your `package.json` from your project root directory:
 
-```json
+```shell
 npm pkg set type=module
 ```
 
