@@ -14,9 +14,9 @@ npm install @dagger.io/dagger --save-dev
 
 ## Local development
 
-You may want to work on the NodeSDK and test it directly on a local node project. 
+You may want to work on the NodeSDK and test it directly on a local node project.
 
-1. Create a new Node project
+### 1. Create a new Node project
 
 :warning: Skip this step if you already have a node project
 
@@ -27,21 +27,21 @@ mkdir my-test-ts-project
 npm init -y
 
 # Add typescript
-npm install typescript --save-dev
+npm install typescript ts-node --save-dev
 
 # Init typescript project
 npx tsc --init
 ```
 
-2. Update project settings
+### 2. Update project settings
 
 Dagger exports its SDK using type module so you will need to also update
 your `package.json` to the same type.
 
-Add or update the field `type` in your `package.json`
+Add or update the field `type` in your `package.json` from your project root directory:
 
-```json
-"type": "module"
+```shell
+npm pkg set type=module
 ```
 
 You must also update your `tsconfig.json` to use `NodeNext` as `module`.
@@ -50,31 +50,38 @@ You must also update your `tsconfig.json` to use `NodeNext` as `module`.
 "module": "NodeNext"
 ```
 
-3. Import Dagger local module
+### 3. Symlink Dagger local module
 
 Go to the Dagger nodejs SDK directory and do the following :
 
 ```shell
-cd path/to/dagger/sdk/nodejs
-yarn link
+cd path/to/dagger/sdk/nodejs # go into the package directory
+npm link # creates global link
 ```
 
 Go back to the root directory of your local project to link the nodejs sdk.
 
 ```shell
-yarn link @dagger.io/dagger  
+cd path/to/my_app # go into your project directory.
+npm link @dagger.io/dagger # link install the package
 ```
 
-4. Use Dagger
+:bulb: Any changes to `path/to/dagger/sdk/nodejs` will be reflected in `path/to/my_app/node_modules/@dagger.io/dagger`.
+
+### 4. Make your contribution
+
+While making SDK code modification you should `watch` the input files:
+
+```shell
+cd path/to/dagger/sdk/nodejs # go into the package directory
+yarn watch # Recompile the code when input files are modified
+```
 
 You can now import the local Dagger NodeSDK as if you were using the official one.
 
 ```ts
-import { connect } from '@dagger.io/dagger"
+import { connect } from "@dagger.io/dagger"
 ```
-
-:bulb: Modifications applied to the local Dagger NodeSDK will be applied to your
-project one you recompile the module using `yarn build`.
 
 ## Documentation
 
