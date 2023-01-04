@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 
@@ -83,5 +83,7 @@ func waitBuildkit(ctx context.Context, host string) error {
 		}
 		time.Sleep(retryPeriod)
 	}
-	return errors.New("buildkit failed to respond")
+
+	listWorkerError := strings.ReplaceAll(err.Error(), "\\n", "")
+	return fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
 }
