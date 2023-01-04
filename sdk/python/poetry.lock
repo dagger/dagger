@@ -783,7 +783,7 @@ files = [
 name = "platformdirs"
 version = "2.6.2"
 description = "A small Python package for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
-category = "dev"
+category = "main"
 optional = false
 python-versions = ">=3.7"
 files = [
@@ -1420,4 +1420,4 @@ server = ["strawberry-graphql"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "4a9d2d5e8e1c44e4942f172556bfca49a1ab71ba823bba543fff12e60405cd58"
+content-hash = "f12710aebb783d704b3dfa794f93a9035ac0b8de0c5f6f39c7b010ce376085c1"

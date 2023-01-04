@@ -14,6 +14,7 @@ from pathlib import Path, PurePath
 from typing import IO, Iterator
 
 import httpx
+import platformdirs
 
 from dagger.context import SyncResourceManager
 
@@ -136,10 +137,12 @@ class Downloader:
 
     @functools.cached_property
     def cache_dir(self) -> Path:
-        # FIXME: should have platform dependent cache dirs
-        cache_dir = (
-            Path(os.environ.get("XDG_CACHE_HOME", "~/.cache")).expanduser() / "dagger"
-        )
+        # Use the XDG_CACHE_HOME environment variable in all platforms to follow
+        # https://github.com/adrg/xdg a bit more closely (used in the Go SDK).
+        # See https://github.com/dagger/dagger/issues/3963
+        env = os.environ.get("XDG_CACHE_HOME", "").strip()
+        path = Path(env).expanduser() if env else platformdirs.user_cache_path()
+        cache_dir = path / "dagger"
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         return cache_dir
 
