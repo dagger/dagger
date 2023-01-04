@@ -21,7 +21,7 @@ const (
 	daggerCliBinName = "dagger"
 	shimBinName      = "dagger-shim"
 	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.10.5"
+	buildkitBranch   = "v0.11.0-rc3"
 )
 
 func parseRef(tag string) error {
