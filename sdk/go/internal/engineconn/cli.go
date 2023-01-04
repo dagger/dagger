@@ -2,6 +2,7 @@ package engineconn
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -188,11 +189,29 @@ func extractCLI(ctx context.Context, dest io.Writer) (string, error) {
 		return "", fmt.Errorf("failed to download CLI archive from %s: %s", cliArchiveURL(), resp.Status)
 	}
 
-	// the body is a tar.gz file, untar it and extract the dagger binary
+	// the body is either a tar.gz file or (on windows) a zipfile, unpack it and extract the dagger binary
 	hasher := sha256.New()
-	gzipReader, err := gzip.NewReader(io.TeeReader(resp.Body, hasher))
+	reader := io.TeeReader(resp.Body, hasher)
+	if runtime.GOOS == "windows" {
+		if err := extractZip(reader, dest); err != nil {
+			return "", err
+		}
+	} else if err := extractTarCLI(reader, dest); err != nil {
+		return "", err
+	}
+
+	_, err = io.ReadAll(reader) // ensure the entire body is read into the hash
 	if err != nil {
 		return "", err
+	}
+
+	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
+}
+
+func extractTarCLI(src io.Reader, dest io.Writer) error {
+	gzipReader, err := gzip.NewReader(src)
+	if err != nil {
+		return err
 	}
 	defer gzipReader.Close()
 	tarReader := tar.NewReader(gzipReader)
@@ -203,25 +222,56 @@ func extractCLI(ctx context.Context, dest io.Writer) (string, error) {
 			break
 		}
 		if err != nil {
-			return "", err
+			return err
 		}
 		if filepath.Base(header.Name) == "dagger" {
 			// limit the amount of data to prevent a decompression bomb (gosec G110)
 			if _, err := io.CopyN(dest, tarReader, 1024*1024*1024); err != nil && err != io.EOF {
-				return "", err
+				return err
 			}
 			found = true
 		}
 	}
 	if !found {
-		return "", fmt.Errorf("failed to find dagger binary in tar.gz")
+		return fmt.Errorf("failed to find dagger binary in tar.gz")
 	}
-	_, err = io.ReadAll(gzipReader) // ensure the entire body is read into the hash
-	if err != nil {
-		return "", err
-	}
+	return nil
+}
 
-	return fmt.Sprintf("%x", hasher.Sum(nil)), nil
+func extractZip(src io.Reader, dest io.Writer) error {
+	tmpFile, err := os.CreateTemp("", "dagger-cli-*.zip")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+	if _, err := io.Copy(tmpFile, src); err != nil {
+		return err
+	}
+	zipReader, err := zip.OpenReader(tmpFile.Name())
+	if err != nil {
+		return err
+	}
+	defer zipReader.Close()
+	var found bool
+	for _, file := range zipReader.File {
+		if filepath.Base(file.Name) == "dagger.exe" {
+			f, err := file.Open()
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			// limit the amount of data to prevent a decompression bomb (gosec G110)
+			if _, err := io.CopyN(dest, f, 1024*1024*1024); err != nil && err != io.EOF {
+				return err
+			}
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf("failed to find dagger.exe binary in zip")
+	}
+	return nil
 }
 
 func defaultCLIArchiveName() string {

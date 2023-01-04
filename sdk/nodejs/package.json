@@ -17,6 +17,7 @@
   "main": "dist/index.js",
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.1",
+    "adm-zip": "^0.5.10",
     "axios": "^1.2.2",
     "env-paths": "^3.0.0",
     "execa": "^6.1.0",
@@ -36,6 +37,7 @@
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
+    "@types/adm-zip": "^0.5.0",
     "@types/mocha": "latest",
     "@types/node": "~16",
     "@types/tar": "^6.1.3",

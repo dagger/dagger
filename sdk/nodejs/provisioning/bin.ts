@@ -1,3 +1,4 @@
+import AdmZip from "adm-zip"
 import * as crypto from "crypto"
 import envPaths from "env-paths"
 import { execaCommand, ExecaChildProcess } from "execa"
@@ -66,7 +67,11 @@ export class Bin implements EngineConn {
     const tmpBinPath = path.join(tmpBinDownloadDir, "dagger")
 
     try {
-      const actualChecksum = await this.extractCLIArchive(tmpBinDownloadDir)
+      // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
+      const actualChecksum: string = await this.extractArchive(
+        tmpBinDownloadDir,
+        this.normalizedOS()
+      )
       const expectedChecksum = await this.expectedChecksum()
       if (actualChecksum !== expectedChecksum) {
         throw new Error(
@@ -294,8 +299,8 @@ export class Bin implements EngineConn {
     return expectedChecksum
   }
 
-  private async extractCLIArchive(destDir: string): Promise<string> {
-    // extract the dagger binary in the cli archive and return the archive of the .tar.gz
+  private async extractArchive(destDir: string, os: string): Promise<string> {
+    // extract the dagger binary in the cli archive and return the archive of the .zip for windows and .tar.gz for other plateforms
     const archiveResp = await fetch(this.cliArchiveURL())
     if (!archiveResp.ok) {
       throw new Error(
@@ -307,7 +312,9 @@ export class Bin implements EngineConn {
     }
 
     // create a temporary file to store the archive
-    const archivePath = `${destDir}/dagger.tar.gz`
+    const archivePath = `${destDir}/${
+      os === "windows" ? "dagger.zip" : "dagger.tar.gz"
+    }`
     const archiveFile = fs.createWriteStream(archivePath)
     await new Promise((resolve, reject) => {
       archiveResp.body?.pipe(archiveFile)
@@ -320,11 +327,17 @@ export class Bin implements EngineConn {
       .update(fs.readFileSync(archivePath))
       .digest("hex")
 
-    tar.extract({
-      cwd: destDir,
-      file: archivePath,
-      sync: true,
-    })
+    if (os === "windows") {
+      const zip = new AdmZip(archivePath)
+      // extract just dagger.exe to the destdir
+      zip.extractEntryTo("dagger.exe", destDir, false, true)
+    } else {
+      tar.extract({
+        cwd: destDir,
+        file: archivePath,
+        sync: true,
+      })
+    }
 
     return actualChecksum
   }
