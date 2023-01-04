@@ -21,10 +21,11 @@ import (
 
 func sessionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "session",
-		Long:   "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
-		Hidden: true,
-		RunE:   EngineSession,
+		Use:          "session",
+		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
+		Hidden:       true,
+		RunE:         EngineSession,
+		SilenceUsage: true,
 	}
 }
 
