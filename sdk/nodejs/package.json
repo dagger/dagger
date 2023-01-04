@@ -29,6 +29,7 @@
   },
   "scripts": {
     "build": "tsc",
+    "watch": "tsc -w",
     "test": "mocha",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix"
