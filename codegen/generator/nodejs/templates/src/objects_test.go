@@ -9,10 +9,10 @@ import (
 
 func TestObjects(t *testing.T) {
 	cases := map[string]struct {
-		in   string
-		want string
+		in           string
+		wantFilePath string
 	}{
-		"CacheVolume + Host": {objectsJSON, wantObjects},
+		"CacheVolume + Host": {objectsJSON, "testdata/objects_test_want.ts"},
 	}
 
 	for name, c := range cases {
@@ -26,81 +26,12 @@ func TestObjects(t *testing.T) {
 			var b bytes.Buffer
 			err := tmpl.ExecuteTemplate(&b, "objects", objects)
 
+			want := updateAndGetFixtures(t, c.wantFilePath, b.String())
 			require.NoError(t, err)
-			require.Equal(t, c.want, b.String())
+			require.Equal(t, want, b.String())
 		})
 	}
 }
-
-var wantObjects = `
-/**
- * A directory whose contents persist across runs
- */
-export class CacheVolume extends BaseClient {
-  async id(): Promise<CacheID> {
-    const response: Awaited<CacheID> = await computeQuery(
-      [
-      ...this._queryTree,
-      {
-      operation: 'id'
-      }
-    ],
-      this.client
-    )
-
-    return response
-  }
-}
-
-/**
- * Information about the host execution environment
- */
-export class Host extends BaseClient {
-
-
-
-  /**
-   * Access a directory on the host
-   */
-  directory(path: string, opts?: HostDirectoryOpts): Directory {
-    return new Directory({queryTree: [
-      ...this._queryTree,
-      {
-      operation: 'directory',
-      args: { path, ...opts }
-      }
-    ], host: this.clientHost, sessionToken: this.sessionToken});
-  }
-
-
-  /**
-   * Lookup the value of an environment variable. Null if the variable is not available.
-   */
-  envVariable(name: string): HostVariable {
-    return new HostVariable({queryTree: [
-      ...this._queryTree,
-      {
-      operation: 'envVariable',
-      args: { name }
-      }
-    ], host: this.clientHost, sessionToken: this.sessionToken});
-  }
-
-
-  /**
-   * The current working directory on the host
-   */
-  workdir(opts?: HostWorkdirOpts): Directory {
-    return new Directory({queryTree: [
-      ...this._queryTree,
-      {
-      operation: 'workdir',
-      args: { ...opts }
-      }
-    ], host: this.clientHost, sessionToken: this.sessionToken});
-  }
-}
-`
 
 var objectsJSON = `
 [

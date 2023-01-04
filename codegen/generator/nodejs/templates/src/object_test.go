@@ -18,25 +18,12 @@ func TestObject(t *testing.T) {
 	var b bytes.Buffer
 	err := tmpl.ExecuteTemplate(&b, "object", object)
 
-	want := wantTestObject
+	want := updateAndGetFixtures(t, "testdata/object_test_want.ts", b.String())
+	require.NoError(t, err)
 
 	require.NoError(t, err)
 	require.Equal(t, want, b.String())
 }
-
-var wantTestObject = `
-export class Container extends BaseClient {
-  exec(opts?: ContainerExecOpts): Container {
-    return new Container({queryTree: [
-      ...this._queryTree,
-      {
-      operation: 'exec',
-      args: { ...opts }
-      }
-    ], host: this.clientHost, sessionToken: this.sessionToken});
-  }
-}
-`
 
 func objectInit(t *testing.T, jsonString string) *introspection.Type {
 	t.Helper()

@@ -20,12 +20,13 @@
 {{- end }}
 {{- "" }}){{ template "return" .TypeRef }} {
 		{{- if .TypeRef }}
-    return new {{ .TypeRef | FormatOutputType }}({queryTree: [
-      ...this._queryTree,
-      {
-      operation: '{{ .Name}}'
-			{{- if or $required $optionals }},
-      args: { {{""}}
+    return new {{ .TypeRef | FormatOutputType }}({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "{{ .Name}}",
+			{{- if or $required $optionals }}
+          args: { {{""}}
       				{{- with $required }}
 					{{- template "call_args" $required }}
 				{{- end }}
@@ -33,10 +34,13 @@
       					{{- if $required }}, {{ end -}}
         ...opts
 				{{- end -}}
-{{""}} }
+{{""}} },
 			{{- end }}
-      }
-    ], host: this.clientHost, sessionToken: this.sessionToken});
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
 		{{- end }}
   }
 {{- end }}
