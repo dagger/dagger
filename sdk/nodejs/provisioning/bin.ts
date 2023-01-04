@@ -67,13 +67,11 @@ export class Bin implements EngineConn {
     const tmpBinPath = path.join(tmpBinDownloadDir, "dagger")
 
     try {
-      // download a zip on windows, tar.gz on other platforms
-      let actualChecksum: string
-      if (this.normalizedOS() === "windows") {
-        actualChecksum = await this.extractZipArchive(tmpBinDownloadDir)
-      } else {
-        actualChecksum = await this.extractTarGZArchive(tmpBinDownloadDir)
-      }
+      // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
+      const actualChecksum: string = await this.extractArchive(
+        tmpBinDownloadDir,
+        this.normalizedOS()
+      )
       const expectedChecksum = await this.expectedChecksum()
       if (actualChecksum !== expectedChecksum) {
         throw new Error(
@@ -301,8 +299,8 @@ export class Bin implements EngineConn {
     return expectedChecksum
   }
 
-  private async extractTarGZArchive(destDir: string): Promise<string> {
-    // extract the dagger binary in the cli archive and return the archive of the .tar.gz
+  private async extractArchive(destDir: string, os: string): Promise<string> {
+    // extract the dagger binary in the cli archive and return the archive of the .zip for windows and .tar.gz for other plateforms
     const archiveResp = await fetch(this.cliArchiveURL())
     if (!archiveResp.ok) {
       throw new Error(
@@ -314,7 +312,9 @@ export class Bin implements EngineConn {
     }
 
     // create a temporary file to store the archive
-    const archivePath = `${destDir}/dagger.tar.gz`
+    const archivePath = `${destDir}/${
+      os === "windows" ? "dagger.zip" : "dagger.tar.gz"
+    }`
     const archiveFile = fs.createWriteStream(archivePath)
     await new Promise((resolve, reject) => {
       archiveResp.body?.pipe(archiveFile)
@@ -327,44 +327,18 @@ export class Bin implements EngineConn {
       .update(fs.readFileSync(archivePath))
       .digest("hex")
 
-    tar.extract({
-      cwd: destDir,
-      file: archivePath,
-      sync: true,
-    })
-
-    return actualChecksum
-  }
-
-  private async extractZipArchive(destDir: string): Promise<string> {
-    // extract the dagger binary in the cli archive and return the archive of the .zip
-    const archiveResp = await fetch(this.cliArchiveURL())
-    if (!archiveResp.ok) {
-      throw new Error(
-        `failed to download dagger cli archive from ${this.cliArchiveURL()}`
-      )
-    }
-    if (!archiveResp.body) {
-      throw new Error("archive response body is null")
+    if (os === "windows") {
+      const zip = new AdmZip(archivePath)
+      // extract just dagger.exe to the destdir
+      zip.extractEntryTo("dagger.exe", destDir, false, true)
+    } else {
+      tar.extract({
+        cwd: destDir,
+        file: archivePath,
+        sync: true,
+      })
     }
 
-    // create a temporary file to store the archive
-    const archivePath = `${destDir}/dagger.zip`
-    const archiveFile = fs.createWriteStream(archivePath)
-    await new Promise((resolve, reject) => {
-      archiveResp.body?.pipe(archiveFile)
-      archiveResp.body?.on("error", reject)
-      archiveFile.on("finish", resolve)
-    })
-
-    const actualChecksum = crypto
-      .createHash("sha256")
-      .update(fs.readFileSync(archivePath))
-      .digest("hex")
-
-    const zip = new AdmZip(archivePath)
-    // extract just dagger.exe to the destdir
-    zip.extractEntryTo("dagger.exe", destDir, false, true)
     return actualChecksum
   }
 
