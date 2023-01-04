@@ -12,10 +12,11 @@ from dagger.exceptions import ProvisionError
 def test_getting_connect_params(fp: FakeProcess):
     fp.register(
         ["dagger", "session"],
-        stdout=['{"host":"127.0.0.1:50004","session_token":"abc"}', ""],
+        stdout=['{"port":50004,"session_token":"abc"}', ""],
     )
     with cli.CLISession(dagger.Config(), "dagger") as conn:
-        assert conn.host == httpx.URL("http://127.0.0.1:50004")
+        assert conn.url == httpx.URL("http://127.0.0.1:50004/query")
+        assert conn.port == 50004
         assert conn.session_token == "abc"
 
 
@@ -29,6 +30,12 @@ def test_getting_connect_params(fp: FakeProcess):
             "returncode": 1,
         },
         {"stdout": []},
+        {"stdout": ['{"port":50004}', ""]},
+        {"stdout": ['{"port":"abc","session_token":"abc"}', ""]},
+        {"stdout": ['{"port":"","session_token":"abc"}', ""]},
+        {"stdout": ['{"port":0,"session_token":"abc"}', ""]},
+        {"stdout": ['{"session_token":"abc"}', ""]},
+        {"stdout": ["dagger devel", ""]},
         {"stdout": ["50004", ""]},
     ],
 )

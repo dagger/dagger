@@ -155,7 +155,7 @@ export class Bin implements EngineConn {
     ])) as ConnectParams
 
     return new Client({
-      host: connectParams.host,
+      host: `127.0.0.1:${connectParams.port}`,
       sessionToken: connectParams.session_token,
     })
   }
@@ -166,7 +166,7 @@ export class Bin implements EngineConn {
     for await (const line of stdoutReader) {
       // parse the the line as json-encoded connect params
       const connectParams = JSON.parse(line) as ConnectParams
-      if (connectParams.host && connectParams.session_token) {
+      if (connectParams.port && connectParams.session_token) {
         return connectParams
       }
       throw new EngineSessionConnectParamsParseError(

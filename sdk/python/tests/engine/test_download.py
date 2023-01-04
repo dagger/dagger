@@ -27,8 +27,8 @@ def cache_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 @pytest.mark.anyio
 @pytest.fixture(autouse=True)
 async def temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
-    # ignore DAGGER_SESSION_URL
-    monkeypatch.delenv("DAGGER_SESSION_URL", raising=False)
+    # ignore DAGGER_SESSION_PORT
+    monkeypatch.delenv("DAGGER_SESSION_PORT", raising=False)
 
     # if explicitly requested to test against a certain URL, use that
     archive_url = os.environ.get("_INTERNAL_DAGGER_TEST_CLI_URL")

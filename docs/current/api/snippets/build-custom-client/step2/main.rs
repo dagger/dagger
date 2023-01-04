@@ -6,7 +6,7 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let endpoint = env::var("DAGGER_SESSION_URL").expect("$DAGGER_SESSION_URL doesn't exist");
+    let port = env::var("DAGGER_SESSION_PORT").expect("$DAGGER_SESSION_PORT doesn't exist");
     let token = env::var("DAGGER_SESSION_TOKEN").expect("$DAGGER_SESSION_TOKEN doesn't exist");
     let query = r#"
     query {
@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "authorization",
         format!("Basic {}", encode(format!("{}:", token))),
     );
-    let client = Client::new_with_headers(endpoint, headers);
+    let client = Client::new_with_headers(format!("http://127.0.0.1:{}/query", port), headers);
     let data = client.query_unwrap::<Value>(query).await.unwrap();
 
     println!(

@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -30,7 +29,7 @@ func sessionCmd() *cobra.Command {
 }
 
 type connectParams struct {
-	Host         string `json:"host"`
+	Port         int    `json:"port"`
 	SessionToken string `json:"session_token"`
 }
 
@@ -76,7 +75,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 
 		paramBytes, err := json.Marshal(connectParams{
-			Host:         "127.0.0.1:" + strconv.Itoa(port),
+			Port:         port,
 			SessionToken: sessionToken.String(),
 		})
 		if err != nil {

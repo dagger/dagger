@@ -35,7 +35,7 @@ touch /root/1 /root/2
 curl \
 -u $DAGGER_SESSION_TOKEN: \
 -H "content-type:application/json" \
--d '{"query":"{host{directory(path:\"/root\"){entries}}}"}' $DAGGER_SESSION_URL/query
+-d '{"query":"{host{directory(path:\"/root\"){entries}}}"}' http://127.0.0.1:$DAGGER_SESSION_PORT/query
         """], experimentalPrivilegedNesting: true) {
           stdout
         }

@@ -32,25 +32,18 @@ class Config:
     execute_timeout: int | float | None = None
 
 
-def _host_converter(value: str) -> httpx.URL:
-    # Soon host will be replaced by just a port which is much simpler to validate.
-    # Just do some basic checks in the meantime, not meant to be exhaustive.
-    if "://" not in value:
-        value = f"http://{value}"
-    try:
-        url = httpx.URL(value)
-    except httpx.InvalidURL as e:
-        raise ValueError(f"Invalid host: {value}") from e
-    if url.scheme != "http":
-        raise ValueError(f"Unsupported scheme in host: {value}. Expected http.")
-    if not url.port:
-        raise ValueError(f"No port found in host: {value}")
-    return url
-
-
 @attrs.define
 class ConnectParams:
     """Options for making a session connection. For internal use only."""
 
-    host: httpx.URL = attrs.field(converter=_host_converter)
+    port: int = attrs.field(converter=int)
     session_token: str
+
+    @port.validator
+    def _check_port(self, _, value):
+        if value < 1:
+            raise ValueError(f"Invalid port value: {value}")
+
+    @property
+    def url(self):
+        return httpx.URL(f"http://127.0.0.1:{self.port}/query")
