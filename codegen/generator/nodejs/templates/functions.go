@@ -76,12 +76,10 @@ func formatDeprecation(s string) []string {
 
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
-// TODO: maybe delete and only use formatType?
 func formatInputType(r *introspection.TypeRef) string {
 	return formatType(r, true)
 }
 
-// TODO: maybe delete and only use formatType?
 func formatOutputType(r *introspection.TypeRef) string {
 	return formatType(r, false)
 }
