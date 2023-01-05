@@ -5,7 +5,7 @@ from typing import NewType
 from dagger.api.base import Arg, Root, Type
 
 CacheID = NewType("CacheID", str)
-"""A global cache volume identifier"""
+"""A global cache volume identifier."""
 
 
 ContainerID = NewType("ContainerID", str)
@@ -14,10 +14,12 @@ ContainerID = NewType("ContainerID", str)
 
 
 DirectoryID = NewType("DirectoryID", str)
-"""A content-addressed directory identifier"""
+"""A content-addressed directory identifier."""
 
 
 FileID = NewType("FileID", str)
+"""A file identifier."""
+
 
 Platform = NewType("Platform", str)
 """The platform config OS and architecture in a Container. The format
@@ -26,11 +28,11 @@ linux/arm64). """
 
 
 SecretID = NewType("SecretID", str)
-"""A unique identifier for a secret"""
+"""A unique identifier for a secret."""
 
 
 SocketID = NewType("SocketID", str)
-"""A content-addressed socket identifier"""
+"""A content-addressed socket identifier."""
 
 
 class BuildArg(Type):
@@ -39,7 +41,7 @@ class BuildArg(Type):
 
 
 class CacheVolume(Type):
-    """A directory whose contents persist across runs"""
+    """A directory whose contents persist across runs."""
 
     async def id(self) -> CacheID:
         """Note
@@ -49,7 +51,7 @@ class CacheVolume(Type):
         Returns
         -------
         CacheID
-            A global cache volume identifier
+            A global cache volume identifier.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -57,7 +59,7 @@ class CacheVolume(Type):
 
 
 class Container(Type):
-    """An OCI-compatible container, also known as a docker container"""
+    """An OCI-compatible container, also known as a docker container."""
 
     def build(
         self,
@@ -65,7 +67,8 @@ class Container(Type):
         dockerfile: str | None = None,
         build_args: list[BuildArg] | None = None,
     ) -> "Container":
-        """Initialize this container from a Dockerfile build.
+        """Initializes this container from a Dockerfile build, using the context,
+        a dockerfile file path and some additional buildArgs.
 
         Parameters
         ----------
@@ -75,7 +78,7 @@ class Container(Type):
             Path to the Dockerfile to use.
             Defaults to './Dockerfile'.
         build_args:
-            Additional build arguments
+            Additional build arguments.
         """
         _args = [
             Arg("context", "context", context, Directory),
@@ -86,7 +89,7 @@ class Container(Type):
         return Container(_ctx)
 
     async def default_args(self) -> list[str] | None:
-        """Default arguments for future commands
+        """Retrieves default arguments for future commands.
 
         Returns
         -------
@@ -100,7 +103,7 @@ class Container(Type):
         return await _ctx.execute(list[str] | None)
 
     def directory(self, path: str) -> "Directory":
-        """Retrieve a directory at the given path. Mounts are included."""
+        """Retrieves a directory at the given path. Mounts are included."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -108,7 +111,7 @@ class Container(Type):
         return Directory(_ctx)
 
     async def entrypoint(self) -> list[str] | None:
-        """Entrypoint to be prepended to the arguments of all commands
+        """Retrieves entrypoint to be prepended to the arguments of all commands.
 
         Returns
         -------
@@ -122,7 +125,7 @@ class Container(Type):
         return await _ctx.execute(list[str] | None)
 
     async def env_variable(self, name: str) -> str | None:
-        """The value of the specified environment variable
+        """Retrieves the value of the specified environment variable.
 
         Returns
         -------
@@ -138,7 +141,7 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     def env_variables(self) -> "EnvVariable":
-        """A list of environment variables passed to commands"""
+        """Retrieves the list of environment variables passed to commands."""
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
         return EnvVariable(_ctx)
@@ -151,7 +154,8 @@ class Container(Type):
         redirect_stderr: str | None = None,
         experimental_privileged_nesting: bool | None = None,
     ) -> "Container":
-        """This container after executing the specified command inside it
+        """Retrieves this container after executing the specified command inside
+        it.
 
         .. deprecated::
             Replaced by :py:meth:`with_exec`.
@@ -159,18 +163,19 @@ class Container(Type):
         Parameters
         ----------
         args:
-            Command to run instead of the container's default command
+            Command to run instead of the container's default command.
         stdin:
-            Content to write to the command's standard input before closing
+            Content to write to the command's standard input before closing.
         redirect_stdout:
-            Redirect the command's standard output to a file in the container
+            Redirect the command's standard output to a file in the container.
         redirect_stderr:
-            Redirect the command's standard error to a file in the container
+            Redirect the command's standard error to a file in the container.
         experimental_privileged_nesting:
-            Provide dagger access to the executed command
-            Do not use this option unless you trust the command being executed
+            Provide dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed.
             The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
-            HOST FILESYSTEM
+            HOST FILESYSTEM.
         """
         _args = [
             Arg("args", "args", args, list[str] | None, None),
@@ -207,8 +212,8 @@ class Container(Type):
     async def export(
         self, path: str, platform_variants: "list[Container] | None" = None
     ) -> bool:
-        """Write the container as an OCI tarball to the destination file path on
-        the host.
+        """Writes the container as an OCI tarball to the destination file path on
+        the host for the specified platformVariants.
 
         Return true on success.
 
@@ -240,7 +245,7 @@ class Container(Type):
         return await _ctx.execute(bool)
 
     def file(self, path: str) -> "File":
-        """Retrieve a file at the given path. Mounts are included."""
+        """Retrieves a file at the given path. Mounts are included."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -248,7 +253,7 @@ class Container(Type):
         return File(_ctx)
 
     def from_(self, address: str) -> "Container":
-        """Initialize this container from the base image published at the given
+        """Initializes this container from the base image published at the given
         address.
 
         Parameters
@@ -265,7 +270,7 @@ class Container(Type):
         return Container(_ctx)
 
     def fs(self) -> "Directory":
-        """This container's root filesystem. Mounts are not included.
+        """Retrieves this container's root filesystem. Mounts are not included.
 
         .. deprecated::
             Replaced by :py:meth:`rootfs`.
@@ -292,7 +297,7 @@ class Container(Type):
         return await _ctx.execute(ContainerID)
 
     async def mounts(self) -> list[str]:
-        """List of paths where a directory is mounted
+        """Retrieves the list of paths where a directory is mounted.
 
         Returns
         -------
@@ -322,8 +327,8 @@ class Container(Type):
     async def publish(
         self, address: str, platform_variants: "list[Container] | None" = None
     ) -> str:
-        """Publish this container as a new image, returning a fully qualified
-        ref.
+        """Publishes this container as a new image to the specified address, for
+        the platformVariants, returning a fully qualified ref.
 
         Parameters
         ----------
@@ -356,7 +361,7 @@ class Container(Type):
         return await _ctx.execute(str)
 
     def rootfs(self) -> "Directory":
-        """This container's root filesystem. Mounts are not included."""
+        """Retrieves this container's root filesystem. Mounts are not included."""
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
@@ -394,7 +399,7 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     async def user(self) -> str | None:
-        """The user to be set for all commands
+        """Retrieves the user to be set for all commands.
 
         Returns
         -------
@@ -408,7 +413,7 @@ class Container(Type):
         return await _ctx.execute(str | None)
 
     def with_default_args(self, args: list[str] | None = None) -> "Container":
-        """Configures default arguments for future commands"""
+        """Configures default arguments for future commands."""
         _args = [
             Arg("args", "args", args, list[str] | None, None),
         ]
@@ -422,7 +427,7 @@ class Container(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> "Container":
-        """This container plus a directory written at the given path"""
+        """Retrieves this container plus a directory written at the given path."""
         _args = [
             Arg("path", "path", path, str),
             Arg("directory", "directory", directory, Directory),
@@ -433,7 +438,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_entrypoint(self, args: list[str]) -> "Container":
-        """This container but with a different command entrypoint"""
+        """Retrieves this container but with a different command entrypoint."""
         _args = [
             Arg("args", "args", args, list[str]),
         ]
@@ -441,7 +446,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_env_variable(self, name: str, value: str) -> "Container":
-        """This container plus the given environment variable"""
+        """Retrieves this container plus the given environment variable."""
         _args = [
             Arg("name", "name", name, str),
             Arg("value", "value", value, str),
@@ -457,23 +462,25 @@ class Container(Type):
         redirect_stderr: str | None = None,
         experimental_privileged_nesting: bool | None = None,
     ) -> "Container":
-        """This container after executing the specified command inside it
+        """Retrieves this container after executing the specified command inside
+        it.
 
         Parameters
         ----------
         args:
-            Command to run instead of the container's default command
+            Command to run instead of the container's default command.
         stdin:
-            Content to write to the command's standard input before closing
+            Content to write to the command's standard input before closing.
         redirect_stdout:
-            Redirect the command's standard output to a file in the container
+            Redirect the command's standard output to a file in the container.
         redirect_stderr:
-            Redirect the command's standard error to a file in the container
+            Redirect the command's standard error to a file in the container.
         experimental_privileged_nesting:
-            Provide dagger access to the executed command
-            Do not use this option unless you trust the command being executed
+            Provide dagger access to the executed command.
+            Do not use this option unless you trust the command being
+            executed.
             The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
-            HOST FILESYSTEM
+            HOST FILESYSTEM.
         """
         _args = [
             Arg("args", "args", args, list[str]),
@@ -492,7 +499,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_fs(self, id: "Directory") -> "Container":
-        """Initialize this container from this DirectoryID
+        """Initializes this container from this DirectoryID.
 
         .. deprecated::
             Replaced by :py:meth:`with_rootfs`.
@@ -506,8 +513,8 @@ class Container(Type):
     def with_file(
         self, path: str, source: "File", permissions: int | None = None
     ) -> "Container":
-        """This container plus the contents of the given file copied to the given
-        path
+        """Retrieves this container plus the contents of the given file copied to
+        the given path.
         """
         _args = [
             Arg("path", "path", path, str),
@@ -520,7 +527,9 @@ class Container(Type):
     def with_mounted_cache(
         self, path: str, cache: "CacheVolume", source: "Directory | None" = None
     ) -> "Container":
-        """This container plus a cache volume mounted at the given path"""
+        """Retrieves this container plus a cache volume mounted at the given
+        path.
+        """
         _args = [
             Arg("path", "path", path, str),
             Arg("cache", "cache", cache, CacheVolume),
@@ -530,7 +539,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_mounted_directory(self, path: str, source: "Directory") -> "Container":
-        """This container plus a directory mounted at the given path"""
+        """Retrieves this container plus a directory mounted at the given path."""
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, Directory),
@@ -539,7 +548,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_mounted_file(self, path: str, source: "File") -> "Container":
-        """This container plus a file mounted at the given path"""
+        """Retrieves this container plus a file mounted at the given path."""
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, File),
@@ -548,7 +557,9 @@ class Container(Type):
         return Container(_ctx)
 
     def with_mounted_secret(self, path: str, source: "Secret") -> "Container":
-        """This container plus a secret mounted into a file at the given path"""
+        """Retrieves this container plus a secret mounted into a file at the
+        given path.
+        """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, Secret),
@@ -557,7 +568,9 @@ class Container(Type):
         return Container(_ctx)
 
     def with_mounted_temp(self, path: str) -> "Container":
-        """This container plus a temporary directory mounted at the given path"""
+        """Retrieves this container plus a temporary directory mounted at the
+        given path.
+        """
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -567,7 +580,7 @@ class Container(Type):
     def with_new_file(
         self, path: str, contents: str | None = None, permissions: int | None = None
     ) -> "Container":
-        """This container plus a new file written at the given path"""
+        """Retrieves this container plus a new file written at the given path."""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str | None, None),
@@ -577,7 +590,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_rootfs(self, id: "Directory") -> "Container":
-        """Initialize this container from this DirectoryID"""
+        """Initializes this container from this DirectoryID."""
         _args = [
             Arg("id", "id", id, Directory),
         ]
@@ -585,7 +598,9 @@ class Container(Type):
         return Container(_ctx)
 
     def with_secret_variable(self, name: str, secret: "Secret") -> "Container":
-        """This container plus an env variable containing the given secret"""
+        """Retrieves this container plus an env variable containing the given
+        secret.
+        """
         _args = [
             Arg("name", "name", name, str),
             Arg("secret", "secret", secret, Secret),
@@ -594,7 +609,9 @@ class Container(Type):
         return Container(_ctx)
 
     def with_unix_socket(self, path: str, source: "Socket") -> "Container":
-        """This container plus a socket forwarded to the given Unix socket path"""
+        """Retrieves this container plus a socket forwarded to the given Unix
+        socket path.
+        """
         _args = [
             Arg("path", "path", path, str),
             Arg("source", "source", source, Socket),
@@ -603,7 +620,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_user(self, name: str) -> "Container":
-        """This container but with a different command user"""
+        """Retrieves this containers with a different command user."""
         _args = [
             Arg("name", "name", name, str),
         ]
@@ -611,7 +628,7 @@ class Container(Type):
         return Container(_ctx)
 
     def with_workdir(self, path: str) -> "Container":
-        """This container but with a different working directory"""
+        """Retrieves this container with a different working directory."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -619,7 +636,7 @@ class Container(Type):
         return Container(_ctx)
 
     def without_env_variable(self, name: str) -> "Container":
-        """This container minus the given environment variable"""
+        """Retrieves this container minus the given environment variable."""
         _args = [
             Arg("name", "name", name, str),
         ]
@@ -627,7 +644,9 @@ class Container(Type):
         return Container(_ctx)
 
     def without_mount(self, path: str) -> "Container":
-        """This container after unmounting everything at the given path."""
+        """Retrieves this container after unmounting everything at the given
+        path.
+        """
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -635,7 +654,7 @@ class Container(Type):
         return Container(_ctx)
 
     def without_unix_socket(self, path: str) -> "Container":
-        """This container with a previously added Unix socket removed"""
+        """Retrieves this container with a previously added Unix socket removed."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -643,7 +662,7 @@ class Container(Type):
         return Container(_ctx)
 
     async def workdir(self) -> str | None:
-        """The working directory for all commands
+        """Retrieves the working directory for all commands.
 
         Returns
         -------
@@ -658,10 +677,10 @@ class Container(Type):
 
 
 class Directory(Type):
-    """A directory"""
+    """A directory."""
 
     def diff(self, other: "Directory") -> "Directory":
-        """The difference between this directory and an another directory"""
+        """Gets the difference between this directory and an another directory."""
         _args = [
             Arg("other", "other", other, Directory),
         ]
@@ -669,7 +688,7 @@ class Directory(Type):
         return Directory(_ctx)
 
     def directory(self, path: str) -> "Directory":
-        """Retrieve a directory at the given path"""
+        """Retrieves a directory at the given path."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -682,7 +701,7 @@ class Directory(Type):
         platform: "Platform | None" = None,
         build_args: list[BuildArg] | None = None,
     ) -> "Container":
-        """Build a new Docker container from this directory
+        """Builds a new Docker container from this directory.
 
         Parameters
         ----------
@@ -701,7 +720,7 @@ class Directory(Type):
         return Container(_ctx)
 
     async def entries(self, path: str | None = None) -> list[str]:
-        """Return a list of files and directories at the given path
+        """Returns a list of files and directories at the given path.
 
         Returns
         -------
@@ -717,7 +736,7 @@ class Directory(Type):
         return await _ctx.execute(list[str])
 
     async def export(self, path: str) -> bool:
-        """Write the contents of the directory to a path on the host
+        """Writes the contents of the directory to a path on the host.
 
         Returns
         -------
@@ -731,7 +750,7 @@ class Directory(Type):
         return await _ctx.execute(bool)
 
     def file(self, path: str) -> "File":
-        """Retrieve a file at the given path"""
+        """Retrieves a file at the given path."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -739,7 +758,7 @@ class Directory(Type):
         return File(_ctx)
 
     async def id(self) -> DirectoryID:
-        """The content-addressed identifier of the directory
+        """The content-addressed identifier of the directory.
 
         Note
         ----
@@ -748,7 +767,7 @@ class Directory(Type):
         Returns
         -------
         DirectoryID
-            A content-addressed directory identifier
+            A content-addressed directory identifier.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -769,7 +788,7 @@ class Directory(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> "Directory":
-        """This directory plus a directory written at the given path
+        """Retrieves this directory plus a directory written at the given path.
 
         Parameters
         ----------
@@ -777,10 +796,10 @@ class Directory(Type):
         directory:
         exclude:
             Exclude artifacts that match the given pattern.
-            (e.g. ["node_modules/", ".git*"])
+            (e.g. ["node_modules/", ".git*"]).
         include:
             Include only artifacts that match the given pattern.
-            (e.g. ["app/", "package.*"])
+            (e.g. ["app/", "package.*"]).
         """
         _args = [
             Arg("path", "path", path, str),
@@ -794,8 +813,8 @@ class Directory(Type):
     def with_file(
         self, path: str, source: "File", permissions: int | None = None
     ) -> "Directory":
-        """This directory plus the contents of the given file copied to the given
-        path
+        """Retrieves this directory plus the contents of the given file copied to
+        the given path.
         """
         _args = [
             Arg("path", "path", path, str),
@@ -808,7 +827,9 @@ class Directory(Type):
     def with_new_directory(
         self, path: str, permissions: int | None = None
     ) -> "Directory":
-        """This directory plus a new directory created at the given path"""
+        """Retrieves this directory plus a new directory created at the given
+        path.
+        """
         _args = [
             Arg("path", "path", path, str),
             Arg("permissions", "permissions", permissions, int | None, None),
@@ -819,7 +840,7 @@ class Directory(Type):
     def with_new_file(
         self, path: str, contents: str, permissions: int | None = None
     ) -> "Directory":
-        """This directory plus a new file written at the given path"""
+        """Retrieves this directory plus a new file written at the given path."""
         _args = [
             Arg("path", "path", path, str),
             Arg("contents", "contents", contents, str),
@@ -829,8 +850,8 @@ class Directory(Type):
         return Directory(_ctx)
 
     def with_timestamps(self, timestamp: int) -> "Directory":
-        """This directory with all file/dir timestamps set to the given time, in
-        seconds from the Unix epoch
+        """Retrieves this directory with all file/dir timestamps set to the given
+        time, in seconds from the Unix epoch.
         """
         _args = [
             Arg("timestamp", "timestamp", timestamp, int),
@@ -839,7 +860,7 @@ class Directory(Type):
         return Directory(_ctx)
 
     def without_directory(self, path: str) -> "Directory":
-        """This directory with the directory at the given path removed"""
+        """Retrieves this directory with the directory at the given path removed."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -847,7 +868,7 @@ class Directory(Type):
         return Directory(_ctx)
 
     def without_file(self, path: str) -> "Directory":
-        """This directory with the file at the given path removed"""
+        """Retrieves this directory with the file at the given path removed."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -856,11 +877,11 @@ class Directory(Type):
 
 
 class EnvVariable(Type):
-    """EnvVariable is a simple key value object that represents an
-    environment variable."""
+    """A simple key value object that represents an environment
+    variable."""
 
     async def name(self) -> str:
-        """name is the environment variable name.
+        """The environment variable name.
 
         Returns
         -------
@@ -874,7 +895,7 @@ class EnvVariable(Type):
         return await _ctx.execute(str)
 
     async def value(self) -> str:
-        """value is the environment variable value
+        """The environment variable value.
 
         Returns
         -------
@@ -889,10 +910,10 @@ class EnvVariable(Type):
 
 
 class File(Type):
-    """A file"""
+    """A file."""
 
     async def contents(self) -> str:
-        """The contents of the file
+        """Retrieves the contents of the file.
 
         Returns
         -------
@@ -906,7 +927,7 @@ class File(Type):
         return await _ctx.execute(str)
 
     async def export(self, path: str) -> bool:
-        """Write the file to a file path on the host
+        """Writes the file to a file path on the host.
 
         Returns
         -------
@@ -920,24 +941,29 @@ class File(Type):
         return await _ctx.execute(bool)
 
     async def id(self) -> FileID:
-        """The content-addressed identifier of the file
+        """Retrieves the content-addressed identifier of the file.
 
         Note
         ----
         This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        FileID
+            A file identifier.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FileID)
 
     def secret(self) -> "Secret":
-        """A secret referencing the contents of this file"""
+        """Retrieves a secret referencing the contents of this file."""
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
     async def size(self) -> int:
-        """The size of the file, in bytes
+        """Gets the size of the file, in bytes.
 
         Returns
         -------
@@ -951,8 +977,8 @@ class File(Type):
         return await _ctx.execute(int)
 
     def with_timestamps(self, timestamp: int) -> "File":
-        """This file with its created/modified timestamps set to the given time,
-        in seconds from the Unix epoch
+        """Retrieves this file with its created/modified timestamps set to the
+        given time, in seconds from the Unix epoch.
         """
         _args = [
             Arg("timestamp", "timestamp", timestamp, int),
@@ -962,10 +988,10 @@ class File(Type):
 
 
 class GitRef(Type):
-    """A git ref (tag or branch)"""
+    """A git ref (tag, branch or commit)."""
 
     async def digest(self) -> str:
-        """The digest of the current value of this ref
+        """The digest of the current value of this ref.
 
         Returns
         -------
@@ -983,7 +1009,7 @@ class GitRef(Type):
         ssh_known_hosts: str | None = None,
         ssh_auth_socket: "Socket | None" = None,
     ) -> "Directory":
-        """The filesystem tree at this ref"""
+        """The filesystem tree at this ref."""
         _args = [
             Arg("ssh_known_hosts", "sshKnownHosts", ssh_known_hosts, str | None, None),
             Arg(
@@ -995,10 +1021,10 @@ class GitRef(Type):
 
 
 class GitRepository(Type):
-    """A git repository"""
+    """A git repository."""
 
     def branch(self, name: str) -> "GitRef":
-        """Details on one branch"""
+        """Returns details on one branch."""
         _args = [
             Arg("name", "name", name, str),
         ]
@@ -1006,7 +1032,7 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     async def branches(self) -> list[str]:
-        """List of branches on the repository
+        """Lists of branches on the repository.
 
         Returns
         -------
@@ -1020,7 +1046,7 @@ class GitRepository(Type):
         return await _ctx.execute(list[str])
 
     def commit(self, id: str) -> "GitRef":
-        """Details on one commit"""
+        """Returns details on one commit."""
         _args = [
             Arg("id", "id", id, str),
         ]
@@ -1028,7 +1054,7 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     def tag(self, name: str) -> "GitRef":
-        """Details on one tag"""
+        """Returns details on one tag."""
         _args = [
             Arg("name", "name", name, str),
         ]
@@ -1036,7 +1062,7 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     async def tags(self) -> list[str]:
-        """List of tags on the repository
+        """Lists of tags on the repository.
 
         Returns
         -------
@@ -1051,7 +1077,7 @@ class GitRepository(Type):
 
 
 class Host(Type):
-    """Information about the host execution environment"""
+    """Information about the host execution environment."""
 
     def directory(
         self,
@@ -1059,7 +1085,7 @@ class Host(Type):
         exclude: list[str] | None = None,
         include: list[str] | None = None,
     ) -> "Directory":
-        """Access a directory on the host"""
+        """Accesses a directory on the host."""
         _args = [
             Arg("path", "path", path, str),
             Arg("exclude", "exclude", exclude, list[str] | None, None),
@@ -1069,7 +1095,7 @@ class Host(Type):
         return Directory(_ctx)
 
     def env_variable(self, name: str) -> "HostVariable":
-        """Access an environment variable on the host"""
+        """Accesses an environment variable on the host."""
         _args = [
             Arg("name", "name", name, str),
         ]
@@ -1077,7 +1103,7 @@ class Host(Type):
         return HostVariable(_ctx)
 
     def unix_socket(self, path: str) -> "Socket":
-        """Access a Unix socket on the host"""
+        """Accesses a Unix socket on the host."""
         _args = [
             Arg("path", "path", path, str),
         ]
@@ -1087,7 +1113,7 @@ class Host(Type):
     def workdir(
         self, exclude: list[str] | None = None, include: list[str] | None = None
     ) -> "Directory":
-        """The current working directory on the host
+        """Retrieves the current working directory on the host.
 
         .. deprecated::
             Use :py:meth:`directory` with path set to '.' instead.
@@ -1101,16 +1127,16 @@ class Host(Type):
 
 
 class HostVariable(Type):
-    """An environment variable on the host environment"""
+    """An environment variable on the host environment."""
 
     def secret(self) -> "Secret":
-        """A secret referencing the value of this variable"""
+        """A secret referencing the value of this variable."""
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
 
     async def value(self) -> str:
-        """The value of this variable
+        """The value of this variable.
 
         Returns
         -------
@@ -1196,7 +1222,7 @@ class Project(Type):
 
 class Client(Root):
     def cache_volume(self, key: str) -> "CacheVolume":
-        """Construct a cache volume for a given cache key
+        """Constructs a cache volume for a given cache key.
 
         Parameters
         ----------
@@ -1213,7 +1239,7 @@ class Client(Root):
     def container(
         self, id: "ContainerID | None" = None, platform: "Platform | None" = None
     ) -> "Container":
-        """Load a container from ID.
+        """Loads a container from ID.
 
         Null ID returns an empty container (scratch).
 
@@ -1251,7 +1277,7 @@ class Client(Root):
         return Directory(_ctx)
 
     def file(self, id: "FileID") -> "File":
-        """Load a file by ID"""
+        """Loads a file by ID."""
         _args = [
             Arg("id", "id", id, FileID),
         ]
@@ -1259,7 +1285,7 @@ class Client(Root):
         return File(_ctx)
 
     def git(self, url: str, keep_git_dir: bool | None = None) -> "GitRepository":
-        """Query a git repository"""
+        """Queries a git repository."""
         _args = [
             Arg("url", "url", url, str),
             Arg("keep_git_dir", "keepGitDir", keep_git_dir, bool | None, None),
@@ -1268,13 +1294,13 @@ class Client(Root):
         return GitRepository(_ctx)
 
     def host(self) -> "Host":
-        """Query the host environment"""
+        """Queries the host environment."""
         _args: list[Arg] = []
         _ctx = self._select("host", _args)
         return Host(_ctx)
 
     def http(self, url: str) -> "File":
-        """An http remote"""
+        """Returns a file containing an http remote url content."""
         _args = [
             Arg("url", "url", url, str),
         ]
@@ -1290,7 +1316,7 @@ class Client(Root):
         return Project(_ctx)
 
     def secret(self, id: "SecretID") -> "Secret":
-        """Load a secret from its ID"""
+        """Loads a secret from its ID."""
         _args = [
             Arg("id", "id", id, SecretID),
         ]
@@ -1298,7 +1324,7 @@ class Client(Root):
         return Secret(_ctx)
 
     def socket(self, id: "SocketID | None" = None) -> "Socket":
-        """Load a socket by ID"""
+        """Loads a socket by its ID."""
         _args = [
             Arg("id", "id", id, SocketID | None, None),
         ]
@@ -1308,10 +1334,10 @@ class Client(Root):
 
 class Secret(Type):
     """A reference to a secret value, which can be handled more safely
-    than the value itself"""
+    than the value itself."""
 
     async def id(self) -> SecretID:
-        """The identifier for this secret
+        """The identifier for this secret.
 
         Note
         ----
@@ -1320,14 +1346,14 @@ class Secret(Type):
         Returns
         -------
         SecretID
-            A unique identifier for a secret
+            A unique identifier for a secret.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
 
     async def plaintext(self) -> str:
-        """The value of this secret
+        """The value of this secret.
 
         Returns
         -------
@@ -1343,7 +1369,7 @@ class Secret(Type):
 
 class Socket(Type):
     async def id(self) -> SocketID:
-        """The content-addressed identifier of the socket
+        """The content-addressed identifier of the socket.
 
         Note
         ----
@@ -1352,7 +1378,7 @@ class Socket(Type):
         Returns
         -------
         SocketID
-            A content-addressed socket identifier
+            A content-addressed socket identifier.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
