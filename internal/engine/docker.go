@@ -17,6 +17,8 @@ import (
 const (
 	DockerImageProvider     = "docker-image"
 	DockerContainerProvider = "docker-container"
+	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
+	DefaultStateDir = "/var/lib/dagger"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -63,6 +65,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
+		"-v", DefaultStateDir,
 		"--privileged",
 		imageRef,
 		"--debug",
