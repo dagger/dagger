@@ -109,7 +109,7 @@ export type ContainerExportOpts = {
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
-  platformVariants?: ContainerID[] | Container[]
+  platformVariants?: Container[]
 }
 
 export type ContainerPublishOpts = {
@@ -117,7 +117,7 @@ export type ContainerPublishOpts = {
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
-  platformVariants?: ContainerID[] | Container[]
+  platformVariants?: Container[]
 }
 
 export type ContainerWithDefaultArgsOpts = {
@@ -158,7 +158,7 @@ export type ContainerWithFileOpts = {
 }
 
 export type ContainerWithMountedCacheOpts = {
-  source?: DirectoryID | Directory
+  source?: Directory
 }
 
 export type ContainerWithNewFileOpts = {
@@ -228,7 +228,7 @@ export type FileID = string
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
-  sshAuthSocket?: SocketID | Socket
+  sshAuthSocket?: Socket
 }
 
 export type HostDirectoryOpts = {
@@ -253,12 +253,12 @@ export type ID = string
 export type Platform = string
 
 export type ClientContainerOpts = {
-  id?: ContainerID | Container
+  id?: Container
   platform?: Platform
 }
 
 export type ClientDirectoryOpts = {
-  id?: DirectoryID | Directory
+  id?: Directory
 }
 
 export type ClientGitOpts = {
@@ -266,7 +266,7 @@ export type ClientGitOpts = {
 }
 
 export type ClientSocketOpts = {
-  id?: SocketID | Socket
+  id?: Socket
 }
 
 /**
@@ -317,10 +317,7 @@ export class Container extends BaseClient {
 Defaults to './Dockerfile'.
    * @param opts.buildArgs Additional build arguments.
    */
-  build(
-    context: DirectoryID | Directory,
-    opts?: ContainerBuildOpts
-  ): Container {
+  build(context: Directory, opts?: ContainerBuildOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -703,7 +700,7 @@ Used for multi-platform image.
    */
   withDirectory(
     path: string,
-    directory: DirectoryID | Directory,
+    directory: Directory,
     opts?: ContainerWithDirectoryOpts
   ): Container {
     return new Container({
@@ -781,7 +778,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * Initializes this container from this DirectoryID.
    * @deprecated Replaced by withRootfs.
    */
-  withFS(id: DirectoryID | Directory): Container {
+  withFS(id: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -800,7 +797,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withFile(
     path: string,
-    source: FileID | File,
+    source: File,
     opts?: ContainerWithFileOpts
   ): Container {
     return new Container({
@@ -821,7 +818,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withMountedCache(
     path: string,
-    cache: CacheID | CacheVolume,
+    cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
   ): Container {
     return new Container({
@@ -840,10 +837,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a directory mounted at the given path.
    */
-  withMountedDirectory(
-    path: string,
-    source: DirectoryID | Directory
-  ): Container {
+  withMountedDirectory(path: string, source: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -860,7 +854,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a file mounted at the given path.
    */
-  withMountedFile(path: string, source: FileID | File): Container {
+  withMountedFile(path: string, source: File): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -877,7 +871,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a secret mounted into a file at the given path.
    */
-  withMountedSecret(path: string, source: SecretID | Secret): Container {
+  withMountedSecret(path: string, source: Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -928,7 +922,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Initializes this container from this DirectoryID.
    */
-  withRootfs(id: DirectoryID | Directory): Container {
+  withRootfs(id: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -945,7 +939,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus an env variable containing the given secret.
    */
-  withSecretVariable(name: string, secret: SecretID | Secret): Container {
+  withSecretVariable(name: string, secret: Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -962,7 +956,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    */
-  withUnixSocket(path: string, source: SocketID | Socket): Container {
+  withUnixSocket(path: string, source: Socket): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1086,7 +1080,7 @@ export class Directory extends BaseClient {
   /**
    * Gets the difference between this directory and an another directory.
    */
-  diff(other: DirectoryID | Directory): Directory {
+  diff(other: Directory): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1232,7 +1226,7 @@ Defaults to './Dockerfile'.
    */
   withDirectory(
     path: string,
-    directory: DirectoryID | Directory,
+    directory: Directory,
     opts?: DirectoryWithDirectoryOpts
   ): Directory {
     return new Directory({
@@ -1253,7 +1247,7 @@ Defaults to './Dockerfile'.
    */
   withFile(
     path: string,
-    source: FileID | File,
+    source: File,
     opts?: DirectoryWithFileOpts
   ): Directory {
     return new Directory({
@@ -1930,7 +1924,7 @@ export default class Client extends BaseClient {
   /**
    * Loads a file by ID.
    */
-  file(id: FileID | File): File {
+  file(id: FileID): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -2014,7 +2008,7 @@ export default class Client extends BaseClient {
   /**
    * Loads a secret from its ID.
    */
-  secret(id: SecretID | Secret): Secret {
+  secret(id: SecretID): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,

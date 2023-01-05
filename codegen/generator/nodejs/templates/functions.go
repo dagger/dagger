@@ -136,9 +136,9 @@ func formatType(r *introspection.TypeRef, input bool) (representation string) {
 				if alias, ok := rewrite[ref.Name]; ok && input {
 					listChars := "[]"
 					if isList {
-						representation += ref.Name + listChars + " | " + alias + listChars
+						representation += alias + listChars
 					} else {
-						representation += ref.Name + " | " + alias
+						representation += alias
 					}
 					isList = false
 				} else {
