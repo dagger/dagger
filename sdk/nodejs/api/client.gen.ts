@@ -228,7 +228,7 @@ export type FileID = string
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
-  sshAuthSocket?: Socket
+  sshAuthSocket?: SocketID
 }
 
 export type HostDirectoryOpts = {
@@ -266,7 +266,7 @@ export type ClientGitOpts = {
 }
 
 export type ClientSocketOpts = {
-  id?: Socket
+  id?: SocketID
 }
 
 /**
@@ -956,7 +956,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    */
-  withUnixSocket(path: string, source: Socket): Container {
+  withUnixSocket(path: string, source: SocketID): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
