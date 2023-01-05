@@ -132,6 +132,7 @@ func formatType(r *introspection.TypeRef, input bool) (representation string) {
 					"FileID":      "File",
 					"DirectoryID": "Directory",
 					"SecretID":    "Secret",
+					"SocketID":    "Socket",
 					"CacheID":     "CacheVolume",
 				}
 				if alias, ok := rewrite[ref.Name]; ok && input {
