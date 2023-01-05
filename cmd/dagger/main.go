@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/dagger/dagger/engine"
@@ -45,7 +44,6 @@ var rootCmd = &cobra.Command{
 func main() {
 	closer := tracing.Init()
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		closer.Close()
 		os.Exit(1)
 	}
