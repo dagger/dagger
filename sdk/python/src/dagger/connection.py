@@ -25,11 +25,11 @@ class Connection(ResourceManager, SyncResourceManager):
             cfg = dagger.Config(log_output=sys.stderr)
 
             async with dagger.Connection(cfg) as client:
-                ctr = client.container().from_("python:3.10.8-alpine")
+                ctr = client.container().from_("python:3.11.1-alpine")
                 version = await ctr.with_exec(["python", "-V"]).stdout()
 
             print(version)
-            # Output: Python 3.10.8
+            # Output: Python 3.11.1
 
         anyio.run(main)
     """

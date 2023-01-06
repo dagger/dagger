@@ -19,7 +19,7 @@ var (
 		"sdk/python/src/dagger/api/gen.py",
 		"sdk/python/src/dagger/api/gen_sync.py",
 	}
-	pythonDefaultVersion = "3.10"
+	pythonDefaultVersion = "3.11"
 )
 
 var _ SDK = Python{}
