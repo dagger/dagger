@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     # only run this on push events, not in PRs
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
     steps:
       - uses: actions/checkout@v3
 
@@ -67,6 +67,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: macos-latest
     env:
@@ -148,6 +149,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -187,6 +189,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -232,6 +235,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:

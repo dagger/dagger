@@ -5,6 +5,7 @@ on:
     tags: ["sdk/go/v**"]
 jobs:
   publish:
+    if: github.repository == 'dagger/dagger'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
