@@ -2,7 +2,7 @@ Connection
 ==========
 
 .. automodule:: dagger.config
-   :members:
+   :members: Config
 
 .. automodule:: dagger.connection
    :members:

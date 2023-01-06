@@ -10,17 +10,19 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/engine/filesync"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
+	"github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/auth/authprovider"
+	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 )
@@ -94,7 +96,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		Session: []session.Attachable{
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(startOpts.LogOutput),
+			authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)),
 		},
 	}
 
@@ -261,10 +263,10 @@ type AnyDirSource struct{}
 func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 	return filesync.SyncedDir{
 		Dir: name,
-		Map: func(p string, st *fstypes.Stat) bool {
+		Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
 			st.Uid = 0
 			st.Gid = 0
-			return true
+			return fsutil.MapResultKeep
 		},
 	}, true
 }

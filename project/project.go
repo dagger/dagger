@@ -313,9 +313,10 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
+			// make extensions compatible with the shim, in future we can actually enable retrieval of stdout/stderr
+			llb.AddMount("/.dagger_meta_mount", llb.Scratch(), llb.Tmpfs()),
 			llb.AddMount(inputMountPath, input, llb.Readonly),
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
-			llb.ReadonlyRootFS(),
 		)
 
 		if sdk == "go" {

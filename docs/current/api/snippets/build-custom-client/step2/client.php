@@ -7,11 +7,11 @@ use GraphQL\Client;
 try {
   // initialize client with
   // endpoint from environment
-  $sessionUrl = getenv('DAGGER_SESSION_URL') or throw new Exception("DAGGER_SESSION_URL doesn't exist");
+  $sessionPort = getenv('DAGGER_SESSION_PORT') or throw new Exception("DAGGER_SESSION_PORT doesn't exist");
   $sessionToken = getenv('DAGGER_SESSION_TOKEN') or throw new Exception("DAGGER_SESSION_TOKEN doesn't exist");
 
   $client = new Client(
-    $sessionUrl,
+    'http://127.0.0.1:' . $sessionPort . '/query',
     ['Authorization' => 'Basic ' . base64_encode($sessionToken . ':')]
   );
 

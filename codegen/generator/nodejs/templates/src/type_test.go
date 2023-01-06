@@ -9,12 +9,7 @@ import (
 
 func TestType(t *testing.T) {
 	t.Run("scalar", func(t *testing.T) {
-		var expectedFieldArgsType = `
-/**
- * Hola
- */
-export type Container = string;
-`
+		wantFile := "testdata/type_test_scalar_want.ts"
 
 		var fieldArgsTypeJSON = `
       {
@@ -30,7 +25,7 @@ export type Container = string;
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, "type", object)
 
-		want := expectedFieldArgsType
+		want := updateAndGetFixtures(t, wantFile, b.String())
 
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())
@@ -43,9 +38,9 @@ export type BuildArg = {
   /**
    * Name description.
    */
-  name: string;
-  value: string;
-};
+  name: string
+  value: string
+}
 `
 
 		var fieldInputTypeJSON = `
@@ -99,37 +94,7 @@ export type BuildArg = {
 	})
 
 	t.Run("args", func(t *testing.T) {
-		var expectedFieldArgsType = `
-export type ContainerExecOpts = {
-
-  /**
-   * Command to run instead of the container's default command
-   */
-  args?: string[];
-
-  /**
-   * Content to write to the command's standard input before closing
-   */
-  stdin?: string;
-
-  /**
-   * Redirect the command's standard output to a file in the container
-   */
-  redirectStdout?: string;
-
-  /**
-   * Redirect the command's standard error to a file in the container
-   */
-  redirectStderr?: string;
-
-  /**
-   * Provide dagger access to the executed command
-   * Do not use this option unless you trust the command being executed
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
-   */
-  experimentalPrivilegedNesting?: boolean;
-};
-`
+		wantFile := "testdata/type_test_args_want.ts"
 
 		var fieldArgsTypeJSON = `
     {
@@ -213,7 +178,7 @@ export type ContainerExecOpts = {
 		var b bytes.Buffer
 		err := tmpl.ExecuteTemplate(&b, "type", object)
 
-		want := expectedFieldArgsType
+		want := updateAndGetFixtures(t, wantFile, b.String())
 
 		require.NoError(t, err)
 		require.Equal(t, want, b.String())

@@ -66,7 +66,7 @@ python test.py
 The tool outputs a string similar to the one below.
 
 ```shell
-Hello from Dagger and Python 3.10.8
+Hello from Dagger and Python 3.11.1
 ```
 
 ## Step 3: Test against a single Python version

@@ -1,7 +1,8 @@
 import assert from "assert"
+
+import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 import Client, { connect } from "../../index.js"
 import { queryFlatten, buildQuery } from "../utils.js"
-import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
@@ -128,6 +129,39 @@ describe("NodeJS SDK api", function () {
 
       const b = await image.stdout()
       assert.strictEqual(b, "hello world\n")
+    })
+  })
+
+  it("Recursively solve sub queries", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const image = client.directory().withNewFile(
+        "Dockerfile",
+        `
+            FROM alpine    
+        `
+      )
+
+      const builder = client
+        .container()
+        .build(image)
+        .withWorkdir("/")
+        .withEntrypoint(["sh", "-c"])
+        .withExec(["echo htrshtrhrthrts > file.txt"])
+        .withExec(["cat file.txt"])
+
+      const copiedFile = await client
+        .container()
+        .from("alpine")
+        .withWorkdir("/")
+        .withFile("/copied-file.txt", builder.file("/file.txt"))
+        .withEntrypoint(["sh", "-c"])
+        .withExec(["cat copied-file.txt"])
+        .file("copied-file.txt")
+        .contents()
+
+      assert.strictEqual(copiedFile, "htrshtrhrthrts\n")
     })
   })
 

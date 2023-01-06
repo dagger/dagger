@@ -14,7 +14,7 @@ async def test():
         python = (
             client.container()
             # pull container
-            .from_("python:3.10-slim-buster")
+            .from_("python:3.11-slim-buster")
             # get Python version
             .with_exec(["python", "-V"])
         )

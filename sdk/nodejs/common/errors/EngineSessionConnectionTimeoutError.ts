@@ -1,5 +1,5 @@
 import { DaggerSDKError, DaggerSDKErrorOptions } from "./DaggerSDKError.js"
-import { ERROR_CODES } from "./errors-codes.js"
+import { ERROR_CODES, ERROR_NAMES } from "./errors-codes.js"
 
 interface EngineSessionConnectionTimeoutErrorOptions
   extends DaggerSDKErrorOptions {
@@ -10,8 +10,8 @@ interface EngineSessionConnectionTimeoutErrorOptions
  * This error is thrown if the EngineSession does not manage to parse the required port successfully because the sessions connection timed out.
  */
 export class EngineSessionConnectionTimeoutError extends DaggerSDKError {
-  readonly name = "EngineSessionConnectionTimeoutError"
-  readonly code = ERROR_CODES.EngineSessionConnectionTimeoutError
+  name = ERROR_NAMES.EngineSessionConnectionTimeoutError
+  code = ERROR_CODES.EngineSessionConnectionTimeoutError
 
   /**
    * The duration until the timeout occurred in ms.
