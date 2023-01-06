@@ -279,6 +279,10 @@ func (c *OtelCollector) Breakdown() map[string]time.Duration {
 	return breakdown
 }
 
+func (c *OtelCollector) Vertices() map[string]*bkclient.Vertex {
+	return c.vertexByID
+}
+
 func newExporter() (trace.SpanExporter, error) {
 	return otlptracegrpc.New(context.Background())
 }

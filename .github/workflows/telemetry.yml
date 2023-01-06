@@ -21,6 +21,9 @@ jobs:
           OTEL_SERVICE_NAME: "dagger"
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
           OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          GRAFANA_CLOUD_USER_ID: "356840"
+          GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
       - name: PR comment
         uses: thollander/actions-comment-pull-request@v2
         with:
