@@ -1,0 +1,28 @@
+name: telemetry
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: 1.19
+      - uses: actions/checkout@v3
+      - run: go build ./cmd/otel-collector
+
+      - run: ./otel-collector ./telemetry/groups.log > ./comment.md
+        env:
+          OTEL_SERVICE_NAME: "dagger"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+      - name: PR comment
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ./comment.md
+          comment_tag: telemetry
