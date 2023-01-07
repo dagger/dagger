@@ -1,12 +1,17 @@
-"A global cache volume identifier"
+"A global cache volume identifier."
 scalar CacheID
 
 extend type Query {
-  "Construct a cache volume for a given cache key"
-  cacheVolume(key: String!): CacheVolume!
+  "Constructs a cache volume for a given cache key."
+  cacheVolume(
+    """
+    A string identifier to target this cache volume (e.g. "myapp-cache").
+    """
+    key: String!
+  ): CacheVolume!
 }
 
-"A directory whose contents persist across runs"
+"A directory whose contents persist across runs."
 type CacheVolume {
   id: CacheID!
 }

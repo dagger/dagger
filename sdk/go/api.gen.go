@@ -9,23 +9,26 @@ import (
 	"github.com/Khan/genqlient/graphql"
 )
 
-// A global cache volume identifier
+// A global cache volume identifier.
 type CacheID string
 
 // A unique container identifier. Null designates an empty container (scratch).
 type ContainerID string
 
-// A content-addressed directory identifier
+// A content-addressed directory identifier.
 type DirectoryID string
 
+// A file identifier.
 type FileID string
 
+// The platform config OS and architecture in a Container.
+// The format is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
 type Platform string
 
-// A unique identifier for a secret
+// A unique identifier for a secret.
 type SecretID string
 
-// A content-addressed socket identifier
+// A content-addressed socket identifier.
 type SocketID string
 
 type BuildArg struct {
@@ -34,7 +37,7 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-// A directory whose contents persist across runs
+// A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -62,7 +65,7 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// An OCI-compatible container, also known as a docker container
+// An OCI-compatible container, also known as a docker container.
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -70,12 +73,14 @@ type Container struct {
 
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
+	// Path to the Dockerfile to use.
+	// Defaults to './Dockerfile'.
 	Dockerfile string
-
+	// Additional build arguments.
 	BuildArgs []BuildArg
 }
 
-// Initialize this container from a Dockerfile build
+// Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	q := r.q.Select("build")
 	q = q.Arg("context", context)
@@ -100,7 +105,7 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	}
 }
 
-// Default arguments for future commands
+// Retrieves default arguments for future commands.
 func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	q := r.q.Select("defaultArgs")
 
@@ -109,7 +114,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieve a directory at the given path. Mounts are included.
+// Retrieves a directory at the given path. Mounts are included.
 func (r *Container) Directory(path string) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -120,7 +125,7 @@ func (r *Container) Directory(path string) *Directory {
 	}
 }
 
-// Entrypoint to be prepended to the arguments of all commands
+// Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
 
@@ -129,7 +134,7 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The value of the specified environment variable
+// Retrieves the value of the specified environment variable.
 func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
@@ -139,7 +144,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 	return response, q.Execute(ctx, r.c)
 }
 
-// A list of environment variables passed to commands
+// Retrieves the list of environment variables passed to commands.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.q.Select("envVariables")
 
@@ -150,21 +155,21 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
-	// Command to run instead of the container's default command
+	// Command to run instead of the container's default command.
 	Args []string
-	// Content to write to the command's standard input before closing
+	// Content to write to the command's standard input before closing.
 	Stdin string
-	// Redirect the command's standard output to a file in the container
+	// Redirect the command's standard output to a file in the container.
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container
+	// Redirect the command's standard error to a file in the container.
 	RedirectStderr string
-	// Provide dagger access to the executed command
-	// Do not use this option unless you trust the command being executed
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	// Provide dagger access to the executed command.
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
 }
 
-// This container after executing the specified command inside it
+// Retrieves this container after executing the specified command inside it.
 //
 // Deprecated: Replaced by WithExec.
 func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
@@ -223,10 +228,13 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
+	// Identifiers for other platform specific containers.
+	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
 
-// Write the container as an OCI tarball to the destination file path on the host
+// Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+// Return true on success.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
@@ -243,7 +251,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieve a file at the given path. Mounts are included.
+// Retrieves a file at the given path. Mounts are included.
 func (r *Container) File(path string) *File {
 	q := r.q.Select("file")
 	q = q.Arg("path", path)
@@ -254,7 +262,7 @@ func (r *Container) File(path string) *File {
 	}
 }
 
-// Initialize this container from the base image published at the given address
+// Initializes this container from the base image published at the given address.
 func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
@@ -265,7 +273,7 @@ func (r *Container) From(address string) *Container {
 	}
 }
 
-// This container's root filesystem. Mounts are not included.
+// Retrieves this container's root filesystem. Mounts are not included.
 //
 // Deprecated: Replaced by Rootfs.
 func (r *Container) FS() *Directory {
@@ -277,7 +285,7 @@ func (r *Container) FS() *Directory {
 	}
 }
 
-// A unique identifier for this container
+// A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
 
@@ -300,7 +308,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// List of paths where a directory is mounted
+// Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.q.Select("mounts")
 
@@ -309,7 +317,7 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The platform this container executes and publishes as
+// The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("platform")
 
@@ -320,10 +328,12 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 
 // ContainerPublishOpts contains options for Container.Publish
 type ContainerPublishOpts struct {
+	// Identifiers for other platform specific containers.
+	// Used for multi-platform image.
 	PlatformVariants []*Container
 }
 
-// Publish this container as a new image, returning a fully qualified ref
+// Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
@@ -340,7 +350,7 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	return response, q.Execute(ctx, r.c)
 }
 
-// This container's root filesystem. Mounts are not included.
+// Retrieves this container's root filesystem. Mounts are not included.
 func (r *Container) Rootfs() *Directory {
 	q := r.q.Select("rootfs")
 
@@ -370,7 +380,7 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The user to be set for all commands
+// Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
 	q := r.q.Select("user")
 
@@ -384,7 +394,7 @@ type ContainerWithDefaultArgsOpts struct {
 	Args []string
 }
 
-// Configures default arguments for future commands
+// Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
 	q := r.q.Select("withDefaultArgs")
 	// `args` optional argument
@@ -408,7 +418,7 @@ type ContainerWithDirectoryOpts struct {
 	Include []string
 }
 
-// This container plus a directory written at the given path
+// Retrieves this container plus a directory written at the given path.
 func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("path", path)
@@ -434,7 +444,7 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	}
 }
 
-// This container but with a different command entrypoint
+// Retrieves this container but with a different command entrypoint.
 func (r *Container) WithEntrypoint(args []string) *Container {
 	q := r.q.Select("withEntrypoint")
 	q = q.Arg("args", args)
@@ -445,7 +455,7 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 	}
 }
 
-// This container plus the given environment variable
+// Retrieves this container plus the given environment variable.
 func (r *Container) WithEnvVariable(name string, value string) *Container {
 	q := r.q.Select("withEnvVariable")
 	q = q.Arg("name", name)
@@ -459,19 +469,19 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// Content to write to the command's standard input before closing
+	// Content to write to the command's standard input before closing.
 	Stdin string
-	// Redirect the command's standard output to a file in the container
+	// Redirect the command's standard output to a file in the container.
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container
+	// Redirect the command's standard error to a file in the container.
 	RedirectStderr string
-	// Provide dagger access to the executed command
-	// Do not use this option unless you trust the command being executed
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+	// Provide dagger access to the executed command.
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
 }
 
-// This container after executing the specified command inside it
+// Retrieves this container after executing the specified command inside it.
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.q.Select("withExec")
 	q = q.Arg("args", args)
@@ -510,7 +520,7 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	}
 }
 
-// Initialize this container from this DirectoryID
+// Initializes this container from this DirectoryID.
 //
 // Deprecated: Replaced by WithRootfs.
 func (r *Container) WithFS(id *Directory) *Container {
@@ -528,7 +538,7 @@ type ContainerWithFileOpts struct {
 	Permissions int
 }
 
-// This container plus the contents of the given file copied to the given path
+// Retrieves this container plus the contents of the given file copied to the given path.
 func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
@@ -552,7 +562,7 @@ type ContainerWithMountedCacheOpts struct {
 	Source *Directory
 }
 
-// This container plus a cache volume mounted at the given path
+// Retrieves this container plus a cache volume mounted at the given path.
 func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
 	q := r.q.Select("withMountedCache")
 	q = q.Arg("path", path)
@@ -571,7 +581,7 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	}
 }
 
-// This container plus a directory mounted at the given path
+// Retrieves this container plus a directory mounted at the given path.
 func (r *Container) WithMountedDirectory(path string, source *Directory) *Container {
 	q := r.q.Select("withMountedDirectory")
 	q = q.Arg("path", path)
@@ -583,7 +593,7 @@ func (r *Container) WithMountedDirectory(path string, source *Directory) *Contai
 	}
 }
 
-// This container plus a file mounted at the given path
+// Retrieves this container plus a file mounted at the given path.
 func (r *Container) WithMountedFile(path string, source *File) *Container {
 	q := r.q.Select("withMountedFile")
 	q = q.Arg("path", path)
@@ -595,7 +605,7 @@ func (r *Container) WithMountedFile(path string, source *File) *Container {
 	}
 }
 
-// This container plus a secret mounted into a file at the given path
+// Retrieves this container plus a secret mounted into a file at the given path.
 func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
 	q := r.q.Select("withMountedSecret")
 	q = q.Arg("path", path)
@@ -607,7 +617,7 @@ func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
 	}
 }
 
-// This container plus a temporary directory mounted at the given path
+// Retrieves this container plus a temporary directory mounted at the given path.
 func (r *Container) WithMountedTemp(path string) *Container {
 	q := r.q.Select("withMountedTemp")
 	q = q.Arg("path", path)
@@ -625,7 +635,7 @@ type ContainerWithNewFileOpts struct {
 	Permissions int
 }
 
-// This container plus a new file written at the given path
+// Retrieves this container plus a new file written at the given path.
 func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
@@ -650,7 +660,7 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	}
 }
 
-// Initialize this container from this DirectoryID
+// Initializes this container from this DirectoryID.
 func (r *Container) WithRootfs(id *Directory) *Container {
 	q := r.q.Select("withRootfs")
 	q = q.Arg("id", id)
@@ -661,7 +671,7 @@ func (r *Container) WithRootfs(id *Directory) *Container {
 	}
 }
 
-// This container plus an env variable containing the given secret
+// Retrieves this container plus an env variable containing the given secret.
 func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	q := r.q.Select("withSecretVariable")
 	q = q.Arg("name", name)
@@ -673,7 +683,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
-// This container plus a socket forwarded to the given Unix socket path
+// Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
 	q := r.q.Select("withUnixSocket")
 	q = q.Arg("path", path)
@@ -685,7 +695,7 @@ func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
 	}
 }
 
-// This container but with a different command user
+// Retrieves this containers with a different command user.
 func (r *Container) WithUser(name string) *Container {
 	q := r.q.Select("withUser")
 	q = q.Arg("name", name)
@@ -696,7 +706,7 @@ func (r *Container) WithUser(name string) *Container {
 	}
 }
 
-// This container but with a different working directory
+// Retrieves this container with a different working directory.
 func (r *Container) WithWorkdir(path string) *Container {
 	q := r.q.Select("withWorkdir")
 	q = q.Arg("path", path)
@@ -707,7 +717,7 @@ func (r *Container) WithWorkdir(path string) *Container {
 	}
 }
 
-// This container minus the given environment variable
+// Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
@@ -718,7 +728,7 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 	}
 }
 
-// This container after unmounting everything at the given path.
+// Retrieves this container after unmounting everything at the given path.
 func (r *Container) WithoutMount(path string) *Container {
 	q := r.q.Select("withoutMount")
 	q = q.Arg("path", path)
@@ -729,7 +739,7 @@ func (r *Container) WithoutMount(path string) *Container {
 	}
 }
 
-// This container with a previously added Unix socket removed
+// Retrieves this container with a previously added Unix socket removed.
 func (r *Container) WithoutUnixSocket(path string) *Container {
 	q := r.q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
@@ -740,7 +750,7 @@ func (r *Container) WithoutUnixSocket(path string) *Container {
 	}
 }
 
-// The working directory for all commands
+// Retrieves the working directory for all commands.
 func (r *Container) Workdir(ctx context.Context) (string, error) {
 	q := r.q.Select("workdir")
 
@@ -749,13 +759,13 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// A directory
+// A directory.
 type Directory struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// The difference between this directory and an another directory
+// Gets the difference between this directory and an another directory.
 func (r *Directory) Diff(other *Directory) *Directory {
 	q := r.q.Select("diff")
 	q = q.Arg("other", other)
@@ -766,7 +776,7 @@ func (r *Directory) Diff(other *Directory) *Directory {
 	}
 }
 
-// Retrieve a directory at the given path
+// Retrieves a directory at the given path.
 func (r *Directory) Directory(path string) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -779,6 +789,8 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
+	// Path to the Dockerfile to use.
+	// Defaults to './Dockerfile'.
 	Dockerfile string
 
 	Platform Platform
@@ -786,7 +798,7 @@ type DirectoryDockerBuildOpts struct {
 	BuildArgs []BuildArg
 }
 
-// Build a new Docker container from this directory
+// Builds a new Docker container from this directory.
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.q.Select("dockerBuild")
 	// `dockerfile` optional argument
@@ -822,7 +834,7 @@ type DirectoryEntriesOpts struct {
 	Path string
 }
 
-// Return a list of files and directories at the given path
+// Returns a list of files and directories at the given path.
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
 	q := r.q.Select("entries")
 	// `path` optional argument
@@ -838,7 +850,7 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	return response, q.Execute(ctx, r.c)
 }
 
-// Write the contents of the directory to a path on the host
+// Writes the contents of the directory to a path on the host.
 func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
@@ -848,7 +860,7 @@ func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieve a file at the given path
+// Retrieves a file at the given path.
 func (r *Directory) File(path string) *File {
 	q := r.q.Select("file")
 	q = q.Arg("path", path)
@@ -859,7 +871,7 @@ func (r *Directory) File(path string) *File {
 	}
 }
 
-// The content-addressed identifier of the directory
+// The content-addressed identifier of the directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	q := r.q.Select("id")
 
@@ -895,12 +907,15 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
+	// Exclude artifacts that match the given pattern.
+	// (e.g. ["node_modules/", ".git*"]).
 	Exclude []string
-
+	// Include only artifacts that match the given pattern.
+	// (e.g. ["app/", "package.*"]).
 	Include []string
 }
 
-// This directory plus a directory written at the given path
+// Retrieves this directory plus a directory written at the given path.
 func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("path", path)
@@ -931,7 +946,7 @@ type DirectoryWithFileOpts struct {
 	Permissions int
 }
 
-// This directory plus the contents of the given file copied to the given path
+// Retrieves this directory plus the contents of the given file copied to the given path.
 func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
@@ -955,7 +970,7 @@ type DirectoryWithNewDirectoryOpts struct {
 	Permissions int
 }
 
-// This directory plus a new directory created at the given path
+// Retrieves this directory plus a new directory created at the given path.
 func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
 	q := r.q.Select("withNewDirectory")
 	q = q.Arg("path", path)
@@ -978,7 +993,7 @@ type DirectoryWithNewFileOpts struct {
 	Permissions int
 }
 
-// This directory plus a new file written at the given path
+// Retrieves this directory plus a new file written at the given path.
 func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
@@ -997,7 +1012,7 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
-// This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+// Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
@@ -1008,7 +1023,7 @@ func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	}
 }
 
-// This directory with the directory at the given path removed
+// Retrieves this directory with the directory at the given path removed.
 func (r *Directory) WithoutDirectory(path string) *Directory {
 	q := r.q.Select("withoutDirectory")
 	q = q.Arg("path", path)
@@ -1019,7 +1034,7 @@ func (r *Directory) WithoutDirectory(path string) *Directory {
 	}
 }
 
-// This directory with the file at the given path removed
+// Retrieves this directory with the file at the given path removed.
 func (r *Directory) WithoutFile(path string) *Directory {
 	q := r.q.Select("withoutFile")
 	q = q.Arg("path", path)
@@ -1030,13 +1045,13 @@ func (r *Directory) WithoutFile(path string) *Directory {
 	}
 }
 
-// EnvVariable is a simple key value object that represents an environment variable.
+// A simple key value object that represents an environment variable.
 type EnvVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// name is the environment variable name.
+// The environment variable name.
 func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	q := r.q.Select("name")
 
@@ -1045,7 +1060,7 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// value is the environment variable value
+// The environment variable value.
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
@@ -1054,13 +1069,13 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// A file
+// A file.
 type File struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// The contents of the file
+// Retrieves the contents of the file.
 func (r *File) Contents(ctx context.Context) (string, error) {
 	q := r.q.Select("contents")
 
@@ -1069,7 +1084,7 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Write the file to a file path on the host
+// Writes the file to a file path on the host.
 func (r *File) Export(ctx context.Context, path string) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
@@ -1079,7 +1094,7 @@ func (r *File) Export(ctx context.Context, path string) (bool, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// The content-addressed identifier of the file
+// Retrieves the content-addressed identifier of the file.
 func (r *File) ID(ctx context.Context) (FileID, error) {
 	q := r.q.Select("id")
 
@@ -1102,7 +1117,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// A secret referencing the contents of this file
+// Retrieves a secret referencing the contents of this file.
 func (r *File) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -1112,7 +1127,7 @@ func (r *File) Secret() *Secret {
 	}
 }
 
-// The size of the file, in bytes
+// Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	q := r.q.Select("size")
 
@@ -1121,7 +1136,7 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+// Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
 func (r *File) WithTimestamps(timestamp int) *File {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
@@ -1132,13 +1147,13 @@ func (r *File) WithTimestamps(timestamp int) *File {
 	}
 }
 
-// A git ref (tag or branch)
+// A git ref (tag, branch or commit).
 type GitRef struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// The digest of the current value of this ref
+// The digest of the current value of this ref.
 func (r *GitRef) Digest(ctx context.Context) (string, error) {
 	q := r.q.Select("digest")
 
@@ -1154,7 +1169,7 @@ type GitRefTreeOpts struct {
 	SSHAuthSocket *Socket
 }
 
-// The filesystem tree at this ref
+// The filesystem tree at this ref.
 func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.q.Select("tree")
 	// `sshKnownHosts` optional argument
@@ -1178,13 +1193,13 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	}
 }
 
-// A git repository
+// A git repository.
 type GitRepository struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// Details on one branch
+// Returns details on one branch.
 func (r *GitRepository) Branch(name string) *GitRef {
 	q := r.q.Select("branch")
 	q = q.Arg("name", name)
@@ -1195,7 +1210,7 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	}
 }
 
-// List of branches on the repository
+// Lists of branches on the repository.
 func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 	q := r.q.Select("branches")
 
@@ -1204,7 +1219,7 @@ func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Details on one commit
+// Returns details on one commit.
 func (r *GitRepository) Commit(id string) *GitRef {
 	q := r.q.Select("commit")
 	q = q.Arg("id", id)
@@ -1215,7 +1230,7 @@ func (r *GitRepository) Commit(id string) *GitRef {
 	}
 }
 
-// Details on one tag
+// Returns details on one tag.
 func (r *GitRepository) Tag(name string) *GitRef {
 	q := r.q.Select("tag")
 	q = q.Arg("name", name)
@@ -1226,7 +1241,7 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
-// List of tags on the repository
+// Lists of tags on the repository.
 func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	q := r.q.Select("tags")
 
@@ -1235,7 +1250,7 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Information about the host execution environment
+// Information about the host execution environment.
 type Host struct {
 	q *querybuilder.Selection
 	c graphql.Client
@@ -1248,7 +1263,7 @@ type HostDirectoryOpts struct {
 	Include []string
 }
 
-// Access a directory on the host
+// Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -1273,7 +1288,7 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
-// Access an environment variable on the host
+// Accesses an environment variable on the host.
 func (r *Host) EnvVariable(name string) *HostVariable {
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
@@ -1284,7 +1299,7 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 	}
 }
 
-// Access a Unix socket on the host
+// Accesses a Unix socket on the host.
 func (r *Host) UnixSocket(path string) *Socket {
 	q := r.q.Select("unixSocket")
 	q = q.Arg("path", path)
@@ -1302,7 +1317,7 @@ type HostWorkdirOpts struct {
 	Include []string
 }
 
-// The current working directory on the host
+// Retrieves the current working directory on the host.
 //
 // Deprecated: Use Directory with path set to '.' instead.
 func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
@@ -1328,13 +1343,13 @@ func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 	}
 }
 
-// An environment variable on the host environment
+// An environment variable on the host environment.
 type HostVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// A secret referencing the value of this variable
+// A secret referencing the value of this variable.
 func (r *HostVariable) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -1344,7 +1359,7 @@ func (r *HostVariable) Secret() *Secret {
 	}
 }
 
-// The value of this variable
+// The value of this variable.
 func (r *HostVariable) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
@@ -1419,7 +1434,7 @@ type Query struct {
 	c graphql.Client
 }
 
-// Construct a cache volume for a given cache key
+// Constructs a cache volume for a given cache key.
 func (r *Query) CacheVolume(key string) *CacheVolume {
 	q := r.q.Select("cacheVolume")
 	q = q.Arg("key", key)
@@ -1437,7 +1452,7 @@ type ContainerOpts struct {
 	Platform Platform
 }
 
-// Load a container from ID.
+// Loads a container from ID.
 // Null ID returns an empty container (scratch).
 // Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
 func (r *Query) Container(opts ...ContainerOpts) *Container {
@@ -1494,7 +1509,7 @@ func (r *Query) Directory(opts ...DirectoryOpts) *Directory {
 	}
 }
 
-// Load a file by ID
+// Loads a file by ID.
 func (r *Query) File(id FileID) *File {
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
@@ -1510,7 +1525,7 @@ type GitOpts struct {
 	KeepGitDir bool
 }
 
-// Query a git repository
+// Queries a git repository.
 func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
 	q = q.Arg("url", url)
@@ -1528,7 +1543,7 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-// Query the host environment
+// Queries the host environment.
 func (r *Query) Host() *Host {
 	q := r.q.Select("host")
 
@@ -1538,7 +1553,7 @@ func (r *Query) Host() *Host {
 	}
 }
 
-// An http remote
+// Returns a file containing an http remote url content.
 func (r *Query) HTTP(url string) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
@@ -1560,7 +1575,7 @@ func (r *Query) Project(name string) *Project {
 	}
 }
 
-// Load a secret from its ID
+// Loads a secret from its ID.
 func (r *Query) Secret(id SecretID) *Secret {
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
@@ -1576,7 +1591,7 @@ type SocketOpts struct {
 	ID SocketID
 }
 
-// Load a socket by ID
+// Loads a socket by its ID.
 func (r *Query) Socket(opts ...SocketOpts) *Socket {
 	q := r.q.Select("socket")
 	// `id` optional argument
@@ -1593,13 +1608,13 @@ func (r *Query) Socket(opts ...SocketOpts) *Socket {
 	}
 }
 
-// A reference to a secret value, which can be handled more safely than the value itself
+// A reference to a secret value, which can be handled more safely than the value itself.
 type Secret struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
-// The identifier for this secret
+// The identifier for this secret.
 func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 	q := r.q.Select("id")
 
@@ -1622,7 +1637,7 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// The value of this secret
+// The value of this secret.
 func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	q := r.q.Select("plaintext")
 
@@ -1636,7 +1651,7 @@ type Socket struct {
 	c graphql.Client
 }
 
-// The content-addressed identifier of the socket
+// The content-addressed identifier of the socket.
 func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 	q := r.q.Select("id")
 

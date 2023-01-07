@@ -1,29 +1,29 @@
 extend type Query {
-  "Query the host environment"
+  "Queries the host environment."
   host: Host!
 }
 
-"Information about the host execution environment"
+"Information about the host execution environment."
 type Host {
-  "The current working directory on the host"
+  "Retrieves the current working directory on the host."
   workdir(exclude: [String!], include: [String!]): Directory!
     @deprecated(reason: "Use `directory` with path set to '.' instead.")
 
-  "Access a directory on the host"
+  "Accesses a directory on the host."
   directory(path: String!, exclude: [String!], include: [String!]): Directory!
 
-  "Access an environment variable on the host"
+  "Accesses an environment variable on the host."
   envVariable(name: String!): HostVariable
 
-  "Access a Unix socket on the host"
+  "Accesses a Unix socket on the host."
   unixSocket(path: String!): Socket!
 }
 
-"An environment variable on the host environment"
+"An environment variable on the host environment."
 type HostVariable {
-  "The value of this variable"
+  "The value of this variable."
   value: String!
 
-  "A secret referencing the value of this variable"
+  "A secret referencing the value of this variable."
   secret: Secret!
 }

@@ -3,56 +3,74 @@ extend type Query {
   directory(id: DirectoryID): Directory!
 }
 
-"A content-addressed directory identifier"
+"A content-addressed directory identifier."
 scalar DirectoryID
 
-"A directory"
+"A directory."
 type Directory {
-  "The content-addressed identifier of the directory"
+  "The content-addressed identifier of the directory."
   id: DirectoryID!
 
-  "Return a list of files and directories at the given path"
+  "Returns a list of files and directories at the given path."
   entries(path: String): [String!]!
 
-  "Retrieve a file at the given path"
+  "Retrieves a file at the given path."
   file(path: String!): File!
 
-  "This directory plus the contents of the given file copied to the given path"
+  "Retrieves this directory plus the contents of the given file copied to the given path."
   withFile(path: String!, source: FileID!, permissions: Int): Directory!
 
-  "This directory plus a new file written at the given path"
+  "Retrieves this directory plus a new file written at the given path."
   withNewFile(path: String!, contents: String!, permissions: Int): Directory!
 
-  "This directory with the file at the given path removed"
+  "Retrieves this directory with the file at the given path removed."
   withoutFile(path: String!): Directory!
 
-  "Retrieve a directory at the given path"
+  "Retrieves a directory at the given path."
   directory(path: String!): Directory!
 
-  "This directory plus a directory written at the given path"
+  "Retrieves this directory plus a directory written at the given path."
   withDirectory(
     path: String!
     directory: DirectoryID!
+    """
+    Exclude artifacts that match the given pattern.
+    (e.g. ["node_modules/", ".git*"]).
+    """
     exclude: [String!]
+
+    """
+    Include only artifacts that match the given pattern.
+    (e.g. ["app/", "package.*"]).
+    """
     include: [String!]
   ): Directory!
 
-  "This directory plus a new directory created at the given path"
+  "Retrieves this directory plus a new directory created at the given path."
   withNewDirectory(path: String!, permissions: Int): Directory!
 
-  "This directory with the directory at the given path removed"
+  "Retrieves this directory with the directory at the given path removed."
   withoutDirectory(path: String!): Directory!
 
-  "The difference between this directory and an another directory"
+  "Gets the difference between this directory and an another directory."
   diff(other: DirectoryID!): Directory!
 
-  "Write the contents of the directory to a path on the host"
+  "Writes the contents of the directory to a path on the host."
   export(path: String!): Boolean!
 
-  "Build a new Docker container from this directory"
-  dockerBuild(dockerfile: String, platform: Platform, buildArgs: [BuildArg!]): Container!
+  "Builds a new Docker container from this directory."
+  dockerBuild(
+    """
+    Path to the Dockerfile to use.
+    Defaults to './Dockerfile'.
+    """
+    dockerfile: String,
 
-  "This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch"
+    platform: Platform,
+    buildArgs: [BuildArg!]
+  ): Container!
+
+  "Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch."
   withTimestamps(timestamp: Int!): Directory!
 }
 

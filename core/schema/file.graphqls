@@ -1,27 +1,28 @@
 extend type Query {
-    "Load a file by ID"
+    "Loads a file by ID."
     file(id: FileID!): File
 }
 
+"A file identifier."
 scalar FileID
 
-"A file"
+"A file."
 type File {
-  "The content-addressed identifier of the file"
+  "Retrieves the content-addressed identifier of the file."
   id: FileID!
 
-  "The contents of the file"
+  "Retrieves the contents of the file."
   contents: String!
 
-  "A secret referencing the contents of this file"
+  "Retrieves a secret referencing the contents of this file."
   secret: Secret!
 
-  "The size of the file, in bytes"
+  "Gets the size of the file, in bytes."
   size: Int!
 
-  "Write the file to a file path on the host"
+  "Writes the file to a file path on the host."
   export(path: String!): Boolean!
 
-  "This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch"
+  "Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch."
   withTimestamps(timestamp: Int!): File!
 }

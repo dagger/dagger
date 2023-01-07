@@ -58,49 +58,65 @@ export type BuildArg = {
 }
 
 /**
- * A global cache volume identifier
+ * A global cache volume identifier.
  */
 export type CacheID = string
 
 export type ContainerBuildOpts = {
+  /**
+   * Path to the Dockerfile to use.
+   * Defaults to './Dockerfile'.
+   */
   dockerfile?: string
+
+  /**
+   * Additional build arguments.
+   */
   buildArgs?: BuildArg[]
 }
 
 export type ContainerExecOpts = {
   /**
-   * Command to run instead of the container's default command
+   * Command to run instead of the container's default command.
    */
   args?: string[]
 
   /**
-   * Content to write to the command's standard input before closing
+   * Content to write to the command's standard input before closing.
    */
   stdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container
+   * Redirect the command's standard output to a file in the container.
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container
+   * Redirect the command's standard error to a file in the container.
    */
   redirectStderr?: string
 
   /**
-   * Provide dagger access to the executed command
-   * Do not use this option unless you trust the command being executed
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   * Provide dagger access to the executed command.
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
 }
 
 export type ContainerExportOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   */
   platformVariants?: ContainerID[] | Container[]
 }
 
 export type ContainerPublishOpts = {
+  /**
+   * Identifiers for other platform specific containers.
+   * Used for multi-platform image.
+   */
   platformVariants?: ContainerID[] | Container[]
 }
 
@@ -115,24 +131,24 @@ export type ContainerWithDirectoryOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * Content to write to the command's standard input before closing
+   * Content to write to the command's standard input before closing.
    */
   stdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container
+   * Redirect the command's standard output to a file in the container.
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container
+   * Redirect the command's standard error to a file in the container.
    */
   redirectStderr?: string
 
   /**
-   * Provide dagger access to the executed command
-   * Do not use this option unless you trust the command being executed
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   * Provide dagger access to the executed command.
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
 }
@@ -161,6 +177,10 @@ export type ContainerID = string
 export type DateTime = string
 
 export type DirectoryDockerBuildOpts = {
+  /**
+   * Path to the Dockerfile to use.
+   * Defaults to './Dockerfile'.
+   */
   dockerfile?: string
   platform?: Platform
   buildArgs?: BuildArg[]
@@ -171,7 +191,16 @@ export type DirectoryEntriesOpts = {
 }
 
 export type DirectoryWithDirectoryOpts = {
+  /**
+   * Exclude artifacts that match the given pattern.
+   * (e.g. ["node_modules/", ".git*"]).
+   */
   exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern.
+   * (e.g. ["app/", "package.*"]).
+   */
   include?: string[]
 }
 
@@ -188,10 +217,13 @@ export type DirectoryWithNewFileOpts = {
 }
 
 /**
- * A content-addressed directory identifier
+ * A content-addressed directory identifier.
  */
 export type DirectoryID = string
 
+/**
+ * A file identifier.
+ */
 export type FileID = string
 
 export type GitRefTreeOpts = {
@@ -214,6 +246,10 @@ export type HostWorkdirOpts = {
  */
 export type ID = string
 
+/**
+ * The platform config OS and architecture in a Container.
+ * The format is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
+ */
 export type Platform = string
 
 export type ClientContainerOpts = {
@@ -234,12 +270,12 @@ export type ClientSocketOpts = {
 }
 
 /**
- * A unique identifier for a secret
+ * A unique identifier for a secret.
  */
 export type SecretID = string
 
 /**
- * A content-addressed socket identifier
+ * A content-addressed socket identifier.
  */
 export type SocketID = string
 
@@ -252,7 +288,7 @@ export type __TypeFieldsOpts = {
 }
 
 /**
- * A directory whose contents persist across runs
+ * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
@@ -271,11 +307,15 @@ export class CacheVolume extends BaseClient {
 }
 
 /**
- * An OCI-compatible container, also known as a docker container
+ * An OCI-compatible container, also known as a docker container.
  */
 export class Container extends BaseClient {
   /**
-   * Initialize this container from a Dockerfile build
+   * Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+   * @param context Directory context used by the Dockerfile.
+   * @param opts.dockerfile Path to the Dockerfile to use.
+Defaults to './Dockerfile'.
+   * @param opts.buildArgs Additional build arguments.
    */
   build(
     context: DirectoryID | Directory,
@@ -295,7 +335,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Default arguments for future commands
+   * Retrieves default arguments for future commands.
    */
   async defaultArgs(): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -312,7 +352,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieve a directory at the given path. Mounts are included.
+   * Retrieves a directory at the given path. Mounts are included.
    */
   directory(path: string): Directory {
     return new Directory({
@@ -329,7 +369,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Entrypoint to be prepended to the arguments of all commands
+   * Retrieves entrypoint to be prepended to the arguments of all commands.
    */
   async entrypoint(): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -346,7 +386,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * The value of the specified environment variable
+   * Retrieves the value of the specified environment variable.
    */
   async envVariable(name: string): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -364,7 +404,7 @@ export class Container extends BaseClient {
   }
 
   /**
-   * A list of environment variables passed to commands
+   * Retrieves the list of environment variables passed to commands.
    */
   async envVariables(): Promise<EnvVariable[]> {
     const response: Awaited<EnvVariable[]> = await computeQuery(
@@ -381,14 +421,14 @@ export class Container extends BaseClient {
   }
 
   /**
-   * This container after executing the specified command inside it
-   * @param opts.args Command to run instead of the container's default command
-   * @param opts.stdin Content to write to the command's standard input before closing
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container
-   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command
-Do not use this option unless you trust the command being executed
-The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   * Retrieves this container after executing the specified command inside it.
+   * @param opts.args Command to run instead of the container's default command.
+   * @param opts.stdin Content to write to the command's standard input before closing.
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container.
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container.
+   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
+Do not use this option unless you trust the command being executed.
+The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @deprecated Replaced by withExec.
    */
   exec(opts?: ContainerExecOpts): Container {
@@ -424,7 +464,12 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Write the container as an OCI tarball to the destination file path on the host
+   * Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+   * Return true on success.
+   * @param path Host's destination path.
+Path can be relative to the engine's workdir or absolute.
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+Used for multi-platform image.
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -442,7 +487,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Retrieve a file at the given path. Mounts are included.
+   * Retrieves a file at the given path. Mounts are included.
    */
   file(path: string): File {
     return new File({
@@ -459,7 +504,9 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Initialize this container from the base image published at the given address
+   * Initializes this container from the base image published at the given address.
+   * @param address Image's address from its registry.
+Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
    */
   from(address: string): Container {
     return new Container({
@@ -476,7 +523,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container's root filesystem. Mounts are not included.
+   * Retrieves this container's root filesystem. Mounts are not included.
    * @deprecated Replaced by rootfs.
    */
   fs(): Directory {
@@ -493,7 +540,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * A unique identifier for this container
+   * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
     const response: Awaited<ContainerID> = await computeQuery(
@@ -510,7 +557,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * List of paths where a directory is mounted
+   * Retrieves the list of paths where a directory is mounted.
    */
   async mounts(): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -527,7 +574,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * The platform this container executes and publishes as
+   * The platform this container executes and publishes as.
    */
   async platform(): Promise<Platform> {
     const response: Awaited<Platform> = await computeQuery(
@@ -544,7 +591,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Publish this container as a new image, returning a fully qualified ref
+   * Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+   * @param address Registry's address to publish the image to.
+Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+   * @param opts.platformVariants Identifiers for other platform specific containers.
+Used for multi-platform image.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -562,7 +613,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container's root filesystem. Mounts are not included.
+   * Retrieves this container's root filesystem. Mounts are not included.
    */
   rootfs(): Directory {
     return new Directory({
@@ -614,7 +665,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * The user to be set for all commands
+   * Retrieves the user to be set for all commands.
    */
   async user(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -631,7 +682,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Configures default arguments for future commands
+   * Configures default arguments for future commands.
    */
   withDefaultArgs(opts?: ContainerWithDefaultArgsOpts): Container {
     return new Container({
@@ -648,7 +699,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a directory written at the given path
+   * Retrieves this container plus a directory written at the given path.
    */
   withDirectory(
     path: string,
@@ -669,7 +720,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container but with a different command entrypoint
+   * Retrieves this container but with a different command entrypoint.
    */
   withEntrypoint(args: string[]): Container {
     return new Container({
@@ -686,7 +737,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus the given environment variable
+   * Retrieves this container plus the given environment variable.
    */
   withEnvVariable(name: string, value: string): Container {
     return new Container({
@@ -703,14 +754,14 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container after executing the specified command inside it
-   * @param args Command to run instead of the container's default command
-   * @param opts.stdin Content to write to the command's standard input before closing
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container
-   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command
-Do not use this option unless you trust the command being executed
-The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+   * Retrieves this container after executing the specified command inside it.
+   * @param args Command to run instead of the container's default command.
+   * @param opts.stdin Content to write to the command's standard input before closing.
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container.
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container.
+   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
+Do not use this option unless you trust the command being executed.
+The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withExec(args: string[], opts?: ContainerWithExecOpts): Container {
     return new Container({
@@ -727,7 +778,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Initialize this container from this DirectoryID
+   * Initializes this container from this DirectoryID.
    * @deprecated Replaced by withRootfs.
    */
   withFS(id: DirectoryID | Directory): Container {
@@ -745,7 +796,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus the contents of the given file copied to the given path
+   * Retrieves this container plus the contents of the given file copied to the given path.
    */
   withFile(
     path: string,
@@ -766,7 +817,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a cache volume mounted at the given path
+   * Retrieves this container plus a cache volume mounted at the given path.
    */
   withMountedCache(
     path: string,
@@ -787,7 +838,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a directory mounted at the given path
+   * Retrieves this container plus a directory mounted at the given path.
    */
   withMountedDirectory(
     path: string,
@@ -807,7 +858,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a file mounted at the given path
+   * Retrieves this container plus a file mounted at the given path.
    */
   withMountedFile(path: string, source: FileID | File): Container {
     return new Container({
@@ -824,7 +875,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a secret mounted into a file at the given path
+   * Retrieves this container plus a secret mounted into a file at the given path.
    */
   withMountedSecret(path: string, source: SecretID | Secret): Container {
     return new Container({
@@ -841,7 +892,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a temporary directory mounted at the given path
+   * Retrieves this container plus a temporary directory mounted at the given path.
    */
   withMountedTemp(path: string): Container {
     return new Container({
@@ -858,7 +909,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a new file written at the given path
+   * Retrieves this container plus a new file written at the given path.
    */
   withNewFile(path: string, opts?: ContainerWithNewFileOpts): Container {
     return new Container({
@@ -875,7 +926,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * Initialize this container from this DirectoryID
+   * Initializes this container from this DirectoryID.
    */
   withRootfs(id: DirectoryID | Directory): Container {
     return new Container({
@@ -892,7 +943,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus an env variable containing the given secret
+   * Retrieves this container plus an env variable containing the given secret.
    */
   withSecretVariable(name: string, secret: SecretID | Secret): Container {
     return new Container({
@@ -909,7 +960,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container plus a socket forwarded to the given Unix socket path
+   * Retrieves this container plus a socket forwarded to the given Unix socket path.
    */
   withUnixSocket(path: string, source: SocketID | Socket): Container {
     return new Container({
@@ -926,7 +977,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container but with a different command user
+   * Retrieves this containers with a different command user.
    */
   withUser(name: string): Container {
     return new Container({
@@ -943,7 +994,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container but with a different working directory
+   * Retrieves this container with a different working directory.
    */
   withWorkdir(path: string): Container {
     return new Container({
@@ -960,7 +1011,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container minus the given environment variable
+   * Retrieves this container minus the given environment variable.
    */
   withoutEnvVariable(name: string): Container {
     return new Container({
@@ -977,7 +1028,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container after unmounting everything at the given path.
+   * Retrieves this container after unmounting everything at the given path.
    */
   withoutMount(path: string): Container {
     return new Container({
@@ -994,7 +1045,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * This container with a previously added Unix socket removed
+   * Retrieves this container with a previously added Unix socket removed.
    */
   withoutUnixSocket(path: string): Container {
     return new Container({
@@ -1011,7 +1062,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
   }
 
   /**
-   * The working directory for all commands
+   * Retrieves the working directory for all commands.
    */
   async workdir(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1029,11 +1080,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 }
 
 /**
- * A directory
+ * A directory.
  */
 export class Directory extends BaseClient {
   /**
-   * The difference between this directory and an another directory
+   * Gets the difference between this directory and an another directory.
    */
   diff(other: DirectoryID | Directory): Directory {
     return new Directory({
@@ -1050,7 +1101,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieve a directory at the given path
+   * Retrieves a directory at the given path.
    */
   directory(path: string): Directory {
     return new Directory({
@@ -1067,7 +1118,9 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Build a new Docker container from this directory
+   * Builds a new Docker container from this directory.
+   * @param opts.dockerfile Path to the Dockerfile to use.
+Defaults to './Dockerfile'.
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({
@@ -1084,7 +1137,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Return a list of files and directories at the given path
+   * Returns a list of files and directories at the given path.
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1102,7 +1155,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Write the contents of the directory to a path on the host
+   * Writes the contents of the directory to a path on the host.
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1120,7 +1173,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Retrieve a file at the given path
+   * Retrieves a file at the given path.
    */
   file(path: string): File {
     return new File({
@@ -1137,7 +1190,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * The content-addressed identifier of the directory
+   * The content-addressed identifier of the directory.
    */
   async id(): Promise<DirectoryID> {
     const response: Awaited<DirectoryID> = await computeQuery(
@@ -1171,7 +1224,11 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory plus a directory written at the given path
+   * Retrieves this directory plus a directory written at the given path.
+   * @param opts.exclude Exclude artifacts that match the given pattern.
+(e.g. ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern.
+(e.g. ["app/", "package.*"]).
    */
   withDirectory(
     path: string,
@@ -1192,7 +1249,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory plus the contents of the given file copied to the given path
+   * Retrieves this directory plus the contents of the given file copied to the given path.
    */
   withFile(
     path: string,
@@ -1213,7 +1270,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory plus a new directory created at the given path
+   * Retrieves this directory plus a new directory created at the given path.
    */
   withNewDirectory(
     path: string,
@@ -1233,7 +1290,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory plus a new file written at the given path
+   * Retrieves this directory plus a new file written at the given path.
    */
   withNewFile(
     path: string,
@@ -1254,7 +1311,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch
+   * Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
    */
   withTimestamps(timestamp: number): Directory {
     return new Directory({
@@ -1271,7 +1328,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory with the directory at the given path removed
+   * Retrieves this directory with the directory at the given path removed.
    */
   withoutDirectory(path: string): Directory {
     return new Directory({
@@ -1288,7 +1345,7 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * This directory with the file at the given path removed
+   * Retrieves this directory with the file at the given path removed.
    */
   withoutFile(path: string): Directory {
     return new Directory({
@@ -1306,11 +1363,11 @@ export class Directory extends BaseClient {
 }
 
 /**
- * EnvVariable is a simple key value object that represents an environment variable.
+ * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
   /**
-   * name is the environment variable name.
+   * The environment variable name.
    */
   async name(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1327,7 +1384,7 @@ export class EnvVariable extends BaseClient {
   }
 
   /**
-   * value is the environment variable value
+   * The environment variable value.
    */
   async value(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1345,11 +1402,11 @@ export class EnvVariable extends BaseClient {
 }
 
 /**
- * A file
+ * A file.
  */
 export class File extends BaseClient {
   /**
-   * The contents of the file
+   * Retrieves the contents of the file.
    */
   async contents(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1366,7 +1423,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * Write the file to a file path on the host
+   * Writes the file to a file path on the host.
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1384,7 +1441,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * The content-addressed identifier of the file
+   * Retrieves the content-addressed identifier of the file.
    */
   async id(): Promise<FileID> {
     const response: Awaited<FileID> = await computeQuery(
@@ -1401,7 +1458,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * A secret referencing the contents of this file
+   * Retrieves a secret referencing the contents of this file.
    */
   secret(): Secret {
     return new Secret({
@@ -1417,7 +1474,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * The size of the file, in bytes
+   * Gets the size of the file, in bytes.
    */
   async size(): Promise<number> {
     const response: Awaited<number> = await computeQuery(
@@ -1434,7 +1491,7 @@ export class File extends BaseClient {
   }
 
   /**
-   * This file with its created/modified timestamps set to the given time, in seconds from the Unix epoch
+   * Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
    */
   withTimestamps(timestamp: number): File {
     return new File({
@@ -1452,11 +1509,11 @@ export class File extends BaseClient {
 }
 
 /**
- * A git ref (tag or branch)
+ * A git ref (tag, branch or commit).
  */
 export class GitRef extends BaseClient {
   /**
-   * The digest of the current value of this ref
+   * The digest of the current value of this ref.
    */
   async digest(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1473,7 +1530,7 @@ export class GitRef extends BaseClient {
   }
 
   /**
-   * The filesystem tree at this ref
+   * The filesystem tree at this ref.
    */
   tree(opts?: GitRefTreeOpts): Directory {
     return new Directory({
@@ -1491,11 +1548,11 @@ export class GitRef extends BaseClient {
 }
 
 /**
- * A git repository
+ * A git repository.
  */
 export class GitRepository extends BaseClient {
   /**
-   * Details on one branch
+   * Returns details on one branch.
    */
   branch(name: string): GitRef {
     return new GitRef({
@@ -1512,7 +1569,7 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * List of branches on the repository
+   * Lists of branches on the repository.
    */
   async branches(): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1529,7 +1586,7 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Details on one commit
+   * Returns details on one commit.
    */
   commit(id: string): GitRef {
     return new GitRef({
@@ -1546,7 +1603,7 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Details on one tag
+   * Returns details on one tag.
    */
   tag(name: string): GitRef {
     return new GitRef({
@@ -1563,7 +1620,7 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * List of tags on the repository
+   * Lists of tags on the repository.
    */
   async tags(): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1581,11 +1638,11 @@ export class GitRepository extends BaseClient {
 }
 
 /**
- * Information about the host execution environment
+ * Information about the host execution environment.
  */
 export class Host extends BaseClient {
   /**
-   * Access a directory on the host
+   * Accesses a directory on the host.
    */
   directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({
@@ -1602,7 +1659,7 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Access an environment variable on the host
+   * Accesses an environment variable on the host.
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({
@@ -1619,7 +1676,7 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Access a Unix socket on the host
+   * Accesses a Unix socket on the host.
    */
   unixSocket(path: string): Socket {
     return new Socket({
@@ -1636,7 +1693,7 @@ export class Host extends BaseClient {
   }
 
   /**
-   * The current working directory on the host
+   * Retrieves the current working directory on the host.
    * @deprecated Use directory with path set to '.' instead.
    */
   workdir(opts?: HostWorkdirOpts): Directory {
@@ -1655,11 +1712,11 @@ export class Host extends BaseClient {
 }
 
 /**
- * An environment variable on the host environment
+ * An environment variable on the host environment.
  */
 export class HostVariable extends BaseClient {
   /**
-   * A secret referencing the value of this variable
+   * A secret referencing the value of this variable.
    */
   secret(): Secret {
     return new Secret({
@@ -1675,7 +1732,7 @@ export class HostVariable extends BaseClient {
   }
 
   /**
-   * The value of this variable
+   * The value of this variable.
    */
   async value(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1800,7 +1857,8 @@ export class Project extends BaseClient {
 
 export default class Client extends BaseClient {
   /**
-   * Construct a cache volume for a given cache key
+   * Constructs a cache volume for a given cache key.
+   * @param key A string identifier to target this cache volume (e.g. "myapp-cache").
    */
   cacheVolume(key: string): CacheVolume {
     return new CacheVolume({
@@ -1817,7 +1875,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Load a container from ID.
+   * Loads a container from ID.
    * Null ID returns an empty container (scratch).
    * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
    */
@@ -1870,7 +1928,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Load a file by ID
+   * Loads a file by ID.
    */
   file(id: FileID | File): File {
     return new File({
@@ -1887,7 +1945,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Query a git repository
+   * Queries a git repository.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -1904,7 +1962,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Query the host environment
+   * Queries the host environment.
    */
   host(): Host {
     return new Host({
@@ -1920,7 +1978,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * An http remote
+   * Returns a file containing an http remote url content.
    */
   http(url: string): File {
     return new File({
@@ -1954,7 +2012,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Load a secret from its ID
+   * Loads a secret from its ID.
    */
   secret(id: SecretID | Secret): Secret {
     return new Secret({
@@ -1971,7 +2029,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Load a socket by ID
+   * Loads a socket by its ID.
    */
   socket(opts?: ClientSocketOpts): Socket {
     return new Socket({
@@ -1989,11 +2047,11 @@ export default class Client extends BaseClient {
 }
 
 /**
- * A reference to a secret value, which can be handled more safely than the value itself
+ * A reference to a secret value, which can be handled more safely than the value itself.
  */
 export class Secret extends BaseClient {
   /**
-   * The identifier for this secret
+   * The identifier for this secret.
    */
   async id(): Promise<SecretID> {
     const response: Awaited<SecretID> = await computeQuery(
@@ -2010,7 +2068,7 @@ export class Secret extends BaseClient {
   }
 
   /**
-   * The value of this secret
+   * The value of this secret.
    */
   async plaintext(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -2029,7 +2087,7 @@ export class Secret extends BaseClient {
 
 export class Socket extends BaseClient {
   /**
-   * The content-addressed identifier of the socket
+   * The content-addressed identifier of the socket.
    */
   async id(): Promise<SocketID> {
     const response: Awaited<SocketID> = await computeQuery(

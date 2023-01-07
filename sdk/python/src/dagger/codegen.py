@@ -53,7 +53,7 @@ DEPRECATION_RE = re.compile(r"`([a-zA-Z\d_]+)`")
 logger = logging.getLogger(__name__)
 
 indent = partial(textwrap.indent, prefix=" " * 4)
-wrap = partial(textwrap.wrap, drop_whitespace=False, replace_whitespace=False)
+wrap = textwrap.wrap
 wrap_indent = partial(wrap, initial_indent=" " * 4, subsequent_indent=" " * 4)
 
 
@@ -455,15 +455,20 @@ class Handler(ABC, Generic[_H]):
     predicate: ClassVar[Predicate] = staticmethod(lambda _: True)
     """Does this handler render the given type?"""
 
+    @joiner
     def render(self, t: _H) -> str:
-        return f"{self.render_head(t)}\n{self.render_body(t)}"
+        yield self.render_head(t)
+        yield self.render_body(t)
 
     @abstractmethod
     def render_head(self, t: _H) -> str:
         ...
 
+    @joiner
     def render_body(self, t: _H) -> str:
-        return f"{doc(t.description)}\n\n" if t.description else ""
+        if t.description:
+            yield from wrap(doc(t.description))
+            yield from ["", ""]
 
 
 @attrs.define
