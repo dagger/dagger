@@ -26,6 +26,11 @@ jobs:
           GRAFANA_CLOUD_USER_ID: "356840"
           GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
           GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+      - name: Upload Graph
+        uses: actions/upload-artifact@v3
+        with:
+          name: graph.txt
+          path: ./telemetry/groups.log
       - name: PR comment
         # Only comment on PRs
         if: github.event_name == 'pull_request'

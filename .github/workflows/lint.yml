@@ -61,4 +61,24 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: 1.19
-      - run: ./hack/make sdk:nodejs:lint
+      - run: |
+        export _EXPERIMENTAL_DAGGER_JOURNAL="/tmp/sdk-nodejs-lint.log"
+        ./hack/make sdk:nodejs:lint
+      - run: go build ./cmd/otel-collector
+        if: always()
+      - run: ./otel-collector /tmp/sdk-nodejs-lint.log > ./comment.md
+        if: always()
+        env:
+          OTEL_SERVICE_NAME: "dagger"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          GRAFANA_CLOUD_USER_ID: "356840"
+          GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+      - name: PR comment
+        # Only comment on PRs
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ./comment.md
+          comment_tag: telemetry-node-lint
