@@ -3,18 +3,22 @@
   "version": "0.0.0",
   "author": "hello@dagger.io",
   "license": "Apache-2.0",
-  "types": "./dist/index.d.ts",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "require": "./dist/index.cjs",
+    "import": "./dist/index.mjs",
+    "node": "./dist/index.cjs",
+    "default": "./dist/index.cjs"
+  },
   "files": [
     "dist/"
   ],
-  "exports": {
-    ".": "./dist/index.js"
-  },
   "engines": {
     "node": ">=16"
   },
-  "main": "dist/index.js",
   "dependencies": {
     "@lifeomic/axios-fetch": "^3.0.1",
     "axios": "^1.2.1",
@@ -27,7 +31,7 @@
     "tar": "^6.1.13"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsup",
     "test": "mocha",
     "lint": "yarn eslint --max-warnings=0 .",
     "fmt": "yarn eslint --fix"
@@ -44,6 +48,7 @@
     "mocha": "^10.1.0",
     "prettier": "^2.8.1",
     "ts-node": "^10.9.1",
+    "tsup": "^6.5.0",
     "typescript": "^4.9.3"
   }
 }
