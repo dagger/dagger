@@ -2,6 +2,8 @@ name: lint
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   # Enable manual trigger for easy debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
