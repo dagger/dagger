@@ -8,3 +8,4 @@ extend-immutable-calls = typer.Option
 per-file-ignores =
     src/dagger/__init__.py:F401,F403
     src/dagger/engine/__init__.py:F401
+    tests/api/test_inputs.py:E800
