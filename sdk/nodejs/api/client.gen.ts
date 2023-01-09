@@ -789,6 +789,10 @@ Used for multi-platform image.
     return response
   }
 
+  with(arg: (param: Container) => Container) {
+    return arg(this)
+  }
+
   /**
    * Configures default arguments for future commands.
    */
