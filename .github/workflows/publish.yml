@@ -70,8 +70,6 @@ jobs:
       github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: macos-latest
-    env:
-      _INTERNAL_DAGGER_TEST_CLI_URL: ${{ needs.publish.outputs.baseurl }}/dagger_${{ needs.publish.outputs.version }}_darwin_amd64.tar.gz
     steps:
       - name: "Set CLI Test URL"
         run: |
