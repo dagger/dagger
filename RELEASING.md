@@ -5,6 +5,7 @@ This document describes how to release:
 - 🐹 Go SDK
 - 🐍 Python SDK
 - ⬡ Node.js SDK
+- Documentation
 
 > **Warning**
 
@@ -357,3 +358,56 @@ notes (see **3/5.**).
 #### 5/5. Help promote the release
 
 👉 DM release link to [@mircubed](https://github.com/mircubed).
+
+## Documentation
+
+> **Warning**
+> Merging a documentation PR does NOT automatically deploy the
+> new documentation to the production website.
+
+There are two websites for documentation, corresponding to two stages
+ the release process:
+
+- Staging website (https://devel.docs.dagger.io)
+  - Netlify dashboard (https://app.netlify.com/sites/devel-docs-dagger-io)
+- Production website (https://docs.dagger.io)
+  - Netlify dashboard (https://app.netlify.com/sites/docs-dagger-io)
+
+### Staging release
+
+When a PR is merged, a new deployment is created for the documentation
+site and it is automatically published to https://devel.docs.dagger.io
+via Netlify.
+
+Use this staging website to test the documentation, including:
+- verifying that the new content appears in the navigation
+- verifying internal and external links work correctly
+- verifying that images appear correctly
+- etc.
+
+### Production release
+
+When a PR is merged, a new production deployment is also created for
+https://docs.dagger.io. However, this deployment is not automatically
+published.
+
+After testing the documentation using the staging website and if you
+are satisfied that the documentation is correct, manually publish the
+production deployment via Netlify as follows:
+
+1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
+1. Refer to the list of "production deploys" and select the one you wish
+to deploy. Usually, this will be the most recent one. You can confirm this
+by checking the commit hash against the latest commit hash in the
+[dagger/dagger repository main branch](https://github.com/dagger/dagger).
+1. On the deployment page, click the "Preview" button to once again
+validate the deployment. You can also check the deployment log to
+confirm there were no errors during the documentation build process.
+1. If you are satisfied with the preview, click the "Publish deploy"
+button. This will publish the selected deployment on https://docs.dagger.io.
+
+> 💡 TIP: There have been cases where Netlify builds have failed with errors,
+> but the same build succeeds when performed locally. In the past, one reason
+> for this has been Netlify's use of a stale cache. In case you encounter
+> this error, click "Options -> Clear cache and retry with latest branch commit"
+> to recreate the deployment with a clean cache.
