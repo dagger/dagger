@@ -3,33 +3,33 @@ package engineconn
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
+	"strconv"
 )
 
 func FromSessionEnv() (EngineConn, bool, error) {
-	urlStr, ok := os.LookupEnv("DAGGER_SESSION_URL")
+	portStr, ok := os.LookupEnv("DAGGER_SESSION_PORT")
 	if !ok {
 		return nil, false, nil
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, false, fmt.Errorf("invalid port in DAGGER_SESSION_PORT: %w", err)
 	}
 
 	sessionToken := os.Getenv("DAGGER_SESSION_TOKEN")
 	if sessionToken == "" {
-		return nil, false, fmt.Errorf("DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_URL")
-	}
-	url, err := url.Parse(urlStr)
-	if err != nil {
-		return nil, false, fmt.Errorf("invalid DAGGER_SESSION_URL: %w", err)
+		return nil, false, fmt.Errorf("DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT")
 	}
 
 	httpClient := defaultHTTPClient(&ConnectParams{
-		Host:         url.Host,
+		Port:         port,
 		SessionToken: sessionToken,
 	})
 
 	return &sessionEnvConn{
 		Client: httpClient,
-		host:   url.Host,
+		host:   fmt.Sprintf("127.0.0.1:%d", port),
 	}, true, nil
 }
 

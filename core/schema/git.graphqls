@@ -1,26 +1,31 @@
 extend type Query {
-    "Query a git repository"
+    "Queries a git repository."
     git(url: String!, keepGitDir: Boolean): GitRepository!
 }
 
-"A git repository"
+"A git repository."
 type GitRepository {
-    "List of branches on the repository"
+    "Lists of branches on the repository."
     branches: [String!]!
-    "Details on one branch"
+
+    "Returns details on one branch."
     branch(name: String!): GitRef!
-    "List of tags on the repository"
+
+    "Lists of tags on the repository."
     tags: [String!]!
-    "Details on one tag"
+
+    "Returns details on one tag."
     tag(name: String!): GitRef!
-    "Details on one commit"
+
+    "Returns details on one commit."
     commit(id: String!): GitRef!
 }
 
-"A git ref (tag or branch)"
+"A git ref (tag, branch or commit)."
 type GitRef {
-    "The digest of the current value of this ref"
+    "The digest of the current value of this ref."
     digest: String!
-    "The filesystem tree at this ref"
+
+    "The filesystem tree at this ref."
     tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
 }

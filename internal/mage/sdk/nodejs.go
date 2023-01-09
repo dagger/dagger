@@ -9,6 +9,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
+	"golang.org/x/sync/errgroup"
 )
 
 var nodejsGeneratedAPIPath = "sdk/nodejs/api/client.gen.ts"
@@ -25,15 +26,37 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	_, err = nodeJsBase(c).
-		WithExec([]string{"yarn", "lint"}).
-		ExitCode(ctx)
-	if err != nil {
+	eg, gctx := errgroup.WithContext(ctx)
+
+	base := nodeJsBase(c)
+
+	eg.Go(func() error {
+		_, err = base.
+			WithExec([]string{"yarn", "lint"}).
+			ExitCode(gctx)
 		return err
-	}
-	return lintGeneratedCode(func() error {
-		return t.Generate(ctx)
-	}, nodejsGeneratedAPIPath)
+	})
+
+	eg.Go(func() error {
+		workdir := util.Repository(c)
+		snippets := c.Directory().
+			WithDirectory("/", workdir.Directory("docs/current/sdk/nodejs/snippets"))
+		_, err = base.
+			WithMountedDirectory("/snippets", snippets).
+			WithWorkdir("/snippets").
+			WithExec([]string{"yarn", "install"}).
+			WithExec([]string{"yarn", "lint"}).
+			ExitCode(gctx)
+		return err
+	})
+
+	eg.Go(func() error {
+		return lintGeneratedCode(func() error {
+			return t.Generate(gctx)
+		}, nodejsGeneratedAPIPath)
+	})
+
+	return eg.Wait()
 }
 
 // Test tests the Node.js SDK

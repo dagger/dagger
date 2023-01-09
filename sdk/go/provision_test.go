@@ -40,12 +40,12 @@ func TestProvision(t *testing.T) {
 	xdg.Reload()
 	cacheDir := filepath.Join(tmpdir, "dagger")
 
-	// ignore DAGGER_SESSION_URL
-	origSessionURL, sessionURLSet := os.LookupEnv("DAGGER_SESSION_URL")
-	if sessionURLSet {
-		defer os.Setenv("DAGGER_SESSION_URL", origSessionURL)
+	// ignore DAGGER_SESSION_PORT
+	origSessionPort, sessionPortSet := os.LookupEnv("DAGGER_SESSION_PORT")
+	if sessionPortSet {
+		defer os.Setenv("DAGGER_SESSION_PORT", origSessionPort)
 	}
-	os.Unsetenv("DAGGER_SESSION_URL")
+	os.Unsetenv("DAGGER_SESSION_PORT")
 
 	if cliURL := os.Getenv("_INTERNAL_DAGGER_TEST_CLI_URL"); cliURL != "" {
 		// If explicitly requested to test against a certain URL, use that

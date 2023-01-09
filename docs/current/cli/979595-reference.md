@@ -16,12 +16,12 @@ dagger [options] [command]
 
 The options below can be used with all CLI commands.
 
-| Option | Description |
-|---|---|
-| `--debug` | Show Buildkitd debug logs |
-| `-h`, `--help` | Show help text |
-| `--workdir` | Define the host working directory (default `.`) |
-|---|---|
+| Option         | Description                                     |
+| -------------- | ----------------------------------------------- |
+| `--debug`      | Show Buildkitd debug logs                       |
+| `-h`, `--help` | Show help text                                  |
+| `--workdir`    | Define the host working directory (default `.`) |
+| ---            | ---                                             |
 
 ## Commands
 
@@ -55,7 +55,7 @@ dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 
 ## dagger run
 
-Executes the specified command in a Dagger session. `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` will be injected automatically.
+Executes the specified command in a Dagger session. `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be injected automatically.
 
 ### Usage
 
@@ -72,7 +72,7 @@ dagger run -- sh -c 'curl \
   -u $DAGGER_SESSION_TOKEN: \
   -H "content-type:application/json" \
   -d "{\"query\":\"{container{id}}\"}" \
-  $DAGGER_SESSION_URL'
+  http://127.0.0.1:$DAGGER_SESSION_PORT/query'
 ```
 
 ## dagger help
@@ -105,12 +105,12 @@ dagger query [--doc file] [--var string] [--var-json string] [query]
 
 ### Options
 
-| Option | Description |
-|---|---|
-| `--doc` | Read query from file |
-| `--var` | Read query from string |
+| Option       | Description                 |
+| ------------ | --------------------------- |
+| `--doc`      | Read query from file        |
+| `--var`      | Read query from string      |
 | `--var-json` | Read query from JSON string |
-|---|---|
+| ---          | ---                         |
 
 ### Example
 

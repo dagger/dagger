@@ -21,8 +21,14 @@ const (
 	daggerCliBinName = "dagger"
 	shimBinName      = "dagger-shim"
 	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.10.5"
+	buildkitBranch   = "v0.11.0-rc3"
+
+	engineTomlPath = "/etc/dagger/engine.toml"
+	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
+	engineDefaultStateDir = "/var/lib/dagger"
 )
+
+var engineToml = fmt.Sprintf("root = %q\n", engineDefaultStateDir)
 
 func parseRef(tag string) error {
 	if tag == "main" {
@@ -207,7 +213,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"run",
 		"-d",
 		"--rm",
-		"-v", volumeName+":/var/lib/buildkit",
+		"-v", volumeName+":"+engineDefaultStateDir,
 		"--name", util.TestContainerName,
 		"--privileged",
 		imageName,
@@ -248,14 +254,17 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				"/app/cmd/shim",
 			}).
 			File("./bin/" + shimBinName)
-		//nolint
 		buildkitBase = buildkitBase.WithRootfs(
-			buildkitBase.Rootfs().WithFile("/usr/bin/"+shimBinName, shimBin),
+			buildkitBase.Rootfs().
+				WithFile("/usr/bin/"+shimBinName, shimBin).
+				WithNewFile(engineTomlPath, engineToml).
+				WithNewDirectory(engineDefaultStateDir),
 		)
 
 		// setup entrypoint
 		buildkitBase = buildkitBase.WithEntrypoint([]string{
 			"buildkitd",
+			"--config", engineTomlPath,
 			"--oci-worker-binary", "/usr/bin/" + shimBinName,
 		})
 

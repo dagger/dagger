@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     # only run this on push events, not in PRs
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.repository == 'dagger/dagger'
     steps:
       - uses: actions/checkout@v3
 
@@ -67,6 +67,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: macos-latest
     env:
@@ -109,7 +110,7 @@ jobs:
 
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
         # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
       - name: "Bootstrap Poetry"
@@ -148,6 +149,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -187,6 +189,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
@@ -209,7 +212,7 @@ jobs:
         shell: bash
       - uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: "Bootstrap Poetry"
         run: |
           curl -sL https://install.python-poetry.org | python - -y
@@ -232,6 +235,7 @@ jobs:
     needs: [publish]
     if: |
       always() &&
+      github.repository == 'dagger/dagger' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
     runs-on: ubuntu-latest
     steps:

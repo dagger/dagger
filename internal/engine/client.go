@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"strings"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 
@@ -25,26 +25,14 @@ func init() {
 	logrus.StandardLogger().SetOutput(io.Discard)
 }
 
-type engineProviderFunc func(ctx context.Context, u *url.URL) (buildkitAddr string, err error)
-
-func passthroughEngineProvider(ctx context.Context, u *url.URL) (string, error) {
-	return u.String(), nil
-}
-
-var engineProviderHandler = map[string]engineProviderFunc{
-	DockerContainerProvider: dockerContainerProvider,
-	DockerImageProvider:     dockerImageProvider,
-	"unix":                  passthroughEngineProvider,
-}
-
 func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
-	provider, found := engineProviderHandler[remote.Scheme]
-	if !found {
-		return nil, errors.Errorf("unknown engine provider: %s", remote.Scheme)
-	}
-	buildkitdHost, err := provider(ctx, remote)
-	if err != nil {
-		return nil, err
+	buildkitdHost := remote.String()
+	if remote.Scheme == DockerImageProvider {
+		var err error
+		buildkitdHost, err = dockerImageProvider(ctx, remote)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if err := waitBuildkit(ctx, buildkitdHost); err != nil {
@@ -95,5 +83,7 @@ func waitBuildkit(ctx context.Context, host string) error {
 		}
 		time.Sleep(retryPeriod)
 	}
-	return errors.New("buildkit failed to respond")
+
+	listWorkerError := strings.ReplaceAll(err.Error(), "\\n", "")
+	return fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
 }

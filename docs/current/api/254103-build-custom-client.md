@@ -68,6 +68,7 @@ Once the client library is installed, create an API client as described below.
 Add the following code to `src/main.rs`:
 
 ```rust file=snippets/build-custom-client/step2/main.rs
+
 ```
 
 </TabItem>
@@ -76,6 +77,7 @@ Add the following code to `src/main.rs`:
 Create a new file named `client.php` and add the following code to it:
 
 ```php file=snippets/build-custom-client/step2/client.php
+
 ```
 
 </TabItem>
@@ -84,12 +86,12 @@ Create a new file named `client.php` and add the following code to it:
 This code listing initializes the client library and defines the Dagger pipeline to be executed as a GraphQL query. This query performs the following operations:
 
 - It requests the `from` field of Dagger's `Container` object type, passing it the address of a container image. To resolve this, Dagger will initialize a container using the specified image and return a `Container` object representing the `alpine:latest` container image.
-- Next, it requests the `withExec` field of the `Container` object from the previous step, passing  the `uname -a` command to the field as an array of arguments. To resolve this, Dagger will return a `Container` object containing the execution plan.
+- Next, it requests the `withExec` field of the `Container` object from the previous step, passing the `uname -a` command to the field as an array of arguments. To resolve this, Dagger will return a `Container` object containing the execution plan.
 - Finally, it requests the `stdout` field of the `Container` object returned in the previous step. To resolve this, Dagger will execute the command and return a `String` containing the results.
 - The result of the query is a JSON object, which is processed and printed to the output device.
 
 :::info
-The API endpoint and the HTTP authentication token for the GraphQL client are not statically defined, they must be retrieved at run-time from the special `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables. This is explained in more detail in the next section.
+The API endpoint and the HTTP authentication token for the GraphQL client are not statically defined, they must be retrieved at run-time from the special `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` environment variables. This is explained in more detail in the next section.
 :::
 
 ## Step 3: Run the API client
@@ -97,7 +99,11 @@ The API endpoint and the HTTP authentication token for the GraphQL client are no
 To run the pipeline, the API client in the previous step needs to communicate with the Dagger Engine, which is responsible for accepting the query, executing it and returning the result. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
 
 :::info
-The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is exposed in the `DAGGER_SESSION_URL` environment variable, and can be directly read from the environment in your client code. It additionally protects the exposed API with an HTTP Basic authentication token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
+The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is served over localhost at the port specified by the `DAGGER_SESSION_PORT` environment variable, and can be directly read from the environment in your client code.
+
+For example, if `DAGGER_SESSION_PORT` is set to `12345`, the API endpoint can be reached at `http://127.0.0.1:$DAGGER_SESSION_PORT/query`
+
+It additionally protects the exposed API with an HTTP Basic authentication token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
 :::
 
 :::warning
@@ -116,7 +122,7 @@ dagger run cargo run
 This command:
 
 - initializes a new Dagger Engine session
-- sets the `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables.
+- sets the `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` environment variables.
 - executes the `cargo run` command in that session
 
 </TabItem>
@@ -129,13 +135,13 @@ dagger run php client.php
 This command:
 
 - initializes a new Dagger Engine session
-- sets the `DAGGER_SESSION_URL` and `DAGGER_SESSION_TOKEN` environment variables.
+- sets the `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` environment variables.
 - executes the `php client.php` command in that session
 
 </TabItem>
 </Tabs>
 
-The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_URL` environment variable, sets an HTTP Basic authentication  token with `DAGGER_SESSION_TOKEN` and executes the GraphQL query. Here is an example of the output:
+The specified command, in turn, invokes the custom API client, connects to the API endpoint specified in the `DAGGER_SESSION_PORT` environment variable, sets an HTTP Basic authentication token with `DAGGER_SESSION_TOKEN` and executes the GraphQL query. Here is an example of the output:
 
 ```shell
 buildkitsandbox 5.15.0-53-generic unknown Linux

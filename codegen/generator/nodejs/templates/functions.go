@@ -13,20 +13,21 @@ import (
 
 var (
 	funcMap = template.FuncMap{
-		"CommentToLines":    commentToLines,
-		"FormatDeprecation": formatDeprecation,
-		"FormatInputType":   formatInputType,
-		"FormatOutputType":  formatOutputType,
-		"FormatName":        formatName,
-		"GetOptionalArgs":   getOptionalArgs,
-		"GetRequiredArgs":   getRequiredArgs,
-		"HasPrefix":         strings.HasPrefix,
-		"PascalCase":        pascalCase,
-		"IsArgOptional":     isArgOptional,
-		"IsCustomScalar":    isCustomScalar,
-		"SortInputFields":   sortInputFields,
-		"Solve":             solve,
-		"Subtract":          subtract,
+		"CommentToLines":      commentToLines,
+		"FormatDeprecation":   formatDeprecation,
+		"FormatInputType":     formatInputType,
+		"FormatOutputType":    formatOutputType,
+		"FormatName":          formatName,
+		"GetOptionalArgs":     getOptionalArgs,
+		"GetRequiredArgs":     getRequiredArgs,
+		"HasPrefix":           strings.HasPrefix,
+		"PascalCase":          pascalCase,
+		"IsArgOptional":       isArgOptional,
+		"IsCustomScalar":      isCustomScalar,
+		"ArgsHaveDescription": argsHaveDescription,
+		"SortInputFields":     sortInputFields,
+		"Solve":               solve,
+		"Subtract":            subtract,
 	}
 )
 
@@ -50,6 +51,11 @@ func subtract(a, b int) int {
 
 // commentToLines split a string by line breaks to be used in comments
 func commentToLines(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return []string{}
+	}
+
 	split := strings.Split(s, "\n")
 	return split
 }
@@ -126,6 +132,7 @@ func formatType(r *introspection.TypeRef, input bool) (representation string) {
 					"FileID":      "File",
 					"DirectoryID": "Directory",
 					"SecretID":    "Secret",
+					"SocketID":    "Socket",
 					"CacheID":     "CacheVolume",
 				}
 				if alias, ok := rewrite[ref.Name]; ok && input {
@@ -194,4 +201,14 @@ func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+func argsHaveDescription(values introspection.InputValues) bool {
+	for _, o := range values {
+		if strings.TrimSpace(o.Description) != "" {
+			return true
+		}
+	}
+
+	return false
 }

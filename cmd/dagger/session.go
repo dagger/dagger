@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
 
@@ -22,15 +21,16 @@ import (
 
 func sessionCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:    "session",
-		Long:   "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
-		Hidden: true,
-		RunE:   EngineSession,
+		Use:          "session",
+		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
+		Hidden:       true,
+		RunE:         EngineSession,
+		SilenceUsage: true,
 	}
 }
 
 type connectParams struct {
-	Host         string `json:"host"`
+	Port         int    `json:"port"`
 	SessionToken string `json:"session_token"`
 }
 
@@ -76,7 +76,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 
 		paramBytes, err := json.Marshal(connectParams{
-			Host:         "127.0.0.1:" + strconv.Itoa(port),
+			Port:         port,
 			SessionToken: sessionToken.String(),
 		})
 		if err != nil {

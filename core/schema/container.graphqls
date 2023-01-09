@@ -1,6 +1,6 @@
 extend type Query {
   """
-  Load a container from ID.
+  Loads a container from ID.
   Null ID returns an empty container (scratch).
   Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
   """
@@ -11,113 +11,128 @@ extend type Query {
 scalar ContainerID
 
 """
-An OCI-compatible container, also known as a docker container
+An OCI-compatible container, also known as a docker container.
 """
 type Container {
-  "A unique identifier for this container"
+  "A unique identifier for this container."
   id: ContainerID!
 
-  "The platform this container executes and publishes as"
+  "The platform this container executes and publishes as."
   platform: Platform!
 
-  "Initialize this container from the base image published at the given address"
-  from(address: String!): Container!
+  "Initializes this container from the base image published at the given address."
+  from(
+    """
+    Image's address from its registry.
+    Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!
+  ): Container!
 
-  "Initialize this container from a Dockerfile build"
-  build(context: DirectoryID!, dockerfile: String, buildArgs: [BuildArg!]): Container!
+  "Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs."
+  build(
+    "Directory context used by the Dockerfile."
+    context: DirectoryID!,
 
-  "This container's root filesystem. Mounts are not included."
+    """
+    Path to the Dockerfile to use.
+    Defaults to './Dockerfile'.
+    """
+    dockerfile: String,
+    "Additional build arguments."
+    buildArgs: [BuildArg!]
+  ): Container!
+
+  "Retrieves this container's root filesystem. Mounts are not included."
   rootfs: Directory!
 
-  "This container's root filesystem. Mounts are not included."
+  "Retrieves this container's root filesystem. Mounts are not included."
   fs: Directory! @deprecated(reason: "Replaced by `rootfs`.")
 
-  "Initialize this container from this DirectoryID"
+  "Initializes this container from this DirectoryID."
   withRootfs(id: DirectoryID!): Container!
 
-  "Initialize this container from this DirectoryID"
+  "Initializes this container from this DirectoryID."
   withFS(id: DirectoryID!): Container!
     @deprecated(reason: "Replaced by `withRootfs`.")
 
-  "Retrieve a directory at the given path. Mounts are included."
+  "Retrieves a directory at the given path. Mounts are included."
   directory(path: String!): Directory!
 
-  "Retrieve a file at the given path. Mounts are included."
+  "Retrieves a file at the given path. Mounts are included."
   file(path: String!): File!
 
-  "The user to be set for all commands"
+  "Retrieves the user to be set for all commands."
   user: String
 
-  "This container but with a different command user"
+  "Retrieves this containers with a different command user."
   withUser(name: String!): Container!
 
-  "The working directory for all commands"
+  "Retrieves the working directory for all commands."
   workdir: String
 
-  "This container but with a different working directory"
+  "Retrieves this container with a different working directory."
   withWorkdir(path: String!): Container!
 
-  "A list of environment variables passed to commands"
+  "Retrieves the list of environment variables passed to commands."
   envVariables: [EnvVariable!]!
 
-  "The value of the specified environment variable"
+  "Retrieves the value of the specified environment variable."
   envVariable(name: String!): String
 
-  "This container plus the given environment variable"
+  "Retrieves this container plus the given environment variable."
   withEnvVariable(name: String!, value: String!): Container!
 
-  "This container plus an env variable containing the given secret"
+  "Retrieves this container plus an env variable containing the given secret."
   withSecretVariable(name: String!, secret: SecretID!): Container!
 
-  "This container minus the given environment variable"
+  "Retrieves this container minus the given environment variable."
   withoutEnvVariable(name: String!): Container!
 
-  "Entrypoint to be prepended to the arguments of all commands"
+  "Retrieves entrypoint to be prepended to the arguments of all commands."
   entrypoint: [String!]
 
-  "This container but with a different command entrypoint"
+  "Retrieves this container but with a different command entrypoint."
   withEntrypoint(args: [String!]!): Container!
 
-  "Default arguments for future commands"
+  "Retrieves default arguments for future commands."
   defaultArgs: [String!]
 
-  "Configures default arguments for future commands"
+  "Configures default arguments for future commands."
   withDefaultArgs(args: [String!]): Container!
 
-  "List of paths where a directory is mounted"
+  "Retrieves the list of paths where a directory is mounted."
   mounts: [String!]!
 
-  "This container plus a directory mounted at the given path"
+  "Retrieves this container plus a directory mounted at the given path."
   withMountedDirectory(path: String!, source: DirectoryID!): Container!
 
-  "This container plus a file mounted at the given path"
+  "Retrieves this container plus a file mounted at the given path."
   withMountedFile(path: String!, source: FileID!): Container!
 
-  "This container plus a temporary directory mounted at the given path"
+  "Retrieves this container plus a temporary directory mounted at the given path."
   withMountedTemp(path: String!): Container!
 
-  "This container plus a cache volume mounted at the given path"
+  "Retrieves this container plus a cache volume mounted at the given path."
   withMountedCache(
     path: String!
     cache: CacheID!
     source: DirectoryID
   ): Container!
 
-  "This container plus a secret mounted into a file at the given path"
+  "Retrieves this container plus a secret mounted into a file at the given path."
   withMountedSecret(path: String!, source: SecretID!): Container!
 
-  """
-  This container after unmounting everything at the given path.
-  """
+  "Retrieves this container after unmounting everything at the given path."
   withoutMount(path: String!): Container!
 
-  "This container plus the contents of the given file copied to the given path"
+  "Retrieves this container plus the contents of the given file copied to the given path."
   withFile(path: String!, source: FileID!, permissions: Int): Container!
 
-  "This container plus a new file written at the given path"
+  "Retrieves this container plus a new file written at the given path."
   withNewFile(path: String!, contents: String, permissions: Int): Container!
 
-  "This container plus a directory written at the given path"
+  "Retrieves this container plus a directory written at the given path."
   withDirectory(
     path: String!
     directory: DirectoryID!
@@ -125,44 +140,52 @@ type Container {
     include: [String!]
   ): Container!
 
-  "This container plus a socket forwarded to the given Unix socket path"
+  "Retrieves this container plus a socket forwarded to the given Unix socket path."
   withUnixSocket(path: String!, source: SocketID!): Container!
 
-  "This container with a previously added Unix socket removed"
+  "Retrieves this container with a previously added Unix socket removed."
   withoutUnixSocket(path: String!): Container!
 
-  "This container after executing the specified command inside it"
+  "Retrieves this container after executing the specified command inside it."
   withExec(
-    "Command to run instead of the container's default command"
+    "Command to run instead of the container's default command."
     args: [String!]!
-    "Content to write to the command's standard input before closing"
+
+    "Content to write to the command's standard input before closing."
     stdin: String
-    "Redirect the command's standard output to a file in the container"
+
+    "Redirect the command's standard output to a file in the container."
     redirectStdout: String
-    "Redirect the command's standard error to a file in the container"
+
+    "Redirect the command's standard error to a file in the container."
     redirectStderr: String
+
     """
-    Provide dagger access to the executed command
-    Do not use this option unless you trust the command being executed
-    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+    Provide dagger access to the executed command.
+    Do not use this option unless you trust the command being executed.
+    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     """
     experimentalPrivilegedNesting: Boolean
   ): Container!
 
-  "This container after executing the specified command inside it"
+  "Retrieves this container after executing the specified command inside it."
   exec(
-    "Command to run instead of the container's default command"
+    "Command to run instead of the container's default command."
     args: [String!]
-    "Content to write to the command's standard input before closing"
+
+    "Content to write to the command's standard input before closing."
     stdin: String
-    "Redirect the command's standard output to a file in the container"
+
+    "Redirect the command's standard output to a file in the container."
     redirectStdout: String
-    "Redirect the command's standard error to a file in the container"
+
+    "Redirect the command's standard error to a file in the container."
     redirectStderr: String
+
     """
-    Provide dagger access to the executed command
-    Do not use this option unless you trust the command being executed
-    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
+    Provide dagger access to the executed command.
+    Do not use this option unless you trust the command being executed.
+    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     """
     experimentalPrivilegedNesting: Boolean
   ): Container! @deprecated(reason: "Replaced by `withExec`.")
@@ -187,25 +210,48 @@ type Container {
 
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.
-  "Publish this container as a new image, returning a fully qualified ref"
-  publish(address: String!, platformVariants: [ContainerID!]): String!
+  """
+  Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+  """
+  publish(
+    """
+    Registry's address to publish the image to.
+    Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!,
 
-  "Write the container as an OCI tarball to the destination file path on the host"
-  export(path: String!, platformVariants: [ContainerID!]): Boolean!
+    """
+    Identifiers for other platform specific containers.
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!]
+  ): String!
+
+  """
+  Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+  Return true on success.
+  """
+  export(
+      """
+      Host's destination path.
+      Path can be relative to the engine's workdir or absolute.
+      """
+      path: String!,
+
+      """
+      Identifiers for other platform specific containers.
+      Used for multi-platform image.
+      """
+      platformVariants: [ContainerID!]
+  ): Boolean!
 }
 
-"""
-EnvVariable is a simple key value object that represents an environment variable.
-"""
+"A simple key value object that represents an environment variable."
 type EnvVariable {
-  """
-  name is the environment variable name.
-  """
+  "The environment variable name."
   name: String!
 
-  """
-  value is the environment variable value
-  """
+  "The environment variable value."
   value: String!
 }
 
