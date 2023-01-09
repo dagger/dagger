@@ -24,6 +24,7 @@ import (
 const (
 	daggerCLIBinPrefix = "dagger-"
 	defaultCLIHost     = "dl.dagger.io"
+	windowsPlatform    = "windows"
 )
 
 var (
@@ -58,7 +59,7 @@ func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
 	}
 
 	binName := daggerCLIBinPrefix + CLIVersion
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsPlatform {
 		binName += ".exe"
 	}
 	binPath := filepath.Join(cacheDir, binName)
@@ -192,7 +193,7 @@ func extractCLI(ctx context.Context, dest io.Writer) (string, error) {
 	// the body is either a tar.gz file or (on windows) a zipfile, unpack it and extract the dagger binary
 	hasher := sha256.New()
 	reader := io.TeeReader(resp.Body, hasher)
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == windowsPlatform {
 		if err := extractZip(reader, dest); err != nil {
 			return "", err
 		}
@@ -282,11 +283,15 @@ func defaultCLIArchiveName() string {
 		}
 		return filepath.Base(url.Path)
 	}
-	// TODO:(sipsma) fix this for windows
-	return fmt.Sprintf("dagger_v%s_%s_%s.tar.gz",
+	ext := "tar.gz"
+	if runtime.GOOS == windowsPlatform {
+		ext = "zip"
+	}
+	return fmt.Sprintf("dagger_v%s_%s_%s.%s",
 		CLIVersion,
 		runtime.GOOS,
 		runtime.GOARCH,
+		ext,
 	)
 }
 
