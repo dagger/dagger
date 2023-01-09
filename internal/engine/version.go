@@ -15,7 +15,13 @@ const (
 var DevelopmentVersion = fmt.Sprintf("devel (%s)", vcsRevision())
 
 // Version holds the complete version number. Filled in at linking time.
-var Version = DevelopmentVersion
+var Version string
+
+func init() {
+	if Version == "" {
+		Version = DevelopmentVersion
+	}
+}
 
 func ImageRef() string {
 	// If "devel" is set, then this is a local build. Normally _EXPERIMENTAL_DAGGER_RUNNER_HOST
