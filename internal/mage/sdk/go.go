@@ -31,6 +31,8 @@ func (t Go) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("go").Pipeline("lint")
+
 	_, err = c.Container().
 		From("golangci/golangci-lint:v1.48").
 		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
@@ -54,6 +56,8 @@ func (t Go) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
+
 	output, err := util.GoBase(c).
 		WithWorkdir("sdk/go").
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
@@ -72,6 +76,8 @@ func (t Go) Generate(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("go").Pipeline("generate")
 
 	generated, err := util.GoBase(c).
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
@@ -93,6 +99,8 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("go").Pipeline("publish")
 
 	var targetTag = strings.TrimPrefix(tag, "sdk/go/")
 

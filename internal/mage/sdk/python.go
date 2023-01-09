@@ -34,6 +34,8 @@ func (t Python) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("python").Pipeline("lint")
+
 	eg, gctx := errgroup.WithContext(ctx)
 
 	base := pythonBase(c, pythonDefaultVersion)
@@ -74,13 +76,15 @@ func (t Python) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("python").Pipeline("test")
+
 	versions := []string{"3.10", "3.11"}
 
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, version := range versions {
 		version := version
 		eg.Go(func() error {
-			_, err := pythonBase(c, version).
+			_, err := pythonBase(c.Pipeline(version), version).
 				WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 				WithExec([]string{"poe", "test", "--exitfirst"}).
 				ExitCode(gctx)
@@ -98,6 +102,8 @@ func (t Python) Generate(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("python").Pipeline("generate")
 
 	generated := pythonBase(c, pythonDefaultVersion).
 		WithExec([]string{"poe", "generate"})
@@ -121,6 +127,8 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("python").Pipeline("publish")
 
 	var (
 		version = strings.TrimPrefix(tag, "sdk/python/v")
