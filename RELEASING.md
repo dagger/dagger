@@ -392,16 +392,16 @@ https://docs.dagger.io. However, this deployment is not automatically
 published.
 
 After testing the documentation using the staging website and if you
-are satisfied that the documentation is correct, manually publish the
+are satisfied with it, manually publish the
 production deployment via Netlify as follows:
 
 1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
 1. Refer to the list of "production deploys" and select the one you wish
 to deploy. Usually, this will be the most recent one. You can confirm this
-by checking the commit hash against the latest commit hash in the
+by checking the deployment hash against the latest commit hash in the
 [dagger/dagger repository main branch](https://github.com/dagger/dagger).
 1. On the deployment page, click the "Preview" button to once again
-validate the deployment. You can also check the deployment log to
+preview/check the deployment. You can also check the deployment log to
 confirm there were no errors during the documentation build process.
 1. If you are satisfied with the preview, click the "Publish deploy"
 button. This will publish the selected deployment on https://docs.dagger.io.
