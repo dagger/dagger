@@ -147,7 +147,11 @@ func formatType(r *introspection.TypeRef, input bool) (representation string) {
 				return representation
 			}
 		case introspection.TypeKindObject:
-			representation += formatName(ref.Name)
+			name := ref.Name
+			if name == "Query" {
+				name = "Client"
+			}
+			representation += formatName(name)
 			return representation
 		case introspection.TypeKindInputObject:
 			representation += formatName(ref.Name)

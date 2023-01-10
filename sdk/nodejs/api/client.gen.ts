@@ -2002,8 +2002,8 @@ export default class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  group(name: string): Query {
-    return new Query({
+  group(name: string): Client {
+    return new Client({
       queryTree: [
         ...this._queryTree,
         {
