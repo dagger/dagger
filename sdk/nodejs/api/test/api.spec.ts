@@ -72,7 +72,7 @@ describe("NodeJS SDK api", function () {
     )
   })
 
-  it("Pass a client with an implicit ID as a parameter", async function () {
+  it("Pass a client with an explicit ID as a parameter", async function () {
     this.timeout(60000)
     connect(async (client: Client) => {
       const image = await client
@@ -84,6 +84,22 @@ describe("NodeJS SDK api", function () {
             .id(),
         })
         .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
+        .withExec(["echo", "foo bar"])
+        .stdout()
+
+      assert.strictEqual(image, `foo  bar`)
+    })
+  })
+
+  it("Pass a cache volume with an implicit ID as a parameter", async function () {
+    this.timeout(60000)
+    connect(async (client: Client) => {
+      const cacheVolume = client.cacheVolume("cache_key")
+      const image = await client
+        .container()
+        .from("alpine")
+        .withExec(["apk", "add", "yarn"])
+        .withMountedCache("/root/.cache", cacheVolume)
         .withExec(["echo", "foo bar"])
         .stdout()
 
