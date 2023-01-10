@@ -16,16 +16,20 @@ export type {{ .Name }} = string
 			{{- $argsLen := len $optionals }}
 			{{- if gt $argsLen 0 }}
 export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
-				{{- range $optionals }}
-					{{- $opt := "" -}}
-					{{- if .TypeRef.IsOptional }}
-						{{- $opt = "?" -}}
-					{{- end }}
-					{{- if .Description }}
+					{{- range $optionals }}
+						{{- $opt := "" -}}
+						{{- if .TypeRef.IsOptional }}
+							{{- $opt = "?" -}}
+						{{- end }}
+						{{- if .Description }}
 {{ template "type_field_comment" .Description }}
-					{{- end }}
+						{{- end }}
+						{{- if ne .Name "id" }}
   {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
-				{{- end }}
+						{{- else }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatOutputType }}
+  						{{- end }}
+					{{- end }}
 }
 {{ "" }}		{{- end }}
 		{{- end }}
@@ -43,7 +47,7 @@ export type {{ $typeName }} = {
     {{- if .Description }}
 {{ template "type_field_comment" .Description }}
     {{- end }}
-  {{ .Name  }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
 
 
     {{- end }}

@@ -11,8 +11,8 @@
 
 {{- template "method_comment" . }}
 {{- "" }}  {{ .Name -}}(
-{{- with $required }}
-	{{- template "args" $required }}
+{{- if $required }}
+	{{- template "args" . }}
 {{- end }}
 {{- if $optionals }}
 	{{- if $required }}, {{ end }}

@@ -76,12 +76,10 @@ func formatDeprecation(s string) []string {
 
 // formatType formats a GraphQL type into Go
 // Example: `String` -> `string`
-// TODO: maybe delete and only use formatType?
 func formatInputType(r *introspection.TypeRef) string {
 	return formatType(r, true)
 }
 
-// TODO: maybe delete and only use formatType?
 func formatOutputType(r *introspection.TypeRef) string {
 	return formatType(r, false)
 }
@@ -138,9 +136,9 @@ func formatType(r *introspection.TypeRef, input bool) (representation string) {
 				if alias, ok := rewrite[ref.Name]; ok && input {
 					listChars := "[]"
 					if isList {
-						representation += ref.Name + listChars + " | " + alias + listChars
+						representation += alias + listChars
 					} else {
-						representation += ref.Name + " | " + alias
+						representation += alias
 					}
 					isList = false
 				} else {
