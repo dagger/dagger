@@ -77,10 +77,11 @@ describe("NodeJS SDK api", function () {
     connect(async (client: Client) => {
       const image = await client
         .container({
-          id: client
+          id: await client
             .container()
             .from("alpine")
-            .withExec(["apk", "add", "yarn"]),
+            .withExec(["apk", "add", "yarn"])
+            .id(),
         })
         .withMountedCache("/root/.cache", client.cacheVolume("cache_key"))
         .withExec(["echo", "foo bar"])
