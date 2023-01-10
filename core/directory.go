@@ -210,7 +210,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)))
+		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Group.LLBOpt())
 	}
 
 	st = st.File(
@@ -307,6 +307,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, payload.Dir, ".", llb.WithCreatedTime(t)),
+		payload.Group.LLBOpt(),
 	)
 
 	return NewDirectory(ctx, stamped, "", payload.Platform)
@@ -387,6 +388,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
 	states := make([]llb.State, 0, len(dirs))
+	var group Group
 	for _, fs := range dirs {
 		payload, err := fs.ID.Decode()
 		if err != nil {
@@ -398,6 +400,10 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, payload.Platform)
 		}
 
+		if group.Name() == "" {
+			group = payload.Group
+		}
+
 		state, err := payload.State()
 		if err != nil {
 			return nil, err
@@ -406,7 +412,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states), "", platform)
+	return NewDirectory(ctx, llb.Merge(states, group.LLBOpt()), "", platform)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -440,7 +446,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt, lowerPayload.Group.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -459,7 +465,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true))))
+	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), payload.Group.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +504,9 @@ func (dir *Directory) Export(
 		if srcPayload.Dir != "" {
 			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
 				CopyDirContentsOnly: true,
-			}))
+			}),
+				srcPayload.Group.LLBOpt(),
+			)
 
 			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
 			if err != nil {
