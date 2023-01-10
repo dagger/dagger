@@ -140,7 +140,10 @@ However if the `_EXPERIMENTAL_DAGGER_RUNNER_HOST` env var is set, then the CLI w
 
 1. `docker-container://<container name>` - Connect to the runner inside the given docker container.
    - Requires the docker CLI be present and usable. Will result in shelling out to `docker exec`.
-1. `unix://<path to unix socket` - Connect to the runner over the provided unix socket.
+1. `podman-container://<container name>` - Connect to the runner inside the given podman container.
+1. `kube-pod://<podname>?context=<context>&namespace=<namespace>&container=<container>` - Connect to the runner inside the given k8s pod. Query strings params like context and namespace are optional.
+1. `unix://<path to unix socket>` - Connect to the runner over the provided unix socket.
+1. `tcp://<addr:port>` - Connect to the runner over tcp to the provided addr+port. No encryption will be setup.
 
 > **Warning**
 > Dagger itself does not setup any encryption of data sent on this wire, so it relies on the underlying connection type to implement this when needed. If you are using a connection type that does not layer encryption then all queries and responses will be sent in plaintext over the wire from the CLI to the Runner.
