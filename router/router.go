@@ -33,12 +33,6 @@ func New(sessionToken string) *Router {
 		sessionToken: sessionToken,
 	}
 
-	// FIXME: Since we're unable to use `extend Query` in `group.graphqls`,
-	// removing this otherwise they'd be 2 conflicting `type Query` definitions.
-	// if err := r.Add(&rootSchema{}); err != nil {
-	// 	panic(err)
-	// }
-
 	return r
 }
 

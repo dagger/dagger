@@ -1,6 +1,0 @@
-# FIXME: this should be using `extend type Query`.
-# However, that fails with `failed to resolve all type definitions: [Query]`
-# during stitching.
-type Query {
-  group(name: String!): Query!
-}

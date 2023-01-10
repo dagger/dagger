@@ -5,21 +5,21 @@ import (
 	"github.com/dagger/dagger/router"
 )
 
-type groupSchema struct {
+type querySchema struct {
 	*baseSchema
 }
 
-var _ router.ExecutableSchema = &groupSchema{}
+var _ router.ExecutableSchema = &querySchema{}
 
-func (s *groupSchema) Name() string {
-	return "group"
+func (s *querySchema) Name() string {
+	return "query"
 }
 
-func (s *groupSchema) Schema() string {
-	return Group
+func (s *querySchema) Schema() string {
+	return Query
 }
 
-func (s *groupSchema) Resolvers() router.Resolvers {
+func (s *querySchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
 			"group": router.ToResolver(s.group),
@@ -27,7 +27,7 @@ func (s *groupSchema) Resolvers() router.Resolvers {
 	}
 }
 
-func (s *groupSchema) Dependencies() []router.ExecutableSchema {
+func (s *querySchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
@@ -35,7 +35,7 @@ type groupArgs struct {
 	Name string
 }
 
-func (s *groupSchema) group(ctx *router.Context, parent *core.Query, args groupArgs) (*core.Query, error) {
+func (s *querySchema) group(ctx *router.Context, parent *core.Query, args groupArgs) (*core.Query, error) {
 	if parent == nil {
 		parent = &core.Query{}
 	}
