@@ -1581,11 +1581,11 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-func (r *Query) Group(name string) *Query {
+func (r *Query) Group(name string) *Client {
 	q := r.q.Select("group")
 	q = q.Arg("name", name)
 
-	return &Query{
+	return &Client{
 		q: q,
 		c: r.c,
 	}
