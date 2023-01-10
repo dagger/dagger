@@ -1394,6 +1394,14 @@ class Client(Root):
         return GitRepository(_ctx)
 
     @typecheck
+    def group(self, name: str) -> "Client":
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("group", _args)
+        return Client(_ctx)
+
+    @typecheck
     def host(self) -> Host:
         """Queries the host environment."""
         _args: list[Arg] = []

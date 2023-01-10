@@ -383,7 +383,7 @@ class _ObjectField:
         self.description = field.description
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
-        self.type = format_output_type(field.type)
+        self.type = format_output_type(field.type).replace("Query", "Client")
 
     @joiner
     def __str__(self) -> Iterator[str]:
