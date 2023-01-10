@@ -194,7 +194,11 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
 		eg.Go(func() error {
-			f, err := os.Create(startOpts.JournalFile)
+			f, err := os.OpenFile(
+				startOpts.JournalFile,
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+				0644,
+			)
 			if err != nil {
 				return err
 			}
