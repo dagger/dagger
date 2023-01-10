@@ -74,17 +74,21 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
-              CLI_VERSION=$GITHUB_SHA
-              ENGINE_VERSION='main'
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_darwin_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
             else
-              # this is a tag push, trim the leading v from vx.y.z
-              CLI_VERSION=${GITHUB_REF_NAME:1}
-              ENGINE_VERSION=$GITHUB_REF_NAME
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_darwin_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_darwin_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
       - name: "Install Docker"
@@ -155,17 +159,21 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
-              CLI_VERSION=$GITHUB_SHA
-              ENGINE_VERSION='main'
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
             else
-              # this is a tag push, trim the leading v from vx.y.z
-              CLI_VERSION=${GITHUB_REF_NAME:1}
-              ENGINE_VERSION=$GITHUB_REF_NAME
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
       - uses: actions/setup-go@v3
@@ -195,17 +203,21 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
-              CLI_VERSION=$GITHUB_SHA
-              ENGINE_VERSION='main'
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
             else
-              # this is a tag push, trim the leading v from vx.y.z
-              CLI_VERSION=${GITHUB_REF_NAME:1}
-              ENGINE_VERSION=$GITHUB_REF_NAME
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
       - uses: actions/setup-python@v4
@@ -241,17 +253,21 @@ jobs:
       - name: "Set CLI Test URL"
         run: |
           if [ ${{ github.event_name }} == 'push' ]; then
+            BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
             if [ $GITHUB_REF_NAME == 'main' ]; then
-              CLI_VERSION=$GITHUB_SHA
-              ENGINE_VERSION='main'
+              # this is a push to the main branch
+              ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
             else
-              # this is a tag push, trim the leading v from vx.y.z
-              CLI_VERSION=${GITHUB_REF_NAME:1}
-              ENGINE_VERSION=$GITHUB_REF_NAME
+              # this is a tag push
+              ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
+              CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
+              RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
             fi
-            echo "_INTERNAL_DAGGER_TEST_CLI_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/dagger_${CLI_VERSION}_linux_amd64.tar.gz" >> $GITHUB_ENV
-            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=https://${{ secrets.RELEASE_FQDN }}/dagger/main/${CLI_VERSION}/checksums.txt" >> $GITHUB_ENV
-            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${ENGINE_VERSION}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+            echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+            echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
           fi
         shell: bash
       - uses: actions/setup-node@v2
