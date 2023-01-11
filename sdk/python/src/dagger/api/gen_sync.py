@@ -72,6 +72,7 @@ class Container(Type):
         context: "Directory",
         dockerfile: Optional[str] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
+        target: Optional[str] = None,
     ) -> "Container":
         """Initializes this container from a Dockerfile build, using the context,
         a dockerfile file path and some additional buildArgs.
@@ -85,11 +86,14 @@ class Container(Type):
             Defaults to './Dockerfile'.
         build_args:
             Additional build arguments.
+        target:
+            Target build stage to build.
         """
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, None),
             Arg("buildArgs", build_args, None),
+            Arg("target", target, None),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -729,6 +733,7 @@ class Directory(Type):
         dockerfile: Optional[str] = None,
         platform: Optional[Platform] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
+        target: Optional[str] = None,
     ) -> Container:
         """Builds a new Docker container from this directory.
 
@@ -738,12 +743,17 @@ class Directory(Type):
             Path to the Dockerfile to use.
             Defaults to './Dockerfile'.
         platform:
+            The platform to build.
         build_args:
+            Additional build arguments.
+        target:
+            Target build stage to build.
         """
         _args = [
             Arg("dockerfile", dockerfile, None),
             Arg("platform", platform, None),
             Arg("buildArgs", build_args, None),
+            Arg("target", target, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)

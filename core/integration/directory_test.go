@@ -701,4 +701,29 @@ CMD goenv
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
+
+	t.Run("with target", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine AS base
+CMD echo "base"
+
+FROM base AS stage1
+CMD echo "stage1"
+
+FROM base AS stage2
+CMD echo "stage2"
+`)
+
+		output, err := src.DockerBuild().WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, output, "stage2\n")
+
+		output, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{
+			Target: "stage1",
+		}).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, output, "stage1\n")
+		require.NotContains(t, output, "stage2\n")
+	})
 }
