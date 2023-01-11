@@ -64,10 +64,16 @@ type Directory {
     Path to the Dockerfile to use.
     Defaults to './Dockerfile'.
     """
-    dockerfile: String,
+    dockerfile: String
 
-    platform: Platform,
+    "The platform to build."
+    platform: Platform
+
+    "Additional build arguments."
     buildArgs: [BuildArg!]
+
+    "Target build stage to build."
+    target: String
   ): Container!
 
   "Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch."

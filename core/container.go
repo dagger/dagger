@@ -234,7 +234,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg, target string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -256,6 +256,10 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
 	} else {
 		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
+	}
+
+	if target != "" {
+		opts["target"] = target
 	}
 
 	for _, buildArg := range buildArgs {

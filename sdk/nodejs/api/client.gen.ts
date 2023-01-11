@@ -73,6 +73,11 @@ export type ContainerBuildOpts = {
    * Additional build arguments.
    */
   buildArgs?: BuildArg[]
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
 }
 
 export type ContainerExecOpts = {
@@ -182,8 +187,21 @@ export type DirectoryDockerBuildOpts = {
    * Defaults to './Dockerfile'.
    */
   dockerfile?: string
+
+  /**
+   * The platform to build.
+   */
   platform?: Platform
+
+  /**
+   * Additional build arguments.
+   */
   buildArgs?: BuildArg[]
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
 }
 
 export type DirectoryEntriesOpts = {
@@ -316,6 +334,7 @@ export class Container extends BaseClient {
    * @param opts.dockerfile Path to the Dockerfile to use.
 Defaults to './Dockerfile'.
    * @param opts.buildArgs Additional build arguments.
+   * @param opts.target Target build stage to build.
    */
   build(context: Directory, opts?: ContainerBuildOpts): Container {
     return new Container({
@@ -1115,6 +1134,9 @@ export class Directory extends BaseClient {
    * Builds a new Docker container from this directory.
    * @param opts.dockerfile Path to the Dockerfile to use.
 Defaults to './Dockerfile'.
+   * @param opts.platform The platform to build.
+   * @param opts.buildArgs Additional build arguments.
+   * @param opts.target Target build stage to build.
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({

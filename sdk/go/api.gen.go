@@ -78,6 +78,8 @@ type ContainerBuildOpts struct {
 	Dockerfile string
 	// Additional build arguments.
 	BuildArgs []BuildArg
+	// Target build stage to build.
+	Target string
 }
 
 // Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
@@ -95,6 +97,13 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
+			break
+		}
+	}
+	// `target` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Target) {
+			q = q.Arg("target", opts[i].Target)
 			break
 		}
 	}
@@ -792,10 +801,12 @@ type DirectoryDockerBuildOpts struct {
 	// Path to the Dockerfile to use.
 	// Defaults to './Dockerfile'.
 	Dockerfile string
-
+	// The platform to build.
 	Platform Platform
-
+	// Additional build arguments.
 	BuildArgs []BuildArg
+	// Target build stage to build.
+	Target string
 }
 
 // Builds a new Docker container from this directory.
@@ -819,6 +830,13 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
+			break
+		}
+	}
+	// `target` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Target) {
+			q = q.Arg("target", opts[i].Target)
 			break
 		}
 	}
