@@ -1,8 +1,10 @@
+{{- if ne (.Name | FormatName) "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
+{{- end }}
 {{ range $field := .Fields }}
 {{- if $field.Args.HasOptionals }}
 // {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
@@ -42,14 +44,22 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{- end }}
 	{{ if $field.TypeRef.IsObject }}
+	{{ $typeName := $field.TypeRef | FormatOutputType }}
 	return &{{ $field.TypeRef | FormatOutputType }} {
 		q: q,
+		{{- if ne $typeName "Client" }}
 		c: r.c,
+		{{- end }}
 	}
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 	var response {{ $field.TypeRef | FormatOutputType }}
 	q = q.Bind(&response)
+	{{- $typeName := $field.TypeRef | FormatOutputType }}
+	{{- if ne $typeName "Client" }}
 	return response, q.Execute(ctx, r.c)
+	{{- else }}
+	return response, q.Execute(ctx, r.gql)
+	{{- end }}
 	{{- end }}
 }
 

@@ -1493,13 +1493,8 @@ func (r *Project) SDK(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-type Query struct {
-	q *querybuilder.Selection
-	c graphql.Client
-}
-
 // Constructs a cache volume for a given cache key.
-func (r *Query) CacheVolume(key string) *CacheVolume {
+func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.q.Select("cacheVolume")
 	q = q.Arg("key", key)
 
@@ -1519,7 +1514,7 @@ type ContainerOpts struct {
 // Loads a container from ID.
 // Null ID returns an empty container (scratch).
 // Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-func (r *Query) Container(opts ...ContainerOpts) *Container {
+func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1543,7 +1538,7 @@ func (r *Query) Container(opts ...ContainerOpts) *Container {
 }
 
 // The default platform of the builder.
-func (r *Query) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
 
 	var response Platform
@@ -1557,7 +1552,7 @@ type DirectoryOpts struct {
 }
 
 // Load a directory by ID. No argument produces an empty directory.
-func (r *Query) Directory(opts ...DirectoryOpts) *Directory {
+func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	q := r.q.Select("directory")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1574,7 +1569,7 @@ func (r *Query) Directory(opts ...DirectoryOpts) *Directory {
 }
 
 // Loads a file by ID.
-func (r *Query) File(id FileID) *File {
+func (r *Client) File(id FileID) *File {
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
 
@@ -1590,7 +1585,7 @@ type GitOpts struct {
 }
 
 // Queries a git repository.
-func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
 	q = q.Arg("url", url)
 	// `keepGitDir` optional argument
@@ -1608,7 +1603,7 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 }
 
 // Queries the host environment.
-func (r *Query) Host() *Host {
+func (r *Client) Host() *Host {
 	q := r.q.Select("host")
 
 	return &Host{
@@ -1618,7 +1613,7 @@ func (r *Query) Host() *Host {
 }
 
 // Returns a file containing an http remote url content.
-func (r *Query) HTTP(url string) *File {
+func (r *Client) HTTP(url string) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
 
@@ -1634,7 +1629,7 @@ type PipelineOpts struct {
 }
 
 // Creates a named sub-pipeline
-func (r *Query) Pipeline(name string, opts ...PipelineOpts) *Client {
+func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
 	// `description` optional argument
@@ -1646,15 +1641,12 @@ func (r *Query) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 
 	return &Client{
-		Query: Query{
-			q: q,
-			c: r.c,
-		},
+		q: q,
 	}
 }
 
 // Look up a project by name
-func (r *Query) Project(name string) *Project {
+func (r *Client) Project(name string) *Project {
 	q := r.q.Select("project")
 	q = q.Arg("name", name)
 
@@ -1665,7 +1657,7 @@ func (r *Query) Project(name string) *Project {
 }
 
 // Loads a secret from its ID.
-func (r *Query) Secret(id SecretID) *Secret {
+func (r *Client) Secret(id SecretID) *Secret {
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
 
@@ -1681,7 +1673,7 @@ type SocketOpts struct {
 }
 
 // Loads a socket by its ID.
-func (r *Query) Socket(opts ...SocketOpts) *Socket {
+func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	q := r.q.Select("socket")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
