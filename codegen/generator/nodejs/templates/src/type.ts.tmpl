@@ -1,8 +1,8 @@
-{{ define "type" -}}
+{{ define "type" }}
 	{{- $typeName := .Name }}
-	{{- if  eq $typeName "Query" }}
-		{{- $typeName = "Client" -}}
-	{{- end -}}
+	{{- if eq $typeName "Query" }}
+		{{- $typeName = "Client" }}
+	{{- end }}
 
 	{{- if IsCustomScalar . }}
 {{ template "object_comment" .Description }}
@@ -21,48 +21,42 @@ export enum {{ .Name }} {
 }
 	{{- end }}
 	{{- with .Fields }}
-		{{- range . -}}
+		{{- range . }}
 			{{- $optionals := GetOptionalArgs .Args }}
 			{{- $argsLen := len $optionals }}
 			{{- if gt $argsLen 0 }}
 export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
-					{{- range $optionals }}
-						{{- $opt := "" -}}
-						{{- if .TypeRef.IsOptional }}
-							{{- $opt = "?" -}}
-						{{- end }}
-						{{- if .Description }}
-{{ template "type_field_comment" .Description }}
-						{{- end }}
-						{{- if ne .Name "id" }}
-  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
-						{{- else }}
-  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatOutputType }}
-  						{{- end }}
-					{{- end }}
+				{{- template "field" $optionals }}
 }
 {{ "" }}		{{- end }}
 		{{- end }}
 	{{- end }}
 
-{{- /* Generate input GraphQL type */ -}}
+	{{- /* Generate input GraphQL type */ -}}
 	{{- with .InputFields }}
 export type {{ $typeName }} = {
-    {{- $sortedField := SortInputFields .  }}
-    {{- range $sortedField -}}
-    {{- $opt := "" -}}
-    {{ if .TypeRef.IsOptional }}
-        {{- $opt = "?" -}}
-    {{- end }}
-    {{- if .Description }}
-{{ template "type_field_comment" .Description }}
-    {{- end }}
-  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
-
-
-    {{- end }}
+		{{- $sortedField := SortInputFields . }}
+		{{- template "field" $sortedField }}
 }
 {{ "" }}
 	{{- end }}
 
+{{- end }}
+
+{{- define "field" }}
+	{{- range . }}
+		{{- $opt := "" }}
+		{{- if .TypeRef.IsOptional }}
+			{{- $opt = "?" }}
+		{{- end }}
+		{{- if .Description }}
+{{ template "type_field_comment" .Description }}
+		{{- end }}
+		{{- if ne .Name "id" }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType }}
+		{{- else }}
+  {{ .Name }}{{ $opt }}: {{ .TypeRef | FormatOutputType }}
+		{{- end }}
+		
+	{{- end }}
 {{- end }}
