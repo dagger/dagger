@@ -115,19 +115,7 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	if err != nil {
 		return nil, err
 	}
-
 	src = path.Join(payload.Dir, src)
-
-	// empty directory, i.e. llb.Scratch()
-	if payload.LLB == nil {
-		if path.Clean(src) == "." {
-			// fake out a reasonable response
-			return &fstypes.Stat{Path: src}, nil
-		}
-
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: payload.LLB,
 	})
@@ -138,6 +126,18 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			// fake out a reasonable response
+			return &fstypes.Stat{
+				Path: src,
+				Mode: uint32(fs.ModeDir),
+			}, nil
+		}
+
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	stat, err := ref.StatFile(ctx, bkgw.StatRequest{
@@ -157,16 +157,6 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	}
 
 	src = path.Join(payload.Dir, src)
-
-	// empty directory, i.e. llb.Scratch()
-	if payload.LLB == nil {
-		if path.Clean(src) == "." {
-			return []string{}, nil
-		}
-
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: payload.LLB,
 	})
@@ -177,6 +167,13 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{

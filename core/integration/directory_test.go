@@ -32,6 +32,16 @@ func TestEmptyDirectory(t *testing.T) {
 	require.Empty(t, res.Directory.Entries)
 }
 
+func TestScratchDirectory(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+	_, err := c.Container().Directory("/").Entries(ctx)
+	require.NoError(t, err)
+	// require.ErrorContains(t, err, "no such file or directory")
+}
+
 func TestDirectoryWithNewFile(t *testing.T) {
 	t.Parallel()
 
