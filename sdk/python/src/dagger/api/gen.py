@@ -322,6 +322,16 @@ class Container(Type):
         return await _ctx.execute(list[str])
 
     @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Container":
+        """Creates a named sub-pipeline"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def platform(self) -> Platform:
         """The platform this container executes and publishes as.
 
@@ -824,6 +834,16 @@ class Directory(Type):
         ]
         _ctx = self._select("loadProject", _args)
         return Project(_ctx)
+
+    @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Directory":
+        """Creates a named sub-pipeline."""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Directory(_ctx)
 
     @typecheck
     def with_directory(
@@ -1392,6 +1412,16 @@ class Client(Root):
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
+
+    @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Client":
+        """Creates a named sub-pipeline"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Client(_ctx)
 
     @typecheck
     def project(self, name: str) -> Project:

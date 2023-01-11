@@ -33,10 +33,6 @@ func New(sessionToken string) *Router {
 		sessionToken: sessionToken,
 	}
 
-	if err := r.Add(&rootSchema{}); err != nil {
-		panic(err)
-	}
-
 	return r
 }
 

@@ -1,0 +1,4 @@
+type Query {
+  "Creates a named sub-pipeline"
+  pipeline(name: String!, description: String): Query!
+}

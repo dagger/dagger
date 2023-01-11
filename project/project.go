@@ -200,7 +200,7 @@ func (p *State) Extensions(
 				}
 				p.extensions = append(p.extensions, depState)
 			case dep.Git != nil:
-				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref), "", platform)
+				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref), "", core.PipelinePath{}, platform)
 				if err != nil {
 					rerr = err
 					return

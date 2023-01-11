@@ -30,6 +30,7 @@ type directoryIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
+	Pipeline PipelinePath   `json:"pipeline"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -80,10 +81,11 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
+		Pipeline: pipeline.Copy(),
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -96,24 +98,24 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 	return payload.ToDirectory()
 }
 
+func (dir *Directory) Pipeline(ctx context.Context, name, description string) (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+		Name:        name,
+		Description: description,
+	})
+	return payload.ToDirectory()
+}
+
 func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
-
 	src = path.Join(payload.Dir, src)
-
-	// empty directory, i.e. llb.Scratch()
-	if payload.LLB == nil {
-		if path.Clean(src) == "." {
-			// fake out a reasonable response
-			return &fstypes.Stat{Path: src}, nil
-		}
-
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: payload.LLB,
 	})
@@ -124,6 +126,18 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			// fake out a reasonable response
+			return &fstypes.Stat{
+				Path: src,
+				Mode: uint32(fs.ModeDir),
+			}, nil
+		}
+
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	stat, err := ref.StatFile(ctx, bkgw.StatRequest{
@@ -143,16 +157,6 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	}
 
 	src = path.Join(payload.Dir, src)
-
-	// empty directory, i.e. llb.Scratch()
-	if payload.LLB == nil {
-		if path.Clean(src) == "." {
-			return []string{}, nil
-		}
-
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
-
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: payload.LLB,
 	})
@@ -163,6 +167,13 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	ref, err := res.SingleRef()
 	if err != nil {
 		return nil, err
+	}
+	// empty directory, i.e. llb.Scratch()
+	if ref == nil {
+		if clean := path.Clean(src); clean == "." || clean == "/" {
+			return []string{}, nil
+		}
+		return nil, fmt.Errorf("%s: no such file or directory", src)
 	}
 
 	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
@@ -200,7 +211,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)))
+		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 	}
 
 	st = st.File(
@@ -209,6 +220,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 			permissions,
 			content,
 		),
+		payload.Pipeline.LLBOpt(),
 	)
 
 	err = payload.SetState(ctx, st)
@@ -269,7 +281,9 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		CopyDirContentsOnly: true,
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
-	}))
+	}),
+		destPayload.Pipeline.LLBOpt(),
+	)
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -294,9 +308,10 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, payload.Dir, ".", llb.WithCreatedTime(t)),
+		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewDirectory(ctx, stamped, "", payload.Platform)
+	return NewDirectory(ctx, stamped, "", payload.Pipeline, payload.Platform)
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string, permissions fs.FileMode) (*Directory, error) {
@@ -322,7 +337,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)))
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 
 	err = payload.SetState(ctx, st)
 	if err != nil {
@@ -362,7 +377,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
 		Mode:           perm,
-	}))
+	}), destPayload.Pipeline.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -374,6 +389,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
 	states := make([]llb.State, 0, len(dirs))
+	var pipeline PipelinePath
 	for _, fs := range dirs {
 		payload, err := fs.ID.Decode()
 		if err != nil {
@@ -385,6 +401,10 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, payload.Platform)
 		}
 
+		if pipeline.Name() == "" {
+			pipeline = payload.Pipeline
+		}
+
 		state, err := payload.State()
 		if err != nil {
 			return nil, err
@@ -393,7 +413,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states), "", platform)
+	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -427,7 +447,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt))
+	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt, lowerPayload.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +466,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true))))
+	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), payload.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -485,7 +505,9 @@ func (dir *Directory) Export(
 		if srcPayload.Dir != "" {
 			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
 				CopyDirContentsOnly: true,
-			}))
+			}),
+				srcPayload.Pipeline.LLBOpt(),
+			)
 
 			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
 			if err != nil {

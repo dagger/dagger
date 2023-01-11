@@ -11,6 +11,9 @@ type Directory {
   "The content-addressed identifier of the directory."
   id: DirectoryID!
 
+  "Creates a named sub-pipeline."
+  pipeline(name: String!, description: String): Directory!
+
   "Returns a list of files and directories at the given path."
   entries(path: String): [String!]!
 

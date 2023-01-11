@@ -117,6 +117,10 @@ export type ContainerExportOpts = {
   platformVariants?: Container[]
 }
 
+export type ContainerPipelineOpts = {
+  description?: string
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -208,6 +212,10 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryPipelineOpts = {
+  description?: string
+}
+
 export type DirectoryWithDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern.
@@ -281,6 +289,10 @@ export type ClientDirectoryOpts = {
 
 export type ClientGitOpts = {
   keepGitDir?: boolean
+}
+
+export type ClientPipelineOpts = {
+  description?: string
 }
 
 export type ClientSocketOpts = {
@@ -587,6 +599,23 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
     )
 
     return response
+  }
+
+  /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ContainerPipelineOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -1232,6 +1261,23 @@ Defaults to './Dockerfile'.
         {
           operation: "loadProject",
           args: { configPath },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Creates a named sub-pipeline.
+   */
+  pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2003,6 +2049,23 @@ export default class Client extends BaseClient {
         {
           operation: "http",
           args: { url },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ClientPipelineOpts): Client {
+    return new Client({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
         },
       ],
       host: this.clientHost,

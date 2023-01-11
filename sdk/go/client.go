@@ -13,10 +13,10 @@ import (
 
 // Client is the Dagger Engine Client
 type Client struct {
-	Query
-
 	conn engineconn.EngineConn
-	gql  graphql.Client
+	c    graphql.Client
+
+	q *querybuilder.Selection
 }
 
 // ClientOpt holds a client option
@@ -79,12 +79,9 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	return &Client{
-		gql:  gql,
+		c:    gql,
 		conn: conn,
-		Query: Query{
-			q: querybuilder.Query(),
-			c: gql,
-		},
+		q:    querybuilder.Query(),
 	}, nil
 }
 
@@ -104,7 +101,7 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 		r.Errors = resp.Errors
 		r.Extensions = resp.Extensions
 	}
-	return c.gql.MakeRequest(ctx, &graphql.Request{
+	return c.c.MakeRequest(ctx, &graphql.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
 		OpName:    req.OpName,
