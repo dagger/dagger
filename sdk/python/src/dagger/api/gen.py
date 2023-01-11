@@ -770,7 +770,7 @@ class Directory(Type):
 
     @typecheck
     async def entries(self, path: Optional[str] = None) -> list[str]:
-        """Returns a list of files and directories at the given path
+        """Returns a list of files and directories at the given path.
 
         Returns
         -------
@@ -837,7 +837,7 @@ class Directory(Type):
 
     @typecheck
     def pipeline(self, name: str, description: Optional[str] = None) -> "Directory":
-        """Creates a named sub-pipeline"""
+        """Creates a named sub-pipeline."""
         _args = [
             Arg("name", name),
             Arg("description", description, None),

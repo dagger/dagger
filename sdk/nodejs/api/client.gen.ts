@@ -1182,7 +1182,7 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Returns a list of files and directories at the given path
+   * Returns a list of files and directories at the given path.
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1269,7 +1269,7 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Creates a named sub-pipeline
+   * Creates a named sub-pipeline.
    */
   pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
     return new Directory({

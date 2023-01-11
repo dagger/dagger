@@ -875,7 +875,7 @@ type DirectoryEntriesOpts struct {
 	Path string
 }
 
-// Returns a list of files and directories at the given path
+// Returns a list of files and directories at the given path.
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
 	q := r.q.Select("entries")
 	// `path` optional argument
@@ -951,7 +951,7 @@ type DirectoryPipelineOpts struct {
 	Description string
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)

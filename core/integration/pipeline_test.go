@@ -4,12 +4,30 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
 	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
 )
+
+type safeBuffer struct {
+	bu bytes.Buffer
+	mu sync.Mutex
+}
+
+func (s *safeBuffer) Write(p []byte) (n int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.Write(p)
+}
+
+func (s *safeBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bu.String()
+}
 
 func TestPipeline(t *testing.T) {
 	t.Parallel()
@@ -19,7 +37,9 @@ func TestPipeline(t *testing.T) {
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
 	t.Run("container pipeline", func(t *testing.T) {
-		var logs bytes.Buffer
+		t.Parallel()
+
+		var logs safeBuffer
 		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
 		require.NoError(t, err)
 		defer c.Close()
@@ -32,11 +52,15 @@ func TestPipeline(t *testing.T) {
 			ExitCode(ctx)
 
 		require.NoError(t, err)
+		// FIXME: Wait for logs to be flushed out
+		time.Sleep(100 * time.Millisecond)
 		require.Contains(t, logs.String(), "container pipeline")
 	})
 
 	t.Run("directory pipeline", func(t *testing.T) {
-		var logs bytes.Buffer
+		t.Parallel()
+
+		var logs safeBuffer
 		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
 		require.NoError(t, err)
 		defer c.Close()

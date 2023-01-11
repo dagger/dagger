@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -180,8 +181,26 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 	if startOpts.LogOutput != nil {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
+
+		// Read `ch`; strip away custom names; re-write to `cleanCh`
+		cleanCh := make(chan *bkclient.SolveStatus)
 		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.LogOutput, ch)
+			defer close(cleanCh)
+			for ev := range ch {
+				for _, v := range ev.Vertexes {
+					customName := core.CustomName{}
+					if json.Unmarshal([]byte(v.Name), &customName) == nil {
+						v.Name = customName.Name
+					}
+				}
+				cleanCh <- ev
+			}
+			return nil
+		})
+
+		// Display from `cleanCh`
+		eg.Go(func() error {
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.LogOutput, cleanCh)
 			for _, w := range warn {
 				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
 			}
