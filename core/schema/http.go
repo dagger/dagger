@@ -36,9 +36,14 @@ type httpArgs struct {
 	URL string `json:"url"`
 }
 
-func (s *httpSchema) http(ctx *router.Context, _ any, args httpArgs) (*core.File, error) {
-	st := llb.HTTP(args.URL, llb.Filename("contents"))
-	f, err := core.NewFile(ctx, st, "contents", s.platform)
+func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
+	pipeline := core.PipelinePath{}
+	if parent != nil {
+		pipeline = parent.Context.Pipeline
+	}
+
+	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
+	f, err := core.NewFile(ctx, st, "contents", pipeline, s.platform)
 	if err != nil {
 		return nil, err
 	}

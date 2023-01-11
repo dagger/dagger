@@ -294,16 +294,6 @@ func (r *Container) FS() *Directory {
 	}
 }
 
-func (r *Container) Group(name string) *Container {
-	q := r.q.Select("group")
-	q = q.Arg("name", name)
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
@@ -334,6 +324,29 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	var response []string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// ContainerPipelineOpts contains options for Container.Pipeline
+type ContainerPipelineOpts struct {
+	Description string
+}
+
+// Creates a named sub-pipeline
+func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
+	q := r.q.Select("pipeline")
+	q = q.Arg("name", name)
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
 }
 
 // The platform this container executes and publishes as.
@@ -899,16 +912,6 @@ func (r *Directory) File(path string) *File {
 	}
 }
 
-func (r *Directory) Group(name string) *Directory {
-	q := r.q.Select("group")
-	q = q.Arg("name", name)
-
-	return &Directory{
-		q: q,
-		c: r.c,
-	}
-}
-
 // The content-addressed identifier of the directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 	q := r.q.Select("id")
@@ -938,6 +941,29 @@ func (r *Directory) LoadProject(configPath string) *Project {
 	q = q.Arg("configPath", configPath)
 
 	return &Project{
+		q: q,
+		c: r.c,
+	}
+}
+
+// DirectoryPipelineOpts contains options for Directory.Pipeline
+type DirectoryPipelineOpts struct {
+	Description string
+}
+
+// Creates a named sub-pipeline
+func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
+	q := r.q.Select("pipeline")
+	q = q.Arg("name", name)
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+
+	return &Directory{
 		q: q,
 		c: r.c,
 	}
@@ -1581,16 +1607,6 @@ func (r *Query) Git(url string, opts ...GitOpts) *GitRepository {
 	}
 }
 
-func (r *Query) Group(name string) *Client {
-	q := r.q.Select("group")
-	q = q.Arg("name", name)
-
-	return &Client{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Queries the host environment.
 func (r *Query) Host() *Host {
 	q := r.q.Select("host")
@@ -1609,6 +1625,31 @@ func (r *Query) HTTP(url string) *File {
 	return &File{
 		q: q,
 		c: r.c,
+	}
+}
+
+// PipelineOpts contains options for Query.Pipeline
+type PipelineOpts struct {
+	Description string
+}
+
+// Creates a named sub-pipeline
+func (r *Query) Pipeline(name string, opts ...PipelineOpts) *Client {
+	q := r.q.Select("pipeline")
+	q = q.Arg("name", name)
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+
+	return &Client{
+		Query: Query{
+			q: q,
+			c: r.c,
+		},
 	}
 }
 

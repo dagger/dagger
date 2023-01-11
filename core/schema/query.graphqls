@@ -1,3 +1,4 @@
 type Query {
-  group(name: String!): Query!
+  "Creates a named sub-pipeline"
+  pipeline(name: String!, description: String): Query!
 }

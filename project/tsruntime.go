@@ -55,6 +55,7 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 				)),
 			)),
 		"",
+		core.PipelinePath{},
 		platform,
 	)
 }

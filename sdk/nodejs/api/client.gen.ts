@@ -117,6 +117,10 @@ export type ContainerExportOpts = {
   platformVariants?: Container[]
 }
 
+export type ContainerPipelineOpts = {
+  description?: string
+}
+
 export type ContainerPublishOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -208,6 +212,10 @@ export type DirectoryEntriesOpts = {
   path?: string
 }
 
+export type DirectoryPipelineOpts = {
+  description?: string
+}
+
 export type DirectoryWithDirectoryOpts = {
   /**
    * Exclude artifacts that match the given pattern.
@@ -281,6 +289,10 @@ export type ClientDirectoryOpts = {
 
 export type ClientGitOpts = {
   keepGitDir?: boolean
+}
+
+export type ClientPipelineOpts = {
+  description?: string
 }
 
 export type ClientSocketOpts = {
@@ -554,19 +566,6 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
       sessionToken: this.sessionToken,
     })
   }
-  group(name: string): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "group",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
 
   /**
    * A unique identifier for this container.
@@ -600,6 +599,23 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
     )
 
     return response
+  }
+
+  /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ContainerPipelineOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -1217,19 +1233,6 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
-  group(name: string): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "group",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
 
   /**
    * The content-addressed identifier of the directory.
@@ -1258,6 +1261,23 @@ Defaults to './Dockerfile'.
         {
           operation: "loadProject",
           args: { configPath },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2002,19 +2022,6 @@ export default class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  group(name: string): Client {
-    return new Client({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "group",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
 
   /**
    * Queries the host environment.
@@ -2042,6 +2049,23 @@ export default class Client extends BaseClient {
         {
           operation: "http",
           args: { url },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ClientPipelineOpts): Client {
+    return new Client({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
         },
       ],
       host: this.clientHost,

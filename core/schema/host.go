@@ -50,11 +50,11 @@ type hostWorkdirArgs struct {
 }
 
 func (s *hostSchema) workdir(ctx *router.Context, parent *core.Query, args hostWorkdirArgs) (*core.Directory, error) {
-	group := core.Group{}
+	pipeline := core.PipelinePath{}
 	if parent != nil {
-		group = parent.Context.Group
+		pipeline = parent.Context.Pipeline
 	}
-	return s.host.Directory(ctx, ".", group, s.platform, args.CopyFilter)
+	return s.host.Directory(ctx, ".", pipeline, s.platform, args.CopyFilter)
 }
 
 type hostVariableArgs struct {
@@ -82,11 +82,11 @@ type hostDirectoryArgs struct {
 }
 
 func (s *hostSchema) directory(ctx *router.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
-	group := core.Group{}
+	pipeline := core.PipelinePath{}
 	if parent != nil {
-		group = parent.Context.Group
+		pipeline = parent.Context.Pipeline
 	}
-	return s.host.Directory(ctx, args.Path, group, s.platform, args.CopyFilter)
+	return s.host.Directory(ctx, args.Path, pipeline, s.platform, args.CopyFilter)
 }
 
 type hostSocketArgs struct {

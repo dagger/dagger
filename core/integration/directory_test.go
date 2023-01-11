@@ -25,12 +25,10 @@ func TestEmptyDirectory(t *testing.T) {
 	err := testutil.Query(
 		`{
 			directory {
-				id
 				entries
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Empty(t, res.Directory.ID)
 	require.Empty(t, res.Directory.Entries)
 }
 

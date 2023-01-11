@@ -44,8 +44,9 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL        string `json:"url"`
-	KeepGitDir bool   `json:"keepGitDir"`
+	URL        string            `json:"url"`
+	KeepGitDir bool              `json:"keepGitDir"`
+	Pipeline   core.PipelinePath `json:"pipeline"`
 }
 
 type gitRef struct {
@@ -58,8 +59,16 @@ type gitArgs struct {
 	KeepGitDir bool   `json:"keepGitDir"`
 }
 
-func (s *gitSchema) git(ctx *router.Context, parent any, args gitArgs) (gitRepository, error) {
-	return gitRepository(args), nil
+func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
+	r := gitRepository{
+		URL:        args.URL,
+		KeepGitDir: args.KeepGitDir,
+	}
+	if parent != nil {
+		r.Pipeline = parent.Context.Pipeline
+	}
+
+	return r, nil
 }
 
 type branchArgs struct {
@@ -124,5 +133,5 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return core.NewDirectory(ctx, st, "", s.platform)
+	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform)
 }

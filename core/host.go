@@ -33,7 +33,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, group Group, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, pipeline PipelinePath, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -55,13 +55,16 @@ func (host *Host) Directory(ctx context.Context, dirPath string, group Group, pl
 		return nil, fmt.Errorf("eval symlinks: %w", err)
 	}
 
-	localGroup := group.Add(fmt.Sprintf("host.directory %s", absPath))
+	// Create a sub-pipeline to group llb.Local instructions
+	directoryPipeline := pipeline.Add(Pipeline{
+		Name: fmt.Sprintf("host.directory %s", absPath),
+	})
 
 	localID := fmt.Sprintf("host:%s", absPath)
 
 	localOpts := []llb.LocalOption{
-		// Inject group ID
-		localGroup.LLBOpt(),
+		// Inject Pipelin
+		directoryPipeline.LLBOpt(),
 
 		// Custom name
 		llb.WithCustomNamef("upload %s", absPath),
@@ -89,15 +92,11 @@ func (host *Host) Directory(ctx context.Context, dirPath string, group Group, pl
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
-		localGroup.LLBOpt(),
+		directoryPipeline.LLBOpt(),
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
-	dir, err := NewDirectory(ctx, st, "", platform)
-	if err != nil {
-		return nil, err
-	}
-	dir, err = dir.Group(ctx, group...)
+	dir, err := NewDirectory(ctx, st, "", pipeline, platform)
 	if err != nil {
 		return nil, err
 	}

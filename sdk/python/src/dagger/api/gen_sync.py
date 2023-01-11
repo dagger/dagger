@@ -289,14 +289,6 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def group(self, name: str) -> "Container":
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("group", _args)
-        return Container(_ctx)
-
-    @typecheck
     def id(self) -> ContainerID:
         """A unique identifier for this container.
 
@@ -328,6 +320,16 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("mounts", _args)
         return _ctx.execute_sync(list[str])
+
+    @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Container":
+        """Creates a named sub-pipeline"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Container(_ctx)
 
     @typecheck
     def platform(self) -> Platform:
@@ -808,14 +810,6 @@ class Directory(Type):
         return File(_ctx)
 
     @typecheck
-    def group(self, name: str) -> "Directory":
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("group", _args)
-        return Directory(_ctx)
-
-    @typecheck
     def id(self) -> DirectoryID:
         """The content-addressed identifier of the directory.
 
@@ -840,6 +834,16 @@ class Directory(Type):
         ]
         _ctx = self._select("loadProject", _args)
         return Project(_ctx)
+
+    @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Directory":
+        """Creates a named sub-pipeline"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Directory(_ctx)
 
     @typecheck
     def with_directory(
@@ -1394,14 +1398,6 @@ class Client(Root):
         return GitRepository(_ctx)
 
     @typecheck
-    def group(self, name: str) -> "Client":
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("group", _args)
-        return Client(_ctx)
-
-    @typecheck
     def host(self) -> Host:
         """Queries the host environment."""
         _args: list[Arg] = []
@@ -1416,6 +1412,16 @@ class Client(Root):
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
+
+    @typecheck
+    def pipeline(self, name: str, description: Optional[str] = None) -> "Client":
+        """Creates a named sub-pipeline"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("pipeline", _args)
+        return Client(_ctx)
 
     @typecheck
     def project(self, name: str) -> Project:

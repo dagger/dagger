@@ -30,9 +30,14 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
-func NewContainer(id ContainerID, platform specs.Platform) (*Container, error) {
+func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform) (*Container, error) {
 	if id == "" {
-		id, err := (&containerIDPayload{Platform: platform}).Encode()
+		payload := &containerIDPayload{
+			Pipeline: pipeline.Copy(),
+			Platform: platform,
+		}
+
+		id, err := payload.Encode()
 		if err != nil {
 			return nil, err
 		}
@@ -66,8 +71,8 @@ type containerIDPayload struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
-	// Group
-	Group Group `json:"group"`
+	// Pipeline
+	Pipeline PipelinePath `json:"pipeline"`
 
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
@@ -201,8 +206,10 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	platform := payload.Platform
 
 	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
-	// We create a progress group to encapsulate both.
-	group := payload.Group.Add(fmt.Sprintf("from %s", addr))
+	// We create a sub-pipeline to encapsulate both.
+	pipeline := payload.Pipeline.Add(Pipeline{
+		Name: fmt.Sprintf("from %s", addr),
+	})
 
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
@@ -215,8 +222,8 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
-		// the group in the vertex name.
-		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Group: group}.String(),
+		// the pipeline in the vertex name.
+		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -230,9 +237,9 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	dir, err := NewDirectory(ctx,
 		llb.Image(addr,
 			llb.WithCustomNamef("pull %s", ref),
-			group.LLBOpt(),
+			pipeline.LLBOpt(),
 		),
-		"/", platform)
+		"/", payload.Pipeline, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -315,13 +322,15 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	// Override the progress group of every LLB vertex in the DAG.
+	// Override the progress pipeline of every LLB vertex in the DAG.
 	// FIXME: this can't be done in a normal way because Buildkit doesn't currently
 	// allow overriding the metadata of DefinitionOp. See this PR and comment:
 	// https://github.com/moby/buildkit/pull/2819
-	group := payload.Group.Add("docker build")
+	pipeline := payload.Pipeline.Add(Pipeline{
+		Name: "docker build",
+	})
 	for dgst, metadata := range def.Metadata {
-		metadata.ProgressGroup = group.ProgressGroup()
+		metadata.ProgressGroup = pipeline.ProgressGroup()
 		def.Metadata[dgst] = metadata
 	}
 
@@ -661,7 +670,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, specs.Platform) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -699,7 +708,7 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err := init(ctx, st, sub, payload.Platform)
+			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -713,7 +722,7 @@ func locatePath[T *File | *Directory](
 		return nil, nil, err
 	}
 
-	found, err = init(ctx, st, containerPath, payload.Platform)
+	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -756,7 +765,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 	if err != nil {
 		return nil, err
 	}
-	dirPayload.Group = containerPayload.Group
+	dirPayload.Pipeline = containerPayload.Pipeline
 
 	dir, err = dirPayload.ToDirectory()
 	if err != nil {
@@ -806,13 +815,16 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Group(ctx context.Context, name ...string) (*Container, error) {
+func (container *Container) Pipeline(ctx context.Context, name, description string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
 	}
 
-	payload.Group = payload.Group.Add(name...)
+	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+		Name:        name,
+		Description: description,
+	})
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -848,7 +860,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		payload.Group.LLBOpt(),
+		payload.Pipeline.LLBOpt(),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
@@ -871,7 +883,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Group.LLBOpt()),
+			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1076,7 +1088,7 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
+	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
 }
 
 func (container *Container) Publish(

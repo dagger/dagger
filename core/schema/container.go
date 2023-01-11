@@ -36,7 +36,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
-			"group":                router.ToResolver(s.group),
+			"pipeline":             router.ToResolver(s.pipeline),
 			"fs":                   router.ToResolver(s.rootfs), // deprecated
 			"withRootfs":           router.ToResolver(s.withRootfs),
 			"withFS":               router.ToResolver(s.withRootfs), // deprecated
@@ -96,12 +96,13 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
-	ctr, err := core.NewContainer(args.ID, platform)
+	pipeline := core.PipelinePath{}
+	if parent != nil {
+		pipeline = parent.Context.Pipeline
+	}
+	ctr, err := core.NewContainer(args.ID, pipeline, platform)
 	if err != nil {
 		return nil, err
-	}
-	if parent != nil {
-		ctr, err = ctr.Group(ctx, parent.Context.Group...)
 	}
 	return ctr, err
 }
@@ -134,12 +135,13 @@ func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container
 	return ctr, nil
 }
 
-type containerGroupArgs struct {
-	Name string
+type containerPipelineArgs struct {
+	Name        string
+	Description string
 }
 
-func (s *containerSchema) group(ctx *router.Context, parent *core.Container, args containerGroupArgs) (*core.Container, error) {
-	return parent.Group(ctx, args.Name)
+func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
+	return parent.Pipeline(ctx, args.Name, args.Description)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {

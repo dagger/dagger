@@ -63,6 +63,7 @@ exec dagger-py "$@"
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
 		"",
+		core.PipelinePath{},
 		platform,
 	)
 }

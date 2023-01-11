@@ -22,7 +22,7 @@ func (s *querySchema) Schema() string {
 func (s *querySchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
-			"group": router.ToResolver(s.group),
+			"pipeline": router.ToResolver(s.pipeline),
 		},
 	}
 }
@@ -31,14 +31,18 @@ func (s *querySchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
-type groupArgs struct {
-	Name string
+type pipelineArgs struct {
+	Name        string
+	Description string
 }
 
-func (s *querySchema) group(ctx *router.Context, parent *core.Query, args groupArgs) (*core.Query, error) {
+func (s *querySchema) pipeline(ctx *router.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	if parent == nil {
 		parent = &core.Query{}
 	}
-	parent.Context.Group = parent.Context.Group.Add(args.Name)
+	parent.Context.Pipeline = parent.Context.Pipeline.Add(core.Pipeline{
+		Name:        args.Name,
+		Description: args.Description,
+	})
 	return parent, nil
 }

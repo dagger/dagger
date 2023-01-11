@@ -5,6 +5,6 @@ type Query struct {
 }
 
 type QueryContext struct {
-	// Group
-	Group Group `json:"group"`
+	// Pipeline
+	Pipeline PipelinePath `json:"pipeline"`
 }

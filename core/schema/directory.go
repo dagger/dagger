@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
+	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -33,7 +34,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 			"directory": router.ToResolver(s.directory),
 		},
 		"Directory": router.ObjectResolver{
-			"group":            router.ToResolver(s.group),
+			"pipeline":         router.ToResolver(s.pipeline),
 			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
 			"withFile":         router.ToResolver(s.withFile),
@@ -55,23 +56,33 @@ func (s *directorySchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
+type directoryPipelineArgs struct {
+	Name        string
+	Description string
+}
+
+func (s *directorySchema) pipeline(ctx *router.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
+	return parent.Pipeline(ctx, args.Name, args.Description)
+}
+
 type directoryArgs struct {
 	ID core.DirectoryID
 }
 
-func (s *directorySchema) group(ctx *router.Context, parent *core.Directory, args containerGroupArgs) (*core.Directory, error) {
-	return parent.Group(ctx, args.Name)
-}
-
 func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
-	dir := &core.Directory{
-		ID: args.ID,
+	if args.ID != "" {
+		return &core.Directory{
+			ID: args.ID,
+		}, nil
 	}
-	var err error
+
+	platform := s.baseSchema.platform
+	pipeline := core.PipelinePath{}
 	if parent != nil {
-		dir, err = dir.Group(ctx, parent.Context.Group...)
+		pipeline = parent.Context.Pipeline
 	}
-	return dir, err
+
+	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform)
 }
 
 type subdirectoryArgs struct {
@@ -195,7 +206,11 @@ func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Director
 	if args.Platform != nil {
 		platform = *args.Platform
 	}
-	ctr, err := core.NewContainer("", platform)
+	payload, err := parent.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	ctr, err := core.NewContainer("", payload.Pipeline, platform)
 	if err != nil {
 		return ctr, err
 	}

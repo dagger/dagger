@@ -11,14 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestGroup(t *testing.T) {
+func TestPipeline(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
 
 	cacheBuster := fmt.Sprintf("%d", time.Now().UTC().UnixNano())
 
-	t.Run("container group", func(t *testing.T) {
+	t.Run("container pipeline", func(t *testing.T) {
 		var logs bytes.Buffer
 		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
 		require.NoError(t, err)
@@ -26,16 +26,16 @@ func TestGroup(t *testing.T) {
 
 		_, err = c.
 			Container().
-			Group("container group").
+			Pipeline("container pipeline").
 			From("alpine:3.16.2").
 			WithExec([]string{"echo", cacheBuster}).
 			ExitCode(ctx)
 
 		require.NoError(t, err)
-		require.Contains(t, logs.String(), "container group")
+		require.Contains(t, logs.String(), "container pipeline")
 	})
 
-	t.Run("directory group", func(t *testing.T) {
+	t.Run("directory pipeline", func(t *testing.T) {
 		var logs bytes.Buffer
 		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
 		require.NoError(t, err)
@@ -43,7 +43,7 @@ func TestGroup(t *testing.T) {
 
 		contents, err := c.
 			Directory().
-			Group("directory group").
+			Pipeline("directory pipeline").
 			WithNewFile("/foo", cacheBuster).
 			File("/foo").
 			Contents(ctx)
@@ -52,6 +52,6 @@ func TestGroup(t *testing.T) {
 		require.Equal(t, contents, cacheBuster)
 		// FIXME: Wait for logs to be flushed out
 		time.Sleep(100 * time.Millisecond)
-		require.Contains(t, logs.String(), "directory group")
+		require.Contains(t, logs.String(), "directory pipeline")
 	})
 }

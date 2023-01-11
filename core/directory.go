@@ -30,7 +30,7 @@ type directoryIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
-	Group    Group          `json:"group"`
+	Pipeline PipelinePath   `json:"pipeline"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -81,10 +81,11 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.Platform) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
+		Pipeline: pipeline.Copy(),
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -97,12 +98,15 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, platform specs.
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) Group(ctx context.Context, name ...string) (*Directory, error) {
+func (dir *Directory) Pipeline(ctx context.Context, name, description string) (*Directory, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
-	payload.Group = payload.Group.Add(name...)
+	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+		Name:        name,
+		Description: description,
+	})
 	return payload.ToDirectory()
 }
 
@@ -210,7 +214,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Group.LLBOpt())
+		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 	}
 
 	st = st.File(
@@ -219,7 +223,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest stri
 			permissions,
 			content,
 		),
-		payload.Group.LLBOpt(),
+		payload.Pipeline.LLBOpt(),
 	)
 
 	err = payload.SetState(ctx, st)
@@ -281,7 +285,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
 	}),
-		destPayload.Group.LLBOpt(),
+		destPayload.Pipeline.LLBOpt(),
 	)
 
 	err = destPayload.SetState(ctx, st)
@@ -307,10 +311,10 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, payload.Dir, ".", llb.WithCreatedTime(t)),
-		payload.Group.LLBOpt(),
+		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewDirectory(ctx, stamped, "", payload.Platform)
+	return NewDirectory(ctx, stamped, "", payload.Pipeline, payload.Platform)
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest string, permissions fs.FileMode) (*Directory, error) {
@@ -336,7 +340,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, gw bkgw.Client, dest
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), payload.Group.LLBOpt())
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 
 	err = payload.SetState(ctx, st)
 	if err != nil {
@@ -376,7 +380,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
 		Mode:           perm,
-	}), destPayload.Group.LLBOpt())
+	}), destPayload.Pipeline.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -388,7 +392,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
 	states := make([]llb.State, 0, len(dirs))
-	var group Group
+	var pipeline PipelinePath
 	for _, fs := range dirs {
 		payload, err := fs.ID.Decode()
 		if err != nil {
@@ -400,8 +404,8 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, payload.Platform)
 		}
 
-		if group.Name() == "" {
-			group = payload.Group
+		if pipeline.Name() == "" {
+			pipeline = payload.Pipeline
 		}
 
 		state, err := payload.State()
@@ -412,7 +416,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, group.LLBOpt()), "", platform)
+	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -446,7 +450,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt, lowerPayload.Group.LLBOpt()))
+	err = lowerPayload.SetState(ctx, llb.Diff(lowerSt, upperSt, lowerPayload.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +469,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), payload.Group.LLBOpt()))
+	err = payload.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), payload.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -505,7 +509,7 @@ func (dir *Directory) Export(
 			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
 				CopyDirContentsOnly: true,
 			}),
-				srcPayload.Group.LLBOpt(),
+				srcPayload.Pipeline.LLBOpt(),
 			)
 
 			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
