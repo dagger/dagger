@@ -2,9 +2,28 @@
 
 set -e -u -x
 
+# Use this nightly build of the dagger CLI
+# NOTE: Make sure to also update `internal/mage` go.mod
+# Get the commit ID from https://github.com/dagger/dagger-go-sdk
+# cd internal/mage/
+# go get -u dagger.io/dagger@COMMIT
+DAGGER_CLI_COMMIT="83a7762edebc8624aa11ceb19518e23c1727db55"
+DAGGER_ENGINE_DIGEST="sha256:6df7f63ca2d6dbab88444b41a5515bb71094d42bd350eedfcf3805976b2cb0f0"
+DAGGER_TMP_BINDIR="/tmp/dagger_${DAGGER_CLI_COMMIT}"
+
+export _EXPERIMENTAL_DAGGER_CLI_BIN="$DAGGER_TMP_BINDIR/dagger"
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST="docker-image://ghcr.io/dagger/engine:main@${DAGGER_ENGINE_DIGEST}"
+
+# Download dagger nightly
+if [ ! -f  "$_EXPERIMENTAL_DAGGER_CLI_BIN" ]; then
+    mkdir -p "$DAGGER_TMP_BINDIR"
+    curl "https://dl.dagger.io/dagger/main/${DAGGER_CLI_COMMIT}/dagger_${DAGGER_CLI_COMMIT}_$(uname -s | tr A-Z a-z)_$(uname -m | sed s/x86_64/amd64/).tar.gz" | tar xvz -C "$DAGGER_TMP_BINDIR"
+fi
+
 DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
 
 cd $MAGEDIR
 go run main.go -w $DAGGER_SRC_ROOT engine:dev
+
 exec go run main.go -w $DAGGER_SRC_ROOT "$@"
