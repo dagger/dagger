@@ -68,7 +68,7 @@ export async function connect(
       )
     }
     client = new Client({
-      host: `http://127.0.0.1:${daggerSessionPort}/query`,
+      host: `127.0.0.1:${daggerSessionPort}`,
       sessionToken: sessionToken,
     })
   } else {
