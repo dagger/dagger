@@ -47,9 +47,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{ $typeName := $field.TypeRef | FormatOutputType }}
 	return &{{ $field.TypeRef | FormatOutputType }} {
 		q: q,
-		{{- if ne $typeName "Client" }}
 		c: r.c,
-		{{- end }}
 	}
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 	var response {{ $field.TypeRef | FormatOutputType }}
