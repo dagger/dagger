@@ -62,7 +62,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 	})
 }
 
-func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
+func AdvertiseDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 	// the cli bin is statically linked, can just mount it in anywhere
 	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
 
@@ -114,7 +114,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
 func GoBase(c *dagger.Client) *dagger.Container {
-	return WithDevEngine(c, goBase(c))
+	return AdvertiseDevEngine(c, goBase(c))
 }
 
 func daggerBinary(c *dagger.Client, goos, goarch string) *dagger.File {
