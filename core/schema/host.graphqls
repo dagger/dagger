@@ -6,17 +6,66 @@ extend type Query {
 "Information about the host execution environment."
 type Host {
   "Retrieves the current working directory on the host."
-  workdir(exclude: [String!], include: [String!]): Directory!
+  workdir(
+    """
+    Exclude artifacts that match the given pattern.
+    Example:
+    ["node_modules/", ".git*"]
+    """
+    exclude: [String!],
+
+    """
+    Include only artifacts that match the given pattern.
+    Example:
+    ["app/", "package.*"]
+    """
+    include: [String!]
+  ): Directory!
     @deprecated(reason: "Use `directory` with path set to '.' instead.")
 
   "Accesses a directory on the host."
-  directory(path: String!, exclude: [String!], include: [String!]): Directory!
+  directory(
+    """
+    Location of the directory to access.
+    Example:
+    src/
+    """
+    path: String!,
+
+    """
+    Exclude artifacts that match the given pattern.
+    Example:
+    ["node_modules/", ".git*"]
+    """
+    exclude: [String!],
+
+    """
+    Include only artifacts that match the given pattern.
+    Example:
+    ["app/", "package.*"]
+    """
+    include: [String!]
+  ): Directory!
 
   "Accesses an environment variable on the host."
-  envVariable(name: String!): HostVariable
+  envVariable(
+    """
+    Name of the environment variable
+    Example:
+    PATH
+    """
+    name: String!
+  ): HostVariable
 
   "Accesses a Unix socket on the host."
-  unixSocket(path: String!): Socket!
+  unixSocket(
+    """
+    Location of the Unix socket.
+    Example:
+    /var/run/docker.sock
+    """
+    path: String!
+  ): Socket!
 }
 
 "An environment variable on the host environment."

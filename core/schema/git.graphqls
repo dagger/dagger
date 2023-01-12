@@ -1,6 +1,20 @@
 extend type Query {
     "Queries a git repository."
-    git(url: String!, keepGitDir: Boolean): GitRepository!
+    git(
+        """
+        Url of the git repository.
+        Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+        Suffix ".git" is optional.
+        Example:
+        https://github.com/dagger/dagger
+        git@github.com/dagger/dagger
+        https://github.com/dagger/dagger.git
+        """
+        url: String!,
+
+        "Set to true to keep .git directory."
+        keepGitDir: Boolean
+    ): GitRepository!
 }
 
 "A git repository."
@@ -9,16 +23,37 @@ type GitRepository {
     branches: [String!]!
 
     "Returns details on one branch."
-    branch(name: String!): GitRef!
+    branch(
+        """
+        Branch's name
+        Example:
+        main
+        """
+        name: String!
+    ): GitRef!
 
     "Lists of tags on the repository."
     tags: [String!]!
 
     "Returns details on one tag."
-    tag(name: String!): GitRef!
+    tag(
+        """
+        Tag's name
+        Example:
+        v0.3.9
+        """
+        name: String!
+    ): GitRef!
 
     "Returns details on one commit."
-    commit(id: String!): GitRef!
+    commit(
+        """
+        Identifier of the commit.
+        Example:
+        b6315d8f2810962c601af73f86831f6866ea798b
+        """
+        id: String!
+    ): GitRef!
 }
 
 "A git ref (tag, branch or commit)."

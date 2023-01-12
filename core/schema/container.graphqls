@@ -2,7 +2,8 @@ extend type Query {
   """
   Loads a container from ID.
   Null ID returns an empty container (scratch).
-  Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+  Optional platform argument initializes new containers to execute and publish as that platform.
+  Platform defaults to that of the builder's host.
   """
   container(id: ContainerID, platform: Platform): Container!
 }
@@ -35,15 +36,17 @@ type Container {
   "Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs."
   build(
     "Directory context used by the Dockerfile."
-    context: DirectoryID!
+    context: DirectoryID!,
 
     """
     Path to the Dockerfile to use.
     Defaults to './Dockerfile'.
     """
-    dockerfile: String
+    dockerfile: String,
+
     "Additional build arguments."
-    buildArgs: [BuildArg!]
+    buildArgs: [BuildArg!],
+
     "Target build stage to build."
     target: String
   ): Container!
@@ -86,7 +89,21 @@ type Container {
   envVariable(name: String!): String
 
   "Retrieves this container plus the given environment variable."
-  withEnvVariable(name: String!, value: String!): Container!
+  withEnvVariable(
+    """
+    The identifier of the environment variable.
+    Example:
+    HOST
+    """
+    name: String!,
+
+    """
+    The value of the environment variable.
+    Example:
+    localhost
+    """
+    value: String!
+  ): Container!
 
   "Retrieves the list of labels passed to container."
   labels: [Label!]!
@@ -101,44 +118,107 @@ type Container {
   withoutLabel(name: String!): Container!
 
   "Retrieves this container plus an env variable containing the given secret."
-  withSecretVariable(name: String!, secret: SecretID!): Container!
+  withSecretVariable(
+    """
+    The identifier of the secret variable.
+    Example:
+    API_SECRET
+    """
+    name: String!,
+
+    "The identifier of the secret value."
+    secret: SecretID!
+  ): Container!
 
   "Retrieves this container minus the given environment variable."
-  withoutEnvVariable(name: String!): Container!
+  withoutEnvVariable(
+    """
+    The identifier of the environment variable.
+    Example:
+    HOST
+    """
+    name: String!
+  ): Container!
 
   "Retrieves entrypoint to be prepended to the arguments of all commands."
   entrypoint: [String!]
 
   "Retrieves this container but with a different command entrypoint."
-  withEntrypoint(args: [String!]!): Container!
+  withEntrypoint(
+    """
+    Entrypoint to use for future executions.
+    Example:
+    ["go", "run"]
+    """
+    args: [String!]!
+  ): Container!
 
   "Retrieves default arguments for future commands."
   defaultArgs: [String!]
 
   "Configures default arguments for future commands."
-  withDefaultArgs(args: [String!]): Container!
+  withDefaultArgs(
+    """
+    Arguments to prepend to future executions.
+    Example:
+    ["-v", "--no-cache"]
+    """
+    args: [String!]
+  ): Container!
 
   "Retrieves the list of paths where a directory is mounted."
   mounts: [String!]!
 
   "Retrieves this container plus a directory mounted at the given path."
-  withMountedDirectory(path: String!, source: DirectoryID!): Container!
+  withMountedDirectory(
+    """
+    Location of the mounted directory.
+    Example:
+    /tmp/mounted_dir
+    """
+    path: String!,
+
+    "Identifier of the mounted directory."
+    source: DirectoryID!
+  ): Container!
 
   "Retrieves this container plus a file mounted at the given path."
-  withMountedFile(path: String!, source: FileID!): Container!
+  withMountedFile(
+    """
+    Location of the mounted file.
+    Example:
+    /tmp/file.txt
+    """
+    path: String!,
+
+    "Identifier of the mounted file."
+    source: FileID!
+  ): Container!
 
   "Retrieves this container plus a temporary directory mounted at the given path."
-  withMountedTemp(path: String!): Container!
+  withMountedTemp(
+    """
+    Location of the temporary directory.
+    Example:
+    /tmp/temp_dir
+    """
+    path: String!
+  ): Container!
 
   "Retrieves this container plus a cache volume mounted at the given path."
   withMountedCache(
-    "Path to mount the cache volume at."
-    path: String!
+    """
+    Location of the cache directory.
 
-    "ID of the cache to mount."
-    cache: CacheID!
+    Example:
+    /cache/node_modules
+    """
+    path: String!,
 
-    "Directory to use as the cache volume's root."
+    "Identifier of the cache volume to mount."
+    cache: CacheID!,
+
+    "Identifier of the directory to use as the cache volume's root."
     source: DirectoryID
 
     "Sharing mode of the cache volume."
@@ -146,22 +226,98 @@ type Container {
   ): Container!
 
   "Retrieves this container plus a secret mounted into a file at the given path."
-  withMountedSecret(path: String!, source: SecretID!): Container!
+  withMountedSecret(
+    """
+    Location of the secret file.
+    Example:
+    /tmp/secret.txt
+    """
+    path: String!,
+
+    "Identifier of the secret to mount."
+    source: SecretID!
+  ): Container!
 
   "Retrieves this container after unmounting everything at the given path."
-  withoutMount(path: String!): Container!
+  withoutMount(
+    """
+    Location of the cache directory.
+    Example:
+    /cache/node_modules
+    """
+    path: String!
+  ): Container!
 
   "Retrieves this container plus the contents of the given file copied to the given path."
-  withFile(path: String!, source: FileID!, permissions: Int): Container!
+  withFile(
+    """
+    Location of the copied file.
+    Example:
+    /tmp/file.txt
+    """
+    path: String!,
+
+    "Identifier of the file to copy."
+    source: FileID!,
+
+    """
+    Permission given to the copied file.
+    Default to 0644.
+    Example:
+    0600
+    """
+    permissions: Int
+  ): Container!
 
   "Retrieves this container plus a new file written at the given path."
-  withNewFile(path: String!, contents: String, permissions: Int): Container!
+  withNewFile(
+    """
+    Location of the written file.
+    Example:
+    /tmp/file.txt
+    """
+    path: String!,
+
+    """
+    Content of the file to write.
+    Example:
+    Hello world!
+    """
+    contents: String,
+
+    """
+    Permission given to the written file.
+    Default to 0644.
+    Example:
+    0600
+    """
+    permissions: Int
+  ): Container!
 
   "Retrieves this container plus a directory written at the given path."
   withDirectory(
-    path: String!
-    directory: DirectoryID!
-    exclude: [String!]
+    """
+    Location of the written directory.
+    Example:
+    /tmp/directory
+    """
+    path: String!,
+
+    "Identifier of the directory to write"
+    directory: DirectoryID!,
+
+    """
+    Patterns to exclude in the written directory.
+    Example:
+    ["node_modules/**", ".gitignore", ".git/"]
+    """
+    exclude: [String!],
+
+    """
+    Patterns to include in the written directory.
+    Example:
+    ["*.go", "go.mod", "go.sum"]
+    """
     include: [String!]
   ): Container!
 
@@ -317,7 +473,19 @@ type Label {
   value: String!
 }
 
+"Key value object that represents a build argument."
 input BuildArg {
+  """
+  The build argument name.
+  Example:
+  MODE
+  """
   name: String!
+
+  """
+  The build argument value.
+  Example:
+  production
+  """
   value: String!
 }

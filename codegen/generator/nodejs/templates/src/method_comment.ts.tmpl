@@ -16,14 +16,44 @@
 
 	{{- range $required }}
 		{{- if .Description }}
-   * @param {{ .Name }} {{ .Description }}
+		{{- /* Reference current arg to access it in range */ -}}
+		{{- $arg := . }}
+		{{- /* Write argument description */ -}}
+		{{- $desc := CommentToLines .Description | GetParamDescription }}
+		    {{- range $i, $line := $desc }}
+		        {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+		        {{- if (eq $i 0) }}
+   * @param {{ $arg.Name }} {{ $line }}
+		        {{- else }}
+   * {{ $line }}
+		        {{- end }}
+		    {{- end }}
+
+		    {{- /* Write argument examples */ -}}
+		    {{- $examples := CommentToLines .Description | GetParamExample }}
+		    {{- range $examples }}
+   * @example {{ . }}
+		    {{- end }}
 		{{- end }}
 	{{- end }}
 
 	{{- if ArgsHaveDescription $optionals }}
 		{{- range $optionals }}
 			{{- if .Description }}
-   * @param opts.{{ .Name }} {{ .Description }} 
+		        {{- /* Reference current arg to access it in range */ -}}
+		        {{- $arg := . }}
+		        {{- /* Write argument description */ -}}
+		        {{- $desc := CommentToLines .Description | GetParamDescription }}
+		        {{- range $i, $line := $desc }}
+		            {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+		            {{- if (eq $i 0) }}
+   * @param opts.{{ $arg.Name }} {{ $line }}
+		            {{- else }}
+   * {{ $line }}
+		            {{- end }}
+		        {{- end }}
+
+		        {{- /* Do not write examples, they are already written in the type struct */ -}}
 			{{- end }}
 		{{- end }}
 	{{- end }}
@@ -39,3 +69,4 @@
 	{{- end }}
 {{ "" -}}
 {{- end }}
+

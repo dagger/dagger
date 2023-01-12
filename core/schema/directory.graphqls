@@ -15,75 +15,207 @@ type Directory {
   pipeline(name: String!, description: String): Directory!
 
   "Returns a list of files and directories at the given path."
-  entries(path: String): [String!]!
+  entries(
+    """
+    Location of the directory to look at.
+    Example:
+    /src
+    """
+    path: String
+  ): [String!]!
 
   "Retrieves a file at the given path."
-  file(path: String!): File!
+  file(
+    """
+    Location of the file to retrieve.
+    Example:
+    /src/index.ts
+    """
+    path: String!
+  ): File!
 
   "Retrieves this directory plus the contents of the given file copied to the given path."
-  withFile(path: String!, source: FileID!, permissions: Int): Directory!
+  withFile(
+    """
+    Location of the copied file.
+    Example:
+    /file.txt
+    """
+    path: String!,
+
+    "Identifier of the file to copy."
+    source: FileID!,
+
+    """
+    Permission given to the copied file.
+    Default to 0644.
+    Example:
+    0600
+    """
+    permissions: Int
+  ): Directory!
 
   "Retrieves this directory plus a new file written at the given path."
-  withNewFile(path: String!, contents: String!, permissions: Int): Directory!
+  withNewFile(
+    """
+    Location of the written file.
+    Example:
+    /file.txt
+    """
+    path: String!,
+
+    """
+    Content of the written file.
+    Example:
+    Hello world
+    """
+    contents: String!,
+
+    """
+    Permission given to the copied file.
+    Default to 0644.
+    Example:
+    0600
+    """
+    permissions: Int
+  ): Directory!
 
   "Retrieves this directory with the file at the given path removed."
-  withoutFile(path: String!): Directory!
+  withoutFile(
+    """
+    Location of the file to remove.
+    Example:
+    /file.txt
+    """
+    path: String!
+  ): Directory!
 
   "Retrieves a directory at the given path."
-  directory(path: String!): Directory!
+  directory(
+    """
+    Location of the directory to retrieve.
+    Example:
+    /src
+    """
+    path: String!
+  ): Directory!
 
   "Retrieves this directory plus a directory written at the given path."
   withDirectory(
-    path: String!
-    directory: DirectoryID!
+    """
+    Location of the written directory.
+    Example:
+    /src/
+    """
+    path: String!,
+
+    "Identifier of the directory to copy."
+    directory: DirectoryID!,
+
     """
     Exclude artifacts that match the given pattern.
-    (e.g. ["node_modules/", ".git*"]).
+    Example:
+    ["node_modules/", ".git*"]
     """
-    exclude: [String!]
+    exclude: [String!],
 
     """
     Include only artifacts that match the given pattern.
-    (e.g. ["app/", "package.*"]).
+    Example:
+    ["app/", "package.*"]
     """
-    include: [String!]
+    include: [String!],
   ): Directory!
 
   "Retrieves this directory plus a new directory created at the given path."
-  withNewDirectory(path: String!, permissions: Int): Directory!
+  withNewDirectory(
+    """
+    Location of the directory created.
+    Example:
+    /logs
+    """
+    path: String!,
+
+    """
+    Permission granted to the created directory.
+    Default to 0755
+    Example:
+    0777
+    """
+    permissions: Int
+  ): Directory!
 
   "Retrieves this directory with the directory at the given path removed."
-  withoutDirectory(path: String!): Directory!
+  withoutDirectory(
+    """
+    Location of the directory to remove.
+    Example:
+    .github/
+    """
+    path: String!
+  ): Directory!
 
   "Gets the difference between this directory and an another directory."
-  diff(other: DirectoryID!): Directory!
+  diff(
+    "Identifier of the directory to compare."
+    other: DirectoryID!
+  ): Directory!
 
   "Writes the contents of the directory to a path on the host."
-  export(path: String!): Boolean!
+  export(
+    """
+    Location of the copied directory.
+    Example:
+    logs/
+    """
+    path: String!
+  ): Boolean!
 
   "Builds a new Docker container from this directory."
   dockerBuild(
     """
     Path to the Dockerfile to use.
     Defaults to './Dockerfile'.
+    Example:
+    frontend.Dockerfile
     """
-    dockerfile: String
+    dockerfile: String,
 
     "The platform to build."
-    platform: Platform
+    platform: Platform,
 
-    "Additional build arguments."
-    buildArgs: [BuildArg!]
+    "Build arguments to use in the build."
+    buildArgs: [BuildArg!],
 
     "Target build stage to build."
     target: String
   ): Container!
 
   "Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch."
-  withTimestamps(timestamp: Int!): Directory!
+  withTimestamps(
+    """
+    Timestamp to set dir/files in.
+    Formatted in seconds following Unix epoch.
+    Example:
+    1672531199 (eq: Saturday, 31 December 2022 23:59:59)
+    """
+    timestamp: Int!
+  ): Directory!
 }
 
+"Key value object that represents a build argument."
 input BuildArg {
-  name: String!
+  """
+  The build argument name.
+  Example:
+  MODE
+  """
+  name: String!,
+
+  """
+  The build argument value.
+  Example:
+  production
+  """
   value: String!
 }

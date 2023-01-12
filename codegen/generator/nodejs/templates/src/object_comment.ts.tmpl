@@ -1,11 +1,16 @@
 {{ define "object_comment" -}}
 	{{- if . -}}
-		{{- $commentLines := CommentToLines . }}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
-/**
-		{{- range $commentLines }}
- * {{ . }}
+		{{- $desc := CommentToLines . | GetParamDescription }}
+		{{- $examples := CommentToLines . | GetParamExample }}
+  /**
+		{{- range $desc }}
+   * {{ . }}
 		{{- end }}
- */
+
+		{{- range $examples }}
+   * @example {{ . }}
+		{{- end }}
+   */
 	{{- end }}
 {{- end }}
