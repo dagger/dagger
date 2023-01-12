@@ -1,7 +1,0 @@
-{{ define "arg" -}}
-	{{- $opt := "" -}}
-	{{- if .TypeRef.IsOptional }}
-		{{- $opt = "?" -}}
-	{{- end }}
-	{{- .Name }}{{ $opt }}: {{ .TypeRef | FormatInputType -}}
-{{- end }}

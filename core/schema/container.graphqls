@@ -20,6 +20,9 @@ type Container {
   "The platform this container executes and publishes as."
   platform: Platform!
 
+  "Creates a named sub-pipeline"
+  pipeline(name: String!, description: String): Container!
+
   "Initializes this container from the base image published at the given address."
   from(
     """
@@ -32,15 +35,17 @@ type Container {
   "Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs."
   build(
     "Directory context used by the Dockerfile."
-    context: DirectoryID!,
+    context: DirectoryID!
 
     """
     Path to the Dockerfile to use.
     Defaults to './Dockerfile'.
     """
-    dockerfile: String,
+    dockerfile: String
     "Additional build arguments."
     buildArgs: [BuildArg!]
+    "Target build stage to build."
+    target: String
   ): Container!
 
   "Retrieves this container's root filesystem. Mounts are not included."
@@ -218,7 +223,7 @@ type Container {
     Registry's address to publish the image to.
     Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
     """
-    address: String!,
+    address: String!
 
     """
     Identifiers for other platform specific containers.
@@ -232,17 +237,17 @@ type Container {
   Return true on success.
   """
   export(
-      """
-      Host's destination path.
-      Path can be relative to the engine's workdir or absolute.
-      """
-      path: String!,
+    """
+    Host's destination path.
+    Path can be relative to the engine's workdir or absolute.
+    """
+    path: String!
 
-      """
-      Identifiers for other platform specific containers.
-      Used for multi-platform image.
-      """
-      platformVariants: [ContainerID!]
+    """
+    Identifiers for other platform specific containers.
+    Used for multi-platform image.
+    """
+    platformVariants: [ContainerID!]
   ): Boolean!
 }
 

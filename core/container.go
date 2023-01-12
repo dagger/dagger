@@ -30,9 +30,14 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
-func NewContainer(id ContainerID, platform specs.Platform) (*Container, error) {
+func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform) (*Container, error) {
 	if id == "" {
-		id, err := (&containerIDPayload{Platform: platform}).Encode()
+		payload := &containerIDPayload{
+			Pipeline: pipeline.Copy(),
+			Platform: platform,
+		}
+
+		id, err := payload.Encode()
 		if err != nil {
 			return nil, err
 		}
@@ -65,6 +70,9 @@ type containerIDPayload struct {
 
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
+
+	// Pipeline
+	Pipeline PipelinePath `json:"pipeline"`
 
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
@@ -197,6 +205,12 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	}
 	platform := payload.Platform
 
+	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
+	// We create a sub-pipeline to encapsulate both.
+	pipeline := payload.Pipeline.Add(Pipeline{
+		Name: fmt.Sprintf("from %s", addr),
+	})
+
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
 		return nil, err
@@ -207,6 +221,9 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
+		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
+		// the pipeline in the vertex name.
+		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -217,7 +234,12 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	dir, err := NewDirectory(ctx, llb.Image(addr), "/", platform)
+	dir, err := NewDirectory(ctx,
+		llb.Image(addr,
+			llb.WithCustomNamef("pull %s", ref),
+			pipeline.LLBOpt(),
+		),
+		"/", payload.Pipeline, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +256,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg, target string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -256,6 +278,10 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
 	} else {
 		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
+	}
+
+	if target != "" {
+		opts["target"] = target
 	}
 
 	for _, buildArg := range buildArgs {
@@ -294,6 +320,18 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
+	}
+
+	// Override the progress pipeline of every LLB vertex in the DAG.
+	// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+	// allow overriding the metadata of DefinitionOp. See this PR and comment:
+	// https://github.com/moby/buildkit/pull/2819
+	pipeline := payload.Pipeline.Add(Pipeline{
+		Name: "docker build",
+	})
+	for dgst, metadata := range def.Metadata {
+		metadata.ProgressGroup = pipeline.ProgressGroup()
+		def.Metadata[dgst] = metadata
 	}
 
 	payload.FS = def.ToPB()
@@ -632,7 +670,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, specs.Platform) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -670,7 +708,7 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err := init(ctx, st, sub, payload.Platform)
+			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -684,7 +722,7 @@ func locatePath[T *File | *Directory](
 		return nil, nil, err
 	}
 
-	found, err = init(ctx, st, containerPath, payload.Platform)
+	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -719,6 +757,21 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return nil, err
 	}
 
+	containerPayload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+	dirPayload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+	dirPayload.Pipeline = containerPayload.Pipeline
+
+	dir, err = dirPayload.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+
 	dir, err = fn(dir)
 	if err != nil {
 		return nil, err
@@ -729,7 +782,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return container.WithRootFS(ctx, dir)
 	}
 
-	dirPayload, err := dir.ID.Decode()
+	dirPayload, err = dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
@@ -753,6 +806,25 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	}
 
 	payload.Config = updateFn(payload.Config)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) Pipeline(ctx context.Context, name, description string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, fmt.Errorf("decode id: %w", err)
+	}
+
+	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+		Name:        name,
+		Description: description,
+	})
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -788,6 +860,8 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
+		payload.Pipeline.LLBOpt(),
+		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -809,7 +883,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta),
+			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1014,7 +1088,7 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Platform)
+	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
 }
 
 func (container *Container) Publish(

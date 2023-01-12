@@ -46,6 +46,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		LogOutput:    os.Stderr,
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
+		JournalFile:  os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 	}
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)

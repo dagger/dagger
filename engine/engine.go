@@ -2,13 +2,17 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -37,6 +41,7 @@ type Config struct {
 	// If true, do not load project extensions
 	NoExtensions  bool
 	LogOutput     io.Writer
+	JournalFile   string
 	DisableHostRW bool
 	RunnerHost    string
 	SessionToken  string
@@ -105,24 +110,10 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-
-	if startOpts.RawBuildkitStatus == nil && startOpts.LogOutput != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		startOpts.RawBuildkitStatus = ch
-
-		eg.Go(func() error {
-			w := startOpts.LogOutput
-			if w == nil {
-				w = io.Discard
-			}
-
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, w, ch)
-			for _, w := range warn {
-				fmt.Fprintf(os.Stderr, "=> %s\n", w.Short)
-			}
-			return err
-		})
-	}
+	solveCh := make(chan *bkclient.SolveStatus)
+	eg.Go(func() error {
+		return handleSolveEvents(startOpts, solveCh)
+	})
 
 	eg.Go(func() error {
 		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
@@ -139,7 +130,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				Gateway:       gw,
 				BKClient:      c,
 				SolveOpts:     solveOpts,
-				SolveCh:       startOpts.RawBuildkitStatus,
+				SolveCh:       solveCh,
 				Platform:      *platform,
 				DisableHostRW: startOpts.DisableHostRW,
 			})
@@ -170,11 +161,109 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			}
 
 			return bkgw.NewResult(), nil
-		}, startOpts.RawBuildkitStatus)
+		}, solveCh)
 		return err
 	})
 
 	return eg.Wait()
+}
+
+func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
+	eg := &errgroup.Group{}
+	readers := []chan *bkclient.SolveStatus{}
+
+	// Dispatch events to raw listener
+	if startOpts.RawBuildkitStatus != nil {
+		readers = append(readers, startOpts.RawBuildkitStatus)
+	}
+
+	// Print events to the console
+	if startOpts.LogOutput != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		readers = append(readers, ch)
+
+		// Read `ch`; strip away custom names; re-write to `cleanCh`
+		cleanCh := make(chan *bkclient.SolveStatus)
+		eg.Go(func() error {
+			defer close(cleanCh)
+			for ev := range ch {
+				for _, v := range ev.Vertexes {
+					customName := core.CustomName{}
+					if json.Unmarshal([]byte(v.Name), &customName) == nil {
+						v.Name = customName.Name
+					}
+				}
+				cleanCh <- ev
+			}
+			return nil
+		})
+
+		// Display from `cleanCh`
+		eg.Go(func() error {
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.LogOutput, cleanCh)
+			for _, w := range warn {
+				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
+			}
+			return err
+		})
+	}
+
+	// Write events to a journal file
+	if startOpts.JournalFile != "" {
+		ch := make(chan *bkclient.SolveStatus)
+		readers = append(readers, ch)
+		eg.Go(func() error {
+			f, err := os.OpenFile(
+				startOpts.JournalFile,
+				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+				0644,
+			)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			enc := json.NewEncoder(f)
+			for ev := range ch {
+				entry := struct {
+					Event *bkclient.SolveStatus `json:"event"`
+					TS    time.Time             `json:"ts"`
+				}{
+					Event: ev,
+					TS:    time.Now().UTC(),
+				}
+
+				if err := enc.Encode(entry); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	}
+
+	eventsMultiReader(ch, readers...)
+	return eg.Wait()
+}
+
+func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.SolveStatus) {
+	wg := sync.WaitGroup{}
+
+	for ev := range ch {
+		for _, r := range readers {
+			r := r
+			ev := ev
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				r <- ev
+			}()
+		}
+	}
+
+	wg.Wait()
+
+	for _, w := range readers {
+		close(w)
+	}
 }
 
 func NormalizePaths(workdir, configPath string) (string, string, error) {

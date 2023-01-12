@@ -28,6 +28,7 @@ type FileID string
 type fileIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	File     string         `json:"file"`
+	Pipeline PipelinePath   `json:"pipeline"`
 	Platform specs.Platform `json:"platform"`
 }
 
@@ -55,7 +56,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, platform specs.Platform) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
@@ -64,6 +65,7 @@ func NewFile(ctx context.Context, st llb.State, file string, platform specs.Plat
 	return (&fileIDPayload{
 		LLB:      def.ToPB(),
 		File:     file,
+		Pipeline: pipeline,
 		Platform: platform,
 	}).ToFile()
 }
@@ -119,9 +121,10 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, payload.File, ".", llb.WithCreatedTime(t)),
+		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewFile(ctx, stamped, path.Base(payload.File), payload.Platform)
+	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform)
 }
 
 func (file *File) Export(
@@ -160,7 +163,7 @@ func (file *File) Export(
 			return nil, err
 		}
 
-		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename))
+		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename), srcPayload.Pipeline.LLBOpt())
 
 		def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
 		if err != nil {

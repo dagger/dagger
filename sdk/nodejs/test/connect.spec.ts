@@ -13,6 +13,26 @@ import * as bin from "../provisioning/bin.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("NodeJS sdk Connect", function () {
+  it("Should parse DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN correctly", async function () {
+    this.timeout(60000)
+
+    process.env["DAGGER_SESSION_TOKEN"] = "foo"
+    process.env["DAGGER_SESSION_PORT"] = "1234"
+
+    await connect(
+      async (client) => {
+        assert.equal(client["client"]["url"], "http://127.0.0.1:1234/query")
+        assert.equal(
+          client["client"]["options"]["headers"]["Authorization"],
+          "Basic Zm9vOg=="
+        )
+      },
+      { LogOutput: process.stderr }
+    )
+
+    delete process.env["DAGGER_SESSION_PORT"]
+    delete process.env["DAGGER_SESSION_TOKEN"]
+  })
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 

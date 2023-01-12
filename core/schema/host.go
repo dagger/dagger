@@ -49,8 +49,12 @@ type hostWorkdirArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) workdir(ctx *router.Context, parent any, args hostWorkdirArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, ".", s.platform, args.CopyFilter)
+func (s *hostSchema) workdir(ctx *router.Context, parent *core.Query, args hostWorkdirArgs) (*core.Directory, error) {
+	pipeline := core.PipelinePath{}
+	if parent != nil {
+		pipeline = parent.Context.Pipeline
+	}
+	return s.host.Directory(ctx, ".", pipeline, s.platform, args.CopyFilter)
 }
 
 type hostVariableArgs struct {
@@ -77,8 +81,12 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) directory(ctx *router.Context, parent any, args hostDirectoryArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, args.Path, s.platform, args.CopyFilter)
+func (s *hostSchema) directory(ctx *router.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
+	pipeline := core.PipelinePath{}
+	if parent != nil {
+		pipeline = parent.Context.Pipeline
+	}
+	return s.host.Directory(ctx, args.Path, pipeline, s.platform, args.CopyFilter)
 }
 
 type hostSocketArgs struct {

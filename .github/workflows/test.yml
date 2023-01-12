@@ -2,6 +2,7 @@ name: test
 
 on:
   push:
+    branches: ["main"]
   pull_request:
   # Enable manual trigger for easy debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
@@ -23,7 +24,7 @@ jobs:
       - run: ./hack/make engine:test
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
-        run: docker logs test-dagger-engine
+        run: docker logs dagger-engine.dev
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
@@ -44,7 +45,7 @@ jobs:
       - run: ./hack/make engine:testrace
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
-        run: docker logs test-dagger-engine
+        run: docker logs dagger-engine.dev
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg

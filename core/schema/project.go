@@ -100,12 +100,14 @@ type projectArgs struct {
 	Name string
 }
 
-func (s *projectSchema) project(ctx *router.Context, parent struct{}, args projectArgs) (*Project, error) {
+func (s *projectSchema) project(ctx *router.Context, parent *core.Query, args projectArgs) (*Project, error) {
 	_, ok := s.getProjectState(args.Name)
 	if !ok {
 		return nil, fmt.Errorf("project %q not found", args.Name)
 	}
-	return &Project{Name: args.Name}, nil
+	return &Project{
+		Name: args.Name,
+	}, nil
 }
 
 func (s *projectSchema) schema(ctx *router.Context, parent *Project, args any) (string, error) {

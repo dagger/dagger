@@ -6,6 +6,7 @@ import * as fs from "fs"
 import fetch from "node-fetch"
 import * as os from "os"
 import * as path from "path"
+import * as process from "process"
 import readline from "readline"
 import * as tar from "tar"
 
@@ -32,7 +33,11 @@ export class Bin implements EngineConn {
   private binPath?: string
   private cliVersion?: string
 
-  private readonly cacheDir = envPaths("dagger", { suffix: "" }).cache
+  private readonly cacheDir = path.join(
+    `${
+      process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache
+    }/dagger`
+  )
 
   private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
 
@@ -249,9 +254,13 @@ export class Bin implements EngineConn {
     if (OVERRIDE_CLI_URL) {
       return path.basename(new URL(OVERRIDE_CLI_URL).pathname)
     }
+    let ext = "tar.gz"
+    if (this.normalizedOS() === "windows") {
+      ext = "zip"
+    }
     return `dagger_v${
       this.cliVersion
-    }_${this.normalizedOS()}_${this.normalizedArch()}.tar.gz`
+    }_${this.normalizedOS()}_${this.normalizedArch()}.${ext}`
   }
 
   private cliArchiveURL(): string {

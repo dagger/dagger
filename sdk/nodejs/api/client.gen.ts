@@ -73,6 +73,11 @@ export type ContainerBuildOpts = {
    * Additional build arguments.
    */
   buildArgs?: BuildArg[]
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
 }
 
 export type ContainerExecOpts = {
@@ -109,7 +114,11 @@ export type ContainerExportOpts = {
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
-  platformVariants?: ContainerID[] | Container[]
+  platformVariants?: Container[]
+}
+
+export type ContainerPipelineOpts = {
+  description?: string
 }
 
 export type ContainerPublishOpts = {
@@ -117,7 +126,7 @@ export type ContainerPublishOpts = {
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
    */
-  platformVariants?: ContainerID[] | Container[]
+  platformVariants?: Container[]
 }
 
 export type ContainerWithDefaultArgsOpts = {
@@ -158,7 +167,7 @@ export type ContainerWithFileOpts = {
 }
 
 export type ContainerWithMountedCacheOpts = {
-  source?: DirectoryID | Directory
+  source?: Directory
 }
 
 export type ContainerWithNewFileOpts = {
@@ -182,12 +191,29 @@ export type DirectoryDockerBuildOpts = {
    * Defaults to './Dockerfile'.
    */
   dockerfile?: string
+
+  /**
+   * The platform to build.
+   */
   platform?: Platform
+
+  /**
+   * Additional build arguments.
+   */
   buildArgs?: BuildArg[]
+
+  /**
+   * Target build stage to build.
+   */
+  target?: string
 }
 
 export type DirectoryEntriesOpts = {
   path?: string
+}
+
+export type DirectoryPipelineOpts = {
+  description?: string
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -228,7 +254,7 @@ export type FileID = string
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
-  sshAuthSocket?: SocketID | Socket
+  sshAuthSocket?: Socket
 }
 
 export type HostDirectoryOpts = {
@@ -253,20 +279,24 @@ export type ID = string
 export type Platform = string
 
 export type ClientContainerOpts = {
-  id?: ContainerID | Container
+  id?: ContainerID
   platform?: Platform
 }
 
 export type ClientDirectoryOpts = {
-  id?: DirectoryID | Directory
+  id?: DirectoryID
 }
 
 export type ClientGitOpts = {
   keepGitDir?: boolean
 }
 
+export type ClientPipelineOpts = {
+  description?: string
+}
+
 export type ClientSocketOpts = {
-  id?: SocketID | Socket
+  id?: SocketID
 }
 
 /**
@@ -316,11 +346,9 @@ export class Container extends BaseClient {
    * @param opts.dockerfile Path to the Dockerfile to use.
 Defaults to './Dockerfile'.
    * @param opts.buildArgs Additional build arguments.
+   * @param opts.target Target build stage to build.
    */
-  build(
-    context: DirectoryID | Directory,
-    opts?: ContainerBuildOpts
-  ): Container {
+  build(context: Directory, opts?: ContainerBuildOpts): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -574,6 +602,23 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
   }
 
   /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ContainerPipelineOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * The platform this container executes and publishes as.
    */
   async platform(): Promise<Platform> {
@@ -703,7 +748,7 @@ Used for multi-platform image.
    */
   withDirectory(
     path: string,
-    directory: DirectoryID | Directory,
+    directory: Directory,
     opts?: ContainerWithDirectoryOpts
   ): Container {
     return new Container({
@@ -781,7 +826,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * Initializes this container from this DirectoryID.
    * @deprecated Replaced by withRootfs.
    */
-  withFS(id: DirectoryID | Directory): Container {
+  withFS(id: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -800,7 +845,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withFile(
     path: string,
-    source: FileID | File,
+    source: File,
     opts?: ContainerWithFileOpts
   ): Container {
     return new Container({
@@ -821,7 +866,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withMountedCache(
     path: string,
-    cache: CacheID | CacheVolume,
+    cache: CacheVolume,
     opts?: ContainerWithMountedCacheOpts
   ): Container {
     return new Container({
@@ -840,10 +885,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a directory mounted at the given path.
    */
-  withMountedDirectory(
-    path: string,
-    source: DirectoryID | Directory
-  ): Container {
+  withMountedDirectory(path: string, source: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -860,7 +902,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a file mounted at the given path.
    */
-  withMountedFile(path: string, source: FileID | File): Container {
+  withMountedFile(path: string, source: File): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -877,7 +919,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a secret mounted into a file at the given path.
    */
-  withMountedSecret(path: string, source: SecretID | Secret): Container {
+  withMountedSecret(path: string, source: Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -928,7 +970,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Initializes this container from this DirectoryID.
    */
-  withRootfs(id: DirectoryID | Directory): Container {
+  withRootfs(id: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -945,7 +987,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus an env variable containing the given secret.
    */
-  withSecretVariable(name: string, secret: SecretID | Secret): Container {
+  withSecretVariable(name: string, secret: Secret): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -962,7 +1004,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    */
-  withUnixSocket(path: string, source: SocketID | Socket): Container {
+  withUnixSocket(path: string, source: Socket): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1086,7 +1128,7 @@ export class Directory extends BaseClient {
   /**
    * Gets the difference between this directory and an another directory.
    */
-  diff(other: DirectoryID | Directory): Directory {
+  diff(other: Directory): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1121,6 +1163,9 @@ export class Directory extends BaseClient {
    * Builds a new Docker container from this directory.
    * @param opts.dockerfile Path to the Dockerfile to use.
 Defaults to './Dockerfile'.
+   * @param opts.platform The platform to build.
+   * @param opts.buildArgs Additional build arguments.
+   * @param opts.target Target build stage to build.
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({
@@ -1224,6 +1269,23 @@ Defaults to './Dockerfile'.
   }
 
   /**
+   * Creates a named sub-pipeline.
+   */
+  pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this directory plus a directory written at the given path.
    * @param opts.exclude Exclude artifacts that match the given pattern.
 (e.g. ["node_modules/", ".git*"]).
@@ -1232,7 +1294,7 @@ Defaults to './Dockerfile'.
    */
   withDirectory(
     path: string,
-    directory: DirectoryID | Directory,
+    directory: Directory,
     opts?: DirectoryWithDirectoryOpts
   ): Directory {
     return new Directory({
@@ -1253,7 +1315,7 @@ Defaults to './Dockerfile'.
    */
   withFile(
     path: string,
-    source: FileID | File,
+    source: File,
     opts?: DirectoryWithFileOpts
   ): Directory {
     return new Directory({
@@ -1930,7 +1992,7 @@ export default class Client extends BaseClient {
   /**
    * Loads a file by ID.
    */
-  file(id: FileID | File): File {
+  file(id: FileID): File {
     return new File({
       queryTree: [
         ...this._queryTree,
@@ -1995,6 +2057,23 @@ export default class Client extends BaseClient {
   }
 
   /**
+   * Creates a named sub-pipeline
+   */
+  pipeline(name: string, opts?: ClientPipelineOpts): Client {
+    return new Client({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pipeline",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Look up a project by name
    */
   project(name: string): Project {
@@ -2014,7 +2093,7 @@ export default class Client extends BaseClient {
   /**
    * Loads a secret from its ID.
    */
-  secret(id: SecretID | Secret): Secret {
+  secret(id: SecretID): Secret {
     return new Secret({
       queryTree: [
         ...this._queryTree,

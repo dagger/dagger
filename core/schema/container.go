@@ -36,6 +36,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
+			"pipeline":             router.ToResolver(s.pipeline),
 			"fs":                   router.ToResolver(s.rootfs), // deprecated
 			"withRootfs":           router.ToResolver(s.withRootfs),
 			"withFS":               router.ToResolver(s.withRootfs), // deprecated
@@ -87,7 +88,7 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *router.Context, parent any, args containerArgs) (*core.Container, error) {
+func (s *containerSchema) container(ctx *router.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
 	platform := s.baseSchema.platform
 	if args.Platform != nil {
 		if args.ID != "" {
@@ -95,7 +96,15 @@ func (s *containerSchema) container(ctx *router.Context, parent any, args contai
 		}
 		platform = *args.Platform
 	}
-	return core.NewContainer(args.ID, platform)
+	pipeline := core.PipelinePath{}
+	if parent != nil {
+		pipeline = parent.Context.Pipeline
+	}
+	ctr, err := core.NewContainer(args.ID, pipeline, platform)
+	if err != nil {
+		return nil, err
+	}
+	return ctr, err
 }
 
 type containerFromArgs struct {
@@ -110,10 +119,11 @@ type containerBuildArgs struct {
 	Context    core.DirectoryID
 	Dockerfile string
 	BuildArgs  []core.BuildArg
+	Target     string
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs)
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs, args.Target)
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
@@ -123,6 +133,15 @@ func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container
 	}
 
 	return ctr, nil
+}
+
+type containerPipelineArgs struct {
+	Name        string
+	Description string
+}
+
+func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
+	return parent.Pipeline(ctx, args.Name, args.Description)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {

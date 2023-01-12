@@ -21,6 +21,8 @@ var (
 	}
 )
 
+const queryStructName = "Query"
+
 // comments out a string
 // Example: `hello\nworld` -> `// hello\n// world\n`
 func comment(s string) string {
@@ -101,7 +103,11 @@ func formatType(r *introspection.TypeRef, input bool) string {
 				return representation
 			}
 		case introspection.TypeKindObject:
-			representation += formatName(ref.Name)
+			name := ref.Name
+			if name == queryStructName {
+				name = "Client"
+			}
+			representation += formatName(name)
 			return representation
 		case introspection.TypeKindInputObject:
 			representation += formatName(ref.Name)
@@ -128,7 +134,7 @@ func fieldOptionsStructName(f introspection.Field) string {
 	// `ContainerOpts` rather than `QueryContainerOpts`
 	// The structure name will not clash with others since everybody else
 	// is prefixed by object name.
-	if f.ParentObject.Name == "Query" {
+	if f.ParentObject.Name == queryStructName {
 		return formatName(f.Name) + "Opts"
 	}
 	return formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
@@ -137,8 +143,12 @@ func fieldOptionsStructName(f introspection.Field) string {
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func fieldFunction(f introspection.Field) string {
+	structName := formatName(f.ParentObject.Name)
+	if structName == queryStructName {
+		structName = "Client"
+	}
 	signature := fmt.Sprintf(`func (r *%s) %s`,
-		formatName(f.ParentObject.Name), formatName(f.Name))
+		structName, formatName(f.Name))
 
 	// Generate arguments
 	args := []string{}
@@ -152,7 +162,7 @@ func fieldFunction(f introspection.Field) string {
 
 		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
 		// scalar (DirectoryID) rather than an object (*Directory).
-		if f.ParentObject.Name == "Query" && arg.Name == "id" {
+		if f.ParentObject.Name == queryStructName && arg.Name == "id" {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatOutputType(arg.TypeRef)))
 		} else {
 			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatInputType(arg.TypeRef)))

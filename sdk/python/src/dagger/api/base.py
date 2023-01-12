@@ -1,26 +1,27 @@
-import types
+import functools
+import logging
 import typing
 from collections import deque
-from typing import Any, NamedTuple, Protocol, Sequence, TypeVar, runtime_checkable
+from typing import Any, Callable, ParamSpec, TypeVar
 
 import anyio
 import attrs
 import cattrs
 import graphql
 import httpx
-from beartype.door import is_bearable
+from beartype import beartype
+from beartype.door import TypeHint
+from beartype.roar import BeartypeCallHintViolation
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 
 from dagger.exceptions import ExecuteTimeoutError, InvalidQueryError
 
-_T = TypeVar("_T")
+logger = logging.getLogger(__name__)
 
-
-def is_optional(t):
-    is_union = typing.get_origin(t) is types.UnionType  # noqa
-    return is_union and type(None) in typing.get_args(t)
+T = TypeVar("T")
+P = ParamSpec("P")
 
 
 @attrs.define
@@ -35,8 +36,8 @@ class Field:
         return field
 
 
-@runtime_checkable
-class IDType(Protocol):
+@typing.runtime_checkable
+class IDType(typing.Protocol):
     def id(self) -> str:
         ...
 
@@ -77,7 +78,7 @@ class Context:
     def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(self.build()))
 
-    async def execute(self, return_type: type[_T]) -> _T:
+    async def execute(self, return_type: type[T]) -> T:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
@@ -90,7 +91,7 @@ class Context:
             ) from e
         return self._get_value(result.data, return_type)
 
-    def execute_sync(self, return_type: type[_T]) -> _T:
+    def execute_sync(self, return_type: type[T]) -> T:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
@@ -122,18 +123,16 @@ class Context:
                 if isinstance(v, (Type, IDType)):
                     sel.args[k] = v.id()
 
-    def _get_value(self, value: dict[str, Any] | None, return_type: type[_T]) -> _T:
+    def _get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
         if value is not None:
             value = self._structure_response(value, return_type)
-        if value is None and not is_optional(return_type):
+        if value is None and not TypeHint(return_type).is_bearable(None):
             raise InvalidQueryError(
                 "Required field got a null response. Check if parent fields are valid."
             )
         return value
 
-    def _structure_response(
-        self, response: dict[str, Any], return_type: type[_T]
-    ) -> _T:
+    def _structure_response(self, response: dict[str, Any], return_type: type[T]) -> T:
         for f in self.selections:
             response = response[f.name]
             if response is None:
@@ -141,53 +140,42 @@ class Context:
         return self.converter.structure(response, return_type)
 
 
-class Arg(NamedTuple):
-    py_name: str
-    name: str
+class Arg(typing.NamedTuple):
+    name: str  # GraphQL name
     value: Any
-    type_: type
     default: Any = attrs.NOTHING
 
-    def is_valid(self) -> bool:
-        return is_bearable(self.value, self.type_)
+
+class Scalar(str):
+    """Custom scalar."""
 
 
-@attrs.define
-class Type:
-    _ctx: Context
+class Object:
+    """Base for object types."""
 
     @property
     def graphql_name(self) -> str:
         return self.__class__.__name__
 
-    def _select(self, field_name: str, args: Sequence[Arg]) -> Context:
-        return self._ctx.select(
-            self.graphql_name,
-            field_name,
-            self._convert_args(args),
-        )
 
-    def _convert_args(self, source: Sequence[Arg]) -> dict[str, Any]:
-        args = {}
-        for arg in source:
-            if arg.value is arg.default:
-                continue
+class Input(Object):
+    """Input object type."""
 
-            # FIXME: use an exception group
-            if not arg.is_valid():
-                exp_type = (
-                    arg.type_ if typing.get_origin(arg.type_) else arg.type_.__name__
-                )
-                raise TypeError(
-                    f"Wrong type for '{arg.py_name}' parameter. "
-                    f"Expected a '{exp_type}' instead."
-                )
 
-            args[arg.name] = arg.value
-        return args
+@attrs.define
+class Type(Object):
+    """Object type."""
+
+    _ctx: Context
+
+    def _select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
+        _args = {arg.name: arg.value for arg in args if arg.value is not arg.default}
+        return self._ctx.select(self.graphql_name, field_name, _args)
 
 
 class Root(Type):
+    """Top level query object type (a.k.a. Query)."""
+
     @classmethod
     def from_session(cls, session: AsyncClientSession):
         assert (
@@ -200,3 +188,49 @@ class Root(Type):
     @property
     def graphql_name(self) -> str:
         return "Query"
+
+
+def typecheck(func: Callable[P, T]) -> Callable[P, T]:
+    """
+    Runtime type checking.
+
+    Allows fast failure, before sending requests to the API,
+    and with greater detail over the specific method and
+    parameter with invalid type to help debug.
+
+    This includes catching typos or forgetting to await a
+    coroutine, but it's less forgiving in some instances.
+
+    For example, an `args: Sequence[str]` parameter set as
+    `args=["echo", 123]` was easily converting the int 123
+    to a string by the dynamic query builder. Now it'll fail.
+    """
+    # Using beartype for the hard work, just tune the traceback a bit.
+    # Hiding as **implementation detail** for now. The project is young
+    # but very active and with good plans on making it very modular/pluggable.
+
+    # Decorating here allows basic checks during definition time
+    # so it'll be catched early, during development.
+    bear = beartype(func)
+
+    @functools.wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+        try:
+            return bear(*args, **kwargs)
+        except BeartypeCallHintViolation as e:
+            # Tweak the error message a bit.
+            msg = str(e).replace("@beartyped ", "")
+
+            # Everything in `dagger.api.gen.` is exported under `dagger.`.
+            msg = msg.replace("dagger.api.gen.", "dagger.")
+
+            # No API methods accept a coroutine, add hint.
+            if "<coroutine object" in msg:
+                msg = f"{msg} Did you forget to await?"
+
+            # The following `raise` line will show in traceback, keep
+            # the noise down to minimum by instantiating outside of it.
+            err = TypeError(msg).with_traceback(None)
+            raise err from None
+
+    return wrapper

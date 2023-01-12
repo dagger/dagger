@@ -165,5 +165,5 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 			WithDirectory("/workdir", workdir),
 	)
 
-	return util.WithDevEngine(c, src)
+	return util.AdvertiseDevEngine(c, src)
 }

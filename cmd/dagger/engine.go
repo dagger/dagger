@@ -20,6 +20,7 @@ func withEngine(
 		SessionToken:  sessionToken,
 		RunnerHost:    internalengine.RunnerHost(),
 		DisableHostRW: disableHostRW,
+		JournalFile:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 	}
 	if debugLogs {
 		engineConf.LogOutput = os.Stderr
