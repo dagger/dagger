@@ -203,5 +203,5 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithRootfs(deps.Rootfs().WithDirectory("/app", src)).
 		WithExec([]string{"poetry", "install", "--without", "docs"})
 
-	return util.WithDevEngine(c, deps)
+	return util.AdvertiseDevEngine(c, deps)
 }
