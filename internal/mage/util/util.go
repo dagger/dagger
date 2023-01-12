@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	TestContainerName = "test-dagger-engine"
+	EngineContainerName = "dagger-engine.dev"
 )
 
 // Repository with common set of exclude filters to speed up upload
@@ -80,7 +80,7 @@ func WithDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 		WithMountedFile(cliBinPath, DaggerBinary(c)).
 		// Point the SDKs to use the dev engine via these env vars
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+TestContainerName)
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+EngineContainerName)
 }
 
 func goBase(c *dagger.Client) *dagger.Container {
