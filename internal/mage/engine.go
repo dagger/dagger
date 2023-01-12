@@ -178,8 +178,8 @@ func (t Engine) Dev(ctx context.Context) error {
 		return err
 	}
 
-	volumeName := "test-dagger-engine"
-	imageName := "localhost/test-dagger-engine:latest"
+	volumeName := util.EngineContainerName
+	imageName := fmt.Sprintf("localhost/%s:latest", util.EngineContainerName)
 
 	// #nosec
 	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
@@ -204,7 +204,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	if output, err := exec.CommandContext(ctx, "docker",
 		"rm",
 		"-fv",
-		util.TestContainerName,
+		util.EngineContainerName,
 	).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker rm: %w: %s", err, output)
 	}
@@ -214,7 +214,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		"--rm",
 		"-v", volumeName+":"+engineDefaultStateDir,
-		"--name", util.TestContainerName,
+		"--name", util.EngineContainerName,
 		"--privileged",
 		imageName,
 		"--debug",
@@ -230,7 +230,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	}
 
 	fmt.Println("export _EXPERIMENTAL_DAGGER_CLI_BIN=" + binDest)
-	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.TestContainerName)
+	fmt.Println("export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://" + util.EngineContainerName)
 	return nil
 }
 
