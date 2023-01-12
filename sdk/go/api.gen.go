@@ -1642,6 +1642,7 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 
 	return &Client{
 		q: q,
+		c: r.c,
 	}
 }
 
