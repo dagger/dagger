@@ -932,6 +932,115 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "GOPATH=/gone\n")
 }
 
+func TestContainerWithLabel(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithLabel struct {
+					Label string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+			  from(address: "alpine:3.16.2") {
+				withLabel(name: "FOO", value: "BAR") {
+				  label(name: "FOO")
+				}
+			  }
+			}
+		  }`, &res, nil)
+	require.NoError(t, err)
+	require.Contains(t, res.Container.From.WithLabel.Label, "BAR")
+}
+
+func TestContainerLabels(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				Labels []schema.Label
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+			  from(address: "nginx") {
+				labels {
+				  name
+				  value
+				}
+			  }
+			}
+		  }`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, []schema.Label{
+		{Name: "maintainer", Value: "NGINX Docker Maintainers <docker-maint@nginx.com>"},
+	}, res.Container.From.Labels)
+}
+
+func TestContainerWithoutLabel(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithoutLabel struct {
+					Label string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+			  from(address: "nginx") {
+				withoutLabel(name: "maintainer") {
+				  label(name: "maintainer")
+				}
+			  }
+			}
+		  }`, &res, nil)
+	require.NoError(t, err)
+	require.Empty(t, res.Container.From.WithoutLabel.Label)
+}
+
+func TestContainerReplaceLabel(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			From struct {
+				WithLabel struct {
+					Label string
+				}
+			}
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+			  from(address: "nginx") {
+				withLabel(name: "maintainer", value: "bar") {
+				  label(name: "maintainer")
+				}
+			  }
+			}
+		  }`, &res, nil)
+	require.NoError(t, err)
+	require.Contains(t, res.Container.From.WithLabel.Label, "bar")
+}
+
 func TestContainerWorkdir(t *testing.T) {
 	t.Parallel()
 
