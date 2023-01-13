@@ -5,65 +5,57 @@ extend type Query {
 
 "Information about the host execution environment."
 type Host {
-  "Retrieves the current working directory on the host."
+  """
+  Retrieves the current working directory on the host.
+  Example:
+  workdir()
+  workdir({ exclude: ["node_modules/", ".git*"] })
+  workdir({ include: ["app/", "package.*"] })
+  """
   workdir(
-    """
-    Exclude artifacts that match the given pattern.
-    Example:
-    ["node_modules/", ".git*"]
-    """
+    "Exclude artifacts that match the given pattern."
     exclude: [String!],
 
-    """
-    Include only artifacts that match the given pattern.
-    Example:
-    ["app/", "package.*"]
-    """
+    "Include only artifacts that match the given pattern."
     include: [String!]
   ): Directory!
     @deprecated(reason: "Use `directory` with path set to '.' instead.")
 
-  "Accesses a directory on the host."
+  """
+  Accesses a directory on the host.
+  Example:
+  directory(".")
+  directory("project/", { exclude: ["node_modules/", ".git*"] })
+  directory(".", { include: ["app/", "package.*"] })
+  """
   directory(
-    """
-    Location of the directory to access.
-    Example:
-    src/
-    """
+    "Location of the directory to access."
     path: String!,
 
-    """
-    Exclude artifacts that match the given pattern.
-    Example:
-    ["node_modules/", ".git*"]
-    """
+    "Exclude artifacts that match the given pattern."
     exclude: [String!],
 
-    """
-    Include only artifacts that match the given pattern.
-    Example:
-    ["app/", "package.*"]
-    """
+    "Include only artifacts that match the given pattern."
     include: [String!]
   ): Directory!
 
-  "Accesses an environment variable on the host."
+  """
+  Accesses an environment variable on the host.
+  Example:
+  envVariable("PATH")
+  """
   envVariable(
-    """
-    Name of the environment variable
-    Example:
-    PATH
-    """
+    "Name of the environment variable."
     name: String!
   ): HostVariable
 
-  "Accesses a Unix socket on the host."
+  """
+  Accesses a Unix socket on the host.
+  Example:
+  unixSocket("/var/run/docker.sock")
+  """
   unixSocket(
-    """
-    Location of the Unix socket.
-    Example:
-    /var/run/docker.sock
-    """
+    "Location of the Unix socket."
     path: String!
   ): Socket!
 }

@@ -14,33 +14,34 @@ type Directory {
   "Creates a named sub-pipeline."
   pipeline(name: String!, description: String): Directory!
 
-  "Returns a list of files and directories at the given path."
+  """
+  Returns a list of files and directories at the given path.
+  Example:
+  entries("/src")
+  """
   entries(
-    """
-    Location of the directory to look at.
-    Example:
-    /src
-    """
+    "Location of the directory to look at."
     path: String
   ): [String!]!
 
-  "Retrieves a file at the given path."
+  """
+  Retrieves a file at the given path.
+  Example:
+  file("/src/index.ts")
+  """
   file(
-    """
-    Location of the file to retrieve.
-    Example:
-    /src/index.ts
-    """
+    "Location of the file to retrieve."
     path: String!
   ): File!
 
-  "Retrieves this directory plus the contents of the given file copied to the given path."
+  """
+  Retrieves this directory plus the contents of the given file copied to the given path.
+  Example:
+  withFile("/file.txt", "file-id")
+  withFile("/file.txt", "file-id", { permissions: 0600 })
+  """
   withFile(
-    """
-    Location of the copied file.
-    Example:
-    /file.txt
-    """
+    "Location of the copied file."
     path: String!,
 
     "Identifier of the file to copy."
@@ -49,109 +50,95 @@ type Directory {
     """
     Permission given to the copied file.
     Default to 0644.
-    Example:
-    0600
     """
     permissions: Int
   ): Directory!
 
-  "Retrieves this directory plus a new file written at the given path."
+  """
+  Retrieves this directory plus a new file written at the given path.
+  Example:
+  withNewFile("/file.txt", "Hello world!")
+  withNewFile("/file.txt", "Hello world!", { permissions: 0600 })
+  """
   withNewFile(
-    """
-    Location of the written file.
-    Example:
-    /file.txt
-    """
+    "Location of the written file."
     path: String!,
 
-    """
-    Content of the written file.
-    Example:
-    Hello world
-    """
+    "Content of the written file."
     contents: String!,
 
     """
     Permission given to the copied file.
     Default to 0644.
-    Example:
-    0600
     """
     permissions: Int
   ): Directory!
 
-  "Retrieves this directory with the file at the given path removed."
+  """
+  Retrieves this directory with the file at the given path removed.
+  Example:
+  withoutFile("/file.txt")
+  """
   withoutFile(
-    """
-    Location of the file to remove.
-    Example:
-    /file.txt
-    """
+    "Location of the file to remove."
     path: String!
   ): Directory!
 
-  "Retrieves a directory at the given path."
+  """
+  Retrieves a directory at the given path.
+  Example:
+  directory("/src")
+  """
   directory(
-    """
-    Location of the directory to retrieve.
-    Example:
-    /src
-    """
+    "Location of the directory to retrieve."
     path: String!
   ): Directory!
 
-  "Retrieves this directory plus a directory written at the given path."
+  """
+  Retrieves this directory plus a directory written at the given path.
+  Example:
+  withDirectory("/src/", "directory-id")
+  withDirectory("/src/", "directory-id", { exclude: ["node_modules/", ".git*"] })
+  withDirectory("/src/", "directory-id", { include: ["app/", "package.*"] })
+  """
   withDirectory(
-    """
-    Location of the written directory.
-    Example:
-    /src/
-    """
+    "Location of the written directory."
     path: String!,
 
     "Identifier of the directory to copy."
     directory: DirectoryID!,
 
-    """
-    Exclude artifacts that match the given pattern.
-    Example:
-    ["node_modules/", ".git*"]
-    """
+    "Exclude artifacts that match the given pattern."
     exclude: [String!],
 
-    """
-    Include only artifacts that match the given pattern.
-    Example:
-    ["app/", "package.*"]
-    """
+    "Include only artifacts that match the given pattern."
     include: [String!],
   ): Directory!
 
-  "Retrieves this directory plus a new directory created at the given path."
+  """
+  Retrieves this directory plus a new directory created at the given path.
+  Example:
+  withNewDirectory("/logs")
+  withNewDirectory("/logs", { permissions: 0777 })
+  """
   withNewDirectory(
-    """
-    Location of the directory created.
-    Example:
-    /logs
-    """
+    "Location of the directory created."
     path: String!,
 
     """
     Permission granted to the created directory.
     Default to 0755
-    Example:
-    0777
     """
     permissions: Int
   ): Directory!
 
-  "Retrieves this directory with the directory at the given path removed."
+  """
+  Retrieves this directory with the directory at the given path removed.
+  Example:
+  withoutDirectory(".github/")
+  """
   withoutDirectory(
-    """
-    Location of the directory to remove.
-    Example:
-    .github/
-    """
+    "Location of the directory to remove."
     path: String!
   ): Directory!
 
@@ -161,23 +148,28 @@ type Directory {
     other: DirectoryID!
   ): Directory!
 
-  "Writes the contents of the directory to a path on the host."
+  """
+  Writes the contents of the directory to a path on the host.
+  Example:
+  export("logs/")
+  """
   export(
-    """
-    Location of the copied directory.
-    Example:
-    logs/
-    """
+    "Location of the copied directory."
     path: String!
   ): Boolean!
 
-  "Builds a new Docker container from this directory."
+  """
+  Builds a new Docker container from this directory.
+  Example:
+  dockerBuild()
+  dockerBuild({ dockerfile: "frontend.Dockerfile" })
+  dockerBuild({ platform: "linux/amd64" })
+  dockerBuild({ platform: "linux/amd64", buildArgs: [{ name: "MODE", value: "production" }] })
+  """
   dockerBuild(
     """
     Path to the Dockerfile to use.
     Defaults to './Dockerfile'.
-    Example:
-    frontend.Dockerfile
     """
     dockerfile: String,
 
@@ -191,13 +183,15 @@ type Directory {
     target: String
   ): Container!
 
-  "Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch."
+  """
+  Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
+  Example:
+  withTimestamps(1672531199)
+  """
   withTimestamps(
     """
     Timestamp to set dir/files in.
     Formatted in seconds following Unix epoch.
-    Example:
-    1672531199 (eq: Saturday, 31 December 2022 23:59:59)
     """
     timestamp: Int!
   ): Directory!
@@ -207,15 +201,11 @@ type Directory {
 input BuildArg {
   """
   The build argument name.
-  Example:
-  MODE
   """
   name: String!,
 
   """
   The build argument value.
-  Example:
-  production
   """
   value: String!
 }

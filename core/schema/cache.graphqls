@@ -17,13 +17,13 @@ enum CacheSharingMode {
 }
 
 extend type Query {
-  "Constructs a cache volume for a given cache key."
+  """
+  Constructs a cache volume for a given cache key.
+  Example:
+  cacheVolume("myapp-cache")
+  """
   cacheVolume(
-    """
-    A string identifier to target this cache volume.
-    Example:
-    myapp-cache.
-    """
+    "A string identifier to target this cache volume."
     key: String!
   ): CacheVolume!
 }

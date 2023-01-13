@@ -1,14 +1,16 @@
 extend type Query {
-    "Queries a git repository."
+    """
+    Queries a git repository.
+    Example:
+    git("https://github.com/dagger/dagger", { keepGitDir: true })
+    git("git@github.com/dagger/dagger")
+    git("https://github.com/dagger/dagger.git")
+    """
     git(
         """
         Url of the git repository.
         Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
         Suffix ".git" is optional.
-        Example:
-        https://github.com/dagger/dagger
-        git@github.com/dagger/dagger
-        https://github.com/dagger/dagger.git
         """
         url: String!,
 
@@ -22,36 +24,36 @@ type GitRepository {
     "Lists of branches on the repository."
     branches: [String!]!
 
-    "Returns details on one branch."
+    """
+    Returns details on one branch.
+    Example:
+    branch("main")
+    """
     branch(
-        """
-        Branch's name
-        Example:
-        main
-        """
+        "Branch's name"
         name: String!
     ): GitRef!
 
     "Lists of tags on the repository."
     tags: [String!]!
 
-    "Returns details on one tag."
+    """
+    Returns details on one tag.
+    Example:
+    tag("v0.3.9")
+    """
     tag(
-        """
-        Tag's name
-        Example:
-        v0.3.9
-        """
+        "Tag's name"
         name: String!
     ): GitRef!
 
-    "Returns details on one commit."
+    """
+    Returns details on one commit.
+    Example:
+    commit("b6315d8f2810962c601af73f86831f6866ea798b")
+    """
     commit(
-        """
-        Identifier of the commit.
-        Example:
-        b6315d8f2810962c601af73f86831f6866ea798b
-        """
+        "Identifier of the commit."
         id: String!
     ): GitRef!
 }

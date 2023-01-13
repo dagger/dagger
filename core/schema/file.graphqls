@@ -20,23 +20,25 @@ type File {
   "Gets the size of the file, in bytes."
   size: Int!
 
-  "Writes the file to a file path on the host."
+  """
+  Writes the file to a file path on the host.
+  Example:
+  export("output.txt")
+  """
   export(
-    """
-    Location of the written directory.
-    Example:
-    output.txt
-    """
+    "Location of the written directory."
     path: String!
   ): Boolean!
 
-  "Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch."
+  """
+  Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
+  Example:
+  withTimestamps(1672531199)
+  """
   withTimestamps(
     """
     Timestamp to set dir/files in.
     Formatted in seconds following Unix epoch.
-    Example:
-    1672531199 (eq: Saturday, 31 December 2022 23:59:59)
     """
     timestamp: Int!
   ): File!

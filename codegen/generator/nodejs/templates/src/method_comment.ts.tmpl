@@ -4,12 +4,12 @@
 	{{- $argsDesc := ArgsHaveDescription .Args }}
 	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 	{{- if or .Description $argsDesc .IsDeprecated }}
-		{{- $commentLines := CommentToLines .Description }}
+		{{- $desc := CommentToLines .Description | GetParamDescription }}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
 {{""}}
 {{""}}
   /**
-		{{- range $commentLines }}
+		{{- range $desc }}
    * {{ . }}
 		{{- end }}
 	{{- end }}
@@ -65,6 +65,10 @@
 	{{- end }}
 
 	{{- if or .Description $argsDesc .IsDeprecated }}
+	{{- $examples := CommentToLines .Description | GetParamExample }}
+        {{- range $examples }}
+   * @example {{ . }}
+        {{- end }}
    */
 	{{- end }}
 {{ "" -}}
