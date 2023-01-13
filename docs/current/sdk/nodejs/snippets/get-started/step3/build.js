@@ -1,14 +1,31 @@
-import { connect } from "@dagger.io/dagger"
+;(async function () {
+  // initialize Dagger client
+  let connect = (await import("@dagger.io/dagger")).connect
 
-// initialize Dagger client
-connect(async (client) => {
-  // get Node image
-  // get Node version
-  const node = client.container().from("node:16").withExec(["node", "-v"])
+  connect(async (client) => {
+    // highlight-start
+    // get reference to the local project
+    const source = client.host().directory(".", { exclude: ["node_modules/"] })
 
-  // execute
-  const version = await node.stdout()
+    // get Node image
+    const node = client.container().from("node:16")
 
-  // print output
-  console.log("Hello from Dagger and Node " + version)
-})
+    // mount cloned repository into Node image
+    const runner = client
+      .container({ id: node })
+      .withMountedDirectory("/src", source)
+      .withWorkdir("/src")
+      .withExec(["npm", "install"])
+
+    // run tests
+    await runner.withExec(["npm", "test", "--", "--watchAll=false"]).exitCode()
+
+    // build application
+    // write the build output to the host
+    await runner
+      .withExec(["npm", "run", "build"])
+      .directory("build/")
+      .export("./build")
+    // highlight-end
+  })
+})()

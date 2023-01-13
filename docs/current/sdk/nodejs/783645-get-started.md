@@ -17,38 +17,11 @@ This tutorial teaches you the basics of using Dagger in Node.js. You will learn 
 
 This tutorial assumes that:
 
-- You have a basic understanding of the TypeScript or JavaScript programming languages. If you're new to TypeScript, learn the basics in a [TypeScript tutorial](https://www.typescriptlang.org/docs/handbook/typescript-from-scratch.html). There are many resources for JavaScript online as well.
 - You have a Node.js development environment with Node.js 16.x or later. If not, install [NodeJS](https://nodejs.org/en/download/).
+- You have a Node.js application developed in either JavaScript or TypeScript. If not, follow the steps in Appendix A to [create an example React application in TypeScript](#appendix-a-create-a-react-application).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
-:::note
-This tutorial creates, tests and builds a React application written in TypeScript. If you wish to use a different application, you must adjust the test and build commands in the code samples to match those needed by your application.
-:::
-
-## Step 1: Create a React application
-
-Follow the steps below to create a sample React application.
-
-1. Create a React application using the TypeScript template:
-
-  ```shell
-  npx create-react-app my-app --template typescript
-  cd my-app
-  ```
-
-1. Install the TypeScript engine:
-
-  ```shell
-  npm install ts-node
-  ```
-
-1. Define the package type as a module:
-
-  ```shell
-  npm pkg set type=module
-  ```
-
-## Step 2: Install the Dagger Node.js SDK
+## Step 1: Install the Dagger Node.js SDK
 
 :::note
 The Dagger Node.js SDK requires [NodeJS 16.x or later](https://nodejs.org/en/download/).
@@ -74,22 +47,36 @@ yarn add @dagger.io/dagger --dev
 </TabItem>
 </Tabs>
 
-## Step 3: Create a Dagger client in Node.js
+## Step 2: Create a Dagger client in Node.js
 
 <Tabs groupId="typescript-javascript">
   <TabItem value="ts" label="TypeScript">
 
-In your project directory, create a new file named `build.ts` and add the following code to it.
+Install the TypeScript engine (if not already present):
 
-```typescript file=snippets/get-started/step3/build.ts
+```shell
+npm install ts-node
+```
+
+In your project directory, create a new file named `build.mts` and add the following code to it.
+
+```typescript file=snippets/get-started/step2/build.mts
 ```
 
   </TabItem>
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+In your project directory, create a new file named `build.mjs` and add the following code to it.
+
+```typescript file=snippets/get-started/step2/build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 In your project directory, create a new file named `build.js` and add the following code to it.
 
-```typescript file=snippets/get-started/step3/build.js
+```typescript file=snippets/get-started/step2/build.js
 ```
 
   </TabItem>
@@ -108,11 +95,18 @@ Run the Node.js CI tool by executing the command below from the project director
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.ts
+node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+```shell
+node ./build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
 node ./build.js
@@ -127,24 +121,32 @@ The tool outputs a string similar to the one below.
 Hello from Dagger and Node v16.18.1
 ```
 
-## Step 4: Test against a single Node.js version
+## Step 3: Test against a single Node.js version
 
-Now that the basic structure of the CI tool is defined and functional, the next step is to flesh it out to actually test and build the React application.
+Now that the basic structure of the CI tool is defined and functional, the next step is to flesh it out to actually test and build the application.
 
 <Tabs groupId="typescript-javascript">
   <TabItem value="ts" label="TypeScript">
 
-Replace the `build.ts` file from the previous step with the version below (highlighted lines indicate changes):
+Replace the `build.mts` file from the previous step with the version below (highlighted lines indicate changes):
 
-```typescript file=snippets/get-started/step4/build.ts
+```typescript file=snippets/get-started/step3/build.mts
 ```
 
   </TabItem>
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+Replace the `build.mjs` file from the previous step with the version below (highlighted lines indicate changes):
+
+```typescript file=snippets/get-started/step3/build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
 
-```typescript file=snippets/get-started/step4/build.js
+```typescript file=snippets/get-started/step3/build.js
 ```
 
   </TabItem>
@@ -172,11 +174,18 @@ Run the Node.js CI tool by executing the command below:
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.ts
+node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+```shell
+node ./build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
 node ./build.js
@@ -185,7 +194,7 @@ node ./build.js
   </TabItem>
 </Tabs>
 
-The tool tests and builds the application, logging the output of the test and build operations to the console as it works. At the end of the process, the built React application is available in a new `build` folder in the project directory, as shown below:
+The tool tests and builds the application, logging the output of the test and build operations to the console as it works. At the end of the process, the built application is available in a new `build` folder in the project directory. Here is an example of the output when building a React application:
 
 ```shell
 tree build
@@ -211,24 +220,32 @@ build
         └── logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg
 ```
 
-## Step 5: Test against multiple Node.js versions
+## Step 4: Test against multiple Node.js versions
 
 Now that the Node.js CI tool can test the application against a single Node.js version, the next step is to extend it for multiple Node.js versions.
 
 <Tabs groupId="typescript-javascript">
   <TabItem value="ts" label="TypeScript">
 
-Replace the `build.ts` file from the previous step with the version below (highlighted lines indicate changes):
+Replace the `build.mts` file from the previous step with the version below (highlighted lines indicate changes):
 
-```typescript file=snippets/get-started/step5/build.ts
+```typescript file=snippets/get-started/step4/build.mts
 ```
 
   </TabItem>
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+Replace the `build.mjs` file from the previous step with the version below (highlighted lines indicate changes):
+
+```typescript file=snippets/get-started/step4/build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 Replace the `build.js` file from the previous step with the version below (highlighted lines indicate changes):
 
-```typescript file=snippets/get-started/step5/build.js
+```typescript file=snippets/get-started/step4/build.js
 ```
 
   </TabItem>
@@ -245,12 +262,19 @@ Run the Node.js CI tool by executing the command below:
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.ts
+node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
 
-  <TabItem value="js" label="JavaScript">
+  <TabItem value="js-esm" label="JavaScript (ESM)">
+
+```shell
+node ./build.mjs
+```
+
+  </TabItem>
+  <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
 node ./build.js
@@ -259,7 +283,7 @@ node ./build.js
   </TabItem>
 </Tabs>
 
-The tool tests and builds the application against each version in sequence. At the end of the process, a built React application is available for each Node.js version in a `build-node-XX` folder in the project directory, as shown below:
+The tool tests and builds the application against each version in sequence. At the end of the process, a built application is available for each Node.js version in a `build-node-XX` folder in the project directory, as shown below:
 
 ```shell
 tree -L 2 -d build-*
@@ -285,3 +309,12 @@ build-node-16
 This tutorial introduced you to the Dagger Node.js SDK. It explained how to install the SDK and use it with a Node.js application. It also provided a working example of a Node.js CI tool powered by the SDK, demonstrating how to test an application against multiple Node.js versions in parallel.
 
 Use the [SDK Reference](./reference/modules.md) to learn more about the Dagger Node.js SDK.
+
+## Appendix A: Create a React application
+
+Create a React application using the TypeScript template:
+
+```shell
+npx create-react-app my-app --template typescript
+cd my-app
+```
