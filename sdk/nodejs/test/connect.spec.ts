@@ -5,11 +5,12 @@ import * as http from "http"
 import { AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
+import sinon from "sinon"
 import * as tar from "tar"
 
 import { GraphQLRequestError } from "../common/errors/index.js"
 import { connect } from "../connect.js"
-import * as bin from "../provisioning/bin.js"
+import { CliDownloader } from "../provisioning/cli-downloader.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("NodeJS sdk Connect", function () {
@@ -80,6 +81,14 @@ describe("NodeJS sdk Connect", function () {
       process.env.XDG_CACHE_HOME = cacheDir
     })
 
+    after(() => {
+      process.env = JSON.parse(oldEnv)
+
+      sinon.stub(CliDownloader, "Download").restore()
+      fs.rmSync(tempDir, { recursive: true })
+      fs.rmSync(cacheDir, { recursive: true })
+    })
+
     it("Should download and unpack the CLI binary automatically", async function () {
       this.timeout(30000)
 
@@ -89,14 +98,22 @@ describe("NodeJS sdk Connect", function () {
       // If explicitly requested to test against a certain URL, use that
       const cliURL = process.env._INTERNAL_DAGGER_TEST_CLI_URL
       if (cliURL) {
-        bin._overrideCLIURL(cliURL)
         const checksumsUrl = process.env._INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL
         if (!checksumsUrl) {
           throw new Error(
             "Missing override checksums URL when overriding CLI URL"
           )
         }
-        bin._overrideCLIChecksumsURL(checksumsUrl)
+
+        sinon.stub(CliDownloader, "Download").returns(
+          CliDownloader.Download({
+            cliVersion: CLI_VERSION,
+            archive: {
+              checksumUrl: checksumsUrl,
+              url: cliURL,
+            },
+          })
+        )
       }
 
       // Otherwise if _EXPERIMENTAL_DAGGER_CLI_BIN is set, create a mock http server for it
@@ -147,12 +164,17 @@ describe("NodeJS sdk Connect", function () {
           server
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
-              bin._overrideCLIURL(
-                `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`
+
+              sinon.stub(CliDownloader, "Download").returns(
+                CliDownloader.Download({
+                  cliVersion: CLI_VERSION,
+                  archive: {
+                    checksumUrl: `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`,
+                    url: `http://${addr.address}:${addr.port}/${basePath}/${archiveName}`,
+                  },
+                })
               )
-              bin._overrideCLIChecksumsURL(
-                `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`
-              )
+
               resolve()
             })
             .unref()
@@ -165,14 +187,6 @@ describe("NodeJS sdk Connect", function () {
         },
         { LogOutput: process.stderr }
       )
-    })
-
-    after(() => {
-      process.env = JSON.parse(oldEnv)
-      bin._overrideCLIURL("")
-      bin._overrideCLIChecksumsURL("")
-      fs.rmSync(tempDir, { recursive: true })
-      fs.rmSync(cacheDir, { recursive: true })
     })
   })
 })

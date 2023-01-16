@@ -1,6 +1,7 @@
 import { Writable } from "node:stream"
 
 import Client from "./api/client.gen.js"
+import { CliDownloader } from "./provisioning/cli-downloader.js"
 import { Bin, CLI_VERSION } from "./provisioning/index.js"
 
 /**
@@ -74,8 +75,11 @@ export async function connect(
   } else {
     // Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN, with fallback behavior of
     // downloading the CLI and using that as the bin.
-    const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
-    const engineConn = new Bin(cliBin, CLI_VERSION)
+    const cliBin =
+      process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"] ??
+      (await CliDownloader.Download({ cliVersion: CLI_VERSION }))
+
+    const engineConn = new Bin(cliBin)
     client = await engineConn.Connect(_config)
     close = () => engineConn.Close()
   }
