@@ -125,7 +125,6 @@ h1 {
 
 h2 {
   font-weight: 700;
-  line-height: 32px;
 }
 
 code,
@@ -176,6 +175,7 @@ code,
   a:not(.card) {
     font-weight: bold;
     color: var(--ifm-color-primary-dark);
+    text-decoration: none;
 
     html[data-theme="dark"] & {
       color: var(--ifm-color-primary-light);
@@ -183,6 +183,7 @@ code,
 
     &:hover {
       color: var(--ifm-color-primary);
+      border-bottom: 1px solid;
 
       html[data-theme="dark"] & {
         color: var(--ifm-color-secondary);
@@ -212,7 +213,6 @@ code,
 p {
   font-size: 18px;
   font-weight: 400;
-  line-height: 21px;
   font-family: var(--ifm-font-family-base);
   letter-spacing: 0.5px; //styleName: Body 1;
 }
