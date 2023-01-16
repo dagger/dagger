@@ -38,9 +38,9 @@ $desktop-xl-width: 1160px;
 /* You can override the default Infima variables here. */
 :root {
   --ifm-background-color: var(--ifm-color-primary-light);
-  --ifm-code-background: var(--ifm-color-primary-dark);
+  --ifm-code-background: rgba(19, 18, 38, 0.1);
   --ifm-code-font-size: 100%;
-  --ifm-code-color: var(--ifm-color-primary-light);
+  --ifm-code-color: var(--ifm-color-primary-dark);
   --ifm-code-padding-vertical: 0.05rem;
   --ifm-code-padding-horizontal: 0.2rem;
   --ifm-color-primary: #0e2b3d;
@@ -125,7 +125,6 @@ h1 {
 
 h2 {
   font-weight: 700;
-  line-height: 32px;
 }
 
 code,
@@ -140,14 +139,25 @@ code,
 }
 
 .markdown {
+  & > h1:first-child {
+    font-size: 3.141rem;
+    margin-bottom: 4rem;
+    font-weight: 700;
+    letter-spacing: -2px;
+  }
+
   & > h2 {
-    --ifm-h2-font-size: 1.5rem;
-    --ifm-h2-vertical-rhythm-top: 4;
+    --ifm-h2-font-size: 2.344rem;
+    --ifm-h2-vertical-rhythm-top: 3;
   }
 
   & > h3 {
-    --ifm-h3-font-size: 1.1875rem;
-    --ifm-h3-vertical-rhythm-top: 3;
+    --ifm-h3-font-size: 1.762rem;
+    --ifm-h3-vertical-rhythm-top: 2;
+  }
+
+  & > h4 {
+    --ifm-h4-font-size: 1.36rem;
   }
 
   & > h2 + h3 {
@@ -164,20 +174,16 @@ code,
 
   a:not(.card) {
     font-weight: bold;
-    text-decoration: underline;
     color: var(--ifm-color-primary-dark);
+    text-decoration: none;
 
     html[data-theme="dark"] & {
       color: var(--ifm-color-primary-light);
     }
 
-    code {
-      display: inline-block !important;
-      color: var(--ifm-color-primary-light);
-    }
-
     &:hover {
       color: var(--ifm-color-primary);
+      border-bottom: 1px solid;
 
       html[data-theme="dark"] & {
         color: var(--ifm-color-secondary);
@@ -207,7 +213,6 @@ code,
 p {
   font-size: 18px;
   font-weight: 400;
-  line-height: 21px;
   font-family: var(--ifm-font-family-base);
   letter-spacing: 0.5px; //styleName: Body 1;
 }
@@ -720,34 +725,5 @@ img[alt="github-contribute"] {
 [class*=" docs-doc-id-current\/sdk\/nodejs\/reference"] {
   .container {
     max-width: 1200px;
-  }
-
-  .markdown h1:first-child {
-    font-size: 3.157rem;
-    margin-bottom: 4rem;
-    font-weight: 700;
-    letter-spacing: -2px;
-  }
-  .markdown > h2 {
-    font-size: 2.369rem;
-    margin-bottom: 3rem;
-  }
-  .markdown > h3 {
-    font-size: 1.802rem;
-    margin-bottom: 2rem;
-  }
-
-  .markdown > h4 {
-    font-size: 1.2rem;
-  }
-
-  code,
-  .markdown a:not(.card) code {
-    background-color: rgba(19, 18, 38, 0.1);
-    color: var(--ifm-color-primary-dark);
-  }
-
-  a > code {
-    font-weight: 400;
   }
 }
