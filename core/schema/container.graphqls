@@ -97,7 +97,7 @@ type Container {
   "Retrieves this container plus the given label."
   withLabel(name: String!, value: String!): Container!
 
-  "Retrieves this container minus the given environment variable."
+  "Retrieves this container minus the given environment label."
   withoutLabel(name: String!): Container!
 
   "Retrieves this container plus an env variable containing the given secret."
