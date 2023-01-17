@@ -296,6 +296,14 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 		require.Equal(t, []string{}, entries)
 	})
 
+	t.Run("exclude works on directory", func(t *testing.T) {
+		entries, err := c.Directory().WithDirectory(".", dir, dagger.DirectoryWithDirectoryOpts{
+			Exclude: []string{"subdir"},
+		}).Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"a.txt", "b.txt", "c.txt.rar"}, entries)
+	})
+
 	subdir := dir.Directory("subdir")
 
 	t.Run("exclude respects subdir", func(t *testing.T) {
