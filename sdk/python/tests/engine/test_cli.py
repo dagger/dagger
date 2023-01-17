@@ -49,3 +49,17 @@ def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
             ...
 
     assert "Dagger engine failed to start" in str(exc_info.value)
+
+
+def test_stderr(fp: FakeProcess):
+    fp.register(
+        ["dagger", "session"],
+        stderr=["Error: buildkit failed to respond", ""],
+        returncode=1,
+    )
+    with pytest.raises(ProvisionError) as exc_info, cli.CLISession(
+        dagger.Config(), "dagger"
+    ):
+        ...
+
+    assert "buildkit failed to respond" in str(exc_info.value)
