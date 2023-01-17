@@ -20,7 +20,7 @@ async function createConfig() {
     },
     themeConfig: {
       sidebarCollapsed: false,
-      metadata: [{name: 'og:image', content: '/img/favicon.png'}],
+      metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
         theme: require("prism-react-renderer/themes/okaidia"),
       },
@@ -106,7 +106,7 @@ async function createConfig() {
             editUrl: "https://github.com/dagger/dagger/edit/main/website",
             routeBasePath: "/",
             remarkPlugins: [
-              [remarkCodeImport, {allowImportingFromOutside: true}],
+              [remarkCodeImport, { allowImportingFromOutside: true }],
             ]
           },
           gtag: {
@@ -126,6 +126,7 @@ async function createConfig() {
       [
         "posthog-docusaurus",
         {
+          appUrl: "https://dagger.io/analytics",
           apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d"
         }
       ],
