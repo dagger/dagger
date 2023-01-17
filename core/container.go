@@ -363,6 +363,7 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 	return (&directoryIDPayload{
 		LLB:      payload.FS,
 		Platform: payload.Platform,
+		Pipeline: payload.Pipeline,
 	}).ToDirectory()
 }
 
