@@ -1,0 +1,55 @@
+---
+slug: /472910/quickstart-build-multi
+displayed_sidebar: "current"
+hide_table_of_contents: true
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import Button from "@site/src/components/atoms/button.js";
+
+## Be more efficient: Use a multi-stage build
+
+Now that you have a working Dagger pipeline, let's refine and optimize it.
+
+You may have noticed that the previous listing exported the build artifacts to a directory on the host, and then copied them to a directory in the destination container. While this works, a more efficient approach is to use a multi-stage build...something that Dagger, by virtue of its design, excels at.
+
+This is because Dagger SDK objects like `Container` and `Directory` can be thought of as collections of state. You can save this state and reference it elsewhere (even in a different Dagger pipeline or engine). You can also update the state from the point you left off, or use it an input to another operation.
+
+In the context of a multi-stage build, this means that you can use Dagger to:
+- Perform a build in a container.
+- Obtain and save a `Directory` object referencing the filesystem state of that container (including the build artifacts) after the build.
+- Pass the saved `Directory` object as a parameter to a different container or pipeline, thereby transferring the saved filesystem state (and build artifacts) to that container or pipeline.
+- Perform further container or pipeline operations as needed.
+
+Let's now update our pipeline to use a multi-stage build, as described above.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=snippets/build-multi/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+
+```javascript file=snippets/build-multi/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+TODO
+</TabItem>
+</Tabs>
+
+This revised pipeline produces the same result as before, but using a two-stage process:
+
+- In the first stage, the pipeline installs dependencies, runs tests and builds the application in the `node:16-slim` container. However, instead of exporting the `build/` directory to the host, it saves the corresponding `Directory` object as a constant. This object represents the filesystem state of the `build/` directory in the container after the build, and is portable to other Dagger pipelines.
+- In the second stage, the pipeline uses the saved `Directory` object as input, thereby transferring the filesystem state (the built React application) to the `nginx:alpine` container. It then publishes the result to a registry as previously described.
+
+<Button label="Back" docPath="730264/quickstart-publish" />
+
+<Button label="Next" docPath="635927/quickstart-caching" />
