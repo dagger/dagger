@@ -17,6 +17,11 @@ module.exports = {
       label: "Introduction",
     },
     {
+      type: "doc",
+      id: "current/quickstart/quickstart-introduction",
+      label: "Quickstart",
+    },
+    {
       type: "category",
       label: "Go SDK",
       collapsible: false,

@@ -1,0 +1,76 @@
+---
+slug: /349011/quickstart-build
+displayed_sidebar: "current"
+hide_table_of_contents: true
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+import Button from "@site/src/components/atoms/button.js";
+
+## Build the application
+
+If your application passes all its tests, the typical next step is to build it.
+
+So, let's update the previous pipeline and add a build step to it, by running `npm run build`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=snippets/build/main.go
+```
+
+- It invokes the `Container.WithExec()` method again, this time to define the command `npm run build` in the container.
+- It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
+- It writes the `build/` directory from the container to the host using the `Directory.Export()` method.
+
+</TabItem>
+<TabItem value="Node.js">
+
+
+```javascript file=snippets/build/index.mjs
+```
+
+This revised pipeline does everything described in the previous step, and then performs the following additional operations:
+
+- It invokes the `Container.withExec()` method again, this time to define the command `npm run build` in the container.
+- It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
+- It writes the `build/` directory from the container to the host using the `Directory.export()` method.
+
+</TabItem>
+<TabItem value="Python">
+TODO
+</TabItem>
+</Tabs>
+
+After Dagger resolves the pipeline, the built application is available in a new `build/` sub-directory of the application directory. Confirm this by executing the `tree` command in the application directory, as shown below:
+
+```shell
+tree build
+build
+├── asset-manifest.json
+├── favicon.ico
+├── index.html
+├── logo192.png
+├── logo512.png
+├── manifest.json
+├── robots.txt
+└── static
+    ├── css
+    │   ├── main.073c9b0a.css
+    │   └── main.073c9b0a.css.map
+    ├── js
+    │   ├── 787.305db8b6.chunk.js
+    │   ├── 787.305db8b6.chunk.js.map
+    │   ├── main.a03ce25e.js
+    │   ├── main.a03ce25e.js.LICENSE.txt
+    │   └── main.a03ce25e.js.map
+    └── media
+        └── logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg
+```
+
+<Button label="Back" docPath="947391/quickstart-test" />
+
+<Button label="Next" docPath="730264/quickstart-publish" />
