@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import time
+from json.decoder import JSONDecodeError
 from pathlib import Path
 
 import cattrs
@@ -9,7 +10,7 @@ from cattrs.preconf.json import JsonConverter
 import dagger
 from dagger.config import ConnectParams
 from dagger.context import SyncResourceManager
-from dagger.exceptions import ProvisionError
+from dagger.exceptions import SessionError
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,10 @@ class CLISession(SyncResourceManager):
         with self.get_sync_stack() as stack:
             try:
                 proc = self._start()
-                stack.push(proc)
-                conn = self._get_conn(proc)
-            except Exception as e:
-                raise ProvisionError("Dagger engine failed to start") from e
+            except (OSError, ValueError, TypeError) as e:
+                raise SessionError(e) from e
+            stack.push(proc)
+            conn = self._get_conn(proc)
         return conn
 
     def _start(self) -> subprocess.Popen:
@@ -66,7 +67,7 @@ class CLISession(SyncResourceManager):
             else:
                 return proc
 
-        raise RuntimeError("CLI busy")
+        raise SessionError("CLI busy")
 
     def _get_conn(self, proc: subprocess.Popen) -> ConnectParams:
         # FIXME: implement engine session timeout (self.cfg.engine_timeout?)
@@ -76,15 +77,24 @@ class CLISession(SyncResourceManager):
         if ret := proc.poll():
             out = conn + proc.stdout.read()
             err = proc.stderr.read() if proc.stderr and proc.stderr.readable() else None
-            # FIXME: not actually using output since it's being
-            # reraised as ProvisionError later
-            # FIXME: maybe check CLI version?
-            raise subprocess.CalledProcessError(ret, " ".join(proc.args), out, err)
+
+            # Reuse error message from CalledProcessError
+            exc = subprocess.CalledProcessError(ret, " ".join(proc.args))
+
+            msg = str(exc)
+            detail = err or out
+            if detail and detail.strip():
+                # `msg` ends in a period, just append
+                msg = f"{msg} {detail.strip()}"
+
+            raise SessionError(msg)
 
         if not conn:
-            raise ValueError("No connection params")
+            msg = "No connection params"
+            raise SessionError(msg)
 
         try:
             return self.converter.loads(conn, ConnectParams)
-        except cattrs.BaseValidationError as e:
-            raise ValueError(f"Invalid connection params: {conn}") from e
+        except (JSONDecodeError, cattrs.BaseValidationError) as e:
+            msg = f"Invalid connection params: {conn}"
+            raise SessionError(msg) from e
