@@ -122,7 +122,10 @@ type gitTreeArgs struct {
 }
 
 func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
-	var opts []llb.GitOption
+	opts := []llb.GitOption{
+		parent.Repository.Pipeline.LLBOpt(),
+	}
+
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}

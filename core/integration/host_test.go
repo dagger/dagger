@@ -53,6 +53,8 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "b.txt"), []byte("2"), 0600))
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "c.txt.rar"), []byte("3"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "sub-file"), []byte("goodbye"), 0600))
 
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
@@ -70,7 +72,21 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Equal(t, "a.txt\nb.txt\n", contents)
+		require.Equal(t, "a.txt\nb.txt\nsubdir\n", contents)
+	})
+
+	t.Run("exclude directory", func(t *testing.T) {
+		wd := c.Host().Directory(".", dagger.HostDirectoryOpts{
+			Exclude: []string{"subdir"},
+		})
+
+		contents, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/host", wd).
+			WithExec([]string{"ls", "/host"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "a.txt\nb.txt\nc.txt.rar\n", contents)
 	})
 
 	t.Run("include", func(t *testing.T) {
