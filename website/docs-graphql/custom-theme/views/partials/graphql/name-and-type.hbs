@@ -1,0 +1,13 @@
+{{~md (
+  concat
+    (spanWrap (codify name) className="property-name" isField=isField id=name)
+    ' - '
+    (spanWrap (mdTypeLink . codify=true) className="property-type")
+    (ternary default
+      (spanWrap (concat " default = "  (codify default stringify=true)) className="property-default")
+      ""
+      undefOnly=true
+    )
+  )
+stripParagraph=true }}
+{{log isField}}

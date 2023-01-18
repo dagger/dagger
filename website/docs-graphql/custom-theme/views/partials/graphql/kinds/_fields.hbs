@@ -1,0 +1,38 @@
+<table>
+  <thead>
+    <tr>
+      <th>Field Name</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each fields}}
+      <tr
+        {{#if (nempty args)}}class="row-has-field-arguments"{{/if}}
+      >
+        <td data-property-name="{{./htmlId}}"
+          {{! The Name column }}
+          {{#if (and isDeprecated (not @root.info.x-hideIsDeprecated)) }}class="definition-deprecated"{{/if}}
+        >
+          {{~> graphql/name-and-type . isField=true}}
+        </td>
+        <td>
+          {{! The Description column }}
+          {{#if description}}
+            {{md (interpolateReferences description) stripParagraph=true}}
+          {{/if}}
+          {{#if (and deprecationReason (not @root.info.x-hideDeprecationReason))}}
+            <span class="deprecation-reason">{{ md deprecationReason stripParagraph=true }}</span>
+          {{/if}}
+        </td>
+      </tr>
+      {{#if (nempty args)}}
+        <tr class="row-field-arguments">
+          <td colspan="2">
+            {{>graphql/field-arguments . }}
+          </td>
+        </tr>
+      {{/if}}
+    {{/each}}
+  </tbody>
+</table>
