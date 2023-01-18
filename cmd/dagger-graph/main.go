@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 
@@ -103,11 +104,6 @@ func generateGraph(vertices []*bkclient.Vertex) string {
 	for _, v := range vertices {
 		w := WrappedVertex{v}
 
-		fmt.Fprintf(os.Stderr, "%s => %s [%+v]\n", w.ID(), w.Name(), w.Pipeline())
-		if strings.Contains(w.v.Name, "resolve image config for") {
-			fmt.Fprintf(os.Stderr, "%q\n", w.v.Name)
-		}
-
 		if w.Internal() {
 			continue
 		}
@@ -116,10 +112,21 @@ func generateGraph(vertices []*bkclient.Vertex) string {
 		for _, p := range w.Pipeline() {
 			graphPath = append(graphPath, fmt.Sprintf("%q", p.Name))
 		}
-		graphPath = append(graphPath, fmt.Sprintf("%q", w.Name()))
+		graphPath = append(graphPath, fmt.Sprintf("%q", w.ID()))
 		graphID := strings.Join(graphPath, ".")
+
+		duration := w.Duration().Round(time.Second / 10).String()
+		if w.Cached() {
+			duration = "CACHED"
+		}
+
+		// `$` has special meaning in D2
+		name := strings.ReplaceAll(w.Name(), "$", "") + " (" + duration + ")"
+
 		vertexToGraphID[w.ID()] = graphID
-		s.WriteString(fmt.Sprintf("%s: %s\n", graphID, w.Name()))
+		s.WriteString(graphID + ": {\n")
+		s.WriteString(fmt.Sprintf("  label: %q\n", name))
+		s.WriteString("}\n")
 	}
 
 	for _, v := range vertices {
