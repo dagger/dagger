@@ -21,7 +21,7 @@ const (
 	daggerCliBinName = "dagger"
 	shimBinName      = "dagger-shim"
 	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.11.0-rc3"
+	buildkitBranch   = "v0.11.1"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
