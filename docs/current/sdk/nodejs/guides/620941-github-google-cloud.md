@@ -5,7 +5,9 @@ displayed_sidebar: "current"
 
 # Use Dagger with GitHub Actions and Google Cloud
 
-We recorded a live demo of this tutorial at our last community call. Check it out [here](https://youtu.be/-pKmv0VDJBg). 
+:::note
+[Watch a live demo](https://youtu.be/-pKmv0VDJBg) of this tutorial in the Dagger Community Call (12 Jan 2023). For more demos, [join the next Dagger Community Call](https://dagger.io/events).
+:::
 
 ## Introduction
 
