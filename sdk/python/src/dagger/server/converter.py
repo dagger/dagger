@@ -17,7 +17,7 @@ def has_resolver(f) -> bool:
 
 
 def strawberry_unstructure(cls: type) -> Callable:
-    """Hook to not unstructure fields with resolvers"""
+    """Don't unstructure fields with resolvers."""
     return make_dict_unstructure_fn(
         cls,
         converter,

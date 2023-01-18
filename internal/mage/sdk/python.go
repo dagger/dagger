@@ -46,12 +46,13 @@ func (t Python) Lint(ctx context.Context) error {
 	})
 
 	eg.Go(func() error {
+		path := "docs/current/sdk/python/snippets"
 		workdir := util.Repository(c)
 		snippets := c.Directory().
-			WithDirectory("/", workdir.Directory("docs/current/sdk/python/snippets"))
+			WithDirectory("/", workdir.Directory(path))
 		_, err = base.
-			WithMountedDirectory("/snippets", snippets).
-			WithExec([]string{"poe", "lint", "/snippets"}).
+			WithMountedDirectory(fmt.Sprintf("/%s", path), snippets).
+			WithExec([]string{"poe", "lint-docs"}).
 			ExitCode(gctx)
 		return err
 	})
@@ -165,12 +166,17 @@ func (t Python) Bump(ctx context.Context, version string) error {
 }
 
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
-	src := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/python"))
-
 	var (
-		path = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-		venv = "/opt/venv"
+		path   = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		venv   = "/opt/venv"
+		appDir = "sdk/python"
 	)
+
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
+
+	// We mirror the same dir structure from the repo because of the
+	// relative paths in ruff (for docs linting).
+	mountPath := fmt.Sprintf("/%s", appDir)
 
 	base := c.Container().
 		From(fmt.Sprintf("python:%s-alpine", version)).
@@ -181,26 +187,27 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:%s", venv, path)).
 		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false").
-		WithWorkdir("/app")
+		WithWorkdir(mountPath)
 
 	// FIXME: Use single `poetry.lock` directly with `poetry install --no-root`
 	// 	when able: https://github.com/python-poetry/poetry/issues/1301
+	reqFile := fmt.Sprintf("%s/requirements.txt", mountPath)
 	requirements := base.
-		WithMountedDirectory("/app", src).
+		WithMountedDirectory(mountPath, src).
 		WithExec([]string{
 			"poetry", "export",
 			"--with", "test,lint,dev",
 			"--without-hashes",
 			"-o", "requirements.txt",
 		}).
-		File("/app/requirements.txt")
+		File(reqFile)
 
 	deps := base.
-		WithRootfs(base.Rootfs().WithFile("/app/requirements.txt", requirements)).
+		WithRootfs(base.Rootfs().WithFile(reqFile, requirements)).
 		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
 
 	deps = deps.
-		WithRootfs(deps.Rootfs().WithDirectory("/app", src)).
+		WithRootfs(deps.Rootfs().WithDirectory(mountPath, src)).
 		WithExec([]string{"poetry", "install", "--without", "docs"})
 
 	return util.AdvertiseDevEngine(c, deps)

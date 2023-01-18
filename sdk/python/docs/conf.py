@@ -9,7 +9,7 @@ import sys
 sys.path.append(os.path.abspath("./_ext"))
 
 project = "Dagger Python SDK"
-copyright = "2022, Dagger"
+copyright = "2023, Dagger"  # noqa: A001
 author = "Dagger"
 
 extensions = [

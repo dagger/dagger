@@ -23,7 +23,7 @@ def context(mocker):
             F("one"),
             F("two"),
             F("three"),
-        ]
+        ],
     )
     return Context(session, schema, selections)
 

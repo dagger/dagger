@@ -38,7 +38,7 @@ class Field:
 
 @typing.runtime_checkable
 class IDType(typing.Protocol):
-    def id(self) -> str:
+    def id(self) -> str:  # noqa: A003
         ...
 
 
@@ -64,7 +64,8 @@ class Context:
 
     def build(self) -> DSLSelectable:
         if not self.selections:
-            raise InvalidQueryError("No field has been selected")
+            msg = "No field has been selected"
+            raise InvalidQueryError(msg)
 
         selections = self.selections.copy()
         selectable = selections.pop().to_dsl(self.schema)
@@ -85,10 +86,11 @@ class Context:
         try:
             result = await self.session.execute(query, get_execution_result=True)
         except httpx.TimeoutException as e:
-            raise ExecuteTimeoutError(
+            msg = (
                 "Request timed out. Try setting a higher value in 'execute_timeout' "
                 "config for this `dagger.Connection()`."
-            ) from e
+            )
+            raise ExecuteTimeoutError(msg) from e
         return self._get_value(result.data, return_type)
 
     def execute_sync(self, return_type: type[T]) -> T:
@@ -98,10 +100,11 @@ class Context:
         try:
             result = self.session.execute(query, get_execution_result=True)
         except httpx.TimeoutException as e:
-            raise ExecuteTimeoutError(
+            msg = (
                 "Request timed out. Try setting a higher value in 'execute_timeout' "
                 "config for this `dagger.Connection()`."
-            ) from e
+            )
+            raise ExecuteTimeoutError(msg) from e
         return self._get_value(result.data, return_type)
 
     async def resolve_ids(self) -> None:
@@ -127,9 +130,10 @@ class Context:
         if value is not None:
             value = self._structure_response(value, return_type)
         if value is None and not TypeHint(return_type).is_bearable(None):
-            raise InvalidQueryError(
+            msg = (
                 "Required field got a null response. Check if parent fields are valid."
             )
+            raise InvalidQueryError(msg)
         return value
 
     def _structure_response(self, response: dict[str, Any], return_type: type[T]) -> T:

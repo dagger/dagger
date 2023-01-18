@@ -1,7 +1,4 @@
-"""
-Create a multi-build pipeline for a Go application.
-"""
-
+"""Create a multi-build pipeline for a Go application."""
 
 import itertools
 import sys

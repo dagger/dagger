@@ -24,14 +24,14 @@ class Engine(SyncResourceManager):
         if not (port := os.environ.get("DAGGER_SESSION_PORT")):
             return None
         if not (token := os.environ.get("DAGGER_SESSION_TOKEN")):
-            raise ProvisionError(
-                "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
-            )
+            msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
+            raise ProvisionError(msg)
         try:
             return ConnectParams(port, token)
         except ValueError as e:
             # only port is validated
-            raise ProvisionError(f"Invalid DAGGER_SESSION_PORT: {port}") from e
+            msg = f"Invalid DAGGER_SESSION_PORT: {port}"
+            raise ProvisionError(msg) from e
 
     def from_cli(self) -> ConnectParams:
         cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")

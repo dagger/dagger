@@ -222,7 +222,9 @@ class Container(Type):
 
     @typecheck
     def export(
-        self, path: str, platform_variants: Optional[Sequence["Container"]] = None
+        self,
+        path: str,
+        platform_variants: Optional[Sequence["Container"]] = None,
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platformVariants.
@@ -346,7 +348,11 @@ class Container(Type):
         return _ctx.execute_sync(list[str])
 
     @typecheck
-    def pipeline(self, name: str, description: Optional[str] = None) -> "Container":
+    def pipeline(
+        self,
+        name: str,
+        description: Optional[str] = None,
+    ) -> "Container":
         """Creates a named sub-pipeline"""
         _args = [
             Arg("name", name),
@@ -372,7 +378,9 @@ class Container(Type):
 
     @typecheck
     def publish(
-        self, address: str, platform_variants: Optional[Sequence["Container"]] = None
+        self,
+        address: str,
+        platform_variants: Optional[Sequence["Container"]] = None,
     ) -> str:
         """Publishes this container as a new image to the specified address, for
         the platformVariants, returning a fully qualified ref.
@@ -458,7 +466,10 @@ class Container(Type):
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def with_default_args(self, args: Optional[Sequence[str]] = None) -> "Container":
+    def with_default_args(
+        self,
+        args: Optional[Sequence[str]] = None,
+    ) -> "Container":
         """Configures default arguments for future commands."""
         _args = [
             Arg("args", args, None),
@@ -557,7 +568,10 @@ class Container(Type):
 
     @typecheck
     def with_file(
-        self, path: str, source: "File", permissions: Optional[int] = None
+        self,
+        path: str,
+        source: "File",
+        permissions: Optional[int] = None,
     ) -> "Container":
         """Retrieves this container plus the contents of the given file copied to
         the given path.
@@ -582,7 +596,10 @@ class Container(Type):
 
     @typecheck
     def with_mounted_cache(
-        self, path: str, cache: CacheVolume, source: Optional["Directory"] = None
+        self,
+        path: str,
+        cache: CacheVolume,
+        source: Optional["Directory"] = None,
     ) -> "Container":
         """Retrieves this container plus a cache volume mounted at the given
         path.
@@ -879,7 +896,11 @@ class Directory(Type):
         return Project(_ctx)
 
     @typecheck
-    def pipeline(self, name: str, description: Optional[str] = None) -> "Directory":
+    def pipeline(
+        self,
+        name: str,
+        description: Optional[str] = None,
+    ) -> "Directory":
         """Creates a named sub-pipeline."""
         _args = [
             Arg("name", name),
@@ -920,7 +941,10 @@ class Directory(Type):
 
     @typecheck
     def with_file(
-        self, path: str, source: "File", permissions: Optional[int] = None
+        self,
+        path: str,
+        source: "File",
+        permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus the contents of the given file copied to
         the given path.
@@ -935,7 +959,9 @@ class Directory(Type):
 
     @typecheck
     def with_new_directory(
-        self, path: str, permissions: Optional[int] = None
+        self,
+        path: str,
+        permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus a new directory created at the given
         path.
@@ -949,7 +975,10 @@ class Directory(Type):
 
     @typecheck
     def with_new_file(
-        self, path: str, contents: str, permissions: Optional[int] = None
+        self,
+        path: str,
+        contents: str,
+        permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus a new file written at the given path."""
         _args = [
@@ -1414,7 +1443,9 @@ class Client(Root):
 
     @typecheck
     def container(
-        self, id: Optional[ContainerID] = None, platform: Optional[Platform] = None
+        self,
+        id: Optional[ContainerID] = None,
+        platform: Optional[Platform] = None,
     ) -> Container:
         """Loads a container from ID.
 
@@ -1465,7 +1496,11 @@ class Client(Root):
         return File(_ctx)
 
     @typecheck
-    def git(self, url: str, keep_git_dir: Optional[bool] = None) -> GitRepository:
+    def git(
+        self,
+        url: str,
+        keep_git_dir: Optional[bool] = None,
+    ) -> GitRepository:
         """Queries a git repository."""
         _args = [
             Arg("url", url),
@@ -1491,7 +1526,11 @@ class Client(Root):
         return File(_ctx)
 
     @typecheck
-    def pipeline(self, name: str, description: Optional[str] = None) -> "Client":
+    def pipeline(
+        self,
+        name: str,
+        description: Optional[str] = None,
+    ) -> "Client":
         """Creates a named sub-pipeline"""
         _args = [
             Arg("name", name),

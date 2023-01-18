@@ -3,7 +3,7 @@ from textwrap import dedent
 import pytest
 from graphql import GraphQLArgument as Argument
 from graphql import GraphQLField as Field
-from graphql import GraphQLID as ID
+from graphql import GraphQLID
 from graphql import GraphQLInputField as Input
 from graphql import GraphQLInputField as InputField
 from graphql import GraphQLInputObjectType as InputObject
@@ -14,17 +14,17 @@ from graphql import GraphQLObjectType as Object
 from graphql import GraphQLScalarType as Scalar
 from graphql import GraphQLString as String
 
-from dagger.codegen import Context
-from dagger.codegen import Scalar as ScalarHandler
 from dagger.codegen import (
+    Context,
     _InputField,
     format_input_type,
     format_name,
     format_output_type,
 )
+from dagger.codegen import Scalar as ScalarHandler
 
 
-@pytest.fixture
+@pytest.fixture()
 def ctx():
     return Context(
         id_map={
@@ -37,7 +37,7 @@ def ctx():
 
 
 @pytest.mark.parametrize(
-    "graphql, expected",
+    ("graphql", "expected"),
     [
         ("stdout", "stdout"),
         ("envVariable", "env_variable"),  # casing
@@ -60,7 +60,7 @@ opts = InputObject(
 
 
 @pytest.mark.parametrize(
-    "graphql, expected",
+    ("graphql", "expected"),
     [
         (NonNull(List(NonNull(String))), "list[str]"),
         (List(String), "Optional[list[Optional[str]]]"),
@@ -86,13 +86,13 @@ cache_volume = Object(
         "id": Field(
             NonNull(Scalar("CacheID")),
             {},
-        )
+        ),
     },
 )
 
 
 @pytest.mark.parametrize(
-    "graphql, expected",
+    ("graphql", "expected"),
     [
         (NonNull(List(NonNull(String))), "list[str]"),
         (List(String), "Optional[list[Optional[str]]]"),
@@ -110,7 +110,7 @@ def test_format_output_type(graphql, expected):
 
 
 @pytest.mark.parametrize(
-    "name, args, expected",
+    ("name", "args", "expected"),
     [
         ("args", (NonNull(List(String)),), "args: Sequence[Optional[str]]"),
         ("secret", (NonNull(Scalar("SecretID")),), "secret: Secret"),
@@ -130,7 +130,7 @@ def test_input_field_param(cls, name, args, expected, ctx: Context):
 
 
 @pytest.mark.parametrize(
-    "name, args, expected",
+    ("name", "args", "expected"),
     [
         (
             "context",
@@ -165,9 +165,9 @@ def test_input_field_arg(cls, name, args, expected, ctx: Context):
 
 
 @pytest.mark.parametrize(
-    "type_, expected",
+    ("type_", "expected"),
     [
-        (ID, False),
+        (GraphQLID, False),
         (String, False),
         (Int, False),
         (Scalar("FileID"), True),
@@ -179,7 +179,7 @@ def test_scalar_predicate(type_, expected, ctx: Context):
 
 
 @pytest.mark.parametrize(
-    "type_, expected",
+    ("type_", "expected"),
     [
         # with doc
         (

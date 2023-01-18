@@ -1,6 +1,4 @@
-"""
-Run tests for multiple Python versions concurrently.
-"""
+"""Run tests for multiple Python versions concurrently."""
 
 import sys
 

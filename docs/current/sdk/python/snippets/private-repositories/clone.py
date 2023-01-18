@@ -1,6 +1,4 @@
-"""
-Clone a Private Git Repository and print the content of the README.md file
-"""
+"""Clone a Private Git Repository and print the content of the README.md file."""
 
 import os
 import sys
@@ -41,6 +39,6 @@ async def private_repo():
 if __name__ == "__main__":
     try:
         anyio.run(private_repo)
-    except Exception as e:
+    except dagger.DaggerError as e:
         print(e, file=sys.stderr)
         sys.exit(1)
