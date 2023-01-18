@@ -13,10 +13,10 @@ Export a type for each type or input existing in the GraphQL schema.
 		{{- $typeName = "Client" }}
 	{{- end }}
 
-	{{- /* Generate scalar type */ -}}
+	{{- /* Generate scalar type. */ -}}
 	{{- if IsCustomScalar . }}
 		{{- if .Description }}
-			{{- /* Split comment string into a slice of one line per element */ -}}
+			{{- /* Split comment string into a slice of one line per element. */ -}}
 			{{- $desc := CommentToLines .Description }}
 /** 
 				{{- range $desc }}
@@ -28,7 +28,7 @@ export type {{ .Name }} = string
 {{ "" }}
 	{{- end }}
 
-	{{- /* Generate structure type */ -}}
+	{{- /* Generate structure type. */ -}}
 	{{- with .Fields }}
 		{{- range . }}
 			{{- $optionals := GetOptionalArgs .Args }}
@@ -40,7 +40,7 @@ export type {{ $typeName }}{{ .Name | PascalCase }}Opts = {
 		{{- end }}
 	{{- end }}
 
-	{{- /* Generate input GraphQL type */ -}}
+	{{- /* Generate input GraphQL type. */ -}}
 	{{- with .InputFields }}
 export type {{ $typeName }} = {
 		{{- template "field" (SortInputFields .) }}
@@ -63,7 +63,7 @@ export type {{ $typeName }} = {
 		{{- if $field.Description }}
 			{{- $desc := CommentToLines $field.Description }}
 
-			{{- /* Add extra break line if it's not the first param */ -}}
+			{{- /* Add extra break line if it's not the first param. */ -}}
 			{{- if ne $i 0 }}
 {{""}}
 			{{- end }}

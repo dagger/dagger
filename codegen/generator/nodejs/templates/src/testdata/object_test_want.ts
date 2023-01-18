@@ -1,6 +1,5 @@
 
 export class Container extends BaseClient {
-
   exec(opts?: ContainerExecOpts): Container {
     return new Container({
       queryTree: [

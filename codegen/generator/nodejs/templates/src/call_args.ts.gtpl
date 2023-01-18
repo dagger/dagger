@@ -1,10 +1,10 @@
+{{- /* Write arguments sent to method resolver. */ -}}
 {{ define "call_args" }}
-	{{- $maxIndex := len . }}
-	{{- $maxIndex = Subtract $maxIndex 1 }}
+	{{- $maxIndex := Subtract (len .) 1 }}
 	{{- range $index, $value := . }}
 		{{- .Name }}
 
-		{{- /* we add a ", " only if it's not the last item */ -}}
+		{{- /* Add a ", " only if it's not the last item. */ -}}
 		{{- if ne $index $maxIndex -}}
 			{{ "" }}, {{ "" }}
 		{{- end }}

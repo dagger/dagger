@@ -13,7 +13,7 @@ var srcs embed.FS
 func New() *template.Template {
 	topLevelTemplate := "api"
 	templateDeps := []string{
-		topLevelTemplate, "header", "objects", "object", "class_comment", "method", "method_solve", "call_args", "return", "return_solve", "method_comment", "types", "args",
+		topLevelTemplate, "header", "objects", "object", "method", "method_solve", "call_args", "method_comment", "types", "args",
 	}
 
 	fileNames := make([]string, 0, len(templateDeps))

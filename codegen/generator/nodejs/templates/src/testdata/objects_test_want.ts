@@ -3,7 +3,6 @@
  * A directory whose contents persist across runs
  */
 export class CacheVolume extends BaseClient {
-
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
       [

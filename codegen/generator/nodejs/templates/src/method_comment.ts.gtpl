@@ -1,15 +1,16 @@
+{{- /* Write comment's method. */ -}}
 {{ define "method_comment" }}
 	{{- $required := GetRequiredArgs .Args }}
 	{{- $optionals := GetOptionalArgs .Args }}
 	{{- $argsDesc := ArgsHaveDescription .Args }}
 	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
+
+	{{- /* Write method description. */ -}}
 	{{- if or .Description $argsDesc .IsDeprecated }}
-		{{- $desc := CommentToLines .Description }}
-		{{- /* we split the comment string into a string slice of one line per element */ -}}
-{{""}}
 {{""}}
   /**
-		{{- range $desc }}
+		{{- /* we split the comment string into a string slice of one line per element */ -}}
+		{{- range CommentToLines .Description }}
    * {{ . }}
 		{{- end }}
 	{{- end }}
@@ -50,8 +51,9 @@
 		{{- end }}
 	{{- end }}
 
-	{{- if .IsDeprecated }}
-		{{- range $deprecationLines }}
+		{{- /* Write deprecation message. */ -}}
+		{{- if .IsDeprecated }}
+			{{- range $deprecationLines }}
    * {{ . }}
 		{{- end }}
 	{{- end }}
@@ -61,4 +63,3 @@
 	{{- end }}
 {{ "" -}}
 {{- end }}
-

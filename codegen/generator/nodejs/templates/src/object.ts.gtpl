@@ -1,22 +1,38 @@
+{{- /* Generate class from GraphQL struct query type. */ -}}
 {{ define "object" }}
 	{{- with . }}
-			{{- if .Fields }}
-{{- template "class_comment" .Description }}
+		{{- if .Fields }}
+
+			{{- /* Write description. */ -}}
+			{{- if .Description }}
+				{{- /* Split comment string into a slice of one line per element. */ -}}
+				{{- $desc := CommentToLines .Description -}}
+/**
+				{{- range $desc }}
+ * {{ . }}
+				{{- end }}
+ */
+			{{- end }}
 {{""}}
+
+			{{- /* Write object name. */ -}}
 			{{- $name := .Name | FormatName }}
-			{{- if  eq $name "Query" }}
+			{{- if eq $name "Query" }}
 export default class Client extends BaseClient {
 			{{- else -}}
 export class {{ .Name | FormatName }} extends BaseClient {
 {{""}}
 			{{- end }}
-				{{- "" }}{{ range $field := .Fields -}}
-					{{- if Solve . }}
-						{{- template "method_solve" $field }}
-					{{- else }}
-						{{- template "method" $field }}
-					{{- end }}
+
+			{{- /* Write methods. */ -}}
+			{{- "" }}{{ range $field := .Fields -}}
+				{{- if Solve . }}
+					{{- template "method_solve" $field }}
+				{{- else }}
+					{{- template "method" $field }}
 				{{- end }}
+			{{- end }}
+
 {{- if ne $name "Query" }}
 {{""}}
   /**
