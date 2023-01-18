@@ -1,3 +1,5 @@
+![Dagger logo](https://user-images.githubusercontent.com/101831275/213310446-dc4468c5-8b66-4b65-a0f3-65b914a1b783.png)
+
 ## What is Dagger?
 
 Dagger is a programmable CI/CD engine that runs your pipelines in containers.
@@ -25,11 +27,19 @@ Dagger may be a good fit if you are...
 * A platform engineer writing custom tooling, with the goal of unifying continuous delivery across organizational silos
 * A cloud-native developer advocate or solutions engineer, looking to demonstrate a complex integration on short notice
 
-## Learn more
+## Get Started 
 
+Option #1 - Pick the [SDK](https://docs.dagger.io/#getting-started) of your choice, and follow that SDK's getting started guide. 
+
+Option #2 - Not sure where to start? Watch our [community demos](https://www.youtube.com/playlist?list=PLyHqb4A5ee1tEgcr7KsNFzQSPN-R3fPs2) to see how others are using Dagger, or check out our [examples repo](https://github.com/dagger/examples). 
+
+Still have questions? Join us on [Discord](https://discord.gg/ufnyBtc8uY), and let us know in the help forum. We are always here to help! 
+
+## Get Involved 
+* [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
+* Follow us on [Twitter](https://twitter.com/dagger_io)
+* Join a [Dagger community call](https://dagger.io/events).
+
+## Additional Resources
 * [How does it work?](https://docs.dagger.io/#how-does-it-work)
 * [Getting started](https://docs.dagger.io/#getting-started)
-* [Examples](https://github.com/dagger/examples)
-* [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
-* [Follow us on Twitter](https://twitter.com/dagger_io)
-* Join a [Dagger community call](https://dagger.io/events).
