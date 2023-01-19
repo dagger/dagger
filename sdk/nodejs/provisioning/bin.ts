@@ -36,7 +36,8 @@ export class Bin implements EngineConn {
   private readonly cacheDir = path.join(
     `${
       process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache
-    }/dagger`
+    }`,
+    "dagger"
   )
 
   private readonly DAGGER_CLI_BIN_PREFIX = "dagger"
@@ -69,7 +70,10 @@ export class Bin implements EngineConn {
     const tmpBinDownloadDir = fs.mkdtempSync(
       path.join(this.cacheDir, `temp-${this.getRandomId()}`)
     )
-    const tmpBinPath = path.join(tmpBinDownloadDir, "dagger")
+    const tmpBinPath = this.buildOsExePath(
+      tmpBinDownloadDir,
+      this.DAGGER_CLI_BIN_PREFIX
+    )
 
     try {
       // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
@@ -100,7 +104,7 @@ export class Bin implements EngineConn {
     try {
       const files = fs.readdirSync(this.cacheDir)
       files.forEach((file) => {
-        const filePath = `${this.cacheDir}/${file}`
+        const filePath = path.join(this.cacheDir, file)
         if (
           filePath === binPath ||
           !file.startsWith(this.DAGGER_CLI_BIN_PREFIX)
@@ -216,7 +220,17 @@ export class Bin implements EngineConn {
    * of the base engine session as constant and the engine identifier.
    */
   private buildBinPath(): string {
-    const binPath = `${this.cacheDir}/${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`
+    return this.buildOsExePath(
+      this.cacheDir,
+      `${this.DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`
+    )
+  }
+
+  /**
+   * buildExePath create a path to output dagger cli binary.
+   */
+  private buildOsExePath(destinationDir: string, filename: string): string {
+    const binPath = path.join(destinationDir, filename)
 
     switch (this.normalizedOS()) {
       case "windows":
@@ -321,9 +335,10 @@ export class Bin implements EngineConn {
     }
 
     // create a temporary file to store the archive
-    const archivePath = `${destDir}/${
+    const archivePath = path.join(
+      destDir,
       os === "windows" ? "dagger.zip" : "dagger.tar.gz"
-    }`
+    )
     const archiveFile = fs.createWriteStream(archivePath)
     await new Promise((resolve, reject) => {
       archiveResp.body?.pipe(archiveFile)
