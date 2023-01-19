@@ -1,6 +1,6 @@
 {{~md (
   concat
-    (spanWrap (codify name) className="property-name" isField=isField id=name)
+    (spanWrap (codify name) className="property-name" isField=isField prefix=typeName id=name)
     ' - '
     (spanWrap (mdTypeLink . codify=true) className="property-type")
     (ternary default

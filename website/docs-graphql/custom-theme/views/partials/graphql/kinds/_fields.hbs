@@ -14,7 +14,7 @@
           {{! The Name column }}
           {{#if (and isDeprecated (not @root.info.x-hideIsDeprecated)) }}class="definition-deprecated"{{/if}}
         >
-          {{~> graphql/name-and-type . isField=true}}
+          {{~> graphql/name-and-type . isField=true typeName=../name}}
         </td>
         <td>
           {{! The Description column }}
