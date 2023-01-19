@@ -21,7 +21,7 @@ const (
 	daggerCliBinName = "dagger"
 	shimBinName      = "dagger-shim"
 	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.11.0-rc3"
+	buildkitBranch   = "v0.11.1"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
@@ -66,9 +66,31 @@ func (t Engine) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	repo := util.RepositoryGoCodeOnly(c)
+
+	// Ensure buildkitd and client (go.mod) are the same version.
+	goMod, err := repo.File("go.mod").Contents(ctx)
+	if err != nil {
+		return err
+	}
+	for _, l := range strings.Split(goMod, "\n") {
+		l = strings.TrimSpace(l)
+		parts := strings.SplitN(l, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		repo, version := parts[0], parts[1]
+		if repo != buildkitRepo {
+			continue
+		}
+		if version != buildkitBranch {
+			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitBranch, version)
+		}
+	}
+
 	_, err = c.Container().
 		From("golangci/golangci-lint:v1.48").
-		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
+		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
 		ExitCode(ctx)
