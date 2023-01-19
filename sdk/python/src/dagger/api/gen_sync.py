@@ -307,6 +307,30 @@ class Container(Type):
         return _ctx.execute_sync(ContainerID)
 
     @typecheck
+    def label(self, name: str) -> Optional[str]:
+        """Retrieves the value of the specified label.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("label", _args)
+        return _ctx.execute_sync(Optional[str])
+
+    @typecheck
+    def labels(self) -> "Label":
+        """Retrieves the list of labels passed to container."""
+        _args: list[Arg] = []
+        _ctx = self._select("labels", _args)
+        return Label(_ctx)
+
+    @typecheck
     def mounts(self) -> list[str]:
         """Retrieves the list of paths where a directory is mounted.
 
@@ -547,6 +571,16 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_label(self, name: str, value: str) -> "Container":
+        """Retrieves this container plus the given label."""
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("withLabel", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_mounted_cache(
         self, path: str, cache: CacheVolume, source: Optional["Directory"] = None
     ) -> "Container":
@@ -678,6 +712,15 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withoutEnvVariable", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_label(self, name: str) -> "Container":
+        """Retrieves this container minus the given environment label."""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withoutLabel", _args)
         return Container(_ctx)
 
     @typecheck
@@ -1242,6 +1285,40 @@ class HostVariable(Type):
         return _ctx.execute_sync(str)
 
 
+class Label(Type):
+    """A simple key value object that represents a label."""
+
+    @typecheck
+    def name(self) -> str:
+        """The label name.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return _ctx.execute_sync(str)
+
+    @typecheck
+    def value(self) -> str:
+        """The label value.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return _ctx.execute_sync(str)
+
+
 class Project(Type):
     """A set of scripts and/or extensions"""
 
@@ -1525,6 +1602,7 @@ __all__ = [
     "GitRepository",
     "Host",
     "HostVariable",
+    "Label",
     "Project",
     "Client",
     "Secret",

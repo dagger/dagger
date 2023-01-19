@@ -585,6 +585,41 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
   }
 
   /**
+   * Retrieves the value of the specified label.
+   */
+  async label(name: string): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "label",
+          args: { name },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves the list of labels passed to container.
+   */
+  async labels(): Promise<Label[]> {
+    const response: Awaited<Label[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "labels",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Retrieves the list of paths where a directory is mounted.
    */
   async mounts(): Promise<string[]> {
@@ -862,6 +897,23 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
+   * Retrieves this container plus the given label.
+   */
+  withLabel(name: string, value: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withLabel",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container plus a cache volume mounted at the given path.
    */
   withMountedCache(
@@ -1061,6 +1113,23 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         ...this._queryTree,
         {
           operation: "withoutEnvVariable",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves this container minus the given environment label.
+   */
+  withoutLabel(name: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutLabel",
           args: { name },
         },
       ],
@@ -1795,6 +1864,45 @@ export class HostVariable extends BaseClient {
 
   /**
    * The value of this variable.
+   */
+  async value(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "value",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
+ * A simple key value object that represents a label.
+ */
+export class Label extends BaseClient {
+  /**
+   * The label name.
+   */
+  async name(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The label value.
    */
   async value(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
