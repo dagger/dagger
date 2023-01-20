@@ -73,13 +73,9 @@ export async function connect(
       sessionToken: sessionToken,
     })
   } else {
-    // Otherwise, prefer _EXPERIMENTAL_DAGGER_CLI_BIN, with fallback behavior of
-    // downloading the CLI and using that as the bin.
-    const cliBin =
-      process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"] ??
-      (await CliDownloader.Download({ cliVersion: CLI_VERSION }))
-
+    const cliBin = await getCliBinPath()
     const engineConn = new Bin(cliBin)
+
     client = await engineConn.Connect(_config)
     close = () => engineConn.Close()
   }
@@ -89,4 +85,19 @@ export async function connect(
       close()
     }
   })
+}
+
+/**
+ * Prefer _EXPERIMENTAL_DAGGER_CLI_BIN
+ * with fallback behavior of downloading the CLI and using that as the bin.
+ * @returns the path to the cli executable
+ *
+ */
+async function getCliBinPath() {
+  const cliBinEnvPath = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
+  if (cliBinEnvPath) {
+    return cliBinEnvPath
+  }
+
+  return await CliDownloader.Download({ cliVersion: CLI_VERSION })
 }
