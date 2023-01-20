@@ -28,7 +28,7 @@ let OVERRIDE_CHECKSUMS_URL: string
  * Bin runs an engine session from a specified binary
  */
 export class Bin implements EngineConn {
-  private subProcess?: ExecaChildProcess
+  private subProcess?: any
 
   private binPath?: string
   private cliVersion?: string
@@ -140,7 +140,7 @@ export class Bin implements EngineConn {
     }
 
     this.subProcess = execaCommand(args.join(" "), {
-      stderr: opts.LogOutput || "ignore",
+      stderr: opts.LogOutput || "pipe",
       reject: true,
 
       // Kill the process if parent exit.
@@ -148,8 +148,7 @@ export class Bin implements EngineConn {
     })
 
     const stdoutReader = readline.createInterface({
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      input: this.subProcess.stdout!,
+      input: this.subProcess?.stdout as NodeJS.ReadableStream,
     })
 
     const timeOutDuration = 300000
@@ -176,7 +175,7 @@ export class Bin implements EngineConn {
 
   private async readConnectParams(
     stdoutReader: readline.Interface
-  ): Promise<ConnectParams> {
+  ): Promise<ConnectParams | undefined> {
     for await (const line of stdoutReader) {
       // parse the the line as json-encoded connect params
       const connectParams = JSON.parse(line) as ConnectParams
@@ -188,9 +187,14 @@ export class Bin implements EngineConn {
         { parsedLine: line }
       )
     }
-    throw new EngineSessionEOFError(
-      "No line was found to parse the engine connect params"
-    )
+
+    try {
+      await this.subProcess
+    } catch {
+      this.subProcess.catch((e: any) => {
+        throw new EngineSessionEOFError(e.stderr)
+      })
+    }
   }
 
   async Close(): Promise<void> {
