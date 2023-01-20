@@ -62,6 +62,10 @@ export class CliDownloader {
       this.executableFilename(`${DAGGER_CLI_BIN_PREFIX}-${this.cliVersion}`)
     )
 
+    if (fs.existsSync(binPath)) {
+      return binPath
+    }
+
     const tmpBinDownloadDir = fs.mkdtempSync(
       path.join(CACHE_DIR, `temp-${this.getRandomId()}`)
     )
