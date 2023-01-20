@@ -116,8 +116,9 @@ The runner is distributed as a container image at `ghcr.io/dagger/engine`.
 1. The runner container currently needs root capabilities, including among others `CAP_SYS_ADMIN`, in order to execute pipelines.
    - For example, this will be granted when using the `--privileged` flag of `docker run`.
    - There is an issue for [supporting rootless execution](https://github.com/dagger/dagger/issues/1287).
-1. The runner container should be given a volume at `/var/lib/buildkit`.
-   - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/buildkit` is itself an overlayfs.
+1. The runner container should be given a volume at `/var/lib/dagger`.
+   - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
+   - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`
 1. The container image comes with a default entrypoint which should be used to start the runner, no extra args are needed.
 
 ### Configuration
