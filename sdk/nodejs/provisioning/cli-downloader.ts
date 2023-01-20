@@ -11,9 +11,10 @@ import { InitEngineSessionBinaryError } from "../common/errors/index.js"
 
 const CLI_HOST = "dl.dagger.io"
 const DAGGER_CLI_BIN_PREFIX = "dagger"
-const CACHE_DIR = envPaths(DAGGER_CLI_BIN_PREFIX, {
-  suffix: "",
-}).cache
+const CACHE_DIR = path.join(
+  `${process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache}`,
+  "dagger"
+)
 
 interface CliDownloaderOptions {
   cliVersion: string

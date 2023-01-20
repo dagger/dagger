@@ -88,6 +88,18 @@ type Container {
   "Retrieves this container plus the given environment variable."
   withEnvVariable(name: String!, value: String!): Container!
 
+  "Retrieves the list of labels passed to container."
+  labels: [Label!]!
+
+  "Retrieves the value of the specified label."
+  label(name: String!): String
+
+  "Retrieves this container plus the given label."
+  withLabel(name: String!, value: String!): Container!
+
+  "Retrieves this container minus the given environment label."
+  withoutLabel(name: String!): Container!
+
   "Retrieves this container plus an env variable containing the given secret."
   withSecretVariable(name: String!, secret: SecretID!): Container!
 
@@ -257,6 +269,15 @@ type EnvVariable {
   name: String!
 
   "The environment variable value."
+  value: String!
+}
+
+"A simple key value object that represents a label."
+type Label {
+  "The label name."
+  name: String!
+
+  "The label value."
   value: String!
 }
 

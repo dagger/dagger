@@ -51,6 +51,10 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withEnvVariable":      router.ToResolver(s.withEnvVariable),
 			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
 			"withoutEnvVariable":   router.ToResolver(s.withoutEnvVariable),
+			"withLabel":            router.ToResolver(s.withLabel),
+			"label":                router.ToResolver(s.label),
+			"labels":               router.ToResolver(s.labels),
+			"withoutLabel":         router.ToResolver(s.withoutLabel),
 			"entrypoint":           router.ToResolver(s.entrypoint),
 			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
 			"defaultArgs":          router.ToResolver(s.defaultArgs),
@@ -344,6 +348,47 @@ func (s *containerSchema) envVariable(ctx *router.Context, parent *core.Containe
 	return nil, nil
 }
 
+type Label struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
+func (s *containerSchema) labels(ctx *router.Context, parent *core.Container, args any) ([]Label, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	labels := make([]Label, 0, len(cfg.Labels))
+	for name, value := range cfg.Labels {
+		label := Label{
+			Name:  name,
+			Value: value,
+		}
+
+		labels = append(labels, label)
+	}
+
+	return labels, nil
+}
+
+type containerLabelArgs struct {
+	Name string
+}
+
+func (s *containerSchema) label(ctx *router.Context, parent *core.Container, args containerLabelArgs) (*string, error) {
+	cfg, err := parent.ImageConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if val, ok := cfg.Labels[args.Name]; ok {
+		return &val, nil
+	}
+
+	return nil, nil
+}
+
 type containerWithMountedDirectoryArgs struct {
 	Path   string
 	Source core.DirectoryID
@@ -404,6 +449,32 @@ func (s *containerSchema) withoutMount(ctx *router.Context, parent *core.Contain
 
 func (s *containerSchema) mounts(ctx *router.Context, parent *core.Container, _ any) ([]string, error) {
 	return parent.Mounts(ctx)
+}
+
+type containerWithLabelArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *containerSchema) withLabel(ctx *router.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		if cfg.Labels == nil {
+			cfg.Labels = make(map[string]string)
+		}
+		cfg.Labels[args.Name] = args.Value
+		return cfg
+	})
+}
+
+type containerWithoutLabelArgs struct {
+	Name string
+}
+
+func (s *containerSchema) withoutLabel(ctx *router.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		delete(cfg.Labels, args.Name)
+		return cfg
+	})
 }
 
 type containerDirectoryArgs struct {

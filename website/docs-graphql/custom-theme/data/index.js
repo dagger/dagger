@@ -17,8 +17,6 @@ const chalk = require('chalk')
 
 const examplesPath = path.resolve(`${__dirname}/../../data/examples`);
 
-console.log("Test")
-
 function sortByName(a, b) {
   if (a.name > b.name) {
     return 1

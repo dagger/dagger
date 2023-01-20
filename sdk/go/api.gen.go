@@ -317,6 +317,25 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+// Retrieves the value of the specified label.
+func (r *Container) Label(ctx context.Context, name string) (string, error) {
+	q := r.q.Select("label")
+	q = q.Arg("name", name)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves the list of labels passed to container.
+func (r *Container) Labels(ctx context.Context) ([]Label, error) {
+	q := r.q.Select("labels")
+
+	var response []Label
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.q.Select("mounts")
@@ -589,6 +608,18 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
+// Retrieves this container plus the given label.
+func (r *Container) WithLabel(name string, value string) *Container {
+	q := r.q.Select("withLabel")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
 	Source *Directory
@@ -752,6 +783,17 @@ func (r *Container) WithWorkdir(path string) *Container {
 // Retrieves this container minus the given environment variable.
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
+	q = q.Arg("name", name)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container minus the given environment label.
+func (r *Container) WithoutLabel(name string) *Container {
+	q := r.q.Select("withoutLabel")
 	q = q.Arg("name", name)
 
 	return &Container{
@@ -1425,6 +1467,30 @@ func (r *HostVariable) Secret() *Secret {
 
 // The value of this variable.
 func (r *HostVariable) Value(ctx context.Context) (string, error) {
+	q := r.q.Select("value")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A simple key value object that represents a label.
+type Label struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The label name.
+func (r *Label) Name(ctx context.Context) (string, error) {
+	q := r.q.Select("name")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The label value.
+func (r *Label) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
 	var response string

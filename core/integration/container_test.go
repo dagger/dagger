@@ -932,6 +932,107 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "GOPATH=/gone\n")
 }
 
+func TestContainerLabel(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("container with new label", func(t *testing.T) {
+		label, err := c.Container().From("alpine:3.16.2").WithLabel("FOO", "BAR").Label(ctx, "FOO")
+
+		require.NoError(t, err)
+		require.Contains(t, label, "BAR")
+	})
+
+	// implementing this test as GraphQL query until
+	// https://github.com/dagger/dagger/issues/4398 gets resolved
+	t.Run("container labels", func(t *testing.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					Labels []schema.Label
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+				container {
+				  from(address: "nginx") {
+					labels {
+					  name
+					  value
+					}
+				  }
+				}
+			  }`, &res, nil)
+		require.NoError(t, err)
+		require.Equal(t, []schema.Label{
+			{Name: "maintainer", Value: "NGINX Docker Maintainers <docker-maint@nginx.com>"},
+		}, res.Container.From.Labels)
+	})
+
+	t.Run("container without label", func(t *testing.T) {
+		label, err := c.Container().From("nginx").WithoutLabel("maintainer").Label(ctx, "maintainer")
+
+		require.NoError(t, err)
+		require.Empty(t, label)
+	})
+
+	t.Run("container replace label", func(t *testing.T) {
+		label, err := c.Container().From("nginx").WithLabel("maintainer", "bar").Label(ctx, "maintainer")
+
+		require.NoError(t, err)
+		require.Contains(t, label, "bar")
+	})
+
+	t.Run("container with new label - nil panics", func(t *testing.T) {
+		label, err := c.Container().WithLabel("FOO", "BAR").Label(ctx, "FOO")
+
+		require.NoError(t, err)
+		require.Contains(t, label, "BAR")
+	})
+
+	t.Run("container label - nil panics", func(t *testing.T) {
+		label, err := c.Container().Label(ctx, "FOO")
+
+		require.NoError(t, err)
+		require.Empty(t, label)
+	})
+
+	t.Run("container without label - nil panics", func(t *testing.T) {
+		label, err := c.Container().WithoutLabel("maintainer").Label(ctx, "maintainer")
+
+		require.NoError(t, err)
+		require.Empty(t, label)
+	})
+
+	// implementing this test as GraphQL query until
+	// https://github.com/dagger/dagger/issues/4398 gets resolved
+	t.Run("container labels - nil panics", func(t *testing.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					Labels []schema.Label
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+				container {
+				  labels {
+					name
+					value
+				  }
+				}
+			  }`, &res, nil)
+		require.NoError(t, err)
+		require.Empty(t, res.Container.From.Labels)
+	})
+}
+
 func TestContainerWorkdir(t *testing.T) {
 	t.Parallel()
 
@@ -949,14 +1050,14 @@ func TestContainerWorkdir(t *testing.T) {
 	err := testutil.Query(
 		`{
 			container {
-				from(address: "golang:1.18.2-alpine") {
-					workdir
-					withExec(args: ["pwd"]) {
-						stdout
-					}
+			  from(address: "golang:1.18.2-alpine") {
+				workdir
+				withExec(args: ["pwd"]) {
+				  stdout
 				}
+			  }
 			}
-		}`, &res, nil)
+		  }`, &res, nil)
 	require.NoError(t, err)
 	require.Equal(t, res.Container.From.Workdir, "/go")
 	require.Equal(t, res.Container.From.WithExec.Stdout, "/go\n")

@@ -5,6 +5,10 @@ displayed_sidebar: "current"
 
 # Use Dagger with GitHub Actions and Google Cloud
 
+:::note
+[Watch a live demo](https://youtu.be/-pKmv0VDJBg) of this tutorial in the Dagger Community Call (12 Jan 2023). For more demos, [join the next Dagger Community Call](https://dagger.io/events).
+:::
+
 ## Introduction
 
 This tutorial teaches you how to use a Dagger pipeline to continuously build and deploy a Node.js application with GitHub Actions on Google Cloud Run. You will learn how to:
