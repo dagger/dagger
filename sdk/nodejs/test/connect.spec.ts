@@ -84,7 +84,7 @@ describe("NodeJS sdk Connect", function () {
     after(() => {
       process.env = JSON.parse(oldEnv)
 
-      sinon.stub(CliDownloader, "Download").restore()
+      sinon.stub(CliDownloader, "download").restore()
       fs.rmSync(tempDir, { recursive: true })
       fs.rmSync(cacheDir, { recursive: true })
     })
@@ -105,8 +105,8 @@ describe("NodeJS sdk Connect", function () {
           )
         }
 
-        sinon.stub(CliDownloader, "Download").returns(
-          CliDownloader.Download({
+        sinon.stub(CliDownloader, "download").returns(
+          CliDownloader.download({
             cliVersion: CLI_VERSION,
             archive: {
               checksumUrl: checksumsUrl,
@@ -165,8 +165,8 @@ describe("NodeJS sdk Connect", function () {
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
 
-              sinon.stub(CliDownloader, "Download").returns(
-                CliDownloader.Download({
+              sinon.stub(CliDownloader, "download").returns(
+                CliDownloader.download({
                   cliVersion: CLI_VERSION,
                   archive: {
                     checksumUrl: `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`,

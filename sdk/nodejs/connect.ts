@@ -99,5 +99,5 @@ async function getCliBinPath() {
     return cliBinEnvPath
   }
 
-  return await CliDownloader.Download({ cliVersion: CLI_VERSION })
+  return await CliDownloader.download({ cliVersion: CLI_VERSION })
 }

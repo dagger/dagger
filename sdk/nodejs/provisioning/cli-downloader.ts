@@ -35,7 +35,7 @@ export class CliDownloader {
 
   constructor(options: CliDownloaderOptions) {
     if (!options.cliVersion) {
-      throw new Error("cliVersion is not set")
+      throw new InitEngineSessionBinaryError("cliVersion is not set")
     }
 
     this.cliVersion = options.cliVersion
@@ -44,16 +44,16 @@ export class CliDownloader {
       options.executableFilename ?? ((name: string) => name)
   }
 
-  static async Download(options: CliDownloaderOptions): Promise<string> {
+  static async download(options: CliDownloaderOptions): Promise<string> {
     const cliDownloader =
       os.platform() === "win32"
         ? new WindowsCliDownloader(options)
         : new CliDownloader(options)
 
-    return await cliDownloader.Download()
+    return await cliDownloader.download()
   }
 
-  async Download(): Promise<string> {
+  async download(): Promise<string> {
     // Create a temporary bin file path
     this.createCacheDir()
 
@@ -119,6 +119,18 @@ export class CliDownloader {
     return binPath
   }
 
+  /**
+   * createCacheDir will create a cache directory on user
+   * host to store dagger binary.
+   *
+   * If set, it will use envPaths to determine system's cache directory,
+   * if not, it will use `$HOME/.cache` as base path.
+   * Nothing happens if the directory already exists.
+   */
+  private createCacheDir(): void {
+    fs.mkdirSync(CACHE_DIR, { mode: 0o700, recursive: true })
+  }
+
   private archiveURL(): string {
     if (this.archive?.url) {
       return this.archive.url
@@ -143,18 +155,6 @@ export class CliDownloader {
     }
 
     return path.join(destinationFolder, `${DAGGER_CLI_BIN_PREFIX}.tar.gz`)
-  }
-
-  /**
-   * createCacheDir will create a cache directory on user
-   * host to store dagger binary.
-   *
-   * If set, it will use envPaths to determine system's cache directory,
-   * if not, it will use `$HOME/.cache` as base path.
-   * Nothing happens if the directory already exists.
-   */
-  private createCacheDir(): void {
-    fs.mkdirSync(CACHE_DIR, { mode: 0o700, recursive: true })
   }
 
   /**
