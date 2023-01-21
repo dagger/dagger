@@ -1,4 +1,3 @@
-import AdmZip from "adm-zip"
 import * as crypto from "crypto"
 import envPaths from "env-paths"
 import * as fs from "fs"
@@ -7,28 +6,17 @@ import * as os from "os"
 import * as path from "path"
 import * as tar from "tar"
 
-import { InitEngineSessionBinaryError } from "../common/errors/index.js"
+import { InitEngineSessionBinaryError } from "../../common/errors/index.js"
+import { CliDownloaderOptions } from "./cli-downloader-options.js"
 
 const CLI_HOST = "dl.dagger.io"
-const DAGGER_CLI_BIN_PREFIX = "dagger"
+export const DAGGER_CLI_BIN_PREFIX = "dagger"
 const CACHE_DIR = path.join(
   `${process.env.XDG_CACHE_HOME?.trim() || envPaths("", { suffix: "" }).cache}`,
   "dagger"
 )
 
-interface CliDownloaderOptions {
-  cliVersion: string
-  archive?: {
-    checksumUrl?: string
-    url?: string
-    name?(architecture: string): string
-    extract?(archivePath: string, destinationPath: string): void
-    path?(destinationFolder: string): string
-  }
-  executableFilename?(name: string): string
-}
-
-export class CliDownloader {
+export abstract class CliDownloader {
   private readonly cliVersion: string
   private readonly archive?: CliDownloaderOptions["archive"]
   private readonly executableFilename: (name: string) => string
@@ -42,15 +30,6 @@ export class CliDownloader {
     this.archive = options.archive
     this.executableFilename =
       options.executableFilename ?? ((name: string) => name)
-  }
-
-  static async download(options: CliDownloaderOptions): Promise<string> {
-    const cliDownloader =
-      os.platform() === "win32"
-        ? new WindowsCliDownloader(options)
-        : new CliDownloader(options)
-
-    return await cliDownloader.download()
   }
 
   async download(): Promise<string> {
@@ -252,35 +231,5 @@ export class CliDownloader {
    */
   private getRandomId(): string {
     return process.hrtime.bigint().toString()
-  }
-}
-
-export class WindowsCliDownloader extends CliDownloader {
-  constructor(
-    options: Omit<CliDownloaderOptions, "archive" | "executableFilename">
-  ) {
-    super({
-      ...options,
-      executableFilename(name) {
-        return `${name}.exe`
-      },
-      archive: {
-        extract(archivePath, destinationPath) {
-          const zip = new AdmZip(archivePath)
-          zip.extractEntryTo(
-            `${DAGGER_CLI_BIN_PREFIX}.exe`,
-            destinationPath,
-            false,
-            true
-          )
-        },
-        name(architecture) {
-          return `${DAGGER_CLI_BIN_PREFIX}_v${options.cliVersion}_windows_${architecture}.zip`
-        },
-        path(destinationFolder) {
-          return path.join(destinationFolder, `${DAGGER_CLI_BIN_PREFIX}.zip`)
-        },
-      },
-    })
   }
 }

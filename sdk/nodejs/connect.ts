@@ -1,7 +1,8 @@
 import { Writable } from "node:stream"
+import * as os from "os"
 
 import Client from "./api/client.gen.js"
-import { CliDownloader } from "./provisioning/cli-downloader.js"
+import { CliDownloaderFactory } from "./provisioning/cli-downloader/cli-downloader-factory.js"
 import { Bin, CLI_VERSION } from "./provisioning/index.js"
 
 /**
@@ -99,5 +100,9 @@ async function getCliBinPath() {
     return cliBinEnvPath
   }
 
-  return await CliDownloader.download({ cliVersion: CLI_VERSION })
+  const cliDownloader = CliDownloaderFactory.create(os.platform(), {
+    cliVersion: CLI_VERSION,
+  })
+
+  return await cliDownloader.download()
 }

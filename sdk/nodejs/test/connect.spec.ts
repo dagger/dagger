@@ -5,12 +5,14 @@ import * as http from "http"
 import { AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
-import sinon, { SinonStub } from "sinon"
+import sinon from "sinon"
 import * as tar from "tar"
 
 import { GraphQLRequestError } from "../common/errors/index.js"
 import { connect } from "../connect.js"
-import { CliDownloader } from "../provisioning/cli-downloader.js"
+import { CliDownloaderFactory } from "../provisioning/cli-downloader/cli-downloader-factory.js"
+import { CliDownloaderOptions } from "../provisioning/cli-downloader/cli-downloader-options.js"
+import { CliDownloader } from "../provisioning/cli-downloader/cli-downloader.js"
 import { CLI_VERSION } from "../provisioning/default.js"
 
 describe("NodeJS sdk Connect", function () {
@@ -34,6 +36,7 @@ describe("NodeJS sdk Connect", function () {
     delete process.env["DAGGER_SESSION_PORT"]
     delete process.env["DAGGER_SESSION_TOKEN"]
   })
+
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 
@@ -73,26 +76,24 @@ describe("NodeJS sdk Connect", function () {
     let oldEnv: string
     let tempDir: string
     let cacheDir: string
-    let downloaderStub: SinonStub
+    let cliDownloaderStub: sinon.SinonStub<
+      [platform: NodeJS.Platform, options: CliDownloaderOptions],
+      CliDownloader
+    >
 
-    const defaultBinPath = CliDownloader.download({
-      cliVersion: CLI_VERSION,
-    })
+    before(async () => {
+      const defaultBinPath = await CliDownloaderFactory.create(os.platform(), {
+        cliVersion: CLI_VERSION,
+      }).download()
 
-    beforeEach(() => {
-      downloaderStub = sinon.stub(CliDownloader, "download")
-      downloaderStub.returns(defaultBinPath)
-    })
+      cliDownloaderStub = sinon
+        .stub(CliDownloaderFactory, "create")
+        .returns(new CliDownloaderStub(defaultBinPath))
 
-    before(() => {
       oldEnv = JSON.stringify(process.env)
       tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-"))
       cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), "dagger-test-cache"))
       process.env.XDG_CACHE_HOME = cacheDir
-    })
-
-    afterEach(() => {
-      downloaderStub.restore()
     })
 
     after(() => {
@@ -100,6 +101,8 @@ describe("NodeJS sdk Connect", function () {
 
       fs.rmSync(tempDir, { recursive: true })
       fs.rmSync(cacheDir, { recursive: true })
+
+      cliDownloaderStub.restore()
     })
 
     it("Should download and unpack the CLI binary automatically", async function () {
@@ -118,8 +121,8 @@ describe("NodeJS sdk Connect", function () {
           )
         }
 
-        downloaderStub.returns(
-          CliDownloader.download({
+        cliDownloaderStub.returns(
+          CliDownloaderFactory.create(os.platform(), {
             cliVersion: CLI_VERSION,
             archive: {
               checksumUrl: checksumsUrl,
@@ -178,8 +181,8 @@ describe("NodeJS sdk Connect", function () {
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
 
-              downloaderStub.returns(
-                CliDownloader.download({
+              cliDownloaderStub.returns(
+                CliDownloaderFactory.create(os.platform(), {
                   cliVersion: CLI_VERSION,
                   archive: {
                     checksumUrl: `http://${addr.address}:${addr.port}/${basePath}/checksums.txt`,
@@ -219,5 +222,17 @@ function normalizedOS(): string {
       return "windows"
     default:
       return os.platform()
+  }
+}
+
+class CliDownloaderStub extends CliDownloader {
+  constructor(private readonly defaultBinPath: string) {
+    super({
+      cliVersion: CLI_VERSION,
+    })
+  }
+
+  download(): Promise<string> {
+    return Promise.resolve(this.defaultBinPath)
   }
 }
