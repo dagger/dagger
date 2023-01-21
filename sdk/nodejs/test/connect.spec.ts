@@ -5,7 +5,7 @@ import * as http from "http"
 import { AddressInfo } from "net"
 import * as os from "os"
 import * as path from "path"
-import sinon from "sinon"
+import sinon, { SinonStub } from "sinon"
 import * as tar from "tar"
 
 import { GraphQLRequestError } from "../common/errors/index.js"
@@ -73,6 +73,16 @@ describe("NodeJS sdk Connect", function () {
     let oldEnv: string
     let tempDir: string
     let cacheDir: string
+    let downloaderStub: SinonStub
+
+    const defaultBinPath = CliDownloader.download({
+      cliVersion: CLI_VERSION,
+    })
+
+    beforeEach(() => {
+      downloaderStub = sinon.stub(CliDownloader, "download")
+      downloaderStub.returns(defaultBinPath)
+    })
 
     before(() => {
       oldEnv = JSON.stringify(process.env)
@@ -81,10 +91,13 @@ describe("NodeJS sdk Connect", function () {
       process.env.XDG_CACHE_HOME = cacheDir
     })
 
+    afterEach(() => {
+      downloaderStub.restore()
+    })
+
     after(() => {
       process.env = JSON.parse(oldEnv)
 
-      sinon.stub(CliDownloader, "download").restore()
       fs.rmSync(tempDir, { recursive: true })
       fs.rmSync(cacheDir, { recursive: true })
     })
@@ -105,7 +118,7 @@ describe("NodeJS sdk Connect", function () {
           )
         }
 
-        sinon.stub(CliDownloader, "download").returns(
+        downloaderStub.returns(
           CliDownloader.download({
             cliVersion: CLI_VERSION,
             archive: {
@@ -165,7 +178,7 @@ describe("NodeJS sdk Connect", function () {
             .listen(0, "127.0.0.1", () => {
               const addr = server.address() as AddressInfo
 
-              sinon.stub(CliDownloader, "download").returns(
+              downloaderStub.returns(
                 CliDownloader.download({
                   cliVersion: CLI_VERSION,
                   archive: {
