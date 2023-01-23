@@ -17,33 +17,33 @@ export class {{ .Name | FormatName }} extends BaseClient {
 						{{- template "method" $field }}
 					{{- end }}
 				{{- end }}
-				{{- if ne $name "Query" }}
+{{- if ne $name "Query" }}
 {{""}}
-					/**
-					* Chain objects together
-					* @example
-					* ```ts
-					*	function AddAFewMounts(c) {
-					*			return c
-					*			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-					*			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-					*	}
-					*
-					* connect(async (client) => {
-					*		const tree = await client
-					*			.container()
-					*			.from("alpine")
-					*			.withWorkdir("/foo")
-					*			.with(AddAFewMounts)
-					*			.withExec(["ls", "-lh"])
-					*			.stdout()
-					* })
-					*```
-					*/
-					with(arg: (param: {{ .Name | FormatName }}) => {{ .Name | FormatName }}) {
-						return arg(this)
-					}
-				{{- end }}
+  /**
+  * Chain objects together
+  * @example
+  * ```ts
+  *	function AddAFewMounts(c) {
+  *			return c
+  *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+  *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+  *	}
+  *
+  * connect(async (client) => {
+  *		const tree = await client
+  *			.container()
+  *			.from("alpine")
+  *			.withWorkdir("/foo")
+  *			.with(AddAFewMounts)
+  *			.withExec(["ls", "-lh"])
+  *			.stdout()
+  * })
+  *```
+  */
+  with(arg: (param: {{ .Name | FormatName }}) => {{ .Name | FormatName }}) {
+    return arg(this)
+  }
+{{- end }}
 }
 		{{- end }}
 	{{- end }}
