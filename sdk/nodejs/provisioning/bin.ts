@@ -14,7 +14,7 @@ import Client from "../api/client.gen.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
-  EngineSessionEOFError,
+  EngineSessionError,
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
 import { ConnectParams } from "../connect.js"
@@ -28,7 +28,7 @@ let OVERRIDE_CHECKSUMS_URL: string
  * Bin runs an engine session from a specified binary
  */
 export class Bin implements EngineConn {
-  private subProcess?: any
+  private subProcess?: ExecaChildProcess
 
   private binPath?: string
   private cliVersion?: string
@@ -188,11 +188,13 @@ export class Bin implements EngineConn {
       )
     }
 
+    // for await did return nothing
+    // await the subprocess to catch the buildkit error
     try {
       await this.subProcess
     } catch {
-      this.subProcess.catch((e: any) => {
-        throw new EngineSessionEOFError(e.stderr)
+      this.subProcess?.catch((e) => {
+        throw new EngineSessionError(e.stderr)
       })
     }
   }
