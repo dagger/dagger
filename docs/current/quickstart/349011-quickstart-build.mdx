@@ -19,8 +19,7 @@ So, let's update the previous pipeline and add a build step to it, by running `n
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=snippets/build/main.go
-```
+<iframe class="embed" src="https://play.dagger.cloud/embed/EPvbuzgZ-IH"></iframe>
 
 - It invokes the `Container.WithExec()` method again, this time to define the command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
