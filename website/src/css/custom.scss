@@ -734,3 +734,18 @@ img[alt="github-contribute"] {
 	height: 800px;
 
 }
+.docs-doc-id-current\/quickstart\/quickstart-setup,
+.docs-doc-id-current\/quickstart\/quickstart-introduction {
+  main .container {
+    margin: 0;
+    margin-right: 800px;
+
+    iframe {
+      position: fixed;
+      top: 96px;
+      right: 0;
+      width: 800px;
+      height: 100%;
+    }
+  }
+}
