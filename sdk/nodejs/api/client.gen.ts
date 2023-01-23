@@ -362,6 +362,31 @@ export class CacheVolume extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: CacheVolume) => CacheVolume) {
+    return arg(this)
+  }
 }
 
 /**
@@ -787,10 +812,6 @@ Used for multi-platform image.
     )
 
     return response
-  }
-
-  with(arg: (param: Container) => Container) {
-    return arg(this)
   }
 
   /**
@@ -1268,6 +1289,31 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Container) => Container) {
+    return arg(this)
+  }
 }
 
 /**
@@ -1571,6 +1617,31 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Directory) => Directory) {
+    return arg(this)
+  }
 }
 
 /**
@@ -1609,6 +1680,31 @@ export class EnvVariable extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: EnvVariable) => EnvVariable) {
+    return arg(this)
   }
 }
 
@@ -1717,6 +1813,31 @@ export class File extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: File) => File) {
+    return arg(this)
+  }
 }
 
 /**
@@ -1755,6 +1876,31 @@ export class GitRef extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: GitRef) => GitRef) {
+    return arg(this)
   }
 }
 
@@ -1846,6 +1992,31 @@ export class GitRepository extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: GitRepository) => GitRepository) {
+    return arg(this)
+  }
 }
 
 /**
@@ -1920,6 +2091,31 @@ export class Host extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Host) => Host) {
+    return arg(this)
+  }
 }
 
 /**
@@ -1957,6 +2153,31 @@ export class HostVariable extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: HostVariable) => HostVariable) {
+    return arg(this)
   }
 }
 
@@ -1996,6 +2217,31 @@ export class Label extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Label) => Label) {
+    return arg(this)
   }
 }
 
@@ -2102,6 +2348,31 @@ export class Project extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Project) => Project) {
+    return arg(this)
   }
 }
 
@@ -2350,6 +2621,31 @@ export class Secret extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Secret) => Secret) {
+    return arg(this)
+  }
 }
 
 export class Socket extends BaseClient {
@@ -2368,5 +2664,30 @@ export class Socket extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Socket) => Socket) {
+    return arg(this)
   }
 }
