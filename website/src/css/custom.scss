@@ -742,10 +742,13 @@ img[alt="github-contribute"] {
 
     iframe {
       position: fixed;
-      top: 96px;
+      top: 0;
       right: 0;
       width: 800px;
       height: 100%;
+      padding-top: 96px;
+      box-shadow: 1px 1px 5px 2px black;
+      background-color: rgb(14, 13, 28);
     }
   }
 }
