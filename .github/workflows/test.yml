@@ -8,6 +8,10 @@ on:
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   engine:
     runs-on: ubuntu-22.04-16c-64g-600gb
@@ -19,15 +23,43 @@ jobs:
         with:
           go-version: 1.19
       - uses: actions/checkout@v3
-      - run: ./hack/make engine:build
-      - run: echo $PWD/bin >> $GITHUB_PATH
       - run: ./hack/make engine:test
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs dagger-engine.dev
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
+      - run: go build ./cmd/otel-collector
+        if: always()
+      - run: |
+          ./otel-collector /tmp/journal.log \
+            --name "${{ github.repository }}#${{ github.ref }}@${{ github.run_number }}.${{ github.run_attempt }}" \
+            --label "github.repository=${{ github.repository }}" \
+            --label "github.ref=${{ github.ref }}" \
+            --label "github.workflow=${{ github.workflow }}" \
+            --label "github.job=engine" \
+            --label "github.run_number=${{ github.run_number }}" \
+            --label "github.run_attempt=${{ github.run_attempt }}" \
+            > ./comment.md
+        shell: bash
+        if: always()
+        env:
+          OTEL_SERVICE_NAME: "dagger"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
+          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          GRAFANA_CLOUD_USER_ID: "356840"
+          GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
+          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+      - name: PR comment
+        # Only comment on PRs
+        if: github.event_name == 'pull_request'
+        uses: thollander/actions-comment-pull-request@v2
+        with:
+          filePath: ./comment.md
+          comment_tag: telemetry
 
   # Run egine tests with race condition detection
   # https://go.dev/blog/race-detector
