@@ -19,11 +19,14 @@ enum CacheSharingMode {
 extend type Query {
   """
   Constructs a cache volume for a given cache key.
+
   Example:
-  cacheVolume("myapp-cache")
+  cacheVolume(key: "myapp-cache")
   """
   cacheVolume(
-    "A string identifier to target this cache volume."
+    """
+    A string identifier to target this cache volume (e.g., "modules-cache").
+    """
     key: String!
   ): CacheVolume!
 }

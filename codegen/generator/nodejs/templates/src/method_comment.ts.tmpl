@@ -28,12 +28,6 @@
    * {{ $line }}
 		        {{- end }}
 		    {{- end }}
-
-		    {{- /* Write argument examples */ -}}
-		    {{- $examples := CommentToLines .Description | GetParamExample }}
-		    {{- range $examples }}
-   * @example {{ . }}
-		    {{- end }}
 		{{- end }}
 	{{- end }}
 
@@ -52,8 +46,6 @@
    * {{ $line }}
 		            {{- end }}
 		        {{- end }}
-
-		        {{- /* Do not write examples, they are already written in the type struct */ -}}
 			{{- end }}
 		{{- end }}
 	{{- end }}
@@ -65,10 +57,6 @@
 	{{- end }}
 
 	{{- if or .Description $argsDesc .IsDeprecated }}
-	{{- $examples := CommentToLines .Description | GetParamExample }}
-        {{- range $examples }}
-   * @example {{ . }}
-        {{- end }}
    */
 	{{- end }}
 {{ "" -}}

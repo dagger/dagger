@@ -26,11 +26,14 @@ type GitRepository {
 
     """
     Returns details on one branch.
+
     Example:
-    branch("main")
+    branch(name: "main")
     """
     branch(
-        "Branch's name"
+        """
+        Branch's name (e.g., "main").
+        """
         name: String!
     ): GitRef!
 
@@ -39,21 +42,27 @@ type GitRepository {
 
     """
     Returns details on one tag.
+
     Example:
-    tag("v0.3.9")
+    tag(name: "v0.3.9")
     """
     tag(
-        "Tag's name"
+        """
+        Tag's name (e.g., "v0.3.9").
+        """
         name: String!
     ): GitRef!
 
     """
     Returns details on one commit.
+
     Example:
-    commit("b6315d8f2810962c601af73f86831f6866ea798b")
+    commit(id: "b6315d8f2810962c601af73f86831f6866ea798b")
     """
     commit(
-        "Identifier of the commit."
+        """
+        Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+        """
         id: String!
     ): GitRef!
 }

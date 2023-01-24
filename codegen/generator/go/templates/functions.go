@@ -34,7 +34,11 @@ func comment(s string) string {
 	if s == "" {
 		return ""
 	}
-	lines := strings.Split(s, "\n")
+
+	// Split description and example to ignore GQL example.
+	content := strings.Split(s, "Example:")
+	lines := strings.Split(content[0], "\n")
+
 	for i, l := range lines {
 		lines[i] = "// " + l
 	}

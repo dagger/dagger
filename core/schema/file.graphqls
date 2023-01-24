@@ -22,22 +22,27 @@ type File {
 
   """
   Writes the file to a file path on the host.
+
   Example:
-  export("output.txt")
+  export(path: "output.txt")
   """
   export(
-    "Location of the written directory."
+    """
+    Location of the written directory (e.g., "output.txt").
+    """
     path: String!
   ): Boolean!
 
   """
   Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
+
   Example:
-  withTimestamps(1672531199)
+  withTimestamps(timestamp: 1672531199)
   """
   withTimestamps(
     """
-    Timestamp to set dir/files in.
+    Timestamp to set dir/files in (e.g., 1672531199).
+
     Formatted in seconds following Unix epoch.
     """
     timestamp: Int!

@@ -2,14 +2,9 @@
 	{{- if . -}}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
 		{{- $desc := CommentToLines . | GetParamDescription }}
-		{{- $examples := CommentToLines . | GetParamExample }}
   /**
 		{{- range $desc }}
    * {{ . }}
-		{{- end }}
-
-		{{- range $examples }}
-   * @example {{ . }}
 		{{- end }}
    */
 	{{- end }}

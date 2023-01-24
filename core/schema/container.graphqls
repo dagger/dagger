@@ -1,6 +1,7 @@
 extend type Query {
   """
   Loads a container from ID.
+
   Null ID returns an empty container (scratch).
   Optional platform argument initializes new containers to execute and publish as that platform.
   Platform defaults to that of the builder's host.
@@ -26,23 +27,27 @@ type Container {
 
   """
   Initializes this container from the base image published at the given address.
+
   Example:
-  from("docker.io/dagger/dagger:main")
+  from(address: "docker.io/dagger/dagger:main")
+  from(address: "alpine")
   """
   from(
     """
     Image's address from its registry.
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     """
     address: String!,
   ): Container!
 
   """
   Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+
   Example:
-  build("directory-id")
-  build("directory-id", { dockerfile: "./frontend.Dockerfile" })
-  build("directory-id", { buildArgs: [{ name: "MODE", value: "production }] })
+  build(context: "directory-id" })
+  build(context: "directory-id", dockerfile: "./frontend.Dockerfile")
+  build(context: "directory-id", buildArgs: [{ name: "MODE", value: "production }])
   """
   build(
     "Directory context used by the Dockerfile."
@@ -50,7 +55,8 @@ type Container {
 
     """
     Path to the Dockerfile to use.
-    Defaults to './Dockerfile'.
+
+    Default: './Dockerfile'.
     """
     dockerfile: String,
 
@@ -74,62 +80,156 @@ type Container {
   withFS(id: DirectoryID!): Container!
     @deprecated(reason: "Replaced by `withRootfs`.")
 
-  "Retrieves a directory at the given path. Mounts are included."
-  directory(path: String!): Directory!
+  """
+  Retrieves a directory at the given path.
 
-  "Retrieves a file at the given path. Mounts are included."
-  file(path: String!): File!
+  Mounts are included.
+  Example:
+  directory(path: "./src")
+  directory(path: "/tmp")
+  """
+  directory(
+    """
+    The path of the directory to retrieve (e.g., "./src").
+    """
+    path: String!
+  ): Directory!
+
+  """
+  Retrieves a file at the given path.
+
+  Mounts are included.
+  Example:
+  file(path: "./README.md")
+  """
+  file(
+    """
+    The path of the file to retrieve (e.g., "./README.md").
+    """
+    path: String!
+  ): File!
 
   "Retrieves the user to be set for all commands."
   user: String
 
-  "Retrieves this containers with a different command user."
-  withUser(name: String!): Container!
+  """
+  Retrieves this containers with a different command user.
+
+  Example:
+  withUser(name: "root")
+  """
+  withUser(
+    """
+    The user to set (e.g., "root").
+    """
+    name: String!
+  ): Container!
 
   "Retrieves the working directory for all commands."
   workdir: String
 
-  "Retrieves this container with a different working directory."
-  withWorkdir(path: String!): Container!
+  """
+  Retrieves this container with a different working directory.
+
+  Example:
+  withWorkdir(path: "/app")
+  """
+  withWorkdir(
+    """
+    The path to set to the working directory (e.g., "/app").
+    """
+    path: String!
+  ): Container!
 
   "Retrieves the list of environment variables passed to commands."
   envVariables: [EnvVariable!]!
 
-  "Retrieves the value of the specified environment variable."
-  envVariable(name: String!): String
+  """
+  Retrieves the value of the specified environment variable.
+
+  Example:
+  envVariable(name: "PATH")
+  """
+  envVariable(
+    """
+    The name of the environment variable to retrieve (e.g., "PATH").
+    """
+    name: String!
+  ): String
 
   """
   Retrieves this container plus the given environment variable.
+
   Example:
-  withEnvVariable("HOST", "localhost")
+  withEnvVariable(name: "HOST", value: "localhost")
   """
   withEnvVariable(
-    "The identifier of the environment variable."
+    """
+    The identifier of the environment variable (e.g., "HOST").
+    """
     name: String!,
 
-    "The value of the environment variable."
+    """
+    The value of the environment variable. (e.g., "localhost").
+    """
     value: String!
   ): Container!
 
   "Retrieves the list of labels passed to container."
   labels: [Label!]!
 
-  "Retrieves the value of the specified label."
-  label(name: String!): String
+  """
+  Retrieves the value of the specified label.
 
-  "Retrieves this container plus the given label."
-  withLabel(name: String!, value: String!): Container!
+  Example:
+  label(name: "foo")
+  """
+  label(
 
-  "Retrieves this container minus the given environment label."
-  withoutLabel(name: String!): Container!
+    name: String!
+  ): String
+
+  """
+  Retrieves this container plus the given label.
+
+  Example:
+  withLabel(name: "foo", value: "bar")
+  """
+  withLabel(
+    """
+    The name of the label (e.g., "foo").
+    """
+    name: String!,
+
+    """
+    The value of the label (e.g., "bar").
+    """
+    value: String!
+  ): Container!
+
+  """
+  Retrieves this container minus the given environment label.
+
+  Example:
+  withoutLabel(name: "foo")
+  """
+  withoutLabel(
+    """
+    The name of the label to remove (e.g., "foo").
+    """
+    name: String!
+  ): Container!
 
   """
   Retrieves this container plus an env variable containing the given secret.
+
   Example:
-  withSecretVariable("API_SECRET", "secret-id")
+  withSecretVariable(name: "API_SECRET", secret: "secret-id")
   """
   withSecretVariable(
-    "The identifier of the secret variable."
+    """
+    The identifier of the secret variable (e.g., "API_SECRET").
+    """
     name: String!,
 
     "The identifier of the secret value."
@@ -138,11 +238,14 @@ type Container {
 
   """
   Retrieves this container minus the given environment variable.
+
   Example:
-  withoutEnvVariable("HOST")
+  withoutEnvVariable(name: "HOST")
   """
   withoutEnvVariable(
-    "The identifier of the environment variable."
+    """
+    The identifier of the environment variable (e.g., "HOST").
+    """
     name: String!
   ): Container!
 
@@ -151,11 +254,14 @@ type Container {
 
   """
   Retrieves this container but with a different command entrypoint.
+
   Example:
-  withEntrypoint(["go", "run"])
+  withEntrypoint(args: ["go", "run"])
   """
   withEntrypoint(
-    "Entrypoint to use for future executions."
+    """
+    Entrypoint to use for future executions (e.g., ["go", "run"]).
+    """
     args: [String!]!
   ): Container!
 
@@ -164,11 +270,14 @@ type Container {
 
   """
   Configures default arguments for future commands.
+
   Example:
-  withDefaultArgs(["-v", "--no-cache"])
+  withDefaultArgs(args: ["-v", "--no-cache"])
   """
   withDefaultArgs(
-    "Arguments to prepend to future executions."
+    """
+    Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+    """
     args: [String!]
   ): Container!
 
@@ -177,11 +286,14 @@ type Container {
 
   """
   Retrieves this container plus a directory mounted at the given path.
+
   Example:
-  withMountedDirectory("/tmp/mounted_dir", "directory-id")
+  withMountedDirectory(path: "/tmp/mounted_dir", source: "directory-id")
   """
   withMountedDirectory(
-    "Location of the mounted directory."
+    """
+    Location of the mounted directory (e.g., "/tmp/directory").
+    """
     path: String!,
 
     "Identifier of the mounted directory."
@@ -190,11 +302,14 @@ type Container {
 
   """
   Retrieves this container plus a file mounted at the given path.
+
   Example:
-  withMountedFile("/tmp/file.txt", "source-id")
+  withMountedFile(path: "/tmp/file.txt", source: "source-id")
   """
   withMountedFile(
-    "Location of the mounted file."
+    """
+    Location of the mounted file (e.g., "/tmp/file.txt").
+    """
     path: String!,
 
     "Identifier of the mounted file."
@@ -203,25 +318,26 @@ type Container {
 
   """
   Retrieves this container plus a temporary directory mounted at the given path.
+
   Example:
-  withMountedTemp("/tmp/temp_dir")
+  withMountedTemp(path: "/tmp/temp_dir")
   """
   withMountedTemp(
-    "Location of the temporary directory."
+    """
+    Location of the temporary directory (e.g., "/tmp/temp_dir").
+    """
     path: String!
   ): Container!
 
   """
   Retrieves this container plus a cache volume mounted at the given path.
+
   Example:
-  withMountedCache("/cache/node_modules", "cache-id", "source-id")
+  withMountedCache(path: "/cache/node_modules", cache: "cache-id", source: "source-id")
   """
   withMountedCache(
     """
-    Location of the cache directory.
-
-    Example:
-    /cache/node_modules
+    Location of the cache directory (e.g., "/cache/node_modules").
     """
     path: String!,
 
@@ -237,11 +353,14 @@ type Container {
 
   """
   Retrieves this container plus a secret mounted into a file at the given path.
+
   Example:
-  withMountedSecret("/tmp/secret.txt", "source-id")
+  withMountedSecret(path: "/tmp/secret.txt", source: "source-id")
   """
   withMountedSecret(
-    "Location of the secret file."
+    """
+    Location of the secret file (e.g., "/tmp/secret.txt").
+    """
     path: String!,
 
     "Identifier of the secret to mount."
@@ -250,82 +369,105 @@ type Container {
 
   """
   Retrieves this container after unmounting everything at the given path.
+
   Example:
-  withoutMount("/cache/node_modules")
+  withoutMount(path: "/cache/node_modules")
   """
   withoutMount(
-    "Location of the cache directory."
+    """
+    Location of the cache directory (e.g., "/cache/node_modules").
+    """
     path: String!
   ): Container!
 
   """
   Retrieves this container plus the contents of the given file copied to the given path.
+
   Example:
-  withFile("/tmp/file.txt", "source-id")
-  withFile("/tmp/file.txt", "source-id", { permissions: 0600 })
+  withFile(path: "/tmp/file.txt", source: "source-id")
+  withFile(path: "/tmp/file.txt", source: "source-id", permissions: 0600)
   """
   withFile(
-    "Location of the copied file."
+    """
+    Location of the copied file (e.g., "/tmp/file.txt").
+    """
     path: String!,
 
     "Identifier of the file to copy."
     source: FileID!,
 
     """
-    Permission given to the copied file.
-    Default to 0644.
+    Permission given to the copied file (e.g., 0600).
+
+    Default: 0644.
     """
     permissions: Int
   ): Container!
 
   """
   Retrieves this container plus a new file written at the given path.
+
   Example:
-  withNewFile("/tmp/file.txt", "Hello world!")
-  withNewFile("/tmp/file.txt", "Hello world!", { permissions: 0600 })
+  withNewFile(path: "/tmp/file.txt", contents: "Hello world!")
+  withNewFile(path: "/tmp/file.txt", contents: "Hello world!", permissions: 0600)
   """
   withNewFile(
-    "Location of the written file."
+    """
+    Location of the written file (e.g., "/tmp/file.txt").
+    """
     path: String!,
 
-    "Content of the file to write."
+    """
+    Content of the file to write (e.g., "Hello world!").
+    """
     contents: String,
 
     """
-    Permission given to the written file.
-    Default to 0644.
+    Permission given to the written file (e.g., 0600).
+
+    Default: 0644.
     """
     permissions: Int
   ): Container!
 
   """
   Retrieves this container plus a directory written at the given path.
+
   Example:
-  withDirectory("/tmp/directory", "directory-id")
-  withDirectory("/tmp/directory", "directory-id", { excludes: ["node_modules/**", ".gitignore", ".git/"] })
-  withDirectory("/tmp/directory", "directory-id", { include: ["*.go", "go.mod", "go.sum"] })
+  withDirectory(name: "/tmp/directory", directory: "directory-id")
+  withDirectory(name: "/tmp/directory", directory: "directory-id", excludes: ["node_modules/**", ".gitignore", ".git/"])
+  withDirectory(name: "/tmp/directory", directory: "directory-id", include: ["*.go", "go.mod", "go.sum"])
   """
   withDirectory(
-    "Location of the written directory."
+    """
+    Location of the written directory (e.g., "/tmp/directory").
+    """
     path: String!,
 
     "Identifier of the directory to write"
     directory: DirectoryID!,
 
-    "Patterns to exclude in the written directory."
+    """
+    Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
+    """
     exclude: [String!],
 
-    "Patterns to include in the written directory."
+    """
+    Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum").
+    """
     include: [String!]
   ): Container!
 
   """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
+
   Example:
-  withUnixSocket("/tmp/socket", "source-id")
+  withUnixSocket(path: "/tmp/socket", source: "source-id")
   """
   withUnixSocket(
-    "Location of the forwarded Unix socket."
+    """
+    Location of the forwarded Unix socket (e.g., "/tmp/socket").
+    """
     path: String!,
 
     "Identifier of the socket to forward."
@@ -334,33 +476,45 @@ type Container {
 
   """
   Retrieves this container with a previously added Unix socket removed.
+
   Example:
-  withoutUnixSocket("/tmp/socket")
+  withoutUnixSocket(path: "/tmp/socket")
   """
   withoutUnixSocket(
-    "Location of the socket to remove."
+    """
+    Location of the socket to remove (e.g., "/tmp/socket").
+    """
     path: String!
   ): Container!
 
   """
   Retrieves this container after executing the specified command inside it.
+
   Example:
-  withExec(["run", "main.go"])
-  withExec(["run", "main.go"], { stdin: "Hello world" })
-  withExec(["run", "main.go"], { redirectStdout: "/tmp/stdout",  redirectStderr: "/tmp/stderr" })
-  withExec(["run", "main.go"], { experimentalPrivilegedNesting: true })
+  withExec(args: ["run", "main.go"])
+  withExec(args: ["run", "main.go"], stdin: "Hello world")
+  withExec(args: ["run", "main.go"], redirectStdout: "/tmp/stdout", redirectStderr: "/tmp/stderr")
+  withExec(args: ["run", "main.go"], experimentalPrivilegedNesting: true)
   """
   withExec(
-    "Command to run instead of the container's default command."
+    """
+    Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+    """
     args: [String!]!,
 
-    "Content to write to the command's standard input before closing."
+    """
+    Content to write to the command's standard input before closing (e.g., "Hello world").
+    """
     stdin: String,
 
-    "Redirect the command's standard output to a file in the container."
+    """
+    Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    """
     redirectStdout: String,
 
-    "Redirect the command's standard error to a file in the container."
+    """
+    Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+    """
     redirectStderr: String,
 
     """
@@ -373,24 +527,34 @@ type Container {
 
   """
   Retrieves this container after executing the specified command inside it.
+
   Example:
-  exec(["run", "main.go"])
-  exec(["run", "main.go"], { stdin: "Hello world" })
-  exec(["run", "main.go"], { redirectStdout: "/tmp/stdout",  redirectStderr: "/tmp/stderr" })
-  exec(["run", "main.go"], { experimentalPrivilegedNesting: true })
+  exec()
+  exec(args: ["run", "main.go"])
+  exec(args: ["run", "main.go"], stdin: "Hello world")
+  exec(args: ["run", "main.go"], redirectStdout: "/tmp/stdout", redirectStderr: "/tmp/stderr")
+  exec(args: ["run", "main.go"], experimentalPrivilegedNesting: true)
   """
   exec(
-    "Command to run instead of the container's default command."
+    """
+    Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+    """
     args: [String!],
 
-    "Content to write to the command's standard input before closing."
+    """
+    Content to write to the command's standard input before closing (e.g., "Hello world").
+    """
     stdin: String,
 
-    "Redirect the command's standard output to a file in the container."
+    """
+    Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    """
     redirectStdout: String,
 
-    "Redirect the command's standard error to a file in the container."
-    redirectStderr: String
+    """
+    Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+    """
+    redirectStderr: String,
 
     """
     Provide dagger access to the executed command.
@@ -421,15 +585,19 @@ type Container {
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.
   """
-  Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+  Publishes this container as a new image to the specified address.
+
+  Publish returns a fully qualified ref.
+  It can also publishes platformVariants.
+
   Example:
-  publish("docker.io/dagger/dagger:main")
-  publish("docker.io/dagger/dagger:main", { platformVariants: ["container-id"] })
+  publish(address: "docker.io/dagger/dagger:main")
+  publish(address: "docker.io/dagger/dagger:main", platformVariants: ["container-id"])
   """
   publish(
     """
     Registry's address to publish the image to.
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     """
     address: String!,
 
@@ -442,17 +610,17 @@ type Container {
 
   """
   Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+
   Return true on success.
+  It can also publishes platformVariants.
   Example:
-  export("./tarball")
-  export("./tarball", { platformVariants: ["container-id"] })
+  export(path: "./tarball")
+  export(path: "./tarball", platformVariants: ["container-id"])
   """
   export(
     """
-    Host's destination path.
+    Host's destination path (e.g., "./tarball").
     Path can be relative to the engine's workdir or absolute.
-    Example:
-    ./tarball
     """
     path: String!,
 
