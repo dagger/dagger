@@ -126,7 +126,6 @@ async function createConfig() {
       [
         "posthog-docusaurus",
         {
-          appUrl: "https://dagger.io/analytics",
           apiKey: "phc_rykA1oJnBnxTwavpgJKr4RAVXEgCkpyPVi21vQ7906d"
         }
       ],
