@@ -1,6 +1,13 @@
 "A global cache volume identifier."
 scalar CacheID
 
+"Sharing mode of the cache volume."
+enum CacheSharingMode {
+  SHARED
+  PRIVATE
+  LOCKED
+}
+
 extend type Query {
   "Constructs a cache volume for a given cache key."
   cacheVolume(

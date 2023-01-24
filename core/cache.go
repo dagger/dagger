@@ -18,6 +18,10 @@ var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cacheVolu
 // strings acting as the cache's "key" or "scope".
 type CacheID string
 
+// CacheSharingMode is a string deriving from CacheSharingMode enum
+// it can take values: SHARED, PRIVATE, LOCKED
+type CacheSharingMode string
+
 func (id CacheID) decode() (*cacheIDPayload, error) {
 	var payload cacheIDPayload
 	if err := decodeID(&payload, id); err != nil {
