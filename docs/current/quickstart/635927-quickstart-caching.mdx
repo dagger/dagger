@@ -2,6 +2,9 @@
 slug: /635927/quickstart-caching
 displayed_sidebar: "current"
 hide_table_of_contents: true
+pagination_next: "current/quickstart/quickstart-build-dockerfile"
+pagination_prev: "current/quickstart/quickstart-build-multi"
+pagination_label: "Caching"
 ---
 
 # Quickstart
@@ -59,6 +62,3 @@ This revised pipeline produces the same result as before, but now uses a cache f
 
 Run the pipeline a few times. Notice that on the first run, the application dependencies are downloaded as usual. However, since the dependencies are cached, subsequent pipeline runs will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
 
-<Button label="Back" docPath="472910/quickstart-build-multi" />
-
-<Button label="Next" docPath="429462/quickstart-build-dockerfile" />
