@@ -106,6 +106,7 @@ html[data-theme="dark"] {
   --ifm-box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.5);
   --ifm-breadcrumb-item-background-active: var(--ifm-color-primary);
 }
+
 /* global */
 
 * {
@@ -139,28 +140,28 @@ code,
 }
 
 .markdown {
-  & > h1:first-child {
+  &>h1:first-child {
     font-size: 3.141rem;
     margin-bottom: 4rem;
     font-weight: 700;
     letter-spacing: -2px;
   }
 
-  & > h2 {
+  &>h2 {
     --ifm-h2-font-size: 2.344rem;
     --ifm-h2-vertical-rhythm-top: 3;
   }
 
-  & > h3 {
+  &>h3 {
     --ifm-h3-font-size: 1.762rem;
     --ifm-h3-vertical-rhythm-top: 2;
   }
 
-  & > h4 {
+  &>h4 {
     --ifm-h4-font-size: 1.36rem;
   }
 
-  & > h2 + h3 {
+  &>h2+h3 {
     --ifm-h3-vertical-rhythm-top: 2;
   }
 
@@ -399,7 +400,7 @@ h1[class^="h1Heading"] {
     }
   }
 
-  > span {
+  >span {
     margin-left: 10px;
     border-right: 1px solid white;
   }
@@ -441,8 +442,9 @@ h1[class^="h1Heading"] {
 
 /* color mode toggle button */
 
-.navbar__items--right > :last-child {
+.navbar__items--right> :last-child {
   margin: 0px 20px;
+
   button:hover {
     background: var(--ifm-color-primary);
   }
@@ -502,6 +504,7 @@ main[class^="docMainContainer"] {
 }
 
 html[data-theme="dark"] .table-of-contents__link {
+
   &--active,
   &:hover {
     color: var(--ifm-color-primary-light);
@@ -555,7 +558,7 @@ button[class^="copyButton"] {
   padding: 3rem 0.5rem 0.5rem !important;
 }
 
-.menu > .menu__list > .menu__list-item {
+.menu>.menu__list>.menu__list-item {
   padding-bottom: 1rem;
 }
 
@@ -648,6 +651,7 @@ li.theme-doc-sidebar-item-link-level-1:active {
 
 .DocSearch--active {
   html[data-theme="dark"] & {
+
     .DocSearch-Hit-source,
     .DocSearch-Cancel {
       color: rgb(190, 195, 201);
@@ -676,12 +680,12 @@ img[alt="github-contribute"] {
 }
 
 @mixin admonitionIcon($args...) {
-  @each $name, $path in meta.keywords($args) {
-    $bgColor: if(
-      $name==danger,
+
+  @each $name,
+  $path in meta.keywords($args) {
+    $bgColor: if($name==danger,
       var(--ifm-color-primary-light),
-      var(--ifm-color-primary-dark)
-    );
+      var(--ifm-color-primary-dark));
 
     .admonition-#{$name} .admonition-icon::before {
       mask: url($path);
@@ -694,8 +698,7 @@ img[alt="github-contribute"] {
   }
 }
 
-@include admonitionIcon(
-  $note: "/img/Dagger_Icons_Note.svg",
+@include admonitionIcon($note: "/img/Dagger_Icons_Note.svg",
   $tip: "/img/Dagger_Icons_Tip.svg",
   $info: "/img/Dagger_Icons_Info.svg",
   $caution: "/img/Dagger_Icons_Caution.svg",
@@ -730,25 +733,36 @@ img[alt="github-contribute"] {
 
 .embed {
 
-	width: 100%;
-	height: 800px;
+  width: 100%;
+  height: 800px;
 
 }
+
 .docs-doc-id-current\/quickstart\/quickstart-setup,
 .docs-doc-id-current\/quickstart\/quickstart-introduction {
   main .container {
     margin: 0;
-    margin-right: 800px;
+    margin-right: 40vw;
 
     iframe {
       position: fixed;
       top: 0;
       right: 0;
-      width: 800px;
+      width: 40vw;
       height: 100%;
       padding-top: 96px;
       box-shadow: 1px 1px 5px 2px black;
       background-color: rgb(14, 13, 28);
+    }
+  }
+}
+
+@include tablet {
+  main .container {
+    margin-right: inherit;
+
+    iframe {
+      visibility: hidden;
     }
   }
 }
