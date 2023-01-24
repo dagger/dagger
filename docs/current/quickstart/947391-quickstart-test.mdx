@@ -49,7 +49,20 @@ This code listing does the following:
 
 </TabItem>
 <TabItem value="Python">
-TODO
+
+```python file=snippets/test/main.py
+```
+
+This code listing does the following:
+
+- It creates a Dagger client with `with dagger.Connection()` as before.
+- It uses the client's `container().from_()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `from_()` method returns a new `Container` object with the result.
+- It uses the `Container.with_mounted_directory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.with_workdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.with_mounted_directory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
+- It uses the `Container.exit_code()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+
 </TabItem>
 </Tabs>
 

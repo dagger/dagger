@@ -73,7 +73,31 @@ Hello from Dagger and Node v16.18.1
 
 </TabItem>
 <TabItem value="Python">
-TODO
+
+In the `ci` directory, create a new file named `main.py` and add the following code to it.
+
+```python file=snippets/hello/main.py
+```
+
+This Python script imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
+
+- It creates a Dagger client with `with dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+- It uses the client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is the `python:3.11-slim` image. This method returns a `Container` representing an OCI-compatible container image.
+- It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the command `python -V`, which returns the Python version string. The `with_exec()` method returns a revised `Container` with the results of command execution.
+- It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
+
+Dagger resolves the pipeline and outputs a string similar to the one below.
+
+```shell
+Hello from Dagger and Python v3.11.1
+```
+
 </TabItem>
 </Tabs>
 

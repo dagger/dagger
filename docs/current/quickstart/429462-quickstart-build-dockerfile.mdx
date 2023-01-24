@@ -47,7 +47,18 @@ This code listing does the following:
 
 </TabItem>
 <TabItem value="Python">
-TODO
+
+```python file=snippets/build-dockerfile/main.py
+```
+
+This code listing does the following:
+
+- It creates a Dagger client with `with dagger.Connection()`.
+- It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
+- It uses the client's `container().build()` method to initialize a new container using a Dockerfile. This method defaults to using the Dockerfile located at `./Dockerfile` in the directory passed to it as argument and returns the built `Container` object.
+- It uses the `Container` object's `publish()` method to publish the container to [ttl.sh](https://ttl.sh). As before, to prevent name collisions, the container image name is suffixed with a random number.
+
+
 </TabItem>
 </Tabs>
 
