@@ -40,7 +40,16 @@ This revised pipeline does everything described in the previous step, and then p
 
 </TabItem>
 <TabItem value="Python">
-TODO
+
+```python file=snippets/build/main.py
+```
+
+This revised pipeline does everything described in the previous step, and then performs the following additional operations:
+
+- It invokes the `Container.with_exec()` method again, this time to define the command `npm run build` in the container.
+- It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
+- It writes the `build/` directory from the container to the host using the `Directory.export()` method.
+
 </TabItem>
 </Tabs>
 

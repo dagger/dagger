@@ -44,7 +44,16 @@ This revised pipeline produces the same result as before, but now uses a cache f
 
 </TabItem>
 <TabItem value="Python">
-TODO
+
+```python file=snippets/caching/main.py
+```
+
+This revised pipeline produces the same result as before, but now uses a cache for the application dependencies.
+
+- It uses the client's `cache_volume()` method to initialize a new cache volume.
+- It uses the `Container.with_mounted_cache()` method to mount this cache volume at the `node_modules/` mount point in the container.
+- It uses the `Container.with_exec()` method to define the `npm install` command. When executed, this command downloads and installs dependencies in the `node_modules/` directory. Since this directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
+
 </TabItem>
 </Tabs>
 
