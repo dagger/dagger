@@ -15,9 +15,6 @@ async function createConfig() {
     stylesheets: [
       "https://fonts.googleapis.com/css2?family=Montserrat:wght@500;700&family=Source+Code+Pro:wght@400&display=swap",
     ],
-    customFields: {
-      AMPLITUDE_ID: process.env.REACT_APP_AMPLITUDE_ID,
-    },
     themeConfig: {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],

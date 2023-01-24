@@ -11,28 +11,10 @@ import DocPageLayout from '@theme/DocPage/Layout';
 import NotFound from '@theme/NotFound';
 import SearchMetadata from '@theme/SearchMetadata';
 
-import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import {useLocation} from '@docusaurus/router';
-import amplitude from 'amplitude-js';
-
 export default function DocPage(props) {
   const {versionMetadata} = props;
   const currentDocRouteMetadata = useDocRouteMetadata(props);
   
-  // DocPage Swizzle
-  const {siteConfig} = useDocusaurusContext();
-  const location = useLocation();
-  
-  useEffect(() => {
-      if(siteConfig.customFields.AMPLITUDE_ID) {
-        var instance1 = amplitude.getInstance().init(siteConfig.customFields.AMPLITUDE_ID, null, {
-          apiEndpoint: `${window.location.hostname}/t`
-        })
-        amplitude.getInstance().logEvent('Docs Viewed', { "hostname": window.location.hostname, "path": location.pathname });
-      }
-  }, [location.pathname])
-  // End DocPageSwizzle
-
   if (!currentDocRouteMetadata) {
     return <NotFound />;
   }
