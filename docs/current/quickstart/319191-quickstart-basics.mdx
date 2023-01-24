@@ -2,6 +2,9 @@
 slug: /319191/quickstart-basics
 displayed_sidebar: "current"
 hide_table_of_contents: true
+pagination_next: "current/quickstart/quickstart-setup"
+pagination_prev: "current/quickstart/quickstart-introduction"
+pagination_label: "Basics"
 ---
 
 # Quickstart
@@ -58,7 +61,3 @@ lib -..-> engine -..-> oci -..-> A1 & B1 & C1
 4. When the engine receives an API request, it computes a [Directed Acyclic Graph (DAG)](https://en.wikipedia.org/wiki/Directed_acyclic_graph) of low-level operations required to compute the result, and starts processing operations concurrently.
 5. When all operations in the pipeline have been resolved, the engine sends the pipeline result back to your program.
 6. Your program may use the pipeline's result as input to new pipelines.
-
-<Button label="Previous" docPath="648215/quickstart" />
-
-<Button label="Next" docPath="120918/quickstart-setup" />
