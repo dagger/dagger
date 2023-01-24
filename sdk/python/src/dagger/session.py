@@ -1,9 +1,8 @@
 import logging
 from typing import TypeAlias, TypeVar
 
-from gql.client import AsyncClientSession
+from gql.client import AsyncClientSession, SyncClientSession
 from gql.client import Client as GraphQLClient
-from gql.client import SyncClientSession
 from gql.transport import AsyncTransport, Transport
 
 from .config import Config, ConnectParams
@@ -20,7 +19,7 @@ ClientSession: TypeAlias = AsyncClientSession | SyncClientSession
 
 
 class Session(ResourceManager, SyncResourceManager):
-    """Establishes a GraphQL client connection to the engine."""
+    """Establish a GraphQL client connection to the engine."""
 
     def __init__(self, conn: ConnectParams, cfg: Config):
         super().__init__()
@@ -41,7 +40,8 @@ class Session(ResourceManager, SyncResourceManager):
         )
 
     def make_graphql_client(
-        self, transport: AsyncTransport | Transport
+        self,
+        transport: AsyncTransport | Transport,
     ) -> GraphQLClient:
         return GraphQLClient(
             transport=transport,

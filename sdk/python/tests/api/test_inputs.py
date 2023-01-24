@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-from typing import Optional
 
 import pytest
 
@@ -22,7 +21,7 @@ class Client(Root):
         return Container(self._ctx)
 
     @typecheck
-    def directory(self, id: Optional[DirectoryID] = None) -> "Directory":
+    def directory(self, id: DirectoryID | None = None) -> "Directory":
         return Directory(self._ctx)
 
     @typecheck
@@ -58,7 +57,7 @@ class File(Type):
     ...
 
 
-@pytest.fixture
+@pytest.fixture()
 def client(mocker):
     return Client(mocker.MagicMock())
 
@@ -102,7 +101,7 @@ def test_no_object_id(client: Client):
         client.container().with_file("a", FileID("fileid"))
 
 
-@pytest.mark.anyio
+@pytest.mark.anyio()
 async def test_await(client: Client):
     client.directory(await client.directory().id())
 

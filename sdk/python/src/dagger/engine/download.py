@@ -44,12 +44,12 @@ def get_platform() -> Platform:
 
 
 class TempFile(SyncResourceManager):
-    """A temporary file that only deletes on error."""
+    """Create a temporary file that only deletes on error."""
 
-    def __init__(self, prefix: str, dir: Path):
+    def __init__(self, prefix: str, directory: Path):
         super().__init__()
         self.prefix = prefix
-        self.dir = dir
+        self.dir = directory
 
     def __enter__(self) -> typing.IO[bytes]:
         with self.get_sync_stack() as stack:
@@ -59,7 +59,7 @@ class TempFile(SyncResourceManager):
                     prefix=self.prefix,
                     dir=self.dir,
                     delete=False,
-                )
+                ),
             )
         return self.file
 
@@ -98,7 +98,7 @@ class StreamReader(IO[bytes]):
             ...
 
     def getbuffer(self):
-        """Reads the entire stream into an in-memory buffer."""
+        """Read the entire stream into an in-memory buffer."""
         buf = io.BytesIO()
         shutil.copyfileobj(self, buf, self.bufsize)
         buf.seek(0)
@@ -110,7 +110,7 @@ class StreamReader(IO[bytes]):
 
 
 class Downloader:
-    """Utility to download a dagger CLI binary."""
+    """Download the dagger CLI binary."""
 
     CLI_BIN_PREFIX = "dagger-"
     CLI_BASE_URL = f"https://{DEFAULT_CLI_HOST}/dagger/releases"
@@ -148,7 +148,6 @@ class Downloader:
 
     def get(self) -> str:
         """Download CLI to cache and return its path."""
-
         cli_bin_path = self.cache_dir / f"{self.CLI_BIN_PREFIX}{self.version}"
 
         if self.platform.os == "windows":
@@ -157,13 +156,16 @@ class Downloader:
         if not cli_bin_path.exists():
             try:
                 cli_bin_path = self._download(cli_bin_path)
-            except Exception as e:
-                raise ProvisionError("Failed to download CLI from archive") from e
+            # FIXME: create sub-exception and raise where it makes
+            # sense instead of doing a catch-all.
+            except Exception as e:  # noqa: BLE001
+                msg = "Failed to download CLI from archive"
+                raise ProvisionError(msg) from e
 
         # garbage collection of old binaries
-        for bin in self.cache_dir.glob(f"{self.CLI_BIN_PREFIX}*"):
-            if bin != cli_bin_path:
-                bin.unlink()
+        for file in self.cache_dir.glob(f"{self.CLI_BIN_PREFIX}*"):
+            if file != cli_bin_path:
+                file.unlink()
 
         return str(cli_bin_path.absolute())
 
@@ -182,10 +184,11 @@ class Downloader:
                 raise
 
             if actual_hash != expected_hash:
-                raise ValueError(
+                msg = (
                     f"Downloaded CLI binary checksum ({actual_hash}) "
                     f"does not match expected checksum ({expected_hash})"
                 )
+                raise ValueError(msg)
 
         tmp_bin_path = Path(tmp_bin.name)
         tmp_bin_path.chmod(0o700)
@@ -199,7 +202,8 @@ class Downloader:
                 checksum, filename = line.split()
                 if filename == archive_name:
                     return checksum
-        raise KeyError("Could not find checksum for CLI archive")
+        msg = "Could not find checksum for CLI archive"
+        raise KeyError(msg)
 
     def extract_cli_archive(self, dest: IO[bytes]) -> str:
         """
@@ -236,16 +240,15 @@ class Downloader:
                     reader.readall()
                     break
             else:
-                raise FileNotFoundError(
-                    "There is no item named 'dagger' in the archive"
-                )
+                msg = "There is no item named 'dagger' in the archive"
+                raise FileNotFoundError(msg)
 
     @contextlib.contextmanager
     def _extract_from_zip(self, reader: StreamReader) -> Iterator[IO[bytes]]:
         # FIXME: extract from stream instead of loading archive into memory
-        with zipfile.ZipFile(reader.getbuffer()) as zip:
+        with zipfile.ZipFile(reader.getbuffer()) as zar:
             try:
-                with zip.open("dagger.exe") as file:
+                with zar.open("dagger.exe") as file:
                     yield file
             except KeyError as e:
                 raise FileNotFoundError from e

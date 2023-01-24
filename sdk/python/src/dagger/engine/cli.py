@@ -15,6 +15,9 @@ from dagger.exceptions import SessionError
 logger = logging.getLogger(__name__)
 
 
+OS_ETXTBSY = 26
+
+
 class CLISession(SyncResourceManager):
     """Start an engine session with a provided CLI path."""
 
@@ -59,15 +62,15 @@ class CLISession(SyncResourceManager):
                     encoding="utf-8",
                 )
             except OSError as e:
-                # 26 is ETXTBSY
-                if e.errno != 26:
+                if e.errno != OS_ETXTBSY:
                     raise
                 logger.warning("file busy, retrying in 0.1 seconds...")
                 time.sleep(0.1)
             else:
                 return proc
 
-        raise SessionError("CLI busy")
+        msg = "CLI busy"
+        raise SessionError(msg)
 
     def _get_conn(self, proc: subprocess.Popen) -> ConnectParams:
         # FIXME: implement engine session timeout (self.cfg.engine_timeout?)

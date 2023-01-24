@@ -1,6 +1,4 @@
-"""
-Run tests for a single Python version.
-"""
+"""Run tests for a single Python version."""
 
 import sys
 

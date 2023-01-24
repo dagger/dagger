@@ -71,7 +71,7 @@ async def test_container_with_mounted_directory():
             """\
             goodbye.txt
             hello.txt
-            """
+            """,
         )
 
 
@@ -92,7 +92,7 @@ async def test_container_with_mounted_cache():
                     "-c",
                     "echo $0 >> /cache/x.txt; cat /cache/x.txt",
                     str(i),
-                ]
+                ],
             ).stdout()
 
         assert out == "0\n1\n2\n3\n4\n"

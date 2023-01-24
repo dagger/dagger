@@ -42,7 +42,8 @@ class ConnectParams:
     @port.validator
     def _check_port(self, _, value):
         if value < 1:
-            raise ValueError(f"Invalid port value: {value}")
+            msg = f"Invalid port value: {value}"
+            raise ValueError(msg)
 
     @property
     def url(self):

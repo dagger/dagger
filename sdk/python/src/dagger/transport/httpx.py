@@ -1,4 +1,7 @@
+# flake8: noqa
 """
+GraphQL client transport using HTTPX.
+
 FIXME: remove this file when gql releases a version with httpx support.
     It was added in https://github.com/graphql-python/gql/pull/370
 """
@@ -178,7 +181,7 @@ class HTTPXAsyncTransport(AsyncTransport, _HTTPXTransport):
         return self._prepare_result(response)
 
     async def close(self):
-        """Closing the transport by closing the inner session"""
+        """Closing the transport by closing the inner session."""
         if self.client:
             await self.client.aclose()
             self.client = None

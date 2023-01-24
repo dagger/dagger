@@ -44,9 +44,11 @@ def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
         ["dagger", "session"],
         **call_kwargs,
     )
-    with pytest.raises(ProvisionError) as exc_info:
-        with cli.CLISession(dagger.Config(**config_args), "dagger"):
-            ...
+    with pytest.raises(ProvisionError) as exc_info, cli.CLISession(
+        dagger.Config(**config_args),
+        "dagger",
+    ):
+        ...
 
     assert "Dagger engine failed to start" in str(exc_info.value)
 
@@ -58,7 +60,8 @@ def test_stderr(fp: FakeProcess):
         returncode=1,
     )
     with pytest.raises(ProvisionError) as exc_info, cli.CLISession(
-        dagger.Config(), "dagger"
+        dagger.Config(),
+        "dagger",
     ):
         ...
 
