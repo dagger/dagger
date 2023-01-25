@@ -22,9 +22,6 @@ type File {
 
   """
   Writes the file to a file path on the host.
-
-  Example:
-  export(path: "output.txt")
   """
   export(
     """
@@ -35,10 +32,7 @@ type File {
 
   """
   Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
-
-  Example:
-  withTimestamps(timestamp: 1672531199)
-  """
+"""
   withTimestamps(
     """
     Timestamp to set dir/files in (e.g., 1672531199).

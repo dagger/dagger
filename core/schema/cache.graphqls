@@ -19,9 +19,6 @@ enum CacheSharingMode {
 extend type Query {
   """
   Constructs a cache volume for a given cache key.
-
-  Example:
-  cacheVolume(key: "myapp-cache")
   """
   cacheVolume(
     """

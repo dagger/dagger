@@ -1,10 +1,6 @@
 extend type Query {
     """
     Queries a git repository.
-    Example:
-    git("https://github.com/dagger/dagger", { keepGitDir: true })
-    git("git@github.com/dagger/dagger")
-    git("https://github.com/dagger/dagger.git")
     """
     git(
         """
@@ -26,9 +22,6 @@ type GitRepository {
 
     """
     Returns details on one branch.
-
-    Example:
-    branch(name: "main")
     """
     branch(
         """
@@ -42,9 +35,6 @@ type GitRepository {
 
     """
     Returns details on one tag.
-
-    Example:
-    tag(name: "v0.3.9")
     """
     tag(
         """
@@ -55,9 +45,6 @@ type GitRepository {
 
     """
     Returns details on one commit.
-
-    Example:
-    commit(id: "b6315d8f2810962c601af73f86831f6866ea798b")
     """
     commit(
         """

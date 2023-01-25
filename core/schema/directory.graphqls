@@ -16,9 +16,6 @@ type Directory {
 
   """
   Returns a list of files and directories at the given path.
-
-  Example:
-  entries(path: "/src")
   """
   entries(
     """
@@ -29,9 +26,6 @@ type Directory {
 
   """
   Retrieves a file at the given path.
-
-  Example:
-  file(path: "/src/index.ts")
   """
   file(
     """
@@ -42,10 +36,6 @@ type Directory {
 
   """
   Retrieves this directory plus the contents of the given file copied to the given path.
-
-  Example:
-  withFile(path: "/file.txt", source: "file-id")
-  withFile(path: "/file.txt", source: "file-id", permissions: 0600)
   """
   withFile(
     """
@@ -66,10 +56,6 @@ type Directory {
 
   """
   Retrieves this directory plus a new file written at the given path.
-
-  Example:
-  withNewFile(path: "/file.txt", contents: "Hello world!")
-  withNewFile(path: "/file.txt", contents: "Hello world!", permissions: 0600)
   """
   withNewFile(
     """
@@ -92,9 +78,6 @@ type Directory {
 
   """
   Retrieves this directory with the file at the given path removed.
-
-  Example:
-  withoutFile(path: "/file.txt")
   """
   withoutFile(
     """
@@ -105,9 +88,6 @@ type Directory {
 
   """
   Retrieves a directory at the given path.
-
-  Example:
-  directory(path: "/src")
   """
   directory(
     """
@@ -118,11 +98,6 @@ type Directory {
 
   """
   Retrieves this directory plus a directory written at the given path.
-
-  Example:
-  withDirectory(path: "/src/", directory: "directory-id")
-  withDirectory(path: "/src/", directory: "directory-id", exclude: ["node_modules/", ".git*"])
-  withDirectory(path: "/src/", directory: "directory-id", include: ["app/", "package.*"])
   """
   withDirectory(
     """
@@ -146,10 +121,6 @@ type Directory {
 
   """
   Retrieves this directory plus a new directory created at the given path.
-
-  Example:
-  withNewDirectory(path: "/logs")
-  withNewDirectory(path: "/logs", permissions: 0777)
   """
   withNewDirectory(
     """
@@ -167,9 +138,6 @@ type Directory {
 
   """
   Retrieves this directory with the directory at the given path removed.
-
-  Example:
-  withoutDirectory(path: ".github/")
   """
   withoutDirectory(
     """
@@ -186,9 +154,6 @@ type Directory {
 
   """
   Writes the contents of the directory to a path on the host.
-
-  Example:
-  export(path: "logs/")
   """
   export(
     """
@@ -199,12 +164,6 @@ type Directory {
 
   """
   Builds a new Docker container from this directory.
-
-  Example:
-  dockerBuild()
-  dockerBuild(dockerfile: "frontend.Dockerfile")
-  dockerBuild(platform: "linux/amd64")
-  dockerBuild(platform: "linux/amd64", buildArgs: [{ name: "MODE", value: "production" }])
   """
   dockerBuild(
     """
@@ -226,9 +185,6 @@ type Directory {
 
   """
   Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
-
-  Example:
-  withTimestamps(timestamp: 1672531199)
   """
   withTimestamps(
     """

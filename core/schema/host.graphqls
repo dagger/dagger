@@ -7,11 +7,6 @@ extend type Query {
 type Host {
   """
   Retrieves the current working directory on the host.
-
-  Example:
-  workdir()
-  workdir(exclude: ["node_modules/", ".git*"])
-  workdir(include: ["app/", "package.*"])
   """
   workdir(
     """
@@ -28,11 +23,6 @@ type Host {
 
   """
   Accesses a directory on the host.
-
-  Example:
-  directory(path: ".")
-  directory(path: "project/", exclude: ["node_modules/", ".git*"])
-  directory(path: ".", include: ["app/", "package.*"])
   """
   directory(
     """
@@ -53,9 +43,6 @@ type Host {
 
   """
   Accesses an environment variable on the host.
-
-  Example:
-  envVariable(name: "PATH")
   """
   envVariable(
     """
@@ -66,9 +53,6 @@ type Host {
 
   """
   Accesses a Unix socket on the host.
-
-  Example:
-  unixSocket(path: "/var/run/docker.sock")
   """
   unixSocket(
     """

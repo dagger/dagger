@@ -26,11 +26,7 @@ type Container {
   pipeline(name: String!, description: String): Container!
 
   """
-  Initializes this container from the base image published at the given address.
-
-  Example:
-  from(address: "docker.io/dagger/dagger:main")
-  from(address: "alpine")
+  Initializes this container from a pulled base image.
   """
   from(
     """
@@ -42,12 +38,7 @@ type Container {
   ): Container!
 
   """
-  Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
-
-  Example:
-  build(context: "directory-id" })
-  build(context: "directory-id", dockerfile: "./frontend.Dockerfile")
-  build(context: "directory-id", buildArgs: [{ name: "MODE", value: "production }])
+  Initializes this container from a Dockerfile build.
   """
   build(
     "Directory context used by the Dockerfile."
@@ -84,9 +75,6 @@ type Container {
   Retrieves a directory at the given path.
 
   Mounts are included.
-  Example:
-  directory(path: "./src")
-  directory(path: "/tmp")
   """
   directory(
     """
@@ -99,8 +87,6 @@ type Container {
   Retrieves a file at the given path.
 
   Mounts are included.
-  Example:
-  file(path: "./README.md")
   """
   file(
     """
@@ -114,9 +100,6 @@ type Container {
 
   """
   Retrieves this containers with a different command user.
-
-  Example:
-  withUser(name: "root")
   """
   withUser(
     """
@@ -130,9 +113,6 @@ type Container {
 
   """
   Retrieves this container with a different working directory.
-
-  Example:
-  withWorkdir(path: "/app")
   """
   withWorkdir(
     """
@@ -146,9 +126,6 @@ type Container {
 
   """
   Retrieves the value of the specified environment variable.
-
-  Example:
-  envVariable(name: "PATH")
   """
   envVariable(
     """
@@ -160,8 +137,6 @@ type Container {
   """
   Retrieves this container plus the given environment variable.
 
-  Example:
-  withEnvVariable(name: "HOST", value: "localhost")
   """
   withEnvVariable(
     """
@@ -180,9 +155,6 @@ type Container {
 
   """
   Retrieves the value of the specified label.
-
-  Example:
-  label(name: "foo")
   """
   label(
 
@@ -191,9 +163,6 @@ type Container {
 
   """
   Retrieves this container plus the given label.
-
-  Example:
-  withLabel(name: "foo", value: "bar")
   """
   withLabel(
     """
@@ -209,9 +178,6 @@ type Container {
 
   """
   Retrieves this container minus the given environment label.
-
-  Example:
-  withoutLabel(name: "foo")
   """
   withoutLabel(
     """
@@ -222,9 +188,6 @@ type Container {
 
   """
   Retrieves this container plus an env variable containing the given secret.
-
-  Example:
-  withSecretVariable(name: "API_SECRET", secret: "secret-id")
   """
   withSecretVariable(
     """
@@ -238,9 +201,6 @@ type Container {
 
   """
   Retrieves this container minus the given environment variable.
-
-  Example:
-  withoutEnvVariable(name: "HOST")
   """
   withoutEnvVariable(
     """
@@ -254,9 +214,6 @@ type Container {
 
   """
   Retrieves this container but with a different command entrypoint.
-
-  Example:
-  withEntrypoint(args: ["go", "run"])
   """
   withEntrypoint(
     """
@@ -270,9 +227,6 @@ type Container {
 
   """
   Configures default arguments for future commands.
-
-  Example:
-  withDefaultArgs(args: ["-v", "--no-cache"])
   """
   withDefaultArgs(
     """
@@ -286,9 +240,6 @@ type Container {
 
   """
   Retrieves this container plus a directory mounted at the given path.
-
-  Example:
-  withMountedDirectory(path: "/tmp/mounted_dir", source: "directory-id")
   """
   withMountedDirectory(
     """
@@ -302,9 +253,6 @@ type Container {
 
   """
   Retrieves this container plus a file mounted at the given path.
-
-  Example:
-  withMountedFile(path: "/tmp/file.txt", source: "source-id")
   """
   withMountedFile(
     """
@@ -318,9 +266,6 @@ type Container {
 
   """
   Retrieves this container plus a temporary directory mounted at the given path.
-
-  Example:
-  withMountedTemp(path: "/tmp/temp_dir")
   """
   withMountedTemp(
     """
@@ -331,9 +276,6 @@ type Container {
 
   """
   Retrieves this container plus a cache volume mounted at the given path.
-
-  Example:
-  withMountedCache(path: "/cache/node_modules", cache: "cache-id", source: "source-id")
   """
   withMountedCache(
     """
@@ -353,9 +295,6 @@ type Container {
 
   """
   Retrieves this container plus a secret mounted into a file at the given path.
-
-  Example:
-  withMountedSecret(path: "/tmp/secret.txt", source: "source-id")
   """
   withMountedSecret(
     """
@@ -369,9 +308,6 @@ type Container {
 
   """
   Retrieves this container after unmounting everything at the given path.
-
-  Example:
-  withoutMount(path: "/cache/node_modules")
   """
   withoutMount(
     """
@@ -382,10 +318,6 @@ type Container {
 
   """
   Retrieves this container plus the contents of the given file copied to the given path.
-
-  Example:
-  withFile(path: "/tmp/file.txt", source: "source-id")
-  withFile(path: "/tmp/file.txt", source: "source-id", permissions: 0600)
   """
   withFile(
     """
@@ -406,10 +338,6 @@ type Container {
 
   """
   Retrieves this container plus a new file written at the given path.
-
-  Example:
-  withNewFile(path: "/tmp/file.txt", contents: "Hello world!")
-  withNewFile(path: "/tmp/file.txt", contents: "Hello world!", permissions: 0600)
   """
   withNewFile(
     """
@@ -432,11 +360,6 @@ type Container {
 
   """
   Retrieves this container plus a directory written at the given path.
-
-  Example:
-  withDirectory(name: "/tmp/directory", directory: "directory-id")
-  withDirectory(name: "/tmp/directory", directory: "directory-id", excludes: ["node_modules/**", ".gitignore", ".git/"])
-  withDirectory(name: "/tmp/directory", directory: "directory-id", include: ["*.go", "go.mod", "go.sum"])
   """
   withDirectory(
     """
@@ -460,9 +383,6 @@ type Container {
 
   """
   Retrieves this container plus a socket forwarded to the given Unix socket path.
-
-  Example:
-  withUnixSocket(path: "/tmp/socket", source: "source-id")
   """
   withUnixSocket(
     """
@@ -476,9 +396,6 @@ type Container {
 
   """
   Retrieves this container with a previously added Unix socket removed.
-
-  Example:
-  withoutUnixSocket(path: "/tmp/socket")
   """
   withoutUnixSocket(
     """
@@ -489,12 +406,6 @@ type Container {
 
   """
   Retrieves this container after executing the specified command inside it.
-
-  Example:
-  withExec(args: ["run", "main.go"])
-  withExec(args: ["run", "main.go"], stdin: "Hello world")
-  withExec(args: ["run", "main.go"], redirectStdout: "/tmp/stdout", redirectStderr: "/tmp/stderr")
-  withExec(args: ["run", "main.go"], experimentalPrivilegedNesting: true)
   """
   withExec(
     """
@@ -527,13 +438,6 @@ type Container {
 
   """
   Retrieves this container after executing the specified command inside it.
-
-  Example:
-  exec()
-  exec(args: ["run", "main.go"])
-  exec(args: ["run", "main.go"], stdin: "Hello world")
-  exec(args: ["run", "main.go"], redirectStdout: "/tmp/stdout", redirectStderr: "/tmp/stderr")
-  exec(args: ["run", "main.go"], experimentalPrivilegedNesting: true)
   """
   exec(
     """
@@ -589,10 +493,6 @@ type Container {
 
   Publish returns a fully qualified ref.
   It can also publishes platformVariants.
-
-  Example:
-  publish(address: "docker.io/dagger/dagger:main")
-  publish(address: "docker.io/dagger/dagger:main", platformVariants: ["container-id"])
   """
   publish(
     """
@@ -613,9 +513,6 @@ type Container {
 
   Return true on success.
   It can also publishes platformVariants.
-  Example:
-  export(path: "./tarball")
-  export(path: "./tarball", platformVariants: ["container-id"])
   """
   export(
     """

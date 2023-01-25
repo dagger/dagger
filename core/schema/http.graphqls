@@ -1,9 +1,6 @@
 extend type Query {
     """
     Returns a file containing an http remote url content.
-
-    Example:
-    http(url: "https://docs.dagger.io")
     """
     http(
         """
