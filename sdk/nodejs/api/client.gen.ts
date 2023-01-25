@@ -274,7 +274,7 @@ export type ID = string
 
 /**
  * The platform config OS and architecture in a Container.
- * The format is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
+ * The format is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
  */
 export type Platform = string
 
@@ -534,7 +534,7 @@ Used for multi-platform image.
   /**
    * Initializes this container from the base image published at the given address.
    * @param address Image's address from its registry.
-Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    */
   from(address: string): Container {
     return new Container({
@@ -673,7 +673,7 @@ Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
   /**
    * Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
    * @param address Registry's address to publish the image to.
-Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    * @param opts.platformVariants Identifiers for other platform specific containers.
 Used for multi-platform image.
    */

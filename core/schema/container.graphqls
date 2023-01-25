@@ -27,7 +27,7 @@ type Container {
   from(
     """
     Image's address from its registry.
-    Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
     address: String!
   ): Container!
@@ -233,7 +233,7 @@ type Container {
   publish(
     """
     Registry's address to publish the image to.
-    Formatted as {host}/{user}/{repo}:{tag} (e.g. docker.io/dagger/dagger:main).
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
     address: String!
 

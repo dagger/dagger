@@ -26,7 +26,7 @@ class FileID(Scalar):
 
 class Platform(Scalar):
     """The platform config OS and architecture in a Container. The format
-    is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64,
+    is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
     linux/arm64)."""
 
 
@@ -271,7 +271,7 @@ class Container(Type):
         ----------
         address:
             Image's address from its registry.
-            Formatted as {host}/{user}/{repo}:{tag} (e.g.
+            Formatted as [host]/[user]/[repo]:[tag] (e.g.
             docker.io/dagger/dagger:main).
         """
         _args = [
@@ -370,7 +370,7 @@ class Container(Type):
         -------
         Platform
             The platform config OS and architecture in a Container. The format
-            is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64,
+            is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
             linux/arm64).
         """
         _args: list[Arg] = []
@@ -390,7 +390,7 @@ class Container(Type):
         ----------
         address:
             Registry's address to publish the image to.
-            Formatted as {host}/{user}/{repo}:{tag} (e.g.
+            Formatted as [host]/[user]/[repo]:[tag] (e.g.
             docker.io/dagger/dagger:main).
         platform_variants:
             Identifiers for other platform specific containers.
@@ -1471,7 +1471,7 @@ class Client(Root):
         -------
         Platform
             The platform config OS and architecture in a Container. The format
-            is {os}/{platform}/{version} (e.g. darwin/arm64/v7, windows/amd64,
+            is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
             linux/arm64).
         """
         _args: list[Arg] = []
