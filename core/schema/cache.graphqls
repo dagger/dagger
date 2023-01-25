@@ -3,8 +3,16 @@ scalar CacheID
 
 "Sharing mode of the cache volume."
 enum CacheSharingMode {
+  "Shares the cache volume amongst many build pipelines"
   SHARED
+
+  "Keeps a cache volume for a single build pipeline"
   PRIVATE
+
+  """
+  Shares the cache volume amongst many build pipelines,
+  but will serialize the writes
+  """
   LOCKED
 }
 

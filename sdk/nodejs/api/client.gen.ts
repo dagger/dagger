@@ -62,6 +62,26 @@ export type BuildArg = {
  */
 export type CacheID = string & { __CacheID: never }
 
+/**
+ * Sharing mode of the cache volume.
+ */
+export enum CacheSharingMode {
+  /**
+   * Shares the cache volume amongst many build pipelines
+   */
+  Shared,
+
+  /**
+   * Keeps a cache volume for a single build pipeline
+   */
+  Private,
+
+  /**
+   * Shares the cache volume amongst many build pipelines,
+   * but will serialize the writes
+   */
+  Locked,
+}
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -167,7 +187,15 @@ export type ContainerWithFileOpts = {
 }
 
 export type ContainerWithMountedCacheOpts = {
+  /**
+   * Directory to use as the cache volume's root.
+   */
   source?: Directory
+
+  /**
+   * Sharing mode of the cache volume.
+   */
+  sharing?: Cachesharingmode
 }
 
 export type ContainerWithNewFileOpts = {
@@ -915,6 +943,10 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a cache volume mounted at the given path.
+   * @param path Path to mount the cache volume at.
+   * @param cache ID of the cache to mount.
+   * @param opts.source Directory to use as the cache volume's root.
+   * @param opts.sharing Sharing mode of the cache volume.
    */
   withMountedCache(
     path: string,

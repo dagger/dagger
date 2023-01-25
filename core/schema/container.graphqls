@@ -142,7 +142,7 @@ type Container {
     source: DirectoryID
 
     "Sharing mode of the cache volume."
-    concurrency: CacheSharingMode
+    sharing: CacheSharingMode
   ): Container!
 
   "Retrieves this container plus a secret mounted into a file at the given path."

@@ -10,6 +10,15 @@ export type {{ .Name }} = string & {__{{ .Name }}: never}
 {{ "" }}
 	{{- end }}
 
+	{{- if IsEnum . }}
+{{ template "object_comment" .Description }}
+export enum {{ .Name }} {
+		{{- range .EnumValues }}
+{{ template "type_field_comment" .Description }}
+  {{ .Name | FormatEnum }},
+		{{- end }}
+}
+	{{- end }}
 	{{- with .Fields }}
 		{{- range . -}}
 			{{- $optionals := GetOptionalArgs .Args }}
