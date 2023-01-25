@@ -51,7 +51,7 @@ async def _temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
         # create an in-memory archive with the cli_bin in it
         archive = io.BytesIO()
 
-        with open(cli_bin, "rb") as f:
+        with Path(cli_bin).open("rb") as f:
             if downloader.archive_name.endswith(".zip"):
                 with zipfile.ZipFile(archive, mode="w") as zar, zar.open(
                     "dagger.exe",

@@ -67,7 +67,7 @@ class TempFile(SyncResourceManager):
         super().__exit__(exc, value, tb)
         # delete on error
         if exc:
-            os.unlink(self.file.name)
+            Path(self.file.name).unlink()
 
 
 class StreamReader(IO[bytes]):

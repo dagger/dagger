@@ -3,13 +3,13 @@
 # For the full list of built-in configuration values, see the documentation:
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
-import os
+import pathlib
 import sys
 
-sys.path.append(os.path.abspath("./_ext"))
+sys.path.append(str(pathlib.Path("./_ext").resolve()))
 
 project = "Dagger Python SDK"
-copyright = "2023, Dagger"  # noqa: A001
+copyright = "2022, Dagger"  # noqa: A001
 author = "Dagger"
 
 extensions = [
