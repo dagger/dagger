@@ -188,8 +188,8 @@ export class Bin implements EngineConn {
       )
     }
 
-    // for await did return nothing
-    // await the subprocess to catch the buildkit error
+    // At this stage something wrong happened, `for await` didn't return anything
+    // await the subprocess to catch the error
     try {
       await this.subProcess
     } catch {
