@@ -52,7 +52,7 @@ jobs:
           OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
           GRAFANA_CLOUD_USER_ID: "356840"
           GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
-          GRAFANA_CLOUD_API_KEY: ${{ secrets.GRAFANA_CLOUD_API_KEY }}
+          GRAFANA_CLOUD_API_KEY: "glc_eyJvIjoiNzcwNzY0IiwibiI6Im1ldHJpY3Nsb2dzdHJhY2Vzd3JpdGVyLWdpdGh1Yi1kYWdnZXItZGFnZ2VyLXJlcG8tYW5kLWZvcmtzIiwiayI6Ijk4My1MX3M0fHpdLDMjNHo/MyswKyg1MCIsIm0iOnsiciI6InVzIn19"
       - name: PR comment
         # Only comment on PRs
         if: github.event_name == 'pull_request'
