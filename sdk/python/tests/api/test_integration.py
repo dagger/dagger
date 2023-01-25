@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from textwrap import dedent
 
 import pytest
@@ -77,7 +76,10 @@ async def test_container_with_mounted_directory():
 
 async def test_container_with_mounted_cache():
     async with dagger.Connection() as client:
-        cache_key = f"example-{datetime.now().isoformat()}"
+        # Do not add a timestamp to the cache_key because it
+        # would then be unique on each run and therefore
+        # not cache any results at all.
+        cache_key = "example-cache"
 
         container = (
             client.container()
