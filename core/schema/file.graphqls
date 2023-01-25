@@ -31,13 +31,13 @@ type File {
   ): Boolean!
 
   """
-  Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
-"""
+  Retrieves this file with its created/modified timestamps set to the given time.
+  """
   withTimestamps(
     """
-    Timestamp to set dir/files in (e.g., 1672531199).
+    Timestamp to set dir/files in.
 
-    Formatted in seconds following Unix epoch.
+    Formatted in seconds following Unix epoch (e.g., 1672531199).
     """
     timestamp: Int!
   ): File!

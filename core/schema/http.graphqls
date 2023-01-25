@@ -4,7 +4,7 @@ extend type Query {
     """
     http(
         """
-        Http url to get the content from (e.g., "https://docs.dagger.io").
+        HTTP url to get the content from (e.g., "https://docs.dagger.io").
         """
         url: String!
     ): File!

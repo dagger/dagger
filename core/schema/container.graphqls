@@ -99,7 +99,7 @@ type Container {
   user: String
 
   """
-  Retrieves this containers with a different command user.
+  Retrieves this container with a different command user.
   """
   withUser(
     """
@@ -116,7 +116,7 @@ type Container {
   """
   withWorkdir(
     """
-    The path to set to the working directory (e.g., "/app").
+    The path to set as the working directory (e.g., "/app").
     """
     path: String!
   ): Container!
@@ -136,11 +136,10 @@ type Container {
 
   """
   Retrieves this container plus the given environment variable.
-
   """
   withEnvVariable(
     """
-    The identifier of the environment variable (e.g., "HOST").
+    The name of the environment variable (e.g., "HOST").
     """
     name: String!,
 
@@ -191,7 +190,7 @@ type Container {
   """
   withSecretVariable(
     """
-    The identifier of the secret variable (e.g., "API_SECRET").
+    The name of the secret variable (e.g., "API_SECRET").
     """
     name: String!,
 
@@ -204,7 +203,7 @@ type Container {
   """
   withoutEnvVariable(
     """
-    The identifier of the environment variable (e.g., "HOST").
+    The name of the environment variable (e.g., "HOST").
     """
     name: String!
   ): Container!
@@ -376,7 +375,7 @@ type Container {
     exclude: [String!],
 
     """
-    Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum").
+    Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
     """
     include: [String!]
   ): Container!
@@ -492,7 +491,7 @@ type Container {
   Publishes this container as a new image to the specified address.
 
   Publish returns a fully qualified ref.
-  It can also publishes platformVariants.
+  It can also publish platform variants.
   """
   publish(
     """
@@ -509,10 +508,10 @@ type Container {
   ): String!
 
   """
-  Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+  Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
 
   Return true on success.
-  It can also publishes platformVariants.
+  It can also publishes platform variants.
   """
   export(
     """

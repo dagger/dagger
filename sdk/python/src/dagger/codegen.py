@@ -390,10 +390,7 @@ class _ObjectField:
             key=attrgetter("has_default"),
         )
         self.description = field.description
-        # Ignore field examples from GraphQL since the signature
-        # may not match Python's.
-        if self.description and "Example:" in self.description:
-            self.description = self.description.split("Example:")[0].strip()
+
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
         self.type = format_output_type(field.type).replace("Query", "Client")
