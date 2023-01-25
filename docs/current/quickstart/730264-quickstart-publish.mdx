@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 hide_table_of_contents: true
 pagination_next: "current/quickstart/quickstart-build-multi"
 pagination_prev: "current/quickstart/quickstart-build"
-pagination_label: "Publish"
+pagination_label: "Publish the application"
 ---
 
 # Quickstart
@@ -15,7 +15,7 @@ import Button from "@site/src/components/atoms/button.js";
 
 ## Publish the application
 
-At this point, your Dagger pipeline has tested, built and delivered the application to your local host. But why stop there? Why not also publish a container image of the application?
+At this point, your Dagger pipeline has tested, built and delivered the application to your local host. But why not also publish a container image of the application to a registry?
 
 Dagger SDKs can do this natively via their `publish()` method. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry.
 

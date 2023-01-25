@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 hide_table_of_contents: true
 pagination_next: "current/quickstart/quickstart-build-dockerfile"
 pagination_prev: "current/quickstart/quickstart-build-multi"
-pagination_label: "Caching"
+pagination_label: "Use caching"
 ---
 
 # Quickstart
@@ -13,7 +13,7 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import Button from "@site/src/components/atoms/button.js";
 
-## Go faster: Use a cache
+## Use caching
 
 One of Dagger's most powerful features is its ability to cache data across pipeline runs. Dagger lets you define one or more directories as cache volume and persists their contents across runs. This enables you to reuse the contents of the cache every time the pipeline runs, and thereby speed up pipeline operations.
 
@@ -61,4 +61,3 @@ This revised pipeline produces the same result as before, but now uses a cache f
 </Tabs>
 
 Run the pipeline a few times. Notice that on the first run, the application dependencies are downloaded as usual. However, since the dependencies are cached, subsequent pipeline runs will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
-
