@@ -2,8 +2,8 @@ from textwrap import dedent
 
 import pytest
 from graphql import GraphQLArgument as Argument
+from graphql import GraphQLEnumType, GraphQLEnumValue, GraphQLID
 from graphql import GraphQLField as Field
-from graphql import GraphQLID
 from graphql import GraphQLInputField as Input
 from graphql import GraphQLInputField as InputField
 from graphql import GraphQLInputObjectType as InputObject
@@ -21,6 +21,7 @@ from dagger.codegen import (
     format_name,
     format_output_type,
 )
+from dagger.codegen import Enum as EnumHandler
 from dagger.codegen import Scalar as ScalarHandler
 
 
@@ -205,4 +206,63 @@ def test_scalar_predicate(type_, expected, ctx: Context):
 )
 def test_scalar_render(type_, expected, ctx: Context):
     handler = ScalarHandler(ctx)
+    assert handler.render(type_) == expected
+
+
+@pytest.mark.parametrize(
+    ("type_", "expected"),
+    [
+        # with doc
+        (
+            GraphQLEnumType(
+                "Enumeration",
+                {
+                    "ONE": GraphQLEnumValue("ONE", description="First value."),
+                    "TWO": GraphQLEnumValue("TWO", description="Second value."),
+                    "THREE": GraphQLEnumValue("THREE", description="Third value."),
+                },
+                description="Example of an enumeration.",
+            ),
+            dedent(
+                '''
+                class Enumeration(enum.StrEnum):
+                    """Example of an enumeration."""
+
+                    ONE = "ONE"
+                    """First value."""
+
+                    TWO = "TWO"
+                    """Second value."""
+
+                    THREE = "THREE"
+                    """Third value."""
+                ''',
+            ),
+        ),
+        # without doc
+        (
+            GraphQLEnumType(
+                "Enumeration",
+                {
+                    "ONE": GraphQLEnumValue("ONE"),
+                    "TWO": GraphQLEnumValue("TWO"),
+                    "THREE": GraphQLEnumValue("THREE"),
+                },
+            ),
+            dedent(
+                """
+                class Enumeration(enum.StrEnum):
+
+                    ONE = "ONE"
+
+                    TWO = "TWO"
+
+                    THREE = "THREE"
+                """,
+            ),
+        ),
+    ],
+)
+def test_enum_render(type_, expected, ctx: Context):
+    handler = EnumHandler(ctx)
     assert handler.render(type_) == expected

@@ -183,6 +183,8 @@ ignore = [
     "RET504",
     # We don't use asserts as runtime validation guarantees.
     "S101",
+    # Pandas
+    "PD", 
 ]
 unfixable = [
     # Don't remove `print` statements, just warn.
