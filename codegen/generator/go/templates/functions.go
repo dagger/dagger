@@ -11,8 +11,16 @@ import (
 )
 
 var (
-	funcMap    template.FuncMap
-	commonFunc *generator.CommonFunctions
+	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
+	funcMap    = template.FuncMap{
+		"Comment":                comment,
+		"FormatDeprecation":      formatDeprecation,
+		"FormatInputType":        commonFunc.FormatInputType,
+		"FormatOutputType":       commonFunc.FormatOutputType,
+		"FormatName":             formatName,
+		"FieldOptionsStructName": fieldOptionsStructName,
+		"FieldFunction":          fieldFunction,
+	}
 )
 
 // comments out a string
@@ -110,18 +118,4 @@ func fieldFunction(f introspection.Field) string {
 	signature += " " + retType
 
 	return signature
-}
-
-func init() {
-	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
-
-	funcMap = template.FuncMap{
-		"Comment":                comment,
-		"FormatDeprecation":      formatDeprecation,
-		"FormatInputType":        commonFunc.FormatInputType,
-		"FormatOutputType":       commonFunc.FormatOutputType,
-		"FormatName":             formatName,
-		"FieldOptionsStructName": fieldOptionsStructName,
-		"FieldFunction":          fieldFunction,
-	}
 }

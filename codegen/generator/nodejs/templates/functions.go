@@ -13,8 +13,24 @@ import (
 )
 
 var (
-	funcMap    template.FuncMap
-	commonFunc *generator.CommonFunctions
+	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
+	funcMap    = template.FuncMap{
+		"CommentToLines":      commentToLines,
+		"FormatDeprecation":   formatDeprecation,
+		"FormatInputType":     commonFunc.FormatInputType,
+		"FormatOutputType":    commonFunc.FormatOutputType,
+		"FormatName":          formatName,
+		"GetOptionalArgs":     getOptionalArgs,
+		"GetRequiredArgs":     getRequiredArgs,
+		"HasPrefix":           strings.HasPrefix,
+		"PascalCase":          pascalCase,
+		"IsArgOptional":       isArgOptional,
+		"IsCustomScalar":      isCustomScalar,
+		"ArgsHaveDescription": argsHaveDescription,
+		"SortInputFields":     sortInputFields,
+		"Solve":               solve,
+		"Subtract":            subtract,
+	}
 )
 
 // pascalCase change a type name into pascalCase
@@ -121,26 +137,4 @@ func argsHaveDescription(values introspection.InputValues) bool {
 	}
 
 	return false
-}
-
-func init() {
-	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
-
-	funcMap = template.FuncMap{
-		"CommentToLines":      commentToLines,
-		"FormatDeprecation":   formatDeprecation,
-		"FormatInputType":     commonFunc.FormatInputType,
-		"FormatOutputType":    commonFunc.FormatOutputType,
-		"FormatName":          formatName,
-		"GetOptionalArgs":     getOptionalArgs,
-		"GetRequiredArgs":     getRequiredArgs,
-		"HasPrefix":           strings.HasPrefix,
-		"PascalCase":          pascalCase,
-		"IsArgOptional":       isArgOptional,
-		"IsCustomScalar":      isCustomScalar,
-		"ArgsHaveDescription": argsHaveDescription,
-		"SortInputFields":     sortInputFields,
-		"Solve":               solve,
-		"Subtract":            subtract,
-	}
 }
