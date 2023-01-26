@@ -49,7 +49,7 @@ jobs:
         env:
           OTEL_SERVICE_NAME: "dagger"
           OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
-          OTEL_EXPORTER_OTLP_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic MzUzMzUzOmdsY19leUp2SWpvaU56Y3dOelkwSWl3aWJpSTZJbTFsZEhKcFkzTnNiMmR6ZEhKaFkyVnpkM0pwZEdWeUxXZHBkR2gxWWkxa1lXZG5aWEl0WkdGbloyVnlMWEpsY0c4dFlXNWtMV1p2Y210eklpd2lheUk2SWprNE15MU1YM00wZkhwZExETWpOSG8vTXlzd0t5ZzFNQ0lzSW0waU9uc2ljaUk2SW5WekluMTk="
           GRAFANA_CLOUD_USER_ID: "356840"
           GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
           GRAFANA_CLOUD_API_KEY: "glc_eyJvIjoiNzcwNzY0IiwibiI6Im1ldHJpY3Nsb2dzdHJhY2Vzd3JpdGVyLWdpdGh1Yi1kYWdnZXItZGFnZ2VyLXJlcG8tYW5kLWZvcmtzIiwiayI6Ijk4My1MX3M0fHpdLDMjNHo/MyswKyg1MCIsIm0iOnsiciI6InVzIn19"
