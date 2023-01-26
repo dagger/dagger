@@ -44,6 +44,17 @@ that builds+pushes the engine image to our registry with a tag matching
 At the end of this workflow, a new PR will automatically be created to bump the
 Engine version in the various SDKs.
 
+⚠️ **There is currently [an issue](https://github.com/dagger/dagger/issues/4050) where workflows do not automatically run in this PR.**
+Instead, you can trigger them to run by pushing an empty commit and then reverting it, e.g.
+
+```console
+gh pr checkout -f <PR number>
+git commit --allow-empty -m "Empty-Commit"
+git push
+git reset --hard HEAD^
+git push --force
+```
+
 👉 **Merge this PR** as soon as all checks pass.
 
 ## 🐹 Go SDK
@@ -387,7 +398,7 @@ notes (see **3/5.**).
 > new documentation to the production website.
 
 There are two websites for documentation, corresponding to two stages
- the release process:
+the release process:
 
 - Staging website (https://devel.docs.dagger.io)
   - Netlify dashboard (https://app.netlify.com/sites/devel-docs-dagger-io)
@@ -401,6 +412,7 @@ site and it is automatically published to https://devel.docs.dagger.io
 via Netlify.
 
 Use this staging website to test the documentation, including:
+
 - verifying that the new content appears in the navigation
 - verifying internal and external links work correctly
 - verifying that images appear correctly
@@ -418,14 +430,14 @@ production deployment via Netlify as follows:
 
 1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
 2. Refer to the list of "production deploys" and select the one you wish
-to deploy. Usually, this will be the most recent one. You can confirm this
-by checking the deployment hash against the latest commit hash in the
-[dagger/dagger repository main branch](https://github.com/dagger/dagger).
+   to deploy. Usually, this will be the most recent one. You can confirm this
+   by checking the deployment hash against the latest commit hash in the
+   [dagger/dagger repository main branch](https://github.com/dagger/dagger).
 3. On the deployment page, click the "Preview" button to once again
-preview/check the deployment. You can also check the deployment log to
-confirm there were no errors during the documentation build process.
+   preview/check the deployment. You can also check the deployment log to
+   confirm there were no errors during the documentation build process.
 4. If you are satisfied with the preview, click the "Publish deploy"
-button. This will publish the selected deployment on https://docs.dagger.io.
+   button. This will publish the selected deployment on https://docs.dagger.io.
 
 > 💡 TIP: There have been cases where Netlify builds have failed with errors,
 > but the same build succeeds when performed locally. In the past, one reason
