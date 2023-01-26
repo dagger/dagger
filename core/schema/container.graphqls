@@ -156,7 +156,6 @@ type Container {
   Retrieves the value of the specified label.
   """
   label(
-
     name: String!
   ): String
 
@@ -165,12 +164,12 @@ type Container {
   """
   withLabel(
     """
-    The name of the label (e.g., "foo").
+    The name of the label (e.g., "org.opencontainers.artifact.created").
     """
     name: String!,
 
     """
-    The value of the label (e.g., "bar").
+    The value of the label (e.g., "2023-01-01T00:00:00Z").
     """
     value: String!
   ): Container!
@@ -180,7 +179,7 @@ type Container {
   """
   withoutLabel(
     """
-    The name of the label to remove (e.g., "foo").
+    The name of the label to remove (e.g., "org.opencontainers.artifact.created").
     """
     name: String!
   ): Container!
@@ -579,7 +578,7 @@ type Label {
 }
 
 """
-Key value object that represents a build argument."
+Key value object that represents a build argument.
 """
 input BuildArg {
   """
