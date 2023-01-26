@@ -32,7 +32,7 @@ type Container {
     """
     Image's address from its registry.
 
-    Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
+    Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
     """
     address: String!,
   ): Container!
@@ -242,7 +242,7 @@ type Container {
   """
   withMountedDirectory(
     """
-    Location of the mounted directory (e.g., "/tmp/directory").
+    Location of the mounted directory (e.g., "/mnt/directory").
     """
     path: String!,
 
@@ -430,7 +430,8 @@ type Container {
     redirectStderr: String,
 
     """
-    Provide dagger access to the executed command.
+    Provides dagger access to the executed command.
+
     Do not use this option unless you trust the command being executed.
     The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     """
@@ -498,6 +499,7 @@ type Container {
   publish(
     """
     Registry's address to publish the image to.
+
     Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     """
     address: String!,
@@ -576,11 +578,17 @@ type Label {
   value: String!
 }
 
-"Key value object that represents a build argument."
+"""
+Key value object that represents a build argument."
+"""
 input BuildArg {
-  "The build argument name."
+  """
+  The build argument name.
+  """
   name: String!
 
-  "The build argument value."
+  """
+  The build argument value.
+  """
   value: String!
 }
