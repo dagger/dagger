@@ -57,6 +57,10 @@ git push --force
 
 👉 **Merge this PR** as soon as all checks pass.
 
+### Post-release Checks
+
+Verify the CLI publish worked as expected by [installing the CLI](https://docs.dagger.io/cli/465058/install) and verifying that `dagger version` outputs `$ENGINE_VERSION`
+
 ## 🐹 Go SDK
 
 > **Warning**
