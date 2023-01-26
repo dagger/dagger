@@ -15,6 +15,7 @@ type Event struct {
 	Error    string            `json:"error,omitempty"`
 	Tags     map[string]string `json:"tag,omitempty"`
 	TraceID  string            `json:"trace_id,omitempty"`
+	Hostname string            `json:"hostname,omitempty"`
 }
 
 func (e Event) Errored() bool {
@@ -41,19 +42,25 @@ func logSummary(name string, vertices VertexList, tags map[string]string, traceI
 	)
 	defer client.Flush()
 
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = ""
+	}
+
 	runEvent := Event{
 		Name:     name,
 		Duration: vertices.Duration().Microseconds(),
 		Error:    errorString(vertices.Error()),
 		Tags:     tags,
 		TraceID:  traceID,
+		Hostname: hostname,
 	}
 	runLabel := Label{
 		Type:    TypeRun,
 		Cached:  vertices.Cached(),
 		Errored: runEvent.Errored(),
 	}
-	err := pushEvent(client, runEvent, runLabel, vertices.Started())
+	err = pushEvent(client, runEvent, runLabel, vertices.Started())
 	if err != nil {
 		return err
 	}
@@ -65,6 +72,7 @@ func logSummary(name string, vertices VertexList, tags map[string]string, traceI
 			Error:    errorString(vertices.Error()),
 			Tags:     tags,
 			TraceID:  traceID,
+			Hostname: hostname,
 		}
 		pipelineLabel := Label{
 			Type:    TypePipeline,
@@ -84,6 +92,7 @@ func logSummary(name string, vertices VertexList, tags map[string]string, traceI
 			Error:    errorString(vertex.Error()),
 			Tags:     tags,
 			TraceID:  traceID,
+			Hostname: hostname,
 		}
 		opLabel := Label{
 			Type:    TypeOp,
@@ -108,7 +117,6 @@ func pushEvent(client *loki.Client, event Event, label Label, ts time.Time) erro
 		string(marshalled),
 		ts,
 		map[string]string{
-			"user":    os.Getenv("USER"),
 			"version": "2023-01-26.1540",
 			"type":    label.Type,
 			"cached":  fmt.Sprintf("%t", label.Cached),
