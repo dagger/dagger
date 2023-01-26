@@ -13,7 +13,7 @@ type Event struct {
 	Name     string            `json:"name"`
 	Duration int64             `json:"duration"`
 	Error    string            `json:"error,omitempty"`
-	Tags     map[string]string `json:"tags,omitempty"`
+	Tags     map[string]string `json:"tag,omitempty"`
 }
 
 func (e Event) Errored() bool {

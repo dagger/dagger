@@ -37,12 +37,13 @@ jobs:
       - run: |
           ./otel-collector /tmp/journal.log \
             --name "${{ github.repository }}#${{ github.ref }}@${{ github.run_number }}.${{ github.run_attempt }}" \
-            --label "github.repository=${{ github.repository }}" \
-            --label "github.ref=${{ github.ref }}" \
-            --label "github.workflow=${{ github.workflow }}" \
-            --label "github.job=engine" \
-            --label "github.run_number=${{ github.run_number }}" \
-            --label "github.run_attempt=${{ github.run_attempt }}" \
+            --tag "github.repository=${{ github.repository }}" \
+            --tag "github.ref=${{ github.ref }}" \
+            --tag "github.workflow=${{ github.workflow }}" \
+            --tag "github.job=engine" \
+            --tag "github.run_number=${{ github.run_number }}" \
+            --tag "github.run_attempt=${{ github.run_attempt }}" \
+            --tag "github.run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             > ./comment.md
         shell: bash
         if: always()

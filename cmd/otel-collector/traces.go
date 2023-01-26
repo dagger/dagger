@@ -24,7 +24,7 @@ const (
 type TraceExporter struct {
 	name     string
 	vertices VertexList
-	labels   map[string]string
+	tags     map[string]string
 
 	tr otrace.Tracer
 
@@ -35,11 +35,11 @@ type TraceExporter struct {
 	contextByPipeline map[string]context.Context
 }
 
-func NewTraceExporter(name string, vertices VertexList, labels map[string]string) *TraceExporter {
+func NewTraceExporter(name string, vertices VertexList, tags map[string]string) *TraceExporter {
 	return &TraceExporter{
 		name:     name,
 		vertices: vertices,
-		labels:   labels,
+		tags:     tags,
 
 		contextByVertex:   make(map[string]context.Context),
 		contextByPipeline: make(map[string]context.Context),
@@ -136,7 +136,7 @@ func (c *TraceExporter) pipelineContext(v Vertex) context.Context {
 }
 
 func (c *TraceExporter) attributes(attributes ...attribute.KeyValue) []attribute.KeyValue {
-	for k, v := range c.labels {
+	for k, v := range c.tags {
 		attributes = append(attributes, attribute.String(k, v))
 	}
 	return attributes

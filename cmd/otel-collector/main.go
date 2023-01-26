@@ -15,7 +15,7 @@ import (
 
 func main() {
 	cmd.Flags().String("name", "pipeline", "name")
-	cmd.Flags().StringArray("label", []string{}, "labels")
+	cmd.Flags().StringArray("tag", []string{}, "tags")
 
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -33,18 +33,18 @@ var cmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		labelList, err := cmd.Flags().GetStringArray("label")
+		tagList, err := cmd.Flags().GetStringArray("tag")
 		if err != nil {
 			return err
 		}
-		labels, err := parseLabels(labelList)
+		tags, err := parseTags(tagList)
 		if err != nil {
 			return err
 		}
 
 		ch := loadEvents(args[0])
 		vertices := mergeVertices(ch)
-		trace := NewTraceExporter(name, vertices, labels)
+		trace := NewTraceExporter(name, vertices, tags)
 
 		now := time.Now()
 		err = trace.Run(ctx)
@@ -138,12 +138,12 @@ func loadEvents(journal string) chan *bkclient.SolveStatus {
 	return ch
 }
 
-func parseLabels(labels []string) (map[string]string, error) {
+func parseTags(tags []string) (map[string]string, error) {
 	res := make(map[string]string)
-	for _, l := range labels {
+	for _, l := range tags {
 		parts := strings.SplitN(l, "=", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("malformed label: %q", l)
+			return nil, fmt.Errorf("malformed tag: %q", l)
 		}
 		res[parts[0]] = parts[1]
 	}
