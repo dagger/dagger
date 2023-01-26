@@ -55,7 +55,7 @@ export abstract class CliDownloader {
     )
 
     try {
-      // download an archive and use appropriate extraction depending on platforms (zip on windows, tar.gz on other platforms)
+      // download an archive and use platform-specific extraction
       const actualChecksum: string = await this.extractArchive(
         tmpBinDownloadDir
       )
