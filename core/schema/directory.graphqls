@@ -43,7 +43,9 @@ type Directory {
     """
     path: String!,
 
-    "Identifier of the file to copy."
+    """
+    Identifier of the file to copy.
+    """
     source: FileID!,
 
     """
