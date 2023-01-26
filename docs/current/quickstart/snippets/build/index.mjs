@@ -5,7 +5,7 @@ connect(async (client) => {
   // use a node:16-slim container
   // mount the source code directory on the host
   // at /src in the container
-  const source = await client.container()
+  const source = client.container()
     .from("node:16-slim")
     .withMountedDirectory('/src', client.host().directory('.', { exclude: ["node_modules/", "ci/"] }))
 
