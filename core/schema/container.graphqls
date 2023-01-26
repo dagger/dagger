@@ -389,7 +389,9 @@ type Container {
     """
     path: String!,
 
-    "Identifier of the socket to forward."
+    """
+    Identifier of the socket to forward.
+    """
     source: SocketID!
   ): Container!
 
