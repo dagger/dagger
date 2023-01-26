@@ -150,12 +150,13 @@ export abstract class CliDownloader {
 
   private cliArchiveName(): string {
     const architecture = this.normalizedArch()
+    const platform = os.platform()
 
     if (this.archive?.name != null) {
       return this.archive.name(architecture)
     }
 
-    return `dagger_v${this.cliVersion}_${os.platform()}_${architecture}.tar.gz`
+    return `dagger_v${this.cliVersion}_${platform}_${architecture}.tar.gz`
   }
 
   private async checksumMap(): Promise<Map<string, string>> {

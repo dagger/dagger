@@ -1,7 +1,9 @@
+import * as fs from "fs"
 import { Writable } from "node:stream"
 import * as os from "os"
 
 import Client from "./api/client.gen.js"
+import { InitEngineSessionBinaryError } from "./common/errors/InitEngineSessionBinaryError.js"
 import { CliDownloaderFactory } from "./provisioning/cli-downloader/cli-downloader-factory.js"
 import { Bin, CLI_VERSION } from "./provisioning/index.js"
 
@@ -97,6 +99,12 @@ export async function connect(
 async function getCliBinPath() {
   const cliBinEnvPath = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
   if (cliBinEnvPath) {
+    if (!fs.existsSync(cliBinEnvPath)) {
+      throw new InitEngineSessionBinaryError(
+        "Dagge CLI path was provided but the file path does nor exist."
+      )
+    }
+
     return cliBinEnvPath
   }
 
