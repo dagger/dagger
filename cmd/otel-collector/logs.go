@@ -117,6 +117,7 @@ func pushEvent(client *loki.Client, event Event, label Label, ts time.Time) erro
 		string(marshalled),
 		ts,
 		map[string]string{
+			"user":    os.Getenv("USER"),
 			"version": "2023-01-26.1540",
 			"type":    label.Type,
 			"cached":  fmt.Sprintf("%t", label.Cached),
