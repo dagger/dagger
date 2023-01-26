@@ -14,6 +14,7 @@ type Event struct {
 	Duration int64             `json:"duration"`
 	Error    string            `json:"error,omitempty"`
 	Tags     map[string]string `json:"tag,omitempty"`
+	TraceID  string            `json:"trace_id,omitempty"`
 }
 
 func (e Event) Errored() bool {
@@ -32,7 +33,7 @@ const (
 	TypeOp       = "op"
 )
 
-func logSummary(name string, vertices VertexList, tags map[string]string) error {
+func logSummary(name string, vertices VertexList, tags map[string]string, traceID string) error {
 	client := loki.New(
 		env("GRAFANA_CLOUD_USER_ID"),
 		env("GRAFANA_CLOUD_API_KEY"),
@@ -45,6 +46,7 @@ func logSummary(name string, vertices VertexList, tags map[string]string) error 
 		Duration: vertices.Duration().Microseconds(),
 		Error:    errorString(vertices.Error()),
 		Tags:     tags,
+		TraceID:  traceID,
 	}
 	runLabel := Label{
 		Type:    TypeRun,
@@ -62,6 +64,7 @@ func logSummary(name string, vertices VertexList, tags map[string]string) error 
 			Duration: vertices.Duration().Microseconds(),
 			Error:    errorString(vertices.Error()),
 			Tags:     tags,
+			TraceID:  traceID,
 		}
 		pipelineLabel := Label{
 			Type:    TypePipeline,
@@ -80,6 +83,7 @@ func logSummary(name string, vertices VertexList, tags map[string]string) error 
 			Duration: vertex.Duration().Microseconds(),
 			Error:    errorString(vertex.Error()),
 			Tags:     tags,
+			TraceID:  traceID,
 		}
 		opLabel := Label{
 			Type:    TypeOp,
