@@ -18,8 +18,7 @@ connect(async (client) => {
     // highlight-end
 
     // mount cloned repository into Node image
-    const runner = client
-      .container({ id: node })
+    const runner = node
       .withMountedDirectory("/src", source)
       .withWorkdir("/src")
       .withExec(["npm", "install"])
