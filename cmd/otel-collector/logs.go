@@ -10,21 +10,29 @@ import (
 )
 
 type Event struct {
-	Type     string            `json:"type"`
 	Name     string            `json:"name"`
 	Duration int64             `json:"duration"`
-	Cached   bool              `json:"cached"`
 	Error    string            `json:"error,omitempty"`
-	Labels   map[string]string `json:"labels,omitempty"`
+	Tags     map[string]string `json:"tags,omitempty"`
+}
+
+func (e Event) Errored() bool {
+	return e.Error != ""
+}
+
+type Label struct {
+	Type    string `json:"type"`
+	Cached  bool   `json:"cached"`
+	Errored bool   `json:"errored"`
 }
 
 const (
-	EventTypeRun      = "run"
-	EventTypePipeline = "pipeline"
-	EventTypeOp       = "op"
+	TypeRun      = "run"
+	TypePipeline = "pipeline"
+	TypeOp       = "op"
 )
 
-func logSummary(name string, vertices VertexList, labels map[string]string) error {
+func logSummary(name string, vertices VertexList, tags map[string]string) error {
 	client := loki.New(
 		env("GRAFANA_CLOUD_USER_ID"),
 		env("GRAFANA_CLOUD_API_KEY"),
@@ -32,48 +40,53 @@ func logSummary(name string, vertices VertexList, labels map[string]string) erro
 	)
 	defer client.Flush()
 
-	// Send overall run event
-	err := pushEvent(client,
-		Event{
-			Type:     EventTypeRun,
-			Name:     name,
-			Duration: vertices.Duration().Microseconds(),
-			Cached:   vertices.Cached(),
-			Error:    errorString(vertices.Error()),
-			Labels:   labels,
-		}, vertices.Started())
+	runEvent := Event{
+		Name:     name,
+		Duration: vertices.Duration().Microseconds(),
+		Error:    errorString(vertices.Error()),
+		Tags:     tags,
+	}
+	runLabel := Label{
+		Type:    TypeRun,
+		Cached:  vertices.Cached(),
+		Errored: runEvent.Errored(),
+	}
+	err := pushEvent(client, runEvent, runLabel, vertices.Started())
 	if err != nil {
 		return err
 	}
 
-	// Send pipelines
 	for pipeline, vertices := range vertices.ByPipeline() {
-		err := pushEvent(client,
-			Event{
-				Type:     EventTypePipeline,
-				Name:     pipeline,
-				Duration: vertices.Duration().Microseconds(),
-				Cached:   vertices.Cached(),
-				Error:    errorString(vertices.Error()),
-				Labels:   labels,
-			},
-			vertices.Started())
+		pipelineEvent := Event{
+			Name:     pipeline,
+			Duration: vertices.Duration().Microseconds(),
+			Error:    errorString(vertices.Error()),
+			Tags:     tags,
+		}
+		pipelineLabel := Label{
+			Type:    TypePipeline,
+			Cached:  vertices.Cached(),
+			Errored: pipelineEvent.Errored(),
+		}
+		err := pushEvent(client, pipelineEvent, pipelineLabel, vertices.Started())
 		if err != nil {
 			return err
 		}
 	}
 
-	// Send individual vertices
 	for _, vertex := range vertices {
-		err := pushEvent(client,
-			Event{
-				Type:     EventTypeOp,
-				Name:     vertex.Name(),
-				Duration: vertex.Duration().Microseconds(),
-				Cached:   vertex.Cached(),
-				Error:    errorString(vertex.Error()),
-				Labels:   labels,
-			}, vertex.Started())
+		opEvent := Event{
+			Name:     vertex.Name(),
+			Duration: vertex.Duration().Microseconds(),
+			Error:    errorString(vertex.Error()),
+			Tags:     tags,
+		}
+		opLabel := Label{
+			Type:    TypeOp,
+			Cached:  vertex.Cached(),
+			Errored: opEvent.Errored(),
+		}
+		err := pushEvent(client, opEvent, opLabel, vertex.Started())
 		if err != nil {
 			return err
 		}
@@ -82,7 +95,7 @@ func logSummary(name string, vertices VertexList, labels map[string]string) erro
 	return nil
 }
 
-func pushEvent(client *loki.Client, event Event, ts time.Time) error {
+func pushEvent(client *loki.Client, event Event, label Label, ts time.Time) error {
 	marshalled, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -92,8 +105,10 @@ func pushEvent(client *loki.Client, event Event, ts time.Time) error {
 		ts,
 		map[string]string{
 			"user":    os.Getenv("USER"),
-			"version": "2023-01-18.1851",
-			"type":    event.Type,
+			"version": "2023-01-26.1540",
+			"type":    label.Type,
+			"cached":  fmt.Sprintf("%t", label.Cached),
+			"errored": fmt.Sprintf("%t", label.Errored),
 		},
 	)
 }

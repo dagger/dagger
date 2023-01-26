@@ -112,7 +112,7 @@ func (c *Client) pushLogLine(line string, timestamp time.Time, extraLabelList ..
 
 	s := stream{
 		Stream: map[string]string{
-			"job": "daggerboard",
+			"job": "dagger",
 		},
 		Values: [][]string{
 			{
