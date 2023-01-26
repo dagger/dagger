@@ -67,24 +67,9 @@ git push --force
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-go test -v -count=1 $(pwd)/core/integration # run the engine tests on your host, which exercises the provisioning code paths of the Go SDK
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -95,6 +80,13 @@ git push origin sdk/go/${SDK_VERSION}
 This will trigger the [`publish-sdk-go`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes [dagger.io/dagger to pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Go SDK Get Started Guide](https://docs.dagger.io/sdk/go/959738/get-started).
+
+- It takes a while for the go module servers to update the `latest` tag, so you can instead run `go get dagger.io/dagger@<SDK_VERSION`
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
@@ -178,24 +170,9 @@ notes (see **3/5.**).
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-poetry run poe test # to be run the `sdk/python` directory in our dagger repo
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -206,6 +183,13 @@ git push origin sdk/python/${SDK_VERSION}
 This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.yml)
 which publishes [dagger-io to PyPI](https://pypi.org/project/dagger-io).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Python SDK Get Started Guide](https://docs.dagger.io/sdk/python/628797/get-started).
+
+- You may need to run `pip install --upgrade dagger.io` to force an update to the newest SDK version
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
@@ -290,24 +274,9 @@ notes (see **3/5.**).
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-yarn test # to be run the `sdk/nodejs` directory in our dagger repo
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -318,6 +287,12 @@ git push origin sdk/nodejs/${SDK_VERSION}
 This will trigger the [`Publish Node.js SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-nodejs.yml)
 which publishes [@dagger.io/dagger to NPM.js](https://www.npmjs.com/package/@dagger.io/dagger).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Node.js SDK Get Started Guide](https://docs.dagger.io/sdk/nodejs/783645/get-started).
+
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
