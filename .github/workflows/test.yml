@@ -36,7 +36,7 @@ jobs:
         if: always()
       - run: |
           ./otel-collector /tmp/journal.log \
-            --name "${{ github.repository }}#${{ github.ref }}@${{ github.run_number }}.${{ github.run_attempt }}" \
+            --name "${{ github.repository }}-${{ github.workflow }}:${{ github.job }}" \
             --tag "github.repository=${{ github.repository }}" \
             --tag "github.ref=${{ github.ref }}" \
             --tag "github.workflow=${{ github.workflow }}" \
