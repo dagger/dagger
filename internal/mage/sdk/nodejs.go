@@ -26,6 +26,8 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("lint")
+
 	eg, gctx := errgroup.WithContext(ctx)
 
 	base := nodeJsBase(c)
@@ -67,6 +69,8 @@ func (t Nodejs) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("test")
+
 	_, err = nodeJsBase(c).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 		WithExec([]string{"yarn", "test"}).
@@ -81,6 +85,8 @@ func (t Nodejs) Generate(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("generate")
 
 	generated, err := nodeJsBase(c).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
@@ -105,6 +111,8 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("publish")
 
 	var (
 		version  = strings.TrimPrefix(tag, "sdk/nodejs/v")

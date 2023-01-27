@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
@@ -41,6 +42,14 @@ func (g PipelinePath) Name() string {
 		return ""
 	}
 	return g[len(g)-1].Name
+}
+
+func (g PipelinePath) String() string {
+	parts := []string{}
+	for _, part := range g {
+		parts = append(parts, part.Name)
+	}
+	return strings.Join(parts, " / ")
 }
 
 func (g PipelinePath) ProgressGroup() *pb.ProgressGroup {

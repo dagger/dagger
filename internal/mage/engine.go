@@ -49,6 +49,7 @@ func (t Engine) Build(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+	c = c.Pipeline("engine").Pipeline("build")
 	build := util.GoBase(c).
 		WithEnvVariable("GOOS", runtime.GOOS).
 		WithEnvVariable("GOARCH", runtime.GOARCH).
@@ -65,6 +66,8 @@ func (t Engine) Lint(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("engine").Pipeline("lint")
 
 	repo := util.RepositoryGoCodeOnly(c)
 
@@ -109,6 +112,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("engine").Pipeline("publish")
 	engineImage, err := util.WithSetHostVar(ctx, c.Host(), "DAGGER_ENGINE_IMAGE").Value(ctx)
 	if err != nil {
 		return err
@@ -145,6 +149,8 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("engine").Pipeline("test")
 
 	cgoEnabledEnv := "0"
 	args := []string{"go", "test", "-p", "16", "-v", "-count=1"}
@@ -184,6 +190,8 @@ func (t Engine) Dev(ctx context.Context) error {
 		return err
 	}
 	defer c.Close()
+
+	c = c.Pipeline("engine").Pipeline("dev")
 
 	tmpfile, err := os.CreateTemp("", "dagger-engine-export")
 	if err != nil {
