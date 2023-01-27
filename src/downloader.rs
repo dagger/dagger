@@ -1,11 +1,16 @@
 use std::{
     fs::File,
-    io::{BufWriter, Read, Write},
+    io::{copy, BufReader, BufWriter, Read, Write},
+    os::unix::prelude::PermissionsExt,
     path::PathBuf,
 };
 
 use eyre::Context;
+use flate2::read::GzDecoder;
+use hex_literal::hex;
 use platform_info::Uname;
+use sha2::Digest;
+use tar::Archive;
 use tempfile::{tempfile, NamedTempFile};
 
 #[allow(dead_code)]
@@ -141,16 +146,24 @@ impl Downloader {
         Ok(cli_bin_path)
     }
 
-    fn download(&self, _path: PathBuf) -> eyre::Result<PathBuf> {
+    fn download(&self, path: PathBuf) -> eyre::Result<PathBuf> {
         let expected_checksum = self.expected_checksum()?;
 
-        let (actual_hash, _tempbin) = self.extract_cli_archive()?;
+        let mut bytes = vec![];
+        let actual_hash = self.extract_cli_archive(&mut bytes)?;
 
         if expected_checksum != actual_hash {
             eyre::bail!("downloaded CLI binary checksum doesn't match checksum from checksums.txt")
         }
 
-        todo!();
+        let mut file = std::fs::File::create(&path)?;
+        let meta = file.metadata()?;
+        let mut perm = meta.permissions();
+        perm.set_mode(0o700);
+        file.set_permissions(perm)?;
+        file.write_all(bytes.as_slice())?;
+
+        Ok(path)
     }
 
     fn expected_checksum(&self) -> eyre::Result<String> {
@@ -178,35 +191,63 @@ impl Downloader {
         eyre::bail!("could not find a matching version or binary in checksums.txt")
     }
 
-    pub fn extract_cli_archive(&self) -> eyre::Result<(String, File)> {
+    pub fn extract_cli_archive(&self, dest: &mut Vec<u8>) -> eyre::Result<String> {
         let archive_url = self.archive_url();
         let resp = reqwest::blocking::get(&archive_url)?;
         let mut resp = resp.error_for_status()?;
-        let temp = NamedTempFile::new()?;
-        let mut buf_writer = BufWriter::new(temp);
         let mut bytes = vec![];
-        let _ = resp.read_to_end(&mut bytes)?;
-        buf_writer.write_all(bytes.as_slice())?;
+        let lines = resp.read_to_end(&mut bytes)?;
+        if lines == 0 {
+            eyre::bail!("nothing was downloaded")
+        }
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(bytes.as_slice());
+        let res = hasher.finalize();
+
+        println!("{}", hex::encode(&res));
 
         if archive_url.ends_with(".zip") {
             // TODO:  Nothing for now
+            todo!()
         } else {
-            //self.extract_from_tar(&temp)?;
+            self.extract_from_tar(bytes.as_slice(), dest)?;
         }
-        todo!()
+
+        Ok(hex::encode(res))
+    }
+
+    fn extract_from_tar(&self, temp: &[u8], output: &mut Vec<u8>) -> eyre::Result<()> {
+        let decompressed_temp = GzDecoder::new(temp);
+        let mut archive = Archive::new(decompressed_temp);
+
+        for entry in archive.entries()? {
+            let mut entry = entry?;
+            let path = entry.path()?;
+
+            println!("path: {:?}", path);
+
+            if path.ends_with("dagger") {
+                copy(&mut entry, output)?;
+
+                return Ok(());
+            }
+        }
+
+        eyre::bail!("could not find a matching file")
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::path::PathBuf;
-
     use super::Downloader;
 
     #[test]
     fn download() {
         let cli_path = Downloader::new("0.3.10".into()).unwrap().get_cli().unwrap();
 
-        assert_eq!(PathBuf::from("/"), cli_path)
+        assert_eq!(
+            Some("dagger-0.3.10"),
+            cli_path.file_name().and_then(|s| s.to_str())
+        )
     }
 }
