@@ -101,7 +101,7 @@ async function getCliBinPath() {
   if (cliBinEnvPath) {
     if (!fs.existsSync(cliBinEnvPath)) {
       throw new InitEngineSessionBinaryError(
-        "Dagge CLI path was provided but the file path does nor exist."
+        "Dagger CLI path was provided but the file path does not exist."
       )
     }
 
