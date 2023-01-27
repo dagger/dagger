@@ -44,6 +44,8 @@ jobs:
             --tag "github.run_number=${{ github.run_number }}" \
             --tag "github.run_attempt=${{ github.run_attempt }}" \
             --tag "github.run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --tag "github.runner_name=${{ runner.name }}" \
+            --tag "github.runner_arch=${{ runner.arch }}" \
             > ./comment.md
         shell: bash
         if: always()
