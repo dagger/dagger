@@ -111,6 +111,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dagger-rs"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dirs",
+ "eyre",
+ "platform-info",
+ "reqwest",
+ "tempfile",
+]
+
+[[package]]
 name = "dirs"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -738,18 +750,6 @@ dependencies = [
  "wasm-streams",
  "web-sys",
  "winreg",
-]
-
-[[package]]
-name = "rust"
-version = "0.1.0"
-dependencies = [
- "clap",
- "dirs",
- "eyre",
- "platform-info",
- "reqwest",
- "tempfile",
 ]
 
 [[package]]
