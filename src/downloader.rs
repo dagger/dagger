@@ -183,10 +183,7 @@ impl Downloader {
         let resp = reqwest::blocking::get(&archive_url)?;
         let mut resp = resp.error_for_status()?;
         let temp = NamedTempFile::new()?;
-        let (file, path) = temp.keep()?;
-        println!("path: {:?}", path);
-
-        let mut buf_writer = BufWriter::new(file);
+        let mut buf_writer = BufWriter::new(temp);
         let mut bytes = vec![];
         let _ = resp.read_to_end(&mut bytes)?;
         buf_writer.write_all(bytes.as_slice())?;
