@@ -6,6 +6,7 @@ pub fn connect() -> eyre::Result<Client> {
 
 struct InnerClient {}
 
+#[allow(dead_code)]
 pub struct Client {
     inner: Arc<InnerClient>,
 }
