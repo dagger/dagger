@@ -1,17 +1,16 @@
 use std::{
     fs::File,
-    io::{copy, BufReader, BufWriter, Read, Write},
+    io::{copy, Read, Write},
     os::unix::prelude::PermissionsExt,
     path::PathBuf,
 };
 
 use eyre::Context;
 use flate2::read::GzDecoder;
-use hex_literal::hex;
 use platform_info::Uname;
 use sha2::Digest;
 use tar::Archive;
-use tempfile::{tempfile, NamedTempFile};
+use tempfile::tempfile;
 
 #[allow(dead_code)]
 #[derive(Clone)]
