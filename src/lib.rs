@@ -6,3 +6,4 @@ pub mod dagger;
 mod downloader;
 mod engine;
 mod schema;
+mod session;
