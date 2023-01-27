@@ -251,9 +251,9 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	return ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
 		// merge config.Env with imgSpec.Config.Env
-		newEnv := []string{}
-		if config.Env != nil {
-			newEnv = append(config.Env, imgSpec.Config.Env...)
+		newEnv := config.Env
+		if imgSpec.Config.Env != nil {
+			newEnv = append(newEnv, imgSpec.Config.Env...)
 		}
 		imgSpec.Config.Env = newEnv
 		return imgSpec.Config
