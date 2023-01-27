@@ -132,10 +132,10 @@ impl Downloader {
         Ok(cli_bin_path)
     }
 
-    fn download(&self, path: PathBuf) -> eyre::Result<PathBuf> {
+    fn download(&self, _path: PathBuf) -> eyre::Result<PathBuf> {
         let expected_checksum = self.expected_checksum()?;
 
-        let (actual_hash, tempbin) = self.extract_cli_archive()?;
+        let (actual_hash, _tempbin) = self.extract_cli_archive()?;
 
         if expected_checksum != actual_hash {
             eyre::bail!("downloaded CLI binary checksum doesn't match checksum from checksums.txt")

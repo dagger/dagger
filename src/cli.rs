@@ -15,7 +15,7 @@ impl Cli {
         let matches = self.cmd.get_matches_from(args);
 
         match matches.subcommand() {
-            Some(("generate", args)) => Ok(()),
+            Some(("generate", _args)) => Ok(()),
             _ => eyre::bail!("command missing"),
         }
     }
