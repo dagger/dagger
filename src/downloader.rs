@@ -8,6 +8,7 @@ use eyre::Context;
 use platform_info::Uname;
 use tempfile::{tempfile, NamedTempFile};
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct Platform {
     pub os: String,
@@ -32,12 +33,14 @@ impl Platform {
     }
 }
 
+#[allow(dead_code)]
 pub struct TempFile {
     prefix: String,
     directory: PathBuf,
     file: File,
 }
 
+#[allow(dead_code)]
 impl TempFile {
     pub fn new(prefix: &str, directory: &PathBuf) -> eyre::Result<Self> {
         let prefix = prefix.to_string();
@@ -53,16 +56,22 @@ impl TempFile {
     }
 }
 
+#[allow(dead_code)]
 pub type CliVersion = String;
 
+#[allow(dead_code)]
 pub struct Downloader {
     version: CliVersion,
     platform: Platform,
 }
+#[allow(dead_code)]
 const DEFAULT_CLI_HOST: &str = "dl.dagger.io";
+#[allow(dead_code)]
 const CLI_BIN_PREFIX: &str = "dagger-";
+#[allow(dead_code)]
 const CLI_BASE_URL: &str = "https://dl.dagger.io/dagger/releases";
 
+#[allow(dead_code)]
 impl Downloader {
     pub fn new(version: CliVersion) -> eyre::Result<Self> {
         Ok(Self {
