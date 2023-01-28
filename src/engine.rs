@@ -1,3 +1,5 @@
+use std::process::Child;
+
 use crate::{
     cli_session::CliSession, config::Config, connect_params::ConnectParams, downloader::Downloader,
 };
@@ -9,7 +11,7 @@ impl Engine {
         Self {}
     }
 
-    fn from_cli(&self, cfg: &Config) -> eyre::Result<ConnectParams> {
+    fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, Child)> {
         let cli = Downloader::new("0.3.10".into())?.get_cli()?;
 
         let cli_session = CliSession::new();
@@ -17,7 +19,7 @@ impl Engine {
         Ok(cli_session.connect(cfg, &cli)?)
     }
 
-    pub fn start(&self, cfg: &Config) -> eyre::Result<ConnectParams> {
+    pub fn start(&self, cfg: &Config) -> eyre::Result<(ConnectParams, Child)> {
         // TODO: Add from existing session as well
         self.from_cli(cfg)
     }
@@ -36,7 +38,7 @@ mod tests {
         let params = engine.start(&Config::new(None, None, None, None)).unwrap();
 
         assert_ne!(
-            params,
+            params.0,
             ConnectParams {
                 port: 123,
                 session_token: "123".into()

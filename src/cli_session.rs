@@ -1,9 +1,11 @@
+use core::time;
 use std::{
     fs::canonicalize,
     io::{BufRead, BufReader},
     path::PathBuf,
-    process::Stdio,
-    sync::Arc,
+    process::{Child, Stdio},
+    sync::{mpsc::sync_channel, Arc},
+    thread::sleep,
 };
 
 use crate::{config::Config, connect_params::ConnectParams};
@@ -20,7 +22,11 @@ impl CliSession {
         }
     }
 
-    pub fn connect(&self, config: &Config, cli_path: &PathBuf) -> eyre::Result<ConnectParams> {
+    pub fn connect(
+        &self,
+        config: &Config,
+        cli_path: &PathBuf,
+    ) -> eyre::Result<(ConnectParams, Child)> {
         self.inner.connect(config, cli_path)
     }
 }
@@ -29,9 +35,13 @@ impl CliSession {
 struct InnerCliSession {}
 
 impl InnerCliSession {
-    pub fn connect(&self, config: &Config, cli_path: &PathBuf) -> eyre::Result<ConnectParams> {
-        let mut proc = self.start(config, cli_path)?;
-        let params = self.get_conn(&mut proc)?;
+    pub fn connect(
+        &self,
+        config: &Config,
+        cli_path: &PathBuf,
+    ) -> eyre::Result<(ConnectParams, Child)> {
+        let proc = self.start(config, cli_path)?;
+        let params = self.get_conn(proc)?;
         Ok(params)
     }
 
@@ -62,7 +72,10 @@ impl InnerCliSession {
         return Ok(proc);
     }
 
-    fn get_conn(&self, proc: &mut std::process::Child) -> eyre::Result<ConnectParams> {
+    fn get_conn(
+        &self,
+        mut proc: std::process::Child,
+    ) -> eyre::Result<(ConnectParams, std::process::Child)> {
         let stdout = proc
             .stdout
             .take()
@@ -73,31 +86,28 @@ impl InnerCliSession {
             .take()
             .ok_or(eyre::anyhow!("could not acquire stderr from child process"))?;
 
-        let mut conn: Option<ConnectParams> = None;
+        let (sender, receiver) = sync_channel(1);
 
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let stdout_bufr = BufReader::new(stdout);
-                let mut res_conn: Option<ConnectParams> = None;
-                for line in stdout_bufr.lines() {
-                    let out = line.unwrap();
-                    let conn: ConnectParams = serde_json::from_str(&out).unwrap();
-                    res_conn = Some(conn);
-                    break;
+        std::thread::spawn(move || {
+            let stdout_bufr = BufReader::new(stdout);
+            for line in stdout_bufr.lines() {
+                let out = line.unwrap();
+                if let Ok(conn) = serde_json::from_str::<ConnectParams>(&out) {
+                    sender.send(conn).unwrap();
                 }
-
-                conn = res_conn;
-            });
-
-            //s.spawn(|| {
-            //    let stderr_bufr = BufReader::new(stderr);
-            //    for line in stderr_bufr.lines() {
-            //        let out = line.unwrap();
-            //        panic!("could not start dagger session: {}", out)
-            //    }
-            //});
+            }
         });
 
-        Ok(conn.ok_or(eyre::anyhow!("could not connect to dagger"))?)
+        std::thread::spawn(|| {
+            let stderr_bufr = BufReader::new(stderr);
+            for line in stderr_bufr.lines() {
+                let out = line.unwrap();
+                panic!("could not start dagger session: {}", out)
+            }
+        });
+
+        let conn = receiver.recv()?;
+
+        Ok((conn, proc))
     }
 }
