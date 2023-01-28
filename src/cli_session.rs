@@ -1,11 +1,10 @@
-use core::time;
+
 use std::{
     fs::canonicalize,
     io::{BufRead, BufReader},
     path::PathBuf,
     process::{Child, Stdio},
     sync::{mpsc::sync_channel, Arc},
-    thread::sleep,
 };
 
 use crate::{config::Config, connect_params::ConnectParams};
