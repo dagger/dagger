@@ -1,5 +1,7 @@
 pub mod cli;
+mod cli_generate;
 mod cli_session;
+mod code_generation;
 mod config;
 mod connect_params;
 pub mod dagger;

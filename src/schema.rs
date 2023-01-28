@@ -8,7 +8,7 @@ pub fn get_schema() -> eyre::Result<IntrospectionResponse> {
     //TODO: Implement context for proc
     let (conn, _proc) = Engine::new().start(&cfg)?;
     let session = Session::new();
-    let req_builder = session.start(cfg, &conn)?;
+    let req_builder = session.start(&cfg, &conn)?;
     let schema = session.schema(req_builder)?;
 
     Ok(schema)

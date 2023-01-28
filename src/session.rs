@@ -23,7 +23,7 @@ impl Session {
         Self {}
     }
 
-    pub fn start(&self, _cfg: Config, conn: &ConnectParams) -> eyre::Result<RequestBuilder> {
+    pub fn start(&self, _cfg: &Config, conn: &ConnectParams) -> eyre::Result<RequestBuilder> {
         let client = Client::builder()
             .user_agent("graphql-rust/0.10.0")
             .connection_verbose(true)

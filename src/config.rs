@@ -7,6 +7,12 @@ pub struct Config {
     pub execute_timeout_ms: Option<u64>,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self::new(None, None, None, None)
+    }
+}
+
 impl Config {
     pub fn new(
         workdir_path: Option<PathBuf>,
