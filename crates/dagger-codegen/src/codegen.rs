@@ -9,7 +9,7 @@ use graphql_introspection_query::introspection_response::{
 };
 
 use crate::{
-    handlers::{enumeration::Enumeration, scalar::Scalar, DynHandler, Handlers},
+    handlers::{enumeration::Enumeration, input::Input, scalar::Scalar, DynHandler, Handlers},
     predicates::is_custom_scalar_type,
 };
 
@@ -21,7 +21,11 @@ pub struct CodeGeneration {
 impl CodeGeneration {
     pub fn new() -> Self {
         Self {
-            handlers: vec![Arc::new(Scalar {}), Arc::new(Enumeration {})],
+            handlers: vec![
+                Arc::new(Scalar {}),
+                Arc::new(Enumeration {}),
+                Arc::new(Input {}),
+            ],
         }
     }
 

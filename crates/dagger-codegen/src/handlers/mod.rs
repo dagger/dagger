@@ -1,4 +1,5 @@
 pub mod enumeration;
+pub mod input;
 pub mod scalar;
 mod utility;
 
@@ -76,9 +77,13 @@ mod tests {
 
         assert_eq!(
             res.to_string().unwrap(),
-            "pub struct SomeName {} { }
-impl SomeName {} { }"
-                .to_string()
+            "pub struct SomeName {} {
+
+}
+impl SomeName {} {
+
+}"
+            .to_string()
         );
     }
 }
