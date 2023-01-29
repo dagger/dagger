@@ -1,4 +1,5 @@
 use clap::{Arg, ArgMatches};
+use dagger_codegen::codegen::CodeGeneration;
 
 use crate::{config::Config, engine::Engine, session::Session};
 
@@ -17,12 +18,12 @@ impl GenerateCommand {
         let session = Session::new();
         let req = session.start(&cfg, &conn)?;
         let schema = session.schema(req)?;
-        //let code = CodeGeneration::generate(&schema)?;
+        let code = CodeGeneration::new().generate(&schema)?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
             // TODO: Write to file
         } else {
-            //println!("{}", code);
+            println!("{}", code);
         }
 
         Ok(())

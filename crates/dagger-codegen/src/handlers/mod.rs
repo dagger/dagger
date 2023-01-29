@@ -1,4 +1,5 @@
 pub mod scalar;
+mod utility;
 
 use std::sync::Arc;
 
@@ -11,16 +12,15 @@ pub trait Handler {
         false
     }
 
-    fn render(&self, t: &FullType) -> eyre::Result<String> {
-        let mut s = String::new();
-
-        s.push_str("\n");
-        s.push_str(self.render_struct(t)?.to_string()?.as_str());
-        s.push_str("\n");
-        s.push_str(self.render_impl(t)?.to_string()?.as_str());
-        s.push_str("\n");
-
-        Ok(s)
+    fn render(&self, t: &FullType) -> eyre::Result<rust::Tokens> {
+        let tstruct = self.render_struct(t)?;
+        let timpl = self.render_impl(t)?;
+        let mut out = rust::Tokens::new();
+        out.append(tstruct);
+        out.push();
+        out.append(timpl);
+        out.push();
+        Ok(out)
     }
 
     fn render_struct(&self, t: &FullType) -> eyre::Result<Tokens> {
@@ -74,12 +74,10 @@ mod tests {
         let res = handler.render(&t).unwrap();
 
         assert_eq!(
-            res,
-            "
-pub struct SomeName {} { }
-impl SomeName {} { }
-"
-            .to_string()
+            res.to_string().unwrap(),
+            "pub struct SomeName {} { }
+impl SomeName {} { }"
+                .to_string()
         );
     }
 }

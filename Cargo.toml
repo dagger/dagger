@@ -8,7 +8,12 @@ description = "A dagger sdk for rust, written in rust"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = ["crates/dagger-codegen", "crates/dagger-sdk"]
+
 [dependencies]
+dagger-codegen = { path = "crates/dagger-codegen" }
+
 clap = "4.1.4"
 dirs = "4.0.0"
 eyre = "0.6.8"
