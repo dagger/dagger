@@ -11,5 +11,9 @@ Work in progress. This is not ready for usage yet
 - [x] dagger cli downloader
 - [x] dagger network session
 - [ ] graphql rust codegen (User API)
+  - [x] Scalars
+  - [x] Enums
+  - [x] Input
+  - [ ] Objects
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
