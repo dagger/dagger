@@ -1,3 +1,5 @@
+pub mod scalar;
+
 use std::sync::Arc;
 
 use genco::prelude::rust::Tokens;
@@ -25,7 +27,7 @@ pub trait Handler {
         let name = t.name.as_ref().ok_or(eyre::anyhow!("name not found"))?;
 
         Ok(quote! {
-            pub $name {} {
+            pub struct $name {} {
                 // TODO: Add fields
             }
         })
@@ -35,7 +37,7 @@ pub trait Handler {
         let name = t.name.as_ref().ok_or(eyre::anyhow!("name not found"))?;
 
         Ok(quote! {
-            pub $name {} {
+            impl $name {} {
                 // TODO: Add fields
             }
         })
@@ -48,6 +50,7 @@ pub type Handlers = Vec<DynHandler>;
 #[cfg(test)]
 mod tests {
     use graphql_introspection_query::introspection_response::FullType;
+    use pretty_assertions::assert_eq;
 
     use super::Handler;
 
@@ -73,8 +76,8 @@ mod tests {
         assert_eq!(
             res,
             "
-pub SomeName {} { }
-pub SomeName {} { }
+pub struct SomeName {} { }
+impl SomeName {} { }
 "
             .to_string()
         );

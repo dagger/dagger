@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use graphql_introspection_query::introspection_response::{
     FullType, IntrospectionResponse, Schema,
 };
+use itertools::Itertools;
 
 use crate::{
-    handlers::{DynHandler, Handlers},
+    handlers::{scalar::Scalar, DynHandler, Handlers},
     predicates::is_custom_scalar_type,
 };
 
@@ -14,7 +17,9 @@ pub struct CodeGeneration {
 
 impl CodeGeneration {
     pub fn new() -> Self {
-        Self { handlers: vec![] }
+        Self {
+            handlers: vec![Arc::new(Scalar {})],
+        }
     }
 
     pub fn generate(&self, schema: &IntrospectionResponse) -> eyre::Result<String> {
@@ -34,8 +39,34 @@ impl CodeGeneration {
 
         let types = get_types(schema)?;
         //let remaining: Vec<Option<String>> = types.into_iter().map(type_name).collect();
+        //
+        for (handler, types) in self.group_by_handlers(&types) {
+            for t in types {
+                if let Some(_) = self.type_name(&t) {
+                    let rendered = handler.render(&t)?;
+                    output.push_str(&rendered)
+                }
+            }
+        }
 
-        todo!()
+        Ok(output)
+    }
+
+    pub fn group_by_handlers(&self, types: &Vec<&FullType>) -> Vec<(DynHandler, Vec<FullType>)> {
+        let mut group = vec![];
+
+        for handler in self.handlers.iter() {
+            let mut group_types: Vec<FullType> = vec![];
+            for t in types.iter() {
+                if handler.predicate(*t) {
+                    group_types.push(t.clone().clone());
+                }
+            }
+
+            group.push((handler.clone(), group_types))
+        }
+
+        group
     }
 
     pub fn type_name(&self, t: &FullType) -> Option<String> {

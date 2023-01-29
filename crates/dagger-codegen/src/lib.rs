@@ -9,6 +9,8 @@ mod tests {
 
     use crate::codegen::CodeGeneration;
 
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn can_generate_from_schema() {
         let schema: IntrospectionResponse = serde_json::from_str(INTROSPECTION_QUERY).unwrap();
