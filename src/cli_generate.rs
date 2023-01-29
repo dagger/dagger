@@ -1,6 +1,6 @@
 use clap::{Arg, ArgMatches};
 
-use crate::{code_generation::CodeGeneration, config::Config, engine::Engine, session::Session};
+use crate::{config::Config, engine::Engine, session::Session};
 
 #[allow(dead_code)]
 pub struct GenerateCommand;
@@ -17,12 +17,12 @@ impl GenerateCommand {
         let session = Session::new();
         let req = session.start(&cfg, &conn)?;
         let schema = session.schema(req)?;
-        let code = CodeGeneration::generate(&schema)?;
+        //let code = CodeGeneration::generate(&schema)?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
             // TODO: Write to file
         } else {
-            println!("{}", code);
+            //println!("{}", code);
         }
 
         Ok(())
