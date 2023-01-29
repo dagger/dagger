@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
-use genco::{prelude::rust, quote, quote_in};
+use genco::{prelude::rust, quote};
 use graphql_introspection_query::introspection_response::{
     FullType, IntrospectionResponse, Schema,
 };
-use itertools::Itertools;
 
 use crate::{
     handlers::{scalar::Scalar, DynHandler, Handlers},
@@ -47,7 +46,6 @@ impl CodeGeneration {
             for t in types {
                 if let Some(_) = self.type_name(&t) {
                     let rendered = handler.render(&t)?;
-
                     output.push();
                     output.append(rendered);
                 }

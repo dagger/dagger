@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use clap::{Arg, ArgMatches};
 use dagger_codegen::codegen::CodeGeneration;
 
@@ -21,7 +23,8 @@ impl GenerateCommand {
         let code = CodeGeneration::new().generate(&schema)?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
-            // TODO: Write to file
+            let mut file = std::fs::File::create(output)?;
+            file.write(code.as_bytes())?;
         } else {
             println!("{}", code);
         }

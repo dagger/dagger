@@ -30,7 +30,7 @@ impl Handler for Scalar {
         let name = t.name.as_ref().ok_or(eyre::anyhow!("name not found"))?;
 
         Ok(quote! {
-            pub struct $name (Scalar);
+            pub struct $name(Scalar);
         })
     }
 
