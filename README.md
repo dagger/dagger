@@ -18,6 +18,7 @@ Work in progress. This is not ready for usage yet
 - [ ] Implement context and querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
+- [ ] document usage
 
 ## Architecture
 
