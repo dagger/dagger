@@ -6,6 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dagger-core = { path = "../dagger-core" }
+
 eyre = "0.6.8"
 genco = "0.17.3"
 graphql-introspection-query = "0.2.0"

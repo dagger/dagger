@@ -9,4 +9,6 @@ description = "A dagger sdk for rust, written in rust"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dagger-core = { path = "../dagger-core" }
+
 genco = "0.17.3"

@@ -1,3 +1,4 @@
+pub mod enumeration;
 pub mod scalar;
 mod utility;
 

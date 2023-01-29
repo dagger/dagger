@@ -29,8 +29,10 @@ impl Handler for Scalar {
     fn render_struct(&self, t: &FullType) -> eyre::Result<genco::prelude::rust::Tokens> {
         let name = t.name.as_ref().ok_or(eyre::anyhow!("name not found"))?;
 
+        let scalar = rust::import("dagger_core", "Scalar");
+
         Ok(quote! {
-            pub struct $name(Scalar);
+            pub struct $name($scalar);
         })
     }
 
