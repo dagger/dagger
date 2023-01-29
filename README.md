@@ -15,5 +15,6 @@ Work in progress. This is not ready for usage yet
   - [x] Enums
   - [x] Input
   - [ ] Objects
+- [ ] Implement context and querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
