@@ -1,0 +1,11 @@
+[package]
+name = "dagger-sdk"
+version = "0.1.0"
+edition = "2021"
+readme = "README.md"
+license-file = "LICENSE.MIT"
+description = "A dagger sdk for rust, written in rust"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

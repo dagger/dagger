@@ -1,6 +1,6 @@
 [package]
 name = "dagger-rs"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
@@ -14,7 +14,10 @@ dirs = "4.0.0"
 eyre = "0.6.8"
 flate2 = { version = "1.0.25", features = ["zlib"] }
 graphql-introspection-query = "0.2.0"
-graphql_client = { version = "0.12.0", features = ["reqwest", "reqwest-blocking"] }
+graphql_client = { version = "0.12.0", features = [
+  "reqwest",
+  "reqwest-blocking",
+] }
 hex = "0.4.3"
 hex-literal = "0.3.4"
 platform-info = "1.0.2"
