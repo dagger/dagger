@@ -10,7 +10,7 @@ use genco::prelude::*;
 use graphql_introspection_query::introspection_response::FullType;
 
 pub trait Handler {
-    fn predicate(&self, t: &FullType) -> bool {
+    fn predicate(&self, _t: &FullType) -> bool {
         false
     }
 

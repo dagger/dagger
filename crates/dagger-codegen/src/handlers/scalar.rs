@@ -36,7 +36,7 @@ impl Handler for Scalar {
         })
     }
 
-    fn render_impl(&self, t: &FullType) -> eyre::Result<genco::prelude::rust::Tokens> {
+    fn render_impl(&self, _t: &FullType) -> eyre::Result<genco::prelude::rust::Tokens> {
         todo!()
     }
 }

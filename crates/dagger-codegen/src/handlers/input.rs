@@ -124,7 +124,7 @@ impl Handler for Input {
 #[cfg(test)]
 mod tests {
     use graphql_introspection_query::introspection_response::{
-        FullType, FullTypeFields, FullTypeInputFields, InputValue, TypeRef, __TypeKind,
+        FullType, FullTypeInputFields, InputValue, TypeRef, __TypeKind,
     };
     use pretty_assertions::assert_eq;
 
