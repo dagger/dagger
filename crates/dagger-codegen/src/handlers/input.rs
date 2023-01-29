@@ -29,9 +29,6 @@ impl Input {
     }
 
     fn render_input_field(&self, field: &FullTypeInputFields) -> eyre::Result<rust::Tokens> {
-        let name = &field.input_value.name;
-
-        let mut inner: Option<&TypeRef> = None;
         let inner = &field.input_value.type_;
         self.render_type_ref(inner)
     }
