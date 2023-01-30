@@ -2,6 +2,7 @@ import functools
 import logging
 import typing
 from collections import deque
+from collections.abc import Sequence
 from typing import Any, Callable, ParamSpec, TypeVar
 
 import anyio
@@ -108,22 +109,42 @@ class Context:
         return self._get_value(result.data, return_type)
 
     async def resolve_ids(self) -> None:
+        """Replace Type object instances with their ID implicitly."""
         # mutating to avoid re-fetching on forked pipeline
         async def _resolve_id(pos: int, k: str, v: IDType):
             sel = self.selections[pos]
             sel.args[k] = await v.id()
 
+        async def _resolve_seq_id(pos: int, idx: int, k: str, v: IDType):
+            sel = self.selections[pos]
+            sel.args[k][idx] = await v.id()
+
         # resolve all ids concurrently
         async with anyio.create_task_group() as tg:
             for i, sel in enumerate(self.selections):
                 for k, v in sel.args.items():
-                    if isinstance(v, (Type, IDType)):
+                    # check if it's a sequence of Type objects
+                    if TypeSequence.is_bearable(v):
+                        # make sure it's a list, to mutate by index
+                        sel.args[k] = v = list(v)
+                        for seq_i, seq_v in enumerate(v):
+                            if isinstance(seq_v, IDType):
+                                tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
+                    elif isinstance(v, (Type, IDType)):
                         tg.start_soon(_resolve_id, i, k, v)
 
     def resolve_ids_sync(self) -> None:
+        """Replace Type object instances with their ID implicitly."""
         for sel in self.selections:
             for k, v in sel.args.items():
-                if isinstance(v, (Type, IDType)):
+                # check if it's a sequence of Type objects
+                if TypeSequence.is_bearable(v):
+                    # make sure it's a list, to mutate by index
+                    sel.args[k] = v = list(v)
+                    for seq_i, seq_v in enumerate(v):
+                        if isinstance(seq_v, IDType):
+                            sel.args[k][seq_i] = seq_v.id()
+                elif isinstance(v, (Type, IDType)):
                     sel.args[k] = v.id()
 
     def _get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
@@ -192,6 +213,9 @@ class Root(Type):
     @property
     def graphql_name(self) -> str:
         return "Query"
+
+
+TypeSequence = TypeHint(Sequence[Type])
 
 
 def typecheck(func: Callable[P, T]) -> Callable[P, T]:

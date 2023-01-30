@@ -5,6 +5,7 @@ from textwrap import dedent
 import pytest
 
 import dagger
+from dagger.api.gen_sync import Platform
 from dagger.exceptions import ExecuteTimeoutError
 
 pytestmark = [
@@ -80,3 +81,20 @@ def test_execute_timeout():
                 .with_exec(["sleep", "2"])
                 .stdout()
             )
+
+
+def test_object_sequence(tmp_path):
+    # Test that a sequence of objects doesn't fail.
+    # In this case, we're using Container.export's
+    # platform_variants which is a Sequence[Container].
+    with dagger.Connection() as client:
+        variants = [
+            client.container(platform=Platform(platform))
+            .from_("alpine:3.16.2")
+            .with_exec(["uname", "-m"])
+            for platform in ("linux/amd64", "linux/arm64")
+        ]
+        client.container().export(
+            path=str(tmp_path / "export.tar.gz"),
+            platform_variants=variants,
+        )
