@@ -188,6 +188,7 @@ export class Bin implements EngineConn {
       )
     }
 
+    // Need to find a better way to handle this part
     // At this stage something wrong happened, `for await` didn't return anything
     // await the subprocess to catch the error
     try {
