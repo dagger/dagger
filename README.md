@@ -10,12 +10,13 @@ Work in progress. This is not ready for usage yet
 
 - [x] dagger cli downloader
 - [x] dagger network session
-- [ ] graphql rust codegen (User API)
+- [x] graphql rust codegen (User API)
   - [x] Scalars
   - [x] Enums
   - [x] Input
-  - [ ] Objects
+  - [x] Objects
 - [ ] Implement context and querier
+- [ ] Add codegen to hook into querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
 - [ ] document usage
