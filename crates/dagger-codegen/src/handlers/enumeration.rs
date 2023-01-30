@@ -23,7 +23,9 @@ impl Handler for Enumeration {
 
         let out = quote! {
             $description
-            pub enum $name {}
+            pub enum $name {
+                // TODO: Add individual items
+            }
         };
 
         Ok(out)

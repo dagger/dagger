@@ -1,6 +1,10 @@
 pub mod enumeration;
+mod fields;
 pub mod input;
+mod input_field;
+pub mod object;
 pub mod scalar;
+mod type_ref;
 mod utility;
 
 use std::sync::Arc;

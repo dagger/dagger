@@ -55,6 +55,13 @@ pub fn is_list_type(t: &TypeRef) -> bool {
     false
 }
 
+pub fn is_object_type(t: &FullType) -> bool {
+    if let Some(introspection_response::__TypeKind::OBJECT) = t.kind {
+        return true;
+    }
+    false
+}
+
 pub fn is_custom_scalar_type(t: &FullType) -> bool {
     if is_scalar_type(t) {
         // TODO: Insert scalar

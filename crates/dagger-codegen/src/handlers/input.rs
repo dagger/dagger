@@ -1,93 +1,12 @@
 use genco::prelude::rust;
 use genco::prelude::*;
-use graphql_introspection_query::introspection_response::{FullType, FullTypeInputFields, TypeRef};
+use graphql_introspection_query::introspection_response::FullType;
 
-use crate::predicates::{
-    is_custom_scalar_type_ref, is_input_object_type, is_list_type, is_required_type_ref,
-    is_scalar_type_ref,
-};
+use crate::predicates::is_input_object_type;
 
-use super::{utility::render_description, Handler};
+use super::{input_field::render_input_fields, utility::render_description, Handler};
 
 pub struct Input;
-impl Input {
-    fn render_input_fields(
-        &self,
-        input_fields: &Vec<FullTypeInputFields>,
-    ) -> eyre::Result<Option<rust::Tokens>> {
-        let mut fields: Vec<(String, rust::Tokens)> = vec![];
-        for field in input_fields.iter() {
-            fields.push((
-                field.input_value.name.clone(),
-                self.render_input_field(field)?,
-            ));
-        }
-
-        Ok(Some(quote! {
-            $(for (name, field) in fields => pub $name: $field $['\n'] )
-        }))
-    }
-
-    fn render_input_field(&self, field: &FullTypeInputFields) -> eyre::Result<rust::Tokens> {
-        let inner = &field.input_value.type_;
-        self.render_type_ref(inner)
-    }
-
-    fn render_type_ref(&self, inner: &TypeRef) -> eyre::Result<rust::Tokens> {
-        let extract_of_type = |t: &TypeRef| -> Option<TypeRef> {
-            return t.clone().of_type.map(|t| *t);
-        };
-
-        if !is_required_type_ref(inner) {
-            if let Some(inner_of_type) = extract_of_type(inner) {
-                let inner_field = self.render_type_ref(&inner_of_type)?;
-                return Ok(quote! {
-                    Option<$inner_field>
-                });
-            }
-        }
-
-        if is_list_type(&inner) {
-            if let Some(inner_of_type) = extract_of_type(inner) {
-                let inner_field = self.render_type_ref(&inner_of_type)?;
-                return Ok(quote! {
-                    Vec<$inner_field>
-                });
-            }
-        }
-
-        if is_custom_scalar_type_ref(&inner) {
-            if let Some(inner_of_type) = extract_of_type(inner) {
-                let inner_field = self.render_type_ref(&inner_of_type)?;
-                return Ok(quote! {
-                    $inner_field
-                });
-            }
-        }
-
-        if is_scalar_type_ref(&inner) {
-            let name = match inner.name.as_ref().map(|s| s.as_str()) {
-                Some("ID") => "ID",
-                Some("Int") => "Int",
-                Some("String") => "String",
-                Some("Float") => "Float",
-                Some("Boolean") => "Boolean",
-                Some("Date") => "Date",
-                Some("DateTime") => "DateTime",
-                Some("Time") => "Time",
-                Some("Decimal") => "Decimal",
-                Some(n) => n,
-                _ => eyre::bail!("missing type in the end of chain"),
-            };
-
-            return Ok(quote! {
-                $name
-            });
-        }
-
-        eyre::bail!("could not determine type")
-    }
-}
 
 impl Handler for Input {
     fn predicate(&self, t: &FullType) -> bool {
@@ -104,7 +23,7 @@ impl Handler for Input {
         let input = rust::import("dagger_core", "Input");
 
         let fields = match t.input_fields.as_ref() {
-            Some(i) => self.render_input_fields(i)?,
+            Some(i) => render_input_fields(i)?,
             None => None,
         };
 
