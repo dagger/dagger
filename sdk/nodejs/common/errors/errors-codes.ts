@@ -25,9 +25,9 @@ export const ERROR_CODES = {
   EngineSessionConnectionTimeoutError: "D104",
 
   /**
-   * {@link EngineSessionEOFError}
+   * {@link EngineSessionError}
    */
-  EngineSessionEOFError: "D105",
+  EngineSessionError: "D105",
 
   /**
    * {@link InitEngineSessionBinaryError}
