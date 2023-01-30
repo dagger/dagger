@@ -3,7 +3,7 @@ use graphql_introspection_query::introspection_response::FullType;
 
 use crate::predicates::is_object_type;
 
-use super::{fields, utility::render_description, Handler};
+use super::{fields, input_field, utility::render_description, Handler};
 
 pub struct Object;
 
@@ -26,9 +26,15 @@ impl Handler for Object {
             None => None,
         };
 
+        let input_fields = match t.input_fields.as_ref() {
+            Some(i) => input_field::render_input_fields(i)?,
+            None => None,
+        };
+
         let out = quote! {
             $(if description.is_some() => $description)
             pub struct $name {
+                $(if input_fields.is_some() => $input_fields)
             }
 
             impl $name {
