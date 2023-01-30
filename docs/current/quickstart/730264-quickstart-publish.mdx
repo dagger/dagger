@@ -16,7 +16,7 @@ import TabItem from "@theme/TabItem";
 
 At this point, your Dagger pipeline has tested, built and delivered the application to your local host. But why not also publish a container image of the application to a registry?
 
-Dagger SDKs can do this natively via their `publish()` method. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry.
+Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -26,9 +26,7 @@ Dagger SDKs can do this natively via their `publish()` method. So, let's update 
 </TabItem>
 <TabItem value="Node.js">
 
-
-```javascript file=snippets/publish/index.mjs
-```
+<iframe class="embed" src="https://play.dagger.cloud/embed/xlXjwXsjvGt"></iframe>
 
 </TabItem>
 <TabItem value="Python">
