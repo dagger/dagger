@@ -1,32 +1,30 @@
-use graphql_introspection_query::introspection_response::{
-    self, FullType, FullTypeInputFields, TypeRef, __TypeKind,
-};
+use dagger_core::introspection::{FullType, FullTypeInputFields, TypeRef, __TypeKind};
 
 use crate::models::Scalars;
 
 pub fn is_scalar_type(t: &FullType) -> bool {
-    if let Some(introspection_response::__TypeKind::SCALAR) = t.kind {
+    if let Some(__TypeKind::SCALAR) = t.kind {
         return true;
     }
     false
 }
 
 pub fn is_scalar_type_ref(t: &TypeRef) -> bool {
-    if let Some(introspection_response::__TypeKind::SCALAR) = t.kind {
+    if let Some(__TypeKind::SCALAR) = t.kind {
         return true;
     }
     false
 }
 
 pub fn is_enum_type(t: &FullType) -> bool {
-    if let Some(introspection_response::__TypeKind::ENUM) = t.kind {
+    if let Some(__TypeKind::ENUM) = t.kind {
         return true;
     }
     false
 }
 
 pub fn is_input_object_type(t: &FullType) -> bool {
-    if let Some(introspection_response::__TypeKind::INPUT_OBJECT) = t.kind {
+    if let Some(__TypeKind::INPUT_OBJECT) = t.kind {
         return true;
     }
     false
@@ -49,14 +47,14 @@ pub fn is_required_type_ref(t: &TypeRef) -> bool {
 }
 
 pub fn is_list_type(t: &TypeRef) -> bool {
-    if let Some(introspection_response::__TypeKind::LIST) = t.kind {
+    if let Some(__TypeKind::LIST) = t.kind {
         return true;
     }
     false
 }
 
 pub fn is_object_type(t: &FullType) -> bool {
-    if let Some(introspection_response::__TypeKind::OBJECT) = t.kind {
+    if let Some(__TypeKind::OBJECT) = t.kind {
         return true;
     }
     false

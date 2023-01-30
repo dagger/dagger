@@ -1,5 +1,5 @@
+use dagger_core::introspection::FullTypeInputFields;
 use genco::{prelude::rust, quote};
-use graphql_introspection_query::introspection_response::FullTypeInputFields;
 
 use super::type_ref;
 

@@ -1,6 +1,6 @@
+use dagger_core::introspection::TypeRef;
 use genco::prelude::rust;
 use genco::prelude::*;
-use graphql_introspection_query::introspection_response::TypeRef;
 
 use crate::predicates::{
     is_custom_scalar_type_ref, is_list_type, is_required_type_ref, is_scalar_type_ref,

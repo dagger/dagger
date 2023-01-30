@@ -9,9 +9,9 @@ mod utility;
 
 use std::sync::Arc;
 
+use dagger_core::introspection::FullType;
 use genco::prelude::rust::Tokens;
 use genco::prelude::*;
-use graphql_introspection_query::introspection_response::FullType;
 
 pub trait Handler {
     fn predicate(&self, _t: &FullType) -> bool {
@@ -55,7 +55,7 @@ pub type Handlers = Vec<DynHandler>;
 
 #[cfg(test)]
 mod tests {
-    use graphql_introspection_query::introspection_response::FullType;
+    use dagger_core::introspection::FullType;
     use pretty_assertions::assert_eq;
 
     use super::Handler;

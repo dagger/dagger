@@ -1,3 +1,5 @@
+pub mod introspection;
+
 pub struct Scalar(String);
 
 pub struct Boolean(bool);

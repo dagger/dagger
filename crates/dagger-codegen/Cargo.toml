@@ -11,7 +11,6 @@ dagger-core = { path = "../dagger-core" }
 
 eyre = "0.6.8"
 genco = "0.17.3"
-graphql-introspection-query = "0.2.0"
 itertools = "0.10.5"
 pretty_assertions = "1.3.0"
 serde = { version = "1.0.152", features = ["derive"] }

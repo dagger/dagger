@@ -1,5 +1,5 @@
+use dagger_core::introspection::FullType;
 use genco::{prelude::rust, quote};
-use graphql_introspection_query::introspection_response::FullType;
 
 use crate::predicates::is_object_type;
 
@@ -50,7 +50,7 @@ impl Handler for Object {
 
 #[cfg(test)]
 mod tests {
-    use graphql_introspection_query::introspection_response::{
+    use dagger_core::introspection::{
         FullType, FullTypeFields, FullTypeFieldsType, TypeRef, __TypeKind,
     };
     use pretty_assertions::assert_eq;
@@ -92,8 +92,14 @@ mod tests {
 
 
 /// A directory whose contents persists across sessions
-pub struct CacheVolume {
-    pub id: Option<CacheID>
+pub struct CacheVolume {}
+
+impl CacheVolume {
+    pub fn id(
+        &self,
+    ) -> Option<CacheID> {
+        todo!()
+    }
 }
 
 impl Input for CacheVolume {}

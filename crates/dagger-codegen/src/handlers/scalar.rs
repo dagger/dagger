@@ -1,5 +1,5 @@
+use dagger_core::introspection::FullType;
 use genco::{prelude::rust, quote};
-use graphql_introspection_query::introspection_response::FullType;
 
 use crate::predicates::is_custom_scalar_type;
 

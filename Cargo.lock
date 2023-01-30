@@ -190,7 +190,6 @@ dependencies = [
  "dagger-core",
  "eyre",
  "genco",
- "graphql-introspection-query",
  "itertools",
  "pretty_assertions",
  "serde",
@@ -200,6 +199,9 @@ dependencies = [
 [[package]]
 name = "dagger-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "dagger-rs"
@@ -207,6 +209,7 @@ version = "0.1.2"
 dependencies = [
  "clap",
  "dagger-codegen",
+ "dagger-core",
  "dirs",
  "eyre",
  "flate2",

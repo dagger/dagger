@@ -1,6 +1,6 @@
+use dagger_core::introspection::FullType;
 use genco::prelude::rust;
 use genco::prelude::*;
-use graphql_introspection_query::introspection_response::FullType;
 
 use crate::predicates::is_input_object_type;
 
@@ -42,7 +42,7 @@ impl Handler for Input {
 
 #[cfg(test)]
 mod tests {
-    use graphql_introspection_query::introspection_response::{
+    use dagger_core::introspection::{
         FullType, FullTypeInputFields, InputValue, TypeRef, __TypeKind,
     };
     use pretty_assertions::assert_eq;
@@ -101,9 +101,9 @@ mod tests {
         let expected = r#"use dagger_core::Input;
 
 pub struct BuildArg {
-    pub name: Option<String>
+    pub name: Option<String>,
 
-    pub value: Option<String>
+    pub value: Option<String>,
 }
 
 impl Input for BuildArg {}

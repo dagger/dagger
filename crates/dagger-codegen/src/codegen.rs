@@ -3,10 +3,8 @@ use std::{
     sync::Arc,
 };
 
+use dagger_core::introspection::{FullType, IntrospectionResponse, Schema};
 use genco::{fmt, prelude::rust, prelude::*, quote};
-use graphql_introspection_query::introspection_response::{
-    FullType, IntrospectionResponse, Schema,
-};
 
 use crate::handlers::{
     enumeration::Enumeration, input::Input, object::Object, scalar::Scalar, DynHandler, Handlers,

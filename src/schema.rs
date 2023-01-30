@@ -1,4 +1,4 @@
-use graphql_introspection_query::introspection_response::IntrospectionResponse;
+use dagger_core::introspection::IntrospectionResponse;
 
 use crate::{config::Config, engine::Engine, session::Session};
 

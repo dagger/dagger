@@ -1,5 +1,5 @@
+use dagger_core::introspection::{self, IntrospectionResponse};
 use graphql_client::GraphQLQuery;
-use graphql_introspection_query::introspection_response::IntrospectionResponse;
 use reqwest::{
     blocking::{Client, RequestBuilder},
     header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
@@ -65,7 +65,7 @@ impl Session {
             return Err(eyre::anyhow!(error_message));
         }
 
-        let json: IntrospectionResponse = res.json()?;
+        let json: introspection::IntrospectionResponse = res.json()?;
 
         Ok(json)
     }
