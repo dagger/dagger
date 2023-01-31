@@ -167,7 +167,9 @@ func (host *Host) NormalizeDest(dest string) (string, error) {
 		return dest, nil
 	}
 
-	if !strings.HasPrefix(dest, wd+"/") {
+	// filepath.ToSlash is needed for Windows
+	// filepath.Clean transforms / to \ on Windows
+	if !strings.HasPrefix(filepath.ToSlash(dest), filepath.ToSlash(wd+"/")) {
 		// writing outside of workdir
 		return "", fmt.Errorf("destination %q escapes workdir", dest)
 	}
