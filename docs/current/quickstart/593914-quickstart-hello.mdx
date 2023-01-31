@@ -1,0 +1,96 @@
+---
+slug: /593914/quickstart-hello
+displayed_sidebar: "quickstart"
+hide_table_of_contents: true
+title: "Write your first Dagger pipeline"
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## Write your first Dagger pipeline
+
+You're now ready to dive into Dagger and write your first pipeline!
+
+This first example is fairly simple: it creates a Dagger client using your chosen SDK, initializes a container, executes a command in that container and prints the output.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+In the `ci` directory, create a file named `main.go` and add the following code to it.
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/lGhP6fB2G2r"></iframe>
+
+This Go program imports the Dagger SDK and defines a `main()` function for the pipeline operations. This function performs the following operations:
+
+- It creates a Dagger client with `dagger.Connect()`. This client provides an interface for executing commands against the Dagger engine.
+- It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is `golang:1.19`. This method returns a `Container` representing an OCI-compatible container image.
+- It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the command `go version`, which returns the Go version string. The `withExec()` method returns a revised `Container` with the results of command execution.
+- It retrieves the output stream of the last executed with the `Container.Stdout()` method and prints the result to the console.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
+Dagger resolves the pipeline and outputs a string similar to the one below.
+Install the Dagger SDK
+</TabItem>
+<TabItem value="Node.js">
+
+In the `ci` directory, create a new file named `index.mjs` and add the following code to it.
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/USkiC0wbQ5k"></iframe>
+
+This Node.js script imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
+
+- It creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
+- It uses the client's `container().from()` method to initialize a new container from a base image. In this example, the base image is `node:16-slim`. This method returns a `Container` representing an OCI-compatible container image.
+- It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the command `node -v`, which returns the Node version string. The `withExec()` method returns a revised `Container` with the results of command execution.
+- It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
+Dagger resolves the pipeline and outputs a string similar to the one below.
+
+```shell
+Hello from Dagger and Node v16.18.1
+```
+
+</TabItem>
+<TabItem value="Python">
+
+In the `ci` directory, create a new file named `main.py` and add the following code to it.
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/FP6MBw_8qFm"></iframe>
+
+This Python script imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
+
+- It creates a Dagger client with `with dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+- It uses the client's `container().from_()` method to initialize a new container from a base image. In this example, the base image is `python:3.11-slim`. This method returns a `Container` representing an OCI-compatible container image.
+- It uses the `Container.with_exec()` method to define the command to be executed in the container - in this case, the command `python -V`, which returns the Python version string. The `with_exec()` method returns a revised `Container` with the results of command execution.
+- It retrieves the output stream of the last executed with the `Container.stdout()` method and prints the result to the console.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
+
+Dagger resolves the pipeline and outputs a string similar to the one below.
+
+```shell
+Hello from Dagger and Python v3.11.1
+```
+
+</TabItem>
+</Tabs>
+
+Well done! You've just successfully written and run your first Dagger pipeline!
