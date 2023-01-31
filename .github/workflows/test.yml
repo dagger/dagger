@@ -8,6 +8,10 @@ on:
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   engine:
     runs-on: ubuntu-22.04-16c-64g-600gb
@@ -19,15 +23,49 @@ jobs:
         with:
           go-version: 1.19
       - uses: actions/checkout@v3
-      - run: ./hack/make engine:build
-      - run: echo $PWD/bin >> $GITHUB_PATH
       - run: ./hack/make engine:test
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs dagger-engine.dev
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
+      - run: go build ./cmd/otel-collector
+        if: always()
+      - run: |
+          ./otel-collector /tmp/journal.log \
+            --name "${{ github.repository }}-${{ github.workflow }}:${{ github.job }}" \
+            --tag "github.repository=${{ github.repository }}" \
+            --tag "github.ref=${{ github.ref }}" \
+            --tag "github.workflow=${{ github.workflow }}" \
+            --tag "github.job=engine" \
+            --tag "github.run_number=${{ github.run_number }}" \
+            --tag "github.run_attempt=${{ github.run_attempt }}" \
+            --tag "github.run_url=${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --tag "github.runner_name=${{ runner.name }}" \
+            --tag "github.runner_arch=${{ runner.arch }}" \
+            > ./comment.md
+        shell: bash
+        if: always()
+        env:
+          OTEL_SERVICE_NAME: "dagger"
+          OTEL_EXPORTER_OTLP_ENDPOINT: "https://tempo-us-central1.grafana.net:443"
+          OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic MzUzMzUzOmdsY19leUp2SWpvaU56Y3dOelkwSWl3aWJpSTZJbTFsZEhKcFkzTnNiMmR6ZEhKaFkyVnpkM0pwZEdWeUxXZHBkR2gxWWkxa1lXZG5aWEl0WkdGbloyVnlMWEpsY0c4dFlXNWtMV1p2Y210eklpd2lheUk2SWprNE15MU1YM00wZkhwZExETWpOSG8vTXlzd0t5ZzFNQ0lzSW0waU9uc2ljaUk2SW5WekluMTk="
+          GRAFANA_CLOUD_USER_ID: "356840"
+          GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
+          GRAFANA_CLOUD_API_KEY: "glc_eyJvIjoiNzcwNzY0IiwibiI6Im1ldHJpY3Nsb2dzdHJhY2Vzd3JpdGVyLWdpdGh1Yi1kYWdnZXItZGFnZ2VyLXJlcG8tYW5kLWZvcmtzIiwiayI6Ijk4My1MX3M0fHpdLDMjNHo/MyswKyg1MCIsIm0iOnsiciI6InVzIn19"
+      - uses: actions/upload-artifact@v3
+        name: Upload otel-collector journal.log
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
+      - uses: actions/upload-artifact@v3
+        name: Upload otel-collector summary
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-summary.md
+          path: ./comment.md
 
   # Run egine tests with race condition detection
   # https://go.dev/blog/race-detector

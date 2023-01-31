@@ -18,11 +18,6 @@
   force = true
 
 [[redirects]]
-from = "/t"
-to = "https://api.amplitude.com"
-status = 200
-
-[[redirects]]
 from = "/api/reference"
 to = "/api/reference/"
 status = 200

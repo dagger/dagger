@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/core"
 	bkclient "github.com/moby/buildkit/client"
@@ -68,4 +69,26 @@ func (w WrappedVertex) Inputs() []string {
 		inputs = append(inputs, i.String())
 	}
 	return inputs
+}
+
+func (w WrappedVertex) Started() time.Time {
+	if w.v.Started == nil {
+		return time.Time{}
+	}
+	return *w.v.Started
+}
+
+func (w WrappedVertex) Completed() time.Time {
+	if w.v.Completed == nil {
+		return time.Time{}
+	}
+	return *w.v.Completed
+}
+
+func (w WrappedVertex) Duration() time.Duration {
+	return w.Completed().Sub(w.Started())
+}
+
+func (w WrappedVertex) Cached() bool {
+	return w.v.Cached
 }

@@ -8,15 +8,17 @@ import (
 
 	"github.com/iancoleman/strcase"
 
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
 var (
-	funcMap = template.FuncMap{
+	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
+	funcMap    = template.FuncMap{
 		"CommentToLines":      commentToLines,
 		"FormatDeprecation":   formatDeprecation,
-		"FormatInputType":     formatInputType,
-		"FormatOutputType":    formatOutputType,
+		"FormatInputType":     commonFunc.FormatInputType,
+		"FormatOutputType":    commonFunc.FormatOutputType,
 		"FormatName":          formatName,
 		"GetOptionalArgs":     getOptionalArgs,
 		"GetRequiredArgs":     getRequiredArgs,
@@ -74,16 +76,6 @@ func formatDeprecation(s string) []string {
 	return commentToLines("@deprecated " + s)
 }
 
-// formatType formats a GraphQL type into Go
-// Example: `String` -> `string`
-func formatInputType(r *introspection.TypeRef) string {
-	return formatType(r, true)
-}
-
-func formatOutputType(r *introspection.TypeRef) string {
-	return formatType(r, false)
-}
-
 // isCustomScalar checks if the type is actually custom.
 func isCustomScalar(t *introspection.Type) bool {
 	switch introspection.Scalar(t.Name) {
@@ -92,74 +84,6 @@ func isCustomScalar(t *introspection.Type) bool {
 	default:
 		return true && t.Kind == introspection.TypeKindScalar
 	}
-}
-
-// formatType formats a GraphQL type into TypeScript
-// Example: `String` -> `string`
-func formatType(r *introspection.TypeRef, input bool) (representation string) {
-	var isList bool
-	for ref := r; ref != nil; ref = ref.OfType {
-		switch ref.Kind {
-		case introspection.TypeKindList:
-			isList = true
-			// add [] as suffix to the type
-			defer func() {
-				// dolanor: hackish way to handle this. Otherwise needs to refactor the whole loop logic.
-				if isList {
-					representation += "[]"
-				}
-			}()
-		case introspection.TypeKindScalar:
-			switch introspection.Scalar(ref.Name) {
-			case introspection.ScalarString:
-				representation += "string"
-				return representation
-			case introspection.ScalarInt, introspection.ScalarFloat:
-				representation += "number"
-				return representation
-			case introspection.ScalarBoolean:
-				representation += "boolean"
-				return representation
-			default:
-				// Custom scalar
-
-				// When used as an input, we're going to add objects as an alternative to ID scalars (e.g. `Container` and `ContainerID`)
-				// FIXME: do this dynamically rather than a hardcoded map.
-				rewrite := map[string]string{
-					"ContainerID": "Container",
-					"FileID":      "File",
-					"DirectoryID": "Directory",
-					"SecretID":    "Secret",
-					"SocketID":    "Socket",
-					"CacheID":     "CacheVolume",
-				}
-				if alias, ok := rewrite[ref.Name]; ok && input {
-					listChars := "[]"
-					if isList {
-						representation += alias + listChars
-					} else {
-						representation += alias
-					}
-					isList = false
-				} else {
-					representation += ref.Name
-				}
-				return representation
-			}
-		case introspection.TypeKindObject:
-			name := ref.Name
-			if name == "Query" {
-				name = "Client"
-			}
-			representation += formatName(name)
-			return representation
-		case introspection.TypeKindInputObject:
-			representation += formatName(ref.Name)
-			return representation
-		}
-	}
-
-	panic(r)
 }
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent

@@ -128,3 +128,20 @@ async def test_execute_timeout():
                 .with_exec(["sleep", "2"])
                 .stdout()
             )
+
+
+async def test_object_sequence(tmp_path):
+    # Test that a sequence of objects doesn't fail.
+    # In this case, we're using Container.export's
+    # platform_variants which is a Sequence[Container].
+    async with dagger.Connection() as client:
+        variants = [
+            client.container(platform=dagger.Platform(platform))
+            .from_("alpine:3.16.2")
+            .with_exec(["uname", "-m"])
+            for platform in ("linux/amd64", "linux/arm64")
+        ]
+        await client.container().export(
+            path=str(tmp_path / "export.tar.gz"),
+            platform_variants=variants,
+        )
