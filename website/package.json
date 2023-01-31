@@ -18,7 +18,7 @@
   "dependencies": {
     "@docusaurus/core": "^2.2.0",
     "@docusaurus/preset-classic": "^2.2.0",
-    "@docusaurus/theme-mermaid": "^2.2.0",
+    "@docusaurus/theme-mermaid": "^2.3.0",
     "@svgr/webpack": "^6.5.1",
     "amplitude-js": "^8.21.3",
     "clsx": "^1.2.1",

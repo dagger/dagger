@@ -14,7 +14,7 @@ import Client from "../api/client.gen.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
-  EngineSessionEOFError,
+  EngineSessionError,
   InitEngineSessionBinaryError,
 } from "../common/errors/index.js"
 import { ConnectParams } from "../connect.js"
@@ -140,7 +140,7 @@ export class Bin implements EngineConn {
     }
 
     this.subProcess = execaCommand(args.join(" "), {
-      stderr: opts.LogOutput || "ignore",
+      stderr: opts.LogOutput || "pipe",
       reject: true,
 
       // Kill the process if parent exit.
@@ -148,8 +148,7 @@ export class Bin implements EngineConn {
     })
 
     const stdoutReader = readline.createInterface({
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      input: this.subProcess.stdout!,
+      input: this.subProcess?.stdout as NodeJS.ReadableStream,
     })
 
     const timeOutDuration = 300000
@@ -176,7 +175,7 @@ export class Bin implements EngineConn {
 
   private async readConnectParams(
     stdoutReader: readline.Interface
-  ): Promise<ConnectParams> {
+  ): Promise<ConnectParams | undefined> {
     for await (const line of stdoutReader) {
       // parse the the line as json-encoded connect params
       const connectParams = JSON.parse(line) as ConnectParams
@@ -188,9 +187,17 @@ export class Bin implements EngineConn {
         { parsedLine: line }
       )
     }
-    throw new EngineSessionEOFError(
-      "No line was found to parse the engine connect params"
-    )
+
+    // Need to find a better way to handle this part
+    // At this stage something wrong happened, `for await` didn't return anything
+    // await the subprocess to catch the error
+    try {
+      await this.subProcess
+    } catch {
+      this.subProcess?.catch((e) => {
+        throw new EngineSessionError(e.stderr)
+      })
+    }
   }
 
   async Close(): Promise<void> {

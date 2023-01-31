@@ -87,6 +87,7 @@ $desktop-xl-width: 1160px;
 
 html[data-theme="dark"] {
   --ifm-background-color: var(--ifm-color-primary-dark);
+  --ifm-code-color: var(--ifm-color-primary-light);
   --ifm-navbar-background-color: var(--ifm-color-primary-darker);
   --ifm-menu-color: var(--ifm-color-primary-light);
   --ifm-menu-color-active: var(--ifm-color-primary-light);
@@ -97,7 +98,7 @@ html[data-theme="dark"] {
   --ifm-pagination-nav-color-hover: var(--ifm-color-primary-light);
   --ifm-tabs-color-active: var(--ifm-color-primary-light);
   --ifm-table-stripe-background: #2e526a;
-  --ifm-code-background: var(--ifm-color-primary-dark);
+  --ifm-code-background: var(--ifm-color-grey-dark);
   --ifm-heading-color: var(--ifm-color-primary-light);
   --ifm-menu-color-background-hover: var(--ifm-color-primary);
   --ifm-blockquote-color: var(--ifm-color-primary-light);
