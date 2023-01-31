@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger"
@@ -28,9 +29,10 @@ func main() {
 	runner := source.WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})
 
-	_, err = runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"}).
-		ExitCode(ctx)
+	out, err := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"}).
+		Stderr(ctx)
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println(out)
 }

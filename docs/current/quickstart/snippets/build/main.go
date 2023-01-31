@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger"
@@ -30,11 +31,18 @@ func main() {
 
 	test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
 
-	_, err = test.WithExec([]string{"npm", "run", "build"}).
-		Directory("./build").
-		Export(ctx, "./build")
+	buildDir := test.WithExec([]string{"npm", "run", "build"}).
+		Directory("./build")
 
+	_, err = buildDir.Export(ctx, "./build")
 	if err != nil {
 		panic(err)
 	}
+
+	e, err := buildDir.Entries(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Printf("build dir contents:\n %s\n", e)
 }

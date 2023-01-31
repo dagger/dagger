@@ -22,10 +22,15 @@ connect(async (client) => {
   // highlight-start
   // build application
   // write the build output to the host
-  await test
+  const buildDir = test
     .withExec(["npm", "run", "build"])
     .directory("./build")
-    .export("./build")
+
+  await buildDir.export("./build")
   // highlight-end
+
+  const e = await buildDir.entries()
+
+  console.log("build dir contents:\n", e)
 
 }, { LogOutput: process.stdout })

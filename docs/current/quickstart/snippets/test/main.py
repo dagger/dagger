@@ -25,7 +25,8 @@ async def main():
         runner = source.with_workdir("/src").with_exec(["npm", "install"])
 
         # run application tests
-        await runner.with_exec(["npm", "test", "--", "--watchAll=false"]).exit_code()
+        out = await runner.with_exec(["npm", "test", "--", "--watchAll=false"]).stderr()
 
+        print(out)
 
 anyio.run(main)

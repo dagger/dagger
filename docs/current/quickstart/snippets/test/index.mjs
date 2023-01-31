@@ -16,8 +16,9 @@ connect(async (client) => {
     .withExec(["npm", "install"])
 
   // run application tests
-  await runner
+  const out = await runner
     .withExec(["npm", "test", "--", "--watchAll=false"])
-    .exitCode()
+    .stderr()
+  console.log(out)
 
 }, { LogOutput: process.stdout })

@@ -30,11 +30,16 @@ async def main():
         # highlight-start
         # build application
         # writhe the build output to the host
-        await (
+        build_dir = (
             test.with_exec(["npm", "run", "build"])
             .directory("./build")
-            .export("./build")
         )
+
+        await build_dir.export("./build")
+
+        e = await build_dir.entries()
+
+        print(f"build dir contents:\n{e}")
         # highlight-end
 
 
