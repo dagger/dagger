@@ -6,6 +6,5 @@ DAGGER_SRC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")"/.. && pwd)"
 MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
 
 cd "$MAGEDIR"
-go run main.go -w "$DAGGER_SRC_ROOT" engine:dev
 
-exec go run main.go -w "$DAGGER_SRC_ROOT" "$@"
+exec go run main.go -w "$DAGGER_SRC_ROOT" engine:dev "$@"
