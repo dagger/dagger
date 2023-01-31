@@ -4,7 +4,7 @@
 	{{- $argsDesc := ArgsHaveDescription .Args }}
 	{{- $deprecationLines := FormatDeprecation .DeprecationReason }}
 	{{- if or .Description $argsDesc .IsDeprecated }}
-		{{- $desc := CommentToLines .Description | GetParamDescription }}
+		{{- $desc := CommentToLines .Description }}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
 {{""}}
 {{""}}
@@ -19,7 +19,7 @@
 		{{- /* Reference current arg to access it in range */ -}}
 		{{- $arg := . }}
 		{{- /* Write argument description */ -}}
-		{{- $desc := CommentToLines .Description | GetParamDescription }}
+		{{- $desc := CommentToLines .Description  }}
 		    {{- range $i, $line := $desc }}
 		        {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 		        {{- if (eq $i 0) }}
@@ -37,7 +37,7 @@
 		        {{- /* Reference current arg to access it in range */ -}}
 		        {{- $arg := . }}
 		        {{- /* Write argument description */ -}}
-		        {{- $desc := CommentToLines .Description | GetParamDescription }}
+		        {{- $desc := CommentToLines .Description }}
 		        {{- range $i, $line := $desc }}
 		            {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
 		            {{- if (eq $i 0) }}

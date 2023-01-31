@@ -1,7 +1,7 @@
 {{ define "type_field_comment" -}}
 	{{- if . -}}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
-		{{- $desc := CommentToLines . | GetParamDescription }}
+		{{- $desc := CommentToLines .  }}
   /**
 		{{- range $desc }}
    * {{ . }}
