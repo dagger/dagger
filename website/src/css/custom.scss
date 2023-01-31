@@ -738,11 +738,20 @@ img[alt="github-contribute"] {
 
 }
 
-.docs-doc-id-current\/quickstart\/quickstart-setup,
-.docs-doc-id-current\/quickstart\/quickstart-introduction {
+.docs-doc-id-current\/quickstart\/quickstart-hello,
+.docs-doc-id-current\/quickstart\/quickstart-test,
+.docs-doc-id-current\/quickstart\/quickstart-build,
+.docs-doc-id-current\/quickstart\/quickstart-publish,
+.docs-doc-id-current\/quickstart\/quickstart-build-multi,
+.docs-doc-id-current\/quickstart\/quickstart-caching,
+.docs-doc-id-current\/quickstart\/quickstart-build-dockerfile {
   main .container {
     margin: 0;
-    margin-right: 40vw;
+    margin-right: 40vw !important;
+
+    .theme-code-block {
+      max-width: 35vw;
+    }
 
     iframe {
       position: fixed;
@@ -753,6 +762,7 @@ img[alt="github-contribute"] {
       padding-top: 96px;
       box-shadow: 1px 1px 5px 2px black;
       background-color: rgb(14, 13, 28);
+      z-index: 100;
     }
   }
 }
