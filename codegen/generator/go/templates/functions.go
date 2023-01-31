@@ -6,22 +6,22 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
 var (
-	funcMap = template.FuncMap{
+	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
+	funcMap    = template.FuncMap{
 		"Comment":                comment,
 		"FormatDeprecation":      formatDeprecation,
-		"FormatInputType":        formatInputType,
-		"FormatOutputType":       formatOutputType,
+		"FormatInputType":        commonFunc.FormatInputType,
+		"FormatOutputType":       commonFunc.FormatOutputType,
 		"FormatName":             formatName,
 		"FieldOptionsStructName": fieldOptionsStructName,
 		"FieldFunction":          fieldFunction,
 	}
 )
-
-const queryStructName = "Query"
 
 // comments out a string
 // Example: `hello\nworld` -> `// hello\n// world\n`
@@ -50,74 +50,6 @@ func formatDeprecation(s string) string {
 	return comment("Deprecated: " + s)
 }
 
-// formatType formats a GraphQL type into Go
-// Example: `String` -> `string`
-func formatInputType(r *introspection.TypeRef) string {
-	return formatType(r, true)
-}
-
-func formatOutputType(r *introspection.TypeRef) string {
-	return formatType(r, false)
-}
-
-// formatType formats a GraphQL type into Go
-// Example: `String` -> `string`
-func formatType(r *introspection.TypeRef, input bool) string {
-	var representation string
-	for ref := r; ref != nil; ref = ref.OfType {
-		switch ref.Kind {
-		case introspection.TypeKindList:
-			representation += "[]"
-		case introspection.TypeKindScalar:
-			switch introspection.Scalar(ref.Name) {
-			case introspection.ScalarString:
-				representation += "string"
-				return representation
-			case introspection.ScalarInt:
-				representation += "int"
-				return representation
-			case introspection.ScalarBoolean:
-				representation += "bool"
-				return representation
-			case introspection.ScalarFloat:
-				representation += "float"
-				return representation
-			default:
-				// Custom scalar
-
-				// When used as an input, we're going to use objects rather than ID scalars (e.g. `*Container` rather than `ContainerID`)
-				// FIXME: do this dynamically rather than a hardcoded map.
-				rewrite := map[string]string{
-					"ContainerID": "Container",
-					"FileID":      "File",
-					"DirectoryID": "Directory",
-					"SecretID":    "Secret",
-					"SocketID":    "Socket",
-					"CacheID":     "CacheVolume",
-				}
-				if alias, ok := rewrite[ref.Name]; ok && input {
-					representation += "*" + alias
-				} else {
-					representation += ref.Name
-				}
-				return representation
-			}
-		case introspection.TypeKindObject:
-			name := ref.Name
-			if name == queryStructName {
-				name = "Client"
-			}
-			representation += formatName(name)
-			return representation
-		case introspection.TypeKindInputObject:
-			representation += formatName(ref.Name)
-			return representation
-		}
-	}
-
-	panic(r)
-}
-
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
 // Example: `fooId` -> `FooID`
 func formatName(s string) string {
@@ -134,7 +66,7 @@ func fieldOptionsStructName(f introspection.Field) string {
 	// `ContainerOpts` rather than `QueryContainerOpts`
 	// The structure name will not clash with others since everybody else
 	// is prefixed by object name.
-	if f.ParentObject.Name == queryStructName {
+	if f.ParentObject.Name == generator.QueryStructName {
 		return formatName(f.Name) + "Opts"
 	}
 	return formatName(f.ParentObject.Name) + formatName(f.Name) + "Opts"
@@ -144,7 +76,7 @@ func fieldOptionsStructName(f introspection.Field) string {
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func fieldFunction(f introspection.Field) string {
 	structName := formatName(f.ParentObject.Name)
-	if structName == queryStructName {
+	if structName == generator.QueryStructName {
 		structName = "Client"
 	}
 	signature := fmt.Sprintf(`func (r *%s) %s`,
@@ -162,10 +94,10 @@ func fieldFunction(f introspection.Field) string {
 
 		// FIXME: For top-level queries (e.g. File, Directory) if the field is named `id` then keep it as a
 		// scalar (DirectoryID) rather than an object (*Directory).
-		if f.ParentObject.Name == queryStructName && arg.Name == "id" {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatOutputType(arg.TypeRef)))
+		if f.ParentObject.Name == generator.QueryStructName && arg.Name == "id" {
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatOutputType(arg.TypeRef)))
 		} else {
-			args = append(args, fmt.Sprintf("%s %s", arg.Name, formatInputType(arg.TypeRef)))
+			args = append(args, fmt.Sprintf("%s %s", arg.Name, commonFunc.FormatInputType(arg.TypeRef)))
 		}
 	}
 	// Options (e.g. DirectoryContentsOptions -> <Object><Field>Options)
@@ -179,9 +111,9 @@ func fieldFunction(f introspection.Field) string {
 
 	retType := ""
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
-		retType = fmt.Sprintf("(%s, error)", formatOutputType(f.TypeRef))
+		retType = fmt.Sprintf("(%s, error)", commonFunc.FormatOutputType(f.TypeRef))
 	} else {
-		retType = "*" + formatOutputType(f.TypeRef)
+		retType = "*" + commonFunc.FormatOutputType(f.TypeRef)
 	}
 	signature += " " + retType
 
