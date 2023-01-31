@@ -34,6 +34,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
 	var id string
+	fallbackToLeftoverEngine := false
 	ref, err := name.ParseReference(imageRef)
 	if err != nil {
 		return "", errors.Wrap(err, "parsing image reference")
@@ -45,12 +46,30 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		// We only have a tag in the image ref, so resolve it to a digest. The default
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
-		img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain))
-		if err != nil {
-			return "", errors.Wrap(err, "resolving image digest")
+		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
+			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %s, falling back to leftover engine\n", err)
+			fallbackToLeftoverEngine = true
+		} else {
+			id = img.Digest.String()
 		}
-		id = img.Digest.String()
 	}
+
+	// We collect leftover engine anyway since we garbage collect them at the end
+	// And check if we are in a fallback case then perform fallback to most recent engine
+	leftoverEngines, err := collectLeftoverEngines(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed to list containers: %s\n", err)
+		leftoverEngines = []string{}
+	}
+	if fallbackToLeftoverEngine {
+		if len(leftoverEngines) == 0 {
+			return "", errors.Wrap(err, "no fallback container found")
+		}
+		firstEngine := leftoverEngines[0]
+		garbageCollectEngines(ctx, leftoverEngines, firstEngine)
+		return "docker-container://" + firstEngine, nil
+	}
+
 	_, id, ok := strings.Cut(id, "sha256:")
 	if !ok {
 		return "", errors.Errorf("invalid image reference %q", imageRef)
@@ -77,32 +96,40 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 	// garbage collect any other containers with the same name pattern, which
 	// we assume to be leftover from previous runs of the engine using an older
 	// version
-	if output, err := exec.CommandContext(ctx,
+	garbageCollectEngines(ctx, leftoverEngines, containerName)
+
+	return "docker-container://" + containerName, nil
+}
+
+func garbageCollectEngines(ctx context.Context, engines []string, exceptThis string) {
+	for _, engine := range engines {
+		if engine == "" {
+			continue
+		}
+		if engine == exceptThis {
+			continue
+		}
+		if output, err := exec.CommandContext(ctx,
+			"docker", "rm", "-fv", engine,
+		).CombinedOutput(); err != nil {
+			if !strings.Contains(string(output), "already in progress") {
+				fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s\n", engine, output)
+			}
+		}
+	}
+}
+
+func collectLeftoverEngines(ctx context.Context) ([]string, error) {
+	output, err := exec.CommandContext(ctx,
 		"docker", "ps",
 		"-a",
 		"--no-trunc",
 		"--filter", "name=^/"+containerNamePrefix,
 		"--format", "{{.Names}}",
-	).CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "failed to list containers: %s", output)
-	} else {
-		for _, line := range strings.Split(string(output), "\n") {
-			if line == "" {
-				continue
-			}
-			if line == containerName {
-				continue
-			}
-			if output, err := exec.CommandContext(ctx,
-				"docker", "rm", "-fv", line,
-			).CombinedOutput(); err != nil {
-				if !strings.Contains(string(output), "already in progress") {
-					fmt.Fprintf(os.Stderr, "failed to remove old container %s: %s", line, output)
-				}
-			}
-		}
-	}
-	return "docker-container://" + containerName, nil
+	).CombinedOutput()
+
+	engineNames := strings.Split(string(output), "\n")
+	return engineNames, err
 }
 
 func isContainerAlreadyInUseOutput(output string) bool {
