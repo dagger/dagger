@@ -34,7 +34,9 @@ jobs:
         run: sudo dmesg
       - run: go build ./cmd/otel-collector
         if: always()
-      - run: |
+      - name: "Upload logs & traces"
+        continue-on-error: true
+        run: |
           ./otel-collector /tmp/journal.log \
             --name "${{ github.repository }}-${{ github.workflow }}:${{ github.job }}" \
             --tag "github.repository=${{ github.repository }}" \
@@ -57,12 +59,14 @@ jobs:
           GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
           GRAFANA_CLOUD_API_KEY: "glc_eyJvIjoiNzcwNzY0IiwibiI6Im1ldHJpY3Nsb2dzdHJhY2Vzd3JpdGVyLWdpdGh1Yi1kYWdnZXItZGFnZ2VyLXJlcG8tYW5kLWZvcmtzIiwiayI6Ijk4My1MX3M0fHpdLDMjNHo/MyswKyg1MCIsIm0iOnsiciI6InVzIn19"
       - uses: actions/upload-artifact@v3
-        name: Upload otel-collector journal.log
+        name: "Upload otel-collector journal.log"
+        continue-on-error: true
         with:
           name: ${{ github.workflow }}-${{ github.job }}-journal.log
           path: /tmp/journal.log
       - uses: actions/upload-artifact@v3
-        name: Upload otel-collector summary
+        name: "Upload otel-collector summary"
+        continue-on-error: true
         with:
           name: ${{ github.workflow }}-${{ github.job }}-summary.md
           path: ./comment.md
