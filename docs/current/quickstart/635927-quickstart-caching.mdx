@@ -23,7 +23,7 @@ This step is, therefore, a good candidate for a cache. Let's update the pipeline
 
 <iframe class="embed" src="https://play.dagger.cloud/embed/2va_6z_3JtB"></iframe>
 
-This revised pipeline produces the same result as before, but now uses a cache for the application dependencies.
+This revised pipeline now uses a cache for the application dependencies.
 
 - It uses the client's `CacheVolume()` method to initialize a new cache volume.
 - It uses the `Container.WithMountedCache()` method to mount this cache volume at the `node_modules/` mount point in the container.
@@ -40,7 +40,7 @@ go run ci/main.go
 
 <iframe class="embed" src="https://play.dagger.cloud/embed/5L9pFphXK2l"></iframe>
 
-This revised pipeline produces the same result as before, but now uses a cache for the application dependencies.
+This revised pipeline now uses a cache for the application dependencies.
 
 - It uses the client's `cacheVolume()` method to initialize a new cache volume.
 - It uses the `Container.withMountedCache()` method to mount this cache volume at the `node_modules/` mount point in the container.
@@ -57,7 +57,7 @@ node ci/index.mjs
 
 <iframe class="embed" src="https://play.dagger.cloud/embed/bnNET0xDiBl"></iframe>
 
-This revised pipeline produces the same result as before, but now uses a cache for the application dependencies.
+This revised pipeline now uses a cache for the application dependencies.
 
 - It uses the client's `cache_volume()` method to initialize a new cache volume.
 - It uses the `Container.with_mounted_cache()` method to mount this cache volume at the `node_modules/` mount point in the container.
@@ -71,5 +71,7 @@ python ci/main.py
 
 </TabItem>
 </Tabs>
+
+This revised pipeline produces the same result as before.
 
 Run the pipeline a few times. Notice that on the first run, the application dependencies are downloaded as usual. However, since the dependencies are cached, subsequent pipeline runs will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
