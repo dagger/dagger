@@ -299,6 +299,11 @@ export type ClientSocketOpts = {
   id?: SocketID
 }
 
+export type RegistryAuth = {
+  secret: Secret
+  username: string
+}
+
 /**
  * A unique identifier for a secret.
  */
@@ -1020,6 +1025,26 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
+   * Retrieves this container with a registry authentication for a given address.
+   * @param address Registry's address to bind the authentication to.
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   * @param auth Authentication information related to the address.
+   */
+  withRegistryAuth(address: string, auth: RegistryAuth): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withRegistryAuth",
+          args: { address, auth },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Initializes this container from this DirectoryID.
    */
   withRootfs(id: Directory): Container {
@@ -1148,6 +1173,25 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withoutMount",
           args: { path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves this container without the registry authentication of a given address.
+   * @param address Registry's address to remove the authentication from.
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   */
+  withoutRegistryAuth(address: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutRegistryAuth",
+          args: { address },
         },
       ],
       host: this.clientHost,

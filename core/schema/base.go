@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
@@ -18,6 +19,7 @@ type InitializeArgs struct {
 	SolveCh       chan *bkclient.SolveStatus
 	Platform      specs.Platform
 	DisableHostRW bool
+	Auth          *auth.RegistryAuthProvider
 }
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
@@ -28,6 +30,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		solveOpts: params.SolveOpts,
 		solveCh:   params.SolveCh,
 		platform:  params.Platform,
+		auth:      params.Auth,
 	}
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
@@ -56,4 +59,5 @@ type baseSchema struct {
 	solveOpts bkclient.SolveOpt
 	solveCh   chan *bkclient.SolveStatus
 	platform  specs.Platform
+	auth      *auth.RegistryAuthProvider
 }

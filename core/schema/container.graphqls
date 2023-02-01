@@ -29,7 +29,7 @@ type Container {
     Image's address from its registry.
     Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
-    address: String!
+    address: String!,
   ): Container!
 
   "Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs."
@@ -261,6 +261,29 @@ type Container {
     """
     platformVariants: [ContainerID!]
   ): Boolean!
+
+  "Retrieves this container with a registry authentication for a given address."
+  withRegistryAuth(
+    """
+    Registry's address to bind the authentication to.
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!,
+
+    """
+    Authentication information related to the address.
+    """
+    auth: RegistryAuth!
+  ): Container!
+
+  "Retrieves this container without the registry authentication of a given address."
+  withoutRegistryAuth(
+    """
+    Registry's address to remove the authentication from.
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!
+  ): Container!
 }
 
 "A simple key value object that represents an environment variable."
@@ -284,4 +307,9 @@ type Label {
 input BuildArg {
   name: String!
   value: String!
+}
+
+input RegistryAuth {
+  username: String!
+  secret: SecretID!
 }
