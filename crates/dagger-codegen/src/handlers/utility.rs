@@ -42,7 +42,7 @@ pub fn render_description_from_input_value(t: &InputValue, name: &String) -> Opt
             output.push();
         }
 
-        for line in lines {
+        for line in lines.iter().skip(1) {
             output.append(quote! {
                 $(format!("///   {line}"))
             });
