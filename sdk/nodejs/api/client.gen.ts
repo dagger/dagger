@@ -80,6 +80,11 @@ export type ContainerBuildOpts = {
   target?: string
 }
 
+export type ContainerEndpointOpts = {
+  scheme?: string
+  port?: number
+}
+
 export type ContainerExecOpts = {
   /**
    * Command to run instead of the container's default command.
@@ -160,6 +165,13 @@ export type ContainerWithExecOpts = {
    * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
+}
+
+export type ContainerWithExposedPortOpts = {
+  /**
+   * Optional port description
+   */
+  description?: string
 }
 
 export type ContainerWithFileOpts = {
@@ -395,13 +407,13 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
-  async endpoint(port: number, protocol: string): Promise<string> {
+  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "endpoint",
-          args: { port, protocol },
+          args: { ...opts },
         },
       ],
       this.client
@@ -877,6 +889,31 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withExec",
           args: { args, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Expose a network port.
+   * Exposed ports serve two purposes:
+   *   - For health checks and introspection, when running services
+   *   - For setting the EXPOSE OCI field when publishing the container
+   * @param port Port number to expose
+   * @param opts.description Optional port description
+   */
+  withExposedPort(
+    port: number,
+    opts?: ContainerWithExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withExposedPort",
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,

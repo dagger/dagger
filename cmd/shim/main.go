@@ -13,7 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
@@ -45,6 +47,11 @@ There are two "subcommands" of this binary:
 */
 func main() {
 	if os.Args[0] == shimPath {
+		if _, found := internalEnv("_DAGGER_INTERNAL_CLI"); found {
+			os.Exit(internalCLI())
+			return
+		}
+
 		// If we're being executed as `/_shim`, then we're inside the container and should shim
 		// the user command.
 		os.Exit(shim())
@@ -52,6 +59,80 @@ func main() {
 		// Otherwise, we're being invoked directly by buildkitd and should setup the bundle.
 		os.Exit(setupBundle())
 	}
+}
+
+func internalCLI() int {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "usage: %s <command> [<args>]\n", os.Args[0])
+		return 1
+	}
+
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	switch cmd {
+	case "check":
+		if err := check(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+		return 1
+	}
+}
+
+func check(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: check <host> port [port ...]")
+	}
+
+	host, ports := args[0], args[1:]
+
+	for _, port := range ports {
+		pollAddr := net.JoinHostPort(host, port)
+
+		fmt.Println("polling for port", pollAddr)
+
+		reached, err := pollForPort(pollAddr)
+		if err != nil {
+			return fmt.Errorf("poll %s: %w", pollAddr, err)
+		}
+
+		fmt.Println("port is up at", reached)
+	}
+
+	return nil
+}
+
+func pollForPort(addr string) (string, error) {
+	retry := backoff.NewExponentialBackOff()
+	retry.InitialInterval = 100 * time.Millisecond
+
+	dialer := net.Dialer{
+		Timeout: time.Second,
+	}
+
+	var reached string
+	err := backoff.Retry(func() error {
+		conn, err := dialer.Dial("tcp", addr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "port not ready: %s; elapsed: %s\n", err, retry.GetElapsedTime())
+			return err
+		}
+
+		reached = conn.RemoteAddr().String()
+
+		_ = conn.Close()
+
+		return nil
+	}, retry)
+	if err != nil {
+		return "", err
+	}
+
+	return reached, nil
 }
 
 func shim() int {
@@ -190,6 +271,14 @@ func setupBundle() int {
 			break
 		}
 	}
+	// We're running an internal shim command, i.e. a service health check
+	for _, env := range spec.Process.Env {
+		if env == "_DAGGER_INTERNAL_CLI=yep" {
+			isDaggerExec = true
+			break
+		}
+	}
+
 	if isDaggerExec {
 		// mount this executable into the container so it can be invoked as the shim
 		selfPath, err := os.Executable()

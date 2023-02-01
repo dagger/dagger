@@ -79,6 +79,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"publish":               router.ToResolver(s.publish),
 			"platform":              router.ToResolver(s.platform),
 			"export":                router.ToResolver(s.export),
+			"withExposedPort":       router.ToResolver(s.withExposedPort),
 			"hostname":              router.ToResolver(s.hostname),
 			"endpoint":              router.ToResolver(s.endpoint),
 			"withServiceDependency": router.ToResolver(s.withServiceDependency),
@@ -577,12 +578,12 @@ func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, 
 }
 
 type containerEndpointArgs struct {
-	Port     int
-	Protocol string
+	Port   int
+	Scheme string
 }
 
 func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	return parent.Endpoint(args.Port, args.Protocol)
+	return parent.Endpoint(args.Port, args.Scheme)
 }
 
 type containerWithServiceDependencyArgs struct {
@@ -591,4 +592,18 @@ type containerWithServiceDependencyArgs struct {
 
 func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
 	return parent.WithServiceDependency(&core.Container{ID: args.Service})
+}
+
+type containerWithExposedPortArgs struct {
+	Protocol    string
+	Port        int
+	Description string
+}
+
+func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+	return parent.WithExposedPort(core.ContainerPort{
+		Protocol:    args.Protocol,
+		Port:        args.Port,
+		Description: args.Description,
+	})
 }

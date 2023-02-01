@@ -1,10 +1,9 @@
 package core
 
 import (
-	"context"
-	"sync"
 	"testing"
 
+	"dagger.io/dagger"
 	"github.com/stretchr/testify/require"
 )
 
@@ -14,33 +13,21 @@ func TestServices(t *testing.T) {
 
 	www := c.Directory().WithNewFile("index.html", "Hello, world!")
 
-	// NB: for now I'm just making this a Container, ignoring the Container vs
-	// Service argument to stay focused
 	srv := c.Container().
 		From("python").
 		WithMountedDirectory("/srv/www", www).
 		WithWorkdir("/srv/www").
-		WithExec([]string{"sh", "-exc", "env; hostname; python -m http.server"})
-		// optional: not a fundamental requirement, but I suspect named ports will
-		// be easier to work with + refactor across abstraction boundaries.
-		// WithExposedPort("http", 8080)
+		WithExec([]string{"python", "-m", "http.server"}).
+		WithExposedPort(8000)
 
 	hostname, err := srv.Hostname(ctx)
 	require.NoError(t, err)
 
-	url, err := srv.Endpoint(ctx, 8000, "http")
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
 	require.NoError(t, err)
 	require.Equal(t, "http://"+hostname+":8000", url)
-
-	srvCtx, cancelSrv := context.WithCancel(ctx)
-	defer cancelSrv()
-
-	wg := new(sync.WaitGroup)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		srv.ExitCode(srvCtx)
-	}()
 
 	client := c.Container().
 		From("alpine").
@@ -51,7 +38,4 @@ func TestServices(t *testing.T) {
 	out, err := client.Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Hello, world!", out)
-
-	cancelSrv()
-	wg.Wait()
 }

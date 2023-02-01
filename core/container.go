@@ -26,6 +26,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/zeebo/xxh3"
+	"golang.org/x/sync/errgroup"
 )
 
 const daggerDNSDomain = ".dns.dagger"
@@ -1088,27 +1089,68 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
+func (container *Container) Start(ctx context.Context, gw bkgw.Client) error {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	health := newHealth(gw, payload.Hostname, payload.Ports)
+
+	ctx, stop := context.WithCancel(ctx)
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- health.Check(ctx)
+	}()
+
+	exited := make(chan error, 1)
+	go func() {
+		_, err := container.ExitCode(ctx, gw)
+		exited <- err
+	}()
+
+	select {
+	case <-checked:
+		_ = stop // leave it running
+		return nil
+	case err := <-exited:
+		stop() // interrupt healthcheck
+
+		if err != nil {
+			return err
+		}
+
+		return fmt.Errorf("service exited before healthcheck")
+	}
+}
+
 func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
-	file, err := container.MetaFile(ctx, gw, filePath)
+	var res *string
+	err := container.withServices(ctx, gw, func() error {
+		file, err := container.MetaFile(ctx, gw, filePath)
+		if err != nil {
+			return err
+		}
+
+		if file == nil {
+			return nil
+		}
+
+		content, err := file.Contents(ctx, gw)
+		if err != nil {
+			return err
+		}
+
+		strContent := string(content)
+		res = &strContent
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	if file == nil {
-		return nil, nil
-	}
-
-	content, err := file.Contents(ctx, gw)
-	if err != nil {
-		return nil, err
-	}
-
-	strContent := string(content)
-	if err != nil {
-		return nil, err
-	}
-
-	return &strContent, nil
+	return res, nil
 }
 
 func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
@@ -1229,18 +1271,42 @@ func (container *Container) Hostname() (string, error) {
 	return payload.Hostname, nil
 }
 
-func (container *Container) Endpoint(port int, protocol string) (string, error) {
+func (container *Container) Endpoint(port int, scheme string) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
 	}
 
+	if port == 0 {
+		if len(payload.Ports) == 0 {
+			return "", fmt.Errorf("no ports exposed")
+		}
+
+		port = payload.Ports[0].Port
+	}
+
 	endpoint := fmt.Sprintf("%s:%d", payload.Hostname, port)
-	if protocol != "" {
-		endpoint = protocol + "://" + endpoint
+	if scheme != "" {
+		endpoint = scheme + "://" + endpoint
 	}
 
 	return endpoint, nil
+}
+
+func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Ports = append(payload.Ports, port)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
 }
 
 func (container *Container) WithServiceDependency(svc *Container) (*Container, error) {
@@ -1257,6 +1323,44 @@ func (container *Container) WithServiceDependency(svc *Container) (*Container, e
 	}
 
 	return &Container{ID: id}, nil
+}
+
+func (container *Container) withServices(ctx context.Context, gw bkgw.Client, fn func() error) error {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	svcCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
+	eg := new(errgroup.Group)
+
+	for _, svcID := range payload.Services {
+		svc := &Container{ID: svcID}
+
+		host, err := svc.Hostname()
+		if err != nil {
+			return err
+		}
+
+		eg.Go(func() error {
+			err = svc.Start(svcCtx, gw)
+			if err != nil {
+				return fmt.Errorf("start %s: %w", host, err)
+			}
+			return nil
+		})
+	}
+
+	// wait for all services to start
+	err = eg.Wait()
+	if err != nil {
+		return err
+	}
+
+	return fn()
 }
 
 func (container *Container) export(

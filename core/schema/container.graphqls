@@ -271,7 +271,23 @@ type Container {
 
   hostname: String!
 
-  endpoint(port: Int!, protocol: String!): String!
+  endpoint(
+    scheme: String,
+    port: Int
+  ): String!
+
+  """
+  Expose a network port.
+  Exposed ports serve two purposes:
+    - For health checks and introspection, when running services
+    - For setting the EXPOSE OCI field when publishing the container
+  """
+  withExposedPort(
+    "Port number to expose"
+    port: Int!,
+    "Optional port description"
+    description: String
+  ): Container!
 
   withServiceDependency(service: ContainerID!): Container!
 }

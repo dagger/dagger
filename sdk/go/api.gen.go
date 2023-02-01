@@ -134,10 +134,29 @@ func (r *Container) Directory(path string) *Directory {
 	}
 }
 
-func (r *Container) Endpoint(ctx context.Context, port int, protocol string) (string, error) {
+// ContainerEndpointOpts contains options for Container.Endpoint
+type ContainerEndpointOpts struct {
+	Scheme string
+
+	Port int
+}
+
+func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
 	q := r.q.Select("endpoint")
-	q = q.Arg("port", port)
-	q = q.Arg("protocol", protocol)
+	// `scheme` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+			break
+		}
+	}
+	// `port` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+			break
+		}
+	}
 
 	var response string
 	q = q.Bind(&response)
@@ -579,6 +598,33 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithExposedPortOpts contains options for Container.WithExposedPort
+type ContainerWithExposedPortOpts struct {
+	// Optional port description
+	Description string
+}
+
+// Expose a network port.
+// Exposed ports serve two purposes:
+//   - For health checks and introspection, when running services
+//   - For setting the EXPOSE OCI field when publishing the container
+func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
+	q := r.q.Select("withExposedPort")
+	q = q.Arg("port", port)
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
 			break
 		}
 	}

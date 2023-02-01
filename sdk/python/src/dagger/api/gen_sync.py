@@ -124,7 +124,11 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def endpoint(self, port: int, protocol: str) -> str:
+    def endpoint(
+        self,
+        scheme: Optional[str] = None,
+        port: Optional[int] = None,
+    ) -> str:
         """Returns
         -------
         str
@@ -133,8 +137,8 @@ class Container(Type):
             GraphQL to represent free-form human-readable text.
         """
         _args = [
-            Arg("port", port),
-            Arg("protocol", protocol),
+            Arg("scheme", scheme, None),
+            Arg("port", port, None),
         ]
         _ctx = self._select("endpoint", _args)
         return _ctx.execute_sync(str)
@@ -581,6 +585,34 @@ class Container(Type):
             Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
         ]
         _ctx = self._select("withExec", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def with_exposed_port(
+        self,
+        port: int,
+        description: Optional[str] = None,
+    ) -> "Container":
+        """Expose a network port.
+
+        Exposed ports serve two purposes:
+
+          - For health checks and introspection, when running services
+
+          - For setting the EXPOSE OCI field when publishing the container
+
+        Parameters
+        ----------
+        port:
+            Port number to expose
+        description:
+            Optional port description
+        """
+        _args = [
+            Arg("port", port),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
 
     @typecheck
