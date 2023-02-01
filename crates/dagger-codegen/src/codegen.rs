@@ -49,9 +49,11 @@ impl CodeGeneration {
         output.append(render_base_types());
         output.push();
 
-        let types = get_types(schema)?;
+        let mut types = get_types(schema)?;
         //let remaining: Vec<Option<String>> = types.into_iter().map(type_name).collect();
-        //
+
+        types.sort_by_key(|a| a.name.as_ref());
+
         for (handler, types) in self.group_by_handlers(&types) {
             for t in types {
                 if let Some(_) = self.type_name(&t) {
