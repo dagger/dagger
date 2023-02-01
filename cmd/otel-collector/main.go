@@ -67,31 +67,22 @@ var cmd = &cobra.Command{
 }
 
 func mergeVertices(ch chan *bkclient.SolveStatus) []Vertex {
-	vertexByID := map[string]*bkclient.Vertex{}
+	seenVertices := map[string]*bkclient.Vertex{}
 	vertices := []*bkclient.Vertex{}
 	for msg := range ch {
 		if msg == nil {
 			break
 		}
 		for _, v := range msg.Vertexes {
-			vertex := vertexByID[v.Digest.String()]
-			if vertex == nil {
-				vertex = v
-				vertexByID[v.Digest.String()] = v
-				vertices = append(vertices, v)
+			if v.Completed == nil {
+				continue
+			}
+			if _, ok := seenVertices[v.Digest.String()]; ok {
+				continue
 			}
 
-			vertex.Name = v.Name
-			vertex.Cached = v.Cached
-
-			if vertex.Started == nil && v.Started != nil {
-				vertex.Started = v.Started
-			}
-			if v.Completed != nil {
-				if vertex.Completed == nil || vertex.Completed.Before(*v.Completed) {
-					vertex.Completed = v.Completed
-				}
-			}
+			seenVertices[v.Digest.String()] = v
+			vertices = append(vertices, v)
 		}
 	}
 

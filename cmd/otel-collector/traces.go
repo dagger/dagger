@@ -102,7 +102,7 @@ func (c *TraceExporter) sendVertex(v Vertex) {
 		otrace.WithLinks(links...),
 	)
 	c.contextByVertex[v.ID()] = vertexCtx
-	vertexSpan.SetAttributes(c.attributes(attribute.Bool("cached", v.Cached()))...)
+	vertexSpan.SetAttributes(c.attributes(attribute.Bool("cached", v.Cached()), attribute.String("digest", v.ID()))...)
 
 	if err := v.Error(); err != nil {
 		vertexSpan.RecordError(err)

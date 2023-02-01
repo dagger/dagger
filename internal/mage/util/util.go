@@ -18,6 +18,9 @@ const (
 func Repository(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{
+			".git",
+			"bin",
+
 			// node
 			"**/node_modules",
 
