@@ -2,4 +2,4 @@
 /**
  * Hola
  */
-export type Container = string
+export type Container = string & {__Container: never}
