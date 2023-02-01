@@ -60,7 +60,7 @@ export type BuildArg = {
 /**
  * A global cache volume identifier.
  */
-export type CacheID = string
+export type CacheID = string & { __CacheID: never }
 
 export type ContainerBuildOpts = {
   /**
@@ -178,12 +178,12 @@ export type ContainerWithNewFileOpts = {
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
-export type ContainerID = string
+export type ContainerID = string & { __ContainerID: never }
 
 /**
  * The `DateTime` scalar type represents a DateTime. The DateTime is serialized as an RFC 3339 quoted string
  */
-export type DateTime = string
+export type DateTime = string & { __DateTime: never }
 
 export type DirectoryDockerBuildOpts = {
   /**
@@ -245,12 +245,12 @@ export type DirectoryWithNewFileOpts = {
 /**
  * A content-addressed directory identifier.
  */
-export type DirectoryID = string
+export type DirectoryID = string & { __DirectoryID: never }
 
 /**
  * A file identifier.
  */
-export type FileID = string
+export type FileID = string & { __FileID: never }
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
@@ -270,13 +270,13 @@ export type HostWorkdirOpts = {
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
-export type ID = string
+export type ID = string & { __ID: never }
 
 /**
  * The platform config OS and architecture in a Container.
  * The format is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
  */
-export type Platform = string
+export type Platform = string & { __Platform: never }
 
 export type ClientContainerOpts = {
   id?: ContainerID
@@ -302,12 +302,12 @@ export type ClientSocketOpts = {
 /**
  * A unique identifier for a secret.
  */
-export type SecretID = string
+export type SecretID = string & { __SecretID: never }
 
 /**
  * A content-addressed socket identifier.
  */
-export type SocketID = string
+export type SocketID = string & { __SocketID: never }
 
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean

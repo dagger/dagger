@@ -6,7 +6,7 @@
 
 	{{- if IsCustomScalar . }}
 {{ template "object_comment" .Description }}
-export type {{ .Name }} = string
+export type {{ .Name }} = string & {__{{ .Name }}: never}
 {{ "" }}
 	{{- end }}
 
