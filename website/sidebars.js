@@ -17,6 +17,11 @@ module.exports = {
       label: "Introduction",
     },
     {
+      type: "doc",
+      id: "current/quickstart/quickstart-introduction",
+      label: "Quickstart",
+    },
+    {
       type: "category",
       label: "Go SDK",
       collapsible: false,
@@ -183,6 +188,33 @@ module.exports = {
       type: "doc",
       id: "current/contributing",
     },
+  ],
+  quickstart: [
+    {
+      type: "doc",
+      id: "current/index",
+      label: "Home",
+    },
+    {
+      type: "category",
+      label: "Quickstart",
+      collapsible: false,
+      collapsed: false,
+      items: [
+        "current/quickstart/quickstart-introduction",
+        "current/quickstart/quickstart-basics",
+        "current/quickstart/quickstart-setup",
+        "current/quickstart/quickstart-sdk",
+        "current/quickstart/quickstart-hello",
+        "current/quickstart/quickstart-test",
+        "current/quickstart/quickstart-build",
+        "current/quickstart/quickstart-publish",
+        "current/quickstart/quickstart-build-multi",
+        "current/quickstart/quickstart-caching",
+        "current/quickstart/quickstart-build-dockerfile",
+        "current/quickstart/quickstart-conclusion",
+      ]
+    }
   ],
   0.2: [
     {

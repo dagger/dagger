@@ -1,0 +1,75 @@
+---
+slug: /730264/quickstart-publish
+displayed_sidebar: "quickstart"
+hide_table_of_contents: true
+title: "Publish the application"
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## Publish the application
+
+At this point, your Dagger pipeline has tested, built and delivered the application to your local host. But why not also publish a container image of the application to a registry?
+
+Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/hGUZKAeot5K"></iframe>
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/xlXjwXsjvGt"></iframe>
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/2r4dX0l8-zq"></iframe>
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
+
+</TabItem>
+</Tabs>
+
+This revised pipeline does everything described in the previous step, and then publishes the container to [ttl.sh](https://ttl.sh), an ephemeral Docker registry.
+
+To prevent name collisions, the container image name is suffixed with a random number, and printed to the console, as in the example output below:
+
+```shell
+Published image to: ttl.sh/hello-dagger-8724562@sha256:16b9344023b9bf1313fd111395a585e03bea13eff8a171616f202c0e9dbb219a
+```
+
+After Dagger resolves the pipeline, the newly-built container image will be available in the [ttl.sh](https://ttl.sh) registry. Download and test it using the command below (update the container image name as per the output of the pipeline):
+
+```shell
+docker run -p 8080:80 ttl.sh/hello-dagger-8724562@sha256:16b9344023b9bf1313fd111395a585e03bea13eff8a171616f202c0e9dbb219a
+```
+
+Browse to host port 8080. Confirm that you see the React application's welcome page.
+
+:::warning
+You may have noticed that the pipeline above is able to publish to the registry without requiring the user to enter any authentication credentials. This is only possible because the [ttl.sh](https://ttl.sh/) registry allows anonymous access. In reality, however, most popular registries require authentication before accepting images for publication.
+
+Dagger SDKs rely on your existing Docker credentials for registry authentication. This means that you must execute `docker login` against your selected container registry on the Dagger host before attempting to publish an image to that registry.
+:::

@@ -1,0 +1,64 @@
+---
+slug: /628381/quickstart-sdk
+displayed_sidebar: "quickstart"
+hide_table_of_contents: true
+title: "Install the Dagger SDK"
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## Install the Dagger SDK
+
+The next step is to install the Dagger SDK for your preferred language. Select from the options below.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+:::note
+The Dagger Go SDK requires [Go 1.15 or later](https://go.dev/doc/install).
+:::
+
+Create a new Go module and install the Dagger Go SDK using the commands below:
+
+```shell
+go mod init main
+go get dagger.io/dagger@latest
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+:::note
+The Dagger Node.js SDK requires [Node.js 16.x or later](https://nodejs.org/en/download/).
+:::
+
+Install the Dagger Node.js SDK using `npm`:
+
+```shell
+npm install @dagger.io/dagger@latest --save-dev
+```
+
+You can also install it using `yarn` if you prefer:
+
+```shell
+yarn add @dagger.io/dagger@latest --dev
+```
+
+</TabItem>
+<TabItem value="Python">
+
+:::note
+The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html). Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended.
+:::
+
+Install the Dagger Python SDK using `pip`:
+
+```shell
+pip install dagger-io
+```
+
+</TabItem>
+</Tabs>

@@ -1,0 +1,91 @@
+---
+slug: /947391/quickstart-test
+displayed_sidebar: "quickstart"
+hide_table_of_contents: true
+title: "Test the application"
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## Test the application
+
+The pipeline in the previous example was illustrative - you wouldn't ever use it in the real world! So let's write a Dagger pipeline to do something more useful, like running an application's tests.
+
+The code listing below demonstrates a Dagger pipeline that runs tests for the example application, by executing the `npm run test` command.
+
+:::tip
+The `npm run test` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
+:::
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/XE3hNGQNWAd"></iframe>
+
+This code listing does the following:
+
+- It creates a Dagger client with `Connect()` as before.
+- It uses the client's `Container().From()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object with the result.
+- It uses the `Container.WithMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.WithMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
+- It uses the `Container.ExitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/paxuz43IvLq"></iframe>
+
+This code listing does the following:
+
+- It creates a Dagger client with `connect()` as before.
+- It uses the client's `container().from()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `from()` method returns a new `Container` object with the result.
+- It uses the `Container.withMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.withWorkdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.withMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.withExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
+- It uses the `Container.exitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/R6X6enRsArH"></iframe>
+
+This code listing does the following:
+
+- It creates a Dagger client with `with dagger.Connection()` as before.
+- It uses the client's `container().from_()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `from_()` method returns a new `Container` object with the result.
+- It uses the `Container.with_mounted_directory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.with_workdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.with_mounted_directory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
+- It uses the `Container.exit_code()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
+
+</TabItem>
+</Tabs>
+
+:::tip
+The `from()`, `withMountedDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
+:::

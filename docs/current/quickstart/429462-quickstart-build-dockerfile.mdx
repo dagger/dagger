@@ -1,0 +1,79 @@
+---
+slug: /429462/quickstart-build-dockerfile
+displayed_sidebar: "quickstart"
+hide_table_of_contents: true
+title: "Wrap existing Dockerfiles with Dagger"
+---
+
+# Quickstart
+
+import Tabs from "@theme/Tabs";
+import TabItem from "@theme/TabItem";
+
+## Wrap existing Dockerfiles with Dagger
+
+As you've seen over the last few pages, Dagger is a powerful tool. It lets you create CI pipelines using general purpose programming languages, giving you full access to native control structures like conditionals and loops. By allowing you to import and use existing language extensions or packages in your pipeline code, Dagger makes it easier to quickly add new functionality or integrate with third-party services. By the same token, Dagger pipelines also benefit from static typing and easier refactoring.
+
+However, rewriting your entire CI/CD system to use Dagger, all at once and without breaking compatibility, is not an easy task.
+
+The good news here is that Dagger can natively run Dockerfiles with full compatibility. This means that it's easy to wrap your existing Dockerfile in a Dagger pipeline, and gradually refactor it over time, without breaking your team's workflow.
+
+The example application repository includes a simple Dockerfile. Use it with a Dagger pipeline as shown below:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/FkLP0dXMgIm"></iframe>
+
+This code listing does the following:
+Connect()`.
+- It uses the client's `Host().Directory()` method to obtain a reference to the source code directory on the host.
+- It uses the client's `Container().Build()` method to initialize a new container using a Dockerfile. This method defaults to using the Dockerfile located at `./Dockerfile` in the directory passed to it as argument and returns the built `Container` object.
+- It uses the `Container` object's `Publish()` method to publish the container to [ttl.sh](https://ttl.sh). As before, to prevent name collisions, the container image name is suffixed with a random number.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/IdHGiwvkn6E"></iframe>
+
+This code listing does the following:
+
+- It creates a Dagger client with `connect()`.
+- It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
+- It uses the client's `container().build()` method to initialize a new container using a Dockerfile. This method defaults to using the Dockerfile located at `./Dockerfile` in the directory passed to it as argument and returns the built `Container` object.
+- It uses the `Container` object's `publish()` method to publish the container to [ttl.sh](https://ttl.sh). As before, to prevent name collisions, the container image name is suffixed with a random number.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+<iframe class="embed" src="https://play.dagger.cloud/embed/xCI5LKiZfGD"></iframe>
+
+This code listing does the following:
+
+- It creates a Dagger client with `with dagger.Connection()`.
+- It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
+- It uses the client's `container().build()` method to initialize a new container using a Dockerfile. This method defaults to using the Dockerfile located at `./Dockerfile` in the directory passed to it as argument and returns the built `Container` object.
+- It uses the `Container` object's `publish()` method to publish the container to [ttl.sh](https://ttl.sh). As before, to prevent name collisions, the container image name is suffixed with a random number.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
+
+</TabItem>
+</Tabs>
+
+After Dagger resolves the pipeline, the newly-built container image will be available in the [ttl.sh](https://ttl.sh) registry. Download and test it as described in the section on [publishing the application](./730264-quickstart-publish.mdx).
