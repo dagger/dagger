@@ -45,6 +45,12 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 	case reflect.Int:
 		return fmt.Sprintf("%d", v.Int()), nil
 	case reflect.String:
+		name := t.Name()
+		// it is a enum type based on a string, hence, its type.Name != string
+		// Is there a better way to distinguish enum const values
+		if name != "string" {
+			return fmt.Sprintf("%s", v.String()), nil
+		}
 		return fmt.Sprintf("%q", v.String()), nil
 	case reflect.Pointer:
 		if v.IsNil() {

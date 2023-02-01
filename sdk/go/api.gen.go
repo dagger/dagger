@@ -622,7 +622,10 @@ func (r *Container) WithLabel(name string, value string) *Container {
 
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
+	// Directory to use as the cache volume's root.
 	Source *Directory
+	// Sharing mode of the cache volume.
+	Sharing CacheSharingMode
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
@@ -634,6 +637,13 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
+			break
+		}
+	}
+	// `sharing` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
 			break
 		}
 	}
@@ -1821,3 +1831,11 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 	}
 	return string(id), nil
 }
+
+type CacheSharingMode string
+
+const (
+	Private CacheSharingMode = "PRIVATE"
+	Locked  CacheSharingMode = "LOCKED"
+	Shared  CacheSharingMode = "SHARED"
+)
