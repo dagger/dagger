@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
+	"github.com/iancoleman/strcase"
 )
 
 var (
@@ -18,8 +19,10 @@ var (
 		"FormatInputType":        commonFunc.FormatInputType,
 		"FormatOutputType":       commonFunc.FormatOutputType,
 		"FormatName":             formatName,
+		"FormatEnum":             formatEnum,
 		"FieldOptionsStructName": fieldOptionsStructName,
 		"FieldFunction":          fieldFunction,
+		"IsEnum":                 isEnum,
 	}
 )
 
@@ -50,6 +53,12 @@ func formatDeprecation(s string) string {
 	return comment("Deprecated: " + s)
 }
 
+func isEnum(t introspection.Type) bool {
+	return t.Kind == introspection.TypeKindEnum &&
+		// We ignore the internal GraphQL enums
+		!strings.HasPrefix(t.Name, "__")
+}
+
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
 // Example: `fooId` -> `FooID`
 func formatName(s string) string {
@@ -57,6 +66,13 @@ func formatName(s string) string {
 		s = strings.ToUpper(string(s[0])) + s[1:]
 	}
 	return lintName(s)
+}
+
+// formatName formats a GraphQL Enum value into a Go equivalent
+// Example: `fooId` -> `FooID`
+func formatEnum(s string) string {
+	s = strings.ToLower(s)
+	return strcase.ToCamel(s)
 }
 
 // fieldOptionsStructName returns the options struct name for a given field

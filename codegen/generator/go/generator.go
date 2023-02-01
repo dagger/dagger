@@ -50,6 +50,14 @@ func (g *GoGenerator) Generate(_ context.Context, schema *introspection.Schema) 
 			render = append(render, out.String())
 			return nil
 		},
+		Enum: func(t *introspection.Type) error {
+			var out bytes.Buffer
+			if err := templates.Enum.Execute(&out, t); err != nil {
+				return err
+			}
+			render = append(render, out.String())
+			return nil
+		},
 		Input: func(t *introspection.Type) error {
 			var out bytes.Buffer
 			if err := templates.Input.Execute(&out, t); err != nil {
