@@ -47,7 +47,11 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
 		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain)); err != nil {
-			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %s, falling back to leftover engine\n", err)
+			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %v\n", err)
+			if strings.Contains(err.Error(), "DENIED") {
+				fmt.Fprintf(os.Stderr, "check your docker ghcr creds, it might be incorrect or expired\n")
+			}
+			fmt.Fprintf(os.Stderr, "falling back to leftover engine\n")
 			fallbackToLeftoverEngine = true
 		} else {
 			id = img.Digest.String()
@@ -62,8 +66,10 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		leftoverEngines = []string{}
 	}
 	if fallbackToLeftoverEngine {
-		if len(leftoverEngines) == 0 {
-			return "", errors.Wrap(err, "no fallback container found")
+		// 0 when  failed to list container, 1 when there is no container
+		// due to the present of EOL in output
+		if len(leftoverEngines) <= 1 {
+			return "", errors.Errorf("no fallback container found")
 		}
 		firstEngine := leftoverEngines[0]
 		garbageCollectEngines(ctx, leftoverEngines, firstEngine)
