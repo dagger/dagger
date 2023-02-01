@@ -18,6 +18,10 @@ You may have noticed that the example pipeline executes the `npm install` comman
 
 This step is, therefore, a good candidate for a cache. Let's update the pipeline accordingly.
 
+:::tip
+The `npm install` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
