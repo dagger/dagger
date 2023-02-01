@@ -30,6 +30,7 @@ type FormatTypeFuncs interface {
 	FormatKindScalarDefault(representation string, refName string, input bool) string
 	FormatKindObject(representation string, refName string) string
 	FormatKindInputObject(representation string, refName string) string
+	FormatKindEnum(representation string, refName string) string
 }
 
 // CommonFunctions formatting function with global shared template functions.
@@ -83,6 +84,8 @@ func (c *CommonFunctions) formatType(r *introspection.TypeRef, input bool) (repr
 			return c.formatTypeFuncs.FormatKindObject(representation, ref.Name)
 		case introspection.TypeKindInputObject:
 			return c.formatTypeFuncs.FormatKindInputObject(representation, ref.Name)
+		case introspection.TypeKindEnum:
+			return c.formatTypeFuncs.FormatKindEnum(representation, ref.Name)
 		}
 	}
 

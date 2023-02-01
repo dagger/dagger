@@ -19,7 +19,7 @@ var (
 		"FormatDeprecation":   formatDeprecation,
 		"FormatInputType":     commonFunc.FormatInputType,
 		"FormatOutputType":    commonFunc.FormatOutputType,
-		"FormatEnum":          commonFunc.FormatEnum,
+		"FormatEnum":          formatEnum,
 		"FormatName":          formatName,
 		"GetOptionalArgs":     getOptionalArgs,
 		"GetRequiredArgs":     getRequiredArgs,
@@ -93,77 +93,6 @@ func isEnum(t *introspection.Type) bool {
 	return t.Kind == introspection.TypeKindEnum &&
 		// We ignore the internal GraphQL enums
 		!strings.HasPrefix(t.Name, "__")
-}
-
-// formatType formats a GraphQL type into TypeScript
-// Example: `String` -> `string`
-func formatType(r *introspection.TypeRef, input bool) (representation string) {
-	var isList bool
-	for ref := r; ref != nil; ref = ref.OfType {
-		switch ref.Kind {
-		case introspection.TypeKindList:
-			isList = true
-			// add [] as suffix to the type
-			defer func() {
-				// dolanor: hackish way to handle this. Otherwise needs to refactor the whole loop logic.
-				if isList {
-					representation += "[]"
-				}
-			}()
-		case introspection.TypeKindScalar:
-			switch introspection.Scalar(ref.Name) {
-			case introspection.ScalarString:
-				representation += "string"
-				return representation
-			case introspection.ScalarInt, introspection.ScalarFloat:
-				representation += "number"
-				return representation
-			case introspection.ScalarBoolean:
-				representation += "boolean"
-				return representation
-			default:
-				// Custom scalar
-
-				// When used as an input, we're going to add objects as an alternative to ID scalars (e.g. `Container` and `ContainerID`)
-				// FIXME: do this dynamically rather than a hardcoded map.
-				rewrite := map[string]string{
-					"ContainerID": "Container",
-					"FileID":      "File",
-					"DirectoryID": "Directory",
-					"SecretID":    "Secret",
-					"SocketID":    "Socket",
-					"CacheID":     "CacheVolume",
-				}
-				if alias, ok := rewrite[ref.Name]; ok && input {
-					listChars := "[]"
-					if isList {
-						representation += alias + listChars
-					} else {
-						representation += alias
-					}
-					isList = false
-				} else {
-					representation += ref.Name
-				}
-				return representation
-			}
-		case introspection.TypeKindObject:
-			name := ref.Name
-			if name == "Query" {
-				name = "Client"
-			}
-			representation += formatName(name)
-			return representation
-		case introspection.TypeKindInputObject:
-			representation += formatName(ref.Name)
-			return representation
-		case introspection.TypeKindEnum:
-			representation += formatEnum(ref.Name)
-			return representation
-		}
-	}
-
-	panic(r)
 }
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
