@@ -48,9 +48,11 @@ type Container {
     target: String
   ): Container!
 
+  # TODO(vito): services
   "Retrieves this container's root filesystem. Mounts are not included."
   rootfs: Directory!
 
+  # TODO(vito): services
   "Retrieves this container's root filesystem. Mounts are not included."
   fs: Directory! @deprecated(reason: "Replaced by `rootfs`.")
 
@@ -61,9 +63,11 @@ type Container {
   withFS(id: DirectoryID!): Container!
     @deprecated(reason: "Replaced by `withRootfs`.")
 
+  # TODO(vito): services
   "Retrieves a directory at the given path. Mounts are included."
   directory(path: String!): Directory!
 
+  # TODO(vito): services
   "Retrieves a file at the given path. Mounts are included."
   file(path: String!): File!
 
@@ -207,18 +211,21 @@ type Container {
     experimentalPrivilegedNesting: Boolean
   ): Container! @deprecated(reason: "Replaced by `withExec`.")
 
+  # TODO(vito): services
   """
   Exit code of the last executed command. Zero means success.
   Null if no command has been executed.
   """
   exitCode: Int
 
+  # TODO(vito): services
   """
   The output stream of the last executed command.
   Null if no command has been executed.
   """
   stdout: String
 
+  # TODO(vito): services
   """
   The error stream of the last executed command.
   Null if no command has been executed.
@@ -261,6 +268,12 @@ type Container {
     """
     platformVariants: [ContainerID!]
   ): Boolean!
+
+  hostname: String!
+
+  endpoint(port: Int!, protocol: String!): String!
+
+  withServiceDependency(service: ContainerID!): Container!
 }
 
 "A simple key value object that represents an environment variable."

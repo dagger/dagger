@@ -2,6 +2,7 @@ package mage
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/docker/docker/libnetwork/resolvconf"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 )
@@ -47,10 +49,9 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-exec %s
+# wrap with dumb-init to clean up dnsmasq commands
+exec dumb-init %s
 `, engineEntrypointCommand)
-
-var engineToml = fmt.Sprintf("root = %q\n", engineDefaultStateDir)
 
 func parseRef(tag string) error {
 	if tag == "main" {
@@ -261,16 +262,22 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker rm: %w: %s", err, output)
 	}
 
-	if output, err := exec.CommandContext(ctx, "docker",
+	runArgs := []string{
 		"run",
 		"-d",
 		"--rm",
-		"-v", volumeName+":"+engineDefaultStateDir,
+		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
-		imageName,
-		"--debug",
-	).CombinedOutput(); err != nil {
+	}
+	dnsFlags, err := DockerDNSFlags()
+	if err != nil {
+		return err
+	}
+	runArgs = append(runArgs, dnsFlags...)
+	runArgs = append(runArgs, imageName, "--debug")
+
+	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
@@ -286,14 +293,41 @@ func (t Engine) Dev(ctx context.Context) error {
 	return nil
 }
 
+const cniVersion = "v1.2.0"
+const dnsnameVersion = "v1.3.1"
+
+func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
+	src := c.Git("https://github.com/containers/dnsname", dagger.GitOpts{KeepGitDir: true}).Tag(dnsnameVersion).Tree()
+
+	return c.Container(dagger.ContainerOpts{
+		Platform: dagger.Platform("linux/" + arch),
+	}).
+		From("golang").
+		WithMountedDirectory("/src", src).
+		WithWorkdir("/src").
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"make", "binaries"}).
+		File("./bin/dnsname")
+}
+
 func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	buildkitRepo := c.Git(buildkitRepo, dagger.GitOpts{KeepGitDir: true}).Branch(buildkitBranch).Tree()
 
+	cni, err := cniConfig("dagger", "10.87.0.0/16")
+	if err != nil {
+		panic(err)
+	}
+
+	buildkitConfigDir := c.Directory().
+		WithNewFile("cni.conflist", string(cni)).
+		WithNewFile("buildkitd.toml", buildkitConfig())
+
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		buildkitBase := c.Container(dagger.ContainerOpts{
-			Platform: dagger.Platform("linux/" + arch),
-		}).Build(buildkitRepo)
+		cniURL := fmt.Sprintf(
+			"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
+			cniVersion, "linux", arch, cniVersion,
+		)
 
 		// build the shim binary
 		shimBin := util.GoBase(c).
@@ -306,12 +340,22 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				"/app/cmd/shim",
 			}).
 			File("./bin/" + shimBinName)
-		buildkitBase = buildkitBase.WithRootfs(
-			buildkitBase.Rootfs().
-				WithFile("/usr/bin/"+shimBinName, shimBin).
-				WithNewFile(engineTomlPath, engineToml).
-				WithNewDirectory(engineDefaultStateDir),
-		)
+
+		buildkitBase := c.
+			Container(dagger.ContainerOpts{
+				Platform: dagger.Platform("linux/" + arch),
+			}).
+			Build(buildkitRepo).
+			WithEntrypoint(nil).
+			WithExec([]string{"apk", "add", "--no-cache", "dumb-init", "iptables", "ip6tables", "dnsmasq"}).
+			WithDirectory("/opt/cni/bin", c.Directory()).
+			WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
+			WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
+			WithExec([]string{"tar", "-xzf", "/tmp/cni-plugins.tgz", "-C", "/opt/cni/bin"}).
+			WithFile("/etc/buildkit/cni.conflist", buildkitConfigDir.File("cni.conflist")).
+			WithFile(engineTomlPath, buildkitConfigDir.File("buildkitd.toml")).
+			WithFile("/usr/bin/"+shimBinName, shimBin).
+			WithDirectory(engineDefaultStateDir, c.Directory())
 
 		// setup entrypoint and CMD
 		buildkitBase = buildkitBase.
@@ -327,4 +371,78 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	}
 
 	return platformVariants
+}
+
+func cniConfig(name, subnet string) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"cniVersion": "0.4.0",
+		"name":       name,
+		"plugins": []any{
+			map[string]any{
+				"type":             "bridge",
+				"bridge":           name + "0",
+				"isDefaultGateway": true,
+				"ipMasq":           true,
+				"hairpinMode":      true,
+				"ipam": map[string]any{
+					"type":   "host-local",
+					"ranges": []any{[]any{map[string]any{"subnet": subnet}}},
+				},
+			},
+			map[string]any{"type": "firewall"},
+			map[string]any{
+				"type":       "dnsname",
+				"domainName": "dns.dagger",
+				"capabilities": map[string]any{
+					"aliases": true,
+				},
+			},
+		},
+	})
+}
+
+func buildkitConfig() string {
+	return strings.Join([]string{
+		fmt.Sprintf("root = %q", engineDefaultStateDir),
+		``,
+		`# configure bridge networking`,
+		`[worker.oci]`,
+		`networkMode = "cni"`,
+		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
+		``,
+		`[worker.containerd]`,
+		`networkMode = "cni"`,
+		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
+	}, "\n")
+}
+
+const (
+	daggerGateway = "10.87.0.1"
+	daggerDNS     = "dns.dagger"
+)
+
+func DockerDNSFlags() ([]string, error) {
+	rc, err := resolvconf.Get()
+	if err != nil {
+		return nil, fmt.Errorf("get resolv.conf: %w", err)
+	}
+
+	flags := []string{
+		"--dns", daggerGateway,
+		"--dns-search", daggerDNS,
+	}
+
+	for _, ns := range resolvconf.GetNameservers(rc.Content, resolvconf.IP) {
+		flags = append(flags, "--dns", ns)
+	}
+
+	for _, domain := range resolvconf.GetSearchDomains(rc.Content) {
+		flags = append(flags, "--dns-search", domain)
+	}
+
+	for _, opt := range resolvconf.GetOptions(rc.Content) {
+		flags = append(flags, "--dns-option", opt)
+	}
+
+	return flags, nil
 }

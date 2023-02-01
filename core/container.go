@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"encoding/base32"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +25,10 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/zeebo/xxh3"
 )
+
+const daggerDNSDomain = ".dns.dagger"
 
 // Container is a content-addressed container.
 type Container struct {
@@ -48,6 +53,10 @@ func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform
 
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
+
+func (id ContainerID) String() string {
+	return string(id)
+}
 
 func (id ContainerID) decode() (*containerIDPayload, error) {
 	if id == "" {
@@ -88,6 +97,16 @@ type containerIDPayload struct {
 
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket `json:"sockets,omitempty"`
+
+	// Hostname is the computed hostname for the container.
+	Hostname string `json:"hostname,omitempty"`
+
+	// Ports to expose from the container.
+	// TODO(vito)
+	Ports []ContainerPort `json:"ports,omitempty"`
+
+	// Services to start before running the container.
+	Services []ContainerID `json:"services,omitempty"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -103,6 +122,13 @@ type ContainerSecret struct {
 type ContainerSocket struct {
 	Socket   SocketID `json:"socket"`
 	UnixPath string   `json:"unix_path,omitempty"`
+}
+
+// ContainerPort configures a port to expose from the container.
+type ContainerPort struct {
+	Port        int    `json:"port"`
+	Protocol    string `json:"protocol,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -841,11 +867,15 @@ func (container *Container) Pipeline(ctx context.Context, name, description stri
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
 	}
+
+	// TODO(vito): gross hack, but... works
+	hostname := hostHash(container.ID.String() + fmt.Sprintf("%#v", opts))
+	payload.Hostname = hostname + daggerDNSDomain
 
 	cfg := payload.Config
 	mounts := payload.Mounts
@@ -869,6 +899,7 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 		llb.Args(args),
 		payload.Pipeline.LLBOpt(),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
+		llb.Hostname(hostname),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -1189,6 +1220,45 @@ func (container *Container) Export(
 	})
 }
 
+func (container *Container) Hostname() (string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	return payload.Hostname, nil
+}
+
+func (container *Container) Endpoint(port int, protocol string) (string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", payload.Hostname, port)
+	if protocol != "" {
+		endpoint = protocol + "://" + endpoint
+	}
+
+	return endpoint, nil
+}
+
+func (container *Container) WithServiceDependency(svc *Container) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Services = append(payload.Services, svc.ID)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
+}
+
 func (container *Container) export(
 	ctx context.Context,
 	gw bkgw.Client,
@@ -1334,4 +1404,16 @@ type ContainerExecOpts struct {
 type BuildArg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+func hostHash(val string) string {
+	return b32(xxh3.HashString(val))
+}
+
+func b32(n uint64) string {
+	var sum [8]byte
+	binary.BigEndian.PutUint64(sum[:], n)
+	return base32.HexEncoding.
+		WithPadding(base32.NoPadding).
+		EncodeToString(sum[:])
 }

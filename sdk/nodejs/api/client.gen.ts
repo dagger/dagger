@@ -395,6 +395,20 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
+  async endpoint(port: number, protocol: string): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { port, protocol },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
 
   /**
    * Retrieves entrypoint to be prepended to the arguments of all commands.
@@ -565,6 +579,19 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+  async hostname(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -1046,6 +1073,19 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withSecretVariable",
           args: { name, secret },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  withServiceDependency(service: Container): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withServiceDependency",
+          args: { service },
         },
       ],
       host: this.clientHost,

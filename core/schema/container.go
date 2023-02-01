@@ -33,52 +33,55 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"container": router.ToResolver(s.container),
 		},
 		"Container": router.ObjectResolver{
-			"from":                 router.ToResolver(s.from),
-			"build":                router.ToResolver(s.build),
-			"rootfs":               router.ToResolver(s.rootfs),
-			"pipeline":             router.ToResolver(s.pipeline),
-			"fs":                   router.ToResolver(s.rootfs), // deprecated
-			"withRootfs":           router.ToResolver(s.withRootfs),
-			"withFS":               router.ToResolver(s.withRootfs), // deprecated
-			"file":                 router.ToResolver(s.file),
-			"directory":            router.ToResolver(s.directory),
-			"user":                 router.ToResolver(s.user),
-			"withUser":             router.ToResolver(s.withUser),
-			"workdir":              router.ToResolver(s.workdir),
-			"withWorkdir":          router.ToResolver(s.withWorkdir),
-			"envVariables":         router.ToResolver(s.envVariables),
-			"envVariable":          router.ToResolver(s.envVariable),
-			"withEnvVariable":      router.ToResolver(s.withEnvVariable),
-			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
-			"withoutEnvVariable":   router.ToResolver(s.withoutEnvVariable),
-			"withLabel":            router.ToResolver(s.withLabel),
-			"label":                router.ToResolver(s.label),
-			"labels":               router.ToResolver(s.labels),
-			"withoutLabel":         router.ToResolver(s.withoutLabel),
-			"entrypoint":           router.ToResolver(s.entrypoint),
-			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
-			"defaultArgs":          router.ToResolver(s.defaultArgs),
-			"withDefaultArgs":      router.ToResolver(s.withDefaultArgs),
-			"mounts":               router.ToResolver(s.mounts),
-			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
-			"withMountedFile":      router.ToResolver(s.withMountedFile),
-			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
-			"withMountedCache":     router.ToResolver(s.withMountedCache),
-			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
-			"withUnixSocket":       router.ToResolver(s.withUnixSocket),
-			"withoutUnixSocket":    router.ToResolver(s.withoutUnixSocket),
-			"withoutMount":         router.ToResolver(s.withoutMount),
-			"withFile":             router.ToResolver(s.withFile),
-			"withNewFile":          router.ToResolver(s.withNewFile),
-			"withDirectory":        router.ToResolver(s.withDirectory),
-			"withExec":             router.ToResolver(s.withExec),
-			"exec":                 router.ToResolver(s.withExec), // deprecated
-			"exitCode":             router.ToResolver(s.exitCode),
-			"stdout":               router.ToResolver(s.stdout),
-			"stderr":               router.ToResolver(s.stderr),
-			"publish":              router.ToResolver(s.publish),
-			"platform":             router.ToResolver(s.platform),
-			"export":               router.ToResolver(s.export),
+			"from":                  router.ToResolver(s.from),
+			"build":                 router.ToResolver(s.build),
+			"rootfs":                router.ToResolver(s.rootfs),
+			"pipeline":              router.ToResolver(s.pipeline),
+			"fs":                    router.ToResolver(s.rootfs), // deprecated
+			"withRootfs":            router.ToResolver(s.withRootfs),
+			"withFS":                router.ToResolver(s.withRootfs), // deprecated
+			"file":                  router.ToResolver(s.file),
+			"directory":             router.ToResolver(s.directory),
+			"user":                  router.ToResolver(s.user),
+			"withUser":              router.ToResolver(s.withUser),
+			"workdir":               router.ToResolver(s.workdir),
+			"withWorkdir":           router.ToResolver(s.withWorkdir),
+			"envVariables":          router.ToResolver(s.envVariables),
+			"envVariable":           router.ToResolver(s.envVariable),
+			"withEnvVariable":       router.ToResolver(s.withEnvVariable),
+			"withSecretVariable":    router.ToResolver(s.withSecretVariable),
+			"withoutEnvVariable":    router.ToResolver(s.withoutEnvVariable),
+			"withLabel":             router.ToResolver(s.withLabel),
+			"label":                 router.ToResolver(s.label),
+			"labels":                router.ToResolver(s.labels),
+			"withoutLabel":          router.ToResolver(s.withoutLabel),
+			"entrypoint":            router.ToResolver(s.entrypoint),
+			"withEntrypoint":        router.ToResolver(s.withEntrypoint),
+			"defaultArgs":           router.ToResolver(s.defaultArgs),
+			"withDefaultArgs":       router.ToResolver(s.withDefaultArgs),
+			"mounts":                router.ToResolver(s.mounts),
+			"withMountedDirectory":  router.ToResolver(s.withMountedDirectory),
+			"withMountedFile":       router.ToResolver(s.withMountedFile),
+			"withMountedTemp":       router.ToResolver(s.withMountedTemp),
+			"withMountedCache":      router.ToResolver(s.withMountedCache),
+			"withMountedSecret":     router.ToResolver(s.withMountedSecret),
+			"withUnixSocket":        router.ToResolver(s.withUnixSocket),
+			"withoutUnixSocket":     router.ToResolver(s.withoutUnixSocket),
+			"withoutMount":          router.ToResolver(s.withoutMount),
+			"withFile":              router.ToResolver(s.withFile),
+			"withNewFile":           router.ToResolver(s.withNewFile),
+			"withDirectory":         router.ToResolver(s.withDirectory),
+			"withExec":              router.ToResolver(s.withExec),
+			"exec":                  router.ToResolver(s.withExec), // deprecated
+			"exitCode":              router.ToResolver(s.exitCode),
+			"stdout":                router.ToResolver(s.stdout),
+			"stderr":                router.ToResolver(s.stderr),
+			"publish":               router.ToResolver(s.publish),
+			"platform":              router.ToResolver(s.platform),
+			"export":                router.ToResolver(s.export),
+			"hostname":              router.ToResolver(s.hostname),
+			"endpoint":              router.ToResolver(s.endpoint),
+			"withServiceDependency": router.ToResolver(s.withServiceDependency),
 		},
 	}
 }
@@ -157,7 +160,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
+	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
@@ -567,4 +570,25 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 	}
 
 	return true, nil
+}
+
+func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
+	return parent.Hostname()
+}
+
+type containerEndpointArgs struct {
+	Port     int
+	Protocol string
+}
+
+func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
+	return parent.Endpoint(args.Port, args.Protocol)
+}
+
+type containerWithServiceDependencyArgs struct {
+	Service core.ContainerID
+}
+
+func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+	return parent.WithServiceDependency(&core.Container{ID: args.Service})
 }

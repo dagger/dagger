@@ -134,6 +134,16 @@ func (r *Container) Directory(path string) *Directory {
 	}
 }
 
+func (r *Container) Endpoint(ctx context.Context, port int, protocol string) (string, error) {
+	q := r.q.Select("endpoint")
+	q = q.Arg("port", port)
+	q = q.Arg("protocol", protocol)
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
@@ -292,6 +302,14 @@ func (r *Container) FS() *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+func (r *Container) Hostname(ctx context.Context) (string, error) {
+	q := r.q.Select("hostname")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this container.
@@ -739,6 +757,16 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	q := r.q.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Container) WithServiceDependency(service *Container) *Container {
+	q := r.q.Select("withServiceDependency")
+	q = q.Arg("service", service)
 
 	return &Container{
 		q: q,
