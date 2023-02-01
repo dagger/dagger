@@ -32,8 +32,8 @@ pub fn is_input_object_type(t: &FullType) -> bool {
 
 pub fn is_required_type(t: &FullTypeInputFields) -> bool {
     match t.input_value.type_.kind {
-        Some(__TypeKind::NON_NULL) => return false,
-        Some(_) => return true,
+        Some(__TypeKind::NON_NULL) => return true,
+        Some(_) => return false,
         _ => return false,
     }
 }
@@ -42,7 +42,7 @@ pub fn is_required_type_ref(t: &TypeRef) -> bool {
     match t.kind {
         Some(__TypeKind::NON_NULL) => return true,
         Some(_) => return false,
-        _ => return true,
+        _ => return false,
     }
 }
 

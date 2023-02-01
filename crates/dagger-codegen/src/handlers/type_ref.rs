@@ -11,15 +11,6 @@ pub fn render_type_ref(inner: &TypeRef) -> eyre::Result<rust::Tokens> {
         return t.clone().of_type.map(|t| *t);
     };
 
-    if !is_required_type_ref(inner) {
-        if let Some(inner_of_type) = extract_of_type(inner) {
-            let inner_field = render_type_ref(&inner_of_type)?;
-            return Ok(quote! {
-                Option<$inner_field>
-            });
-        }
-    }
-
     if is_list_type(&inner) {
         if let Some(inner_of_type) = extract_of_type(inner) {
             let inner_field = render_type_ref(&inner_of_type)?;
@@ -56,6 +47,15 @@ pub fn render_type_ref(inner: &TypeRef) -> eyre::Result<rust::Tokens> {
         return Ok(quote! {
             $name
         });
+    }
+
+    if !is_required_type_ref(inner) {
+        if let Some(inner_of_type) = extract_of_type(inner) {
+            let inner_field = render_type_ref(&inner_of_type)?;
+            return Ok(quote! {
+                Option<$inner_field>
+            });
+        }
     }
 
     if let Some(inner_type) = inner.of_type.as_ref() {
