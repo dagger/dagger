@@ -36,7 +36,7 @@
     "react-dom": "^17.0.1",
     "react-social-login-buttons": "^3.6.1",
     "remark-code-import": "^1.1.1",
-    "sass": "^1.57.1",
+    "sass": "^1.58.0",
     "spectaql": "^2.0.4",
     "typedoc": "^0.23.24",
     "typedoc-plugin-markdown": "^3.14.0",
