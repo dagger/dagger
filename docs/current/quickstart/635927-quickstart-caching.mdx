@@ -29,6 +29,12 @@ This revised pipeline produces the same result as before, but now uses a cache f
 - It uses the `Container.WithMountedCache()` method to mount this cache volume at the `node_modules/` mount point in the container.
 - It uses the `Container.WithExec()` method to define the `npm install` command. When executed, this command downloads and installs dependencies in the `node_modules/` directory. Since this directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
 </TabItem>
 <TabItem value="Node.js">
 
@@ -40,6 +46,12 @@ This revised pipeline produces the same result as before, but now uses a cache f
 - It uses the `Container.withMountedCache()` method to mount this cache volume at the `node_modules/` mount point in the container.
 - It uses the `Container.withExec()` method to define the `npm install` command. When executed, this command downloads and installs dependencies in the `node_modules/` directory. Since this directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
 </TabItem>
 <TabItem value="Python">
 
@@ -50,6 +62,12 @@ This revised pipeline produces the same result as before, but now uses a cache f
 - It uses the client's `cache_volume()` method to initialize a new cache volume.
 - It uses the `Container.with_mounted_cache()` method to mount this cache volume at the `node_modules/` mount point in the container.
 - It uses the `Container.with_exec()` method to define the `npm install` command. When executed, this command downloads and installs dependencies in the `node_modules/` directory. Since this directory is defined as a cache volume, its contents will persist even after the pipeline terminates and can be reused on the next pipeline run.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
 
 </TabItem>
 </Tabs>
