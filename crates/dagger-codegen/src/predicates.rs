@@ -40,9 +40,9 @@ pub fn is_required_type(t: &FullTypeInputFields) -> bool {
 
 pub fn is_required_type_ref(t: &TypeRef) -> bool {
     match t.kind {
-        Some(__TypeKind::NON_NULL) => return false,
-        Some(_) => return true,
-        _ => return false,
+        Some(__TypeKind::NON_NULL) => return true,
+        Some(_) => return false,
+        _ => return true,
     }
 }
 
