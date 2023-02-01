@@ -50,9 +50,6 @@ def test_container_with_mounted_directory():
 
 def test_container_with_mounted_cache():
     with dagger.Connection() as client:
-        # Do not add a timestamp to the cache_key because it
-        # would then be unique on each run and therefore
-        # not cache any results at all.
         cache_key = "example-cache"
 
         container = (

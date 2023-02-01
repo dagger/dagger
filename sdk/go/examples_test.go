@@ -139,9 +139,6 @@ func ExampleContainer_WithMountedCache() {
 	}
 	defer client.Close()
 
-	// Do not add a timestamp to the cacheKey because it
-	// would then be unique on each run and therefore
-	// not cache any results at all.
 	cacheKey := "example-cache"
 
 	cache := client.CacheVolume(cacheKey)
