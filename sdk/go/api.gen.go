@@ -37,12 +37,6 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-type RegistryAuth struct {
-	Secret *Secret `json:"secret"`
-
-	Username string `json:"username"`
-}
-
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -730,10 +724,11 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 }
 
 // Retrieves this container with a registry authentication for a given address.
-func (r *Container) WithRegistryAuth(address string, auth RegistryAuth) *Container {
+func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
 	q := r.q.Select("withRegistryAuth")
 	q = q.Arg("address", address)
-	q = q.Arg("auth", auth)
+	q = q.Arg("username", username)
+	q = q.Arg("secret", secret)
 
 	return &Container{
 		q: q,

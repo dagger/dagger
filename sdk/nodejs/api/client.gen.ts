@@ -299,11 +299,6 @@ export type ClientSocketOpts = {
   id?: SocketID
 }
 
-export type RegistryAuth = {
-  secret: Secret
-  username: string
-}
-
 /**
  * A unique identifier for a secret.
  */
@@ -1028,15 +1023,20 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * Retrieves this container with a registry authentication for a given address.
    * @param address Registry's address to bind the authentication to.
 Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
-   * @param auth Authentication information related to the address.
+   * @param username The username of the registry's account (e.g., "Dagger").
+   * @param secret The API key, password or token to authenticate to this registry.
    */
-  withRegistryAuth(address: string, auth: RegistryAuth): Container {
+  withRegistryAuth(
+    address: string,
+    username: string,
+    secret: Secret
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withRegistryAuth",
-          args: { address, auth },
+          args: { address, username, secret },
         },
       ],
       host: this.clientHost,

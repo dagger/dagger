@@ -572,17 +572,18 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 }
 
 type containerWithRegistryAuthArgs struct {
-	Address string
-	Auth    core.RegistryAuth
+	Address  string        `json:"address"`
+	Username string        `json:"username"`
+	Secret   core.SecretID `json:"secret"`
 }
 
 func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
-	secret, err := core.NewSecret(args.Auth.Secret).Plaintext(ctx, s.gw)
+	secret, err := core.NewSecret(args.Secret).Plaintext(ctx, s.gw)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.auth.AddCredential(args.Address, args.Auth.Username, string(secret)); err != nil {
+	if err := s.auth.AddCredential(args.Address, args.Username, string(secret)); err != nil {
 		return nil, err
 	}
 
@@ -593,7 +594,7 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
 	if err := s.auth.RemoveCredential(args.Address); err != nil {
 		return nil, err
 	}

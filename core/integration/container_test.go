@@ -2798,6 +2798,8 @@ func TestContainerExecError(t *testing.T) {
 }
 
 func TestContainerWithRegistryAuth(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
@@ -2815,14 +2817,14 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	require.Error(t, err)
 
 	pushedRef, err := container.
-		WithRegistryAuth("127.0.0.1:5010/testimagepush:latest", dagger.RegistryAuth{
-			Username: "john",
-			Secret: c.
-				Container().
+		WithRegistryAuth(
+			"127.0.0.1:5010/testimagepush:latest",
+			"john",
+			c.Container().
 				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
 				File("secret.txt").
 				Secret(),
-		}).
+		).
 		Publish(ctx, testRef)
 
 	require.NoError(t, err)

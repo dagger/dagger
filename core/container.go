@@ -1329,8 +1329,3 @@ type BuildArg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
-
-type RegistryAuth struct {
-	Username string   `json:"username"`
-	Secret   SecretID `json:"secret"`
-}

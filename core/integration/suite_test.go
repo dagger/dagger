@@ -163,13 +163,15 @@ func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 	t.Helper()
 
 	// Include a random ID so it runs every time (hack until we have no-cache or equivalent support)
-	creds := c.Host().Directory("testdata/auth")
-
 	randomID := identity.NewID()
 	go func() {
 		_, err := c.Container().
 			From("registry:2").
-			WithMountedDirectory("/auth", creds).
+			WithMountedDirectory("/auth", c.
+				Directory().
+				// Plaintext = john:xFlejaPdjrt25Dvr
+				WithNewFile("htpasswd", "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"),
+			).
 			WithEnvVariable("REGISTRY_HTTP_ADDR", "127.0.0.1:5010").
 			WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").

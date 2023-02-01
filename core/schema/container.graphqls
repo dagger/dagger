@@ -271,9 +271,14 @@ type Container {
     address: String!,
 
     """
-    Authentication information related to the address.
+    The username of the registry's account (e.g., "Dagger").
     """
-    auth: RegistryAuth!
+    username: String!,
+
+    """
+    The API key, password or token to authenticate to this registry.
+    """
+    secret: SecretID!,
   ): Container!
 
   "Retrieves this container without the registry authentication of a given address."
@@ -307,9 +312,4 @@ type Label {
 input BuildArg {
   name: String!
   value: String!
-}
-
-input RegistryAuth {
-  username: String!
-  secret: SecretID!
 }
