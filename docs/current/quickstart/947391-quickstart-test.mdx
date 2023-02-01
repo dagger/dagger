@@ -2,7 +2,7 @@
 slug: /947391/quickstart-test
 displayed_sidebar: "quickstart"
 hide_table_of_contents: true
-title: "Run application tests"
+title: "Test the application"
 ---
 
 # Quickstart
@@ -10,11 +10,15 @@ title: "Run application tests"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-## Run application tests
+## Test the application
 
 The pipeline in the previous example was illustrative - you wouldn't ever use it in the real world! So let's write a Dagger pipeline to do something more useful, like running an application's tests.
 
 The code listing below demonstrates a Dagger pipeline that runs tests for the example application, by executing the `npm run test` command.
+
+:::tip
+The `npm run test` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
+:::
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -31,6 +35,12 @@ This code listing does the following:
 - It uses the `Container.ExitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
   - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
 </TabItem>
 <TabItem value="Node.js">
 
@@ -46,6 +56,12 @@ This code listing does the following:
 - It uses the `Container.exitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
   - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
 </TabItem>
 <TabItem value="Python">
 
@@ -60,6 +76,12 @@ This code listing does the following:
 - It uses the `Container.with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
 - It uses the `Container.exit_code()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
   - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
 
 </TabItem>
 </Tabs>

@@ -25,6 +25,12 @@ So, let's update the previous pipeline and add a build step to it, by running `n
 - It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
 - It writes the `build/` directory from the container to the host using the `Directory.Export()` method.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+go run ci/main.go
+```
+
 </TabItem>
 <TabItem value="Node.js">
 
@@ -36,6 +42,12 @@ This revised pipeline does everything described in the previous step, and then p
 - It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
 - It writes the `build/` directory from the container to the host using the `Directory.export()` method.
 
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+node ci/index.mjs
+```
+
 </TabItem>
 <TabItem value="Python">
 
@@ -46,6 +58,12 @@ This revised pipeline does everything described in the previous step, and then p
 - It invokes the `Container.with_exec()` method again, this time to define the command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
 - It writes the `build/` directory from the container to the host using the `Directory.export()` method.
+
+Run the pipeline by executing the command below from the application directory:
+
+```shell
+python ci/main.py
+```
 
 </TabItem>
 </Tabs>
