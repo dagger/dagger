@@ -26,7 +26,29 @@ const (
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	engineDefaultStateDir = "/var/lib/dagger"
+
+	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
+	engineEntrypointCommand = "buildkitd --config " + engineTomlPath + " --oci-worker-binary /usr/bin/" + shimBinName
 )
+
+// setting cgroup v2 nesting. ref: https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
+var engineEntrypoint = fmt.Sprintf(`#!/bin/sh
+set -e
+
+# cgroup v2: enable nesting
+if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+	# move the processes from the root group to the /init group,
+	# otherwise writing subtree_control fails with EBUSY.
+	# An error during moving non-existent process (i.e., "cat") is ignored.
+	mkdir -p /sys/fs/cgroup/init
+	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+	# enable controllers
+	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+		> /sys/fs/cgroup/cgroup.subtree_control
+fi
+
+exec %s
+`, engineEntrypointCommand)
 
 var engineToml = fmt.Sprintf("root = %q\n", engineDefaultStateDir)
 
@@ -291,12 +313,15 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				WithNewDirectory(engineDefaultStateDir),
 		)
 
-		// setup entrypoint
-		buildkitBase = buildkitBase.WithEntrypoint([]string{
-			"buildkitd",
-			"--config", engineTomlPath,
-			"--oci-worker-binary", "/usr/bin/" + shimBinName,
-		})
+		// setup entrypoint and CMD
+		buildkitBase = buildkitBase.
+			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
+				Contents:    engineEntrypoint,
+				Permissions: 755,
+			}).
+			WithEntrypoint([]string{
+				"dagger-entrypoint.sh",
+			})
 
 		platformVariants = append(platformVariants, buildkitBase)
 	}
