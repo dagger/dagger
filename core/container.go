@@ -446,9 +446,9 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	cacheSharingMode := ""
 	switch concurrency {
-	case "PRIVATE":
+	case CacheSharingModePrivate:
 		cacheSharingMode = "private"
-	case "LOCKED":
+	case CacheSharingModeLocked:
 		cacheSharingMode = "locked"
 	default:
 		cacheSharingMode = "shared"

@@ -60,9 +60,9 @@ func (payload cacheIDPayload) Encode() (CacheID, error) {
 type CacheSharingMode string
 
 const (
-	CacheSharingModeShared  CacheSharingMode = "shared"
-	CacheSharingModePrivate CacheSharingMode = "private"
-	CacheSharingModeLocked  CacheSharingMode = "locked"
+	CacheSharingModeShared  CacheSharingMode = "SHARED"
+	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
+	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
 )
 
 func NewCache(keys ...string) (*CacheVolume, error) {
