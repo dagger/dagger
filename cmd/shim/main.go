@@ -186,6 +186,15 @@ func shim() int {
 		stderrPath = stderrRedirect
 	}
 
+	var secretsToScrub core.SecretToScrubInfo
+
+	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
+	if found {
+		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
+		if err != nil {
+			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+		}
+	}
 	if _, found := internalEnv(core.DebugFailedExecEnv); found {
 		// if we are being requested to just obtain the output of a previously failed exec,
 		// do that and exit
@@ -208,19 +217,33 @@ func shim() int {
 		return 0
 	}
 
+	shimFS := os.DirFS("/")
+
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stdoutFile.Close()
-	cmd.Stdout = io.MultiWriter(stdoutFile, os.Stdout)
+
+	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
+	scrubOutWriter, err := NewSecretScrubWriter(outWriter, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stdout = scrubOutWriter
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
-	cmd.Stderr = io.MultiWriter(stderrFile, os.Stderr)
+
+	errWriter := io.MultiWriter(stderrFile, os.Stderr)
+	scrubErrWriter, err := NewSecretScrubWriter(errWriter, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stderr = scrubErrWriter
 
 	cmd.Env = os.Environ()
 

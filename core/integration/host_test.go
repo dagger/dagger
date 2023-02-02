@@ -259,5 +259,5 @@ func TestHostVariable(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 
-	require.Contains(t, env, "SECRET=hello")
+	require.Contains(t, env, "SECRET=***")
 }
