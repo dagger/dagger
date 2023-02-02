@@ -1835,7 +1835,7 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 type CacheSharingMode string
 
 const (
+	Shared  CacheSharingMode = "SHARED"
 	Private CacheSharingMode = "PRIVATE"
 	Locked  CacheSharingMode = "LOCKED"
-	Shared  CacheSharingMode = "SHARED"
 )

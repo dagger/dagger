@@ -66,6 +66,10 @@ export type CacheID = string & { __CacheID: never }
  * Sharing mode of the cache volume.
  */
 export enum CacheSharingMode {
+  /**
+   * Shares the cache volume amongst many build pipelines
+   */
+  Shared,
 
   /**
    * Keeps a cache volume for a single build pipeline
@@ -77,14 +81,8 @@ export enum CacheSharingMode {
    * but will serialize the writes
    */
   Locked,
-
-  /**
-   * Shares the cache volume amongst many build pipelines
-   */
-  Shared,
 }
 export type ContainerBuildOpts = {
-
   /**
    * Path to the Dockerfile to use.
    * Defaults to './Dockerfile'.
@@ -103,7 +101,6 @@ export type ContainerBuildOpts = {
 }
 
 export type ContainerExecOpts = {
-
   /**
    * Command to run instead of the container's default command.
    */
@@ -133,7 +130,6 @@ export type ContainerExecOpts = {
 }
 
 export type ContainerExportOpts = {
-
   /**
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
@@ -146,7 +142,6 @@ export type ContainerPipelineOpts = {
 }
 
 export type ContainerPublishOpts = {
-
   /**
    * Identifiers for other platform specific containers.
    * Used for multi-platform image.
@@ -164,7 +159,6 @@ export type ContainerWithDirectoryOpts = {
 }
 
 export type ContainerWithExecOpts = {
-
   /**
    * Content to write to the command's standard input before closing.
    */
@@ -193,7 +187,6 @@ export type ContainerWithFileOpts = {
 }
 
 export type ContainerWithMountedCacheOpts = {
-
   /**
    * Directory to use as the cache volume's root.
    */
@@ -221,7 +214,6 @@ export type ContainerID = string & { __ContainerID: never }
 export type DateTime = string & { __DateTime: never }
 
 export type DirectoryDockerBuildOpts = {
-
   /**
    * Path to the Dockerfile to use.
    * Defaults to './Dockerfile'.
@@ -253,7 +245,6 @@ export type DirectoryPipelineOpts = {
 }
 
 export type DirectoryWithDirectoryOpts = {
-
   /**
    * Exclude artifacts that match the given pattern.
    * (e.g. ["node_modules/", ".git*"]).
@@ -354,20 +345,10 @@ export type __TypeFieldsOpts = {
   includeDeprecated?: boolean
 }
 
-
-
-
-
-
-
-
-
-
 /**
  * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
-
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
       [
@@ -387,8 +368,6 @@ export class CacheVolume extends BaseClient {
  * An OCI-compatible container, also known as a docker container.
  */
 export class Container extends BaseClient {
-
-
   /**
    * Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
    * @param context Directory context used by the Dockerfile.
@@ -830,7 +809,11 @@ Used for multi-platform image.
   /**
    * Retrieves this container plus a directory written at the given path.
    */
-  withDirectory(path: string, directory: Directory, opts?: ContainerWithDirectoryOpts): Container {
+  withDirectory(
+    path: string,
+    directory: Directory,
+    opts?: ContainerWithDirectoryOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -923,7 +906,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   /**
    * Retrieves this container plus the contents of the given file copied to the given path.
    */
-  withFile(path: string, source: File, opts?: ContainerWithFileOpts): Container {
+  withFile(
+    path: string,
+    source: File,
+    opts?: ContainerWithFileOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -961,7 +948,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @param opts.source Directory to use as the cache volume's root.
    * @param opts.sharing Sharing mode of the cache volume.
    */
-  withMountedCache(path: string, cache: CacheVolume, opts?: ContainerWithMountedCacheOpts): Container {
+  withMountedCache(
+    path: string,
+    cache: CacheVolume,
+    opts?: ContainerWithMountedCacheOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -1231,16 +1222,10 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 }
 
-
-
-
-
 /**
  * A directory.
  */
 export class Directory extends BaseClient {
-
-
   /**
    * Gets the difference between this directory and an another directory.
    */
@@ -1408,7 +1393,11 @@ Defaults to './Dockerfile'.
    * @param opts.include Include only artifacts that match the given pattern.
 (e.g. ["app/", "package.*"]).
    */
-  withDirectory(path: string, directory: Directory, opts?: DirectoryWithDirectoryOpts): Directory {
+  withDirectory(
+    path: string,
+    directory: Directory,
+    opts?: DirectoryWithDirectoryOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1425,7 +1414,11 @@ Defaults to './Dockerfile'.
   /**
    * Retrieves this directory plus the contents of the given file copied to the given path.
    */
-  withFile(path: string, source: File, opts?: DirectoryWithFileOpts): Directory {
+  withFile(
+    path: string,
+    source: File,
+    opts?: DirectoryWithFileOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1442,7 +1435,10 @@ Defaults to './Dockerfile'.
   /**
    * Retrieves this directory plus a new directory created at the given path.
    */
-  withNewDirectory(path: string, opts?: DirectoryWithNewDirectoryOpts): Directory {
+  withNewDirectory(
+    path: string,
+    opts?: DirectoryWithNewDirectoryOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1459,7 +1455,11 @@ Defaults to './Dockerfile'.
   /**
    * Retrieves this directory plus a new file written at the given path.
    */
-  withNewFile(path: string, contents: string, opts?: DirectoryWithNewFileOpts): Directory {
+  withNewFile(
+    path: string,
+    contents: string,
+    opts?: DirectoryWithNewFileOpts
+  ): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
@@ -1525,14 +1525,10 @@ Defaults to './Dockerfile'.
   }
 }
 
-
-
 /**
  * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
-
-
   /**
    * The environment variable name.
    */
@@ -1572,8 +1568,6 @@ export class EnvVariable extends BaseClient {
  * A file.
  */
 export class File extends BaseClient {
-
-
   /**
    * Retrieves the contents of the file.
    */
@@ -1677,16 +1671,10 @@ export class File extends BaseClient {
   }
 }
 
-
-
-
-
 /**
  * A git ref (tag, branch or commit).
  */
 export class GitRef extends BaseClient {
-
-
   /**
    * The digest of the current value of this ref.
    */
@@ -1726,8 +1714,6 @@ export class GitRef extends BaseClient {
  * A git repository.
  */
 export class GitRepository extends BaseClient {
-
-
   /**
    * Returns details on one branch.
    */
@@ -1818,8 +1804,6 @@ export class GitRepository extends BaseClient {
  * Information about the host execution environment.
  */
 export class Host extends BaseClient {
-
-
   /**
    * Accesses a directory on the host.
    */
@@ -1894,8 +1878,6 @@ export class Host extends BaseClient {
  * An environment variable on the host environment.
  */
 export class HostVariable extends BaseClient {
-
-
   /**
    * A secret referencing the value of this variable.
    */
@@ -1930,16 +1912,10 @@ export class HostVariable extends BaseClient {
   }
 }
 
-
-
-
-
 /**
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
-
-
   /**
    * The label name.
    */
@@ -1975,14 +1951,10 @@ export class Label extends BaseClient {
   }
 }
 
-
-
 /**
  * A set of scripts and/or extensions
  */
 export class Project extends BaseClient {
-
-
   /**
    * extensions in this project
    */
@@ -2085,10 +2057,7 @@ export class Project extends BaseClient {
   }
 }
 
-
-
 export default class Client extends BaseClient {
-
   /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g. "myapp-cache").
@@ -2300,8 +2269,6 @@ export default class Client extends BaseClient {
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
 export class Secret extends BaseClient {
-
-
   /**
    * The identifier for this secret.
    */
@@ -2337,12 +2304,7 @@ export class Secret extends BaseClient {
   }
 }
 
-
-
-
 export class Socket extends BaseClient {
-
-
   /**
    * The content-addressed identifier of the socket.
    */
@@ -2360,8 +2322,3 @@ export class Socket extends BaseClient {
     return response
   }
 }
-
-
-
-
-

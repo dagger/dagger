@@ -38,6 +38,21 @@ class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
 
+class CacheSharingMode(enum.StrEnum):
+    """Sharing mode of the cache volume."""
+
+    SHARED = "SHARED"
+    """Shares the cache volume amongst many build pipelines"""
+
+    PRIVATE = "PRIVATE"
+    """Keeps a cache volume for a single build pipeline"""
+
+    LOCKED = "LOCKED"
+    """Shares the cache volume amongst many build pipelines,
+    but will serialize the writes
+    """
+
+
 class BuildArg(Input):
 
     name: str
@@ -601,14 +616,27 @@ class Container(Type):
         path: str,
         cache: CacheVolume,
         source: Optional["Directory"] = None,
+        sharing: Optional[CacheSharingMode] = None,
     ) -> "Container":
         """Retrieves this container plus a cache volume mounted at the given
         path.
+
+        Parameters
+        ----------
+        path:
+            Path to mount the cache volume at.
+        cache:
+            ID of the cache to mount.
+        source:
+            Directory to use as the cache volume's root.
+        sharing:
+            Sharing mode of the cache volume.
         """
         _args = [
             Arg("path", path),
             Arg("cache", cache),
             Arg("source", source, None),
+            Arg("sharing", sharing, None),
         ]
         _ctx = self._select("withMountedCache", _args)
         return Container(_ctx)
@@ -1632,6 +1660,7 @@ __all__ = [
     "Platform",
     "SecretID",
     "SocketID",
+    "CacheSharingMode",
     "BuildArg",
     "CacheVolume",
     "Container",
