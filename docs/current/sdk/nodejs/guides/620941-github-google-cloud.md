@@ -288,7 +288,7 @@ This tutorial assumes that you have a GitHub repository with a Node.js Web appli
 1. Make a minor modification to the application's index page:
 
   ```shell
-  sed -i 's/Express/Dagger/g' routes/index.js
+  sed -i -e 's/Express/Dagger/g' routes/index.js
   ```
 
 1. Initialize a local Git repository for the application:
