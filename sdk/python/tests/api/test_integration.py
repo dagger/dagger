@@ -78,7 +78,7 @@ async def test_container_with_mounted_directory():
 async def test_container_with_mounted_cache():
     async with dagger.Connection() as client:
         cache_key = "example-cache"
-        filename = f"{datetime.now().isoformat()}.txt"
+        filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
         container = (
             client.container()
@@ -91,7 +91,7 @@ async def test_container_with_mounted_cache():
                 [
                     "sh",
                     "-c",
-                    f"echo $0 >> /cache/{filename}; cat /cache/{filename}",
+                    f"echo $0 >> /cache/{filename}.txt; cat /cache/{filename}.txt",
                     str(i),
                 ],
             ).stdout()
