@@ -2493,7 +2493,7 @@ func TestContainerPublish(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
+	startRegistry(t)
 
 	testRef := "127.0.0.1:5000/testimagepush:latest"
 	pushedRef, err := c.Container().
@@ -2516,7 +2516,7 @@ func TestExecFromScratch(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
+	startRegistry(t)
 
 	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
 	execBusybox := c.Container().
@@ -2613,7 +2613,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
+	startRegistry(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {

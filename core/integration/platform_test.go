@@ -33,7 +33,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
+	startRegistry(t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
@@ -80,7 +80,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
+	startRegistry(t)
 
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
