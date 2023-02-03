@@ -11,7 +11,7 @@ connect(async (daggerClient) => {
   const source = daggerClient.host().directory(".", { exclude: ["node_modules/", "ci/"] })
 
   // get Node image
-  const node = daggerClient.container().from("node:16")
+  const node = daggerClient.container({ platform: "linux/amd64" }).from("node:16")
 
   // mount cloned repository into Node image
   // install dependencies
