@@ -140,7 +140,7 @@ func ExampleContainer_WithMountedCache() {
 	}
 	defer client.Close()
 
-	cacheKey := "example-" + time.Now().Format(time.RFC3339)
+	cacheKey := "example-cache"
 
 	cache := client.CacheVolume(cacheKey)
 
@@ -148,14 +148,13 @@ func ExampleContainer_WithMountedCache() {
 
 	container = container.WithMountedCache("/cache", cache)
 
+	filename := time.Now().Format("2006-01-02-15-04-05")
+	echoCmd := fmt.Sprintf("echo $0 >> /cache/%[1]v.txt; cat /cache/%[1]v.txt", filename)
+
 	var out string
 	for i := 0; i < 5; i++ {
 		out, err = container.Exec(dagger.ContainerExecOpts{
-			Args: []string{
-				"sh", "-c",
-				"echo $0 >> /cache/x.txt; cat /cache/x.txt",
-				strconv.Itoa(i),
-			},
+			Args: []string{"sh", "-c", echoCmd, strconv.Itoa(i)},
 		}).Stdout(ctx)
 		if err != nil {
 			panic(err)
