@@ -36,9 +36,8 @@ subgraph program["Your program"]
   lib["Dagger SDK"]
 end
 
-engine["Dagger Engine"]
+engine["Dagger Engine - OCI container runtime"]
 
-oci["OCI container runtime"]
 subgraph A["your build pipeline"]
   A1[" "] -.-> A2[" "] -.-> A3[" "]
 end
@@ -49,7 +48,7 @@ subgraph C["your deploy pipeline"]
   C1[" "] -.-> C2[" "] -.-> C3[" "] -.-> C4[" "]
 end
 
-lib -..-> engine -..-> oci -..-> A1 & B1 & C1
+lib -..-> engine -..-> A1 & B1 & C1
 ```
 
 1. Your program imports the Dagger SDK in your language of choice.
