@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 from textwrap import dedent
 
 import pytest
@@ -50,7 +51,8 @@ def test_container_with_mounted_directory():
 
 def test_container_with_mounted_cache():
     with dagger.Connection() as client:
-        cache_key = "example-cache"
+        cache_key = f"example-{datetime.now().isoformat()}"
+        filename = f"{datetime.now().isoformat()}.txt"
 
         container = (
             client.container()
@@ -63,7 +65,7 @@ def test_container_with_mounted_cache():
                 [
                     "sh",
                     "-c",
-                    "echo $0 >> /cache/x.txt; cat /cache/x.txt",
+                    f"echo $0 >> /cache/{filename}; cat /cache/{filename}",
                     str(i),
                 ],
             ).stdout()
