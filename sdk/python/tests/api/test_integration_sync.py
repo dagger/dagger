@@ -51,7 +51,7 @@ def test_container_with_mounted_directory():
 
 def test_container_with_mounted_cache():
     with dagger.Connection() as client:
-        cache_key = f"example-{datetime.now().isoformat()}"
+        cache_key = "example-cache"
         filename = f"{datetime.now().isoformat()}.txt"
 
         container = (
