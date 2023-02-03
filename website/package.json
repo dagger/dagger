@@ -16,7 +16,7 @@
     "graphql-docs": "spectaql ./docs-graphql/config.yml -t ./static/api/reference"
   },
   "dependencies": {
-    "@docusaurus/core": "^2.3.0",
+    "@docusaurus/core": "^2.3.1",
     "@docusaurus/preset-classic": "^2.3.0",
     "@docusaurus/theme-mermaid": "^2.3.0",
     "@svgr/webpack": "^6.5.1",
