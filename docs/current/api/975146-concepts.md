@@ -50,9 +50,7 @@ The query returns a list of the packages installed in the image:
   "container": {
    "from": {
     "withExec": {
-     "stdout": {
-      "contents": "alpine-baselayout-data\nmusl\nbusybox\nalpine-baselayout\nalpine-keys\nca-certificates-bundle\nlibcrypto1.1\nlibssl1.1\nssl_client\nzlib\napk-tools\nscanelf\nmusl-utils\nlibc-utils\n"
-     }
+     "stdout": "alpine-baselayout-data\nmusl\nbusybox\nalpine-baselayout\nalpine-keys\nca-certificates-bundle\nlibcrypto1.1\nlibssl1.1\nssl_client\nzlib\napk-tools\nscanelf\nmusl-utils\nlibc-utils\n"
     }
    }
   }
