@@ -32,7 +32,7 @@ This code listing does the following:
 - It uses the `Container.WithMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
   - Notice that the `Container.WithMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
-- It uses the `Container.ExitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+- It uses the `Container.Stderr()` method to return the error stream of the last executed command, `Null` if no command has been executed - no `panic` or `stderr` output implies successful execution (all tests pass).
   - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
 
 Run the pipeline by executing the command below from the application directory:
