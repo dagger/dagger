@@ -112,6 +112,7 @@ impl Selection {
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
+    use serde::Serialize;
 
     use super::query;
 
@@ -207,5 +208,27 @@ mod tests {
 
         let b = root.select("b").build().unwrap();
         assert_eq!(b, r#"query{test{b}}"#.to_string());
+    }
+
+    #[derive(Serialize)]
+    struct CustomType {
+        pub name: String,
+        pub s: Option<Box<CustomType>>,
+    }
+
+    #[test]
+    fn test_arg_custom_type() {
+        let input = CustomType {
+            name: "some-name".to_string(),
+            s: Some(Box::new(CustomType {
+                name: "some-other-name".to_string(),
+                s: None,
+            })),
+        };
+
+        let root = query().select("a").arg("arg", input).unwrap();
+        let query = root.build().unwrap();
+
+        assert_eq!(query, r#"query{a(arg:"some-string")}"#.to_string())
     }
 }
