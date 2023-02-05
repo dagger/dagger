@@ -59,10 +59,10 @@ impl Container {
     /// * `target` - Target build stage to build.
     pub fn build(
         &self,
-        context: DirectoryID,
-        dockerfile: Option<String>,
-        build_args: Option<Vec<BuildArg>>,
-        target: Option<String>,
+        _context: DirectoryID,
+        _dockerfile: Option<String>,
+        _build_args: Option<Vec<BuildArg>>,
+        _target: Option<String>,
     ) -> Container {
         todo!()
     }
@@ -73,7 +73,7 @@ impl Container {
     }
 
     /// Retrieves a directory at the given path. Mounts are included.
-    pub fn directory(&self, path: String) -> Directory {
+    pub fn directory(&self, _path: String) -> Directory {
         todo!()
     }
 
@@ -83,7 +83,7 @@ impl Container {
     }
 
     /// Retrieves the value of the specified environment variable.
-    pub fn env_variable(&self, name: String) -> Option<String> {
+    pub fn env_variable(&self, _name: String) -> Option<String> {
         todo!()
     }
 
@@ -104,11 +104,11 @@ impl Container {
     ///   The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     pub fn exec(
         &self,
-        args: Option<Vec<String>>,
-        stdin: Option<String>,
-        redirect_stdout: Option<String>,
-        redirect_stderr: Option<String>,
-        experimental_privileged_nesting: Option<Boolean>,
+        _args: Option<Vec<String>>,
+        _stdin: Option<String>,
+        _redirect_stdout: Option<String>,
+        _redirect_stderr: Option<String>,
+        _experimental_privileged_nesting: Option<Boolean>,
     ) -> Container {
         todo!()
     }
@@ -127,12 +127,12 @@ impl Container {
     ///   Path can be relative to the engine's workdir or absolute.
     /// * `platformVariants` - Identifiers for other platform specific containers.
     ///   Used for multi-platform image.
-    pub fn export(&self, path: String, platform_variants: Option<Vec<ContainerID>>) -> Boolean {
+    pub fn export(&self, _path: String, _platform_variants: Option<Vec<ContainerID>>) -> Boolean {
         todo!()
     }
 
     /// Retrieves a file at the given path. Mounts are included.
-    pub fn file(&self, path: String) -> File {
+    pub fn file(&self, _path: String) -> File {
         todo!()
     }
 
@@ -141,7 +141,7 @@ impl Container {
     ///
     /// * `address` - Image's address from its registry.
     ///   Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
-    pub fn from(&self, address: String) -> Container {
+    pub fn from(&self, _address: String) -> Container {
         todo!()
     }
 
@@ -156,7 +156,7 @@ impl Container {
     }
 
     /// Retrieves the value of the specified label.
-    pub fn label(&self, name: String) -> Option<String> {
+    pub fn label(&self, _name: String) -> Option<String> {
         todo!()
     }
 
@@ -171,7 +171,7 @@ impl Container {
     }
 
     /// Creates a named sub-pipeline
-    pub fn pipeline(&self, name: String, description: Option<String>) -> Container {
+    pub fn pipeline(&self, _name: String, _description: Option<String>) -> Container {
         todo!()
     }
 
@@ -187,7 +187,7 @@ impl Container {
     ///   Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     /// * `platformVariants` - Identifiers for other platform specific containers.
     ///   Used for multi-platform image.
-    pub fn publish(&self, address: String, platform_variants: Option<Vec<ContainerID>>) -> String {
+    pub fn publish(&self, _address: String, _platform_variants: Option<Vec<ContainerID>>) -> String {
         todo!()
     }
 
@@ -214,28 +214,28 @@ impl Container {
     }
 
     /// Configures default arguments for future commands.
-    pub fn with_default_args(&self, args: Option<Vec<String>>) -> Container {
+    pub fn with_default_args(&self, _args: Option<Vec<String>>) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a directory written at the given path.
     pub fn with_directory(
         &self,
-        path: String,
-        directory: DirectoryID,
-        exclude: Option<Vec<String>>,
-        include: Option<Vec<String>>,
+        _path: String,
+        _directory: DirectoryID,
+        _exclude: Option<Vec<String>>,
+        _include: Option<Vec<String>>,
     ) -> Container {
         todo!()
     }
 
     /// Retrieves this container but with a different command entrypoint.
-    pub fn with_entrypoint(&self, args: Vec<String>) -> Container {
+    pub fn with_entrypoint(&self, _args: Vec<String>) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus the given environment variable.
-    pub fn with_env_variable(&self, name: String, value: String) -> Container {
+    pub fn with_env_variable(&self, _name: String, _value: String) -> Container {
         todo!()
     }
 
@@ -251,112 +251,112 @@ impl Container {
     ///   The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     pub fn with_exec(
         &self,
-        args: Vec<String>,
-        stdin: Option<String>,
-        redirect_stdout: Option<String>,
-        redirect_stderr: Option<String>,
-        experimental_privileged_nesting: Option<Boolean>,
+        _args: Vec<String>,
+        _stdin: Option<String>,
+        _redirect_stdout: Option<String>,
+        _redirect_stderr: Option<String>,
+        _experimental_privileged_nesting: Option<Boolean>,
     ) -> Container {
         todo!()
     }
 
     /// Initializes this container from this DirectoryID.
-    pub fn with_fs(&self, id: DirectoryID) -> Container {
+    pub fn with_fs(&self, _id: DirectoryID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus the contents of the given file copied to the given path.
-    pub fn with_file(&self, path: String, source: FileID, permissions: Option<Int>) -> Container {
+    pub fn with_file(&self, _path: String, _source: FileID, _permissions: Option<Int>) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus the given label.
-    pub fn with_label(&self, name: String, value: String) -> Container {
+    pub fn with_label(&self, _name: String, _value: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a cache volume mounted at the given path.
     pub fn with_mounted_cache(
         &self,
-        path: String,
-        cache: CacheID,
-        source: Option<DirectoryID>,
+        _path: String,
+        _cache: CacheID,
+        _source: Option<DirectoryID>,
     ) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a directory mounted at the given path.
-    pub fn with_mounted_directory(&self, path: String, source: DirectoryID) -> Container {
+    pub fn with_mounted_directory(&self, _path: String, _source: DirectoryID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a file mounted at the given path.
-    pub fn with_mounted_file(&self, path: String, source: FileID) -> Container {
+    pub fn with_mounted_file(&self, _path: String, _source: FileID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a secret mounted into a file at the given path.
-    pub fn with_mounted_secret(&self, path: String, source: SecretID) -> Container {
+    pub fn with_mounted_secret(&self, _path: String, _source: SecretID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a temporary directory mounted at the given path.
-    pub fn with_mounted_temp(&self, path: String) -> Container {
+    pub fn with_mounted_temp(&self, _path: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a new file written at the given path.
     pub fn with_new_file(
         &self,
-        path: String,
-        contents: Option<String>,
-        permissions: Option<Int>,
+        _path: String,
+        _contents: Option<String>,
+        _permissions: Option<Int>,
     ) -> Container {
         todo!()
     }
 
     /// Initializes this container from this DirectoryID.
-    pub fn with_rootfs(&self, id: DirectoryID) -> Container {
+    pub fn with_rootfs(&self, _id: DirectoryID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus an env variable containing the given secret.
-    pub fn with_secret_variable(&self, name: String, secret: SecretID) -> Container {
+    pub fn with_secret_variable(&self, _name: String, _secret: SecretID) -> Container {
         todo!()
     }
 
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
-    pub fn with_unix_socket(&self, path: String, source: SocketID) -> Container {
+    pub fn with_unix_socket(&self, _path: String, _source: SocketID) -> Container {
         todo!()
     }
 
     /// Retrieves this containers with a different command user.
-    pub fn with_user(&self, name: String) -> Container {
+    pub fn with_user(&self, _name: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container with a different working directory.
-    pub fn with_workdir(&self, path: String) -> Container {
+    pub fn with_workdir(&self, _path: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container minus the given environment variable.
-    pub fn without_env_variable(&self, name: String) -> Container {
+    pub fn without_env_variable(&self, _name: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container minus the given environment label.
-    pub fn without_label(&self, name: String) -> Container {
+    pub fn without_label(&self, _name: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container after unmounting everything at the given path.
-    pub fn without_mount(&self, path: String) -> Container {
+    pub fn without_mount(&self, _path: String) -> Container {
         todo!()
     }
 
     /// Retrieves this container with a previously added Unix socket removed.
-    pub fn without_unix_socket(&self, path: String) -> Container {
+    pub fn without_unix_socket(&self, _path: String) -> Container {
         todo!()
     }
 
@@ -373,12 +373,12 @@ pub struct Directory {}
 
 impl Directory {
     /// Gets the difference between this directory and an another directory.
-    pub fn diff(&self, other: DirectoryID) -> Directory {
+    pub fn diff(&self, _other: DirectoryID) -> Directory {
         todo!()
     }
 
     /// Retrieves a directory at the given path.
-    pub fn directory(&self, path: String) -> Directory {
+    pub fn directory(&self, _path: String) -> Directory {
         todo!()
     }
 
@@ -392,26 +392,26 @@ impl Directory {
     /// * `target` - Target build stage to build.
     pub fn docker_build(
         &self,
-        dockerfile: Option<String>,
-        platform: Option<Platform>,
-        build_args: Option<Vec<BuildArg>>,
-        target: Option<String>,
+        _dockerfile: Option<String>,
+        _platform: Option<Platform>,
+        _build_args: Option<Vec<BuildArg>>,
+        _target: Option<String>,
     ) -> Container {
         todo!()
     }
 
     /// Returns a list of files and directories at the given path.
-    pub fn entries(&self, path: Option<String>) -> Vec<String> {
+    pub fn entries(&self, _path: Option<String>) -> Vec<String> {
         todo!()
     }
 
     /// Writes the contents of the directory to a path on the host.
-    pub fn export(&self, path: String) -> Boolean {
+    pub fn export(&self, _path: String) -> Boolean {
         todo!()
     }
 
     /// Retrieves a file at the given path.
-    pub fn file(&self, path: String) -> File {
+    pub fn file(&self, _path: String) -> File {
         todo!()
     }
 
@@ -421,12 +421,12 @@ impl Directory {
     }
 
     /// load a project's metadata
-    pub fn load_project(&self, config_path: String) -> Project {
+    pub fn load_project(&self, _config_path: String) -> Project {
         todo!()
     }
 
     /// Creates a named sub-pipeline.
-    pub fn pipeline(&self, name: String, description: Option<String>) -> Directory {
+    pub fn pipeline(&self, _name: String, _description: Option<String>) -> Directory {
         todo!()
     }
 
@@ -439,46 +439,46 @@ impl Directory {
     ///   (e.g. ["app/", "package.*"]).
     pub fn with_directory(
         &self,
-        path: String,
-        directory: DirectoryID,
-        exclude: Option<Vec<String>>,
-        include: Option<Vec<String>>,
+        _path: String,
+        _directory: DirectoryID,
+        _exclude: Option<Vec<String>>,
+        _include: Option<Vec<String>>,
     ) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory plus the contents of the given file copied to the given path.
-    pub fn with_file(&self, path: String, source: FileID, permissions: Option<Int>) -> Directory {
+    pub fn with_file(&self, _path: String, _source: FileID, _permissions: Option<Int>) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory plus a new directory created at the given path.
-    pub fn with_new_directory(&self, path: String, permissions: Option<Int>) -> Directory {
+    pub fn with_new_directory(&self, _path: String, _permissions: Option<Int>) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory plus a new file written at the given path.
     pub fn with_new_file(
         &self,
-        path: String,
-        contents: String,
-        permissions: Option<Int>,
+        _path: String,
+        _contents: String,
+        _permissions: Option<Int>,
     ) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
-    pub fn with_timestamps(&self, timestamp: Int) -> Directory {
+    pub fn with_timestamps(&self, _timestamp: Int) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory with the directory at the given path removed.
-    pub fn without_directory(&self, path: String) -> Directory {
+    pub fn without_directory(&self, _path: String) -> Directory {
         todo!()
     }
 
     /// Retrieves this directory with the file at the given path removed.
-    pub fn without_file(&self, path: String) -> Directory {
+    pub fn without_file(&self, _path: String) -> Directory {
         todo!()
     }
 }
@@ -512,7 +512,7 @@ impl File {
     }
 
     /// Writes the file to a file path on the host.
-    pub fn export(&self, path: String) -> Boolean {
+    pub fn export(&self, _path: String) -> Boolean {
         todo!()
     }
 
@@ -532,7 +532,7 @@ impl File {
     }
 
     /// Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
-    pub fn with_timestamps(&self, timestamp: Int) -> File {
+    pub fn with_timestamps(&self, _timestamp: Int) -> File {
         todo!()
     }
 }
@@ -551,8 +551,8 @@ impl GitRef {
     /// The filesystem tree at this ref.
     pub fn tree(
         &self,
-        ssh_known_hosts: Option<String>,
-        ssh_auth_socket: Option<SocketID>,
+        _ssh_known_hosts: Option<String>,
+        _ssh_auth_socket: Option<SocketID>,
     ) -> Directory {
         todo!()
     }
@@ -565,7 +565,7 @@ pub struct GitRepository {}
 
 impl GitRepository {
     /// Returns details on one branch.
-    pub fn branch(&self, name: String) -> GitRef {
+    pub fn branch(&self, _name: String) -> GitRef {
         todo!()
     }
 
@@ -575,12 +575,12 @@ impl GitRepository {
     }
 
     /// Returns details on one commit.
-    pub fn commit(&self, id: String) -> GitRef {
+    pub fn commit(&self, _id: String) -> GitRef {
         todo!()
     }
 
     /// Returns details on one tag.
-    pub fn tag(&self, name: String) -> GitRef {
+    pub fn tag(&self, _name: String) -> GitRef {
         todo!()
     }
 
@@ -599,25 +599,25 @@ impl Host {
     /// Accesses a directory on the host.
     pub fn directory(
         &self,
-        path: String,
-        exclude: Option<Vec<String>>,
-        include: Option<Vec<String>>,
+        _path: String,
+        _exclude: Option<Vec<String>>,
+        _include: Option<Vec<String>>,
     ) -> Directory {
         todo!()
     }
 
     /// Accesses an environment variable on the host.
-    pub fn env_variable(&self, name: String) -> Option<HostVariable> {
+    pub fn env_variable(&self, _name: String) -> Option<HostVariable> {
         todo!()
     }
 
     /// Accesses a Unix socket on the host.
-    pub fn unix_socket(&self, path: String) -> Socket {
+    pub fn unix_socket(&self, _path: String) -> Socket {
         todo!()
     }
 
     /// Retrieves the current working directory on the host.
-    pub fn workdir(&self, exclude: Option<Vec<String>>, include: Option<Vec<String>>) -> Directory {
+    pub fn workdir(&self, _exclude: Option<Vec<String>>, _include: Option<Vec<String>>) -> Directory {
         todo!()
     }
 }
@@ -703,14 +703,14 @@ impl Query {
     /// # Arguments
     ///
     /// * `key` - A string identifier to target this cache volume (e.g. "myapp-cache").
-    pub fn cache_volume(&self, key: String) -> CacheVolume {
+    pub fn cache_volume(&self, _key: String) -> CacheVolume {
         todo!()
     }
 
     /// Loads a container from ID.
     /// Null ID returns an empty container (scratch).
     /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
-    pub fn container(&self, id: Option<ContainerID>, platform: Option<Platform>) -> Container {
+    pub fn container(&self, _id: Option<ContainerID>, _platform: Option<Platform>) -> Container {
         todo!()
     }
 
@@ -720,17 +720,17 @@ impl Query {
     }
 
     /// Load a directory by ID. No argument produces an empty directory.
-    pub fn directory(&self, id: Option<DirectoryID>) -> Directory {
+    pub fn directory(&self, _id: Option<DirectoryID>) -> Directory {
         todo!()
     }
 
     /// Loads a file by ID.
-    pub fn file(&self, id: FileID) -> Option<File> {
+    pub fn file(&self, _id: FileID) -> Option<File> {
         todo!()
     }
 
     /// Queries a git repository.
-    pub fn git(&self, url: String, keep_git_dir: Option<Boolean>) -> GitRepository {
+    pub fn git(&self, _url: String, _keep_git_dir: Option<Boolean>) -> GitRepository {
         todo!()
     }
 
@@ -740,27 +740,27 @@ impl Query {
     }
 
     /// Returns a file containing an http remote url content.
-    pub fn http(&self, url: String) -> File {
+    pub fn http(&self, _url: String) -> File {
         todo!()
     }
 
     /// Creates a named sub-pipeline
-    pub fn pipeline(&self, name: String, description: Option<String>) -> Query {
+    pub fn pipeline(&self, _name: String, _description: Option<String>) -> Query {
         todo!()
     }
 
     /// Look up a project by name
-    pub fn project(&self, name: String) -> Project {
+    pub fn project(&self, _name: String) -> Project {
         todo!()
     }
 
     /// Loads a secret from its ID.
-    pub fn secret(&self, id: SecretID) -> Secret {
+    pub fn secret(&self, _id: SecretID) -> Secret {
         todo!()
     }
 
     /// Loads a socket by its ID.
-    pub fn socket(&self, id: Option<SocketID>) -> Socket {
+    pub fn socket(&self, _id: Option<SocketID>) -> Socket {
         todo!()
     }
 }
