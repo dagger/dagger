@@ -1,17 +1,19 @@
-use std::{
-    collections::HashMap,
-    ops::Add,
-    sync::{Arc},
-};
+use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use serde::{Serialize};
+use serde::Serialize;
 
 pub fn query() -> Selection {
-    Selection {
-        name: None,
-        alias: None,
-        args: None,
-        prev: None,
+    Selection::default()
+}
+
+impl Default for Selection {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            alias: Default::default(),
+            args: Default::default(),
+            prev: Default::default(),
+        }
     }
 }
 
