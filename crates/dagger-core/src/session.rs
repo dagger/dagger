@@ -1,11 +1,10 @@
-use dagger_core::introspection::{self, IntrospectionResponse};
 use graphql_client::GraphQLQuery;
 use reqwest::{
     blocking::{Client, RequestBuilder},
     header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
 };
 
-use crate::{config::Config, connect_params::ConnectParams};
+use crate::{config::Config, connect_params::ConnectParams, introspection::IntrospectionResponse};
 
 #[derive(GraphQLQuery)]
 #[graphql(
@@ -65,7 +64,7 @@ impl Session {
             return Err(eyre::anyhow!(error_message));
         }
 
-        let json: introspection::IntrospectionResponse = res.json()?;
+        let json: IntrospectionResponse = res.json()?;
 
         Ok(json)
     }

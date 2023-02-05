@@ -17,6 +17,4 @@ impl Client {
             inner: Arc::new(InnerClient {}),
         })
     }
-
-    //    pub fn container(&self) -> Container {}
 }

@@ -1,6 +1,7 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use serde::Serialize;
+use futures::executor::block_on;
+use serde::{Deserialize, Serialize};
 
 pub fn query() -> Selection {
     Selection::default()
@@ -90,6 +91,20 @@ impl Selection {
         }
 
         Ok(fields.join("{") + &"}".repeat(fields.len() - 1))
+    }
+
+    pub fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<Option<D>>
+    where
+        D: for<'de> Deserialize<'de>,
+    {
+        let query = self.build()?;
+
+        let resp: Option<D> = match block_on(gql_client.query(&query)) {
+            Ok(r) => r,
+            Err(e) => eyre::bail!(e),
+        };
+
+        Ok(resp)
     }
 
     fn path(&self) -> Vec<Selection> {

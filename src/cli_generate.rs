@@ -2,8 +2,9 @@ use std::io::Write;
 
 use clap::{Arg, ArgMatches};
 use dagger_codegen::codegen::CodeGeneration;
-
-use crate::{config::Config, engine::Engine, session::Session};
+use dagger_core::config::Config;
+use dagger_core::engine::Engine;
+use dagger_core::session::Session;
 
 #[allow(dead_code)]
 pub struct GenerateCommand;

@@ -1,5 +1,4 @@
-use dagger_core::introspection::IntrospectionResponse;
-
+use crate::introspection::IntrospectionResponse;
 use crate::{config::Config, engine::Engine, session::Session};
 
 pub fn get_schema() -> eyre::Result<IntrospectionResponse> {

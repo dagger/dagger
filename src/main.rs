@@ -2,14 +2,6 @@ use cli::Cli;
 
 pub mod cli;
 mod cli_generate;
-mod cli_session;
-mod config;
-mod connect_params;
-pub mod dagger;
-mod downloader;
-mod engine;
-mod schema;
-mod session;
 
 fn main() -> eyre::Result<()> {
     let args = std::env::args();
