@@ -229,6 +229,10 @@ mod tests {
         let root = query().select("a").arg("arg", input).unwrap();
         let query = root.build().unwrap();
 
-        assert_eq!(query, r#"query{a(arg:"some-string")}"#.to_string())
+        assert_eq!(
+            query,
+            r#"query{a(arg:{"name":"some-name","s":{"name":"some-other-name","s":null}})}"#
+                .to_string()
+        )
     }
 }
