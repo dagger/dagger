@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use futures::executor::block_on;
 use serde::{Deserialize, Serialize};
+use tokio::task::block_in_place;
 
 pub fn query() -> Selection {
     Selection::default()
@@ -99,7 +99,14 @@ impl Selection {
     {
         let query = self.build()?;
 
-        let resp: Option<D> = match block_on(gql_client.query(&query)) {
+        let basic = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        dbg!(&query);
+
+        let resp: Option<D> = match basic.block_on(gql_client.query(&query)) {
             Ok(r) => r,
             Err(e) => eyre::bail!(e),
         };
