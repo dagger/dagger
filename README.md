@@ -16,6 +16,9 @@ Work in progress. This is not ready for usage yet
   - [x] Input
   - [x] Objects
 - [ ] Implement context and querier
+  - [x] Marshaller
+  - [x] Querier
+  - [ ] Context
 - [ ] Add codegen to hook into querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
