@@ -39,3 +39,30 @@ func TestServices(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Hello, world!", out)
 }
+
+func TestServiceHostnamesAreStable(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	www := c.Directory().WithNewFile("index.html", "Hello, world!")
+
+	srv := c.Container().
+		From("python").
+		WithMountedDirectory("/srv/www", www).
+		WithWorkdir("/srv/www").
+		WithExposedPort(8000).
+		WithExec([]string{"echo", "hello"}).
+		WithExec([]string{"echo", "hello"}).
+		WithExec([]string{"echo", "hello"}).
+		WithExec([]string{"python", "-m", "http.server"})
+
+	hosts := map[string]int{}
+
+	for i := 0; i < 100; i++ {
+		hostname, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+		hosts[hostname]++
+	}
+
+	require.Len(t, hosts, 1)
+}
