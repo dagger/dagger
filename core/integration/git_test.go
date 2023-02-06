@@ -160,17 +160,6 @@ sleep infinity
 	sshHost, err := sshSvc.Hostname(ctx)
 	require.NoError(t, err)
 
-	// entries, err := c.Container().
-	// 	From("alpine/git").
-	// 	WithServiceDependency(sshSvc).
-	// 	WithUnixSocket("/root/.ssh/agent.sock", c.Host().UnixSocket(sock)).
-	// 	WithMountedFile("/root/.ssh/known_hosts", c.Directory().WithNewFile("known_hosts", fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey))).File("known_hosts")).
-	// 	WithEntrypoint(nil).
-	// 	WithExec([]string{"cat", "/etc/resolv.conf"}).
-	// 	WithExec([]string{"git", "clone", fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort), "/src"}).
-	// 	Directory("/src").
-	// 	Entries(ctx)
-
 	entries, err := c.Git(fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)).
 		Branch("main").
 		Tree(dagger.GitRefTreeOpts{
