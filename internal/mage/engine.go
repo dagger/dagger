@@ -33,6 +33,8 @@ const (
 
 	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
 	engineEntrypointCommand = "/usr/local/bin/" + engineBinName + " --debug --config " + engineTomlPath + " --oci-worker-binary /usr/local/bin/" + shimBinName
+
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 )
 
 // setting cgroup v2 nesting. ref: https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
@@ -269,6 +271,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"run",
 		"-d",
 		"--rm",
+		"-e", cacheConfigEnvName,
 		"-v", volumeName+":"+engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",

@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/armon/circbuf"
@@ -28,21 +30,53 @@ const (
 // of execs when they fail.
 type GatewayClient struct {
 	bkgw.Client
+	refs map[*ref]struct{}
+	mu   sync.Mutex
+}
+
+func NewGatewayClient(baseClient bkgw.Client) *GatewayClient {
+	return &GatewayClient{
+		Client: baseClient,
+		refs:   make(map[*ref]struct{}),
+	}
 }
 
 func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bkgw.Result, rerr error) {
 	defer wrapSolveError(&rerr, g.Client)
+	req.CacheImports = []bkgw.CacheOptionsEntry{{
+		Type: "dagger",
+	}}
 	res, err := g.Client.Solve(ctx, req)
 	if err != nil {
 		return nil, err
 	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	if res.Ref != nil {
-		res.Ref = &ref{Reference: res.Ref, gw: g}
+		r := &ref{Reference: res.Ref, gw: g}
+		g.refs[r] = struct{}{}
+		res.Ref = r
 	}
 	for k, r := range res.Refs {
-		res.Refs[k] = &ref{Reference: r, gw: g}
+		r := &ref{Reference: r, gw: g}
+		g.refs[r] = struct{}{}
+		res.Refs[k] = r
 	}
 	return res, nil
+}
+
+// CombinedResult returns a buildkit result with all the refs solved by this client so far.
+// This is useful for constructing a result for remote caching.
+func (g *GatewayClient) CombinedResult() *bkgw.Result {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	res := bkgw.NewResult()
+	i := 0
+	for r := range g.refs {
+		res.AddRef(strconv.Itoa(i), r.Reference)
+		i++
+	}
+	return res
 }
 
 type ref struct {

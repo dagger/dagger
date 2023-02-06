@@ -20,16 +20,11 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
+	daggerremotecache "github.com/dagger/dagger/engine/remotecache"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/moby/buildkit/cache/remotecache"
-	"github.com/moby/buildkit/cache/remotecache/azblob"
-	"github.com/moby/buildkit/cache/remotecache/gha"
-	inlineremotecache "github.com/moby/buildkit/cache/remotecache/inline"
-	localremotecache "github.com/moby/buildkit/cache/remotecache/local"
-	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
-	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/control"
@@ -672,19 +667,10 @@ func newController(c *cli.Context, cfg *config.Config) (*control.Controller, err
 	}
 
 	remoteCacheExporterFuncs := map[string]remotecache.ResolveCacheExporterFunc{
-		"registry": registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
-		"local":    localremotecache.ResolveCacheExporterFunc(sessionManager),
-		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
-		"gha":      gha.ResolveCacheExporterFunc(),
-		"s3":       s3remotecache.ResolveCacheExporterFunc(),
-		"azblob":   azblob.ResolveCacheExporterFunc(),
+		"dagger": daggerremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
 	}
 	remoteCacheImporterFuncs := map[string]remotecache.ResolveCacheImporterFunc{
-		"registry": registryremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
-		"local":    localremotecache.ResolveCacheImporterFunc(sessionManager),
-		"gha":      gha.ResolveCacheImporterFunc(),
-		"s3":       s3remotecache.ResolveCacheImporterFunc(),
-		"azblob":   azblob.ResolveCacheImporterFunc(),
+		"dagger": daggerremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
 	}
 	return control.NewController(control.Opt{
 		SessionManager:            sessionManager,
