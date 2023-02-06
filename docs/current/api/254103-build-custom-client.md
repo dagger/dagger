@@ -68,7 +68,6 @@ Once the client library is installed, create an API client as described below.
 Add the following code to `src/main.rs`:
 
 ```rust file=snippets/build-custom-client/step2/main.rs
-
 ```
 
 </TabItem>
@@ -77,7 +76,6 @@ Add the following code to `src/main.rs`:
 Create a new file named `client.php` and add the following code to it:
 
 ```php file=snippets/build-custom-client/step2/client.php
-
 ```
 
 </TabItem>
