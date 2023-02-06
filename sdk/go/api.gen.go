@@ -28,6 +28,8 @@ type Platform string
 // A unique identifier for a secret.
 type SecretID string
 
+type ServiceID string
+
 // A content-addressed socket identifier.
 type SocketID string
 
@@ -443,6 +445,15 @@ func (r *Container) Rootfs() *Directory {
 	q := r.q.Select("rootfs")
 
 	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Container) Start() *Service {
+	q := r.q.Select("start")
+
+	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -1808,6 +1819,27 @@ func (r *Client) Secret(id SecretID) *Secret {
 	}
 }
 
+// ServiceOpts contains options for Query.Service
+type ServiceOpts struct {
+	ID ServiceID
+}
+
+func (r *Client) Service(opts ...ServiceOpts) *Service {
+	q := r.q.Select("service")
+	// `id` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+			break
+		}
+	}
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
 // SocketOpts contains options for Query.Socket
 type SocketOpts struct {
 	ID SocketID
@@ -1866,6 +1898,50 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	var response string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+type Service struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+func (r *Service) Container() *Container {
+	q := r.q.Select("container")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Service) Detach(ctx context.Context) (bool, error) {
+	q := r.q.Select("detach")
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+	q := r.q.Select("id")
+
+	var response ServiceID
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Service) XXX_GraphQLType() string {
+	return "Service"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
 
 type Socket struct {

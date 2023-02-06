@@ -34,6 +34,10 @@ class SecretID(Scalar):
     """A unique identifier for a secret."""
 
 
+class ServiceID(Scalar):
+    ...
+
+
 class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
@@ -449,6 +453,12 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def start(self) -> "Service":
+        _args: list[Arg] = []
+        _ctx = self._select("start", _args)
+        return Service(_ctx)
 
     @typecheck
     def stderr(self) -> Optional[str]:
@@ -1628,6 +1638,14 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
+    def service(self, id: Optional[ServiceID] = None) -> "Service":
+        _args = [
+            Arg("id", id, None),
+        ]
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
+
+    @typecheck
     def socket(self, id: Optional[SocketID] = None) -> "Socket":
         """Loads a socket by its ID."""
         _args = [
@@ -1674,6 +1692,35 @@ class Secret(Type):
         return _ctx.execute_sync(str)
 
 
+class Service(Type):
+    @typecheck
+    def container(self) -> Container:
+        _args: list[Arg] = []
+        _ctx = self._select("container", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def detach(self) -> bool:
+        """Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("detach", _args)
+        return _ctx.execute_sync(bool)
+
+    @typecheck
+    def id(self) -> ServiceID:
+        """Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return _ctx.execute_sync(ServiceID)
+
+
 class Socket(Type):
     @typecheck
     def id(self) -> SocketID:
@@ -1700,6 +1747,7 @@ __all__ = [
     "FileID",
     "Platform",
     "SecretID",
+    "ServiceID",
     "SocketID",
     "BuildArg",
     "CacheVolume",
@@ -1715,5 +1763,6 @@ __all__ = [
     "Project",
     "Client",
     "Secret",
+    "Service",
     "Socket",
 ]

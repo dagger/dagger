@@ -17,6 +17,9 @@ var File string
 //go:embed container.graphqls
 var Container string
 
+//go:embed service.graphqls
+var Service string
+
 //go:embed http.graphqls
 var HTTP string
 

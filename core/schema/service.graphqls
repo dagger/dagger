@@ -1,0 +1,13 @@
+extend type Query {
+  service(id: ServiceID): Service!
+}
+
+scalar ServiceID
+
+type Service {
+  id: ServiceID!
+
+  container: Container!
+
+  detach: Boolean!
+}

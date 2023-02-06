@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"path/filepath"
@@ -11,7 +12,6 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
-	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -106,33 +106,11 @@ git config --global user.name "Test User"
 git commit -m "init"
 
 chmod 0600 ~/.ssh/host_key
-$(which sshd) -h ~/.ssh/host_key -p 3486
+$(which sshd) -h ~/.ssh/host_key -p 2222
 
 sleep infinity
 `).
 		File("setup.sh")
-
-	go func() {
-		_, err := hostKeyGen.
-			WithMountedFile("/root/start.sh", setupScript).
-			WithExec([]string{"sh", "/root/start.sh"}).
-			ExitCode(ctx)
-		if err != nil {
-			t.Logf("error running git + ssh: %v", err)
-		}
-	}()
-
-	// include a random ID so it runs every time (hack until we have no-cache or equivalent support)
-	randomID := identity.NewID()
-
-	t.Logf("polling for ssh server with id %s", randomID)
-
-	_, err = c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("RANDOM", randomID).
-		WithExec([]string{"sh", "-c", "for i in $(seq 1 120); do nc -zv 127.0.0.1 3486 && exit 0; sleep 1; done; exit 1"}).
-		ExitCode(ctx)
-	require.NoError(t, err)
 
 	key, err := ssh.ParseRawPrivateKey([]byte(userPrivateKey))
 	require.NoError(t, err)
@@ -170,10 +148,33 @@ sleep infinity
 		}
 	}()
 
-	entries, err := c.Git("ssh://root@127.0.0.1:3486/root/repo").
+	sshPort := 2222
+	sshSvc := hostKeyGen.
+		WithMountedFile("/root/start.sh", setupScript).
+		WithExposedPort(sshPort).
+		WithExec([]string{"sh", "/root/start.sh"})
+
+	_, err = sshSvc.Start().ID(ctx)
+	require.NoError(t, err)
+
+	sshHost, err := sshSvc.Hostname(ctx)
+	require.NoError(t, err)
+
+	// entries, err := c.Container().
+	// 	From("alpine/git").
+	// 	WithServiceDependency(sshSvc).
+	// 	WithUnixSocket("/root/.ssh/agent.sock", c.Host().UnixSocket(sock)).
+	// 	WithMountedFile("/root/.ssh/known_hosts", c.Directory().WithNewFile("known_hosts", fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey))).File("known_hosts")).
+	// 	WithEntrypoint(nil).
+	// 	WithExec([]string{"cat", "/etc/resolv.conf"}).
+	// 	WithExec([]string{"git", "clone", fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort), "/src"}).
+	// 	Directory("/src").
+	// 	Entries(ctx)
+
+	entries, err := c.Git(fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)).
 		Branch("main").
 		Tree(dagger.GitRefTreeOpts{
-			SSHKnownHosts: "[127.0.0.1]:3486 " + strings.TrimSpace(hostPubKey),
+			SSHKnownHosts: fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 			SSHAuthSocket: c.Host().UnixSocket(sock),
 		}).Entries(ctx)
 	require.NoError(t, err)

@@ -290,6 +290,8 @@ type Container {
   ): Container!
 
   withServiceDependency(service: ContainerID!): Container!
+
+  start: Service!
 }
 
 "A simple key value object that represents an environment variable."

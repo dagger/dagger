@@ -13,7 +13,8 @@ import (
 type containerSchema struct {
 	*baseSchema
 
-	host *core.Host
+	host     *core.Host
+	services *core.Services
 }
 
 var _ router.ExecutableSchema = &containerSchema{}
@@ -83,6 +84,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"hostname":              router.ToResolver(s.hostname),
 			"endpoint":              router.ToResolver(s.endpoint),
 			"withServiceDependency": router.ToResolver(s.withServiceDependency),
+			"start":                 router.ToResolver(s.start),
 		},
 	}
 }
@@ -606,4 +608,15 @@ func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Cont
 		Port:        args.Port,
 		Description: args.Description,
 	})
+}
+
+func (s *containerSchema) start(ctx *router.Context, parent *core.Container, args any) (*core.Service, error) {
+	svc, err := parent.Start(ctx, s.gw)
+	if err != nil {
+		return nil, err
+	}
+
+	s.services.Started(svc)
+
+	return svc, nil
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1089,10 +1090,10 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
-func (container *Container) Start(ctx context.Context, gw bkgw.Client) error {
+func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	health := newHealth(gw, payload.Hostname, payload.Ports)
@@ -1110,18 +1111,25 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) error {
 		exited <- err
 	}()
 
+	id := identity.NewID()
+
 	select {
 	case <-checked:
 		_ = stop // leave it running
-		return nil
+
+		return &Service{
+			ID:        ServiceID(id),
+			Container: container,
+			Detach:    stop,
+		}, nil
 	case err := <-exited:
 		stop() // interrupt healthcheck
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		return fmt.Errorf("service exited before healthcheck")
+		return nil, fmt.Errorf("service exited before healthcheck")
 	}
 }
 
@@ -1346,7 +1354,7 @@ func (container *Container) withServices(ctx context.Context, gw bkgw.Client, fn
 		}
 
 		eg.Go(func() error {
-			err = svc.Start(svcCtx, gw)
+			_, err = svc.Start(svcCtx, gw)
 			if err != nil {
 				return fmt.Errorf("start %s: %w", host, err)
 			}

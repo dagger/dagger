@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"sync"
 	"syscall"
 
 	"github.com/moby/buildkit/client/llb"
@@ -12,7 +13,39 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 )
 
-const shimExePath = "/bass/shim"
+type Service struct {
+	ID ServiceID
+
+	Container *Container
+
+	Detach func()
+}
+
+type ServiceID string
+
+type Services struct {
+	running  map[ServiceID]*Service
+	runningL sync.Mutex
+}
+
+func NewServices() *Services {
+	return &Services{
+		running: make(map[ServiceID]*Service),
+	}
+}
+
+func (ss *Services) Started(s *Service) {
+	ss.runningL.Lock()
+	ss.running[s.ID] = s
+	ss.runningL.Unlock()
+}
+
+func (ss *Services) Service(id ServiceID) (*Service, bool) {
+	ss.runningL.Lock()
+	v, found := ss.running[id]
+	ss.runningL.Unlock()
+	return v, found
+}
 
 type portHealthChecker struct {
 	gw    bkgw.Client
