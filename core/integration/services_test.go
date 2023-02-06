@@ -17,8 +17,8 @@ func TestServices(t *testing.T) {
 		From("python").
 		WithMountedDirectory("/srv/www", www).
 		WithWorkdir("/srv/www").
-		WithExec([]string{"python", "-m", "http.server"}).
-		WithExposedPort(8000)
+		WithExposedPort(8000).
+		WithExec([]string{"python", "-m", "http.server"})
 
 	hostname, err := srv.Hostname(ctx)
 	require.NoError(t, err)
