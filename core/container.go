@@ -1031,12 +1031,12 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	if len(payload.Ports) > 0 {
 		constraints := llb.NewConstraints(llb.Platform(platform))
 		rootVtx := execSt.Root().Output().Vertex(ctx, constraints)
-		digest, _, _, _, err := rootVtx.Marshal(ctx, constraints)
+		_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints)
 		if err != nil {
 			return nil, fmt.Errorf("marshal: %w", err)
 		}
 
-		hostname := hostHash(digest.String())
+		hostname := hostHash(opBytes)
 		payload.Hostname = hostname + daggerDNSDomain
 
 		runOpts = append(runOpts, llb.Hostname(hostname))
@@ -1528,8 +1528,8 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-func hostHash(val string) string {
-	return b32(xxh3.HashString(val))
+func hostHash(val []byte) string {
+	return b32(xxh3.Hash(val))
 }
 
 func b32(n uint64) string {
