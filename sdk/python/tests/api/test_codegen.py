@@ -225,17 +225,17 @@ def test_scalar_render(type_, expected, ctx: Context):
             ),
             dedent(
                 '''
-                class Enumeration(enum.StrEnum):
+                class Enumeration(Enum):
                     """Example of an enumeration."""
 
                     ONE = "ONE"
                     """First value."""
 
-                    TWO = "TWO"
-                    """Second value."""
-
                     THREE = "THREE"
                     """Third value."""
+
+                    TWO = "TWO"
+                    """Second value."""
                 ''',
             ),
         ),
@@ -251,13 +251,13 @@ def test_scalar_render(type_, expected, ctx: Context):
             ),
             dedent(
                 """
-                class Enumeration(enum.StrEnum):
+                class Enumeration(Enum):
 
                     ONE = "ONE"
 
-                    TWO = "TWO"
-
                     THREE = "THREE"
+
+                    TWO = "TWO"
                 """,
             ),
         ),

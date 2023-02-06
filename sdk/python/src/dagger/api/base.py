@@ -1,3 +1,4 @@
+import enum
 import functools
 import logging
 import typing
@@ -173,6 +174,13 @@ class Arg(typing.NamedTuple):
 
 class Scalar(str):
     """Custom scalar."""
+
+
+class Enum(str, enum.Enum):
+    """Custom enumeration."""
+
+    def __str__(self) -> str:
+        return str(self.value)
 
 
 class Object:
