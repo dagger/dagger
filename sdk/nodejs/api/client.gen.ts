@@ -67,9 +67,10 @@ export type CacheID = string & { __CacheID: never }
  */
 export enum CacheSharingMode {
   /**
-   * Shares the cache volume amongst many build pipelines
+   * Shares the cache volume amongst many build pipelines,
+   * but will serialize the writes
    */
-  Shared,
+  Locked,
 
   /**
    * Keeps a cache volume for a single build pipeline
@@ -77,10 +78,9 @@ export enum CacheSharingMode {
   Private,
 
   /**
-   * Shares the cache volume amongst many build pipelines,
-   * but will serialize the writes
+   * Shares the cache volume amongst many build pipelines
    */
-  Locked,
+  Shared,
 }
 export type ContainerBuildOpts = {
   /**

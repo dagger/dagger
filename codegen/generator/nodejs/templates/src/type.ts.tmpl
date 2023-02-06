@@ -13,7 +13,8 @@ export type {{ .Name }} = string & {__{{ .Name }}: never}
 	{{- if IsEnum . }}
 {{ template "object_comment" .Description }}
 export enum {{ .Name }} {
-		{{- range .EnumValues }}
+	{{- $sortedEnumValues := SortEnumFields .EnumValues  }}
+	{{- range $sortedEnumValues }}
 {{ template "type_field_comment" .Description }}
   {{ .Name | FormatEnum }},
 		{{- end }}

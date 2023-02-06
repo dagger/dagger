@@ -109,3 +109,46 @@ func TestSortInputFields(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 }
+
+func TestSortEnumFields(t *testing.T) {
+	genInput := func(names []string) []introspection.EnumValue {
+		var iv []introspection.EnumValue
+		for _, i := range names {
+			iv = append(iv, introspection.EnumValue{
+				Name: i,
+			})
+		}
+		return iv
+	}
+
+	t.Run("name, value", func(t *testing.T) {
+		names := []string{"name", "value"}
+
+		iv := genInput(names)
+
+		want := make([]introspection.EnumValue, len(iv))
+		copy(want, iv)
+
+		got := sortEnumFields(want)
+		require.Equal(t, want, got)
+	})
+	t.Run("value, name", func(t *testing.T) {
+		names := []string{"value", "name"}
+		iv := genInput(names)
+
+		want := genInput([]string{"name", "value"})
+
+		got := sortEnumFields(iv)
+		require.Equal(t, want, got)
+	})
+
+	t.Run("a, z, b, t, l", func(t *testing.T) {
+		names := []string{"a", "z", "b", "t", "l"}
+		iv := genInput(names)
+
+		want := genInput([]string{"a", "b", "l", "t", "z"})
+
+		got := sortEnumFields(iv)
+		require.Equal(t, want, got)
+	})
+}

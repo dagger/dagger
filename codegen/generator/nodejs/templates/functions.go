@@ -30,6 +30,7 @@ var (
 		"IsEnum":              isEnum,
 		"ArgsHaveDescription": argsHaveDescription,
 		"SortInputFields":     sortInputFields,
+		"SortEnumFields":      sortEnumFields,
 		"Solve":               solve,
 		"Subtract":            subtract,
 	}
@@ -138,6 +139,13 @@ func getOptionalArgs(values introspection.InputValues) introspection.InputValues
 }
 
 func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
+	sort.SliceStable(s, func(i, j int) bool {
+		return s[i].Name < s[j].Name
+	})
+	return s
+}
+
+func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	sort.SliceStable(s, func(i, j int) bool {
 		return s[i].Name < s[j].Name
 	})
