@@ -875,10 +875,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		return nil, fmt.Errorf("decode id: %w", err)
 	}
 
-	// TODO(vito): gross hack, but... works
-	hostname := hostHash(container.ID.String() + fmt.Sprintf("%#v", opts))
-	payload.Hostname = hostname + daggerDNSDomain
-
 	cfg := payload.Config
 	mounts := payload.Mounts
 	platform := payload.Platform
@@ -901,7 +897,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		llb.Args(args),
 		payload.Pipeline.LLBOpt(),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
-		llb.Hostname(hostname),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -1032,6 +1027,21 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	}
 
 	execSt := fsSt.Run(runOpts...)
+
+	if len(payload.Ports) > 0 {
+		constraints := llb.NewConstraints(llb.Platform(platform))
+		rootVtx := execSt.Root().Output().Vertex(ctx, constraints)
+		digest, _, _, _, err := rootVtx.Marshal(ctx, constraints)
+		if err != nil {
+			return nil, fmt.Errorf("marshal: %w", err)
+		}
+
+		hostname := hostHash(digest.String())
+		payload.Hostname = hostname + daggerDNSDomain
+
+		runOpts = append(runOpts, llb.Hostname(hostname))
+		execSt = fsSt.Run(runOpts...)
+	}
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
