@@ -3,6 +3,7 @@ package templates
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"text/template"
 
@@ -20,6 +21,7 @@ var (
 		"FormatOutputType":       commonFunc.FormatOutputType,
 		"FormatName":             formatName,
 		"FormatEnum":             formatEnum,
+		"SortEnumFields":         sortEnumFields,
 		"FieldOptionsStructName": fieldOptionsStructName,
 		"FieldFunction":          fieldFunction,
 		"IsEnum":                 isEnum,
@@ -73,6 +75,13 @@ func formatName(s string) string {
 func formatEnum(s string) string {
 	s = strings.ToLower(s)
 	return strcase.ToCamel(s)
+}
+
+func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
+	sort.SliceStable(s, func(i, j int) bool {
+		return s[i].Name < s[j].Name
+	})
+	return s
 }
 
 // fieldOptionsStructName returns the options struct name for a given field
