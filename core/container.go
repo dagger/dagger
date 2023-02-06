@@ -1108,7 +1108,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	health := newHealth(gw, payload.Hostname, payload.Ports)
 
-	ctx, stop := context.WithCancel(ctx)
+	svcCtx, stop := context.WithCancel(context.Background())
 
 	checked := make(chan error, 1)
 	go func() {
@@ -1117,7 +1117,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	exited := make(chan error, 1)
 	go func() {
-		_, err := container.ExitCode(ctx, gw)
+		_, err := container.ExitCode(svcCtx, gw)
 		exited <- err
 	}()
 
