@@ -9,6 +9,15 @@ title: "Publish the application"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from "@site/src/components/molecules/quickstartDoc.js"
+
+export const ids = {
+    Go: "hGUZKAeot5K",
+    Node: "xlXjwXsjvGt",
+    Python: "2r4dX0l8-zq"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Publish the application
 
@@ -16,7 +25,7 @@ At this point, your Dagger pipeline has tested, built and delivered the applicat
 
 Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
 <iframe class="embed" src="https://play.dagger.cloud/embed/SYJ885fBPOy"></iframe>
@@ -28,7 +37,7 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
 <iframe class="embed" src="https://play.dagger.cloud/embed/P8mz6yjC2lM"></iframe>
 
@@ -73,3 +82,5 @@ You may have noticed that the pipeline above is able to publish to the registry 
 
 Dagger SDKs rely on your existing Docker credentials for registry authentication. This means that you must execute `docker login` against your selected container registry on the Dagger host before attempting to publish an image to that registry.
 :::
+
+</QuickstartDoc>

@@ -1,0 +1,55 @@
+@use "../custom.scss";
+
+.quickstartDoc {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 30px;
+}
+
+.stepContent {
+  width: 40%;
+}
+
+.stepEmbed {
+  position: sticky;
+  top: 120px;
+  width: 60%;
+  right: 20px;
+  height: 100%;
+
+  & .tabs {
+    background-color: var(--ifm-navbar-background-color) !important;
+  }
+
+  iframe {
+    width: 100%;
+    min-height: 50vh;
+    height: 100%;
+    height: calc(100vh - 230px);
+
+    border-radius: var(--ifm-alert-border-radius);
+  }
+}
+
+.stepContent :global(.embeds),
+.stepContent iframe {
+  display: none;
+}
+
+@include custom.mobile {
+  .stepContent {
+    width: 100%;
+
+    iframe {
+      display: inherit;
+    }
+  }
+
+  .stepContent :global(.embeds) {
+    display: inherit;
+  }
+
+  .stepEmbed {
+    display: none;
+  }
+}
