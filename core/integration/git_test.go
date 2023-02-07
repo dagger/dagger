@@ -154,18 +154,17 @@ sleep infinity
 		WithExposedPort(sshPort).
 		WithExec([]string{"sh", "/root/start.sh"})
 
-	_, err = sshSvc.Start().ID(ctx)
-	require.NoError(t, err)
-
 	sshHost, err := sshSvc.Hostname(ctx)
 	require.NoError(t, err)
 
 	entries, err := c.Git(fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)).
+		WithServiceDependency(sshSvc).
 		Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			SSHKnownHosts: fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),
 			SSHAuthSocket: c.Host().UnixSocket(sock),
-		}).Entries(ctx)
+		}).
+		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
 }

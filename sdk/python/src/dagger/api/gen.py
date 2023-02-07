@@ -766,6 +766,15 @@ class Container(Type):
 
     @typecheck
     def with_service_dependency(self, service: "Container") -> "Container":
+        """Establish a runtime dependency on a service. The service will be
+        started automatically when needed and detached when it is no longer
+        needed.
+
+
+
+        The service dependency will also convey to any files or directories
+        produced by the container.
+        """
         _args = [
             Arg("service", service),
         ]
@@ -1310,6 +1319,23 @@ class GitRepository(Type):
         _args: list[Arg] = []
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
+
+    @typecheck
+    def with_service_dependency(self, service: Container) -> "GitRepository":
+        """Establish a runtime dependency on a service. The service will be
+        started automatically when needed and detached when it is no longer
+        needed.
+
+
+
+        The service dependency will also convey to any files or directories
+        produced by the repository.
+        """
+        _args = [
+            Arg("service", service),
+        ]
+        _ctx = self._select("withServiceDependency", _args)
+        return GitRepository(_ctx)
 
 
 class Host(Type):

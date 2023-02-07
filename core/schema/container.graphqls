@@ -289,6 +289,11 @@ type Container {
     description: String
   ): Container!
 
+  """
+  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+
+  The service dependency will also convey to any files or directories produced by the container.
+  """
   withServiceDependency(service: ContainerID!): Container!
 
   start: Service!

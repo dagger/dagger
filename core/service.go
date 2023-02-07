@@ -11,6 +11,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"golang.org/x/sync/errgroup"
 )
 
 type Service struct {
@@ -45,6 +46,51 @@ func (ss *Services) Service(id ServiceID) (*Service, bool) {
 	v, found := ss.running[id]
 	ss.runningL.Unlock()
 	return v, found
+}
+
+// WithServices runs the given function with the given services started,
+// detaching from each of them after the function completes.
+func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs []ContainerID, fn func() (T, error)) (T, error) {
+	var zero T
+
+	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
+	eg := new(errgroup.Group)
+	started := make(chan *Service, len(svcs))
+
+	for _, svcID := range svcs {
+		svc := &Container{ID: svcID}
+
+		host, err := svc.Hostname()
+		if err != nil {
+			return zero, err
+		}
+
+		eg.Go(func() error {
+			svc, err := svc.Start(ctx, gw)
+			if err != nil {
+				return fmt.Errorf("start %s: %w", host, err)
+			}
+			started <- svc
+			return nil
+		})
+	}
+
+	startErr := eg.Wait()
+
+	close(started)
+
+	defer func() {
+		for svc := range started {
+			svc.Detach()
+		}
+	}()
+
+	// wait for all services to start
+	if startErr != nil {
+		return zero, startErr
+	}
+
+	return fn()
 }
 
 type portHealthChecker struct {

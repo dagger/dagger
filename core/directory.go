@@ -31,6 +31,9 @@ type directoryIDPayload struct {
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
 	Pipeline PipelinePath   `json:"pipeline"`
+
+	// Services necessary to provision the directory.
+	Services []ContainerID `json:"services,omitempty"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -81,11 +84,12 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services ...ContainerID) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
 		Pipeline: pipeline.Copy(),
+		Services: services,
 	}
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
@@ -116,38 +120,36 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 		return nil, err
 	}
 	src = path.Join(payload.Dir, src)
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
 
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			// fake out a reasonable response
-			return &fstypes.Stat{
-				Path: src,
-				Mode: uint32(fs.ModeDir),
-			}, nil
+	return WithServices(ctx, gw, payload.Services, func() (*fstypes.Stat, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Definition: payload.LLB,
+		})
+		if err != nil {
+			return nil, err
 		}
 
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		// empty directory, i.e. llb.Scratch()
+		if ref == nil {
+			if clean := path.Clean(src); clean == "." || clean == "/" {
+				// fake out a reasonable response
+				return &fstypes.Stat{
+					Path: src,
+					Mode: uint32(fs.ModeDir),
+				}, nil
+			}
 
-	stat, err := ref.StatFile(ctx, bkgw.StatRequest{
-		Path: src,
+			return nil, fmt.Errorf("%s: no such file or directory", src)
+		}
+
+		return ref.StatFile(ctx, bkgw.StatRequest{
+			Path: src,
+		})
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	return stat, nil
 }
 
 func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
@@ -157,38 +159,41 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	}
 
 	src = path.Join(payload.Dir, src)
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: payload.LLB,
-	})
-	if err != nil {
-		return nil, err
-	}
 
-	ref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-	// empty directory, i.e. llb.Scratch()
-	if ref == nil {
-		if clean := path.Clean(src); clean == "." || clean == "/" {
-			return []string{}, nil
+	return WithServices(ctx, gw, payload.Services, func() ([]string, error) {
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Definition: payload.LLB,
+		})
+		if err != nil {
+			return nil, err
 		}
-		return nil, fmt.Errorf("%s: no such file or directory", src)
-	}
 
-	entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
-		Path: src,
+		ref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+		// empty directory, i.e. llb.Scratch()
+		if ref == nil {
+			if clean := path.Clean(src); clean == "." || clean == "/" {
+				return []string{}, nil
+			}
+			return nil, fmt.Errorf("%s: no such file or directory", src)
+		}
+
+		entries, err := ref.ReadDir(ctx, bkgw.ReadDirRequest{
+			Path: src,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		paths := []string{}
+		for _, entry := range entries {
+			paths = append(paths, entry.GetPath())
+		}
+
+		return paths, nil
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	paths := []string{}
-	for _, entry := range entries {
-		paths = append(paths, entry.GetPath())
-	}
-
-	return paths, nil
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
@@ -252,6 +257,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 		LLB:      payload.LLB,
 		File:     path.Join(payload.Dir, file),
 		Platform: payload.Platform,
+		Services: payload.Services,
 	}).ToFile()
 }
 
@@ -496,32 +502,34 @@ func (dir *Directory) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
 	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		src, err := srcPayload.State()
-		if err != nil {
-			return nil, err
-		}
-
-		var defPB *pb.Definition
-		if srcPayload.Dir != "" {
-			src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
-				CopyDirContentsOnly: true,
-			}),
-				srcPayload.Pipeline.LLBOpt(),
-			)
-
-			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
+			src, err := srcPayload.State()
 			if err != nil {
 				return nil, err
 			}
 
-			defPB = def.ToPB()
-		} else {
-			defPB = srcPayload.LLB
-		}
+			var defPB *pb.Definition
+			if srcPayload.Dir != "" {
+				src = llb.Scratch().File(llb.Copy(src, srcPayload.Dir, ".", &llb.CopyInfo{
+					CopyDirContentsOnly: true,
+				}),
+					srcPayload.Pipeline.LLBOpt(),
+				)
 
-		return gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: defPB,
+				def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+				if err != nil {
+					return nil, err
+				}
+
+				defPB = def.ToPB()
+			} else {
+				defPB = srcPayload.LLB
+			}
+
+			return gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: defPB,
+			})
 		})
 	})
 }

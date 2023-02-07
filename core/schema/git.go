@@ -26,11 +26,12 @@ func (s *gitSchema) Resolvers() router.Resolvers {
 			"git": router.ToResolver(s.git),
 		},
 		"GitRepository": router.ObjectResolver{
-			"branches": router.ToResolver(s.branches),
-			"branch":   router.ToResolver(s.branch),
-			"tags":     router.ToResolver(s.tags),
-			"tag":      router.ToResolver(s.tag),
-			"commit":   router.ToResolver(s.commit),
+			"branches":              router.ToResolver(s.branches),
+			"branch":                router.ToResolver(s.branch),
+			"tags":                  router.ToResolver(s.tags),
+			"tag":                   router.ToResolver(s.tag),
+			"commit":                router.ToResolver(s.commit),
+			"withServiceDependency": router.ToResolver(s.withServiceDependency),
 		},
 		"GitRef": router.ObjectResolver{
 			"digest": router.ToResolver(s.digest),
@@ -44,9 +45,10 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL        string            `json:"url"`
-	KeepGitDir bool              `json:"keepGitDir"`
-	Pipeline   core.PipelinePath `json:"pipeline"`
+	URL        string             `json:"url"`
+	KeepGitDir bool               `json:"keepGitDir"`
+	Pipeline   core.PipelinePath  `json:"pipeline"`
+	Services   []core.ContainerID `json:"services,omitempty"`
 }
 
 type gitRef struct {
@@ -69,6 +71,15 @@ func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (
 	}
 
 	return r, nil
+}
+
+type gitWithServiceDependencyArgs struct {
+	Service core.ContainerID
+}
+
+func (s *gitSchema) withServiceDependency(ctx *router.Context, parent gitRepository, args gitWithServiceDependencyArgs) (gitRepository, error) {
+	parent.Services = append(parent.Services, args.Service)
+	return parent, nil
 }
 
 type branchArgs struct {
@@ -136,5 +147,5 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform)
+	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform, parent.Repository.Services...)
 }

@@ -27,7 +27,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/zeebo/xxh3"
-	"golang.org/x/sync/errgroup"
 )
 
 const daggerDNSDomain = ".dns.dagger"
@@ -705,7 +704,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ...ContainerID) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -757,7 +756,7 @@ func locatePath[T *File | *Directory](
 		return nil, nil, err
 	}
 
-	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform)
+	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform, payload.Services...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1144,34 +1143,6 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 }
 
 func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
-	var res *string
-	err := container.withServices(ctx, gw, func() error {
-		file, err := container.MetaFile(ctx, gw, filePath)
-		if err != nil {
-			return err
-		}
-
-		if file == nil {
-			return nil
-		}
-
-		content, err := file.Contents(ctx, gw)
-		if err != nil {
-			return err
-		}
-
-		strContent := string(content)
-		res = &strContent
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return res, nil
-}
-
-func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -1186,7 +1157,20 @@ func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePa
 		return nil, nil
 	}
 
-	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
+	return WithServices(ctx, gw, payload.Services, func() (*string, error) {
+		file, err := NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
+		if err != nil {
+			return nil, err
+		}
+
+		content, err := file.Contents(ctx, gw)
+		if err != nil {
+			return nil, err
+		}
+
+		strContent := string(content)
+		return &strContent, nil
+	})
 }
 
 func (container *Container) Publish(
@@ -1341,44 +1325,6 @@ func (container *Container) WithServiceDependency(svc *Container) (*Container, e
 	}
 
 	return &Container{ID: id}, nil
-}
-
-func (container *Container) withServices(ctx context.Context, gw bkgw.Client, fn func() error) error {
-	payload, err := container.ID.decode()
-	if err != nil {
-		return err
-	}
-
-	svcCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
-	eg := new(errgroup.Group)
-
-	for _, svcID := range payload.Services {
-		svc := &Container{ID: svcID}
-
-		host, err := svc.Hostname()
-		if err != nil {
-			return err
-		}
-
-		eg.Go(func() error {
-			_, err = svc.Start(svcCtx, gw)
-			if err != nil {
-				return fmt.Errorf("start %s: %w", host, err)
-			}
-			return nil
-		})
-	}
-
-	// wait for all services to start
-	err = eg.Wait()
-	if err != nil {
-		return err
-	}
-
-	return fn()
 }
 
 func (container *Container) export(

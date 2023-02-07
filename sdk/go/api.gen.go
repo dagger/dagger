@@ -821,6 +821,9 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
+// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+//
+// The service dependency will also convey to any files or directories produced by the container.
 func (r *Container) WithServiceDependency(service *Container) *Container {
 	q := r.q.Select("withServiceDependency")
 	q = q.Arg("service", service)
@@ -1439,6 +1442,19 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	var response []string
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+//
+// The service dependency will also convey to any files or directories produced by the repository.
+func (r *GitRepository) WithServiceDependency(service *Container) *GitRepository {
+	q := r.q.Select("withServiceDependency")
+	q = q.Arg("service", service)
+
+	return &GitRepository{
+		q: q,
+		c: r.c,
+	}
 }
 
 // Information about the host execution environment.

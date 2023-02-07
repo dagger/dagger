@@ -5,27 +5,34 @@ extend type Query {
 
 "A git repository."
 type GitRepository {
-    "Lists of branches on the repository."
-    branches: [String!]!
+  "Lists of branches on the repository."
+  branches: [String!]!
 
-    "Returns details on one branch."
-    branch(name: String!): GitRef!
+  "Returns details on one branch."
+  branch(name: String!): GitRef!
 
-    "Lists of tags on the repository."
-    tags: [String!]!
+  "Lists of tags on the repository."
+  tags: [String!]!
 
-    "Returns details on one tag."
-    tag(name: String!): GitRef!
+  "Returns details on one tag."
+  tag(name: String!): GitRef!
 
-    "Returns details on one commit."
-    commit(id: String!): GitRef!
+  "Returns details on one commit."
+  commit(id: String!): GitRef!
+
+  """
+  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+
+  The service dependency will also convey to any files or directories produced by the repository.
+  """
+  withServiceDependency(service: ContainerID!): GitRepository!
 }
 
 "A git ref (tag, branch or commit)."
 type GitRef {
-    "The digest of the current value of this ref."
-    digest: String!
+  "The digest of the current value of this ref."
+  digest: String!
 
-    "The filesystem tree at this ref."
-    tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
+  "The filesystem tree at this ref."
+  tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
 }

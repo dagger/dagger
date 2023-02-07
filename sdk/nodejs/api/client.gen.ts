@@ -1134,6 +1134,12 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+   *
+   * The service dependency will also convey to any files or directories produced by the container.
+   */
   withServiceDependency(service: Container): Container {
     return new Container({
       queryTree: [
@@ -1860,6 +1866,25 @@ export class GitRepository extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+   *
+   * The service dependency will also convey to any files or directories produced by the repository.
+   */
+  withServiceDependency(service: Container): GitRepository {
+    return new GitRepository({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withServiceDependency",
+          args: { service },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 }
 
