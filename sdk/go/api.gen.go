@@ -1768,10 +1768,22 @@ func (r *Client) Host() *Host {
 	}
 }
 
+// HTTPOpts contains options for Query.HTTP
+type HTTPOpts struct {
+	ServiceDependency *Container
+}
+
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string) *File {
+func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
+	// `serviceDependency` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ServiceDependency) {
+			q = q.Arg("serviceDependency", opts[i].ServiceDependency)
+			break
+		}
+	}
 
 	return &File{
 		q: q,

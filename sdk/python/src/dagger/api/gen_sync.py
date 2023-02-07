@@ -1613,10 +1613,15 @@ class Client(Root):
         return Host(_ctx)
 
     @typecheck
-    def http(self, url: str) -> File:
+    def http(
+        self,
+        url: str,
+        service_dependency: Optional[Container] = None,
+    ) -> File:
         """Returns a file containing an http remote url content."""
         _args = [
             Arg("url", url),
+            Arg("serviceDependency", service_dependency, None),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)

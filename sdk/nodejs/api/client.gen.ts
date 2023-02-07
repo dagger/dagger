@@ -303,6 +303,10 @@ export type ClientGitOpts = {
   keepGitDir?: boolean
 }
 
+export type ClientHttpOpts = {
+  serviceDependency?: Container
+}
+
 export type ClientPipelineOpts = {
   description?: string
 }
@@ -2252,13 +2256,13 @@ export default class Client extends BaseClient {
   /**
    * Returns a file containing an http remote url content.
    */
-  http(url: string): File {
+  http(url: string, opts?: ClientHttpOpts): File {
     return new File({
       queryTree: [
         ...this._queryTree,
         {
           operation: "http",
-          args: { url },
+          args: { url, ...opts },
         },
       ],
       host: this.clientHost,
