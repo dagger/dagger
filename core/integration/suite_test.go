@@ -147,7 +147,7 @@ func startRegistry(t *testing.T) {
 	if err := exec.Command("docker", "inspect", registryContainer).Run(); err != nil {
 		// start registry if it doesn't exist
 		runCmd(t, "docker", "rm", "-f", registryContainer)
-		runCmd(t, "docker", "run", "--name", registryContainer, "--net", "container:"+engineContainer, "-d", "registry:2")
+		runCmd(t, "docker", "run", "--rm", "--name", registryContainer, "--net", "container:"+engineContainer, "-d", "registry:2")
 	}
 
 	runCmd(t, "docker", "exec", engineContainer, "sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1")
