@@ -21,7 +21,6 @@ import (
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1120,14 +1119,11 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 		exited <- err
 	}()
 
-	id := identity.NewID()
-
 	select {
 	case <-checked:
 		_ = stop // leave it running
 
 		return &Service{
-			ID:        ServiceID(id),
 			Container: container,
 			Detach:    stop,
 		}, nil

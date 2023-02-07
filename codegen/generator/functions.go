@@ -12,7 +12,6 @@ const (
 // map.
 var CustomScalar = map[string]string{
 	"ContainerID": "Container",
-	"ServiceID":   "Service",
 	"FileID":      "File",
 	"DirectoryID": "Directory",
 	"SecretID":    "Secret",

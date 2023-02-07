@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"sync"
 	"syscall"
 
 	"github.com/moby/buildkit/client/llb"
@@ -15,37 +14,8 @@ import (
 )
 
 type Service struct {
-	ID ServiceID
-
 	Container *Container
-
-	Detach func()
-}
-
-type ServiceID string
-
-type Services struct {
-	running  map[ServiceID]*Service
-	runningL sync.Mutex
-}
-
-func NewServices() *Services {
-	return &Services{
-		running: make(map[ServiceID]*Service),
-	}
-}
-
-func (ss *Services) Started(s *Service) {
-	ss.runningL.Lock()
-	ss.running[s.ID] = s
-	ss.runningL.Unlock()
-}
-
-func (ss *Services) Service(id ServiceID) (*Service, bool) {
-	ss.runningL.Lock()
-	v, found := ss.running[id]
-	ss.runningL.Unlock()
-	return v, found
+	Detach    func()
 }
 
 // WithServices runs the given function with the given services started,

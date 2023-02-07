@@ -307,10 +307,6 @@ export type ClientPipelineOpts = {
   description?: string
 }
 
-export type ClientServiceOpts = {
-  id?: ServiceID
-}
-
 export type ClientSocketOpts = {
   id?: SocketID
 }
@@ -319,8 +315,6 @@ export type ClientSocketOpts = {
  * A unique identifier for a secret.
  */
 export type SecretID = string & { __SecretID: never }
-
-export type ServiceID = string & { __ServiceID: never }
 
 /**
  * A content-addressed socket identifier.
@@ -746,18 +740,6 @@ Used for multi-platform image.
         ...this._queryTree,
         {
           operation: "rootfs",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-  start(): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "start",
         },
       ],
       host: this.clientHost,
@@ -2334,19 +2316,6 @@ export default class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  service(opts?: ClientServiceOpts): Service {
-    return new Service({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "service",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
 
   /**
    * Loads a socket by its ID.
@@ -2396,47 +2365,6 @@ export class Secret extends BaseClient {
         ...this._queryTree,
         {
           operation: "plaintext",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-}
-
-export class Service extends BaseClient {
-  container(): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "container",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-  async detach(): Promise<boolean> {
-    const response: Awaited<boolean> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "detach",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-  async id(): Promise<ServiceID> {
-    const response: Awaited<ServiceID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
         },
       ],
       this.client

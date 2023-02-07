@@ -295,8 +295,6 @@ type Container {
   The service dependency will also convey to any files or directories produced by the container.
   """
   withServiceDependency(service: ContainerID!): Container!
-
-  start: Service!
 }
 
 "A simple key value object that represents an environment variable."
