@@ -435,7 +435,7 @@ func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, gw, file, content, permissions) // TODO(vito): doesn't this need a name...?
+		return dir.WithNewFile(ctx, file, content, permissions) // TODO(vito): doesn't this need a name...?
 	})
 }
 
