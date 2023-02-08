@@ -298,91 +298,95 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	platform := payload.Platform
+	payload.Services = append(payload.Services, ctxPayload.Services...)
 
-	opts := map[string]string{
-		"platform":      platforms.Format(platform),
-		"contextsubdir": ctxPayload.Dir,
-	}
+	return WithServices(ctx, gw, payload.Services, func() (*Container, error) {
+		platform := payload.Platform
 
-	if dockerfile != "" {
-		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
-	} else {
-		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
-	}
+		opts := map[string]string{
+			"platform":      platforms.Format(platform),
+			"contextsubdir": ctxPayload.Dir,
+		}
 
-	if target != "" {
-		opts["target"] = target
-	}
+		if dockerfile != "" {
+			opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
+		} else {
+			opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
+		}
 
-	for _, buildArg := range buildArgs {
-		opts["build-arg:"+buildArg.Name] = buildArg.Value
-	}
+		if target != "" {
+			opts["target"] = target
+		}
 
-	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    ctxPayload.LLB,
-		dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
-	}
+		for _, buildArg := range buildArgs {
+			opts["build-arg:"+buildArg.Name] = buildArg.Value
+		}
 
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
-	})
-	if err != nil {
-		return nil, err
-	}
+		inputs := map[string]*pb.Definition{
+			dockerfilebuilder.DefaultLocalNameContext:    ctxPayload.LLB,
+			dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
+		}
 
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var st llb.State
-	if bkref == nil {
-		st = llb.Scratch()
-	} else {
-		st, err = bkref.ToState()
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
 		if err != nil {
 			return nil, err
 		}
-	}
 
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
-	// Override the progress pipeline of every LLB vertex in the DAG.
-	// FIXME: this can't be done in a normal way because Buildkit doesn't currently
-	// allow overriding the metadata of DefinitionOp. See this PR and comment:
-	// https://github.com/moby/buildkit/pull/2819
-	pipeline := payload.Pipeline.Add(Pipeline{
-		Name: "docker build",
-	})
-	for dgst, metadata := range def.Metadata {
-		metadata.ProgressGroup = pipeline.ProgressGroup()
-		def.Metadata[dgst] = metadata
-	}
-
-	payload.FS = def.ToPB()
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec specs.Image
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+		bkref, err := res.SingleRef()
+		if err != nil {
 			return nil, err
 		}
 
-		payload.Config = imgSpec.Config
-	}
+		var st llb.State
+		if bkref == nil {
+			st = llb.Scratch()
+		} else {
+			st, err = bkref.ToState()
+			if err != nil {
+				return nil, err
+			}
+		}
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+		def, err := st.Marshal(ctx, llb.Platform(platform))
+		if err != nil {
+			return nil, err
+		}
 
-	return &Container{ID: id}, nil
+		// Override the progress pipeline of every LLB vertex in the DAG.
+		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+		// allow overriding the metadata of DefinitionOp. See this PR and comment:
+		// https://github.com/moby/buildkit/pull/2819
+		pipeline := payload.Pipeline.Add(Pipeline{
+			Name: "docker build",
+		})
+		for dgst, metadata := range def.Metadata {
+			metadata.ProgressGroup = pipeline.ProgressGroup()
+			def.Metadata[dgst] = metadata
+		}
+
+		payload.FS = def.ToPB()
+
+		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+		if found {
+			var imgSpec specs.Image
+			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+				return nil, err
+			}
+
+			payload.Config = imgSpec.Config
+		}
+
+		id, err := payload.Encode()
+		if err != nil {
+			return nil, err
+		}
+
+		return &Container{ID: id}, nil
+	})
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {

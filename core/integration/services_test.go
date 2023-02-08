@@ -91,26 +91,121 @@ func TestContainerExecServices(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
+func TestContainerBuildService(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("building with service dependency", func(t *testing.T) {
+		content := identity.NewID()
+		srv := httpService(c, content)
+		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		src := c.Directory().
+			WithNewFile("Dockerfile",
+				`FROM alpine:3.16.2
+WORKDIR /src
+RUN wget `+httpURL+`
+CMD cat index.html
+`)
+
+		fileContent, err := c.Container().
+			WithServiceDependency(srv).
+			Build(src).
+			WithExec(nil).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, fileContent)
+	})
+
+	t.Run("building a directory that depends on a service (Container.Build)", func(t *testing.T) {
+		content := identity.NewID()
+		srv := httpService(c, content)
+		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		src := c.Directory().
+			WithNewFile("Dockerfile",
+				`FROM alpine:3.16.2
+WORKDIR /src
+RUN wget `+httpURL+`
+CMD cat index.html
+`)
+
+		gitDaemon := gitService(c, src)
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+		gitDir := c.Git(repoURL).
+			WithServiceDependency(gitDaemon).
+			Branch("main").
+			Tree()
+
+		fileContent, err := c.Container().
+			WithServiceDependency(srv).
+			Build(gitDir).
+			WithExec(nil).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, fileContent)
+	})
+
+	t.Run("building a directory that depends on a service (Directory.DockerBuild)", func(t *testing.T) {
+		content := identity.NewID()
+		srv := httpService(c, content)
+		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		src := c.Directory().
+			WithNewFile("Dockerfile",
+				`FROM alpine:3.16.2
+WORKDIR /src
+RUN wget `+httpURL+`
+CMD cat index.html
+`)
+
+		gitDaemon := gitService(c, src)
+		gitHost, err := gitDaemon.Hostname(ctx)
+		require.NoError(t, err)
+		repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+		gitDir := c.Git(repoURL).
+			WithServiceDependency(gitDaemon).
+			Branch("main").
+			Tree()
+
+		fileContent, err := gitDir.
+			DockerBuild().
+			WithServiceDependency(srv).
+			WithExec(nil).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, fileContent)
+	})
+}
+
 func TestContainerExportServices(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
 	content := identity.NewID()
 	srv := httpService(c, content)
-
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
 		Scheme: "http",
 	})
 	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
 
 	client := c.Container().
 		From("alpine:3.16.2").
 		WithServiceDependency(srv).
-		WithExec([]string{"wget", url})
+		WithExec([]string{"wget", httpURL})
 
 	filePath := filepath.Join(t.TempDir(), "image.tar")
 	ok, err := client.Export(ctx, filePath)
@@ -230,10 +325,8 @@ func TestContainerWithRootFSServices(t *testing.T) {
 			// to check that the path exists (and is a file/dir), but Rootfs always
 			// exists, and is always a directory.
 			Rootfs())
-
 	gitHost, err := gitDaemon.Hostname(ctx)
 	require.NoError(t, err)
-
 	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
 
 	gitDir := c.Git(repoURL).
