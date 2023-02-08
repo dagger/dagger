@@ -21,6 +21,10 @@ var (
 	//go:embed src/object.go.tmpl
 	objectSource string
 	Object       *template.Template
+
+	//go:embed src/enum.go.tmpl
+	enumSource string
+	Enum       *template.Template
 )
 
 func init() {
@@ -41,6 +45,11 @@ func init() {
 	}
 
 	Object, err = template.New("object").Funcs(funcMap).Parse(objectSource)
+	if err != nil {
+		panic(err)
+	}
+
+	Enum, err = template.New("enum").Funcs(funcMap).Parse(enumSource)
 	if err != nil {
 		panic(err)
 	}
