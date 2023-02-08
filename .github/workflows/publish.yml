@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: '1.20'
 
       - uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
@@ -103,7 +103,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: "1.19"
+          go-version: '1.20'
 
       - name: "Test Go SDK"
         run: |
@@ -178,7 +178,7 @@ jobs:
         shell: bash
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: '1.20'
       - name: "Test Go SDK"
         run: |
           cd sdk/go

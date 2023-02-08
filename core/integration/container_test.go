@@ -2535,9 +2535,9 @@ func TestContainerMultipleMounts(t *testing.T) {
 	defer c.Close()
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0o600))
 
 	one := c.Host().Directory(dir).File("one")
 	two := c.Host().Directory(dir).File("two")
@@ -2718,7 +2718,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
 	ctr := c.Container().
-		From("golang:1.18.2-alpine").
+		From("golang:1.20.0-alpine").
 		WithMountedFile("/src/main.go", echo).
 		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
 		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})

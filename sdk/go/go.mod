@@ -1,6 +1,6 @@
 module dagger.io/dagger
 
-go 1.19
+go 1.20
 
 replace github.com/dagger/dagger => ../..
 
