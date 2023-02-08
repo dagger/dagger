@@ -6,6 +6,11 @@ on:
 
   # Run tests in a PR when an SDK has a default CLI version bump
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     paths:
       - sdk/go/internal/engineconn/version.gen.go
       - sdk/python/src/dagger/engine/_version.py
@@ -57,6 +62,7 @@ jobs:
             This PR was auto-generated.
           delete-branch: true
           branch: bump-engine
+          draft: true
 
   test-provision-macos:
     name: "Test SDK Provision / macos"

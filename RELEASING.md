@@ -41,19 +41,9 @@ This will kick off the workflow in
 that builds+pushes the engine image to our registry with a tag matching
 `ENGINE_VERSION`. It also builds & publishes a new `dagger` CLI version.
 
-At the end of this workflow, a new PR will automatically be created to bump the
-Engine version in the various SDKs.
-
-⚠️ **There is currently [an issue](https://github.com/dagger/dagger/issues/4050) where workflows do not automatically run in this PR.**
-Instead, you can trigger them to run by pushing an empty commit and then reverting it, e.g.
-
-```console
-gh pr checkout -f <PR number>
-git commit --allow-empty -m "Empty-Commit"
-git push
-git reset --hard HEAD^
-git push --force
-```
+At the end of this workflow, a new `draft` PR will automatically be created to bump the
+Engine version in the various SDKs. Navigate towards the PR, and after marking
+it as "ready to review", wait for all the checks to finish successfully.
 
 👉 **Merge this PR** as soon as all checks pass.
 
@@ -144,6 +134,7 @@ Replacing `$ENGINE_VERSION` with the value in `sdk/go/internal/engineconn/versio
 
 #### 3/5. Publish release
 
+- Validate release notes look good in `preview` mode
 - ⚠️ De-select **Set as the latest release** (only used for Engine/CLI releases)
 - Click on **Publish release**
 
@@ -248,6 +239,7 @@ Replacing `$ENGINE_VERSION` with the value in `sdk/python/src/dagger/engine/_ver
 
 #### 3/5. Publish release
 
+- Validate release notes look good in `preview` mode
 - ⚠️ De-select **Set as the latest release** (only used for Engine/CLI releases)
 - Click on **Publish release**
 
@@ -350,6 +342,7 @@ Replacing `$ENGINE_VERSION` with the value in `sdk/nodejs/provisioning/default.t
 
 #### 3/5. Publish release
 
+- Validate release notes look good in `preview` mode
 - ⚠️ De-select **Set as the latest release** (only used for Engine/CLI releases)
 - Click on **Publish release**
 
