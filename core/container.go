@@ -102,7 +102,6 @@ type containerIDPayload struct {
 	Hostname string `json:"hostname,omitempty"`
 
 	// Ports to expose from the container.
-	// TODO(vito)
 	Ports []ContainerPort `json:"ports,omitempty"`
 
 	// Services to start before running the container.
@@ -1145,29 +1144,34 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		return nil, err
 	}
 
-	meta, err := payload.MetaState()
+	metaSt, err := payload.MetaState()
 	if err != nil {
 		return nil, err
 	}
 
-	if meta == nil {
+	if metaSt == nil {
 		return nil, nil
 	}
 
-	return WithServices(ctx, gw, payload.Services, func() (*string, error) {
-		file, err := NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
-		if err != nil {
-			return nil, err
-		}
+	file, err := NewFile(
+		ctx,
+		*metaSt,
+		path.Join(metaSourcePath, filePath),
+		payload.Pipeline,
+		payload.Platform,
+		payload.Services,
+	)
+	if err != nil {
+		return nil, err
+	}
 
-		content, err := file.Contents(ctx, gw)
-		if err != nil {
-			return nil, err
-		}
+	content, err := file.Contents(ctx, gw)
+	if err != nil {
+		return nil, err
+	}
 
-		strContent := string(content)
-		return &strContent, nil
-	})
+	strContent := string(content)
+	return &strContent, nil
 }
 
 func (container *Container) Publish(

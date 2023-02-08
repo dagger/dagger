@@ -124,10 +124,12 @@ func (d *portHealthChecker) Check(ctx context.Context) error {
 	}
 
 	proc, err := container.Start(cleanupCtx, bkgw.StartRequest{
-		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_CLI=yep"},
-		Stdout: os.Stderr, // TODO(vito)
-		Stderr: os.Stderr, // TODO(vito)
+		Args: args,
+		Env:  []string{"_DAGGER_INTERNAL_COMMAND="},
+		// TODO(vito): it would be great to make this visible somehow for
+		// troubleshooting, but there's no good place to send it. hmm.
+		Stdout: os.Stderr,
+		Stderr: os.Stderr,
 	})
 	if err != nil {
 		return err

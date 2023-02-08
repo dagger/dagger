@@ -47,8 +47,8 @@ There are two "subcommands" of this binary:
 */
 func main() {
 	if os.Args[0] == shimPath {
-		if _, found := internalEnv("_DAGGER_INTERNAL_CLI"); found {
-			os.Exit(internalCLI())
+		if _, found := internalEnv("_DAGGER_INTERNAL_COMMAND"); found {
+			os.Exit(internalCommand())
 			return
 		}
 
@@ -61,7 +61,7 @@ func main() {
 	}
 }
 
-func internalCLI() int {
+func internalCommand() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <command> [<args>]\n", os.Args[0])
 		return 1
@@ -273,7 +273,7 @@ func setupBundle() int {
 	}
 	// We're running an internal shim command, i.e. a service health check
 	for _, env := range spec.Process.Env {
-		if env == "_DAGGER_INTERNAL_CLI=yep" {
+		if strings.HasPrefix(env, "_DAGGER_INTERNAL_COMMAND=") {
 			isDaggerExec = true
 			break
 		}
