@@ -684,6 +684,39 @@ func TestFileServiceTimestamp(t *testing.T) {
 	require.Contains(t, stdout, "1991-06-03")
 }
 
+func TestFileServiceSecret(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+
+	httpSrv := httpService(c, content)
+	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
+	require.NoError(t, err)
+
+	secret := c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}).Secret()
+
+	t.Run("secret env", func(t *testing.T) {
+		stdout, err := c.Container().
+			From("alpine:3.16.2").
+			WithSecretVariable("SEKRIT", secret).
+			WithExec([]string{"sh", "-c", "echo -n $SEKRIT"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, stdout)
+	})
+
+	t.Run("secret mount", func(t *testing.T) {
+		stdout, err := c.Container().
+			From("alpine:3.16.2").
+			WithMountedSecret("/sekrit", secret).
+			WithExec([]string{"cat", "/sekrit"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, stdout)
+	})
+}
+
 func httpService(c *dagger.Client, content string) *dagger.Container {
 	return c.Container().
 		From("python").
