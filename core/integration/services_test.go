@@ -1,16 +1,3 @@
-package core
-
-import (
-	"fmt"
-	"os"
-	"path/filepath"
-	"testing"
-
-	"dagger.io/dagger"
-	"github.com/moby/buildkit/identity"
-	"github.com/stretchr/testify/require"
-)
-
 // NB(vito): be careful how you test services, in particular with a container
 // as the client! It's easy to end up with a falsely passing test because
 // various container APIs eagerly build and cache the client call, for example
@@ -22,6 +9,53 @@ import (
 // File and are started just-in-time wherever they end up, a few of these tests
 // instead use the Git and HTTP Dagger APIs since they will directly yield a
 // Directory or File without eager evaluation.
+
+package core
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
+	"github.com/stretchr/testify/require"
+)
+
+func TestServiceHostnamesAreStable(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	www := c.Directory().WithNewFile("index.html", "Hello, world!")
+
+	srv := c.Container().
+		From("python").
+		WithMountedDirectory("/srv/www", www).
+		WithWorkdir("/srv/www").
+		// NB: chain a few things to make the container a bit more complicated.
+		//
+		// for example, ContainerIDs aren't totally deterministic as WithExec adds
+		// some randomization to how LLB gets marshalled.
+		WithExec([]string{"echo", "first"}).
+		WithExec([]string{"echo", "second"}).
+		WithExec([]string{"echo", "third"}).
+		WithEnvVariable("FOO", "123").
+		WithEnvVariable("BAR", "456").
+		WithExposedPort(8000).
+		WithExec([]string{"python", "-m", "http.server"})
+
+	hosts := map[string]int{}
+
+	for i := 0; i < 10; i++ {
+		hostname, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+		hosts[hostname]++
+	}
+
+	require.Len(t, hosts, 1)
+}
 
 func TestContainerExecServices(t *testing.T) {
 	c, ctx := connect(t)
@@ -39,7 +73,7 @@ func TestContainerExecServices(t *testing.T) {
 	require.Equal(t, "http://"+hostname+":8000", url)
 
 	client := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithServiceDependency(srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", url})
@@ -74,7 +108,7 @@ func TestContainerExportServices(t *testing.T) {
 	require.Equal(t, "http://"+hostname+":8000", url)
 
 	client := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithServiceDependency(srv).
 		WithExec([]string{"wget", url})
 
@@ -98,7 +132,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 		require.NoError(t, err)
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine").
+			From("alpine:3.16.2").
 			WithServiceDependency(srv).
 			WithExec([]string{"wget", url}).
 			WithExec([]string{"uname", "-m"})
@@ -161,7 +195,7 @@ func TestContainerRootFSServices(t *testing.T) {
 	require.Equal(t, "http://"+hostname+":8000", url)
 
 	fileContent, err := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithServiceDependency(srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url}).
@@ -169,6 +203,48 @@ func TestContainerRootFSServices(t *testing.T) {
 		File("/sub/out/index.html").
 		Contents(ctx)
 
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
+}
+
+func TestContainerWithRootFSServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+	srv := httpService(c, content)
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	gitDaemon := gitService(c,
+		// this little maneuver commits the entire rootfs into a git repo
+		c.Container().
+			From("alpine:3.16.2").
+			WithServiceDependency(srv).
+			WithWorkdir("/sub/out").
+			WithExec([]string{"wget", url}).
+			// NB(vito): related to the package-level comment: Rootfs is not eager,
+			// so this is actually OK. File and Directory are eager because they need
+			// to check that the path exists (and is a file/dir), but Rootfs always
+			// exists, and is always a directory.
+			Rootfs())
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	gitDir := c.Git(repoURL).
+		WithServiceDependency(gitDaemon).
+		Branch("main").
+		Tree()
+
+	fileContent, err := c.Container().
+		WithRootfs(gitDir).
+		WithExec([]string{"cat", "/sub/out/index.html"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, fileContent)
 }
@@ -190,7 +266,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 	require.Equal(t, "http://"+hostname+":8000", url)
 
 	wget := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithServiceDependency(srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
@@ -243,7 +319,7 @@ func TestContainerFileServices(t *testing.T) {
 	require.Equal(t, "http://"+hostname+":8000", url)
 
 	client := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithServiceDependency(srv).
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
@@ -253,7 +329,7 @@ func TestContainerFileServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerMountServices(t *testing.T) {
+func TestContainerWithMountedDirectoryFileServices(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -282,9 +358,51 @@ func TestContainerMountServices(t *testing.T) {
 		Tree()
 
 	useBoth := c.Container().
-		From("alpine").
+		From("alpine:3.16.2").
 		WithMountedDirectory("/mnt/repo", gitDir).
 		WithMountedFile("/mnt/index.html", httpFile)
+
+	httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, response, httpContent)
+
+	gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, response, gitContent)
+}
+
+func TestContainerWithDirectoryFileServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	response := identity.NewID()
+	srv := httpService(c, response)
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
+		ServiceDependency: srv,
+	})
+
+	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", response))
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	gitDir := c.Git(repoURL).
+		WithServiceDependency(gitDaemon).
+		Branch("main").
+		Tree()
+
+	useBoth := c.Container().
+		From("alpine:3.16.2").
+		WithDirectory("/mnt/repo", gitDir).
+		WithFile("/mnt/index.html", httpFile)
 
 	httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
 	require.NoError(t, err)
@@ -315,6 +433,59 @@ func TestDirectoryServiceEntries(t *testing.T) {
 		Entries(ctx)
 	require.NoError(t, err)
 	require.Equal(t, []string{"README.md"}, entries)
+}
+
+func TestDirectoryServiceTimestamp(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
+	stamped := c.Git(repoURL).
+		WithServiceDependency(gitDaemon).
+		Branch("main").
+		Tree().
+		WithTimestamps(int(ts.Unix()))
+
+	stdout, err := c.Container().From("alpine:3.16.2").
+		WithDirectory("/repo", stamped).
+		WithExec([]string{"stat", "/repo/README.md"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "1991-06-03")
+}
+
+func TestDirectoryWithDirectoryFileServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+
+	gitSrv := gitService(c, c.Directory().WithNewFile("README.md", content))
+	gitHost, err := gitSrv.Hostname(ctx)
+	require.NoError(t, err)
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	httpSrv := httpService(c, content)
+	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
+	require.NoError(t, err)
+
+	useBoth := c.Directory().
+		WithDirectory("/repo", c.Git(repoURL).WithServiceDependency(gitSrv).Branch("main").Tree()).
+		WithFile("/index.html", c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}))
+
+	entries, err := useBoth.Directory("/repo").Entries(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"README.md"}, entries)
+
+	fileContent, err := useBoth.File("/index.html").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
 }
 
 func TestDirectoryServiceExport(t *testing.T) {
@@ -398,37 +569,26 @@ func TestFileServiceExport(t *testing.T) {
 	require.Equal(t, content, string(exportedContent))
 }
 
-func TestServiceHostnamesAreStable(t *testing.T) {
+func TestFileServiceTimestamp(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	www := c.Directory().WithNewFile("index.html", "Hello, world!")
+	content := identity.NewID()
 
-	srv := c.Container().
-		From("python").
-		WithMountedDirectory("/srv/www", www).
-		WithWorkdir("/srv/www").
-		// NB: chain a few things to make the container a bit more complicated.
-		//
-		// for example, ContainerIDs aren't totally deterministic as WithExec adds
-		// some randomization to how LLB gets marshalled.
-		WithExec([]string{"echo", "first"}).
-		WithExec([]string{"echo", "second"}).
-		WithExec([]string{"echo", "third"}).
-		WithEnvVariable("FOO", "123").
-		WithEnvVariable("BAR", "456").
-		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"})
+	httpSrv := httpService(c, content)
+	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
+	require.NoError(t, err)
 
-	hosts := map[string]int{}
+	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
+	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}).
+		WithTimestamps(int(ts.Unix()))
 
-	for i := 0; i < 10; i++ {
-		hostname, err := srv.Hostname(ctx)
-		require.NoError(t, err)
-		hosts[hostname]++
-	}
-
-	require.Len(t, hosts, 1)
+	stdout, err := c.Container().From("alpine:3.16.2").
+		WithFile("/index.html", stamped).
+		WithExec([]string{"stat", "/index.html"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "1991-06-03")
 }
 
 func httpService(c *dagger.Client, content string) *dagger.Container {

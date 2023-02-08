@@ -38,6 +38,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 		"",
 		core.PipelinePath{},
 		platform,
+		nil,
 	)
 }
 

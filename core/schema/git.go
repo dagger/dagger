@@ -147,5 +147,5 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform, parent.Repository.Services...)
+	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform, parent.Repository.Services)
 }

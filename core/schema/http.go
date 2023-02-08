@@ -51,9 +51,5 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 		svcs = append(svcs, *args.ServiceDependency)
 	}
 
-	f, err := core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs...)
-	if err != nil {
-		return nil, err
-	}
-	return f, nil
+	return core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs)
 }

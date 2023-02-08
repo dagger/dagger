@@ -264,7 +264,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 			llb.WithCustomNamef("pull %s", ref),
 			pipeline.LLBOpt(),
 		),
-		"/", payload.Pipeline, platform)
+		"/", payload.Pipeline, platform, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -411,6 +411,8 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	}
 
 	payload.FS = dirPayload.LLB
+
+	payload.Services = append(payload.Services, dirPayload.Services...)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -703,7 +705,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ...ContainerID) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, []ContainerID) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -741,7 +743,7 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform)
+			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform, payload.Services)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -755,7 +757,7 @@ func locatePath[T *File | *Directory](
 		return nil, nil, err
 	}
 
-	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform, payload.Services...)
+	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform, payload.Services)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1161,7 +1163,7 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		path.Join(metaSourcePath, filePath),
 		payload.Pipeline,
 		payload.Platform,
-		payload.Services...,
+		payload.Services,
 	)
 	if err != nil {
 		return nil, err

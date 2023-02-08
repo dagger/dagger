@@ -84,7 +84,7 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services ...ContainerID) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services []ContainerID) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
@@ -296,6 +296,8 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
+	destPayload.Services = append(destPayload.Services, srcPayload.Services...)
+
 	return destPayload.ToDirectory()
 }
 
@@ -317,7 +319,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewDirectory(ctx, stamped, "", payload.Pipeline, payload.Platform)
+	return NewDirectory(ctx, stamped, "", payload.Pipeline, payload.Platform, payload.Services)
 }
 
 func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permissions fs.FileMode) (*Directory, error) {
@@ -390,6 +392,8 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 		return nil, err
 	}
 
+	destPayload.Services = append(destPayload.Services, srcPayload.Services...)
+
 	return destPayload.ToDirectory()
 }
 
@@ -419,7 +423,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform)
+	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

@@ -82,7 +82,7 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 		pipeline = parent.Context.Pipeline
 	}
 
-	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform)
+	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform, nil)
 }
 
 type subdirectoryArgs struct {

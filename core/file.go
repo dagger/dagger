@@ -59,7 +59,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform, services ...ContainerID) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform, services []ContainerID) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
@@ -132,7 +132,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform)
+	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform, payload.Services)
 }
 
 func (file *File) Export(
