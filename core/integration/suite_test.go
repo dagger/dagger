@@ -156,7 +156,7 @@ func startRegistry(t *testing.T) {
 	runCmd(t, "docker", "exec", engineContainer, "sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1")
 }
 
-func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
+func startPrivateRegistry(t *testing.T) {
 	t.Helper()
 
 	authDir := t.TempDir()
@@ -190,7 +190,7 @@ func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
 		"for i in $(seq 1 60); do nc -zv 127.0.0.1 5010 && exit 0; sleep 1; done; exit 1")
 }
 
-func runCmd(t *testing.T, exe string, args ...string) {
+func runCmd(t *testing.T, exe string, args ...string) { //nolint:unparam
 	t.Helper()
 
 	t.Logf("running %s %s", exe, strings.Join(args, " "))

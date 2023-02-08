@@ -2804,7 +2804,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startPrivateRegistry(ctx, c, t)
+	startPrivateRegistry(t)
 
 	testRef := "127.0.0.1:5010/testimagepush:latest"
 	container := c.Container().From("alpine:3.16.2")
