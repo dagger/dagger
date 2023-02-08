@@ -1,0 +1,20 @@
+name: Test Publish Engine
+on:
+  # only run this in PRs, it verifies that we can build all the images we publish
+  # once pushed to main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test-publish-engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "1.20"
+
+      - name: "Test Publish Engine"
+        run: |
+          ./hack/make engine:testpublish
