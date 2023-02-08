@@ -21,8 +21,7 @@ const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
 	alpineVersion = "3.17"
-	runcRepo      = "github.com/opencontainers/runc"
-	runcRef       = "v1.1.4"
+	runcVersion   = "v1.1.4"
 	buildkitRepo  = "github.com/moby/buildkit"
 	buildkitRef   = "v0.11.1"
 	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
@@ -300,7 +299,9 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 			From("alpine:"+alpineVersion).
 			WithExec([]string{"apk", "add", "git", "openssh", "pigz", "xz"}).
-			WithFile("/usr/local/bin/runc", runcBin(c, arch)).
+			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
+				Permissions: 0700,
+			}).
 			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
@@ -363,18 +364,11 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 }
 
 func runcBin(c *dagger.Client, arch string) *dagger.File {
-	return util.GoBase(c).
-		WithExec([]string{"apk", "add", "musl-dev", "gcc", "libseccomp-dev", "libseccomp-static"}).
-		WithEnvVariable("CGO_ENABLED", "1").
-		WithEnvVariable("GOOS", "linux").
-		WithEnvVariable("GOARCH", arch).
-		WithMountedDirectory("/app", c.Git(runcRepo).Branch(runcRef).Tree()).
-		WithExec([]string{
-			"go", "build",
-			"-ldflags", "-extldflags -static",
-			"-tags", "apparmor seccomp netgo cgo static_build osusergo",
-			"-o", "./bin/runc",
-		}).File("./bin/runc")
+	return c.HTTP(fmt.Sprintf(
+		"https://github.com/opencontainers/runc/releases/download/%s/runc.%s",
+		runcVersion,
+		arch,
+	))
 }
 
 func qemuBins(c *dagger.Client, arch string) *dagger.Directory {
