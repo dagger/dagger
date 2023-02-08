@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -155,6 +156,8 @@ func startRegistry(t *testing.T) {
 
 func runCmd(t *testing.T, exe string, args ...string) {
 	t.Helper()
+
+	t.Logf("running %s %s", exe, strings.Join(args, " "))
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = os.Stdout

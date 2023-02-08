@@ -2487,10 +2487,7 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
+	c, ctx := connect(t)
 	defer c.Close()
 
 	startRegistry(t)

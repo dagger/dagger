@@ -30,11 +30,135 @@ func TestContainerExecServices(t *testing.T) {
 		From("alpine").
 		WithServiceDependency(srv).
 		WithExec([]string{"apk", "add", "curl"}).
-		WithExec([]string{"curl", "-s", url})
+		WithExec([]string{"curl", "-v", url})
 
-	out, err := client.Stdout(ctx)
+	code, err := client.ExitCode(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "Hello, world!", out)
+	require.Equal(t, 0, code)
+
+	stdout, err := client.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", stdout)
+
+	stderr, err := client.Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Host: "+hostname+":8000")
+}
+
+func TestContainerExportServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+	srv := httpService(c, content)
+
+	hostname, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "http://"+hostname+":8000", url)
+
+	client := c.Container().
+		From("alpine").
+		WithServiceDependency(srv).
+		WithExec([]string{"wget", url})
+
+	filePath := filepath.Join(t.TempDir(), "image.tar")
+	ok, err := client.Export(ctx, filePath)
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+func TestContainerMultiPlatformExportServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	variants := make([]*dagger.Container, 0, len(platformToUname))
+	for platform := range platformToUname {
+		srv := httpService(c, string(platform))
+
+		url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From("alpine").
+			WithServiceDependency(srv).
+			WithExec([]string{"wget", url}).
+			WithExec([]string{"uname", "-m"})
+
+		variants = append(variants, ctr)
+	}
+
+	dest := filepath.Join(t.TempDir(), "image.tar")
+	ok, err := c.Container().Export(ctx, dest, dagger.ContainerExportOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+func TestServicesContainerPublish(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	startRegistry(t)
+
+	content := identity.NewID()
+	srv := httpService(c, content)
+
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	testRef := "127.0.0.1:5000/testimagepush:latest"
+	pushedRef, err := c.Container().
+		From("alpine:3.16.2").
+		WithServiceDependency(srv).
+		WithExec([]string{"wget", url}).
+		Publish(ctx, testRef)
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
+
+	fileContent, err := c.Container().
+		From(pushedRef).Rootfs().File("/index.html").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fileContent, content)
+}
+
+func TestContainerRootFSServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+	srv := httpService(c, content)
+
+	hostname, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "http://"+hostname+":8000", url)
+
+	fileContent, err := c.Container().
+		From("alpine").
+		WithServiceDependency(srv).
+		WithWorkdir("/sub/out").
+		WithExec([]string{"wget", url}).
+		Rootfs().
+		File("/sub/out/index.html").
+		Contents(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
 }
 
 func TestContainerDirectoryServices(t *testing.T) {

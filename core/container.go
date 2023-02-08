@@ -396,6 +396,7 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 		LLB:      payload.FS,
 		Platform: payload.Platform,
 		Pipeline: payload.Pipeline,
+		Services: payload.Services,
 	}).ToDirectory()
 }
 
@@ -1329,6 +1330,7 @@ func (container *Container) export(
 	platformVariants []ContainerID,
 ) (*bkgw.Result, error) {
 	var payloads []*containerIDPayload
+	var services []ContainerID
 	if container.ID != "" {
 		payload, err := container.ID.decode()
 		if err != nil {
@@ -1336,6 +1338,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
+			services = append(services, payload.Services...)
 		}
 	}
 	for _, id := range platformVariants {
@@ -1345,6 +1348,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
+			services = append(services, payload.Services...)
 		}
 	}
 
@@ -1353,97 +1357,99 @@ func (container *Container) export(
 		return nil, errors.New("no containers to export")
 	}
 
-	if len(payloads) == 1 {
-		payload := payloads[0]
+	return WithServices(ctx, gw, services, func() (*bkgw.Result, error) {
+		if len(payloads) == 1 {
+			payload := payloads[0]
 
-		st, err := payload.FSState()
+			st, err := payload.FSState()
+			if err != nil {
+				return nil, err
+			}
+
+			stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			res, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: stDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			cfgBytes, err := json.Marshal(specs.Image{
+				Architecture: payload.Platform.Architecture,
+				OS:           payload.Platform.OS,
+				OSVersion:    payload.Platform.OSVersion,
+				OSFeatures:   payload.Platform.OSFeatures,
+				Config:       payload.Config,
+			})
+			if err != nil {
+				return nil, err
+			}
+			res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+
+			return res, nil
+		}
+
+		res := bkgw.NewResult()
+		expPlatforms := &exptypes.Platforms{
+			Platforms: make([]exptypes.Platform, len(payloads)),
+		}
+
+		for i, payload := range payloads {
+			st, err := payload.FSState()
+			if err != nil {
+				return nil, err
+			}
+
+			stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			r, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: stDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := r.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+
+			platformKey := platforms.Format(payload.Platform)
+			res.AddRef(platformKey, ref)
+			expPlatforms.Platforms[i] = exptypes.Platform{
+				ID:       platformKey,
+				Platform: payload.Platform,
+			}
+
+			cfgBytes, err := json.Marshal(specs.Image{
+				Architecture: payload.Platform.Architecture,
+				OS:           payload.Platform.OS,
+				OSVersion:    payload.Platform.OSVersion,
+				OSFeatures:   payload.Platform.OSFeatures,
+				Config:       payload.Config,
+			})
+			if err != nil {
+				return nil, err
+			}
+			res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
+		}
+
+		platformBytes, err := json.Marshal(expPlatforms)
 		if err != nil {
 			return nil, err
 		}
-
-		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		cfgBytes, err := json.Marshal(specs.Image{
-			Architecture: payload.Platform.Architecture,
-			OS:           payload.Platform.OS,
-			OSVersion:    payload.Platform.OSVersion,
-			OSFeatures:   payload.Platform.OSFeatures,
-			Config:       payload.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
 
 		return res, nil
-	}
-
-	res := bkgw.NewResult()
-	expPlatforms := &exptypes.Platforms{
-		Platforms: make([]exptypes.Platform, len(payloads)),
-	}
-
-	for i, payload := range payloads {
-		st, err := payload.FSState()
-		if err != nil {
-			return nil, err
-		}
-
-		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-		if err != nil {
-			return nil, err
-		}
-
-		r, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		ref, err := r.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		platformKey := platforms.Format(payload.Platform)
-		res.AddRef(platformKey, ref)
-		expPlatforms.Platforms[i] = exptypes.Platform{
-			ID:       platformKey,
-			Platform: payload.Platform,
-		}
-
-		cfgBytes, err := json.Marshal(specs.Image{
-			Architecture: payload.Platform.Architecture,
-			OS:           payload.Platform.OS,
-			OSVersion:    payload.Platform.OSVersion,
-			OSFeatures:   payload.Platform.OSFeatures,
-			Config:       payload.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
-	}
-
-	platformBytes, err := json.Marshal(expPlatforms)
-	if err != nil {
-		return nil, err
-	}
-	res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-
-	return res, nil
+	})
 }
 
 type ContainerExecOpts struct {
