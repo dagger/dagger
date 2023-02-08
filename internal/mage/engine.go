@@ -57,6 +57,8 @@ exec %s
 
 var engineToml = fmt.Sprintf("root = %q\n", engineDefaultStateDir)
 
+var publishedEngineArches = []string{"amd64", "arm64"}
+
 func parseRef(tag string) error {
 	if tag == "main" {
 		return nil
@@ -146,10 +148,8 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
-	arches := []string{"amd64", "arm64"}
-
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: devEngineContainer(c, arches),
+		PlatformVariants: devEngineContainer(c, publishedEngineArches),
 	})
 	if err != nil {
 		return err
@@ -168,6 +168,22 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
 
 	return nil
+}
+
+// Verify that all arches for the engine can be built. Just do a local export to avoid setting up
+// a registry
+func (t Engine) TestPublish(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("engine").Pipeline("test-publish")
+	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
+		PlatformVariants: devEngineContainer(c, publishedEngineArches),
+	})
+	return err
 }
 
 func (t Engine) test(ctx context.Context, race bool) error {
