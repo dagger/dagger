@@ -61,6 +61,7 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 	case reflect.String:
 		name := t.Name()
 		// distinguish enum const values and customScalars from string type
+		// GraphQL complains if you try to put a string literal in place of an enum: FOO vs "FOO"
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
 			return fmt.Sprintf("%s", v.String()), nil //nolint:gosimple,staticcheck
