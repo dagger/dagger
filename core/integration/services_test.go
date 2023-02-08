@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -89,6 +90,80 @@ func TestContainerExecServices(t *testing.T) {
 	stderr, err := client.Stderr(ctx)
 	require.NoError(t, err)
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
+}
+
+func TestContainerExecServicesDetachAfterUse(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := httpService(c, identity.NewID())
+
+	hostname, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "http://"+hostname+":8000", url)
+
+	usingClient := c.Container().
+		From("alpine:3.16.2").
+		WithServiceDependency(srv).
+		WithExec([]string{"wget", url})
+
+	code, err := usingClient.ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+
+	nonUsingClient := c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithExec([]string{"wget", url})
+
+	_, err = nonUsingClient.ExitCode(ctx)
+	require.Error(t, err)
+}
+
+func TestContainerExecServicesChained(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := httpService(c, "0\n")
+
+	for i := 1; i < 10; i++ {
+		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "http",
+		})
+		require.NoError(t, err)
+
+		srv = c.Container().
+			From("python").
+			WithFile(
+				"/srv/www/index.html",
+				c.HTTP(httpURL, dagger.HTTPOpts{
+					ServiceDependency: srv,
+				}),
+			).
+			WithExec([]string{"sh", "-c", "echo $0 >> /srv/www/index.html", strconv.Itoa(i)}).
+			WithWorkdir("/srv/www").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
+	}
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	fileContent, err := c.Container().
+		From("alpine:3.16.2").
+		WithServiceDependency(srv).
+		WithExec([]string{"wget", httpURL}).
+		WithExec([]string{"cat", "index.html"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
 func TestContainerBuildService(t *testing.T) {
