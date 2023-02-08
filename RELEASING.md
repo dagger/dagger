@@ -44,7 +44,22 @@ that builds+pushes the engine image to our registry with a tag matching
 At the end of this workflow, a new PR will automatically be created to bump the
 Engine version in the various SDKs.
 
+⚠️ **There is currently [an issue](https://github.com/dagger/dagger/issues/4050) where workflows do not automatically run in this PR.**
+Instead, you can trigger them to run by pushing an empty commit and then reverting it, e.g.
+
+```console
+gh pr checkout -f <PR number>
+git commit --allow-empty -m "Empty-Commit"
+git push
+git reset --hard HEAD^
+git push --force
+```
+
 👉 **Merge this PR** as soon as all checks pass.
+
+### Post-release Checks
+
+Verify the CLI publish worked as expected by [installing the CLI](https://docs.dagger.io/cli/465058/install) and verifying that `dagger version` outputs `$ENGINE_VERSION`
 
 ## 🐹 Go SDK
 
@@ -56,24 +71,9 @@ Engine version in the various SDKs.
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-go test -v -count=1 $(pwd)/core/integration # run the engine tests on your host, which exercises the provisioning code paths of the Go SDK
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -84,6 +84,13 @@ git push origin sdk/go/${SDK_VERSION}
 This will trigger the [`publish-sdk-go`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes [dagger.io/dagger to pkg.go.dev](https://pkg.go.dev/dagger.io/dagger).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Go SDK Get Started Guide](https://docs.dagger.io/sdk/go/959738/get-started).
+
+- It takes a while for the go module servers to update the `latest` tag, so you can instead run `go get dagger.io/dagger@<SDK_VERSION`
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
@@ -167,24 +174,9 @@ notes (see **3/5.**).
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-poetry run poe test # to be run the `sdk/python` directory in our dagger repo
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -195,6 +187,13 @@ git push origin sdk/python/${SDK_VERSION}
 This will trigger the [`Publish Python SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.yml)
 which publishes [dagger-io to PyPI](https://pypi.org/project/dagger-io).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Python SDK Get Started Guide](https://docs.dagger.io/sdk/python/628797/get-started).
+
+- You may need to run `pip install --upgrade dagger.io` to force an update to the newest SDK version
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
@@ -279,24 +278,9 @@ notes (see **3/5.**).
 > Ensure that all checks on the `main` branch are green, otherwise you may be
 > releasing a 💥 broken release.
 
-👉 Manually test provisioning by running the following commands on your host:
-
-```console
-# ensure there's no existing container so we use the full provisioning code paths
-docker rm -fv $(docker ps --filter "name=^dagger-engine-*" -qa)
-docker volume prune -f
-docker system prune -f
-# ensure there's no existing local engine-session binaries for same reason as above
-rm -rf ~/.cache/dagger/*
-yarn test # to be run the `sdk/nodejs` directory in our dagger repo
-```
-
-👉 If your host is macOS, repeat the above on Linux. If your host is Linux,
-repeat the above on macOS.
-
-When the above is looking good, you are ready to release:
-
 ### Release
+
+First, ensure that you have the correct commit checked out locally. For most releases, the engine and SDKs are all being released at the same time, in which case you should have the commit that bumps engine SDK dependency versions checked out.
 
 ```console
 export SDK_VERSION=v0.<MINOR>.<PATCH>
@@ -307,6 +291,12 @@ git push origin sdk/nodejs/${SDK_VERSION}
 This will trigger the [`Publish Node.js SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-nodejs.yml)
 which publishes [@dagger.io/dagger to NPM.js](https://www.npmjs.com/package/@dagger.io/dagger).
+
+### Post-release Checks
+
+Verify everything is working as expected by running through the [Node.js SDK Get Started Guide](https://docs.dagger.io/sdk/nodejs/783645/get-started).
+
+- Running through all of the steps isn't necessary, just verifying the first step that executes a pipeline works is sufficient.
 
 ### Changelog
 
@@ -387,7 +377,7 @@ notes (see **3/5.**).
 > new documentation to the production website.
 
 There are two websites for documentation, corresponding to two stages
- the release process:
+the release process:
 
 - Staging website (https://devel.docs.dagger.io)
   - Netlify dashboard (https://app.netlify.com/sites/devel-docs-dagger-io)
@@ -401,6 +391,7 @@ site and it is automatically published to https://devel.docs.dagger.io
 via Netlify.
 
 Use this staging website to test the documentation, including:
+
 - verifying that the new content appears in the navigation
 - verifying internal and external links work correctly
 - verifying that images appear correctly
@@ -418,14 +409,14 @@ production deployment via Netlify as follows:
 
 1. Log in to the [Netlify dashboard for https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
 2. Refer to the list of "production deploys" and select the one you wish
-to deploy. Usually, this will be the most recent one. You can confirm this
-by checking the deployment hash against the latest commit hash in the
-[dagger/dagger repository main branch](https://github.com/dagger/dagger).
+   to deploy. Usually, this will be the most recent one. You can confirm this
+   by checking the deployment hash against the latest commit hash in the
+   [dagger/dagger repository main branch](https://github.com/dagger/dagger).
 3. On the deployment page, click the "Preview" button to once again
-preview/check the deployment. You can also check the deployment log to
-confirm there were no errors during the documentation build process.
+   preview/check the deployment. You can also check the deployment log to
+   confirm there were no errors during the documentation build process.
 4. If you are satisfied with the preview, click the "Publish deploy"
-button. This will publish the selected deployment on https://docs.dagger.io.
+   button. This will publish the selected deployment on https://docs.dagger.io.
 
 > 💡 TIP: There have been cases where Netlify builds have failed with errors,
 > but the same build succeeds when performed locally. In the past, one reason
