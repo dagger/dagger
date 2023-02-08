@@ -445,7 +445,7 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir)
+	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
@@ -454,7 +454,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File)
+	return container.withMounted(target, payload.LLB, payload.File, payload.Services)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory) (*Container, error) {
@@ -762,7 +762,7 @@ func locatePath[T *File | *Directory](
 	return found, nil, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs []ContainerID) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -775,6 +775,8 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		SourcePath: srcPath,
 		Target:     target,
 	})
+
+	payload.Services = append(payload.Services, svcs...)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -820,7 +822,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath)
+	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1159,7 +1161,7 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		path.Join(metaSourcePath, filePath),
 		payload.Pipeline,
 		payload.Platform,
-		payload.Services,
+		payload.Services...,
 	)
 	if err != nil {
 		return nil, err

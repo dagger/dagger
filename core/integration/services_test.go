@@ -11,6 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// NB(vito): be careful how you test services, in particular with a container
+// as the client! It's easy to end up with a falsely passing test because
+// various container APIs eagerly build and cache the client call, for example
+// Container.Directory and Container.File. When the container exec is cached
+// it's no longer possible to test whether its services are started
+// just-in-time for a File or Directory accessed from it.
+//
+// So, in order to actually test that services convey to/from a Directory or
+// File and are started just-in-time wherever they end up, a few of these tests
+// instead use the Git and HTTP Dagger APIs since they will directly yield a
+// Directory or File without eager evaluation.
+
 func TestContainerExecServices(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
@@ -241,12 +253,48 @@ func TestContainerFileServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-// TestDirectoryServiceEntries tests that a directory starts its dependent
-// services when listing entries.
-//
-// It uses the Git API to avoid using a container. Using the Container API
-// would falsely pass because the container would be run and cached as soon as
-// we access a directory from it, allowing the export to work regardless.
+func TestContainerMountServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	response := identity.NewID()
+	srv := httpService(c, response)
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
+		ServiceDependency: srv,
+	})
+
+	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", response))
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	gitDir := c.Git(repoURL).
+		WithServiceDependency(gitDaemon).
+		Branch("main").
+		Tree()
+
+	useBoth := c.Container().
+		From("alpine").
+		WithMountedDirectory("/mnt/repo", gitDir).
+		WithMountedFile("/mnt/index.html", httpFile)
+
+	httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, response, httpContent)
+
+	gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, response, gitContent)
+}
+
 func TestDirectoryServiceEntries(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
@@ -269,12 +317,6 @@ func TestDirectoryServiceEntries(t *testing.T) {
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
-// TestDirectoryServiceExport tests that a directory starts its dependent
-// services upon export.
-//
-// It uses the Git API to avoid using a container. Using the Container API
-// would falsely pass because the container would be run and cached as soon as
-// we access a directory from it, allowing the export to work regardless.
 func TestDirectoryServiceExport(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
@@ -303,12 +345,6 @@ func TestDirectoryServiceExport(t *testing.T) {
 	require.Equal(t, content, string(exportedContent))
 }
 
-// TestFileServiceContents tests that a file starts its dependent services when
-// reading its content.
-//
-// It uses the Git API to avoid using a container. Using the Container API
-// would falsely pass because the container would be run and cached as soon as
-// we access a file from it, allowing the export to work regardless.
 func TestFileServiceContents(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
@@ -332,12 +368,6 @@ func TestFileServiceContents(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-// TestFileServiceExport tests that a file starts its dependent services upon
-// export.
-//
-// It uses the Git API to avoid using a container. Using the Container API
-// would falsely pass because the container would be run and cached as soon as
-// we access a file from it, allowing the export to work regardless.
 func TestFileServiceExport(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
