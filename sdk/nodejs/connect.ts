@@ -47,14 +47,6 @@ export async function connect(
   cb: CallbackFct,
   config: ConnectOpts = {}
 ): Promise<void> {
-  // Create config with default values that may be overridden
-  // by config if values are set.
-  const _config: ConnectOpts = {
-    Workdir: process.env["DAGGER_WORKDIR"] || process.cwd(),
-    ConfigPath: process.env["DAGGER_CONFIG"] || "./dagger.json",
-    ...config,
-  }
-
   let client
   let close: null | (() => void) = null
 
@@ -76,7 +68,7 @@ export async function connect(
     // downloading the CLI and using that as the bin.
     const cliBin = process.env["_EXPERIMENTAL_DAGGER_CLI_BIN"]
     const engineConn = new Bin(cliBin, CLI_VERSION)
-    client = await engineConn.Connect(_config)
+    client = await engineConn.Connect(config)
     close = () => engineConn.Close()
   }
 
