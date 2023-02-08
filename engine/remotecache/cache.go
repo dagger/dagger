@@ -7,6 +7,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/remotes/docker"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/moby/buildkit/cache/remotecache"
 	"github.com/moby/buildkit/cache/remotecache/azblob"
 	"github.com/moby/buildkit/cache/remotecache/gha"
@@ -19,8 +20,7 @@ import (
 )
 
 const (
-	exporterName       = "dagger-exporter"
-	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	exporterName = "dagger-exporter"
 )
 
 func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHosts) remotecache.ResolveCacheExporterFunc {
@@ -81,7 +81,7 @@ func ResolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docke
 }
 
 func cacheConfigFromEnv() (string, map[string]string, error) {
-	envVal, ok := os.LookupEnv(CacheConfigEnvName)
+	envVal, ok := os.LookupEnv(engine.CacheConfigEnvName)
 	if !ok {
 		return "", nil, nil
 	}

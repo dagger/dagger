@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -19,6 +18,8 @@ const (
 	DockerImageProvider = "docker-image"
 	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
 	DefaultStateDir = "/var/lib/dagger"
+
+	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -90,7 +91,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
-		"-e", remotecache.CacheConfigEnvName,
+		"-e", CacheConfigEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
 		imageRef,
