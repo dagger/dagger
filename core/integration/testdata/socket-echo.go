@@ -8,7 +8,7 @@ import (
 
 func main() {
 	if len(os.Args) != 3 {
-		fmt.Fprintln(os.Stderr, "usage: %s <socket> <message>", os.Args[0])
+		fmt.Fprintf(os.Stderr, "usage: %s <socket> <message>\n", os.Args[0])
 		os.Exit(1)
 		return
 	}

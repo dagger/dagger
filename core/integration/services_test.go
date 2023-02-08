@@ -13,6 +13,7 @@
 package core
 
 import (
+	_ "embed"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestServiceHostnamesAreStable(t *testing.T) {
@@ -123,6 +125,48 @@ func TestContainerExecServicesDetachAfterUse(t *testing.T) {
 
 	_, err = nonUsingClient.ExitCode(ctx)
 	require.Error(t, err)
+}
+
+//go:embed testdata/pipe.go
+var pipeSrc string
+
+func TestContainerExecServicesDeduping(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := c.Container().
+		From("golang:1.18.2-alpine").
+		WithMountedFile("/src/main.go",
+			c.Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
+		WithExposedPort(8080).
+		WithExec([]string{"go", "run", "/src/main.go"})
+
+	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"apk", "add", "curl"}).
+		WithServiceDependency(srv).
+		WithEnvVariable("CACHEBUST", identity.NewID())
+
+	eg := new(errgroup.Group)
+	eg.Go(func() error {
+		_, err := client.
+			WithExec([]string{"curl", "-s", "-X", "POST", url + "/write", "-d", "hello"}).
+			ExitCode(ctx)
+		return err
+	})
+
+	msg, err := client.
+		WithExec([]string{"curl", "-s", url + "/read"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "hello", msg)
+
+	require.NoError(t, eg.Wait())
 }
 
 func TestContainerExecServicesChained(t *testing.T) {
