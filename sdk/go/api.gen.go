@@ -733,6 +733,19 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	}
 }
 
+// Retrieves this container with a registry authentication for a given address.
+func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+	q := r.q.Select("withRegistryAuth")
+	q = q.Arg("address", address)
+	q = q.Arg("username", username)
+	q = q.Arg("secret", secret)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Initializes this container from this DirectoryID.
 func (r *Container) WithRootfs(id *Directory) *Container {
 	q := r.q.Select("withRootfs")
@@ -816,6 +829,17 @@ func (r *Container) WithoutLabel(name string) *Container {
 func (r *Container) WithoutMount(path string) *Container {
 	q := r.q.Select("withoutMount")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container without the registry authentication of a given address.
+func (r *Container) WithoutRegistryAuth(address string) *Container {
+	q := r.q.Select("withoutRegistryAuth")
+	q = q.Arg("address", address)
 
 	return &Container{
 		q: q,

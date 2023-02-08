@@ -700,6 +700,35 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_registry_auth(
+        self,
+        address: str,
+        username: str,
+        secret: "Secret",
+    ) -> "Container":
+        """Retrieves this container with a registry authentication for a given
+        address.
+
+        Parameters
+        ----------
+        address:
+            Registry's address to bind the authentication to.
+            Formatted as [host]/[user]/[repo]:[tag] (e.g.
+            docker.io/dagger/dagger:main).
+        username:
+            The username of the registry's account (e.g., "Dagger").
+        secret:
+            The API key, password or token to authenticate to this registry.
+        """
+        _args = [
+            Arg("address", address),
+            Arg("username", username),
+            Arg("secret", secret),
+        ]
+        _ctx = self._select("withRegistryAuth", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_rootfs(self, id: "Directory") -> "Container":
         """Initializes this container from this DirectoryID."""
         _args = [
@@ -777,6 +806,24 @@ class Container(Type):
             Arg("path", path),
         ]
         _ctx = self._select("withoutMount", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_registry_auth(self, address: str) -> "Container":
+        """Retrieves this container without the registry authentication of a
+        given address.
+
+        Parameters
+        ----------
+        address:
+            Registry's address to remove the authentication from.
+            Formatted as [host]/[user]/[repo]:[tag] (e.g.
+            docker.io/dagger/dagger:main).
+        """
+        _args = [
+            Arg("address", address),
+        ]
+        _ctx = self._select("withoutRegistryAuth", _args)
         return Container(_ctx)
 
     @typecheck

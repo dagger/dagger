@@ -79,6 +79,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"publish":              router.ToResolver(s.publish),
 			"platform":             router.ToResolver(s.platform),
 			"export":               router.ToResolver(s.export),
+			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
+			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
 		},
 	}
 }
@@ -568,4 +570,35 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 	}
 
 	return true, nil
+}
+
+type containerWithRegistryAuthArgs struct {
+	Address  string        `json:"address"`
+	Username string        `json:"username"`
+	Secret   core.SecretID `json:"secret"`
+}
+
+func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+	secret, err := core.NewSecret(args.Secret).Plaintext(ctx, s.gw)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.auth.AddCredential(args.Address, args.Username, string(secret)); err != nil {
+		return nil, err
+	}
+
+	return parents, nil
+}
+
+type containerWithoutRegistryAuthArgs struct {
+	Address string
+}
+
+func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+	if err := s.auth.RemoveCredential(args.Address); err != nil {
+		return nil, err
+	}
+
+	return parents, nil
 }

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
@@ -21,7 +22,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
@@ -97,11 +97,13 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
 	}
 
+	registryAuth := auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr))
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
+			registryAuth,
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)),
 		},
 	}
 
@@ -133,6 +135,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				SolveCh:       solveCh,
 				Platform:      *platform,
 				DisableHostRW: startOpts.DisableHostRW,
+				Auth:          registryAuth,
 			})
 			if err != nil {
 				return nil, err

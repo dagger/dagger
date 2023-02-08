@@ -2796,3 +2796,38 @@ func TestContainerExecError(t *testing.T) {
 		require.Contains(t, err.Error(), errMsg)
 	})
 }
+
+func TestContainerWithRegistryAuth(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+
+	require.NoError(t, err)
+	defer c.Close()
+
+	startPrivateRegistry(ctx, c, t)
+
+	testRef := "127.0.0.1:5010/testimagepush:latest"
+	container := c.Container().From("alpine:3.16.2")
+
+	// Push without credentials should fail
+	_, err = container.Publish(ctx, testRef)
+	require.Error(t, err)
+
+	pushedRef, err := container.
+		WithRegistryAuth(
+			"127.0.0.1:5010/testimagepush:latest",
+			"john",
+			c.Container().
+				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
+				File("secret.txt").
+				Secret(),
+		).
+		Publish(ctx, testRef)
+
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
+}
