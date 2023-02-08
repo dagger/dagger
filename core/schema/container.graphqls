@@ -29,7 +29,7 @@ type Container {
     Image's address from its registry.
     Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
-    address: String!
+    address: String!,
   ): Container!
 
   "Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs."
@@ -132,9 +132,17 @@ type Container {
 
   "Retrieves this container plus a cache volume mounted at the given path."
   withMountedCache(
+    "Path to mount the cache volume at."
     path: String!
+
+    "ID of the cache to mount."
     cache: CacheID!
+
+    "Directory to use as the cache volume's root."
     source: DirectoryID
+
+    "Sharing mode of the cache volume."
+    sharing: CacheSharingMode
   ): Container!
 
   "Retrieves this container plus a secret mounted into a file at the given path."
@@ -261,6 +269,34 @@ type Container {
     """
     platformVariants: [ContainerID!]
   ): Boolean!
+
+  "Retrieves this container with a registry authentication for a given address."
+  withRegistryAuth(
+    """
+    Registry's address to bind the authentication to.
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!,
+
+    """
+    The username of the registry's account (e.g., "Dagger").
+    """
+    username: String!,
+
+    """
+    The API key, password or token to authenticate to this registry.
+    """
+    secret: SecretID!,
+  ): Container!
+
+  "Retrieves this container without the registry authentication of a given address."
+  withoutRegistryAuth(
+    """
+    Registry's address to remove the authentication from.
+    Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    """
+    address: String!
+  ): Container!
 
   hostname: String!
 

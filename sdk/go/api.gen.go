@@ -686,7 +686,10 @@ func (r *Container) WithLabel(name string, value string) *Container {
 
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
+	// Directory to use as the cache volume's root.
 	Source *Directory
+	// Sharing mode of the cache volume.
+	Sharing CacheSharingMode
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
@@ -698,6 +701,13 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
+			break
+		}
+	}
+	// `sharing` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
 			break
 		}
 	}
@@ -780,6 +790,19 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 			break
 		}
 	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with a registry authentication for a given address.
+func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+	q := r.q.Select("withRegistryAuth")
+	q = q.Arg("address", address)
+	q = q.Arg("username", username)
+	q = q.Arg("secret", secret)
 
 	return &Container{
 		q: q,
@@ -883,6 +906,17 @@ func (r *Container) WithoutLabel(name string) *Container {
 func (r *Container) WithoutMount(path string) *Container {
 	q := r.q.Select("withoutMount")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container without the registry authentication of a given address.
+func (r *Container) WithoutRegistryAuth(address string) *Container {
+	q := r.q.Select("withoutRegistryAuth")
+	q = q.Arg("address", address)
 
 	return &Container{
 		q: q,
@@ -1923,3 +1957,11 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 	}
 	return string(id), nil
 }
+
+type CacheSharingMode string
+
+const (
+	Locked  CacheSharingMode = "LOCKED"
+	Private CacheSharingMode = "PRIVATE"
+	Shared  CacheSharingMode = "SHARED"
+)

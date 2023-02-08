@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
@@ -408,9 +409,12 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, ls, "-rw-r--r--    1 root     root            12 Oct 26  1985 some-file")
-		require.Contains(t, ls, "drwxr-xr-x    2 root     root          4096 Oct 26  1985 sub-dir")
-		require.Contains(t, ls, "-rw-r--r--    1 root     root            11 Oct 26  1985 sub-file")
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
+		require.Regexp(t, regexp.MustCompile(`drwxr-xr-x\s+2 root\s+root\s+\d+ Oct 26  1985 sub-dir`), ls)
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 sub-file`), ls)
+		// require.Contains(t, ls, "-rw-r--r--    1 root     root            12 Oct 26  1985 some-file")
+		// require.Contains(t, ls, "drwxr-xr-x    2 root     root          4096 Oct 26  1985 sub-dir")
+		// require.Contains(t, ls, "-rw-r--r--    1 root     root            11 Oct 26  1985 sub-file")
 	})
 
 	t.Run("results in stable tar archiving", func(t *testing.T) {

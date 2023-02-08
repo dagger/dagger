@@ -76,6 +76,7 @@ type Type struct {
 	Description string       `json:"description,omitempty"`
 	Fields      []*Field     `json:"fields,omitempty"`
 	InputFields []InputValue `json:"inputFields,omitempty"`
+	EnumValues  []EnumValue  `json:"enumValues,omitempty"`
 }
 
 type Types []*Type
@@ -159,4 +160,11 @@ type InputValue struct {
 	Description  string   `json:"description"`
 	DefaultValue *string  `json:"defaultValue"`
 	TypeRef      *TypeRef `json:"type"`
+}
+
+type EnumValue struct {
+	Name              string `json:"name"`
+	Description       string `json:"description"`
+	IsDeprecated      bool   `json:"isDeprecated"`
+	DeprecationReason string `json:"deprecationReason"`
 }

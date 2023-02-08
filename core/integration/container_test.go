@@ -2532,9 +2532,9 @@ func TestContainerMultipleMounts(t *testing.T) {
 	defer c.Close()
 
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "one"), []byte("1"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "two"), []byte("2"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "three"), []byte("3"), 0o600))
 
 	one := c.Host().Directory(dir).File("one")
 	two := c.Host().Directory(dir).File("two")
@@ -2715,7 +2715,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
 	ctr := c.Container().
-		From("golang:1.18.2-alpine").
+		From("golang:1.20.0-alpine").
 		WithMountedFile("/src/main.go", echo).
 		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
 		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
@@ -2792,4 +2792,39 @@ func TestContainerExecError(t *testing.T) {
 		require.Contains(t, err.Error(), outMsg)
 		require.Contains(t, err.Error(), errMsg)
 	})
+}
+
+func TestContainerWithRegistryAuth(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+
+	require.NoError(t, err)
+	defer c.Close()
+
+	startPrivateRegistry(ctx, c, t)
+
+	testRef := "127.0.0.1:5010/testimagepush:latest"
+	container := c.Container().From("alpine:3.16.2")
+
+	// Push without credentials should fail
+	_, err = container.Publish(ctx, testRef)
+	require.Error(t, err)
+
+	pushedRef, err := container.
+		WithRegistryAuth(
+			"127.0.0.1:5010/testimagepush:latest",
+			"john",
+			c.Container().
+				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
+				File("secret.txt").
+				Secret(),
+		).
+		Publish(ctx, testRef)
+
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 }

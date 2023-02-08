@@ -62,6 +62,26 @@ export type BuildArg = {
  */
 export type CacheID = string & { __CacheID: never }
 
+/**
+ * Sharing mode of the cache volume.
+ */
+export enum CacheSharingMode {
+  /**
+   * Shares the cache volume amongst many build pipelines,
+   * but will serialize the writes
+   */
+  Locked,
+
+  /**
+   * Keeps a cache volume for a single build pipeline
+   */
+  Private,
+
+  /**
+   * Shares the cache volume amongst many build pipelines
+   */
+  Shared,
+}
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
@@ -179,7 +199,15 @@ export type ContainerWithFileOpts = {
 }
 
 export type ContainerWithMountedCacheOpts = {
+  /**
+   * Directory to use as the cache volume's root.
+   */
   source?: Directory
+
+  /**
+   * Sharing mode of the cache volume.
+   */
+  sharing?: CacheSharingMode
 }
 
 export type ContainerWithNewFileOpts = {
@@ -983,6 +1011,10 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a cache volume mounted at the given path.
+   * @param path Path to mount the cache volume at.
+   * @param cache ID of the cache to mount.
+   * @param opts.source Directory to use as the cache volume's root.
+   * @param opts.sharing Sharing mode of the cache volume.
    */
   withMountedCache(
     path: string,
@@ -1080,6 +1112,31 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withNewFile",
           args: { path, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves this container with a registry authentication for a given address.
+   * @param address Registry's address to bind the authentication to.
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   * @param username The username of the registry's account (e.g., "Dagger").
+   * @param secret The API key, password or token to authenticate to this registry.
+   */
+  withRegistryAuth(
+    address: string,
+    username: string,
+    secret: Secret
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withRegistryAuth",
+          args: { address, username, secret },
         },
       ],
       host: this.clientHost,
@@ -1235,6 +1292,25 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withoutMount",
           args: { path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves this container without the registry authentication of a given address.
+   * @param address Registry's address to remove the authentication from.
+Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   */
+  withoutRegistryAuth(address: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutRegistryAuth",
+          args: { address },
         },
       ],
       host: this.clientHost,

@@ -43,7 +43,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 }
 
 func goBase(gw bkgw.Client) llb.State {
-	return llb.Image("golang:1.19.1-alpine", llb.WithMetaResolver(gw)).
+	return llb.Image("golang:1.20.0-alpine", llb.WithMetaResolver(gw)).
 		Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root()
 }
 

@@ -55,6 +55,16 @@ func (payload cacheIDPayload) Encode() (CacheID, error) {
 	return CacheID(id), nil
 }
 
+// CacheSharingMode is a string deriving from CacheSharingMode enum
+// it can take values: SHARED, PRIVATE, LOCKED
+type CacheSharingMode string
+
+const (
+	CacheSharingModeShared  CacheSharingMode = "SHARED"
+	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
+	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
+)
+
 func NewCache(keys ...string) (*CacheVolume, error) {
 	id, err := cacheIDPayload{Keys: keys}.Encode()
 	if err != nil {

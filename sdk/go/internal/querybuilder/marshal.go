@@ -22,7 +22,21 @@ const (
 	GraphQLMarshallerID   = "XXX_GraphQLID"
 )
 
-var gqlMarshaller reflect.Type
+var (
+	gqlMarshaller reflect.Type
+
+	// Taken from codegen/generator/functions.go
+	// Includes also Platform
+	customScalar = map[string]struct{}{
+		"ContainerID": {},
+		"FileID":      {},
+		"DirectoryID": {},
+		"SecretID":    {},
+		"SocketID":    {},
+		"CacheID":     {},
+		"Platform":    {},
+	}
+)
 
 func init() {
 	gqlMarshaller = reflect.TypeOf((*GraphQLMarshaller)(nil)).Elem()
@@ -45,7 +59,14 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 	case reflect.Int:
 		return fmt.Sprintf("%d", v.Int()), nil
 	case reflect.String:
-		return fmt.Sprintf("%q", v.String()), nil
+		name := t.Name()
+		// distinguish enum const values and customScalars from string type
+		// GraphQL complains if you try to put a string literal in place of an enum: FOO vs "FOO"
+		_, found := customScalar[t.Name()]
+		if name != "string" && !found {
+			return fmt.Sprintf("%s", v.String()), nil //nolint:gosimple,staticcheck
+		}
+		return fmt.Sprintf("%q", v.String()), nil //nolint:gosimple,staticcheck
 	case reflect.Pointer:
 		if v.IsNil() {
 			return "null", nil

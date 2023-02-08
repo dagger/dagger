@@ -165,6 +165,41 @@ func runCmd(t *testing.T, exe string, args ...string) {
 	require.NoError(t, cmd.Run())
 }
 
+func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
+	t.Helper()
+
+	// Include a random ID so it runs every time (hack until we have no-cache or equivalent support)
+	randomID := identity.NewID()
+	go func() {
+		_, err := c.Container().
+			From("registry:2").
+			WithMountedDirectory("/auth", c.
+				Directory().
+				// Plaintext = john:xFlejaPdjrt25Dvr
+				WithNewFile("htpasswd", "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"),
+			).
+			WithEnvVariable("REGISTRY_HTTP_ADDR", "127.0.0.1:5010").
+			WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+			WithEnvVariable("RANDOM", randomID).
+			WithExec([]string{}).
+			ExitCode(ctx)
+
+		if err != nil {
+			t.Logf("error running registry: %v", err)
+		}
+	}()
+
+	// Wait for registry to be ready
+	_, err := c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("RANDOM", randomID).
+		WithExec([]string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5010 && exit 0; sleep 1; done; exit 1"}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+}
+
 func ls(dir string) ([]string, error) {
 	ents, err := os.ReadDir(dir)
 	if err != nil {

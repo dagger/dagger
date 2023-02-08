@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/dagger/dagger/engine/remotecache"
 	"github.com/docker/docker/libnetwork/resolvconf"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -90,6 +91,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
+		"-e", remotecache.CacheConfigEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
 	}

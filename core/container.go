@@ -463,7 +463,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(target, payload.LLB, payload.File, payload.Services)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -476,10 +476,20 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	target = absPath(payload.Config.WorkingDir, target)
 
+	cacheSharingMode := ""
+	switch concurrency {
+	case CacheSharingModePrivate:
+		cacheSharingMode = "private"
+	case CacheSharingModeLocked:
+		cacheSharingMode = "locked"
+	default:
+		cacheSharingMode = "shared"
+	}
+
 	mount := ContainerMount{
 		Target:           target,
 		CacheID:          cachePayload.Sum(),
-		CacheSharingMode: "shared", // TODO(vito): add param
+		CacheSharingMode: cacheSharingMode,
 	}
 
 	if source != nil {

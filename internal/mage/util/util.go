@@ -96,7 +96,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 	}
 
 	return c.Container().
-		From("golang:1.19-alpine").
+		From("golang:1.20.0-alpine").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 		Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "build-base"}}).
 		WithEnvVariable("CGO_ENABLED", "0").
@@ -108,7 +108,9 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithMountedDirectory("/app", goMods).
 		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
-		WithMountedDirectory("/app", repo)
+		WithMountedDirectory("/app", repo).
+		// include a cache for go build
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build"))
 }
 
 // GoBase is a standardized base image for running Go, cache optimized for the layout

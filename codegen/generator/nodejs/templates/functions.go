@@ -19,6 +19,7 @@ var (
 		"FormatDeprecation":   formatDeprecation,
 		"FormatInputType":     commonFunc.FormatInputType,
 		"FormatOutputType":    commonFunc.FormatOutputType,
+		"FormatEnum":          formatEnum,
 		"FormatName":          formatName,
 		"GetOptionalArgs":     getOptionalArgs,
 		"GetRequiredArgs":     getRequiredArgs,
@@ -26,8 +27,10 @@ var (
 		"PascalCase":          pascalCase,
 		"IsArgOptional":       isArgOptional,
 		"IsCustomScalar":      isCustomScalar,
+		"IsEnum":              isEnum,
 		"ArgsHaveDescription": argsHaveDescription,
 		"SortInputFields":     sortInputFields,
+		"SortEnumFields":      sortEnumFields,
 		"Solve":               solve,
 		"Subtract":            subtract,
 	}
@@ -86,9 +89,22 @@ func isCustomScalar(t *introspection.Type) bool {
 	}
 }
 
+// isEnum checks if the type is actually custom.
+func isEnum(t *introspection.Type) bool {
+	return t.Kind == introspection.TypeKindEnum &&
+		// We ignore the internal GraphQL enums
+		!strings.HasPrefix(t.Name, "__")
+}
+
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
 func formatName(s string) string {
 	return s
+}
+
+// formatEnum formats a GraphQL enum into a TS equivalent
+func formatEnum(s string) string {
+	s = strings.ToLower(s)
+	return strcase.ToCamel(s)
 }
 
 // isArgOptional checks if some arg are optional.
@@ -123,6 +139,13 @@ func getOptionalArgs(values introspection.InputValues) introspection.InputValues
 }
 
 func sortInputFields(s []introspection.InputValue) []introspection.InputValue {
+	sort.SliceStable(s, func(i, j int) bool {
+		return s[i].Name < s[j].Name
+	})
+	return s
+}
+
+func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	sort.SliceStable(s, func(i, j int) bool {
 		return s[i].Name < s[j].Name
 	})
