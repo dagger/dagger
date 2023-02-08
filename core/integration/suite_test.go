@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -138,8 +139,9 @@ func newFile(t *testing.T, path, contents string) core.FileID {
 }
 
 const (
-	registryContainer = "dagger-registry.dev"
-	engineContainer   = "dagger-engine.dev"
+	registryContainer        = "dagger-registry.dev"
+	privateRegistryContainer = "dagger-private-registry.dev"
+	engineContainer          = "dagger-engine.dev"
 )
 
 func startRegistry(t *testing.T) {
@@ -154,6 +156,40 @@ func startRegistry(t *testing.T) {
 	runCmd(t, "docker", "exec", engineContainer, "sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1")
 }
 
+func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
+	t.Helper()
+
+	authDir := t.TempDir()
+	require.NoError(t,
+		os.WriteFile(
+			filepath.Join(authDir, "htpasswd"),
+			// Plaintext = john:xFlejaPdjrt25Dvr
+			[]byte("john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"),
+			0600,
+		),
+	)
+
+	if err := exec.Command("docker", "inspect", privateRegistryContainer).Run(); err != nil {
+		// start registry if it doesn't exist
+		runCmd(t, "docker", "rm", "-f", privateRegistryContainer)
+		runCmd(t, "docker", "run", "--rm",
+			"--name", privateRegistryContainer,
+			"--net", "container:"+engineContainer,
+			"-e", "REGISTRY_HTTP_ADDR=127.0.0.1:5010",
+			"-e", "REGISTRY_AUTH=htpasswd",
+			"-e", "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm",
+			"-e", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
+			"-v", authDir+":/auth",
+			"-d",
+			"registry:2",
+		)
+	}
+
+	runCmd(t, "docker", "exec", engineContainer,
+		"sh", "-c",
+		"for i in $(seq 1 60); do nc -zv 127.0.0.1 5010 && exit 0; sleep 1; done; exit 1")
+}
+
 func runCmd(t *testing.T, exe string, args ...string) {
 	t.Helper()
 
@@ -163,41 +199,6 @@ func runCmd(t *testing.T, exe string, args ...string) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	require.NoError(t, cmd.Run())
-}
-
-func startPrivateRegistry(ctx context.Context, c *dagger.Client, t *testing.T) {
-	t.Helper()
-
-	// Include a random ID so it runs every time (hack until we have no-cache or equivalent support)
-	randomID := identity.NewID()
-	go func() {
-		_, err := c.Container().
-			From("registry:2").
-			WithMountedDirectory("/auth", c.
-				Directory().
-				// Plaintext = john:xFlejaPdjrt25Dvr
-				WithNewFile("htpasswd", "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"),
-			).
-			WithEnvVariable("REGISTRY_HTTP_ADDR", "127.0.0.1:5010").
-			WithEnvVariable("REGISTRY_AUTH", "htpasswd").
-			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
-			WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
-			WithEnvVariable("RANDOM", randomID).
-			WithExec([]string{}).
-			ExitCode(ctx)
-
-		if err != nil {
-			t.Logf("error running registry: %v", err)
-		}
-	}()
-
-	// Wait for registry to be ready
-	_, err := c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("RANDOM", randomID).
-		WithExec([]string{"sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5010 && exit 0; sleep 1; done; exit 1"}).
-		ExitCode(ctx)
-	require.NoError(t, err)
 }
 
 func ls(dir string) ([]string, error) {
