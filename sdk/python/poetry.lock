@@ -847,14 +847,14 @@ dev = ["pre-commit", "pytest-asyncio", "tox"]
 
 [[package]]
 name = "pytest-subprocess"
-version = "1.4.2"
+version = "1.5.0"
 description = "A plugin to fake subprocess for pytest"
 category = "dev"
 optional = false
 python-versions = ">=3.6"
 files = [
-    {file = "pytest-subprocess-1.4.2.tar.gz", hash = "sha256:3edccde14da6f65860d55891df37a1ec86fcf83db880512f856a77cfb521d1e1"},
-    {file = "pytest_subprocess-1.4.2-py3-none-any.whl", hash = "sha256:b072da330c64e238f25a14ed9410bf8882b276e64d823f651b33e91406899cee"},
+    {file = "pytest-subprocess-1.5.0.tar.gz", hash = "sha256:d7693b96f588f39b84c7b2b5c04287459246dfae6be1dd4098937a728ad4fbe3"},
+    {file = "pytest_subprocess-1.5.0-py3-none-any.whl", hash = "sha256:dfd75b10af6800a89a9b758f2e2eceff9de082a27bd1388521271b6e8bde298b"},
 ]
 
 [package.dependencies]
