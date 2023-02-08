@@ -114,6 +114,11 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	if proc == nil {
 		return nil, fmt.Errorf("failed to start dagger session")
 	}
+	// Wait on the proc, this ensures it doesn't become a zombie in a long-running
+	// process and also ensures that GC won't collect any of its resources (e.g.
+	// pipe fds) until it has exited.
+	go proc.Wait()
+
 	defer func() {
 		if rerr != nil {
 			stderrContents := stderrBuf.String()
