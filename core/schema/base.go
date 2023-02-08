@@ -13,7 +13,7 @@ import (
 type InitializeArgs struct {
 	Router        *router.Router
 	Workdir       string
-	Gateway       bkgw.Client
+	Gateway       *core.GatewayClient
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
 	SolveCh       chan *bkclient.SolveStatus
@@ -25,7 +25,7 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:    params.Router,
-		gw:        &core.GatewayClient{Client: params.Gateway},
+		gw:        params.Gateway,
 		bkClient:  params.BKClient,
 		solveOpts: params.SolveOpts,
 		solveCh:   params.SolveCh,

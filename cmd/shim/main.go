@@ -26,7 +26,7 @@ const (
 	metaMountPath = "/.dagger_meta_mount"
 	stdinPath     = metaMountPath + "/stdin"
 	exitCodePath  = metaMountPath + "/exitCode"
-	runcPath      = "/usr/bin/buildkit-runc"
+	runcPath      = "/usr/local/bin/runc"
 	shimPath      = "/_shim"
 )
 

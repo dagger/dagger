@@ -105,6 +105,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
 		},
+		CacheExports: []bkclient.CacheOptionsEntry{{
+			Type: "dagger",
+		}},
+		CacheImports: []bkclient.CacheOptionsEntry{{
+			Type: "dagger",
+		}},
 	}
 
 	if !startOpts.DisableHostRW {
@@ -126,10 +132,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			// Thankfully we can just yeet the gateway into the store.
 			secretStore.SetGateway(gw)
 
+			gwClient := core.NewGatewayClient(gw)
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:        router,
 				Workdir:       startOpts.Workdir,
-				Gateway:       gw,
+				Gateway:       gwClient,
 				BKClient:      c,
 				SolveOpts:     solveOpts,
 				SolveCh:       solveCh,
@@ -163,7 +170,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			return bkgw.NewResult(), nil
+			// Return a result that contains every reference that was solved in this session.
+			// If cache export is enabled server-side, all these references will be exported.
+			return gwClient.CombinedResult(), nil
 		}, solveCh)
 		return err
 	})

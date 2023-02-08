@@ -18,17 +18,23 @@ import (
 )
 
 const (
-	daggerCliBinName = "dagger"
-	shimBinName      = "dagger-shim"
-	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.11.1"
+	engineBinName = "dagger-engine"
+	shimBinName   = "dagger-shim"
+	alpineVersion = "3.17"
+	runcRepo      = "github.com/opencontainers/runc"
+	runcRef       = "v1.1.4"
+	buildkitRepo  = "github.com/moby/buildkit"
+	buildkitRef   = "v0.11.1"
+	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	engineDefaultStateDir = "/var/lib/dagger"
 
 	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
-	engineEntrypointCommand = "buildkitd --config " + engineTomlPath + " --oci-worker-binary /usr/bin/" + shimBinName
+	engineEntrypointCommand = "/usr/local/bin/" + engineBinName + " --debug --config " + engineTomlPath + " --oci-worker-binary /usr/local/bin/" + shimBinName
+
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 )
 
 // setting cgroup v2 nesting. ref: https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
@@ -108,8 +114,8 @@ func (t Engine) Lint(ctx context.Context) error {
 		if repo != buildkitRepo {
 			continue
 		}
-		if version != buildkitBranch {
-			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitBranch, version)
+		if version != buildkitRef {
+			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitRef, version)
 		}
 	}
 
@@ -265,6 +271,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"run",
 		"-d",
 		"--rm",
+		"-e", cacheConfigEnvName,
 		"-v", volumeName+":"+engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
@@ -287,44 +294,92 @@ func (t Engine) Dev(ctx context.Context) error {
 }
 
 func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
-	buildkitRepo := c.Git(buildkitRepo, dagger.GitOpts{KeepGitDir: true}).Branch(buildkitBranch).Tree()
-
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		buildkitBase := c.Container(dagger.ContainerOpts{
-			Platform: dagger.Platform("linux/" + arch),
-		}).Build(buildkitRepo)
-
-		// build the shim binary
-		shimBin := util.GoBase(c).
-			WithEnvVariable("GOOS", "linux").
-			WithEnvVariable("GOARCH", arch).
-			WithExec([]string{
-				"go", "build",
-				"-o", "./bin/" + shimBinName,
-				"-ldflags", "-s -w",
-				"/app/cmd/shim",
+		platformVariants = append(platformVariants, c.
+			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+			From("alpine:"+alpineVersion).
+			WithExec([]string{"apk", "add", "git", "openssh", "pigz", "xz"}).
+			WithFile("/usr/local/bin/runc", runcBin(c, arch)).
+			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
+			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
+			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
+			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
+			WithDirectory(engineDefaultStateDir, c.Directory()).
+			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
+				Contents: engineToml,
 			}).
-			File("./bin/" + shimBinName)
-		buildkitBase = buildkitBase.WithRootfs(
-			buildkitBase.Rootfs().
-				WithFile("/usr/bin/"+shimBinName, shimBin).
-				WithNewFile(engineTomlPath, engineToml).
-				WithNewDirectory(engineDefaultStateDir),
-		)
-
-		// setup entrypoint and CMD
-		buildkitBase = buildkitBase.
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
 				Permissions: 755,
 			}).
 			WithEntrypoint([]string{
 				"dagger-entrypoint.sh",
-			})
-
-		platformVariants = append(platformVariants, buildkitBase)
+			}),
+		)
 	}
 
 	return platformVariants
+}
+
+func engineBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/" + engineBinName,
+			"-ldflags", "-s -w",
+			"/app/cmd/engine",
+		}).
+		File("./bin/" + engineBinName)
+}
+
+func shimBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/" + shimBinName,
+			"-ldflags", "-s -w",
+			"/app/cmd/shim",
+		}).
+		File("./bin/" + shimBinName)
+}
+
+func buildctlBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithMountedDirectory("/app", c.Git(buildkitRepo).Branch(buildkitRef).Tree()).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/buildctl",
+			"-ldflags", "-s -w",
+			"/app/cmd/buildctl",
+		}).
+		File("./bin/buildctl")
+}
+
+func runcBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithExec([]string{"apk", "add", "musl-dev", "gcc", "libseccomp-dev", "libseccomp-static"}).
+		WithEnvVariable("CGO_ENABLED", "1").
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithMountedDirectory("/app", c.Git(runcRepo).Branch(runcRef).Tree()).
+		WithExec([]string{
+			"go", "build",
+			"-ldflags", "-extldflags -static",
+			"-tags", "apparmor seccomp netgo cgo static_build osusergo",
+			"-o", "./bin/runc",
+		}).File("./bin/runc")
+}
+
+func qemuBins(c *dagger.Client, arch string) *dagger.Directory {
+	return c.
+		Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From(qemuBinImage).
+		Rootfs()
 }
