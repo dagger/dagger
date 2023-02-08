@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 
@@ -58,6 +59,7 @@ func (r *RegistryAuthProvider) AddCredential(address, username, secret string) e
 	r.m.Lock()
 	defer r.m.Unlock()
 
+	log.Println("ADDING CREDENTIAL FOR ADDRESS", address, username, secret)
 	r.credentials[address] = &bkauth.CredentialsResponse{
 		Username: username,
 		Secret:   secret,
@@ -139,6 +141,8 @@ func (r *RegistryAuthProvider) RemoveCredential(address string) error {
 		return err
 	}
 
+	log.Println("REMOVING CREDENTIALS", address)
+
 	r.m.Lock()
 	defer r.m.Unlock()
 
@@ -175,6 +179,7 @@ func (r *RegistryAuthProvider) credential(domain string) *bkauth.CredentialsResp
 // on DockerAuthProvider.
 func (r *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.CredentialsRequest) (*bkauth.CredentialsResponse, error) {
 	memoryCredential := r.credential(req.GetHost())
+	log.Println("CREDENTIALS MEMORY CREDENTIAL", req.GetHost(), memoryCredential)
 	if memoryCredential != nil {
 		return memoryCredential, nil
 	}
@@ -184,6 +189,7 @@ func (r *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 
 func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (*bkauth.FetchTokenResponse, error) {
 	memoryCredential := r.credential(req.GetHost())
+	log.Println("FETCHTOKEN MEMORY CREDENTIAL", req.GetHost(), memoryCredential)
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}
@@ -193,6 +199,7 @@ func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.Fetch
 
 func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
 	memoryCredential := r.credential(req.GetHost())
+	log.Println("GETTOKENAUTHORITY MEMORY CREDENTIAL", req.GetHost(), memoryCredential)
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}
@@ -202,6 +209,7 @@ func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkaut
 
 func (r *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
 	memoryCredential := r.credential(req.GetHost())
+	log.Println("VERIFYTOKENAUTHORITY MEMORY CREDENTIAL", req.GetHost(), memoryCredential)
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}

@@ -2815,7 +2815,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 
 	pushedRef, err := container.
 		WithRegistryAuth(
-			"127.0.0.1:5010/testimagepush:latest",
+			"127.0.0.1:5010",
 			"john",
 			c.Container().
 				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).

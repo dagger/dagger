@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"log"
 	"path"
 	"strings"
 
@@ -588,6 +589,7 @@ func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Co
 		return nil, err
 	}
 
+	log.Println("ADDING CREDENTIAL", args.Username, string(secret))
 	if err := s.auth.AddCredential(args.Address, args.Username, string(secret)); err != nil {
 		return nil, err
 	}

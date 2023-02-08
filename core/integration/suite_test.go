@@ -5,9 +5,9 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -159,29 +159,29 @@ func startRegistry(t *testing.T) {
 func startPrivateRegistry(t *testing.T) {
 	t.Helper()
 
-	authDir := t.TempDir()
-	require.NoError(t,
-		os.WriteFile(
-			filepath.Join(authDir, "htpasswd"),
-			// Plaintext = john:xFlejaPdjrt25Dvr
-			[]byte("john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"),
-			0600,
-		),
-	)
+	t.Cleanup(func() {
+		if t.Failed() {
+			log.Println("!!!!!!!!!!!!!!!!!!!!!!! DUMPING REGISTRY LOGS")
+			runCmd(t, "docker", "logs", privateRegistryContainer)
+		}
+	})
 
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
 	if err := exec.Command("docker", "inspect", privateRegistryContainer).Run(); err != nil {
 		// start registry if it doesn't exist
 		runCmd(t, "docker", "rm", "-f", privateRegistryContainer)
 		runCmd(t, "docker", "run", "--rm",
 			"--name", privateRegistryContainer,
 			"--net", "container:"+engineContainer,
-			"-e", "REGISTRY_HTTP_ADDR=127.0.0.1:5010",
-			"-e", "REGISTRY_AUTH=htpasswd",
-			"-e", "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm",
-			"-e", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
-			"-v", authDir+":/auth",
+			"--env", "REGISTRY_HTTP_ADDR=127.0.0.1:5010",
+			"--env", "REGISTRY_AUTH=htpasswd",
+			"--env", "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm",
+			"--env", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
+			"--env", "REGISTRY_HTPASSWD="+htpasswd,
+			"--entrypoint", "",
 			"-d",
 			"registry:2",
+			"sh", "-exc", `mkdir -p /auth && echo "$REGISTRY_HTPASSWD" > /auth/htpasswd && /entrypoint.sh /etc/docker/registry/config.yml`,
 		)
 	}
 
