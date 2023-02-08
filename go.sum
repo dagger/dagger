@@ -2226,10 +2226,10 @@ mvdan.cc/interfacer v0.0.0-20180901003855-c20040233aed/go.mod h1:Xkxe497xwlCKkIa
 mvdan.cc/lint v0.0.0-20170908181259-adc824a0674b/go.mod h1:2odslEg/xrtNQqCYg2/jCoyKnw3vv5biOc3JnIcYfL4=
 mvdan.cc/unparam v0.0.0-20190720180237-d51796306d8f/go.mod h1:4G1h5nDURzA3bwVMZIVpwbkw+04kSxk3rAtzlimaUJw=
 mvdan.cc/unparam v0.0.0-20200501210554-b37ab49443f7/go.mod h1:HGC5lll35J70Y5v7vCGb9oLhHoScFwkHDJm/05RdSTc=
-oss.terrastruct.com/d2 v0.1.5 h1:QNL7C0nZI1DLU7gc5vkwXiaSZKJzsSdPyLDJxr4O17M=
-oss.terrastruct.com/d2 v0.1.5/go.mod h1:RFg3HvInAbPc1kbRxLYrx4DW3hiFgfVB1HAxINfVwno=
-oss.terrastruct.com/util-go v0.0.0-20221226181616-c04ce7d1b79f h1:psTZna5TN42M+DA1oiuIATH/mxdQ81kNoYUcWXyrAYE=
-oss.terrastruct.com/util-go v0.0.0-20221226181616-c04ce7d1b79f/go.mod h1:Fwy72FDIOOM4K8F96ScXkxHHppR1CPfUyo9+x9c1PBU=
+oss.terrastruct.com/d2 v0.1.6 h1:TdNET4uzt3Djl66UriSR3sbItWYcCV9ugpHzF9w2eIY=
+oss.terrastruct.com/d2 v0.1.6/go.mod h1:7sIRmEj3QeXVB6erSPW6dOfFUX7orsQkO0twmTYILEA=
+oss.terrastruct.com/util-go v0.0.0-20230118143836-0960f48cae9f h1:+VLjmVHPpFbsovhDyXOX7xRa8bM6tQ2821jsviq57PY=
+oss.terrastruct.com/util-go v0.0.0-20230118143836-0960f48cae9f/go.mod h1:Fwy72FDIOOM4K8F96ScXkxHHppR1CPfUyo9+x9c1PBU=
 pack.ag/amqp v0.11.2/go.mod h1:4/cbmt4EJXSKlG6LCfWHoqmN0uFdy5i/+YFz+fTfhV4=
 rsc.io/pdf v0.1.1 h1:k1MczvYDUvJBe93bYd7wrZLLUEcLZAuF824/I4e5Xr4=
 sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.14/go.mod h1:LEScyzhFmoF5pso/YSeBstl57mOzx9xlU9n85RGrDQg=

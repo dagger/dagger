@@ -46,7 +46,7 @@ require (
 	golang.org/x/sys v0.4.0
 	golang.org/x/term v0.4.0
 	google.golang.org/grpc v1.51.0
-	oss.terrastruct.com/d2 v0.1.5
+	oss.terrastruct.com/d2 v0.1.6
 )
 
 require (
@@ -139,7 +139,7 @@ require (
 	golang.org/x/image v0.1.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gonum.org/v1/plot v0.12.0 // indirect
-	oss.terrastruct.com/util-go v0.0.0-20221226181616-c04ce7d1b79f // indirect
+	oss.terrastruct.com/util-go v0.0.0-20230118143836-0960f48cae9f // indirect
 )
 
 require (
