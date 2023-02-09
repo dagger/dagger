@@ -21,7 +21,7 @@ func TestRemoteCache(t *testing.T) {
 
 	getClient := func() *dagger.Client {
 		return runSeparateEngine(ctx, t, map[string]string{
-			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry;ref=127.0.0.1:5000/test-cache",
+			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=127.0.0.1:5000/test-cache",
 		}, "container:"+registryContainerName)
 	}
 	pipelineOutput := func(c *dagger.Client) string {
