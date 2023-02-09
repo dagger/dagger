@@ -1042,22 +1042,22 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
-	execSt := fsSt.Run(runOpts...)
+	// first, build without a hostname
+	execStNoHostname := fsSt.Run(runOpts...)
 
-	if len(payload.Ports) > 0 {
-		constraints := llb.NewConstraints(llb.Platform(platform))
-		rootVtx := execSt.Root().Output().Vertex(ctx, constraints)
-		_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints)
-		if err != nil {
-			return nil, fmt.Errorf("marshal: %w", err)
-		}
-
-		hostname := hostHash(opBytes)
-		payload.Hostname = hostname + daggerDNSDomain
-
-		runOpts = append(runOpts, llb.Hostname(hostname))
-		execSt = fsSt.Run(runOpts...)
+	// next, marshal it to compute a deterministic hostname
+	constraints := llb.NewConstraints(llb.Platform(platform))
+	rootVtx := execStNoHostname.Root().Output().Vertex(ctx, constraints)
+	_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints)
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
 	}
+	hostname := hostHash(opBytes)
+	payload.Hostname = hostname + daggerDNSDomain
+
+	// finally, build with the hostname set
+	runOpts = append(runOpts, llb.Hostname(hostname))
+	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
