@@ -18,7 +18,6 @@ async def build():
 
     # initialize dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-
         # get reference to the local project
         src = client.host().directory(".")
 

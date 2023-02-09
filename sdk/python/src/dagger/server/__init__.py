@@ -1,6 +1,7 @@
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 import attrs
 from cattrs.preconf.json import JsonConverter
@@ -30,7 +31,7 @@ class Server:
     debug: bool = False
 
     def export_schema(self) -> None:
-        logger.debug(f"schema => \n{self.schema}")
+        logger.debug("schema => \n%s", self.schema)
         schema_path.write_text(str(self.schema))
 
     async def execute(self) -> None:
@@ -38,12 +39,12 @@ class Server:
         # entry point for the event loop. I.e., no other tasks
         # are running concurrently at this point.
         inputs = self._read_inputs()
-        logger.debug(f"{inputs = }")
+        logger.debug("inputs = %s", inputs)
 
         # Resolvers can chose to be implemented in async,
         # e.g., running multiple client calls concurrently.
         result = await self._call_resolver(inputs)
-        logger.debug(f"{result = }")
+        logger.debug("result = %s", result)
 
         self._write_output(result)
 
@@ -64,5 +65,5 @@ class Server:
 
     def _write_output(self, o) -> None:
         output = self.converter.dumps(o, ensure_ascii=False)
-        logger.debug(f"{output = }")
+        logger.debug("output = %s", output)
         outputs_path.write_text(output)

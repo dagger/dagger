@@ -29,31 +29,31 @@ def context(mocker):
 
 
 def test_none(ctx: Context):
-    assert ctx._get_value(None, int | None) is None
+    assert ctx.get_value(None, int | None) is None
 
 
 def test_optional_parent(ctx: Context):
     with pytest.raises(InvalidQueryError):
-        ctx._get_value(None, int)
+        ctx.get_value(None, int)
 
 
 def test_optional_parent_with_optional_value(ctx: Context):
     r = {"one": {"two": None}}
-    assert ctx._get_value(r, int | None) is None
+    assert ctx.get_value(r, int | None) is None
 
 
 def test_value_with_optional_type(ctx: Context):
     r = {"one": {"two": {"three": 3}}}
-    assert ctx._get_value(r, int | None) == 3
+    assert ctx.get_value(r, int | None) == 3
 
 
 def test_none_value_with_optional_type(ctx: Context):
     r = {"one": {"two": {"three": None}}}
-    assert ctx._get_value(r, int | None) is None
+    assert ctx.get_value(r, int | None) is None
 
 
 def test_scalar(ctx: Context):
     r = {"one": {"two": {"three": "144"}}}
-    actual = ctx._get_value(r, SomeID)
+    actual = ctx.get_value(r, SomeID)
     assert isinstance(actual, SomeID)
     assert actual == "144"

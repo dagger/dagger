@@ -155,7 +155,7 @@ warn_unused_ignores = true
 
 [tool.black]
 include = '\.pyi?$'
-target-version = ["py310"]
+target-version = ["py310", "py311"]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -176,6 +176,8 @@ ignore = [
     "D401",
     # Not using timezones in this project.
     "DTZ",
+    # Allow logging with default %. You need custom setup to use `extra`.
+    "G002",
     # Valid use in pytest, docs and examples.
     "INP001",
     # Unnecessary variable assignment before `return` statement
@@ -183,6 +185,8 @@ ignore = [
     "RET504",
     # We don't use asserts as runtime validation guarantees.
     "S101",
+    # Don't guard types. Don't want to stringize them. 
+    "TCH",
     # Pandas
     "PD", 
 ]
@@ -208,6 +212,8 @@ extend-immutable-calls = ["typer.Option"]
     # code so no need to bother.
     "A", 
     "D", 
+    # Too many arguments to function call.
+    "PLR0913",
     # `Optional` is preferred over `| None` because of how 
     # beartype handles forward references.
     "UP007",
