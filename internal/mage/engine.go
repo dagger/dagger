@@ -210,6 +210,9 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 		WithExec(args).
+		// TODO(vito): troubleshooting scheduler errors in CI, remove before
+		// merging
+		WithExec([]string{"go", "test", "-c", "./core/integration", "-run", "ContainerWithServiceFile/copying", "-count=100"}).
 		Stdout(ctx)
 	if err != nil {
 		return err
@@ -372,6 +375,9 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				Contents:    engineEntrypoint,
 				Permissions: 755,
 			}).
+			// TODO(vito): troubleshooting scheduler errors in CI, remove before
+			// merging
+			WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1").
 			WithEntrypoint([]string{
 				"dagger-entrypoint.sh",
 			}),
