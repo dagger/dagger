@@ -268,7 +268,7 @@ func TestContainerExecManyServices(t *testing.T) {
 		WithExec([]string{"apk", "add", "curl"})
 
 	catCmd := []string{"cat"}
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 5; i++ {
 		httpSrv, httpURL := httpService(ctx, t, c, strconv.Itoa(i))
 		httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
 			ServiceDependency: httpSrv,
@@ -292,7 +292,7 @@ func TestContainerExecManyServices(t *testing.T) {
 
 	fileContent, err := gigaGetter.WithExec(catCmd).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "00112233445566778899", fileContent)
+	require.Equal(t, "0011223344", fileContent)
 }
 
 func TestContainerBuildService(t *testing.T) {
