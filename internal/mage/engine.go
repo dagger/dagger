@@ -343,7 +343,13 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 		platformVariants = append(platformVariants, c.
 			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 			From("alpine:"+alpineVersion).
-			WithExec([]string{"apk", "add", "git", "openssh", "pigz", "xz"}).
+			WithExec([]string{
+				"apk", "add",
+				// for Buildkit
+				"git", "openssh", "pigz", "xz",
+				// for CNI
+				"dumb-init", "iptables", "ip6tables", "dnsmasq",
+			}).
 			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 				Permissions: 0700,
 			}).
@@ -352,7 +358,6 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 			WithDirectory(engineDefaultStateDir, c.Directory()).
-			WithExec([]string{"apk", "add", "--no-cache", "dumb-init", "iptables", "ip6tables", "dnsmasq"}).
 			WithDirectory("/opt/cni/bin", c.Directory()).
 			WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
 			WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
