@@ -25,12 +25,7 @@ func TestHTTPService(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	svc := httpService(c, "Hello, world!")
-
-	url, err := svc.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
+	svc, url := httpService(ctx, t, c, "Hello, world!")
 
 	contents, err := c.HTTP(url, dagger.HTTPOpts{
 		ServiceDependency: svc,

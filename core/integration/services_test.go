@@ -13,6 +13,7 @@
 package core
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -60,20 +61,76 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 	require.Len(t, hosts, 1)
 }
 
+func TestContainerHostnameEndpoint(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("hostname is independent of exposed ports", func(t *testing.T) {
+		a, err := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Hostname(ctx)
+		require.NoError(t, err)
+
+		b, err := c.Container().
+			From("python").
+			WithExec([]string{"python", "-m", "http.server"}).
+			Hostname(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, a, b)
+	})
+
+	t.Run("hostname is same as endpoint", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		ep, err := srv.Endpoint(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, hn+":8000", ep)
+	})
+
+	t.Run("endpoint can specify arbitrary port", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExec([]string{"python", "-m", "http.server"})
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		ep, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Port: 1234,
+		})
+		require.NoError(t, err)
+
+		require.Equal(t, hn+":1234", ep)
+	})
+
+	t.Run("endpoint with no port errors if no exposed port", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExec([]string{"python", "-m", "http.server"})
+
+		_, err := srv.Endpoint(ctx)
+		require.Error(t, err)
+	})
+}
+
 func TestContainerExecServices(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	srv := httpService(c, "Hello, world!")
+	srv, url := httpService(ctx, t, c, "Hello, world!")
 
 	hostname, err := srv.Hostname(ctx)
 	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -98,16 +155,7 @@ func TestContainerExecServicesDetachAfterUse(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	srv := httpService(c, identity.NewID())
-
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
+	srv, url := httpService(ctx, t, c, identity.NewID())
 
 	usingClient := c.Container().
 		From("alpine:3.16.2").
@@ -173,7 +221,7 @@ func TestContainerExecServicesChained(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	srv := httpService(c, "0\n")
+	srv, _ := httpService(ctx, t, c, "0\n")
 
 	for i := 1; i < 10; i++ {
 		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
@@ -216,11 +264,7 @@ func TestContainerBuildService(t *testing.T) {
 
 	t.Run("building with service dependency", func(t *testing.T) {
 		content := identity.NewID()
-		srv := httpService(c, content)
-		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-			Scheme: "http",
-		})
-		require.NoError(t, err)
+		srv, httpURL := httpService(ctx, t, c, content)
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
@@ -241,11 +285,7 @@ CMD cat index.html
 
 	t.Run("building a directory that depends on a service (Container.Build)", func(t *testing.T) {
 		content := identity.NewID()
-		srv := httpService(c, content)
-		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-			Scheme: "http",
-		})
-		require.NoError(t, err)
+		srv, httpURL := httpService(ctx, t, c, content)
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
@@ -255,10 +295,7 @@ RUN wget `+httpURL+`
 CMD cat index.html
 `)
 
-		gitDaemon := gitService(c, src)
-		gitHost, err := gitDaemon.Hostname(ctx)
-		require.NoError(t, err)
-		repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+		gitDaemon, repoURL := gitService(ctx, t, c, src)
 
 		gitDir := c.Git(repoURL).
 			WithServiceDependency(gitDaemon).
@@ -276,11 +313,7 @@ CMD cat index.html
 
 	t.Run("building a directory that depends on a service (Directory.DockerBuild)", func(t *testing.T) {
 		content := identity.NewID()
-		srv := httpService(c, content)
-		httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-			Scheme: "http",
-		})
-		require.NoError(t, err)
+		srv, httpURL := httpService(ctx, t, c, content)
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
@@ -290,10 +323,7 @@ RUN wget `+httpURL+`
 CMD cat index.html
 `)
 
-		gitDaemon := gitService(c, src)
-		gitHost, err := gitDaemon.Hostname(ctx)
-		require.NoError(t, err)
-		repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+		gitDaemon, repoURL := gitService(ctx, t, c, src)
 
 		gitDir := c.Git(repoURL).
 			WithServiceDependency(gitDaemon).
@@ -315,11 +345,7 @@ func TestContainerExportServices(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
+	srv, httpURL := httpService(ctx, t, c, content)
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -338,12 +364,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
-		srv := httpService(c, string(platform))
-
-		url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-			Scheme: "http",
-		})
-		require.NoError(t, err)
+		srv, url := httpService(ctx, t, c, string(platform))
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
@@ -369,12 +390,7 @@ func TestServicesContainerPublish(t *testing.T) {
 	startRegistry(t)
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
+	srv, url := httpService(ctx, t, c, content)
 
 	testRef := "127.0.0.1:5000/testimagepush:latest"
 	pushedRef, err := c.Container().
@@ -397,16 +413,7 @@ func TestContainerRootFSServices(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
+	srv, url := httpService(ctx, t, c, content)
 
 	fileContent, err := c.Container().
 		From("alpine:3.16.2").
@@ -426,13 +433,9 @@ func TestContainerWithRootFSServices(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
+	srv, url := httpService(ctx, t, c, content)
 
-	gitDaemon := gitService(c,
+	gitDaemon, repoURL := gitService(ctx, t, c,
 		// this little maneuver commits the entire rootfs into a git repo
 		c.Container().
 			From("alpine:3.16.2").
@@ -444,9 +447,6 @@ func TestContainerWithRootFSServices(t *testing.T) {
 			// to check that the path exists (and is a file/dir), but Rootfs always
 			// exists, and is always a directory.
 			Rootfs())
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
 
 	gitDir := c.Git(repoURL).
 		WithServiceDependency(gitDaemon).
@@ -466,16 +466,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
+	srv, url := httpService(ctx, t, c, content)
 
 	wget := c.Container().
 		From("alpine:3.16.2").
@@ -519,16 +510,7 @@ func TestContainerFileServices(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	srv := httpService(c, content)
-
-	hostname, err := srv.Hostname(ctx)
-	require.NoError(t, err)
-
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-	require.Equal(t, "http://"+hostname+":8000", url)
+	srv, url := httpService(ctx, t, c, content)
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -541,88 +523,51 @@ func TestContainerFileServices(t *testing.T) {
 	require.Equal(t, content, fileContent)
 }
 
-func TestContainerWithMountedDirectoryFileServices(t *testing.T) {
+func TestContainerWithServiceFileDirectory(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
 	response := identity.NewID()
-	srv := httpService(c, response)
-
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-
+	srv, httpURL := httpService(ctx, t, c, response)
 	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
 		ServiceDependency: srv,
 	})
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", response))
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
-
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", response))
 	gitDir := c.Git(repoURL).
 		WithServiceDependency(gitDaemon).
 		Branch("main").
 		Tree()
 
-	useBoth := c.Container().
-		From("alpine:3.16.2").
-		WithMountedDirectory("/mnt/repo", gitDir).
-		WithMountedFile("/mnt/index.html", httpFile)
+	t.Run("mounting", func(t *testing.T) {
+		useBoth := c.Container().
+			From("alpine:3.16.2").
+			WithMountedDirectory("/mnt/repo", gitDir).
+			WithMountedFile("/mnt/index.html", httpFile)
 
-	httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, response, httpContent)
+		httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, response, httpContent)
 
-	gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, response, gitContent)
-}
-
-func TestContainerWithDirectoryFileServices(t *testing.T) {
-	c, ctx := connect(t)
-	defer c.Close()
-
-	response := identity.NewID()
-	srv := httpService(c, response)
-
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-
-	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
-		ServiceDependency: srv,
+		gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, response, gitContent)
 	})
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", response))
+	t.Run("copying", func(t *testing.T) {
+		useBoth := c.Container().
+			From("alpine:3.16.2").
+			WithDirectory("/mnt/repo", gitDir).
+			WithFile("/mnt/index.html", httpFile)
 
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
+		httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, response, httpContent)
 
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
-
-	gitDir := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
-		Branch("main").
-		Tree()
-
-	useBoth := c.Container().
-		From("alpine:3.16.2").
-		WithDirectory("/mnt/repo", gitDir).
-		WithFile("/mnt/index.html", httpFile)
-
-	httpContent, err := useBoth.File("/mnt/index.html").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, response, httpContent)
-
-	gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, response, gitContent)
+		gitContent, err := useBoth.File("/mnt/repo/README.md").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, response, gitContent)
+	})
 }
 
 func TestDirectoryServiceEntries(t *testing.T) {
@@ -631,12 +576,7 @@ func TestDirectoryServiceEntries(t *testing.T) {
 
 	content := identity.NewID()
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	entries, err := c.Git(repoURL).
 		WithServiceDependency(gitDaemon).
@@ -652,10 +592,7 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 	defer c.Close()
 
 	content := identity.NewID()
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
 	stamped := c.Git(repoURL).
@@ -678,14 +615,9 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 
 	content := identity.NewID()
 
-	gitSrv := gitService(c, c.Directory().WithNewFile("README.md", content))
-	gitHost, err := gitSrv.Hostname(ctx)
-	require.NoError(t, err)
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitSrv, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
-	httpSrv := httpService(c, content)
-	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
-	require.NoError(t, err)
+	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	useBoth := c.Directory().
 		WithDirectory("/repo", c.Git(repoURL).WithServiceDependency(gitSrv).Branch("main").Tree()).
@@ -706,12 +638,7 @@ func TestDirectoryServiceExport(t *testing.T) {
 
 	content := identity.NewID()
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	dest := t.TempDir()
 
@@ -734,12 +661,7 @@ func TestFileServiceContents(t *testing.T) {
 
 	content := identity.NewID()
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	fileContent, err := c.Git(repoURL).
 		WithServiceDependency(gitDaemon).
@@ -757,12 +679,7 @@ func TestFileServiceExport(t *testing.T) {
 
 	content := identity.NewID()
 
-	gitDaemon := gitService(c, c.Directory().WithNewFile("README.md", content))
-
-	gitHost, err := gitDaemon.Hostname(ctx)
-	require.NoError(t, err)
-
-	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	dest := t.TempDir()
 	filePath := filepath.Join(dest, "README.md")
@@ -787,9 +704,7 @@ func TestFileServiceTimestamp(t *testing.T) {
 
 	content := identity.NewID()
 
-	httpSrv := httpService(c, content)
-	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
-	require.NoError(t, err)
+	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
 	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}).
@@ -809,11 +724,11 @@ func TestFileServiceSecret(t *testing.T) {
 
 	content := identity.NewID()
 
-	httpSrv := httpService(c, content)
-	httpURL, err := httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{Scheme: "http"})
-	require.NoError(t, err)
+	httpSrv, httpURL := httpService(ctx, t, c, content)
 
-	secret := c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}).Secret()
+	secret := c.HTTP(httpURL, dagger.HTTPOpts{
+		ServiceDependency: httpSrv,
+	}).Secret()
 
 	t.Run("secret env", func(t *testing.T) {
 		stdout, err := c.Container().
@@ -836,8 +751,10 @@ func TestFileServiceSecret(t *testing.T) {
 	})
 }
 
-func httpService(c *dagger.Client, content string) *dagger.Container {
-	return c.Container().
+func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Container, string) {
+	t.Helper()
+
+	srv := c.Container().
 		From("python").
 		WithMountedDirectory(
 			"/srv/www",
@@ -846,11 +763,20 @@ func httpService(c *dagger.Client, content string) *dagger.Container {
 		WithWorkdir("/srv/www").
 		WithExposedPort(8000).
 		WithExec([]string{"python", "-m", "http.server"})
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	require.NoError(t, err)
+
+	return srv, httpURL
 }
 
-func gitService(c *dagger.Client, content *dagger.Directory) *dagger.Container {
+func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory) (*dagger.Container, string) {
+	t.Helper()
+
 	const gitPort = 9418
-	return c.Container().
+	gitDaemon := c.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/repo", content).
@@ -883,4 +809,11 @@ git daemon --verbose --export-all --base-path=/root/srv
 				File("start.sh")).
 		WithExposedPort(gitPort).
 		WithExec([]string{"sh", "/root/start.sh"})
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	require.NoError(t, err)
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
 }
