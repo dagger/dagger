@@ -1,7 +1,7 @@
-name: Test Publish Engine
+name: Test Publish Engine & CLI
 on:
-  # only run this in PRs, it verifies that we can build all the images we publish
-  # once pushed to main
+  # only run this in PRs, it verifies that we can build all the images
+  # and binaries we publish once pushed to main
   pull_request:
   workflow_dispatch:
 
@@ -18,3 +18,16 @@ jobs:
       - name: "Test Publish Engine"
         run: |
           ./hack/make engine:testpublish
+
+  test-publish-cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "1.20"
+
+      - name: "Test Publish CLI"
+        run: |
+          ./hack/make cli:testpublish

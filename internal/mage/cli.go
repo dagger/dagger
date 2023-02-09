@@ -8,6 +8,7 @@ import (
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
+	"golang.org/x/sync/errgroup"
 )
 
 type Cli mg.Namespace
@@ -57,4 +58,40 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		WithExec(args).
 		ExitCode(ctx)
 	return err
+}
+
+// TestPublish verifies that the CLI builds without actually publishing anything
+// TODO: ideally this would also use go releaser, but we want to run this step in
+// PRs and locally and we use goreleaser pro features that require a key...
+// For now, this just builds the CLI for the same targets so there's at least some
+// coverage
+func (cl Cli) TestPublish(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	oses := []string{"linux", "windows", "darwin"}
+	arches := []string{"amd64", "arm64", "arm"}
+
+	var eg errgroup.Group
+	for _, os := range oses {
+		for _, arch := range arches {
+			if arch == "arm" && os == "darwin" {
+				continue
+			}
+			var goarm string
+			if arch == "arm" {
+				goarm = "7" // not always correct but not sure of better way
+			}
+			os := os
+			arch := arch
+			eg.Go(func() error {
+				_, err := util.PlatformDaggerBinary(c, os, arch, goarm).Export(ctx, "./bin/dagger-"+os+"-"+arch)
+				return err
+			})
+		}
+	}
+	return eg.Wait()
 }
