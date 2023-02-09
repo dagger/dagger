@@ -1048,7 +1048,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// next, marshal it to compute a deterministic hostname
 	constraints := llb.NewConstraints(llb.Platform(platform))
 	rootVtx := execStNoHostname.Root().Output().Vertex(ctx, constraints)
-	_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints)
+	_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints) //nolint:dogsled
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}

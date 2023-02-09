@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -161,12 +160,13 @@ func startPrivateRegistry(t *testing.T) {
 
 	t.Cleanup(func() {
 		if t.Failed() {
-			log.Println("!!!!!!!!!!!!!!!!!!!!!!! DUMPING REGISTRY LOGS")
 			runCmd(t, "docker", "logs", privateRegistryContainer)
 		}
 	})
 
-	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC"
+	// john:xFlejaPdjrt25Dvr
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+
 	if err := exec.Command("docker", "inspect", privateRegistryContainer).Run(); err != nil {
 		// start registry if it doesn't exist
 		runCmd(t, "docker", "rm", "-f", privateRegistryContainer)
