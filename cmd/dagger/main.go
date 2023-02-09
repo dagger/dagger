@@ -1,10 +1,12 @@
 package main
 
 import (
+	"io"
 	"os"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -16,6 +18,11 @@ var (
 )
 
 func init() {
+	// Disable logrus output, which only comes from the docker
+	// commandconn library that is used by buildkit's connhelper
+	// and prints unneeded warning logs.
+	logrus.StandardLogger().SetOutput(io.Discard)
+
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
 
