@@ -258,6 +258,35 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
+func TestContainerExecManyServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	gigaGetter := c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("CACHEBUST", identity.NewID()).
+		WithExec([]string{"apk", "add", "curl"})
+
+	catCmd := []string{"cat"}
+	for i := 0; i < 10; i++ {
+		srv, httpURL := httpService(ctx, t, c, strconv.Itoa(i))
+
+		file := c.HTTP(httpURL, dagger.HTTPOpts{
+			ServiceDependency: srv,
+		})
+
+		fileName := fmt.Sprintf("file-%d", i)
+
+		catCmd = append(catCmd, fileName)
+
+		gigaGetter = gigaGetter.WithFile(fileName, file)
+	}
+
+	fileContent, err := gigaGetter.WithExec(catCmd).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "0123456789", fileContent)
+}
+
 func TestContainerBuildService(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
