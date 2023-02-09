@@ -4,6 +4,7 @@ import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterator
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import partial
@@ -12,10 +13,8 @@ from keyword import iskeyword
 from operator import attrgetter
 from typing import (
     Any,
-    Callable,
     ClassVar,
     Generic,
-    Iterator,
     ParamSpec,
     Protocol,
     TypeAlias,

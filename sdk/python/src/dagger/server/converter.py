@@ -1,5 +1,5 @@
+from collections.abc import Callable
 from dataclasses import fields
-from typing import Callable
 
 from cattrs.gen import make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
