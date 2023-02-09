@@ -269,22 +269,30 @@ func TestContainerExecManyServices(t *testing.T) {
 
 	catCmd := []string{"cat"}
 	for i := 0; i < 10; i++ {
-		srv, httpURL := httpService(ctx, t, c, strconv.Itoa(i))
-
-		file := c.HTTP(httpURL, dagger.HTTPOpts{
-			ServiceDependency: srv,
+		httpSrv, httpURL := httpService(ctx, t, c, strconv.Itoa(i))
+		httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
+			ServiceDependency: httpSrv,
 		})
 
+		gitSrv, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("file", strconv.Itoa(i)))
+		gitDir := c.Git(repoURL).
+			WithServiceDependency(gitSrv).
+			Branch("main").
+			Tree()
+
 		fileName := fmt.Sprintf("file-%d", i)
+		repoName := fmt.Sprintf("repo-%d", i)
 
-		catCmd = append(catCmd, fileName)
+		gigaGetter = gigaGetter.
+			WithFile(fileName, httpFile).
+			WithDirectory(repoName, gitDir)
 
-		gigaGetter = gigaGetter.WithFile(fileName, file)
+		catCmd = append(catCmd, fileName, filepath.Join(repoName, "file"))
 	}
 
 	fileContent, err := gigaGetter.WithExec(catCmd).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "0123456789", fileContent)
+	require.Equal(t, "00112233445566778899", fileContent)
 }
 
 func TestContainerBuildService(t *testing.T) {
