@@ -4,6 +4,11 @@ on:
   push:
     branches: ["main"]
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   # Enable manual trigger for easy debugging
   # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
   workflow_dispatch:
