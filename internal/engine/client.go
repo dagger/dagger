@@ -3,27 +3,18 @@ package engine
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/url"
 	"strings"
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
-	"github.com/sirupsen/logrus"
 	"go.opentelemetry.io/otel"
 
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
 	_ "github.com/moby/buildkit/client/connhelper/kubepod"         // import the kubernetes connection driver
 	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
 )
-
-func init() {
-	// Disable logrus output, which only comes from the docker
-	// commandconn library that is used by buildkit's connhelper
-	// and prints unneeded warning logs.
-	logrus.StandardLogger().SetOutput(io.Discard)
-}
 
 func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
 	buildkitdHost := remote.String()
