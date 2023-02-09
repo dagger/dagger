@@ -136,24 +136,29 @@ func (r *Container) Directory(path string) *Directory {
 
 // ContainerEndpointOpts contains options for Container.Endpoint
 type ContainerEndpointOpts struct {
-	Scheme string
-
 	Port int
+
+	Scheme string
 }
 
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
 func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
 	q := r.q.Select("endpoint")
-	// `scheme` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].Scheme) {
-			q = q.Arg("scheme", opts[i].Scheme)
-			break
-		}
-	}
 	// `port` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Port) {
 			q = q.Arg("port", opts[i].Port)
+			break
+		}
+	}
+	// `scheme` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
 			break
 		}
 	}
@@ -323,6 +328,7 @@ func (r *Container) FS() *Directory {
 	}
 }
 
+// Retrieves a hostname which can be used by clients to reach this container.
 func (r *Container) Hostname(ctx context.Context) (string, error) {
 	q := r.q.Select("hostname")
 
@@ -1804,10 +1810,11 @@ func (r *Client) Host() *Host {
 
 // HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
+	// A service which must be started before the URL is fetched.
 	ServiceDependency *Container
 }
 
-// Returns a file containing an http remote url content.
+// Returns a file containing an HTTP remote URL's fetched content.
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)

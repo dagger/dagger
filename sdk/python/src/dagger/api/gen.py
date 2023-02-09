@@ -140,10 +140,22 @@ class Container(Type):
     @typecheck
     async def endpoint(
         self,
-        scheme: Optional[str] = None,
         port: Optional[int] = None,
+        scheme: Optional[str] = None,
     ) -> str:
-        """Returns
+        """Retrieves an endpoint that clients can use to reach this container.
+
+
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -151,8 +163,8 @@ class Container(Type):
             GraphQL to represent free-form human-readable text.
         """
         _args = [
-            Arg("scheme", scheme, None),
             Arg("port", port, None),
+            Arg("scheme", scheme, None),
         ]
         _ctx = self._select("endpoint", _args)
         return await _ctx.execute(str)
@@ -327,7 +339,10 @@ class Container(Type):
 
     @typecheck
     async def hostname(self) -> str:
-        """Returns
+        """Retrieves a hostname which can be used by clients to reach this
+        container.
+
+        Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
@@ -1692,7 +1707,14 @@ class Client(Root):
         url: str,
         service_dependency: Optional[Container] = None,
     ) -> File:
-        """Returns a file containing an http remote url content."""
+        """Returns a file containing an HTTP remote URL's fetched content.
+
+        Parameters
+        ----------
+        url:
+        service_dependency:
+            A service which must be started before the URL is fetched.
+        """
         _args = [
             Arg("url", url),
             Arg("serviceDependency", service_dependency, None),

@@ -101,8 +101,8 @@ export type ContainerBuildOpts = {
 }
 
 export type ContainerEndpointOpts = {
-  scheme?: string
   port?: number
+  scheme?: string
 }
 
 export type ContainerExecOpts = {
@@ -332,6 +332,9 @@ export type ClientGitOpts = {
 }
 
 export type ClientHttpOpts = {
+  /**
+   * A service which must be started before the URL is fetched.
+   */
   serviceDependency?: Container
 }
 
@@ -439,6 +442,14 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   */
   async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
       [
@@ -624,6 +635,10 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   */
   async hostname(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
       [
@@ -2330,7 +2345,8 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Returns a file containing an http remote url content.
+   * Returns a file containing an HTTP remote URL's fetched content.
+   * @param opts.serviceDependency A service which must be started before the URL is fetched.
    */
   http(url: string, opts?: ClientHttpOpts): File {
     return new File({

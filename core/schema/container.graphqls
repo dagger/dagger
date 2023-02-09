@@ -298,13 +298,6 @@ type Container {
     address: String!
   ): Container!
 
-  hostname: String!
-
-  endpoint(
-    scheme: String,
-    port: Int
-  ): String!
-
   """
   Expose a network port.
   Exposed ports serve two purposes:
@@ -324,6 +317,20 @@ type Container {
   The service dependency will also convey to any files or directories produced by the container.
   """
   withServiceDependency(service: ContainerID!): Container!
+
+  """
+  Retrieves a hostname which can be used by clients to reach this container.
+  """
+  hostname: String!
+
+  """
+  Retrieves an endpoint that clients can use to reach this container.
+
+  If no port is specified, the first exposed port is used. If none exist an error is returned.
+
+  If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+  """
+  endpoint(port: Int, scheme: String): String!
 }
 
 "A simple key value object that represents an environment variable."
