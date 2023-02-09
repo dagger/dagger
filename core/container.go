@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1048,11 +1049,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// next, marshal it to compute a deterministic hostname
 	constraints := llb.NewConstraints(llb.Platform(platform))
 	rootVtx := execStNoHostname.Root().Output().Vertex(ctx, constraints)
-	_, opBytes, _, _, err := rootVtx.Marshal(ctx, constraints) //nolint:dogsled
+	digest, _, _, _, err := rootVtx.Marshal(ctx, constraints) //nolint:dogsled
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
-	hostname := hostHash(opBytes)
+	hostname := hostHash(digest)
 	payload.Hostname = hostname + daggerDNSDomain
 
 	// finally, build with the hostname set
@@ -1498,8 +1499,12 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
-func hostHash(val []byte) string {
-	return b32(xxh3.Hash(val))
+func hostHash(val digest.Digest) string {
+	b, err := hex.DecodeString(val.Encoded())
+	if err != nil {
+		panic(err)
+	}
+	return b32(xxh3.Hash(b))
 }
 
 func b32(n uint64) string {
