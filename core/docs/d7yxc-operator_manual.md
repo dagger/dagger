@@ -106,10 +106,10 @@ To ensure that an SDK will be used with a compatible CLI and runner:
 
 ### Distribution and Versioning
 
-The runner is distributed as a container image at `ghcr.io/dagger/engine`.
+The runner is distributed as a container image at `registry.dagger.io/engine`.
 
 - Tags are made for the version of each release.
-- For example, the [`v0.3.7` release](https://github.com/dagger/dagger/releases/tag/v0.3.7) has a corresponding image at `ghcr.io/dagger/engine:v0.3.7`
+- For example, the [`v0.3.7` release](https://github.com/dagger/dagger/releases/tag/v0.3.7) has a corresponding image at `registry.dagger.io/engine:v0.3.7`
 
 ### Execution Requirements
 
