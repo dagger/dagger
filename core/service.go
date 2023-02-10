@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"syscall"
+	"time"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -50,9 +51,13 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs []ContainerID
 	close(started)
 
 	defer func() {
-		for svc := range started {
-			svc.Detach()
-		}
+		go func() {
+			<-time.After(10 * time.Second)
+
+			for svc := range started {
+				svc.Detach()
+			}
+		}()
 	}()
 
 	// wait for all services to start

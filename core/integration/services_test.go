@@ -151,30 +151,6 @@ func TestContainerExecServices(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
-func TestContainerExecServicesDetachAfterUse(t *testing.T) {
-	c, ctx := connect(t)
-	defer c.Close()
-
-	srv, url := httpService(ctx, t, c, identity.NewID())
-
-	usingClient := c.Container().
-		From("alpine:3.16.2").
-		WithServiceDependency(srv).
-		WithExec([]string{"wget", url})
-
-	code, err := usingClient.ExitCode(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, code)
-
-	nonUsingClient := c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("CACHEBUST", identity.NewID()).
-		WithExec([]string{"wget", url})
-
-	_, err = nonUsingClient.ExitCode(ctx)
-	require.Error(t, err)
-}
-
 //go:embed testdata/pipe.go
 var pipeSrc string
 
