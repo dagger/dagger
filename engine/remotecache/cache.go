@@ -12,7 +12,7 @@ import (
 	"github.com/moby/buildkit/cache/remotecache/azblob"
 	"github.com/moby/buildkit/cache/remotecache/gha"
 	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
-	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
+	"github.com/moby/buildkit/cache/remotecache/s3"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -32,7 +32,9 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHos
 		case "gha":
 			impl, err = gha.ResolveCacheExporterFunc()(ctx, g, attrs)
 		case "s3":
-			impl, err = s3remotecache.ResolveCacheExporterFunc()(ctx, g, attrs)
+			impl, err = s3.ResolveCacheExporterFunc()(ctx, g, attrs)
+		case "experimental_dagger_s3":
+			impl, err = s3Exporter(ctx, g, attrs)
 		case "azblob":
 			impl, err = azblob.ResolveCacheExporterFunc()(ctx, g, attrs)
 		default:
@@ -63,7 +65,9 @@ func ResolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docke
 		case "gha":
 			impl, desc, err = gha.ResolveCacheImporterFunc()(ctx, g, attrs)
 		case "s3":
-			impl, desc, err = s3remotecache.ResolveCacheImporterFunc()(ctx, g, attrs)
+			impl, desc, err = s3.ResolveCacheImporterFunc()(ctx, g, attrs)
+		case "experimental_dagger_s3":
+			impl, desc, err = s3Importer(ctx, g, attrs)
 		case "azblob":
 			impl, desc, err = azblob.ResolveCacheImporterFunc()(ctx, g, attrs)
 		default:
