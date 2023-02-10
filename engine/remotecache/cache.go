@@ -42,6 +42,9 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHos
 		if err != nil {
 			return nil, err
 		}
+		if userAttrs != nil {
+			userAttrs["mode"] = attrs["mode"]
+		}
 		return impl, nil
 	}
 }
