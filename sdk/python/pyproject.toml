@@ -42,14 +42,16 @@ python = "^3.10"
 anyio = ">=3.6.2"
 attrs = ">=22.1.0"
 cattrs = ">=22.2.0"
+graphql-core = ">=3.2.3"
 # FIXME: replace next two lines with the following when gql version 3.5.0 is released
 # gql = {version = ">=3.5.0", extras = ["httpx"]}
 gql = ">=3.4.0"
 httpx = ">=0.23.1"
-strawberry-graphql = {version = ">=0.133.5", optional = true}
-typer = {version = ">=0.6.1", extras = ["all"]}
 beartype = ">=0.11.0"
 platformdirs = ">=2.6.2"
+rich = ">=12.6.0"
+typer = {version = ">=0.6.1", extras = ["all"]}
+strawberry-graphql = {version = ">=0.133.5", optional = true}
 
 [tool.poetry.extras]
 server = ["strawberry-graphql"]
