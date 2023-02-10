@@ -1100,6 +1100,35 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	return &Container{ID: id}, nil
 }
 
+func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	if payload.FS == nil {
+		return nil
+	}
+
+	_, err = WithServices(ctx, gw, payload.Services, func() (*bkgw.Result, error) {
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+	})
+	return err
+}
+
 func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
 	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
@@ -1134,8 +1163,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	exited := make(chan error, 1)
 	go func() {
-		_, err := container.ExitCode(svcCtx, gw)
-		exited <- err
+		exited <- container.Evaluate(svcCtx, gw)
 	}()
 
 	select {
