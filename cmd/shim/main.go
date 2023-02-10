@@ -310,8 +310,6 @@ func setupBundle() int {
 		}
 	}
 
-	const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
-
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
@@ -330,32 +328,8 @@ func setupBundle() int {
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
-			if !ok {
-				fmt.Fprintln(os.Stderr, "malformed alias prefix:", env)
-				return 1
-			}
-
-			ips, err := net.LookupIP(target)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "could not resolve hostname alias:", err)
-				return 1
-			}
-
-			hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "could not open /etc/hosts for aliases:", err)
-				return 1
-			}
-
-			for _, ip := range ips {
-				if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
-					fmt.Fprintln(os.Stderr, "could not append to /etc/hosts:", err)
-				}
-			}
-
-			if err := hostsFile.Close(); err != nil {
-				fmt.Fprintln(os.Stderr, "close /etc/hosts:", err)
+			if err := appendHostAlias(hostsFilePath, env); err != nil {
+				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
 		default:
@@ -406,6 +380,33 @@ func setupBundle() int {
 		return 1
 	}
 	return 0
+}
+
+const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
+
+func appendHostAlias(hostsFilePath string, env string) error {
+	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
+	if !ok {
+		return fmt.Errorf("malformed host alias: %s", env)
+	}
+
+	ips, err := net.LookupIP(target)
+	if err != nil {
+		return err
+	}
+
+	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
+	if err != nil {
+		return err
+	}
+
+	for _, ip := range ips {
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+			return err
+		}
+	}
+
+	return hostsFile.Close()
 }
 
 // nolint: unparam
