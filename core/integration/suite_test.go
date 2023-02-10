@@ -4,11 +4,15 @@ import (
 	"archive/tar"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log"
+	"net"
 	"os"
 	"os/exec"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -16,6 +20,14 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	// start with fresh test registries once per suite; they're an engine-global
+	// dependency
+	startRegistry()
+	startPrivateRegistry()
+	os.Exit(m.Run())
+}
 
 func connect(t *testing.T) (*dagger.Client, context.Context) {
 	ctx := context.Background()
@@ -141,64 +153,84 @@ const (
 	registryContainer        = "dagger-registry.dev"
 	privateRegistryContainer = "dagger-private-registry.dev"
 	engineContainer          = "dagger-engine.dev"
+
+	registryHost        = "127.0.0.1:5000"
+	privateRegistryHost = "127.0.0.1:5010"
 )
 
-func startRegistry(t *testing.T) {
-	t.Helper()
+func startRegistry() {
+	runCmd("docker", "rm", "-f", registryContainer)
+	runCmd("docker", "run", "--rm", "--name", registryContainer, "--net", "container:"+engineContainer, "-d", "registry:2")
 
-	if err := exec.Command("docker", "inspect", registryContainer).Run(); err != nil {
-		// start registry if it doesn't exist
-		runCmd(t, "docker", "rm", "-f", registryContainer)
-		runCmd(t, "docker", "run", "--rm", "--name", registryContainer, "--net", "container:"+engineContainer, "-d", "registry:2")
-	}
-
-	runCmd(t, "docker", "exec", engineContainer, "sh", "-c", "for i in $(seq 1 60); do nc -zv 127.0.0.1 5000 && exit 0; sleep 1; done; exit 1")
+	waitForRegistry(registryHost)
 }
 
-func startPrivateRegistry(t *testing.T) {
-	t.Helper()
-
-	t.Cleanup(func() {
-		if t.Failed() {
-			runCmd(t, "docker", "logs", privateRegistryContainer)
-		}
-	})
-
+func startPrivateRegistry() {
 	// john:xFlejaPdjrt25Dvr
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
 
-	if err := exec.Command("docker", "inspect", privateRegistryContainer).Run(); err != nil {
-		// start registry if it doesn't exist
-		runCmd(t, "docker", "rm", "-f", privateRegistryContainer)
-		runCmd(t, "docker", "run", "--rm",
-			"--name", privateRegistryContainer,
-			"--net", "container:"+engineContainer,
-			"--env", "REGISTRY_HTTP_ADDR=127.0.0.1:5010",
-			"--env", "REGISTRY_AUTH=htpasswd",
-			"--env", "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm",
-			"--env", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
-			"--env", "REGISTRY_HTPASSWD="+htpasswd,
-			"--entrypoint", "",
-			"-d",
-			"registry:2",
-			"sh", "-exc", `mkdir -p /auth && echo "$REGISTRY_HTPASSWD" > /auth/htpasswd && /entrypoint.sh /etc/docker/registry/config.yml`,
-		)
-	}
+	// start registry if it doesn't exist
+	runCmd("docker", "rm", "-f", privateRegistryContainer)
+	runCmd("docker", "run", "--rm",
+		"--name", privateRegistryContainer,
+		"--net", "container:"+engineContainer,
+		"--env", "REGISTRY_HTTP_ADDR="+privateRegistryHost,
+		"--env", "REGISTRY_AUTH=htpasswd",
+		"--env", "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm",
+		"--env", "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd",
+		"--env", "REGISTRY_HTPASSWD="+htpasswd,
+		"--entrypoint", "",
+		"-d",
+		"registry:2",
+		"sh", "-exc", `mkdir -p /auth && echo "$REGISTRY_HTPASSWD" > /auth/htpasswd && /entrypoint.sh /etc/docker/registry/config.yml`,
+	)
 
-	runCmd(t, "docker", "exec", engineContainer,
-		"sh", "-c",
-		"for i in $(seq 1 60); do nc -zv 127.0.0.1 5010 && exit 0; sleep 1; done; exit 1")
+	waitForRegistry(privateRegistryHost)
 }
 
-func runCmd(t *testing.T, exe string, args ...string) { //nolint:unparam
-	t.Helper()
+func registryRef(name string) string {
+	return fmt.Sprintf("%s/%s:%s", registryHost, name, identity.NewID())
+}
 
-	t.Logf("running %s %s", exe, strings.Join(args, " "))
+func privateRegistryRef(name string) string {
+	return fmt.Sprintf("%s/%s:%s", privateRegistryHost, name, identity.NewID())
+}
+
+func waitForRegistry(addr string) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		panic(err)
+	}
+
+	start := time.Now()
+	for i := 0; i < 100; i++ {
+		cmd := exec.Command("docker", "exec", engineContainer, "nc", "-zv", host, port)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		if err := cmd.Run(); err == nil {
+			break
+		}
+
+		if i == 99 {
+			log.Println("registry", addr, "not ready after", time.Since(start))
+			os.Exit(1)
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func runCmd(exe string, args ...string) { //nolint:unparam
+	fmt.Printf("running %s %s", exe, strings.Join(args, " "))
 
 	cmd := exec.Command(exe, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	require.NoError(t, cmd.Run())
+	err := cmd.Run()
+	if err != nil {
+		os.Exit(cmd.ProcessState.ExitCode())
+	}
 }
 
 func ls(dir string) ([]string, error) {

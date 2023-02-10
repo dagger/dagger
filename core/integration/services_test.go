@@ -400,12 +400,10 @@ func TestServicesContainerPublish(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	startRegistry(t)
-
 	content := identity.NewID()
 	srv, url := httpService(ctx, t, c, content)
 
-	testRef := "127.0.0.1:5000/testimagepush:latest"
+	testRef := registryRef("services-container-publish")
 	pushedRef, err := c.Container().
 		From("alpine:3.16.2").
 		WithServiceDependency(srv).
