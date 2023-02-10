@@ -151,6 +151,33 @@ func TestContainerExecServices(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
+func TestContainerExecServiceAlias(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv, _ := httpService(ctx, t, c, "Hello, world!")
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithServiceDependency(srv, dagger.ContainerWithServiceDependencyOpts{
+			Alias: "hello",
+		}).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithExec([]string{"curl", "-v", "http://hello:8000"})
+
+	code, err := client.ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+
+	stdout, err := client.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", stdout)
+
+	stderr, err := client.Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Host: hello:8000")
+}
+
 //go:embed testdata/pipe.go
 var pipeSrc string
 

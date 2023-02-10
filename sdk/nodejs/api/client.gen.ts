@@ -215,6 +215,13 @@ export type ContainerWithNewFileOpts = {
   permissions?: number
 }
 
+export type ContainerWithServiceDependencyOpts = {
+  /**
+   * Optional hostname alias to map to the service
+   */
+  alias?: string
+}
+
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
@@ -1222,14 +1229,18 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
    * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
    *
    * The service dependency will also convey to any files or directories produced by the container.
+   * @param opts.alias Optional hostname alias to map to the service
    */
-  withServiceDependency(service: Container): Container {
+  withServiceDependency(
+    service: Container,
+    opts?: ContainerWithServiceDependencyOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withServiceDependency",
-          args: { service },
+          args: { service, ...opts },
         },
       ],
       host: this.clientHost,

@@ -622,10 +622,11 @@ func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, 
 
 type containerWithServiceDependencyArgs struct {
 	Service core.ContainerID
+	Alias   string
 }
 
 func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	return parent.WithServiceDependency(&core.Container{ID: args.Service})
+	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {

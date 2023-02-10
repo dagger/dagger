@@ -825,7 +825,11 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service_dependency(self, service: "Container") -> "Container":
+    def with_service_dependency(
+        self,
+        service: "Container",
+        alias: Optional[str] = None,
+    ) -> "Container":
         """Establish a runtime dependency on a service. The service will be
         started automatically when needed and detached when it is no longer
         needed.
@@ -834,9 +838,16 @@ class Container(Type):
 
         The service dependency will also convey to any files or directories
         produced by the container.
+
+        Parameters
+        ----------
+        service:
+        alias:
+            Optional hostname alias to map to the service
         """
         _args = [
             Arg("service", service),
+            Arg("alias", alias, None),
         ]
         _ctx = self._select("withServiceDependency", _args)
         return Container(_ctx)

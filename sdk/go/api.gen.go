@@ -839,12 +839,25 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
+// ContainerWithServiceDependencyOpts contains options for Container.WithServiceDependency
+type ContainerWithServiceDependencyOpts struct {
+	// Optional hostname alias to map to the service
+	Alias string
+}
+
 // Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
 //
 // The service dependency will also convey to any files or directories produced by the container.
-func (r *Container) WithServiceDependency(service *Container) *Container {
+func (r *Container) WithServiceDependency(service *Container, opts ...ContainerWithServiceDependencyOpts) *Container {
 	q := r.q.Select("withServiceDependency")
 	q = q.Arg("service", service)
+	// `alias` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Alias) {
+			q = q.Arg("alias", opts[i].Alias)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,

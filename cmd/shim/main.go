@@ -156,10 +156,6 @@ func shim() int {
 	}
 
 	cmd := exec.Command(name, args...)
-	cmd.Env = os.Environ()
-
-	// append nesting envs if any
-	cmd.Env = append(cmd.Env, env...)
 
 	if stdinFile, err := os.Open(stdinPath); err == nil {
 		defer stdinFile.Close()
@@ -213,6 +209,11 @@ func shim() int {
 	}
 	defer stderrFile.Close()
 	cmd.Stderr = io.MultiWriter(stderrFile, os.Stderr)
+
+	cmd.Env = os.Environ()
+
+	// append nesting envs if any
+	cmd.Env = append(cmd.Env, env...)
 
 	exitCode := 0
 	if err := cmd.Run(); err != nil {
@@ -302,10 +303,22 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-checkenv:
+	var hostsFilePath string
+	for _, mnt := range spec.Mounts {
+		if mnt.Destination == "/etc/hosts" {
+			hostsFilePath = mnt.Source
+		}
+	}
+
+	const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
+
+	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
+			// keep the env var; we use it at runtime
+			keepEnv = append(keepEnv, env)
+
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.runner.sock",
@@ -313,9 +326,43 @@ checkenv:
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-			break checkenv
+		case strings.HasPrefix(env, aliasPrefix):
+			// NB: don't keep this env var, it's only for the bundling step
+			// keepEnv = append(keepEnv, env)
+
+			alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
+			if !ok {
+				fmt.Fprintln(os.Stderr, "malformed alias prefix:", env)
+				return 1
+			}
+
+			ips, err := net.LookupIP(target)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "could not resolve hostname alias:", err)
+				return 1
+			}
+
+			hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "could not open /etc/hosts for aliases:", err)
+				return 1
+			}
+
+			for _, ip := range ips {
+				if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+					fmt.Fprintln(os.Stderr, "could not append to /etc/hosts:", err)
+				}
+			}
+
+			if err := hostsFile.Close(); err != nil {
+				fmt.Fprintln(os.Stderr, "close /etc/hosts:", err)
+				return 1
+			}
+		default:
+			keepEnv = append(keepEnv, env)
 		}
 	}
+	spec.Process.Env = keepEnv
 
 	// write the updated config
 	configBytes, err = json.Marshal(spec)

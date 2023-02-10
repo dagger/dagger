@@ -106,7 +106,13 @@ type containerIDPayload struct {
 	Ports []ContainerPort `json:"ports,omitempty"`
 
 	// Services to start before running the container.
-	Services []ContainerID `json:"services,omitempty"`
+	Services    []ContainerID `json:"services,omitempty"`
+	HostAliases []HostAlias   `json:"host_aliases,omitempty"`
+}
+
+type HostAlias struct {
+	Alias  string `json:"alias"`
+	Target string `json:"target"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -946,6 +952,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
 	}
 
+	for _, alias := range payload.HostAliases {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias.Alias, alias.Target))
+	}
+
 	if cfg.User != "" {
 		runOpts = append(runOpts, llb.User(cfg.User))
 	}
@@ -1359,13 +1369,25 @@ func (container *Container) WithExposedPort(port ContainerPort) (*Container, err
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) WithServiceDependency(svc *Container) (*Container, error) {
+func (container *Container) WithServiceDependency(svc *Container, alias string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
 	payload.Services = append(payload.Services, svc.ID)
+
+	if alias != "" {
+		hn, err := svc.Hostname()
+		if err != nil {
+			return nil, fmt.Errorf("get hostname: %w", err)
+		}
+
+		payload.HostAliases = append(payload.HostAliases, HostAlias{
+			Alias:  alias,
+			Target: hn,
+		})
+	}
 
 	id, err := payload.Encode()
 	if err != nil {
