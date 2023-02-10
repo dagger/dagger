@@ -319,10 +319,11 @@ func (t Engine) Dev(ctx context.Context) error {
 }
 
 const cniVersion = "v1.2.0"
-const dnsnameVersion = "v1.3.1"
 
 func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
-	src := c.Git("https://github.com/containers/dnsname", dagger.GitOpts{KeepGitDir: true}).Tag(dnsnameVersion).Tree()
+	src := c.Git("https://github.com/vito/dnsname", dagger.GitOpts{KeepGitDir: true}).
+		Branch("fix-del-add-race").
+		Tree()
 
 	return c.Container(dagger.ContainerOpts{
 		Platform: dagger.Platform("linux/" + arch),
