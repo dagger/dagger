@@ -10,11 +10,12 @@ title: "Publish the application"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import QuickstartDoc from "@site/src/components/molecules/quickstartDoc.js"
+import Embed from "@site/src/components/atoms/embed.js"
 
 export const ids = {
-    Go: "hGUZKAeot5K",
-    Node: "xlXjwXsjvGt",
-    Python: "2r4dX0l8-zq"
+    Go: "SYJ885fBPOy",
+    Node: "P8mz6yjC2lM",
+    Python: "Vz6OJ6gIDaP"
 }
 
 <QuickstartDoc embeds={ids}>
@@ -28,7 +29,7 @@ Dagger SDKs have built-in support to publish container images. So, let's update 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/SYJ885fBPOy"></iframe>
+<Embed id={"SYJ885fBPOy"}></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -39,7 +40,7 @@ go run ci/main.go
 </TabItem>
 <TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/P8mz6yjC2lM"></iframe>
+<Embed id="P8mz6yjC2lM"></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -50,7 +51,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/Vz6OJ6gIDaP"></iframe>
+<Embed id="Vz6OJ6gIDaP"></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 

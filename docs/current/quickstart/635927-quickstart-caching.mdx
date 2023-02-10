@@ -10,11 +10,12 @@ title: "Use caching"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import QuickstartDoc from "@site/src/components/molecules/quickstartDoc.js"
+import Embed from "@site/src/components/atoms/embed.js"
 
 export const ids = {
-    Go: "hGUZKAeot5K",
-    Node: "xlXjwXsjvGt",
-    Python: "2r4dX0l8-zq"
+    Go: "faz9rMJNQca",
+    Node: "2DhNPJQ6pUU",
+    Python: "ZxqkCRsSlGU"
 }
 
 <QuickstartDoc embeds={ids}>
@@ -34,7 +35,7 @@ The `npm install` command is appropriate for a React application, but other appl
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/faz9rMJNQca"></iframe>
+<Embed id="faz9rMJNQca" />
 
 This revised pipeline now uses a cache for the application dependencies.
 
@@ -51,7 +52,7 @@ go run ci/main.go
 </TabItem>
 <TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/2DhNPJQ6pUU"></iframe>
+<Embed id="2DhNPJQ6pUU" />
 
 This revised pipeline now uses a cache for the application dependencies.
 
@@ -68,7 +69,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/ZxqkCRsSlGU"></iframe>
+<Embed id="ZxqkCRsSlGU" />
 
 This revised pipeline now uses a cache for the application dependencies.
 

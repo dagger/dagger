@@ -31,8 +31,8 @@ iframe {
   }
 
   .stepContent :global(.embeds),
-  .stepContent iframe {
-    display: none;
+  .stepContent :global(#embedWrapper) {
+    display: none !important;
   }
 }
 
@@ -64,34 +64,3 @@ iframe {
   @include show-embed-in-column;
 }
 
-.spinnerWrapper {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  align-content: center;
-  position: absolute;
-  padding-bottom: 300px;
-  background-color: var(--ifm-background-color);
-}
-
-.spinner {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: inline-block;
-  border-top: 3px solid var(--ifm-code-color);
-  border-right: 3px solid transparent;
-  box-sizing: border-box;
-  animation: rotation 0.8s linear infinite;
-}
-
-@keyframes rotation {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
-}
