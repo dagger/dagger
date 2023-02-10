@@ -10,8 +10,9 @@ import tarfile
 import tempfile
 import typing
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path, PurePath
-from typing import IO, Iterator
+from typing import IO
 
 import httpx
 import platformdirs
@@ -173,14 +174,14 @@ class Downloader:
         try:
             expected_hash = self.expected_checksum()
         except httpx.HTTPError:
-            logger.error("Failed to download checksums")
+            logger.exception("Failed to download checksums")
             raise
 
         with TempFile(f"temp-{self.CLI_BIN_PREFIX}", self.cache_dir) as tmp_bin:
             try:
                 actual_hash = self.extract_cli_archive(tmp_bin)
             except httpx.HTTPError:
-                logger.error("Failed to download CLI archive")
+                logger.exception("Failed to download CLI archive")
                 raise
 
             if actual_hash != expected_hash:

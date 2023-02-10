@@ -53,7 +53,6 @@ class CacheSharingMode(Enum):
 
 
 class BuildArg(Input):
-
     name: str
 
     value: str

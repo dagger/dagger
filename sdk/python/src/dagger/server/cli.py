@@ -32,6 +32,6 @@ def main(
 
     if schema:
         server.export_schema()
-        raise typer.Exit()
+        raise typer.Exit
 
     anyio.run(server.execute)
