@@ -24,9 +24,38 @@ Export a type for each type or input existing in the GraphQL schema.
 				{{- end }}
  */			
 		{{- end }}
-export type {{ .Name }} = string
+export type {{ .Name }} = string & {__{{ .Name }}: never}
 {{ "" }}
 	{{- end }}
+
+    {{- /* Generate enum */ -}}
+	{{- if IsEnum . }}
+		{{- if .Description }}
+			{{- /* Split comment string into a slice of one line per element. */ -}}
+			{{- $desc := CommentToLines .Description }}
+/**
+				{{- range $desc }}
+ * {{ . }}
+				{{- end }}
+ */
+		{{- end }}
+export enum {{ .Name }} {
+	    {{- $sortedEnumValues := SortEnumFields .EnumValues  }}
+	    {{- range $sortedEnumValues }}
+		    {{- if .Description }}
+			    {{- /* Split comment string into a slice of one line per element. */ -}}
+			    {{- $desc := CommentToLines .Description }}
+
+  /**
+			    {{- range $desc }}
+   * {{ . }}
+			    {{- end }}
+   */
+		    {{- end }}
+            {{ .Name | FormatEnum }},
+	    {{- end }}
+}
+    {{- end }}
 
 	{{- /* Generate structure type. */ -}}
 	{{- with .Fields }}
