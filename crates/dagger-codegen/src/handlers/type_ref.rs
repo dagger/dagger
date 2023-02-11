@@ -6,14 +6,6 @@ use crate::predicates::{
     is_custom_scalar_type_ref, is_list_type, is_required_type_ref, is_scalar_type_ref,
 };
 
-//fn optional(t: rust::Tokens) -> impl FormatInto<Rust> {
-//    quote_fn! {"Option<$[const](t)>"}
-//}
-//
-//fn required(t: rust::Tokens) -> impl FormatInto<Rust> {
-//    quote_fn! {"$[const](t)"}
-//}
-
 pub fn render_type_ref(inner: &TypeRef) -> eyre::Result<rust::Tokens> {
     let extract_of_type = |t: &TypeRef| -> Option<TypeRef> {
         return t.clone().of_type.map(|t| *t);

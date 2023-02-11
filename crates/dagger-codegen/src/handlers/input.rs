@@ -20,7 +20,7 @@ impl Handler for Input {
             .ok_or(eyre::anyhow!("could not find name"))?;
         let description = render_description(t);
 
-        let input = rust::import("dagger_core", "Input");
+        //let input = rust::import("dagger_core", "Input");
 
         let fields = match t.input_fields.as_ref() {
             Some(i) => render_input_fields(i)?,
@@ -32,8 +32,6 @@ impl Handler for Input {
             pub struct $name {
                 $(if fields.is_some() => $fields)
             }
-
-            impl $input for $name {}
         };
 
         Ok(out)

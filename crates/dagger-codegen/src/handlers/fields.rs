@@ -39,7 +39,17 @@ pub fn render_fields(fields: &Vec<FullTypeFields>) -> eyre::Result<Option<rust::
             pub fn $name(
                 &self,
                 $(if let Some(args) = args.as_ref() => $(&args.args))
-            ) -> $output {
+            ) -> $(&output) {
+                let query = self.selection.select("$(field.name.as_ref())");
+
+                let query = query.arg("args", args).unwrap();
+
+                $output {
+                    conn: self.conn.clone(),
+                    proc: self.proc.clone(),
+                    selection: query,
+                }
+
                 todo!()
             }
         });
