@@ -16,5 +16,5 @@ fn test_example_container() {
         )
         .stdout();
 
-    assert_eq!(out, Some("3.16.2".to_string()))
+    assert_eq!(out, Some("3.16.2\n".to_string()))
 }

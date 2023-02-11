@@ -1,7 +1,7 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
+use eyre::Context;
 use serde::{Deserialize, Serialize};
-use tokio::task::block_in_place;
 
 pub fn query() -> Selection {
     Selection::default()
@@ -106,10 +106,12 @@ impl Selection {
 
         dbg!(&query);
 
-        let resp: Option<D> = match basic.block_on(gql_client.query(&query)) {
+        let resp: Option<serde_json::Value> = match basic.block_on(gql_client.query(&query)) {
             Ok(r) => r,
             Err(e) => eyre::bail!(e),
         };
+
+        let resp: Option<D> = self.unpack_resp(resp)?;
 
         Ok(resp)
     }
@@ -128,6 +130,33 @@ impl Selection {
 
         selections.reverse();
         selections
+    }
+
+    pub(crate) fn unpack_resp<D>(&self, resp: Option<serde_json::Value>) -> eyre::Result<Option<D>>
+    where
+        D: for<'de> Deserialize<'de>,
+    {
+        match resp {
+            Some(r) => self.unpack_resp_value::<D>(r).map(|v| Some(v)),
+            None => Ok(None),
+        }
+    }
+
+    fn unpack_resp_value<D>(&self, r: serde_json::Value) -> eyre::Result<D>
+    where
+        D: for<'de> Deserialize<'de>,
+    {
+        if let Some(o) = r.as_object() {
+            let keys = o.keys();
+            if keys.len() != 1 {
+                eyre::bail!("too many nested objects inside graphql response")
+            }
+
+            let first = keys.into_iter().next().unwrap();
+            return self.unpack_resp_value(o.get(first).unwrap().clone());
+        }
+
+        serde_json::from_value::<D>(r).context("could not deserialize response")
     }
 }
 
