@@ -1,7 +1,7 @@
 {{ define "object_comment" -}}
 	{{- if . -}}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
-		{{- $desc := CommentToLines . -}}
+		{{- $desc := CommentToLines . }}
   /**
 		{{- range $desc }}
    * {{ . }}
