@@ -1,4 +1,3 @@
-
 use std::{
     fs::canonicalize,
     io::{BufRead, BufReader},
@@ -101,7 +100,7 @@ impl InnerCliSession {
             let stderr_bufr = BufReader::new(stderr);
             for line in stderr_bufr.lines() {
                 let out = line.unwrap();
-                panic!("could not start dagger session: {}", out)
+                //panic!("could not start dagger session: {}", out)
             }
         });
 

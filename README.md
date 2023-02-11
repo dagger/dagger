@@ -15,11 +15,11 @@ Work in progress. This is not ready for usage yet
   - [x] Enums
   - [x] Input
   - [x] Objects
-- [ ] Implement context and querier
+- [x] Implement context and querier
   - [x] Marshaller
   - [x] Querier
   - [x] Context
-  - [ ] Deserializer for nested response (bind)
+  - [x] Deserializer for nested response (bind)
 - [ ] Add codegen to hook into querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
