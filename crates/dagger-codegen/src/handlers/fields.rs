@@ -19,30 +19,24 @@ pub fn render_fields(fields: &Vec<FullTypeFields>) -> eyre::Result<Option<rust::
         };
 
         let mut tkns = rust::Tokens::new();
-        if let Some(desc) = &description {
-            tkns.append(desc);
-            tkns.push()
-        }
 
         if let Some(args) = args.as_ref() {
-            if let Some(desc) = args.description.as_ref() {
-                tkns.append("/// # Arguments");
-                tkns.push();
-                tkns.append("///");
-                tkns.push();
-                tkns.append(desc);
-                tkns.push();
-            }
+            tkns.append(quote! {
+                $description
+                pub struct $(&name)Args {
+                    $(&args.args)
+                }
+            });
+            tkns.push();
         }
 
         tkns.append(quote! {
-            pub fn $name(
+            pub fn $(&name)(
                 &self,
-                $(if let Some(args) = args.as_ref() => $(&args.args))
+                $(if let Some(_) = args.as_ref() => args: $(&name)Args)
             ) -> $(&output) {
-                let query = self.selection.select("$(field.name.as_ref())");
-
-                let query = query.arg("args", args).unwrap();
+                let query = self.selection.select($(field.name.as_ref().map(|n| format!("\"{}\"", n))));
+                $(if let Some(_) = args.as_ref() => query.args(args);)
 
                 $output {
                     conn: self.conn.clone(),

@@ -96,15 +96,11 @@ mod tests {
             fields: None,
         };
 
-        let expected = r#"use dagger_core::Input;
+        let expected = r#"pub struct BuildArg {
+    pub name: String,
 
-pub struct BuildArg {
-    pub name: Option<String>,
-
-    pub value: Option<String>,
+    pub value: String,
 }
-
-impl Input for BuildArg {}
 "#;
 
         let output = input.render(&t).unwrap();
