@@ -322,7 +322,7 @@ const cniVersion = "v1.2.0"
 
 func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 	src := c.Git("https://github.com/vito/dnsname", dagger.GitOpts{KeepGitDir: true}).
-		Branch("fix-del-add-race").
+		Branch("fork").
 		Tree()
 
 	return c.Container(dagger.ContainerOpts{
