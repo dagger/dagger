@@ -9,6 +9,16 @@ title: "Perform a multi-stage build"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
+import Embed from '@site/src/components/atoms/embed.js'
+
+export const ids = {
+    Go: "m1TsqrqYvgE",
+    Node: "ijTE41ISH95",
+    Python: "rgVdmi0ssZq"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Perform a multi-stage build
 
@@ -26,10 +36,10 @@ In the context of a multi-stage build, this means that you can use Dagger to:
 
 Let's now update our pipeline to use a multi-stage build, as described above.
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/m1TsqrqYvgE"></iframe>
+<Embed id="m1TsqrqYvgE"/>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -38,9 +48,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/ijTE41ISH95"></iframe>
+<Embed id="ijTE41ISH95"/>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -51,7 +61,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/rgVdmi0ssZq"></iframe>
+<Embed id="rgVdmi0ssZq"/>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -66,3 +76,5 @@ This revised pipeline produces the same result as before, but using a two-stage 
 
 - In the first stage, the pipeline installs dependencies, runs tests and builds the application in the `node:16-slim` container. However, instead of exporting the `build/` directory to the host, it saves the corresponding `Directory` object as a constant. This object represents the filesystem state of the `build/` directory in the container after the build, and is portable to other Dagger pipelines.
 - In the second stage, the pipeline uses the saved `Directory` object as input, thereby transferring the filesystem state (the built React application) to the `nginx:alpine` container. It then publishes the result to a registry as previously described.
+
+</QuickstartDoc>
