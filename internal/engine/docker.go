@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/docker/docker/libnetwork/resolvconf"
+	"github.com/dagger/dagger/network"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -97,7 +97,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"--privileged",
 	}
 
-	dnsFlags, err := DockerDNSFlags()
+	dnsFlags, err := network.DockerDNSFlags()
 	if err != nil {
 		return "", err
 	}
@@ -159,35 +159,4 @@ func isContainerAlreadyInUseOutput(output string) bool {
 		return true
 	}
 	return false
-}
-
-const (
-	daggerGateway = "10.87.0.1"
-	daggerDNS     = "dns.dagger"
-)
-
-func DockerDNSFlags() ([]string, error) {
-	rc, err := resolvconf.Get()
-	if err != nil {
-		return nil, fmt.Errorf("get resolv.conf: %w", err)
-	}
-
-	flags := []string{
-		"--dns", daggerGateway,
-		"--dns-search", daggerDNS,
-	}
-
-	for _, ns := range resolvconf.GetNameservers(rc.Content, resolvconf.IP) {
-		flags = append(flags, "--dns", ns)
-	}
-
-	for _, domain := range resolvconf.GetSearchDomains(rc.Content) {
-		flags = append(flags, "--dns-search", domain)
-	}
-
-	for _, opt := range resolvconf.GetOptions(rc.Content) {
-		flags = append(flags, "--dns-option", opt)
-	}
-
-	return flags, nil
 }

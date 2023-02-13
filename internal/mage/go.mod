@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	dagger.io/dagger v0.4.4
-	github.com/docker/docker v23.0.0-rc.1+incompatible
+	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.14.0
 	golang.org/x/mod v0.7.0
@@ -14,10 +14,14 @@ require (
 require (
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect
+	github.com/docker/docker v23.0.0-rc.1+incompatible // indirect
 	github.com/iancoleman/strcase v0.2.0 // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.1 // indirect
 	golang.org/x/sys v0.4.0 // indirect
 )
 
-replace github.com/docker/docker => github.com/docker/docker v20.10.3-0.20220414164044-61404de7df1a+incompatible
+// needed to resolve "ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules"
+replace cloud.google.com/go => cloud.google.com/go v0.100.2
+
+replace github.com/dagger/dagger => ../../

@@ -14,7 +14,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/docker/docker/libnetwork/resolvconf"
+	"github.com/dagger/dagger/network"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 )
@@ -291,11 +291,12 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		"--rm",
 		"-e", cacheConfigEnvName,
+		"-e", "_DAGGER_DEBUG_HEALTHCHECKS=1",
 		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}
-	dnsFlags, err := DockerDNSFlags()
+	dnsFlags, err := network.DockerDNSFlags()
 	if err != nil {
 		return err
 	}
@@ -367,7 +368,7 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
 			WithExec([]string{"tar", "-xzf", "/tmp/cni-plugins.tgz", "-C", "/opt/cni/bin"}).
 			WithNewFile("/etc/buildkit/cni.conflist", dagger.ContainerWithNewFileOpts{
-				Contents: cniConfig("dagger", "10.87.0.0/16"),
+				Contents: cniConfig("dagger", network.CIDR),
 			}).
 			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 				Contents: buildkitConfig(),
@@ -379,9 +380,7 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			// TODO(vito): troubleshooting scheduler errors in CI, remove before
 			// merging
 			WithEnvVariable("BUILDKIT_SCHEDULER_DEBUG", "1").
-			WithEntrypoint([]string{
-				"dagger-entrypoint.sh",
-			}),
+			WithEntrypoint([]string{"dagger-entrypoint.sh"}),
 		)
 	}
 
@@ -404,7 +403,9 @@ func cniConfig(name, subnet string) string {
 					"ranges": []any{[]any{map[string]any{"subnet": subnet}}},
 				},
 			},
-			map[string]any{"type": "firewall"},
+			map[string]any{
+				"type": "firewall",
+			},
 			map[string]any{
 				"type":       "dnsname",
 				"domainName": "dns.dagger",
@@ -433,37 +434,6 @@ func buildkitConfig() string {
 		`networkMode = "cni"`,
 		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
 	}, "\n")
-}
-
-const (
-	daggerGateway = "10.87.0.1"
-	daggerDNS     = "dns.dagger"
-)
-
-func DockerDNSFlags() ([]string, error) {
-	rc, err := resolvconf.Get()
-	if err != nil {
-		return nil, fmt.Errorf("get resolv.conf: %w", err)
-	}
-
-	flags := []string{
-		"--dns", daggerGateway,
-		"--dns-search", daggerDNS,
-	}
-
-	for _, ns := range resolvconf.GetNameservers(rc.Content, resolvconf.IP) {
-		flags = append(flags, "--dns", ns)
-	}
-
-	for _, domain := range resolvconf.GetSearchDomains(rc.Content) {
-		flags = append(flags, "--dns-search", domain)
-	}
-
-	for _, opt := range resolvconf.GetOptions(rc.Content) {
-		flags = append(flags, "--dns-option", opt)
-	}
-
-	return flags, nil
 }
 
 func engineBin(c *dagger.Client, arch string) *dagger.File {

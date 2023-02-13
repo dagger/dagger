@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"syscall"
@@ -17,6 +18,14 @@ import (
 type Service struct {
 	Container *Container
 	Detach    func()
+}
+
+var debugHealthchecks bool
+
+func init() {
+	if os.Getenv("_DAGGER_DEBUG_HEALTHCHECKS") != "" {
+		debugHealthchecks = true
+	}
 }
 
 // WithServices runs the given function with the given services started,
@@ -128,13 +137,18 @@ func (d *portHealthChecker) Check(ctx context.Context) error {
 		args = append(args, strconv.Itoa(port.Port))
 	}
 
-	proc, err := container.Start(cleanupCtx, bkgw.StartRequest{
+	var debugW io.WriteCloser
+	if debugHealthchecks {
+		debugW = os.Stderr
+	}
+
+	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args: args,
 		Env:  []string{"_DAGGER_INTERNAL_COMMAND="},
-		// TODO(vito): it would be great to make this visible somehow for
-		// troubleshooting, but there's no good place to send it. hmm.
-		Stdout: os.Stderr,
-		Stderr: os.Stderr,
+		// FIXME(vito): it would be great to send these to the progress stream
+		// somehow instead
+		Stdout: debugW,
+		Stderr: debugW,
 	})
 	if err != nil {
 		return err
