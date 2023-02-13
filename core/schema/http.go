@@ -33,9 +33,8 @@ func (s *httpSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL string `json:"url"`
-
-	ServiceDependency *core.ContainerID `json:"serviceDependency"`
+	URL         string            `json:"url"`
+	ServiceHost *core.ContainerID `json:"serviceHost"`
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
@@ -47,8 +46,8 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
 
 	svcs := []core.ContainerID{}
-	if args.ServiceDependency != nil {
-		svcs = append(svcs, *args.ServiceDependency)
+	if args.ServiceHost != nil {
+		svcs = append(svcs, *args.ServiceHost)
 	}
 
 	return core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs)

@@ -1409,23 +1409,6 @@ class GitRepository(Type):
         _ctx = self._select("tags", _args)
         return await _ctx.execute(list[str])
 
-    @typecheck
-    def with_service_dependency(self, service: Container) -> "GitRepository":
-        """Establish a runtime dependency on a service. The service will be
-        started automatically when needed and detached when it is no longer
-        needed.
-
-
-
-        The service dependency will also convey to any files or directories
-        produced by the repository.
-        """
-        _args = [
-            Arg("service", service),
-        ]
-        _ctx = self._select("withServiceDependency", _args)
-        return GitRepository(_ctx)
-
 
 class Host(Type):
     """Information about the host execution environment."""
@@ -1695,11 +1678,21 @@ class Client(Root):
         self,
         url: str,
         keep_git_dir: Optional[bool] = None,
+        service_host: Optional[Container] = None,
     ) -> GitRepository:
-        """Queries a git repository."""
+        """Queries a git repository.
+
+        Parameters
+        ----------
+        url:
+        keep_git_dir:
+        service_host:
+            A service which must be started before the repo is fetched.
+        """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, None),
+            Arg("serviceHost", service_host, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -1715,19 +1708,19 @@ class Client(Root):
     def http(
         self,
         url: str,
-        service_dependency: Optional[Container] = None,
+        service_host: Optional[Container] = None,
     ) -> File:
         """Returns a file containing an HTTP remote URL's fetched content.
 
         Parameters
         ----------
         url:
-        service_dependency:
+        service_host:
             A service which must be started before the URL is fetched.
         """
         _args = [
             Arg("url", url),
-            Arg("serviceDependency", service_dependency, None),
+            Arg("serviceHost", service_host, None),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)

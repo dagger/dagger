@@ -1,6 +1,11 @@
 extend type Query {
   "Queries a git repository."
-  git(url: String!, keepGitDir: Boolean): GitRepository!
+  git(
+    url: String!,
+    keepGitDir: Boolean,
+    "A service which must be started before the repo is fetched."
+    serviceHost: ContainerID,
+  ): GitRepository!
 }
 
 "A git repository."
@@ -19,13 +24,6 @@ type GitRepository {
 
   "Returns details on one commit."
   commit(id: String!): GitRef!
-
-  """
-  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-
-  The service dependency will also convey to any files or directories produced by the repository.
-  """
-  withServiceDependency(service: ContainerID!): GitRepository!
 }
 
 "A git ref (tag, branch or commit)."

@@ -3,6 +3,6 @@ extend type Query {
   http(
     url: String!,
     "A service which must be started before the URL is fetched."
-    serviceDependency: ContainerID,
+    serviceHost: ContainerID,
   ): File!
 }

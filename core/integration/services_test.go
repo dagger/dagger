@@ -237,7 +237,7 @@ func TestContainerExecServicesChained(t *testing.T) {
 			WithFile(
 				"/srv/www/index.html",
 				c.HTTP(httpURL, dagger.HTTPOpts{
-					ServiceDependency: srv,
+					ServiceHost: srv,
 				}),
 			).
 			WithExec([]string{"sh", "-c", "echo $0 >> /srv/www/index.html", strconv.Itoa(i)}).
@@ -274,12 +274,11 @@ func TestContainerExecManyServices(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		httpSrv, httpURL := httpService(ctx, t, c, strconv.Itoa(i))
 		httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
-			ServiceDependency: httpSrv,
+			ServiceHost: httpSrv,
 		})
 
 		gitSrv, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("file", strconv.Itoa(i)))
-		gitDir := c.Git(repoURL).
-			WithServiceDependency(gitSrv).
+		gitDir := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitSrv}).
 			Branch("main").
 			Tree()
 
@@ -337,8 +336,7 @@ CMD cat index.html
 
 		gitDaemon, repoURL := gitService(ctx, t, c, src)
 
-		gitDir := c.Git(repoURL).
-			WithServiceDependency(gitDaemon).
+		gitDir := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 			Branch("main").
 			Tree()
 
@@ -365,8 +363,7 @@ CMD cat index.html
 
 		gitDaemon, repoURL := gitService(ctx, t, c, src)
 
-		gitDir := c.Git(repoURL).
-			WithServiceDependency(gitDaemon).
+		gitDir := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 			Branch("main").
 			Tree()
 
@@ -486,8 +483,7 @@ func TestContainerWithRootFSServices(t *testing.T) {
 			// exists, and is always a directory.
 			Rootfs())
 
-	gitDir := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	gitDir := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree()
 
@@ -568,12 +564,11 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 	response := identity.NewID()
 	srv, httpURL := httpService(ctx, t, c, response)
 	httpFile := c.HTTP(httpURL, dagger.HTTPOpts{
-		ServiceDependency: srv,
+		ServiceHost: srv,
 	})
 
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", response))
-	gitDir := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	gitDir := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree()
 
@@ -616,8 +611,7 @@ func TestDirectoryServiceEntries(t *testing.T) {
 
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
-	entries, err := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	entries, err := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		Entries(ctx)
@@ -633,8 +627,7 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
-	stamped := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	stamped := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		WithTimestamps(int(ts.Unix()))
@@ -658,8 +651,8 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	useBoth := c.Directory().
-		WithDirectory("/repo", c.Git(repoURL).WithServiceDependency(gitSrv).Branch("main").Tree()).
-		WithFile("/index.html", c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}))
+		WithDirectory("/repo", c.Git(repoURL, dagger.GitOpts{ServiceHost: gitSrv}).Branch("main").Tree()).
+		WithFile("/index.html", c.HTTP(httpURL, dagger.HTTPOpts{ServiceHost: httpSrv}))
 
 	entries, err := useBoth.Directory("/repo").Entries(ctx)
 	require.NoError(t, err)
@@ -680,8 +673,7 @@ func TestDirectoryServiceExport(t *testing.T) {
 
 	dest := t.TempDir()
 
-	ok, err := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	ok, err := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		Export(ctx, dest)
@@ -701,8 +693,7 @@ func TestFileServiceContents(t *testing.T) {
 
 	gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
 
-	fileContent, err := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	fileContent, err := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
@@ -722,8 +713,7 @@ func TestFileServiceExport(t *testing.T) {
 	dest := t.TempDir()
 	filePath := filepath.Join(dest, "README.md")
 
-	ok, err := c.Git(repoURL).
-		WithServiceDependency(gitDaemon).
+	ok, err := c.Git(repoURL, dagger.GitOpts{ServiceHost: gitDaemon}).
 		Branch("main").
 		Tree().
 		File("README.md").
@@ -745,7 +735,7 @@ func TestFileServiceTimestamp(t *testing.T) {
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	ts := time.Date(1991, 6, 3, 0, 0, 0, 0, time.UTC)
-	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ServiceDependency: httpSrv}).
+	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ServiceHost: httpSrv}).
 		WithTimestamps(int(ts.Unix()))
 
 	stdout, err := c.Container().From("alpine:3.16.2").
@@ -765,7 +755,7 @@ func TestFileServiceSecret(t *testing.T) {
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
 	secret := c.HTTP(httpURL, dagger.HTTPOpts{
-		ServiceDependency: httpSrv,
+		ServiceHost: httpSrv,
 	}).Secret()
 
 	t.Run("secret env", func(t *testing.T) {

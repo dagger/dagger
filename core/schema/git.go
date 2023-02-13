@@ -26,12 +26,11 @@ func (s *gitSchema) Resolvers() router.Resolvers {
 			"git": router.ToResolver(s.git),
 		},
 		"GitRepository": router.ObjectResolver{
-			"branches":              router.ToResolver(s.branches),
-			"branch":                router.ToResolver(s.branch),
-			"tags":                  router.ToResolver(s.tags),
-			"tag":                   router.ToResolver(s.tag),
-			"commit":                router.ToResolver(s.commit),
-			"withServiceDependency": router.ToResolver(s.withServiceDependency),
+			"branches": router.ToResolver(s.branches),
+			"branch":   router.ToResolver(s.branch),
+			"tags":     router.ToResolver(s.tags),
+			"tag":      router.ToResolver(s.tag),
+			"commit":   router.ToResolver(s.commit),
 		},
 		"GitRef": router.ObjectResolver{
 			"digest": router.ToResolver(s.digest),
@@ -57,8 +56,9 @@ type gitRef struct {
 }
 
 type gitArgs struct {
-	URL        string `json:"url"`
-	KeepGitDir bool   `json:"keepGitDir"`
+	URL         string            `json:"url"`
+	KeepGitDir  bool              `json:"keepGitDir"`
+	ServiceHost *core.ContainerID `json:"serviceHost"`
 }
 
 func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
@@ -66,20 +66,14 @@ func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (
 		URL:        args.URL,
 		KeepGitDir: args.KeepGitDir,
 	}
+	if args.ServiceHost != nil {
+		r.Services = []core.ContainerID{*args.ServiceHost}
+	}
 	if parent != nil {
 		r.Pipeline = parent.Context.Pipeline
 	}
 
 	return r, nil
-}
-
-type gitWithServiceDependencyArgs struct {
-	Service core.ContainerID
-}
-
-func (s *gitSchema) withServiceDependency(ctx *router.Context, parent gitRepository, args gitWithServiceDependencyArgs) (gitRepository, error) {
-	parent.Services = append(parent.Services, args.Service)
-	return parent, nil
 }
 
 type branchArgs struct {

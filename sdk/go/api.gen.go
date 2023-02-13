@@ -1486,19 +1486,6 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-//
-// The service dependency will also convey to any files or directories produced by the repository.
-func (r *GitRepository) WithServiceDependency(service *Container) *GitRepository {
-	q := r.q.Select("withServiceDependency")
-	q = q.Arg("service", service)
-
-	return &GitRepository{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Information about the host execution environment.
 type Host struct {
 	q *querybuilder.Selection
@@ -1791,6 +1778,8 @@ func (r *Client) File(id FileID) *File {
 // GitOpts contains options for Query.Git
 type GitOpts struct {
 	KeepGitDir bool
+	// A service which must be started before the repo is fetched.
+	ServiceHost *Container
 }
 
 // Queries a git repository.
@@ -1801,6 +1790,13 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+			break
+		}
+	}
+	// `serviceHost` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ServiceHost) {
+			q = q.Arg("serviceHost", opts[i].ServiceHost)
 			break
 		}
 	}
@@ -1824,17 +1820,17 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ServiceDependency *Container
+	ServiceHost *Container
 }
 
 // Returns a file containing an HTTP remote URL's fetched content.
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
-	// `serviceDependency` optional argument
+	// `serviceHost` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].ServiceDependency) {
-			q = q.Arg("serviceDependency", opts[i].ServiceDependency)
+		if !querybuilder.IsZeroValue(opts[i].ServiceHost) {
+			q = q.Arg("serviceHost", opts[i].ServiceHost)
 			break
 		}
 	}

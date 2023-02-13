@@ -336,13 +336,18 @@ export type ClientDirectoryOpts = {
 
 export type ClientGitOpts = {
   keepGitDir?: boolean
+
+  /**
+   * A service which must be started before the repo is fetched.
+   */
+  serviceHost?: Container
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  serviceDependency?: Container
+  serviceHost?: Container
 }
 
 export type ClientPipelineOpts = {
@@ -2107,25 +2112,6 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-   *
-   * The service dependency will also convey to any files or directories produced by the repository.
-   */
-  withServiceDependency(service: Container): GitRepository {
-    return new GitRepository({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withServiceDependency",
-          args: { service },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Chain objects together
    * @example
    * ```ts
@@ -2599,6 +2585,7 @@ export default class Client extends BaseClient {
 
   /**
    * Queries a git repository.
+   * @param opts.serviceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -2632,7 +2619,7 @@ export default class Client extends BaseClient {
 
   /**
    * Returns a file containing an HTTP remote URL's fetched content.
-   * @param opts.serviceDependency A service which must be started before the URL is fetched.
+   * @param opts.serviceHost A service which must be started before the URL is fetched.
    */
   http(url: string, opts?: ClientHttpOpts): File {
     return new File({

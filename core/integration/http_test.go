@@ -28,7 +28,7 @@ func TestHTTPService(t *testing.T) {
 	svc, url := httpService(ctx, t, c, "Hello, world!")
 
 	contents, err := c.HTTP(url, dagger.HTTPOpts{
-		ServiceDependency: svc,
+		ServiceHost: svc,
 	}).Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "Hello, world!")
