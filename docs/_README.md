@@ -43,6 +43,35 @@ We prefer to keep the organisation of doc pages, and writing them separate.
 For the time being - 2022 Q1 - the focus is on writing self-contained doc content.
 Don't worry about where to fit this content, it's enough to keep this in mind: [Writing effective documentation](https://www.youtube.com/watch?v=R6zeikbTgVc&t=19s).
 
+
+### Adding or editing a Quickstart page
+
+> **Note**
+> "Step", "`.mdx` file" and "doc" are used interchangeably.
+> **Note**
+>The new format of the step only affects the steps that have an embedded Playground instance. If no embed is present in the step (no `<QuickstartDoc>` component is present in the `.mdx` file), the default Docusarus theme is used.  
+
+The new layout is based on two columns for wide screens. The embed is placed as `sticky` on the right. This allows the user to scroll through the doc content and keep the editor visible.  
+To add or edit a step, be sure to:  
+
+- Create an object with the SDK name as properties and their Playground ID as their value, then pass it to the `<QuickstartDoc>` component as an "embeds" prop.
+
+```jsx
+export const ids = {
+    Go: "ho4ZF-6naKv",
+    Node: "aPB-msb5UEn",
+    Python: "tqaPp2aVr_L"
+}
+
+<QuickstartDoc embeds={ids}>
+```
+
+- Encapsulate the whole quickstart content inside the `<QuickstartDoc>` component. This will pass all the content as children. This component will take care of rendering each column accordingly.
+- Use the `<Embed>` component instead of the native `<iframe>` element. This component makes sure to add a spinner while the `<iframe>` is loading, besides taking care of some custom styling.  
+- Make sure the `<TabItem>` `value` prop has the same values as the `ids` object property names. Use `value=Node` instead of value="Node.js" on the prop, as property names cannot contain dots in JS.
+
+See [children](https://beta.reactjs.org/reference/react/Children) and [tabs](https://docusaurus.io/docs/markdown-features/tabs) for implementation context.
+
 ## Debugging
 
 A [debug plugin](https://docusaurus.io/docs/api/plugins/@docusaurus/plugin-debug) is available at `http://localhost:3000/__docusaurus/debug`.  
