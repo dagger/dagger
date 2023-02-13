@@ -43,7 +43,6 @@ We prefer to keep the organisation of doc pages, and writing them separate.
 For the time being - 2022 Q1 - the focus is on writing self-contained doc content.
 Don't worry about where to fit this content, it's enough to keep this in mind: [Writing effective documentation](https://www.youtube.com/watch?v=R6zeikbTgVc&t=19s).
 
-
 ### Adding or editing a Quickstart page
 
 > **Note**
