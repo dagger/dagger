@@ -1177,7 +1177,12 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}()
 
 	select {
-	case <-checked:
+	case err := <-checked:
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
 		_ = stop // leave it running
 
 		return &Service{
@@ -1188,7 +1193,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 		stop() // interrupt healthcheck
 
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("exited: %w", err)
 		}
 
 		return nil, fmt.Errorf("service exited before healthcheck")
