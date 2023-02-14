@@ -252,7 +252,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
+	_, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
 		// merge config.Env with imgSpec.Config.Env
 		newEnv := config.Env
 		if imgSpec.Config.Env != nil {
@@ -1317,7 +1317,7 @@ func (container *Container) Sha(ctx context.Context, gw bkgw.Client) (string, er
 		return imgRef, nil
 	}
 
-	return "", errors.Errorf("Image sha can only be retrieved immediately after the 'Container.From' call. Error in fetching sha as the container image is changed.")
+	return "", errors.Errorf("Image sha can only be retrieved immediately after the 'Container.From' call. Error in fetching sha as the container image is changed")
 }
 
 func (container *Container) containerFromPayload(payload *containerIDPayload) (*Container, error) {
