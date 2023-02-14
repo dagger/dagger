@@ -847,6 +847,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * The unique image reference
+   */
+  async sha(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sha",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * The error stream of the last executed command.
    * Null if no command has been executed.
    */

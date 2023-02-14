@@ -557,6 +557,9 @@ type Container {
     """
     address: String!
   ): Container!
+
+  "The unique image reference"
+  sha: String
 }
 
 "A simple key value object that represents an environment variable."

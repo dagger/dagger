@@ -425,6 +425,15 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
+// The unique image reference
+func (r *Container) Sha(ctx context.Context) (string, error) {
+	q := r.q.Select("sha")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // The error stream of the last executed command.
 // Null if no command has been executed.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
