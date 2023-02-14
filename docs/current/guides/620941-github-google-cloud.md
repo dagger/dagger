@@ -1,6 +1,10 @@
 ---
-slug: /sdk/nodejs/620941/github-google-cloud
+slug: /620941/github-google-cloud
 displayed_sidebar: "current"
+category: "guides"
+tags: ["nodejs", "gitlab-ci", "google-cloud"]
+authors: ["Vikram Vaswani"]
+date: "12/12/2022"
 ---
 
 # Use Dagger with GitHub Actions and Google Cloud
@@ -33,11 +37,11 @@ This tutorial assumes that:
 
 ## Step 1: Create a Google Cloud service account
 
-{@include: ../../../partials/_google-cloud-service-account-key-setup.md}
+{@include: ../partials/_google-cloud-service-account-key-setup.md}
 
 ## Step 2: Configure Google Cloud APIs and a Google Cloud Run service
 
-{@include: ../../../partials/_google-cloud-api-run-setup.md}
+{@include: ../partials/_google-cloud-api-run-setup.md}
 
 ## Step 3: Create the Dagger pipeline
 
@@ -51,7 +55,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.mjs` and add the following code to it. Replace the PROJECT placeholder with your Google Cloud project identifier and adjust the region (`us-central1`) and service name (`myapp`) if you specified different values when creating the Google Cloud Run service in Step 2.
 
-  ```javascript file=../snippets/github-google-cloud/main.mjs
+  ```javascript file=./snippets/github-google-cloud/main.mjs
   ```
 
   This file performs the following operations:
@@ -73,7 +77,7 @@ Most `Container` object methods return a revised `Container` object representing
 
 Configure credentials for the Google Cloud SDK on the local host, as follows:
 
-{@include: ../../../partials/_google-cloud-sdk-credentials-setup.md}
+{@include: ../partials/_google-cloud-sdk-credentials-setup.md}
 
 Once credentials are configured, test the Dagger pipeline by running the command below:
 
@@ -91,7 +95,7 @@ Browse to the URL shown in the deployment message to see the running application
 
 If you deployed the example application from [Appendix A](#appendix-a-create-a-github-repository-with-an-example-express-application), you should see a page similar to that shown below:
 
-![Result of running pipeline from local host](/img/current/sdk/nodejs/guides/github-google-cloud/local-deployment.png)
+![Result of running pipeline from local host](/img/current/guides/github-google-cloud/local-deployment.png)
 
 ## Step 5: Create a GitHub Actions workflow
 
@@ -109,7 +113,7 @@ This also means that it's very easy to move your Dagger pipeline from your local
 
 1. In the GitHub repository, create a new workflow file at `.github/workflows/main.yml` with the following content:
 
-  ```yaml file=../snippets/github-google-cloud/main.yml
+  ```yaml file=./snippets/github-google-cloud/main.yml
   ```
 
   This workflow runs on every commit to the repository `master` branch. It consists of a single job with six steps, as below:
@@ -129,7 +133,7 @@ The [Authenticate to Google Cloud action](https://github.com/marketplace/actions
     - Secret: The contents of the service account JSON key file downloaded in Step 1.
 1. Click `Add secret` to save the secret.
 
-![Create GitHub secret](/img/current/sdk/nodejs/guides/github-google-cloud/create-github-secret.png)
+![Create GitHub secret](/img/current/guides/github-google-cloud/create-github-secret.png)
 
 ## Step 6: Test the Dagger pipeline on GitHub
 
@@ -155,7 +159,7 @@ Deployment for image gcr.io/PROJECT/myapp@sha256:h4si... now available at https:
 
 Browse to the URL shown in the deployment message to see the running application. If you deployed the example application with the additional modification above, you see a page similar to that shown below:
 
-![Result of running pipeline from GitHub](/img/current/sdk/nodejs/guides/github-google-cloud/github-actions-deployment.png)
+![Result of running pipeline from GitHub](/img/current/guides/github-google-cloud/github-actions-deployment.png)
 
 ## Conclusion
 
@@ -163,7 +167,7 @@ This tutorial walked you through the process of creating a Dagger pipeline to co
 
 Dagger executes your pipelines entirely as standard OCI containers. This means that pipelines can be tested and debugged locally, and that the same pipeline will run consistently on your local machine, a CI runner, a dedicated server, or any container hosting service. This portability is one of Dagger's key advantages, and this tutorial demonstrated it in action by using the same pipeline on the local host and on GitHub.
 
-Use the [API Key Concepts](../../../api/975146-concepts.md) page and the [Node.js SDK Reference](../reference/modules.md) to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.md) page and the [Node.js SDK Reference](../sdk/nodejs/reference/modules.md) to learn more about Dagger.
 
 ## Appendix A: Create a GitHub repository with an example Express application
 

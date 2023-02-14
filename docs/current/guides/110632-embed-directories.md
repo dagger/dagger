@@ -1,6 +1,10 @@
 ---
 slug: /110632/embed-directories
 displayed_sidebar: "current"
+category: "guides"
+tags: ["go"]
+authors: ["Guillaume de Rouville"]
+date: "04/11/2022"
 ---
 
 # Copy Embedded Directories into a Container
@@ -21,7 +25,7 @@ tree
 
 The following example demonstrates how to copy an embedded directory:
 
-```go file=../snippets/embed-directories/main.go
+```go file=./snippets/embed-directories/main.go
 ```
 
 Attempt to run the code and print the content of the `/embed` directory:

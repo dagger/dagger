@@ -1,6 +1,10 @@
 ---
-slug: /sdk/python/648384/multi-builds
+slug: /648384/multi-builds
 displayed_sidebar: "current"
+category: "guides"
+tags: ["python"]
+authors: ["Helder Correia"]
+date: "22/11/2022"
 ---
 
 # Create a Multi-Build CI Pipeline
@@ -14,7 +18,7 @@ The Dagger Python SDK makes it easy to build an application for multiple OS and 
 This guide assumes that:
 
 - You have a Python development environment with Python 3.10 or later. If not, install [Python](https://www.python.org/downloads/).
-- You are familiar with the basics of the Python SDK and have it installed. If not, read the [Python SDK guide](../628797-get-started.md) and the [Python SDK installation instructions](../866944-install.md).
+- You are familiar with the basics of the Python SDK and have it installed. If not, read the [Python SDK guide](../sdk/python/628797-get-started.md) and the [Python SDK installation instructions](../sdk/python/866944-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have an application that you wish to build. This guide assumes a Go application, but you can use an application of your choice.
 
@@ -26,7 +30,7 @@ Dagger pipelines are executed as standard OCI containers. This portability enabl
 
 Assume that the Go application to be built is stored in the current directory on the host. The following code listing demonstrates how to build this Go application for multiple OS and architecture combinations using the Python SDK.
 
-```python file=../snippets/multi-builds/build.py
+```python file=./snippets/multi-builds/build.py
 ```
 
 The `build()` function does the following:
