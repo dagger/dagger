@@ -230,7 +230,7 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory","args":{path:"foo"}}],"clientHost":"127.0.0.1:8080","sessionToken":"","client":{url:"http://127.0.0.1:8080/query","options":{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory","args":{path:"bar"}}],"clientHost":"127.0.0.1:8080","sessionToken":"","client":{url:"http://127.0.0.1:8080/query","options":{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
+      `{ container { from (address: "alpine") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"foo"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",options:{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"bar"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",options:{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
     )
   })
 })
