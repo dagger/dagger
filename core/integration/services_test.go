@@ -151,6 +151,41 @@ func TestContainerExecServices(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
+//go:embed testdata/udp-service.go
+var udpSrc string
+
+func TestContainerExecUDPServices(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := c.Container().
+		From("golang:1.18.2-alpine").
+		WithMountedFile("/src/main.go",
+			c.Directory().WithNewFile("main.go", udpSrc).File("main.go")).
+		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
+			Protocol: dagger.Udp,
+		}).
+		WithExec([]string{"go", "run", "/src/main.go"})
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"apk", "add", "socat"}).
+		WithServiceDependency(srv, dagger.ContainerWithServiceDependencyOpts{
+			Alias: "echo",
+		}).
+		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
+			Stdin: "Hello, world!",
+		})
+
+	code, err := client.ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
+
+	stdout, err := client.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", stdout)
+}
+
 func TestContainerExecServiceAlias(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()

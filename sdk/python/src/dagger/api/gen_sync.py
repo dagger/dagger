@@ -52,6 +52,12 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class NetworkProtocol(Enum):
+    TCP = "TCP"
+
+    UDP = "UDP"
+
+
 class BuildArg(Input):
     name: str
 
@@ -619,6 +625,7 @@ class Container(Type):
     def with_exposed_port(
         self,
         port: int,
+        protocol: Optional[NetworkProtocol] = None,
         description: Optional[str] = None,
     ) -> "Container":
         """Expose a network port.
@@ -633,11 +640,14 @@ class Container(Type):
         ----------
         port:
             Port number to expose
+        protocol:
+            Transport layer network protocol
         description:
             Optional port description
         """
         _args = [
             Arg("port", port),
+            Arg("protocol", protocol, None),
             Arg("description", description, None),
         ]
         _ctx = self._select("withExposedPort", _args)
@@ -1832,6 +1842,7 @@ __all__ = [
     "SecretID",
     "SocketID",
     "CacheSharingMode",
+    "NetworkProtocol",
     "BuildArg",
     "CacheVolume",
     "Container",

@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -28,8 +29,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/zeebo/xxh3"
 )
-
-const daggerDNSDomain = ".dns.dagger"
 
 // Container is a content-addressed container.
 type Container struct {
@@ -132,9 +131,9 @@ type ContainerSocket struct {
 
 // ContainerPort configures a port to expose from the container.
 type ContainerPort struct {
-	Port        int    `json:"port"`
-	Protocol    string `json:"protocol,omitempty"`
-	Description string `json:"description,omitempty"`
+	Port        int             `json:"port"`
+	Protocol    NetworkProtocol `json:"protocol,omitempty"`
+	Description string          `json:"description,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -1064,7 +1063,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 	hostname := hostHash(digest)
-	payload.Hostname = hostname + daggerDNSDomain
+	payload.Hostname = fmt.Sprintf("%s.%s", hostname, network.DNSDomain)
 
 	// finally, build with the hostname set
 	runOpts = append(runOpts, llb.Hostname(hostname))

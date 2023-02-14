@@ -189,6 +189,11 @@ export type ContainerWithExecOpts = {
 
 export type ContainerWithExposedPortOpts = {
   /**
+   * Transport layer network protocol
+   */
+  protocol?: NetworkProtocol
+
+  /**
    * Optional port description
    */
   description?: string
@@ -319,6 +324,11 @@ export type HostWorkdirOpts = {
  */
 export type ID = string & { __ID: never }
 
+export enum NetworkProtocol {
+  Tcp,
+
+  Udp,
+}
 /**
  * The platform config OS and architecture in a Container.
  * The format is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
@@ -986,6 +996,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
    * @param port Port number to expose
+   * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
    */
   withExposedPort(

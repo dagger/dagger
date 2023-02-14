@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,6 +26,20 @@ func init() {
 	if os.Getenv("_DAGGER_DEBUG_HEALTHCHECKS") != "" {
 		debugHealthchecks = true
 	}
+}
+
+// NetworkProtocol is a string deriving from NetworkProtocol enum
+type NetworkProtocol string
+
+const (
+	NetworkProtocolTCP NetworkProtocol = "TCP"
+	NetworkProtocolUDP NetworkProtocol = "UDP"
+)
+
+// Network returns the value appropriate for the "network" argument to Go
+// net.Dial.
+func (p NetworkProtocol) Network() string {
+	return strings.ToLower(string(p))
 }
 
 // WithServices runs the given function with the given services started,
@@ -133,8 +147,7 @@ func (d *portHealthChecker) Check(ctx context.Context) error {
 
 	args := []string{"check", d.host}
 	for _, port := range d.ports {
-		// TODO(vito): include protocol
-		args = append(args, strconv.Itoa(port.Port))
+		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
 	}
 
 	var debugW io.WriteCloser

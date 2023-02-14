@@ -85,17 +85,22 @@ func internalCommand() int {
 
 func check(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: check <host> port [port ...]")
+		return fmt.Errorf("usage: check <host> port/tcp [port/udp ...]")
 	}
 
 	host, ports := args[0], args[1:]
 
 	for _, port := range ports {
+		port, network, ok := strings.Cut(port, "/")
+		if !ok {
+			network = "tcp"
+		}
+
 		pollAddr := net.JoinHostPort(host, port)
 
 		fmt.Println("polling for port", pollAddr)
 
-		reached, err := pollForPort(pollAddr)
+		reached, err := pollForPort(network, pollAddr)
 		if err != nil {
 			return fmt.Errorf("poll %s: %w", pollAddr, err)
 		}
@@ -106,7 +111,7 @@ func check(args []string) error {
 	return nil
 }
 
-func pollForPort(addr string) (string, error) {
+func pollForPort(network, addr string) (string, error) {
 	retry := backoff.NewExponentialBackOff()
 	retry.InitialInterval = 100 * time.Millisecond
 
@@ -116,7 +121,11 @@ func pollForPort(addr string) (string, error) {
 
 	var reached string
 	err := backoff.Retry(func() error {
-		conn, err := dialer.Dial("tcp", addr)
+		// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
+		// up, since it'll be a false positive even if they're not listening yet,
+		// but it at least checks that we're able to resolve the container address.
+
+		conn, err := dialer.Dial(network, addr)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "port not ready: %s; elapsed: %s\n", err, retry.GetElapsedTime())
 			return err

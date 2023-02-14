@@ -630,7 +630,7 @@ func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *cor
 }
 
 type containerWithExposedPortArgs struct {
-	Protocol    string
+	Protocol    core.NetworkProtocol
 	Port        int
 	Description string
 }

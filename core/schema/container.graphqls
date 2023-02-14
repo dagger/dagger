@@ -307,6 +307,8 @@ type Container {
   withExposedPort(
     "Port number to expose"
     port: Int!,
+    "Transport layer network protocol"
+    protocol: NetworkProtocol = TCP,
     "Optional port description"
     description: String
   ): Container!
@@ -358,4 +360,9 @@ type Label {
 input BuildArg {
   name: String!
   value: String!
+}
+
+enum NetworkProtocol {
+  TCP
+  UDP
 }

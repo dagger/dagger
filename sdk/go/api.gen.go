@@ -616,6 +616,8 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 
 // ContainerWithExposedPortOpts contains options for Container.WithExposedPort
 type ContainerWithExposedPortOpts struct {
+	// Transport layer network protocol
+	Protocol NetworkProtocol
 	// Optional port description
 	Description string
 }
@@ -627,6 +629,13 @@ type ContainerWithExposedPortOpts struct {
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
 	// `description` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
@@ -1980,4 +1989,11 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type NetworkProtocol string
+
+const (
+	Tcp NetworkProtocol = "TCP"
+	Udp NetworkProtocol = "UDP"
 )

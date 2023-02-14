@@ -22,6 +22,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	os.Setenv("_DAGGER_DEBUG_HEALTHCHECKS", "1")
 	// start with fresh test registries once per suite; they're an engine-global
 	// dependency
 	startRegistry()
