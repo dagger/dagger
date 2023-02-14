@@ -33,3 +33,4 @@ Dagger may be a good fit if you are...
 * [Join the Dagger community server](https://discord.gg/ufnyBtc8uY)
 * [Follow us on Twitter](https://twitter.com/dagger_io)
 * Join a [Dagger community call](https://dagger.io/events).
+* [Sign up for our newsletter](http://eepurl.com/hzIma5)
