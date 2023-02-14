@@ -291,7 +291,6 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		"--rm",
 		"-e", cacheConfigEnvName,
-		"-e", "_DAGGER_DEBUG_HEALTHCHECKS=1",
 		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
