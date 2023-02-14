@@ -2,7 +2,7 @@ import assert from "assert"
 
 import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 import Client, { connect } from "../../index.js"
-import { Container } from "../client.gen.js"
+import { Container, Directory } from "../client.gen.js"
 import { queryFlatten, buildQuery } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
@@ -235,23 +235,13 @@ describe("NodeJS SDK api", function () {
   })
 
   it("Compute nested arguments", async function () {
-    this.timeout(60000)
+    const tree = new Client()
+      .container()
+      .build(new Directory(), { buildArgs: [{ value: "foo", name: "test" }] })
 
-    await connect(async (client) => {
-      const node = client.directory().withNewFile(
-        "Dockerfile",
-        `
-            FROM node:alpine
-            RUN node --version
-          `
-      )
-
-      const code = await client
-        .container()
-        .build(node, { buildArgs: [{ value: "foo", name: "test" }] })
-        .exitCode()
-
-      assert.strictEqual(code, null)
-    })
+    assert.strictEqual(
+      querySanitizer(buildQuery(tree.queryTree)),
+      `{ container { build (context: {"_queryTree":[],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://undefined/query",options:{headers:{Authorization:"Basic dW5kZWZpbmVkOg=="}}}},buildArgs: [{value:"foo",name:"test"}]) } }`
+    )
   })
 })
