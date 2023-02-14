@@ -134,7 +134,7 @@ func TestContainerExecServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", url})
 
@@ -170,9 +170,7 @@ func TestContainerExecUDPServices(t *testing.T) {
 	client := c.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "socat"}).
-		WithServiceDependency(srv, dagger.ContainerWithServiceDependencyOpts{
-			Alias: "echo",
-		}).
+		WithServiceAlias("echo", srv).
 		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
 			Stdin: "Hello, world!",
 		})
@@ -194,9 +192,7 @@ func TestContainerExecServiceAlias(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv, dagger.ContainerWithServiceDependencyOpts{
-			Alias: "hello",
-		}).
+		WithServiceAlias("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", "http://hello:8000"})
 
@@ -227,27 +223,22 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 		WithExposedPort(8080).
 		WithExec([]string{"go", "run", "/src/main.go"})
 
-	url, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-
 	client := c.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "curl"}).
-		WithServiceDependency(srv).
+		WithServiceAlias("www", srv).
 		WithEnvVariable("CACHEBUST", identity.NewID())
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
 		_, err := client.
-			WithExec([]string{"curl", "-s", "-X", "POST", url + "/write", "-d", "hello"}).
+			WithExec([]string{"curl", "-s", "-X", "POST", "http://www:8080/write", "-d", "hello"}).
 			ExitCode(ctx)
 		return err
 	})
 
 	msg, err := client.
-		WithExec([]string{"curl", "-s", url + "/read"}).
+		WithExec([]string{"curl", "-s", "http://www:8080/read"}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello", msg)
@@ -281,15 +272,10 @@ func TestContainerExecServicesChained(t *testing.T) {
 			WithExec([]string{"python", "-m", "http.server"})
 	}
 
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	require.NoError(t, err)
-
 	fileContent, err := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
-		WithExec([]string{"wget", httpURL}).
+		WithServiceAlias("www", srv).
+		WithExec([]string{"wget", "http://www:8000"}).
 		WithExec([]string{"cat", "index.html"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -349,7 +335,7 @@ CMD cat index.html
 `)
 
 		fileContent, err := c.Container().
-			WithServiceDependency(srv).
+			WithService(srv).
 			Build(src).
 			WithExec(nil).
 			Stdout(ctx)
@@ -376,7 +362,7 @@ CMD cat index.html
 			Tree()
 
 		fileContent, err := c.Container().
-			WithServiceDependency(srv).
+			WithService(srv).
 			Build(gitDir).
 			WithExec(nil).
 			Stdout(ctx)
@@ -404,7 +390,7 @@ CMD cat index.html
 
 		fileContent, err := gitDir.
 			DockerBuild().
-			WithServiceDependency(srv).
+			WithService(srv).
 			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -421,7 +407,7 @@ func TestContainerExportServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithExec([]string{"wget", httpURL})
 
 	filePath := filepath.Join(t.TempDir(), "image.tar")
@@ -440,7 +426,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
-			WithServiceDependency(srv).
+			WithService(srv).
 			WithExec([]string{"wget", url}).
 			WithExec([]string{"uname", "-m"})
 
@@ -465,7 +451,7 @@ func TestServicesContainerPublish(t *testing.T) {
 	testRef := registryRef("services-container-publish")
 	pushedRef, err := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithExec([]string{"wget", url}).
 		Publish(ctx, testRef)
 	require.NoError(t, err)
@@ -487,7 +473,7 @@ func TestContainerRootFSServices(t *testing.T) {
 
 	fileContent, err := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url}).
 		Rootfs().
@@ -509,7 +495,7 @@ func TestContainerWithRootFSServices(t *testing.T) {
 		// this little maneuver commits the entire rootfs into a git repo
 		c.Container().
 			From("alpine:3.16.2").
-			WithServiceDependency(srv).
+			WithService(srv).
 			WithWorkdir("/sub/out").
 			WithExec([]string{"wget", url}).
 			// NB(vito): related to the package-level comment: Rootfs is not eager,
@@ -539,7 +525,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 
 	wget := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
 
@@ -583,7 +569,7 @@ func TestContainerFileServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithServiceDependency(srv).
+		WithService(srv).
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
 
