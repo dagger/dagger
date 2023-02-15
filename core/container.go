@@ -267,7 +267,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	}
 
 	fs := imgSpec.RootFS
-	if &fs != nil && len(fs.DiffIDs) > 0 {
+	if len(fs.DiffIDs) > 0 {
 		shaStr := strings.Split(fs.DiffIDs[0].String(), ":")
 		if len(shaStr) > 1 {
 			payload.ImageRef = shaStr[1]
