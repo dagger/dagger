@@ -266,7 +266,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	payload, err = container.ID.decode()
+	payload, err = ctr.ID.decode()
 	if err != nil {
 		return nil, err
 	}
