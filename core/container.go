@@ -252,7 +252,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	_, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
+	ctr, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
 		// merge config.Env with imgSpec.Config.Env
 		newEnv := config.Env
 		if imgSpec.Config.Env != nil {
@@ -262,6 +262,11 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return imgSpec.Config
 	})
 
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err = container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
