@@ -1,0 +1,14 @@
+@use "../custom";
+
+.tag {
+    font-size: 0.8rem;
+    border: 1px solid black;
+    border-radius: 3px;
+    padding: 2px 4px;
+    white-space: nowrap;
+
+    html[data-theme="dark"] & {
+        color: white;
+        border: 1px solid white;
+    }
+}
