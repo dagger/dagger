@@ -4,7 +4,7 @@ displayed_sidebar: 'current'
 category: "guides"
 tags: ["go"]
 authors: ["Guillaume de Rouville"]
-date: "31/10/2022"
+date: "2022-10-31"
 ---
 
 import Tabs from "@theme/Tabs";

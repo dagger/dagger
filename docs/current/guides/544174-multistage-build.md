@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go"]
 authors: ["Kyle Penfound"]
-date: "09/11/2022"
+date: "2022-11-09"
 ---
 
 # Use Dagger with Multi-stage Container Builds

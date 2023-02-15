@@ -4,7 +4,7 @@ displayed_sidebar: 'current'
 category: "guides"
 tags: ["go"]
 authors: ["Alex Suraci", "Vikram Vaswani"]
-date: "01/11/2022"
+date: "2022-11-01"
 ---
 
 # Work with the Host Filesystem

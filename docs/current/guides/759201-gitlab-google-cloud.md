@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go", "gitlab-ci", "google-cloud"]
 authors: ["Vikram Vaswani"]
-date: "11/02/2023"
+date: "2023-02-11"
 ---
 
 # Use Dagger with GitLab CI/CD and Google Cloud

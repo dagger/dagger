@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go"]
 authors: ["Erik Sipsma"]
-date: "20/11/2022"
+date: "2022-11-20"
 ---
 
 # Understand Multi-Platform Support

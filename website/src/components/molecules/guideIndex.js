@@ -5,7 +5,9 @@ import guidesJSON from "@site/static/guides.json";
 import Tag from "../atoms/tag";
 
 export default function GuidesIndex() {
-  const guides = guidesJSON;
+  const guides = guidesJSON.sort((a, b) => {
+    return b.timestamp - a.timestamp
+  })
 
   return (
     <div className={styles.guideIndex}>
@@ -18,7 +20,7 @@ export default function GuidesIndex() {
               url={x.frontMatter.slug}
               tags={x.frontMatter.tags}
               authors={x.frontMatter.authors}
-              date={x.frontMatter.date}
+              timestamp={x.timestamp}
             />
           </li>
         ))}
@@ -27,12 +29,14 @@ export default function GuidesIndex() {
   );
 }
 
-function GuideCard({title, description, url, tags, authors, date}) {
+function GuideCard({title, description, url, tags, authors, timestamp}) {
   const handleAuthors = () => {
     let authorsString = "";
     authors.forEach((x) => (authorsString += `, ${x}`));
     return `By ${authorsString.slice(1)}`;
   };
+  const dateOptions = { year: 'numeric', month: 'long', day: 'numeric' };
+  const date = new Date(timestamp).toLocaleDateString('en-US', dateOptions)
   return (
     <div className={styles.guideCard}>
       <div className={styles.info}>

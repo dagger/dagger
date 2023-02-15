@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["nodejs", "gitlab-ci", "google-cloud"]
 authors: ["Vikram Vaswani"]
-date: "12/12/2022"
+date: "2022-12-12"
 ---
 
 # Use Dagger with GitHub Actions and Google Cloud

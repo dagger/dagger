@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["python"]
 authors: ["Helder Correia"]
-date: "22/11/2022"
+date: "2022-11-22"
 ---
 
 # Create a Multi-Build CI Pipeline

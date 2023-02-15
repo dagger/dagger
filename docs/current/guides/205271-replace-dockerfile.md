@@ -4,7 +4,7 @@ displayed_sidebar: 'current'
 category: "guides"
 tags: ["go"]
 authors: ["Kyle Penfound", "Vikram Vaswani"]
-date: "07/01/2023"
+date: "2023-01-07"
 ---
 
 # Replace a Dockerfile with Go

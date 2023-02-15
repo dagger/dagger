@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go"]
 authors: ["Guillaume de Rouville"]
-date: "04/11/2022"
+date: "2022-11-04"
 ---
 
 # Copy Embedded Directories into a Container
