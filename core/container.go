@@ -266,7 +266,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	if len(imgSpec.RootFS.DiffIDs) > 0 {
+	if imgSpec.RootFS != nil && imgSpec.RootFS.DiffIDs != nil && len(imgSpec.RootFS.DiffIDs) > 0 {
 		shaStr := strings.Split(imgSpec.RootFS.DiffIDs[0].String(), ":")
 		if len(shaStr) > 1 {
 			payload.ImageRef = shaStr[1]
