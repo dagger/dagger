@@ -651,7 +651,7 @@ type containerWithoutExposedPortArgs struct {
 	Port     int
 }
 
-func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
