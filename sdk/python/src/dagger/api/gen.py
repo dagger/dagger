@@ -305,6 +305,12 @@ class Container(Type):
         return await _ctx.execute(bool)
 
     @typecheck
+    def exposed_ports(self) -> "Port":
+        _args: list[Arg] = []
+        _ctx = self._select("exposedPorts", _args)
+        return Port(_ctx)
+
+    @typecheck
     def file(self, path: str) -> "File":
         """Retrieves a file at the given path. Mounts are included."""
         _args = [
@@ -911,6 +917,20 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withoutEnvVariable", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_exposed_port(
+        self,
+        port: int,
+        protocol: Optional[NetworkProtocol] = None,
+    ) -> "Container":
+        """Unexpose a previously exposed port."""
+        _args = [
+            Arg("port", port),
+            Arg("protocol", protocol, None),
+        ]
+        _ctx = self._select("withoutExposedPort", _args)
         return Container(_ctx)
 
     @typecheck
@@ -1548,6 +1568,47 @@ class Label(Type):
         return await _ctx.execute(str)
 
 
+class Port(Type):
+    """A port exposed by a container."""
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """The port description.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def port(self) -> int:
+        """The port number.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("port", _args)
+        return await _ctx.execute(int)
+
+    @typecheck
+    async def protocol(self) -> NetworkProtocol:
+        """The transport layer network protocol."""
+        _args: list[Arg] = []
+        _ctx = self._select("protocol", _args)
+        return await _ctx.execute(NetworkProtocol)
+
+
 class Project(Type):
     """A set of scripts and/or extensions"""
 
@@ -1866,6 +1927,7 @@ __all__ = [
     "Host",
     "HostVariable",
     "Label",
+    "Port",
     "Project",
     "Client",
     "Secret",

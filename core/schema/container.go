@@ -82,6 +82,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
 			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
 			"withExposedPort":      router.ToResolver(s.withExposedPort),
+			"withoutExposedPort":   router.ToResolver(s.withoutExposedPort),
+			"exposedPorts":         router.ToResolver(s.exposedPorts),
 			"hostname":             router.ToResolver(s.hostname),
 			"endpoint":             router.ToResolver(s.endpoint),
 			"withService":          router.ToResolver(s.withServiceDependency),
@@ -633,7 +635,7 @@ func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *cor
 type containerWithExposedPortArgs struct {
 	Protocol    core.NetworkProtocol
 	Port        int
-	Description string
+	Description *string
 }
 
 func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
@@ -642,4 +644,39 @@ func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Cont
 		Port:        args.Port,
 		Description: args.Description,
 	})
+}
+
+type containerWithoutExposedPortArgs struct {
+	Protocol core.NetworkProtocol
+	Port     int
+}
+
+func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+	return parent.WithoutExposedPort(args.Port, args.Protocol)
+}
+
+// NB(vito): we have to use a different type with a regular string Protocol
+// field so that the enum mapping works.
+type ExposedPort struct {
+	Port        int     `json:"port"`
+	Protocol    string  `json:"protocol"`
+	Description *string `json:"description,omitempty"`
+}
+
+func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Container, args any) ([]ExposedPort, error) {
+	ports, err := parent.ExposedPorts()
+	if err != nil {
+		return nil, err
+	}
+
+	exposedPorts := []ExposedPort{}
+	for _, p := range ports {
+		exposedPorts = append(exposedPorts, ExposedPort{
+			Port:        p.Port,
+			Protocol:    string(p.Protocol),
+			Description: p.Description,
+		})
+	}
+
+	return exposedPorts, nil
 }

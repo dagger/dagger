@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -121,6 +122,98 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 		_, err := srv.Endpoint(ctx)
 		require.Error(t, err)
 	})
+}
+
+func TestContainerPortLifecycle(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	withPorts := c.Container().
+		From("python").
+		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+			Description: "eight thousand tcp",
+		}).
+		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+			Protocol:    dagger.Udp,
+			Description: "eight thousand udp",
+		}).
+		WithExposedPort(5432)
+
+	cid, err := withPorts.ID(ctx)
+	require.NoError(t, err)
+
+	res := struct {
+		Container struct {
+			ExposedPorts []struct {
+				Port        int
+				Protocol    dagger.NetworkProtocol
+				Description *string
+			}
+		}
+	}{}
+
+	getPorts := `query Test($id: ContainerID!) {
+		container(id: $id) {
+			exposedPorts {
+				port
+				protocol
+				description
+			}
+		}
+	}`
+
+	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+		Variables: map[string]interface{}{
+			"id": cid,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Container.ExposedPorts, 3)
+	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
+	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[0].Protocol)
+	require.Equal(t, "eight thousand tcp", *res.Container.ExposedPorts[0].Description)
+	require.Equal(t, 8000, res.Container.ExposedPorts[1].Port)
+	require.Equal(t, dagger.Udp, res.Container.ExposedPorts[1].Protocol)
+	require.Equal(t, "eight thousand udp", *res.Container.ExposedPorts[1].Description)
+	require.Equal(t, 5432, res.Container.ExposedPorts[2].Port)
+	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[2].Protocol)
+	require.Nil(t, res.Container.ExposedPorts[2].Description)
+
+	withoutTCP := withPorts.WithoutExposedPort(8000)
+	cid, err = withoutTCP.ID(ctx)
+	require.NoError(t, err)
+	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+		Variables: map[string]interface{}{
+			"id": cid,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Container.ExposedPorts, 2)
+	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
+	require.Equal(t, dagger.Udp, res.Container.ExposedPorts[0].Protocol)
+	require.Equal(t, "eight thousand udp", *res.Container.ExposedPorts[0].Description)
+	require.Equal(t, 5432, res.Container.ExposedPorts[1].Port)
+	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[1].Protocol)
+	require.Nil(t, res.Container.ExposedPorts[1].Description)
+
+	withoutUDP := withPorts.WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
+		Protocol: dagger.Udp,
+	})
+	cid, err = withoutUDP.ID(ctx)
+	require.NoError(t, err)
+	err = testutil.Query(getPorts, &res, &testutil.QueryOptions{
+		Variables: map[string]interface{}{
+			"id": cid,
+		},
+	})
+	require.NoError(t, err)
+	require.Len(t, res.Container.ExposedPorts, 2)
+	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
+	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[0].Protocol)
+	require.Equal(t, "eight thousand tcp", *res.Container.ExposedPorts[0].Description)
+	require.Equal(t, 5432, res.Container.ExposedPorts[1].Port)
+	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[1].Protocol)
+	require.Nil(t, res.Container.ExposedPorts[1].Description)
 }
 
 func TestContainerExecServices(t *testing.T) {

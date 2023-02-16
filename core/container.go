@@ -132,8 +132,8 @@ type ContainerSocket struct {
 // ContainerPort configures a port to expose from the container.
 type ContainerPort struct {
 	Port        int             `json:"port"`
-	Protocol    NetworkProtocol `json:"protocol,omitempty"`
-	Description string          `json:"description,omitempty"`
+	Protocol    NetworkProtocol `json:"protocol"`
+	Description *string         `json:"description,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -1371,6 +1371,37 @@ func (container *Container) WithExposedPort(port ContainerPort) (*Container, err
 	}
 
 	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := []ContainerPort{}
+	for _, p := range payload.Ports {
+		if p.Port != port || p.Protocol != protocol {
+			filtered = append(filtered, p)
+		}
+	}
+	payload.Ports = filtered
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) ExposedPorts() ([]ContainerPort, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return payload.Ports, nil
 }
 
 func (container *Container) WithServiceDependency(svc *Container, alias string) (*Container, error) {

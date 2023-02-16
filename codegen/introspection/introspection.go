@@ -119,6 +119,9 @@ func (r TypeRef) IsScalar() bool {
 	if ref.Kind == TypeKindScalar {
 		return true
 	}
+	if ref.Kind == TypeKindEnum {
+		return true
+	}
 	return false
 }
 

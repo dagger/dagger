@@ -220,6 +220,10 @@ export type ContainerWithNewFileOpts = {
   permissions?: number
 }
 
+export type ContainerWithoutExposedPortOpts = {
+  protocol?: NetworkProtocol
+}
+
 /**
  * A unique container identifier. Null designates an empty container (scratch).
  */
@@ -615,6 +619,19 @@ Used for multi-platform image.
         {
           operation: "export",
           args: { path, ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+  async exposedPorts(): Promise<Port[]> {
+    const response: Awaited<Port[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exposedPorts",
         },
       ],
       this.client
@@ -1335,6 +1352,26 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
         {
           operation: "withoutEnvVariable",
           args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Unexpose a previously exposed port.
+   */
+  withoutExposedPort(
+    port: number,
+    opts?: ContainerWithoutExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutExposedPort",
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2380,6 +2417,87 @@ export class Label extends BaseClient {
    *```
    */
   with(arg: (param: Label) => Label) {
+    return arg(this)
+  }
+}
+
+/**
+ * A port exposed by a container.
+ */
+export class Port extends BaseClient {
+  /**
+   * The port description.
+   */
+  async description(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The port number.
+   */
+  async port(): Promise<number> {
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "port",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The transport layer network protocol.
+   */
+  async protocol(): Promise<NetworkProtocol> {
+    const response: Awaited<NetworkProtocol> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "protocol",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Port) => Port) {
     return arg(this)
   }
 }

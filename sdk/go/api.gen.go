@@ -294,6 +294,14 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	return response, q.Execute(ctx, r.c)
 }
 
+func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+	q := r.q.Select("exposedPorts")
+
+	var response []Port
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves a file at the given path. Mounts are included.
 func (r *Container) File(path string) *File {
 	q := r.q.Select("file")
@@ -915,6 +923,29 @@ func (r *Container) WithWorkdir(path string) *Container {
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithoutExposedPortOpts contains options for Container.WithoutExposedPort
+type ContainerWithoutExposedPortOpts struct {
+	Protocol NetworkProtocol
+}
+
+// Unexpose a previously exposed port.
+func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
+	q := r.q.Select("withoutExposedPort")
+	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -1636,6 +1667,39 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
 	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A port exposed by a container.
+type Port struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The port description.
+func (r *Port) Description(ctx context.Context) (string, error) {
+	q := r.q.Select("description")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The port number.
+func (r *Port) Port(ctx context.Context) (int, error) {
+	q := r.q.Select("port")
+
+	var response int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The transport layer network protocol.
+func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+	q := r.q.Select("protocol")
+
+	var response NetworkProtocol
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }

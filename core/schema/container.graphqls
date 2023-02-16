@@ -314,6 +314,13 @@ type Container {
   ): Container!
 
   """
+  Unexpose a previously exposed port.
+  """
+  withoutExposedPort(port: Int!, protocol: NetworkProtocol = TCP): Container!
+
+  exposedPorts: [Port!]!
+
+  """
   Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
 
   The service dependency will also convey to any files or directories produced by the container.
@@ -351,6 +358,18 @@ type EnvVariable {
 
   "The environment variable value."
   value: String!
+}
+
+"A port exposed by a container."
+type Port {
+  "The port number."
+  port: Int!
+
+  "The transport layer network protocol."
+  protocol: NetworkProtocol!
+
+  "The port description."
+  description: String
 }
 
 "A simple key value object that represents a label."
