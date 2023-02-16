@@ -3,7 +3,7 @@
 		{{- if HasPrefix .Name "__" }}
 			{{- /* we ignore types prefixed by __ */ -}}
 		{{- else }}
-{{ "" }}		{{- template "object" . -}}
+{{ "" }}		{{- template "object" . }}
 		{{- end }}
 	{{- end }}
 {{- end }}

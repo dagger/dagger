@@ -20,33 +20,33 @@
 		{{- /* Reference current arg to access it in range */ -}}
 		{{- $arg := . }}
 		{{- /* Write argument description */ -}}
-		{{- $desc := CommentToLines .Description  }}
-		    {{- range $i, $line := $desc }}
-		        {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
-		        {{- if (eq $i 0) }}
+		{{- $desc := CommentToLines .Description }}
+			{{- range $i, $line := $desc }}
+				{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+				{{- if (eq $i 0) }}
    * @param {{ $arg.Name }} {{ $line }}
-		        {{- else }}
+				{{- else }}
    * {{ $line }}
-		        {{- end }}
-		    {{- end }}
+				{{- end }}
+			{{- end }}
 		{{- end }}
 	{{- end }}
 
 	{{- if ArgsHaveDescription $optionals }}
 		{{- range $optionals }}
 			{{- if .Description }}
-		        {{- /* Reference current arg to access it in range */ -}}
-		        {{- $arg := . }}
-		        {{- /* Write argument description */ -}}
-		        {{- $desc := CommentToLines .Description }}
-		        {{- range $i, $line := $desc }}
-		            {{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
-		            {{- if (eq $i 0) }}
+				{{- /* Reference current arg to access it in range */ -}}
+				{{- $arg := . }}
+				{{- /* Write argument description */ -}}
+				{{- $desc := CommentToLines .Description }}
+				{{- range $i, $line := $desc }}
+					{{- /* If it's the first line, add the JSDoc tag, otherwise treat it as a simple line */ -}}
+					{{- if (eq $i 0) }}
    * @param opts.{{ $arg.Name }} {{ $line }}
-		            {{- else }}
+					{{- else }}
    * {{ $line }}
-		            {{- end }}
-		        {{- end }}
+					{{- end }}
+				{{- end }}
 			{{- end }}
 		{{- end }}
 	{{- end }}

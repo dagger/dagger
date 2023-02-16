@@ -1,7 +1,7 @@
 {{- /* Types definition generation.
 Export a type for each type or input existing in the GraphQL schema.
  */ -}}
-{{ define "types" -}}
+{{ define "types" }}
 	{{- range . }}
 		{{- template "type" . }}
 	{{- end }}
@@ -28,7 +28,7 @@ export type {{ .Name }} = string & {__{{ .Name }}: never}
 {{ "" }}
 	{{- end }}
 
-    {{- /* Generate enum */ -}}
+	{{- /* Generate enum */ -}}
 	{{- if IsEnum . }}
 		{{- if .Description }}
 			{{- /* Split comment string into a slice of one line per element. */ -}}
@@ -40,22 +40,22 @@ export type {{ .Name }} = string & {__{{ .Name }}: never}
  */
 		{{- end }}
 export enum {{ .Name }} {
-	    {{- $sortedEnumValues := SortEnumFields .EnumValues  }}
-	    {{- range $sortedEnumValues }}
-		    {{- if .Description }}
-			    {{- /* Split comment string into a slice of one line per element. */ -}}
-			    {{- $desc := CommentToLines .Description }}
+		{{- $sortedEnumValues := SortEnumFields .EnumValues }}
+		{{- range $sortedEnumValues }}
+			{{- if .Description }}
+				{{- /* Split comment string into a slice of one line per element. */ -}}
+				{{- $desc := CommentToLines .Description }}
 
   /**
-			    {{- range $desc }}
+				{{- range $desc }}
    * {{ . }}
-			    {{- end }}
+				{{- end }}
    */
-		    {{- end }}
-            {{ .Name | FormatEnum }},
-	    {{- end }}
+			{{- end }}
+  {{ .Name | FormatEnum }},
+		{{- end }}
 }
-    {{- end }}
+	{{- end }}
 
 	{{- /* Generate structure type. */ -}}
 	{{- with .Fields }}

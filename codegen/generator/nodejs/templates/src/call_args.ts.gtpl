@@ -5,8 +5,8 @@
 		{{- .Name }}
 
 		{{- /* Add a ", " only if it's not the last item. */ -}}
-		{{- if ne $index $maxIndex -}}
-			{{ "" }}, {{ "" }}
+		{{- if ne $index $maxIndex }}
+			{{- "" }}, {{ "" }}
 		{{- end }}
 	{{- end }}
 {{- end }}

@@ -11,7 +11,7 @@
 	{{- /* Write method comment. */ -}}
 	{{- template "method_comment" . }}
 	{{- /* Write async method name. */ -}}
-	{{- "" }}  async {{ .Name -}}(
+	{{- "" }}  async {{ .Name }}(
 
 	{{- /* Write required arguments. */ -}}
 	{{- if $required }}
@@ -26,7 +26,7 @@
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ .TypeRef | FormatOutputType  }}> {
+	{{- "" }}): Promise<{{ .TypeRef | FormatOutputType }}> {
 
 	{{- if .TypeRef }}
     const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await computeQuery(
@@ -43,10 +43,10 @@
 			{{- end }}
 
       		{{- with $optionals }}
-      			{{- if $required }}, {{ end -}}
-				...opts
-			{{- end -}}
-{{""}} },
+      			{{- if $required }}, {{ end }}
+				{{- "" }}...opts
+			{{- end }}
+{{- "" }} },
 		{{- end }}
         },
       ],
