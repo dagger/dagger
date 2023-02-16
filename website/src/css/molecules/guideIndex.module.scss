@@ -6,6 +6,14 @@
   }
 }
 
+.selectedTags {
+    height: 50px;
+    display: flex;
+    gap: 5px;
+    flex-grow: inherit;
+    align-items: flex-start;
+}
+
 .guideCard {
   border: 1px solid var(--ifm-color-primary-darker);
   display: flex;

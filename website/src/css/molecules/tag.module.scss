@@ -1,14 +1,27 @@
 @use "../custom";
 
 .tag {
-    font-size: 0.8rem;
-    border: 1px solid black;
-    border-radius: 3px;
-    padding: 2px 4px;
-    white-space: nowrap;
+  font-size: 0.8rem;
+  border: 1px solid black;
+  border-radius: 3px;
+  padding: 2px 4px;
+  white-space: nowrap;
+  display: flex;
 
-    html[data-theme="dark"] & {
-        color: white;
-        border: 1px solid white;
-    }
+  html[data-theme="dark"] & {
+    color: white;
+    border: 1px solid white;
+  }
+}
+
+.close {
+  padding: 5px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+
+  html[data-theme="dark"] & {
+    color: white;
+  }
 }
