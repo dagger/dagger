@@ -1,8 +1,20 @@
 .guideIndex {
+  ul {
+   display: flex;
+   flex-wrap: wrap;
+   width: 100%;
+   gap: 1.5rem;
+   justify-content: center;
+   padding-left: 0px;
+  }
+
   li {
     list-style: none;
     text-decoration: none;
-    margin: 20px 0px;
+    margin-top: 0px !important;
+    min-width: 350px;
+    max-width: 600px;
+    flex: 1 1 400px;
   }
 }
 
@@ -15,6 +27,7 @@
 }
 
 .guideCard {
+  height: 100%;
   border: 1px solid var(--ifm-color-primary-darker);
   display: flex;
   gap: 0.8rem;
@@ -24,8 +37,6 @@
   text-decoration: none !important;
   box-shadow: 4px 4px 0px #40b9bc;
   padding: 3%;
-
-  transition: border color 0.2s ease-in-out;
 
   p {
     font-size: 1rem;
@@ -82,5 +93,7 @@
 .tags {
   display: flex;
   flex-wrap: wrap;
+  flex-grow: inherit;
+  align-items: flex-start;
   gap: 5px;
 }
