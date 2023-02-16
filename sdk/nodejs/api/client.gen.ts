@@ -416,6 +416,7 @@ export type __TypeFieldsOpts = {
 /**
  * A directory whose contents persist across runs.
  */
+
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
@@ -460,6 +461,7 @@ export class CacheVolume extends BaseClient {
 /**
  * An OCI-compatible container, also known as a docker container.
  */
+
 export class Container extends BaseClient {
   /**
    * Initializes this container from a Dockerfile build.
@@ -1440,6 +1442,7 @@ export class Container extends BaseClient {
 /**
  * A directory.
  */
+
 export class Directory extends BaseClient {
   /**
    * Gets the difference between this directory and an another directory.
@@ -1793,6 +1796,7 @@ export class Directory extends BaseClient {
 /**
  * A simple key value object that represents an environment variable.
  */
+
 export class EnvVariable extends BaseClient {
   /**
    * The environment variable name.
@@ -1857,6 +1861,7 @@ export class EnvVariable extends BaseClient {
 /**
  * A file.
  */
+
 export class File extends BaseClient {
   /**
    * Retrieves the contents of the file.
@@ -1993,6 +1998,7 @@ export class File extends BaseClient {
 /**
  * A git ref (tag, branch or commit).
  */
+
 export class GitRef extends BaseClient {
   /**
    * The digest of the current value of this ref.
@@ -2057,6 +2063,7 @@ export class GitRef extends BaseClient {
 /**
  * A git repository.
  */
+
 export class GitRepository extends BaseClient {
   /**
    * Returns details on one branch.
@@ -2175,6 +2182,7 @@ export class GitRepository extends BaseClient {
 /**
  * Information about the host execution environment.
  */
+
 export class Host extends BaseClient {
   /**
    * Accesses a directory on the host.
@@ -2281,6 +2289,7 @@ export class Host extends BaseClient {
 /**
  * An environment variable on the host environment.
  */
+
 export class HostVariable extends BaseClient {
   /**
    * A secret referencing the value of this variable.
@@ -2344,6 +2353,7 @@ export class HostVariable extends BaseClient {
 /**
  * A simple key value object that represents a label.
  */
+
 export class Label extends BaseClient {
   /**
    * The label name.
@@ -2408,6 +2418,7 @@ export class Label extends BaseClient {
 /**
  * A set of scripts and/or extensions
  */
+
 export class Project extends BaseClient {
   /**
    * extensions in this project
@@ -2754,6 +2765,7 @@ export default class Client extends BaseClient {
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
+
 export class Secret extends BaseClient {
   /**
    * The identifier for this secret.
