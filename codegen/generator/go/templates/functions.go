@@ -34,7 +34,9 @@ func comment(s string) string {
 	if s == "" {
 		return ""
 	}
+
 	lines := strings.Split(s, "\n")
+
 	for i, l := range lines {
 		lines[i] = "// " + l
 	}

@@ -1,10 +1,20 @@
 extend type Query {
-  "Queries a git repository."
+  """
+  Queries a git repository.
+  """
   git(
+    """
+    Url of the git repository.
+    Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    Suffix ".git" is optional.
+    """
     url: String!,
+
+    "Set to true to keep .git directory."
     keepGitDir: Boolean,
+
     "A service which must be started before the repo is fetched."
-    serviceHost: ContainerID,
+    serviceHost: ContainerID
   ): GitRepository!
 }
 
@@ -13,17 +23,38 @@ type GitRepository {
   "Lists of branches on the repository."
   branches: [String!]!
 
-  "Returns details on one branch."
-  branch(name: String!): GitRef!
+  """
+  Returns details on one branch.
+  """
+  branch(
+    """
+    Branch's name (e.g., "main").
+    """
+    name: String!
+  ): GitRef!
 
   "Lists of tags on the repository."
   tags: [String!]!
 
-  "Returns details on one tag."
-  tag(name: String!): GitRef!
+  """
+  Returns details on one tag.
+  """
+  tag(
+    """
+    Tag's name (e.g., "v0.3.9").
+    """
+    name: String!
+  ): GitRef!
 
-  "Returns details on one commit."
-  commit(id: String!): GitRef!
+  """
+  Returns details on one commit.
+  """
+  commit(
+    """
+    Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
+    """
+    id: String!
+  ): GitRef!
 }
 
 "A git ref (tag, branch or commit)."

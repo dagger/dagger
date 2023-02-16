@@ -33,93 +33,11 @@ This tutorial assumes that:
 
 ## Step 1: Create a Google Cloud service account
 
-The Dagger pipeline demonstrated in this tutorial (re)builds a container image of an application every time a new commit is added to the application's GitHub repository. It then publishes the container image to Google Container registry and deploys it at a public URL using Google Cloud infrastructure.
-
-This requires the following:
-
-- A Google Cloud service account with all necessary privileges
-- A Google Cloud Run service with a public URL and defined resource/capacity/access rules
-- Access to various Google Cloud APIs
-
-:::info
-This step discusses how to create a Google Cloud service account. If you already have a Google Cloud service account and key for your project, skip to [Step 2](#step-2-configure-google-cloud-apis-and-a-google-cloud-run-service).
-:::
-
-The first step is to create a Google Cloud service account, as follows:
-
-1. Log in to the Google Cloud Console and select your project.
-1. From the navigation menu, click `IAM & Admin` -> `Service Accounts`.
-1. Click `Create Service Account`.
-1. In the `Service account details` section, enter a string in the `Service account ID` field. This string forms the prefix of the unique service account email address.
-
-  ![Create Google Cloud service account](/img/current/sdk/nodejs/guides/github-google-cloud/create-gcloud-service-account-id.png)
-
-1. Click `Create and Continue`.
-1. In the `Grant this service account access to project` section, select the `Service Account Token Creator` and `Editor` roles.
-
-  ![Create Google Cloud service account roles](/img/current/sdk/nodejs/guides/github-google-cloud/create-gcloud-service-account-role.png)
-
-1. Click `Continue`.
-1. Click `Done`.
-
-Once the service account is created, the Google Cloud Console displays it in the service account list, as shown below. Note the service account email address, as you will need it in the next step.
-
-  ![List Google Cloud service accounts](/img/current/sdk/nodejs/guides/github-google-cloud/list-gcloud-service-accounts.png)
-
-Next, create a JSON key for the service account as follows:
-
-1. From the navigation menu, click `IAM & Admin` -> `Service Accounts`.
-1. Click the newly-created service account in the list of service accounts.
-1. Click the `Keys` tab on the service account detail page.
-1. Click `Add Key` -> `Create new key`.
-1. Select the `JSON` key type.
-1. Click `Create`.
-
-The key is created and automatically downloaded to your local host through your browser as a JSON file.
-
-  ![Create Google Cloud service account key](/img/current/sdk/nodejs/guides/github-google-cloud/create-gcloud-service-account-key.png)
-
-:::warning
-Store the JSON service account key file safely as it cannot be retrieved again.
-:::
+{@include: ../../../partials/_google-cloud-service-account-key-setup.md}
 
 ## Step 2: Configure Google Cloud APIs and a Google Cloud Run service
 
-The next step is to enable access to the required Google Cloud APIs:
-
-1. From the navigation menu, select the `APIs & Services` -> `Enabled APIs & services` option.
-1. Select the `Enable APIs and Services` option.
-1. On the `API Library` page, search for and select the `Cloud Run API` entry.
-1. On the API detail page, click `Enable`.
-
-  ![Enable Google Cloud API](/img/current/sdk/nodejs/guides/github-google-cloud/enable-gcloud-api.png)
-
-1. Repeat the previous two steps for the `IAM Service Account Credentials API`.
-
-Once the APIs are enabled, the Google Cloud Console displays the updated status of the APIs.
-
-The final step is to create a Google Cloud Run service and corresponding public URL endpoint. This service will eventually host the container deployed by the Dagger pipeline.
-
-1. From the navigation menu, select the `Serverless` -> `Cloud Run` product.
-1. Select the `Create Service` option.
-1. Select the `Deploy one revision from an existing container image` option. Click `Test with a sample container` to have a container image URL pre-filled.
-1. Continue configuring the service with the following inputs:
-
-    - Service name: `myapp` (modify as needed)
-    - Region: `us-central1` (modify as needed)
-    - CPU allocation and pricing: `CPU is only allocated during request processing`
-    - Minimum number of instances: `0` (modify as needed)
-    - Maximum number of instances: `1` (modify as needed)
-    - Ingress: `Allow all traffic`
-    - Authentication: `Allow unauthenticated invocations`
-
-    ![Create Google Cloud Run service](/img/current/sdk/nodejs/guides/github-google-cloud/create-gcloud-run-service.png)
-
-1. Click `Create` to create the service.
-
-The new service is created. The Google Cloud Console displays the service details, including its public URL, on the service detail page, as shown below.
-
-![View Google Cloud Run service details](/img/current/sdk/nodejs/guides/github-google-cloud/view-gcloud-run-service.png)
+{@include: ../../../partials/_google-cloud-api-run-setup.md}
 
 ## Step 3: Create the Dagger pipeline
 
@@ -153,30 +71,15 @@ Most `Container` object methods return a revised `Container` object representing
 
 ## Step 4: Test the Dagger pipeline on the local host
 
-Test the Dagger pipeline as follows:
+Configure credentials for the Google Cloud SDK on the local host, as follows:
 
-1. Configure Docker credentials for Google Container Registry on the local host using the following commands. Replace the SERVICE-ACCOUNT-ID placeholder with the service account email address created in Step 1, and the SERVICE-ACCOUNT-KEY-FILE placeholder with the location of the service account JSON key file downloaded in Step 1.
+{@include: ../../../partials/_google-cloud-sdk-credentials-setup.md}
 
-  ```shell
-  gcloud auth activate-service-account SERVICE-ACCOUNT-ID --key-file=SERVICE-ACCOUNT-KEY-FILE
-  gcloud auth configure-docker
-  ```
+Once credentials are configured, test the Dagger pipeline by running the command below:
 
-  :::info
-  This step is necessary because Dagger relies on the host's Docker credentials and authorizations when publishing to remote registries.
-  :::
-
-1. Set the `GOOGLE_APPLICATION_CREDENTIALS` environment variable to the location of the service account JSON key file, replacing the SERVICE-ACCOUNT-KEY-FILE placeholder in the following command. This variable is used by the Google Cloud Run client library during the client authentication process.
-
-  ```shell
-  export GOOGLE_APPLICATION_CREDENTIALS=SERVICE-ACCOUNT-KEY-FILE
-  ```
-
-1. Run the pipeline:
-
-  ```shell
-  node ci/main.mjs
-  ```
+```shell
+node ci/main.mjs
+```
 
 Dagger performs the operations defined in the pipeline script, logging each operation to the console. At the end of the process, the built container is deployed to Google Cloud Run and a message similar to the one below appears in the console output:
 

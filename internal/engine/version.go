@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	EngineImageRepo = "ghcr.io/dagger/engine"
+	EngineImageRepo = "registry.dagger.io/engine"
 )
 
 var DevelopmentVersion = fmt.Sprintf("devel (%s)", vcsRevision())
