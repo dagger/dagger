@@ -11,9 +11,10 @@ func TestComment(t *testing.T) {
 	templateType := "object_comment"
 	t.Run("simple comment", func(t *testing.T) {
 		tmpl := templateHelper(t)
-		want := `/**
- * This is a comment
- */`
+		want := `
+  /**
+   * This is a comment
+   */`
 		comments := "This is a comment"
 
 		var b bytes.Buffer
@@ -24,10 +25,11 @@ func TestComment(t *testing.T) {
 	})
 	t.Run("multi line comment", func(t *testing.T) {
 		tmpl := templateHelper(t)
-		want := `/**
- * This is a comment
- * that spans on multiple lines
- */`
+		want := `
+  /**
+   * This is a comment
+   * that spans on multiple lines
+   */`
 		comments := "This is a comment\nthat spans on multiple lines"
 
 		var b bytes.Buffer

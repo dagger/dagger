@@ -1,9 +1,9 @@
 {{ define "type_field_comment" -}}
 	{{- if . -}}
 		{{- /* we split the comment string into a string slice of one line per element */ -}}
-		{{- $commentLines := CommentToLines . }}
+		{{- $desc := CommentToLines .  }}
   /**
-		{{- range $commentLines }}
+		{{- range $desc }}
    * {{ . }}
 		{{- end }}
    */

@@ -24,9 +24,9 @@ class FileID(Scalar):
 
 
 class Platform(Scalar):
-    """The platform config OS and architecture in a Container. The format
-    is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
-    linux/arm64)."""
+    """The platform config OS and architecture in a Container.  The format
+    is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
+    "windows/amd64", "linux/arm64")."""
 
 
 class SecretID(Scalar):
@@ -53,9 +53,13 @@ class CacheSharingMode(Enum):
 
 
 class BuildArg(Input):
+    """Key value object that represents a build argument."""
+
     name: str
+    """The build argument name."""
 
     value: str
+    """The build argument value."""
 
 
 class CacheVolume(Type):
@@ -88,8 +92,7 @@ class Container(Type):
         build_args: Optional[Sequence[BuildArg]] = None,
         target: Optional[str] = None,
     ) -> "Container":
-        """Initializes this container from a Dockerfile build, using the context,
-        a dockerfile file path and some additional buildArgs.
+        """Initializes this container from a Dockerfile build.
 
         Parameters
         ----------
@@ -97,7 +100,7 @@ class Container(Type):
             Directory context used by the Dockerfile.
         dockerfile:
             Path to the Dockerfile to use.
-            Defaults to './Dockerfile'.
+            Default: './Dockerfile'.
         build_args:
             Additional build arguments.
         target:
@@ -129,7 +132,15 @@ class Container(Type):
 
     @typecheck
     def directory(self, path: str) -> "Directory":
-        """Retrieves a directory at the given path. Mounts are included."""
+        """Retrieves a directory at the given path.
+
+        Mounts are included.
+
+        Parameters
+        ----------
+        path:
+            The path of the directory to retrieve (e.g., "./src").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -154,6 +165,11 @@ class Container(Type):
     @typecheck
     def env_variable(self, name: str) -> Optional[str]:
         """Retrieves the value of the specified environment variable.
+
+        Parameters
+        ----------
+        name:
+            The name of the environment variable to retrieve (e.g., "PATH").
 
         Returns
         -------
@@ -193,13 +209,17 @@ class Container(Type):
         Parameters
         ----------
         args:
-            Command to run instead of the container's default command.
+            Command to run instead of the container's default command (e.g.,
+            ["run", "main.go"]).
         stdin:
-            Content to write to the command's standard input before closing.
+            Content to write to the command's standard input before closing
+            (e.g., "Hello world").
         redirect_stdout:
-            Redirect the command's standard output to a file in the container.
+            Redirect the command's standard output to a file in the container
+            (e.g., "/tmp/stdout").
         redirect_stderr:
-            Redirect the command's standard error to a file in the container.
+            Redirect the command's standard error to a file in the container
+            (e.g., "/tmp/stderr").
         experimental_privileged_nesting:
             Provide dagger access to the executed command.
             Do not use this option unless you trust the command being
@@ -220,7 +240,6 @@ class Container(Type):
     @typecheck
     def exit_code(self) -> Optional[int]:
         """Exit code of the last executed command. Zero means success.
-
         Null if no command has been executed.
 
         Returns
@@ -241,14 +260,15 @@ class Container(Type):
         platform_variants: Optional[Sequence["Container"]] = None,
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
-        the host for the specified platformVariants.
+        the host for the specified platform variants.
 
         Return true on success.
+        It can also publishes platform variants.
 
         Parameters
         ----------
         path:
-            Host's destination path.
+            Host's destination path (e.g., "./tarball").
             Path can be relative to the engine's workdir or absolute.
         platform_variants:
             Identifiers for other platform specific containers.
@@ -268,7 +288,15 @@ class Container(Type):
 
     @typecheck
     def file(self, path: str) -> "File":
-        """Retrieves a file at the given path. Mounts are included."""
+        """Retrieves a file at the given path.
+
+        Mounts are included.
+
+        Parameters
+        ----------
+        path:
+            The path of the file to retrieve (e.g., "./README.md").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -277,15 +305,14 @@ class Container(Type):
 
     @typecheck
     def from_(self, address: str) -> "Container":
-        """Initializes this container from the base image published at the given
-        address.
+        """Initializes this container from a pulled base image.
 
         Parameters
         ----------
         address:
             Image's address from its registry.
-            Formatted as [host]/[user]/[repo]:[tag] (e.g.
-            docker.io/dagger/dagger:main).
+            Formatted as [host]/[user]/[repo]:[tag] (e.g.,
+            "docker.io/dagger/dagger:main").
         """
         _args = [
             Arg("address", address),
@@ -382,9 +409,9 @@ class Container(Type):
         Returns
         -------
         Platform
-            The platform config OS and architecture in a Container. The format
-            is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
-            linux/arm64).
+            The platform config OS and architecture in a Container.  The
+            format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
+            "windows/amd64", "linux/arm64").
         """
         _args: list[Arg] = []
         _ctx = self._select("platform", _args)
@@ -396,15 +423,17 @@ class Container(Type):
         address: str,
         platform_variants: Optional[Sequence["Container"]] = None,
     ) -> str:
-        """Publishes this container as a new image to the specified address, for
-        the platformVariants, returning a fully qualified ref.
+        """Publishes this container as a new image to the specified address.
+
+        Publish returns a fully qualified ref.
+        It can also publish platform variants.
 
         Parameters
         ----------
         address:
             Registry's address to publish the image to.
             Formatted as [host]/[user]/[repo]:[tag] (e.g.
-            docker.io/dagger/dagger:main).
+            "docker.io/dagger/dagger:main").
         platform_variants:
             Identifiers for other platform specific containers.
             Used for multi-platform image.
@@ -433,7 +462,6 @@ class Container(Type):
     @typecheck
     def stderr(self) -> Optional[str]:
         """The error stream of the last executed command.
-
         Null if no command has been executed.
 
         Returns
@@ -450,7 +478,6 @@ class Container(Type):
     @typecheck
     def stdout(self) -> Optional[str]:
         """The output stream of the last executed command.
-
         Null if no command has been executed.
 
         Returns
@@ -484,7 +511,14 @@ class Container(Type):
         self,
         args: Optional[Sequence[str]] = None,
     ) -> "Container":
-        """Configures default arguments for future commands."""
+        """Configures default arguments for future commands.
+
+        Parameters
+        ----------
+        args:
+            Arguments to prepend to future executions (e.g., ["-v", "--no-
+            cache"]).
+        """
         _args = [
             Arg("args", args, None),
         ]
@@ -499,7 +533,21 @@ class Container(Type):
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
     ) -> "Container":
-        """Retrieves this container plus a directory written at the given path."""
+        """Retrieves this container plus a directory written at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the written directory (e.g., "/tmp/directory").
+        directory:
+            Identifier of the directory to write
+        exclude:
+            Patterns to exclude in the written directory (e.g.,
+            ["node_modules/**", ".gitignore", ".git/"]).
+        include:
+            Patterns to include in the written directory (e.g., ["*.go",
+            "go.mod", "go.sum"]).
+        """
         _args = [
             Arg("path", path),
             Arg("directory", directory),
@@ -511,7 +559,13 @@ class Container(Type):
 
     @typecheck
     def with_entrypoint(self, args: Sequence[str]) -> "Container":
-        """Retrieves this container but with a different command entrypoint."""
+        """Retrieves this container but with a different command entrypoint.
+
+        Parameters
+        ----------
+        args:
+            Entrypoint to use for future executions (e.g., ["go", "run"]).
+        """
         _args = [
             Arg("args", args),
         ]
@@ -520,7 +574,15 @@ class Container(Type):
 
     @typecheck
     def with_env_variable(self, name: str, value: str) -> "Container":
-        """Retrieves this container plus the given environment variable."""
+        """Retrieves this container plus the given environment variable.
+
+        Parameters
+        ----------
+        name:
+            The name of the environment variable (e.g., "HOST").
+        value:
+            The value of the environment variable. (e.g., "localhost").
+        """
         _args = [
             Arg("name", name),
             Arg("value", value),
@@ -543,15 +605,19 @@ class Container(Type):
         Parameters
         ----------
         args:
-            Command to run instead of the container's default command.
+            Command to run instead of the container's default command (e.g.,
+            ["run", "main.go"]).
         stdin:
-            Content to write to the command's standard input before closing.
+            Content to write to the command's standard input before closing
+            (e.g., "Hello world").
         redirect_stdout:
-            Redirect the command's standard output to a file in the container.
+            Redirect the command's standard output to a file in the container
+            (e.g., "/tmp/stdout").
         redirect_stderr:
-            Redirect the command's standard error to a file in the container.
+            Redirect the command's standard error to a file in the container
+            (e.g., "/tmp/stderr").
         experimental_privileged_nesting:
-            Provide dagger access to the executed command.
+            Provides dagger access to the executed command.
             Do not use this option unless you trust the command being
             executed.
             The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
@@ -589,6 +655,16 @@ class Container(Type):
     ) -> "Container":
         """Retrieves this container plus the contents of the given file copied to
         the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the copied file (e.g., "/tmp/file.txt").
+        source:
+            Identifier of the file to copy.
+        permissions:
+            Permission given to the copied file (e.g., 0600).
+            Default: 0644.
         """
         _args = [
             Arg("path", path),
@@ -600,7 +676,16 @@ class Container(Type):
 
     @typecheck
     def with_label(self, name: str, value: str) -> "Container":
-        """Retrieves this container plus the given label."""
+        """Retrieves this container plus the given label.
+
+        Parameters
+        ----------
+        name:
+            The name of the label (e.g.,
+            "org.opencontainers.artifact.created").
+        value:
+            The value of the label (e.g., "2023-01-01T00:00:00Z").
+        """
         _args = [
             Arg("name", name),
             Arg("value", value),
@@ -622,11 +707,11 @@ class Container(Type):
         Parameters
         ----------
         path:
-            Path to mount the cache volume at.
+            Location of the cache directory (e.g., "/cache/node_modules").
         cache:
-            ID of the cache to mount.
+            Identifier of the cache volume to mount.
         source:
-            Directory to use as the cache volume's root.
+            Identifier of the directory to use as the cache volume's root.
         sharing:
             Sharing mode of the cache volume.
         """
@@ -641,7 +726,15 @@ class Container(Type):
 
     @typecheck
     def with_mounted_directory(self, path: str, source: "Directory") -> "Container":
-        """Retrieves this container plus a directory mounted at the given path."""
+        """Retrieves this container plus a directory mounted at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted directory (e.g., "/mnt/directory").
+        source:
+            Identifier of the mounted directory.
+        """
         _args = [
             Arg("path", path),
             Arg("source", source),
@@ -651,7 +744,15 @@ class Container(Type):
 
     @typecheck
     def with_mounted_file(self, path: str, source: "File") -> "Container":
-        """Retrieves this container plus a file mounted at the given path."""
+        """Retrieves this container plus a file mounted at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the mounted file (e.g., "/tmp/file.txt").
+        source:
+            Identifier of the mounted file.
+        """
         _args = [
             Arg("path", path),
             Arg("source", source),
@@ -663,6 +764,13 @@ class Container(Type):
     def with_mounted_secret(self, path: str, source: "Secret") -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the secret file (e.g., "/tmp/secret.txt").
+        source:
+            Identifier of the secret to mount.
         """
         _args = [
             Arg("path", path),
@@ -675,6 +783,11 @@ class Container(Type):
     def with_mounted_temp(self, path: str) -> "Container":
         """Retrieves this container plus a temporary directory mounted at the
         given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the temporary directory (e.g., "/tmp/temp_dir").
         """
         _args = [
             Arg("path", path),
@@ -689,7 +802,18 @@ class Container(Type):
         contents: Optional[str] = None,
         permissions: Optional[int] = None,
     ) -> "Container":
-        """Retrieves this container plus a new file written at the given path."""
+        """Retrieves this container plus a new file written at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the written file (e.g., "/tmp/file.txt").
+        contents:
+            Content of the file to write (e.g., "Hello world!").
+        permissions:
+            Permission given to the written file (e.g., 0600).
+            Default: 0644.
+        """
         _args = [
             Arg("path", path),
             Arg("contents", contents, None),
@@ -740,6 +864,13 @@ class Container(Type):
     def with_secret_variable(self, name: str, secret: "Secret") -> "Container":
         """Retrieves this container plus an env variable containing the given
         secret.
+
+        Parameters
+        ----------
+        name:
+            The name of the secret variable (e.g., "API_SECRET").
+        secret:
+            The identifier of the secret value.
         """
         _args = [
             Arg("name", name),
@@ -752,6 +883,13 @@ class Container(Type):
     def with_unix_socket(self, path: str, source: "Socket") -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
+
+        Parameters
+        ----------
+        path:
+            Location of the forwarded Unix socket (e.g., "/tmp/socket").
+        source:
+            Identifier of the socket to forward.
         """
         _args = [
             Arg("path", path),
@@ -762,7 +900,13 @@ class Container(Type):
 
     @typecheck
     def with_user(self, name: str) -> "Container":
-        """Retrieves this containers with a different command user."""
+        """Retrieves this container with a different command user.
+
+        Parameters
+        ----------
+        name:
+            The user to set (e.g., "root").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -771,7 +915,13 @@ class Container(Type):
 
     @typecheck
     def with_workdir(self, path: str) -> "Container":
-        """Retrieves this container with a different working directory."""
+        """Retrieves this container with a different working directory.
+
+        Parameters
+        ----------
+        path:
+            The path to set as the working directory (e.g., "/app").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -780,7 +930,13 @@ class Container(Type):
 
     @typecheck
     def without_env_variable(self, name: str) -> "Container":
-        """Retrieves this container minus the given environment variable."""
+        """Retrieves this container minus the given environment variable.
+
+        Parameters
+        ----------
+        name:
+            The name of the environment variable (e.g., "HOST").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -789,7 +945,14 @@ class Container(Type):
 
     @typecheck
     def without_label(self, name: str) -> "Container":
-        """Retrieves this container minus the given environment label."""
+        """Retrieves this container minus the given environment label.
+
+        Parameters
+        ----------
+        name:
+            The name of the label to remove (e.g.,
+            "org.opencontainers.artifact.created").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -800,6 +963,11 @@ class Container(Type):
     def without_mount(self, path: str) -> "Container":
         """Retrieves this container after unmounting everything at the given
         path.
+
+        Parameters
+        ----------
+        path:
+            Location of the cache directory (e.g., "/cache/node_modules").
         """
         _args = [
             Arg("path", path),
@@ -827,7 +995,13 @@ class Container(Type):
 
     @typecheck
     def without_unix_socket(self, path: str) -> "Container":
-        """Retrieves this container with a previously added Unix socket removed."""
+        """Retrieves this container with a previously added Unix socket removed.
+
+        Parameters
+        ----------
+        path:
+            Location of the socket to remove (e.g., "/tmp/socket").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -855,7 +1029,13 @@ class Directory(Type):
 
     @typecheck
     def diff(self, other: "Directory") -> "Directory":
-        """Gets the difference between this directory and an another directory."""
+        """Gets the difference between this directory and an another directory.
+
+        Parameters
+        ----------
+        other:
+            Identifier of the directory to compare.
+        """
         _args = [
             Arg("other", other),
         ]
@@ -864,7 +1044,13 @@ class Directory(Type):
 
     @typecheck
     def directory(self, path: str) -> "Directory":
-        """Retrieves a directory at the given path."""
+        """Retrieves a directory at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to retrieve (e.g., "/src").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -884,12 +1070,12 @@ class Directory(Type):
         Parameters
         ----------
         dockerfile:
-            Path to the Dockerfile to use.
-            Defaults to './Dockerfile'.
+            Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+            Defaults: './Dockerfile'.
         platform:
             The platform to build.
         build_args:
-            Additional build arguments.
+            Build arguments to use in the build.
         target:
             Target build stage to build.
         """
@@ -905,6 +1091,11 @@ class Directory(Type):
     @typecheck
     def entries(self, path: Optional[str] = None) -> list[str]:
         """Returns a list of files and directories at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to look at (e.g., "/src").
 
         Returns
         -------
@@ -923,6 +1114,11 @@ class Directory(Type):
     def export(self, path: str) -> bool:
         """Writes the contents of the directory to a path on the host.
 
+        Parameters
+        ----------
+        path:
+            Location of the copied directory (e.g., "logs/").
+
         Returns
         -------
         bool
@@ -936,7 +1132,13 @@ class Directory(Type):
 
     @typecheck
     def file(self, path: str) -> "File":
-        """Retrieves a file at the given path."""
+        """Retrieves a file at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve (e.g., "README.md").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -996,13 +1198,15 @@ class Directory(Type):
         Parameters
         ----------
         path:
+            Location of the written directory (e.g., "/src/").
         directory:
+            Identifier of the directory to copy.
         exclude:
-            Exclude artifacts that match the given pattern.
-            (e.g. ["node_modules/", ".git*"]).
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
         include:
-            Include only artifacts that match the given pattern.
-            (e.g. ["app/", "package.*"]).
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
         """
         _args = [
             Arg("path", path),
@@ -1022,6 +1226,16 @@ class Directory(Type):
     ) -> "Directory":
         """Retrieves this directory plus the contents of the given file copied to
         the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the copied file (e.g., "/file.txt").
+        source:
+            Identifier of the file to copy.
+        permissions:
+            Permission given to the copied file (e.g., 0600).
+            Default: 0644.
         """
         _args = [
             Arg("path", path),
@@ -1039,6 +1253,14 @@ class Directory(Type):
     ) -> "Directory":
         """Retrieves this directory plus a new directory created at the given
         path.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory created (e.g., "/logs").
+        permissions:
+            Permission granted to the created directory (e.g., 0777).
+            Default: 0755.
         """
         _args = [
             Arg("path", path),
@@ -1054,7 +1276,18 @@ class Directory(Type):
         contents: str,
         permissions: Optional[int] = None,
     ) -> "Directory":
-        """Retrieves this directory plus a new file written at the given path."""
+        """Retrieves this directory plus a new file written at the given path.
+
+        Parameters
+        ----------
+        path:
+            Location of the written file (e.g., "/file.txt").
+        contents:
+            Content of the written file (e.g., "Hello world!").
+        permissions:
+            Permission given to the copied file (e.g., 0600).
+            Default: 0644.
+        """
         _args = [
             Arg("path", path),
             Arg("contents", contents),
@@ -1066,7 +1299,13 @@ class Directory(Type):
     @typecheck
     def with_timestamps(self, timestamp: int) -> "Directory":
         """Retrieves this directory with all file/dir timestamps set to the given
-        time, in seconds from the Unix epoch.
+        time.
+
+        Parameters
+        ----------
+        timestamp:
+            Timestamp to set dir/files in.
+            Formatted in seconds following Unix epoch (e.g., 1672531199).
         """
         _args = [
             Arg("timestamp", timestamp),
@@ -1076,7 +1315,13 @@ class Directory(Type):
 
     @typecheck
     def without_directory(self, path: str) -> "Directory":
-        """Retrieves this directory with the directory at the given path removed."""
+        """Retrieves this directory with the directory at the given path removed.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to remove (e.g., ".github/").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -1085,7 +1330,13 @@ class Directory(Type):
 
     @typecheck
     def without_file(self, path: str) -> "Directory":
-        """Retrieves this directory with the file at the given path removed."""
+        """Retrieves this directory with the file at the given path removed.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to remove (e.g., "/file.txt").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -1150,6 +1401,11 @@ class File(Type):
     def export(self, path: str) -> bool:
         """Writes the file to a file path on the host.
 
+        Parameters
+        ----------
+        path:
+            Location of the written directory (e.g., "output.txt").
+
         Returns
         -------
         bool
@@ -1203,7 +1459,13 @@ class File(Type):
     @typecheck
     def with_timestamps(self, timestamp: int) -> "File":
         """Retrieves this file with its created/modified timestamps set to the
-        given time, in seconds from the Unix epoch.
+        given time.
+
+        Parameters
+        ----------
+        timestamp:
+            Timestamp to set dir/files in.
+            Formatted in seconds following Unix epoch (e.g., 1672531199).
         """
         _args = [
             Arg("timestamp", timestamp),
@@ -1250,7 +1512,13 @@ class GitRepository(Type):
 
     @typecheck
     def branch(self, name: str) -> GitRef:
-        """Returns details on one branch."""
+        """Returns details on one branch.
+
+        Parameters
+        ----------
+        name:
+            Branch's name (e.g., "main").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -1274,7 +1542,14 @@ class GitRepository(Type):
 
     @typecheck
     def commit(self, id: str) -> GitRef:
-        """Returns details on one commit."""
+        """Returns details on one commit.
+
+        Parameters
+        ----------
+        id:
+            Identifier of the commit (e.g.,
+            "b6315d8f2810962c601af73f86831f6866ea798b").
+        """
         _args = [
             Arg("id", id),
         ]
@@ -1283,7 +1558,13 @@ class GitRepository(Type):
 
     @typecheck
     def tag(self, name: str) -> GitRef:
-        """Returns details on one tag."""
+        """Returns details on one tag.
+
+        Parameters
+        ----------
+        name:
+            Tag's name (e.g., "v0.3.9").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -1316,7 +1597,19 @@ class Host(Type):
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
     ) -> Directory:
-        """Accesses a directory on the host."""
+        """Accesses a directory on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the directory to access (e.g., ".").
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
+        """
         _args = [
             Arg("path", path),
             Arg("exclude", exclude, None),
@@ -1327,7 +1620,13 @@ class Host(Type):
 
     @typecheck
     def env_variable(self, name: str) -> "HostVariable":
-        """Accesses an environment variable on the host."""
+        """Accesses an environment variable on the host.
+
+        Parameters
+        ----------
+        name:
+            Name of the environment variable (e.g., "PATH").
+        """
         _args = [
             Arg("name", name),
         ]
@@ -1336,7 +1635,13 @@ class Host(Type):
 
     @typecheck
     def unix_socket(self, path: str) -> "Socket":
-        """Accesses a Unix socket on the host."""
+        """Accesses a Unix socket on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the Unix socket (e.g., "/var/run/docker.sock").
+        """
         _args = [
             Arg("path", path),
         ]
@@ -1353,6 +1658,15 @@ class Host(Type):
 
         .. deprecated::
             Use :py:meth:`directory` with path set to '.' instead.
+
+        Parameters
+        ----------
+        exclude:
+            Exclude artifacts that match the given pattern (e.g.,
+            ["node_modules/", ".git*"]).
+        include:
+            Include only artifacts that match the given pattern (e.g.,
+            ["app/", "package.*"]).
         """
         _args = [
             Arg("exclude", exclude, None),
@@ -1506,7 +1820,7 @@ class Client(Root):
         Parameters
         ----------
         key:
-            A string identifier to target this cache volume (e.g. "myapp-
+            A string identifier to target this cache volume (e.g., "modules-
             cache").
         """
         _args = [
@@ -1524,10 +1838,9 @@ class Client(Root):
         """Loads a container from ID.
 
         Null ID returns an empty container (scratch).
-
         Optional platform argument initializes new containers to execute and
-        publish as that platform. Platform defaults to that of the builder's
-        host.
+        publish as that platform.
+        Platform defaults to that of the builder's host.
         """
         _args = [
             Arg("id", id, None),
@@ -1543,9 +1856,9 @@ class Client(Root):
         Returns
         -------
         Platform
-            The platform config OS and architecture in a Container. The format
-            is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64,
-            linux/arm64).
+            The platform config OS and architecture in a Container.  The
+            format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
+            "windows/amd64", "linux/arm64").
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultPlatform", _args)
@@ -1575,7 +1888,18 @@ class Client(Root):
         url: str,
         keep_git_dir: Optional[bool] = None,
     ) -> GitRepository:
-        """Queries a git repository."""
+        """Queries a git repository.
+
+        Parameters
+        ----------
+        url:
+            Url of the git repository.
+            Can be formatted as https://{host}/{owner}/{repo},
+            git@{host}/{owner}/{repo}
+            Suffix ".git" is optional.
+        keep_git_dir:
+            Set to true to keep .git directory.
+        """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, None),
@@ -1592,7 +1916,13 @@ class Client(Root):
 
     @typecheck
     def http(self, url: str) -> File:
-        """Returns a file containing an http remote url content."""
+        """Returns a file containing an http remote url content.
+
+        Parameters
+        ----------
+        url:
+            HTTP url to get the content from (e.g., "https://docs.dagger.io").
+        """
         _args = [
             Arg("url", url),
         ]
