@@ -307,7 +307,10 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 	t := time.Unix(int64(unix), 0)
 
 	stamped := llb.Scratch().File(
-		llb.Copy(st, payload.Dir, ".", llb.WithCreatedTime(t)),
+		llb.Copy(st, payload.Dir, ".", &llb.CopyInfo{
+			CopyDirContentsOnly: true,
+			CreatedTime:         &t,
+		}),
 		payload.Pipeline.LLBOpt(),
 	)
 

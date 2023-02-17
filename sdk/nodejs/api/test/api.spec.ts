@@ -2,7 +2,7 @@ import assert from "assert"
 
 import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 import Client, { connect } from "../../index.js"
-import { Container } from "../client.gen.js"
+import { Container, Directory } from "../client.gen.js"
 import { queryFlatten, buildQuery } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
@@ -230,7 +230,18 @@ describe("NodeJS SDK api", function () {
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory","args":{path:"foo"}}],"clientHost":"127.0.0.1:8080","sessionToken":"","client":{url:"http://127.0.0.1:8080/query","options":{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory","args":{path:"bar"}}],"clientHost":"127.0.0.1:8080","sessionToken":"","client":{url:"http://127.0.0.1:8080/query","options":{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
+      `{ container { from (address: "alpine") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"foo"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",options:{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"bar"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",options:{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
+    )
+  })
+
+  it("Compute nested arguments", async function () {
+    const tree = new Client()
+      .container()
+      .build(new Directory(), { buildArgs: [{ value: "foo", name: "test" }] })
+
+    assert.strictEqual(
+      querySanitizer(buildQuery(tree.queryTree)),
+      `{ container { build (context: {"_queryTree":[],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://undefined/query",options:{headers:{Authorization:"Basic dW5kZWZpbmVkOg=="}}}},buildArgs: [{value:"foo",name:"test"}]) } }`
     )
   })
 })
