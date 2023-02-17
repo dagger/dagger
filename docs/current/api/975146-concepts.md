@@ -26,37 +26,9 @@ This tutorial explains some basic GraphQL concepts in the context of the Dagger 
 
 To understand the Dagger GraphQL API, consider the following query:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["apk", "info"]) {
-        stdout
-      }
-    }
-  }
-}
-```
+<iframe class="embed" src="https://play.dagger.cloud/embed/9SB8ePzCltX"></iframe>
 
-<LinkPlayground url="https://play.dagger.cloud/playground/9SB8ePzCltX" />
-
-This query represents a very simple Dagger pipeline. In plain English, it instructs Dagger to "download the latest `alpine` container image, run the command `apk info` in that image, and print the results of the command to the standard output device".
-
-The query returns a list of the packages installed in the image:
-
-```graphql
-{
- "data": {
-  "container": {
-   "from": {
-    "withExec": {
-     "stdout": "alpine-baselayout-data\nmusl\nbusybox\nalpine-baselayout\nalpine-keys\nca-certificates-bundle\nlibcrypto1.1\nlibssl1.1\nssl_client\nzlib\napk-tools\nscanelf\nmusl-utils\nlibc-utils\n"
-    }
-   }
-  }
- }
-}
-```
+This query represents a very simple Dagger pipeline. In plain English, it instructs Dagger to "download the latest `alpine` container image, run the command `apk info` in that image, and print the results of the command to the standard output device". It returns a list of the packages installed in the image:
 
 A GraphQL schema works by defining one or more object types, and then fields (and field arguments) on those object types. The fields of an object type can themselves be objects, allowing for different entities to be logically connected with each other. API users can then perform GraphQL queries to return all or some fields of an object.
 
@@ -116,31 +88,7 @@ In the Dagger GraphQL API too, objects expose an ID but here, the ID represents 
 
 To illustrate this, consider the following query:
 
-```graphql
-query {
-  host {
-    directory(path: ".") {
-      id
-    }
-  }
-}
-```
-
-<LinkPlayground url="https://play.dagger.cloud/playground/8I0c_SMKQbj" />
-
-This query returns the following (abbreviated) output:
-
-```graphql
-{
-  "data": {
-    "host": {
-      "directory": {
-        "id": "eyJs...In19"
-      }
-    }
-  }
-}
-```
+<iframe class="embed" src="https://play.dagger.cloud/embed/8I0c_SMKQbj"></iframe>
 
 The return value of the previous query is an ID representing the state of the current directory on the host.
 
@@ -148,19 +96,7 @@ By using object IDs to represesent object state, Dagger's GraphQL API enables so
 
 To make this clearer, consider the following query:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["touch", "/tmp/myfile"]) {
-        id
-      }
-    }
-  }
-}
-```
-
-<LinkPlayground url="https://play.dagger.cloud/playground/PE1GJrfZODq" />
+<iframe class="embed" src="https://play.dagger.cloud/embed/PE1GJrfZODq"></iframe>
 
 This query instructs Dagger to:
 
@@ -168,35 +104,11 @@ This query instructs Dagger to:
 - create an empty file at `/tmp/myfile` using the `touch` command (this resolves the `withExec` field)
 - return an identifier representing the state of the container filesystem (this resolves the final `id` field)
 
-The output of this query is an identifier representing the state of the container filesystem and Dagger's execution plan, similar to the output shown below:
-
-```graphql
-{
-  "data": {
-    "container": {
-      "from": {
-        "withExec": {
-          "id": "eyJmc...9fQ=="
-        }
-      }
-    }
-  }
-}
-```
+The output of this query is an identifier representing the state of the container filesystem and Dagger's execution plan.
 
 Now, execute a second query as follows, replacing the placeholder with the contents of the `id` field from the previous query:
 
-```graphql
-query {
-  container(id: "YOUR-ID-HERE") {
-    withExec(args: ["ls", "/tmp"]) {
-      stdout
-    }
-  }
-}
-```
-
-<LinkPlayground url="https://play.dagger.cloud/playground/DKUH7PI5Yt0" />
+<iframe class="embed" src="https://play.dagger.cloud/embed/DKUH7PI5Yt0"></iframe>
 
 This second query instructs Dagger to:
 
@@ -204,19 +116,7 @@ This second query instructs Dagger to:
 - run the `ls` command to list the files in the `/tmp/` directory (this resolves the `withExec` field)
 - return the output of the command (this resolves the final `stdout` field)
 
-This second query returns the following output:
-
-```graphql
-{
-  "data": {
-    "container": {
-      "withExec": {
-        "stdout": "myfile\n"
-      }
-    }
-  }
-}
-```
+This second query returns a listing for the `/tmp` directory.
 
 As this example demonstrates, Dagger object IDs hold the state of their corresponding object. This state can be transferred from one query to another, or even from one Dagger instance to another. It can also be updated or used as input to other objects.
 
@@ -230,21 +130,7 @@ An example will make this clearer. First, navigate to [Webhook.site](https://web
 
 Then, execute the following query, replacing the placeholder with your unique webhook URL:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["apk", "add", "curl"]) {
-        withExec(args: ["curl", "YOUR-WEBHOOK-URL"]) {
-          id
-        }
-      }
-    }
-  }
-}
-```
-
-<LinkPlayground url="https://play.dagger.cloud/playground/NuLZcSHaNno" />
+<iframe class="embed" src="https://play.dagger.cloud/embed/NuLZcSHaNno"></iframe>
 
 This query instructs Dagger to:
 
@@ -253,43 +139,13 @@ This query instructs Dagger to:
 - send an HTTP request to your webhook URL using `curl` (this resolves the second `withExec` field)
 - return an ID representing the container state (this resolves the final `id` field)
 
-The query returns a base64-encoded block, as explained in the previous section:
-
-```graphql
-{
-  "data": {
-    "container": {
-      "from": {
-        "withExec": {
-          "withExec": {
-            "id": "eyJmcyI6ey...JkZWYJ9fQ=="
-          }
-        }
-      }
-    }
-  }
-}
-```
+The query returns a base64-encoded block, as explained in the previous section.
 
 However, check the Webhook.site dashboard and you will notice that no HTTP request was sent when this query was executed. The reason is laziness: the query requests only an ID and, since resolving this does not require the commands to be executed, Dagger does not do so. It merely returns the container state and execution plan without actually executing the plan or running the `curl` command.
 
 Now, update and execute the query again as follows:
 
-```graphql
-query {
-  container {
-    from(address: "alpine:latest") {
-      withExec(args: ["apk", "add", "curl"]) {
-        withExec(args: ["curl", "YOUR-WEBHOOK-URL-HERE"]) {
-          stdout
-        }
-      }
-    }
-  }
-}
-```
-
-<LinkPlayground url="https://play.dagger.cloud/playground/SLtXQ4lvqNS" />
+<iframe class="embed" src="https://play.dagger.cloud/embed/SLtXQ4lvqNS"></iframe>
 
 This time, Dagger both prepares and executes the plan, because that is the only way to resolve the `stdout` field. Check the Webhook.site dashboard and the HTTP request sent by the `curl` command will be visible in the request log, as shown below:
 
