@@ -14,7 +14,7 @@ jobs:
         id: semver
         uses: ietf-tools/semver-action@v1
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
           branch: main
       - uses: rickstaa/action-create-tag@v1
         with:
