@@ -11,7 +11,12 @@ publish = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace]
-members = ["crates/dagger-codegen", "crates/dagger-sdk", "crates/dagger-core"]
+members = [
+  "crates/dagger-codegen",
+  "crates/dagger-sdk",
+  "crates/dagger-core",
+  "ci",
+]
 
 [dependencies]
 dagger-codegen = { path = "crates/dagger-codegen", version = "0.2.0" }
