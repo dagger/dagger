@@ -89,9 +89,12 @@ impl InnerCliSession {
         std::thread::spawn(move || {
             let stdout_bufr = BufReader::new(stdout);
             for line in stdout_bufr.lines() {
-                let out = line.unwrap();
+                let out = line.as_ref().unwrap();
                 if let Ok(conn) = serde_json::from_str::<ConnectParams>(&out) {
                     sender.send(conn).unwrap();
+                }
+                if let Ok(line) = line {
+                    println!("dagger: {}", line);
                 }
             }
         });
@@ -99,7 +102,9 @@ impl InnerCliSession {
         std::thread::spawn(|| {
             let stderr_bufr = BufReader::new(stderr);
             for line in stderr_bufr.lines() {
-                let out = line.unwrap();
+                if let Ok(line) = line {
+                    println!("dagger: {}", line);
+                }
                 //panic!("could not start dagger session: {}", out)
             }
         });
