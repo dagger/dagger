@@ -5,8 +5,8 @@ use genco::quote;
 use genco::tokens::quoted;
 
 use crate::functions::{
-    type_field_has_optional, type_ref_is_list, type_ref_is_list_of_objects, type_ref_is_object,
-    type_ref_is_optional, type_ref_is_scalar, CommonFunctions,
+    type_field_has_optional, type_ref_is_list_of_objects, type_ref_is_object,
+    type_ref_is_optional, CommonFunctions,
 };
 use crate::utility::OptionExt;
 
@@ -53,7 +53,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     })
 }
 
-fn render_required_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .into_iter()
@@ -83,7 +83,7 @@ fn render_required_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Opti
     }
 }
 
-fn render_optional_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .into_iter()

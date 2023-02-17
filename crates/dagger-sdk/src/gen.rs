@@ -32,7 +32,7 @@ pub struct CacheVolume {
 
 impl CacheVolume {
     pub fn id(&self) -> CacheId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -112,7 +112,7 @@ impl Container {
         };
     }
     pub fn default_args(&self) -> Vec<String> {
-        let mut query = self.selection.select("defaultArgs");
+        let query = self.selection.select("defaultArgs");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -128,7 +128,7 @@ impl Container {
         };
     }
     pub fn entrypoint(&self) -> Vec<String> {
-        let mut query = self.selection.select("entrypoint");
+        let query = self.selection.select("entrypoint");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -140,7 +140,7 @@ impl Container {
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn env_variables(&self) -> Vec<EnvVariable> {
-        let mut query = self.selection.select("envVariables");
+        let query = self.selection.select("envVariables");
 
         return vec![EnvVariable {
             proc: self.proc.clone(),
@@ -181,7 +181,7 @@ impl Container {
         };
     }
     pub fn exit_code(&self) -> isize {
-        let mut query = self.selection.select("exitCode");
+        let query = self.selection.select("exitCode");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -220,7 +220,7 @@ impl Container {
         };
     }
     pub fn fs(&self) -> Directory {
-        let mut query = self.selection.select("fs");
+        let query = self.selection.select("fs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -229,7 +229,7 @@ impl Container {
         };
     }
     pub fn id(&self) -> ContainerId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -241,7 +241,7 @@ impl Container {
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn labels(&self) -> Vec<Label> {
-        let mut query = self.selection.select("labels");
+        let query = self.selection.select("labels");
 
         return vec![Label {
             proc: self.proc.clone(),
@@ -250,7 +250,7 @@ impl Container {
         }];
     }
     pub fn mounts(&self) -> Vec<String> {
-        let mut query = self.selection.select("mounts");
+        let query = self.selection.select("mounts");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -271,7 +271,7 @@ impl Container {
         };
     }
     pub fn platform(&self) -> Platform {
-        let mut query = self.selection.select("platform");
+        let query = self.selection.select("platform");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -288,7 +288,7 @@ impl Container {
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn rootfs(&self) -> Directory {
-        let mut query = self.selection.select("rootfs");
+        let query = self.selection.select("rootfs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -297,17 +297,17 @@ impl Container {
         };
     }
     pub fn stderr(&self) -> String {
-        let mut query = self.selection.select("stderr");
+        let query = self.selection.select("stderr");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn stdout(&self) -> String {
-        let mut query = self.selection.select("stdout");
+        let query = self.selection.select("stdout");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn user(&self) -> String {
-        let mut query = self.selection.select("user");
+        let query = self.selection.select("user");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -639,7 +639,7 @@ impl Container {
         };
     }
     pub fn workdir(&self) -> String {
-        let mut query = self.selection.select("workdir");
+        let query = self.selection.select("workdir");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -753,7 +753,7 @@ impl Directory {
         };
     }
     pub fn id(&self) -> DirectoryId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -915,12 +915,12 @@ pub struct EnvVariable {
 
 impl EnvVariable {
     pub fn name(&self) -> String {
-        let mut query = self.selection.select("name");
+        let query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn value(&self) -> String {
-        let mut query = self.selection.select("value");
+        let query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -933,7 +933,7 @@ pub struct File {
 
 impl File {
     pub fn contents(&self) -> String {
-        let mut query = self.selection.select("contents");
+        let query = self.selection.select("contents");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -945,12 +945,12 @@ impl File {
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn id(&self) -> FileId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn secret(&self) -> Secret {
-        let mut query = self.selection.select("secret");
+        let query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -959,7 +959,7 @@ impl File {
         };
     }
     pub fn size(&self) -> isize {
-        let mut query = self.selection.select("size");
+        let query = self.selection.select("size");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -988,7 +988,7 @@ pub struct GitRefTreeOpts {
 
 impl GitRef {
     pub fn digest(&self) -> String {
-        let mut query = self.selection.select("digest");
+        let query = self.selection.select("digest");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1030,7 +1030,7 @@ impl GitRepository {
         };
     }
     pub fn branches(&self) -> Vec<String> {
-        let mut query = self.selection.select("branches");
+        let query = self.selection.select("branches");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1057,7 +1057,7 @@ impl GitRepository {
         };
     }
     pub fn tags(&self) -> Vec<String> {
-        let mut query = self.selection.select("tags");
+        let query = self.selection.select("tags");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1146,7 +1146,7 @@ pub struct HostVariable {
 
 impl HostVariable {
     pub fn secret(&self) -> Secret {
-        let mut query = self.selection.select("secret");
+        let query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -1155,7 +1155,7 @@ impl HostVariable {
         };
     }
     pub fn value(&self) -> String {
-        let mut query = self.selection.select("value");
+        let query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1168,12 +1168,12 @@ pub struct Label {
 
 impl Label {
     pub fn name(&self) -> String {
-        let mut query = self.selection.select("name");
+        let query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn value(&self) -> String {
-        let mut query = self.selection.select("value");
+        let query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1186,7 +1186,7 @@ pub struct Project {
 
 impl Project {
     pub fn extensions(&self) -> Vec<Project> {
-        let mut query = self.selection.select("extensions");
+        let query = self.selection.select("extensions");
 
         return vec![Project {
             proc: self.proc.clone(),
@@ -1195,7 +1195,7 @@ impl Project {
         }];
     }
     pub fn generated_code(&self) -> Directory {
-        let mut query = self.selection.select("generatedCode");
+        let query = self.selection.select("generatedCode");
 
         return Directory {
             proc: self.proc.clone(),
@@ -1204,22 +1204,22 @@ impl Project {
         };
     }
     pub fn install(&self) -> bool {
-        let mut query = self.selection.select("install");
+        let query = self.selection.select("install");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn name(&self) -> String {
-        let mut query = self.selection.select("name");
+        let query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn schema(&self) -> String {
-        let mut query = self.selection.select("schema");
+        let query = self.selection.select("schema");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn sdk(&self) -> String {
-        let mut query = self.selection.select("sdk");
+        let query = self.selection.select("sdk");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1278,7 +1278,7 @@ impl Query {
         };
     }
     pub fn default_platform(&self) -> Platform {
-        let mut query = self.selection.select("defaultPlatform");
+        let query = self.selection.select("defaultPlatform");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1325,7 +1325,7 @@ impl Query {
         };
     }
     pub fn host(&self) -> Host {
-        let mut query = self.selection.select("host");
+        let query = self.selection.select("host");
 
         return Host {
             proc: self.proc.clone(),
@@ -1406,12 +1406,12 @@ pub struct Secret {
 
 impl Secret {
     pub fn id(&self) -> SecretId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
     pub fn plaintext(&self) -> String {
-        let mut query = self.selection.select("plaintext");
+        let query = self.selection.select("plaintext");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
@@ -1424,7 +1424,7 @@ pub struct Socket {
 
 impl Socket {
     pub fn id(&self) -> SocketId {
-        let mut query = self.selection.select("id");
+        let query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }

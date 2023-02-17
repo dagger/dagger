@@ -1,4 +1,4 @@
-use dagger_sdk::gen::HostDirectoryOpts;
+
 use rand::Rng;
 
 fn main() -> eyre::Result<()> {

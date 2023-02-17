@@ -37,7 +37,7 @@ impl FormatTypeFuncs for FormatTypeFunc {
         &self,
         representation: &str,
         ref_name: &str,
-        input: bool,
+        _input: bool,
     ) -> String {
         let mut rep = representation.to_string();
         rep.push_str(&format_name(ref_name));

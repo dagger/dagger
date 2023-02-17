@@ -31,7 +31,7 @@ impl Generator for RustGenerator {
             handlers: VisitHandlers {
                 visit_scalar: Arc::new({
                     let render = render.clone();
-                    let common_funcs = common_funcs.clone();
+                    let _common_funcs = common_funcs.clone();
 
                     move |t| {
                         println!("generating scalar");
@@ -83,7 +83,7 @@ impl Generator for RustGenerator {
                 }),
                 visit_enum: Arc::new({
                     let render = render.clone();
-                    let common_funcs = common_funcs.clone();
+                    let _common_funcs = common_funcs.clone();
 
                     move |t| {
                         println!("generating enum");
