@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -76,6 +77,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
+
+	// Load default labels asynchronously in the background.
+	go func() {
+		err := pipeline.LoadDefaultLabels(startOpts.Workdir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to load default labels: %v\n", err)
+		}
+	}()
 
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
@@ -200,7 +209,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 			defer close(cleanCh)
 			for ev := range ch {
 				for _, v := range ev.Vertexes {
-					customName := core.CustomName{}
+					customName := pipeline.CustomName{}
 					if json.Unmarshal([]byte(v.Name), &customName) == nil {
 						v.Name = customName.Name
 					}

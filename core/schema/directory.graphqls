@@ -11,8 +11,15 @@ type Directory {
   "The content-addressed identifier of the directory."
   id: DirectoryID!
 
-  "Creates a named sub-pipeline."
-  pipeline(name: String!, description: String): Directory!
+  "Creates a named sub-pipeline"
+  pipeline(
+    "Pipeline name."
+    name: String!
+    "Pipeline description."
+    description: String
+    "Pipeline labels."
+    labels: [PipelineLabel!]
+  ): Directory!
 
   """
   Returns a list of files and directories at the given path.
@@ -41,12 +48,12 @@ type Directory {
     """
     Location of the copied file (e.g., "/file.txt").
     """
-    path: String!,
+    path: String!
 
     """
     Identifier of the file to copy.
     """
-    source: FileID!,
+    source: FileID!
 
     """
     Permission given to the copied file (e.g., 0600).
@@ -63,12 +70,12 @@ type Directory {
     """
     Location of the written file (e.g., "/file.txt").
     """
-    path: String!,
+    path: String!
 
     """
     Content of the written file (e.g., "Hello world!").
     """
-    contents: String!,
+    contents: String!
 
     """
     Permission given to the copied file (e.g., 0600).
@@ -105,20 +112,20 @@ type Directory {
     """
     Location of the written directory (e.g., "/src/").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the directory to copy."
-    directory: DirectoryID!,
+    directory: DirectoryID!
 
     """
     Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     """
-    exclude: [String!],
+    exclude: [String!]
 
     """
     Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
-    include: [String!],
+    include: [String!]
   ): Directory!
 
   """
@@ -128,7 +135,7 @@ type Directory {
     """
     Location of the directory created (e.g., "/logs").
     """
-    path: String!,
+    path: String!
 
     """
     Permission granted to the created directory (e.g., 0777).
@@ -173,13 +180,13 @@ type Directory {
 
     Defaults: './Dockerfile'.
     """
-    dockerfile: String,
+    dockerfile: String
 
     "The platform to build."
-    platform: Platform,
+    platform: Platform
 
     "Build arguments to use in the build."
-    buildArgs: [BuildArg!],
+    buildArgs: [BuildArg!]
 
     "Target build stage to build."
     target: String
@@ -203,7 +210,7 @@ input BuildArg {
   """
   The build argument name.
   """
-  name: String!,
+  name: String!
 
   """
   The build argument value.

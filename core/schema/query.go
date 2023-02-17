@@ -2,6 +2,7 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 )
 
@@ -34,15 +35,17 @@ func (s *querySchema) Dependencies() []router.ExecutableSchema {
 type pipelineArgs struct {
 	Name        string
 	Description string
+	Labels      []pipeline.Label
 }
 
 func (s *querySchema) pipeline(ctx *router.Context, parent *core.Query, args pipelineArgs) (*core.Query, error) {
 	if parent == nil {
 		parent = &core.Query{}
 	}
-	parent.Context.Pipeline = parent.Context.Pipeline.Add(core.Pipeline{
+	parent.Context.Pipeline = parent.Context.Pipeline.Add(pipeline.Pipeline{
 		Name:        args.Name,
 		Description: args.Description,
+		Labels:      pipeline.MergeLabels(args.Labels...),
 	})
 	return parent, nil
 }

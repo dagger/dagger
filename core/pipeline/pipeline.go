@@ -1,4 +1,4 @@
-package core
+package pipeline
 
 import (
 	"encoding/json"
@@ -9,19 +9,20 @@ import (
 )
 
 type Pipeline struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Labels      []Label `json:"labels,omitempty"`
 }
 
-type PipelinePath []Pipeline
+type Path []Pipeline
 
-func (g PipelinePath) Copy() PipelinePath {
-	copy := make(PipelinePath, 0, len(g))
+func (g Path) Copy() Path {
+	copy := make(Path, 0, len(g))
 	copy = append(copy, g...)
 	return copy
 }
 
-func (g PipelinePath) Add(pipeline Pipeline) PipelinePath {
+func (g Path) Add(pipeline Pipeline) Path {
 	// make a copy of path, don't modify in-place
 	newPath := g.Copy()
 	// add the sub-pipeline
@@ -29,7 +30,7 @@ func (g PipelinePath) Add(pipeline Pipeline) PipelinePath {
 	return newPath
 }
 
-func (g PipelinePath) ID() string {
+func (g Path) ID() string {
 	id, err := json.Marshal(g)
 	if err != nil {
 		panic(err)
@@ -37,14 +38,14 @@ func (g PipelinePath) ID() string {
 	return string(id)
 }
 
-func (g PipelinePath) Name() string {
+func (g Path) Name() string {
 	if len(g) == 0 {
 		return ""
 	}
 	return g[len(g)-1].Name
 }
 
-func (g PipelinePath) String() string {
+func (g Path) String() string {
 	parts := []string{}
 	for _, part := range g {
 		parts = append(parts, part.Name)
@@ -52,22 +53,22 @@ func (g PipelinePath) String() string {
 	return strings.Join(parts, " / ")
 }
 
-func (g PipelinePath) ProgressGroup() *pb.ProgressGroup {
+func (g Path) ProgressGroup() *pb.ProgressGroup {
 	return &pb.ProgressGroup{
 		Id:   g.ID(),
 		Name: g.Name(),
 	}
 }
 
-func (g PipelinePath) LLBOpt() llb.ConstraintsOpt {
+func (g Path) LLBOpt() llb.ConstraintsOpt {
 	pg := g.ProgressGroup()
 	return llb.ProgressGroup(pg.Id, pg.Name, pg.Weak)
 }
 
 type CustomName struct {
-	Name     string       `json:"name,omitempty"`
-	Pipeline PipelinePath `json:"pipeline,omitempty"`
-	Internal bool         `json:"internal,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Pipeline Path   `json:"pipeline,omitempty"`
+	Internal bool   `json:"internal,omitempty"`
 }
 
 func (c CustomName) String() string {

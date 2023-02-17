@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 )
 
@@ -50,7 +51,7 @@ type hostWorkdirArgs struct {
 }
 
 func (s *hostSchema) workdir(ctx *router.Context, parent *core.Query, args hostWorkdirArgs) (*core.Directory, error) {
-	pipeline := core.PipelinePath{}
+	pipeline := pipeline.Path{}
 	if parent != nil {
 		pipeline = parent.Context.Pipeline
 	}
@@ -82,7 +83,7 @@ type hostDirectoryArgs struct {
 }
 
 func (s *hostSchema) directory(ctx *router.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
-	pipeline := core.PipelinePath{}
+	pipeline := pipeline.Path{}
 	if parent != nil {
 		pipeline = parent.Context.Pipeline
 	}

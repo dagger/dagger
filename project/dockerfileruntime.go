@@ -6,6 +6,7 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -46,5 +47,5 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		return nil, err
 	}
 
-	return core.NewDirectory(ctx, newSt, "", core.PipelinePath{}, platform)
+	return core.NewDirectory(ctx, newSt, "", pipeline.Path{}, platform)
 }

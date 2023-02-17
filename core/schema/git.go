@@ -2,6 +2,7 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 )
@@ -44,9 +45,9 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL        string            `json:"url"`
-	KeepGitDir bool              `json:"keepGitDir"`
-	Pipeline   core.PipelinePath `json:"pipeline"`
+	URL        string        `json:"url"`
+	KeepGitDir bool          `json:"keepGitDir"`
+	Pipeline   pipeline.Path `json:"pipeline"`
 }
 
 type gitRef struct {

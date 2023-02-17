@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -102,7 +103,7 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
-	pipeline := core.PipelinePath{}
+	pipeline := pipeline.Path{}
 	if parent != nil {
 		pipeline = parent.Context.Pipeline
 	}
@@ -144,10 +145,11 @@ func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container
 type containerPipelineArgs struct {
 	Name        string
 	Description string
+	Labels      []pipeline.Label
 }
 
 func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.Pipeline(ctx, args.Name, args.Description)
+	return parent.Pipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {

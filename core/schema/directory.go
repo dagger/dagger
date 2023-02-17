@@ -4,6 +4,7 @@ import (
 	"io/fs"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -59,10 +60,11 @@ func (s *directorySchema) Dependencies() []router.ExecutableSchema {
 type directoryPipelineArgs struct {
 	Name        string
 	Description string
+	Labels      []pipeline.Label
 }
 
 func (s *directorySchema) pipeline(ctx *router.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
-	return parent.Pipeline(ctx, args.Name, args.Description)
+	return parent.Pipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
 type directoryArgs struct {
@@ -77,7 +79,7 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 	}
 
 	platform := s.baseSchema.platform
-	pipeline := core.PipelinePath{}
+	pipeline := pipeline.Path{}
 	if parent != nil {
 		pipeline = parent.Context.Pipeline
 	}

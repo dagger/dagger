@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -28,7 +29,7 @@ type FileID string
 type fileIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	File     string         `json:"file"`
-	Pipeline PipelinePath   `json:"pipeline"`
+	Pipeline pipeline.Path  `json:"pipeline"`
 	Platform specs.Platform `json:"platform"`
 }
 
@@ -56,7 +57,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
