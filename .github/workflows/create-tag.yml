@@ -20,4 +20,4 @@ jobs:
         with:
           tag: ${{ steps.semver.outputs.next }}
           message: ${{ steps.semver.outputs.next }}
-          github_token: ${{ github.token }}
+          github_token: ${{ secrets.PERSONAL_GITHUB_TOKEN }}
