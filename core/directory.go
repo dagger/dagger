@@ -33,7 +33,7 @@ type directoryIDPayload struct {
 	Pipeline PipelinePath   `json:"pipeline"`
 
 	// Services necessary to provision the directory.
-	Services []ContainerID `json:"services,omitempty"`
+	Services ServiceBindings `json:"services,omitempty"`
 }
 
 // Decode returns the private payload of a DirectoryID.
@@ -84,7 +84,7 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services []ContainerID) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
@@ -296,7 +296,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	destPayload.Services = append(destPayload.Services, srcPayload.Services...)
+	destPayload.Services.Merge(srcPayload.Services)
 
 	return destPayload.ToDirectory()
 }
@@ -395,7 +395,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 		return nil, err
 	}
 
-	destPayload.Services = append(destPayload.Services, srcPayload.Services...)
+	destPayload.Services.Merge(srcPayload.Services)
 
 	return destPayload.ToDirectory()
 }

@@ -105,8 +105,8 @@ type containerIDPayload struct {
 	Ports []ContainerPort `json:"ports,omitempty"`
 
 	// Services to start before running the container.
-	Services    []ContainerID `json:"services,omitempty"`
-	HostAliases []HostAlias   `json:"host_aliases,omitempty"`
+	Services    ServiceBindings `json:"services,omitempty"`
+	HostAliases []HostAlias     `json:"host_aliases,omitempty"`
 }
 
 type HostAlias struct {
@@ -304,7 +304,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	payload.Services = append(payload.Services, ctxPayload.Services...)
+	payload.Services.Merge(ctxPayload.Services)
 
 	return WithServices(ctx, gw, payload.Services, func() (*Container, error) {
 		platform := payload.Platform
@@ -422,7 +422,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 
 	payload.FS = dirPayload.LLB
 
-	payload.Services = append(payload.Services, dirPayload.Services...)
+	payload.Services.Merge(dirPayload.Services)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -725,7 +725,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, []ContainerID) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ServiceBindings) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -784,7 +784,7 @@ func locatePath[T *File | *Directory](
 	return found, nil, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs []ContainerID) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs ServiceBindings) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -798,7 +798,7 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		Target:     target,
 	})
 
-	payload.Services = append(payload.Services, svcs...)
+	payload.Services.Merge(svcs)
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -1410,7 +1410,9 @@ func (container *Container) WithServiceDependency(svc *Container, alias string) 
 		return nil, err
 	}
 
-	payload.Services = append(payload.Services, svc.ID)
+	payload.Services.Merge(ServiceBindings{
+		svc.ID: AliasSet{alias},
+	})
 
 	if alias != "" {
 		hn, err := svc.Hostname()
@@ -1437,8 +1439,8 @@ func (container *Container) export(
 	gw bkgw.Client,
 	platformVariants []ContainerID,
 ) (*bkgw.Result, error) {
-	var payloads []*containerIDPayload
-	var services []ContainerID
+	payloads := []*containerIDPayload{}
+	services := ServiceBindings{}
 	if container.ID != "" {
 		payload, err := container.ID.decode()
 		if err != nil {
@@ -1446,7 +1448,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
-			services = append(services, payload.Services...)
+			services.Merge(payload.Services)
 		}
 	}
 	for _, id := range platformVariants {
@@ -1456,7 +1458,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
-			services = append(services, payload.Services...)
+			services.Merge(payload.Services)
 		}
 	}
 

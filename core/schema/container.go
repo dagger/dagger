@@ -140,12 +140,7 @@ func (s *containerSchema) build(ctx *router.Context, parent *core.Container, arg
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
-	ctr, err := parent.WithRootFS(ctx, &arg)
-	if err != nil {
-		return nil, err
-	}
-
-	return ctr, nil
+	return parent.WithRootFS(ctx, &arg)
 }
 
 type containerPipelineArgs struct {

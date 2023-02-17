@@ -32,7 +32,7 @@ type fileIDPayload struct {
 	Platform specs.Platform `json:"platform"`
 
 	// Services necessary to provision the file.
-	Services []ContainerID `json:"services,omitempty"`
+	Services ServiceBindings `json:"services,omitempty"`
 }
 
 func (id FileID) decode() (*fileIDPayload, error) {
@@ -59,7 +59,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform, services []ContainerID) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err

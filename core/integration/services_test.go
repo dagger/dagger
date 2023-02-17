@@ -244,6 +244,28 @@ func TestContainerExecServices(t *testing.T) {
 	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
+func TestContainerExecServicesError(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := c.Container().
+		From("alpine:3.16.2").
+		WithExposedPort(8080).
+		WithExec([]string{"sh", "-c", "echo nope; exit 42"})
+
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithService("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.ExitCode(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
+}
+
 //go:embed testdata/udp-service.go
 var udpSrc string
 

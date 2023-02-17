@@ -45,9 +45,9 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 
 	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
 
-	svcs := []core.ContainerID{}
+	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		svcs = append(svcs, *args.ExperimentalServiceHost)
+		svcs[*args.ExperimentalServiceHost] = nil
 	}
 
 	return core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs)

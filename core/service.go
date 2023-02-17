@@ -20,6 +20,45 @@ type Service struct {
 	Detach    func()
 }
 
+type ServiceBindings map[ContainerID]AliasSet
+
+type AliasSet []string
+
+func (set AliasSet) String() string {
+	if len(set) == 0 {
+		return "no aliases"
+	}
+
+	return fmt.Sprintf("aliased as %s", strings.Join(set, ", "))
+}
+
+func (set AliasSet) With(alias string) AliasSet {
+	for _, a := range set {
+		if a == alias {
+			return set
+		}
+	}
+	return append(set, alias)
+}
+
+func (bndp *ServiceBindings) Merge(other ServiceBindings) {
+	if *bndp == nil {
+		*bndp = ServiceBindings{}
+	}
+
+	bnd := *bndp
+
+	for id, aliases := range other {
+		if len(bnd[id]) == 0 {
+			bnd[id] = aliases
+		} else {
+			for _, alias := range aliases {
+				bnd[id] = bnd[id].With(alias)
+			}
+		}
+	}
+}
+
 var debugHealthchecks bool
 
 func init() {
@@ -44,14 +83,14 @@ func (p NetworkProtocol) Network() string {
 
 // WithServices runs the given function with the given services started,
 // detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs []ContainerID, fn func() (T, error)) (T, error) {
+func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
 	var zero T
 
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
 	eg := new(errgroup.Group)
 	started := make(chan *Service, len(svcs))
 
-	for _, svcID := range svcs {
+	for svcID, aliases := range svcs {
 		svc := &Container{ID: svcID}
 
 		host, err := svc.Hostname()
@@ -59,10 +98,11 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs []ContainerID
 			return zero, err
 		}
 
+		aliases := aliases
 		eg.Go(func() error {
 			svc, err := svc.Start(ctx, gw)
 			if err != nil {
-				return fmt.Errorf("start %s: %w", host, err)
+				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
 			}
 			started <- svc
 			return nil
