@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 convert_case = "0.6.0"
-dagger-core = { path = "../dagger-core", version = "0.2.0" }
+dagger-core = { path = "../dagger-core", version = "*" }
 
 eyre = "0.6.8"
 genco = "0.17.3"
