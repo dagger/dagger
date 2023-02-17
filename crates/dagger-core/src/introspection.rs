@@ -161,6 +161,9 @@ pub struct FullTypeFields {
     pub type_: Option<FullTypeFieldsType>,
     pub is_deprecated: Option<bool>,
     pub deprecation_reason: Option<String>,
+
+    #[serde(skip)]
+    pub parent_type: Option<FullType>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -20,7 +20,7 @@ Work in progress. This is not ready for usage yet
   - [x] Querier
   - [x] Context
   - [x] Deserializer for nested response (bind)
-- [ ] Add codegen to hook into querier
+- [x] Add codegen to hook into querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
 - [ ] document usage

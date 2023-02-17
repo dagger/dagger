@@ -1,7 +1,9 @@
 use std::io::Write;
+use std::sync::Arc;
 
 use clap::{Arg, ArgMatches};
-use dagger_codegen::codegen::CodeGeneration;
+use dagger_codegen::generate;
+use dagger_codegen::rust::RustGenerator;
 use dagger_core::config::Config;
 use dagger_core::engine::Engine;
 use dagger_core::session::Session;
@@ -21,7 +23,10 @@ impl GenerateCommand {
         let session = Session::new();
         let req = session.start(&cfg, &conn)?;
         let schema = session.schema(req)?;
-        let code = CodeGeneration::new().generate(&schema)?;
+        let code = generate(
+            schema.into_schema().schema.unwrap(),
+            Arc::new(RustGenerator {}),
+        )?;
 
         if let Some(output) = arg_matches.get_one::<String>("output") {
             let mut file = std::fs::File::create(output)?;
