@@ -1,26 +1,15 @@
-name: Deploy
+name: Release
+permissions:
+  contents: write
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - "main"
+    tags:
+      - v[0-9]+.*
 jobs:
-  deploy:
+  create-release:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-      - name: Get Next Version
-        id: semver
-        uses: ietf-tools/semver-action@v1
-        with:
-          token: ${{ github.token }}
-          branch: main
-      - uses: rickstaa/action-create-tag@v1
-        with:
-          tag: ${{ steps.semver.outputs.next }}
-          message: ${{ steps.semver.outputs.next }}
-          github_token: ${{ github.token }}
+      - uses: actions/checkout@v3
       - uses: taiki-e/create-gh-release-action@v1
         with:
           # (Optional) Path to changelog.
