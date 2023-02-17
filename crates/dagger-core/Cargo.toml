@@ -2,7 +2,9 @@
 name = "dagger-core"
 version = "0.2.0"
 edition = "2021"
-
+readme = "README.md"
+license-file = "LICENSE.MIT"
+description = "dagger sdk core library"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
