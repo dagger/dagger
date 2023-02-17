@@ -997,29 +997,7 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service(self, service: "Container") -> "Container":
-        """Establish a runtime dependency on a service. The service will be
-        started automatically when needed and detached when it is no longer
-        needed.
-
-
-
-        The service dependency will also convey to any files or directories
-        produced by the container.
-
-        Parameters
-        ----------
-        service:
-            Identifier of the service container
-        """
-        _args = [
-            Arg("service", service),
-        ]
-        _ctx = self._select("withService", _args)
-        return Container(_ctx)
-
-    @typecheck
-    def with_service_alias(self, alias: str, service: "Container") -> "Container":
+    def with_service(self, alias: str, service: "Container") -> "Container":
         """Establish a runtime dependency on a service. The service will be
         started automatically when needed and detached when it is no longer
         needed.
@@ -1037,7 +1015,7 @@ class Container(Type):
         Parameters
         ----------
         alias:
-            Hostname alias to use to reach the service
+            A name that can be used to reach the service from the container
         service:
             Identifier of the service container
         """
@@ -1045,7 +1023,7 @@ class Container(Type):
             Arg("alias", alias),
             Arg("service", service),
         ]
-        _ctx = self._select("withServiceAlias", _args)
+        _ctx = self._select("withService", _args)
         return Container(_ctx)
 
     @typecheck

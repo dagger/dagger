@@ -883,24 +883,11 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 
 // Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
 //
-// The service dependency will also convey to any files or directories produced by the container.
-func (r *Container) WithService(service *Container) *Container {
-	q := r.q.Select("withService")
-	q = q.Arg("service", service)
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-//
 // The service will be reachable from the container via the provided hostname alias.
 //
 // The service dependency will also convey to any files or directories produced by the container.
-func (r *Container) WithServiceAlias(alias string, service *Container) *Container {
-	q := r.q.Select("withServiceAlias")
+func (r *Container) WithService(alias string, service *Container) *Container {
+	q := r.q.Select("withService")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
 

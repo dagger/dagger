@@ -1393,38 +1393,18 @@ export class Container extends BaseClient {
   /**
    * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
    *
+   * The service will be reachable from the container via the provided hostname alias.
+   *
    * The service dependency will also convey to any files or directories produced by the container.
+   * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withService(service: Container): Container {
+  withService(alias: string, service: Container): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withService",
-          args: { service },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-   *
-   * The service will be reachable from the container via the provided hostname alias.
-   *
-   * The service dependency will also convey to any files or directories produced by the container.
-   * @param alias Hostname alias to use to reach the service
-   * @param service Identifier of the service container
-   */
-  withServiceAlias(alias: string, service: Container): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withServiceAlias",
           args: { alias, service },
         },
       ],

@@ -227,7 +227,7 @@ func TestContainerExecServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", url})
 
@@ -263,7 +263,7 @@ func TestContainerExecUDPServices(t *testing.T) {
 	client := c.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "socat"}).
-		WithServiceAlias("echo", srv).
+		WithService("echo", srv).
 		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
 			Stdin: "Hello, world!",
 		})
@@ -285,7 +285,7 @@ func TestContainerExecServiceAlias(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithServiceAlias("hello", srv).
+		WithService("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", "http://hello:8000"})
 
@@ -319,7 +319,7 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 	client := c.Container().
 		From("alpine:3.16.2").
 		WithExec([]string{"apk", "add", "curl"}).
-		WithServiceAlias("www", srv).
+		WithService("www", srv).
 		WithEnvVariable("CACHEBUST", identity.NewID())
 
 	eg := new(errgroup.Group)
@@ -367,7 +367,7 @@ func TestContainerExecServicesChained(t *testing.T) {
 
 	fileContent, err := c.Container().
 		From("alpine:3.16.2").
-		WithServiceAlias("www", srv).
+		WithService("www", srv).
 		WithExec([]string{"wget", "http://www:8000"}).
 		WithExec([]string{"cat", "index.html"}).
 		Stdout(ctx)
@@ -392,7 +392,7 @@ CMD cat index.html
 `)
 
 		fileContent, err := c.Container().
-			WithService(srv).
+			WithService("www", srv).
 			Build(src).
 			WithExec(nil).
 			Stdout(ctx)
@@ -419,7 +419,7 @@ CMD cat index.html
 			Tree()
 
 		fileContent, err := c.Container().
-			WithService(srv).
+			WithService("www", srv).
 			Build(gitDir).
 			WithExec(nil).
 			Stdout(ctx)
@@ -447,7 +447,7 @@ CMD cat index.html
 
 		fileContent, err := gitDir.
 			DockerBuild().
-			WithService(srv).
+			WithService("www", srv).
 			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
@@ -464,7 +464,7 @@ func TestContainerExportServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithExec([]string{"wget", httpURL})
 
 	filePath := filepath.Join(t.TempDir(), "image.tar")
@@ -483,7 +483,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
-			WithService(srv).
+			WithService("www", srv).
 			WithExec([]string{"wget", url}).
 			WithExec([]string{"uname", "-m"})
 
@@ -508,7 +508,7 @@ func TestServicesContainerPublish(t *testing.T) {
 	testRef := registryRef("services-container-publish")
 	pushedRef, err := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithExec([]string{"wget", url}).
 		Publish(ctx, testRef)
 	require.NoError(t, err)
@@ -530,7 +530,7 @@ func TestContainerRootFSServices(t *testing.T) {
 
 	fileContent, err := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url}).
 		Rootfs().
@@ -552,7 +552,7 @@ func TestContainerWithRootFSServices(t *testing.T) {
 		// this little maneuver commits the entire rootfs into a git repo
 		c.Container().
 			From("alpine:3.16.2").
-			WithService(srv).
+			WithService("www", srv).
 			WithWorkdir("/sub/out").
 			WithExec([]string{"wget", url}).
 			// NB(vito): related to the package-level comment: Rootfs is not eager,
@@ -582,7 +582,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 
 	wget := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
 
@@ -626,7 +626,7 @@ func TestContainerFileServices(t *testing.T) {
 
 	client := c.Container().
 		From("alpine:3.16.2").
-		WithService(srv).
+		WithService("www", srv).
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
 

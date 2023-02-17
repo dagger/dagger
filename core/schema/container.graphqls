@@ -589,22 +589,12 @@ type Container {
   """
   Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
 
-  The service dependency will also convey to any files or directories produced by the container.
-  """
-  withService(
-    "Identifier of the service container"
-    service: ContainerID!
-  ): Container!
-
-  """
-  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
-
   The service will be reachable from the container via the provided hostname alias.
 
   The service dependency will also convey to any files or directories produced by the container.
   """
-  withServiceAlias(
-    "Hostname alias to use to reach the service"
+  withService(
+    "A name that can be used to reach the service from the container"
     alias: String!,
     "Identifier of the service container"
     service: ContainerID!
