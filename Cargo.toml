@@ -12,8 +12,8 @@ description = "A dagger sdk for rust, written in rust"
 members = ["crates/dagger-codegen", "crates/dagger-sdk", "crates/dagger-core"]
 
 [dependencies]
-dagger-codegen = { path = "crates/dagger-codegen" }
-dagger-core = { path = "crates/dagger-core" }
+dagger-codegen = { path = "crates/dagger-codegen", version = "*" }
+dagger-core = { path = "crates/dagger-core", version = "*" }
 
 clap = "4.1.4"
 dirs = "4.0.0"
