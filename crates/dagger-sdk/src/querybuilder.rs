@@ -104,8 +104,6 @@ impl Selection {
             .build()
             .unwrap();
 
-        dbg!(&query);
-
         let resp: Option<serde_json::Value> = match basic.block_on(gql_client.query(&query)) {
             Ok(r) => r,
             Err(e) => eyre::bail!(e),

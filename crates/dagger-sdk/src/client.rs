@@ -32,7 +32,7 @@ pub fn graphql_client(conn: &ConnectParams) -> gql_client::Client {
 
     gql_client::Client::new_with_config(ClientConfig {
         endpoint: conn.url(),
-        timeout: None,
+        timeout: Some(1000),
         headers: Some(headers),
         proxy: None,
     })
