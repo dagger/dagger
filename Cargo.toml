@@ -14,8 +14,8 @@ publish = true
 members = ["crates/dagger-codegen", "crates/dagger-sdk", "crates/dagger-core"]
 
 [dependencies]
-dagger-codegen = { path = "crates/dagger-codegen", version = "*" }
-dagger-core = { path = "crates/dagger-core", version = "*" }
+dagger-codegen = { path = "crates/dagger-codegen", version = "0.2.0" }
+dagger-core = { path = "crates/dagger-core", version = "0.2.0" }
 
 clap = "4.1.4"
 dirs = "4.0.0"
