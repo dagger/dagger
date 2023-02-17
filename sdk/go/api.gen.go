@@ -886,8 +886,8 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service will be reachable from the container via the provided hostname alias.
 //
 // The service dependency will also convey to any files or directories produced by the container.
-func (r *Container) WithService(alias string, service *Container) *Container {
-	q := r.q.Select("withService")
+func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
 

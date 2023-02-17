@@ -86,8 +86,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"exposedPorts":         router.ToResolver(s.exposedPorts),
 			"hostname":             router.ToResolver(s.hostname),
 			"endpoint":             router.ToResolver(s.endpoint),
-			"withService":          router.ToResolver(s.withServiceDependency),
-			"withServiceAlias":     router.ToResolver(s.withServiceDependency),
+			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
 		},
 	}
 }
@@ -623,7 +622,7 @@ type containerWithServiceDependencyArgs struct {
 	Alias   string
 }
 
-func (s *containerSchema) withServiceDependency(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
 	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
 }
 

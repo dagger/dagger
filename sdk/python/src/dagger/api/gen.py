@@ -997,7 +997,7 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service(self, alias: str, service: "Container") -> "Container":
+    def with_service_binding(self, alias: str, service: "Container") -> "Container":
         """Establish a runtime dependency on a service. The service will be
         started automatically when needed and detached when it is no longer
         needed.
@@ -1023,7 +1023,7 @@ class Container(Type):
             Arg("alias", alias),
             Arg("service", service),
         ]
-        _ctx = self._select("withService", _args)
+        _ctx = self._select("withServiceBinding", _args)
         return Container(_ctx)
 
     @typecheck

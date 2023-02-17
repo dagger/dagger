@@ -593,7 +593,7 @@ type Container {
 
   The service dependency will also convey to any files or directories produced by the container.
   """
-  withService(
+  withServiceBinding(
     "A name that can be used to reach the service from the container"
     alias: String!,
     "Identifier of the service container"

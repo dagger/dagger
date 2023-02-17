@@ -1400,12 +1400,12 @@ export class Container extends BaseClient {
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withService(alias: string, service: Container): Container {
+  withServiceBinding(alias: string, service: Container): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
-          operation: "withService",
+          operation: "withServiceBinding",
           args: { alias, service },
         },
       ],
