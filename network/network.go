@@ -23,7 +23,11 @@ func DockerDNSFlags() ([]string, error) {
 		"--dns-search", DNSDomain,
 	}
 
-	for _, ns := range resolvconf.GetNameservers(rc.Content, resolvconf.IP) {
+	// NB: we only want IPv4 addresses because some resolvconfs include IPv6
+	// addresses with a 'zone' affixed (e.g. fe80::1%2) which a) the --dns flag
+	// can't handle and b) might be referring to an interface unreachable by the
+	// container anyway.
+	for _, ns := range resolvconf.GetNameservers(rc.Content, resolvconf.IPv4) {
 		flags = append(flags, "--dns", ns)
 	}
 
