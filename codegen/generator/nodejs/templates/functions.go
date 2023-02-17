@@ -85,7 +85,7 @@ func isCustomScalar(t *introspection.Type) bool {
 	case introspection.ScalarString, introspection.ScalarInt, introspection.ScalarFloat, introspection.ScalarBoolean:
 		return false
 	default:
-		return true && t.Kind == introspection.TypeKindScalar
+		return t.Kind == introspection.TypeKindScalar
 	}
 }
 

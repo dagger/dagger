@@ -13,7 +13,7 @@ func TestType(t *testing.T) {
 
 		var fieldArgsTypeJSON = `
       {
-        "kind": "SCALAR",
+        "kind": "SCALAR"  ,
         "name": "Container",
         "description": "Hola"
     }
@@ -31,10 +31,33 @@ func TestType(t *testing.T) {
 		require.Equal(t, want, b.String())
 	})
 
+	t.Run("scalar multiline comment", func(t *testing.T) {
+		wantFile := "testdata/type_test_scalar_multiline_comment_want.ts"
+
+		var fieldArgsTypeJSON = `
+    {
+      "kind": "SCALAR",
+      "name": "Container",
+      "description": "Container type.\nA simple container definition."
+    }
+    `
+
+		tmpl := templateHelper(t)
+
+		object := objectInit(t, fieldArgsTypeJSON)
+
+		var b bytes.Buffer
+		err := tmpl.ExecuteTemplate(&b, "type", object)
+
+		want := updateAndGetFixtures(t, wantFile, b.String())
+
+		require.NoError(t, err)
+		require.Equal(t, want, b.String())
+	})
+
 	t.Run("input", func(t *testing.T) {
 		var expectedInputType = `
 export type BuildArg = {
-
   /**
    * Name description.
    */
