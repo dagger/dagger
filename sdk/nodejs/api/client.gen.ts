@@ -409,7 +409,6 @@ export enum NetworkProtocol {
    */
   Udp,
 }
-
 /**
  * The platform config OS and architecture in a Container.
  *
@@ -2605,6 +2604,7 @@ export class Label extends BaseClient {
 /**
  * A port exposed by a container.
  */
+
 export class Port extends BaseClient {
   /**
    * The port description.
