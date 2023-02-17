@@ -2129,7 +2129,7 @@ class Client(Root):
         self,
         url: str,
         keep_git_dir: Optional[bool] = None,
-        service_host: Optional[Container] = None,
+        experimental_service_host: Optional[Container] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -2142,13 +2142,13 @@ class Client(Root):
             Suffix ".git" is optional.
         keep_git_dir:
             Set to true to keep .git directory.
-        service_host:
+        experimental_service_host:
             A service which must be started before the repo is fetched.
         """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, None),
-            Arg("serviceHost", service_host, None),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -2164,7 +2164,7 @@ class Client(Root):
     def http(
         self,
         url: str,
-        service_host: Optional[Container] = None,
+        experimental_service_host: Optional[Container] = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -2172,12 +2172,12 @@ class Client(Root):
         ----------
         url:
             HTTP url to get the content from (e.g., "https://docs.dagger.io").
-        service_host:
+        experimental_service_host:
             A service which must be started before the URL is fetched.
         """
         _args = [
             Arg("url", url),
-            Arg("serviceHost", service_host, None),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)

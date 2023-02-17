@@ -9,6 +9,6 @@ extend type Query {
     url: String!,
 
     "A service which must be started before the URL is fetched."
-    serviceHost: ContainerID
+    experimentalServiceHost: ContainerID
   ): File!
 }

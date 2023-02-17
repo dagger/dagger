@@ -14,7 +14,7 @@ extend type Query {
     keepGitDir: Boolean,
 
     "A service which must be started before the repo is fetched."
-    serviceHost: ContainerID
+    experimentalServiceHost: ContainerID
   ): GitRepository!
 }
 

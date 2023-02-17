@@ -158,7 +158,7 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	entries, err := c.Git(repoURL, dagger.GitOpts{ServiceHost: sshSvc}).
+	entries, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: sshSvc}).
 		Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			SSHKnownHosts: fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),

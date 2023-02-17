@@ -435,14 +435,14 @@ export type ClientGitOpts = {
   /**
    * A service which must be started before the repo is fetched.
    */
-  serviceHost?: Container
+  experimentalServiceHost?: Container
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  serviceHost?: Container
+  experimentalServiceHost?: Container
 }
 
 export type ClientPipelineOpts = {
@@ -2921,7 +2921,7 @@ export default class Client extends BaseClient {
    * Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
-   * @param opts.serviceHost A service which must be started before the repo is fetched.
+   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -2956,7 +2956,7 @@ export default class Client extends BaseClient {
   /**
    * Returns a file containing an http remote url content.
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
-   * @param opts.serviceHost A service which must be started before the URL is fetched.
+   * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
   http(url: string, opts?: ClientHttpOpts): File {
     return new File({

@@ -1895,7 +1895,7 @@ type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
-	ServiceHost *Container
+	ExperimentalServiceHost *Container
 }
 
 // Queries a git repository.
@@ -1909,10 +1909,10 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 			break
 		}
 	}
-	// `serviceHost` optional argument
+	// `experimentalServiceHost` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].ServiceHost) {
-			q = q.Arg("serviceHost", opts[i].ServiceHost)
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 			break
 		}
 	}
@@ -1936,17 +1936,17 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ServiceHost *Container
+	ExperimentalServiceHost *Container
 }
 
 // Returns a file containing an http remote url content.
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
-	// `serviceHost` optional argument
+	// `experimentalServiceHost` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].ServiceHost) {
-			q = q.Arg("serviceHost", opts[i].ServiceHost)
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 			break
 		}
 	}
