@@ -5,6 +5,7 @@ edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
 description = "dagger sdk core library"
+repository = "https://github.com/kjuulh/dagger-rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
