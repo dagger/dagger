@@ -2,9 +2,9 @@
 
 A dagger sdk written in rust for rust.
 
-## Disclaimer
+# Usage
 
-Work in progress. This is not ready for usage yet
+See [dagger-sdk](./crates/dagger-sdk/README.md)
 
 ### Status
 
@@ -23,7 +23,7 @@ Work in progress. This is not ready for usage yet
 - [x] Add codegen to hook into querier
 - [ ] fix build / release cycle
 - [ ] general api stabilisation
-- [ ] document usage
+- [x] document usage
 - [ ] make async variant
 
 ## Architecture
