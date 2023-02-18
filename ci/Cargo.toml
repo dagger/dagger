@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 clap = "4.1.6"
 color-eyre = "0.6.2"
-dagger-sdk = "0.2.0"
+dagger-sdk = "0.2.1"
 eyre = "0.6.8"
