@@ -719,6 +719,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * The unique image reference
+   */
+  async imageRef(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "imageRef",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Retrieves the value of the specified label.
    */
   async label(name: string): Promise<string> {
@@ -844,23 +861,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * The unique image reference
-   */
-  async sha(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "sha",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**

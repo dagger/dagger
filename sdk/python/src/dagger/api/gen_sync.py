@@ -350,6 +350,21 @@ class Container(Type):
         return _ctx.execute_sync(ContainerID)
 
     @typecheck
+    def image_ref(self) -> Optional[str]:
+        """The unique image reference
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("imageRef", _args)
+        return _ctx.execute_sync(Optional[str])
+
+    @typecheck
     def label(self, name: str) -> Optional[str]:
         """Retrieves the value of the specified label.
 
@@ -458,21 +473,6 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
-
-    @typecheck
-    def sha(self) -> Optional[str]:
-        """The unique image reference
-
-        Returns
-        -------
-        Optional[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("sha", _args)
-        return _ctx.execute_sync(Optional[str])
 
     @typecheck
     def stderr(self) -> Optional[str]:

@@ -221,13 +221,18 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	digest, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
 		// the pipeline in the vertex name.
 		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	digested, err := reference.WithDigest(refName, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -271,13 +276,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	fs := imgSpec.RootFS
-	if len(fs.DiffIDs) > 0 {
-		shaStr := strings.Split(fs.DiffIDs[0].String(), ":")
-		if len(shaStr) > 1 {
-			payload.ImageRef = shaStr[1]
-		}
-	}
+	payload.ImageRef = digested.String()
 
 	return container.containerFromPayload(payload)
 }
@@ -1312,7 +1311,7 @@ func (container *Container) export(
 	return res, nil
 }
 
-func (container *Container) Sha(ctx context.Context, gw bkgw.Client) (string, error) {
+func (container *Container) ImageRef(ctx context.Context, gw bkgw.Client) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err

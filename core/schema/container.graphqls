@@ -559,7 +559,7 @@ type Container {
   ): Container!
 
   "The unique image reference"
-  sha: String
+  imageRef: String
 }
 
 "A simple key value object that represents an environment variable."
