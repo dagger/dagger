@@ -137,6 +137,14 @@ fn get_dependencies(client: Arc<Query>) -> Container {
             None,
         )
         .with_env_variable("RUSTC_WRAPPER".into(), "/usr/local/bin/sccache".into())
+        .with_env_variable(
+            "AWS_ACCESS_KEY_ID".into(),
+            std::env::var("AWS_ACCESS_KEY_ID").unwrap_or("".into()),
+        )
+        .with_env_variable(
+            "AWS_SECRET_ACCESS_KEY".into(),
+            std::env::var("AWS_SECRET_ACCESS_KEY").unwrap_or("".into()),
+        )
         .with_env_variable("SCCACHE_BUCKET".into(), "sccache".into())
         .with_env_variable("SCCACHE_REGION".into(), "auto".into())
         .with_env_variable(
