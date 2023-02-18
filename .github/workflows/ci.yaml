@@ -6,8 +6,8 @@ on:
       - "main"
 env:
   CARGO_TERM_COLOR: always
-  AWS_ACCESS_KEY_ID: ${{ AWS_ACCESS_KEY_ID }}
-  AWS_SECRET_ACCESS_KEY: ${{ AWS_SECRET_ACCESS_KEY }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 jobs:
   deploy:
     runs-on: ubuntu-latest
