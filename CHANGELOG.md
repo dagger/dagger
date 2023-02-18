@@ -11,7 +11,29 @@ With smart releaser
 
 ## v0.2.5 (2023-02-17)
 
-## v0.2.4 (2023-02-17)
+## v0.2.4 (2023-02-18)
+
+### Bug Fixes
+
+ - <csr-id-4ac89b645712dd8c357832a817af131c2d2e0686/> trying agian
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - trying agian ([`4ac89b6`](https://github.com/kjuulh/dagger-rs/commit/4ac89b645712dd8c357832a817af131c2d2e0686))
+</details>
 
 ## v0.2.3 (2023-02-18)
 

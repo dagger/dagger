@@ -305,7 +305,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-rs"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "clap",
  "color-eyre",
