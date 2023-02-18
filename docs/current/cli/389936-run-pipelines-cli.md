@@ -32,26 +32,25 @@ This tutorial assumes that:
 
 The Dagger CLI offers a `dagger query` sub-command, which provides an easy way to send API queries to the Dagger Engine from the command line.
 
-To see this in action, create a new shell script named `build.sh` and add the following code to it:
+To see this in action, create a new file named `document.gql` and add the following GraphQL document to it:
 
-```shell file=snippets/get-started/step2/build.sh
+```graphql file=snippets/get-started/step2/document.gql
 ```
 
-This script invokes the Dagger CLI's `query` sub-command and passes it a GraphQL API query. This query performs the following operations:
+This command invokes the Dagger CLI's `query` sub-command and passes it a GraphQL API query using `--doc` flag:
+
+```shell
+dagger query --doc document.gql | jq -r .container.from.withExec.stdout
+```
+
+This query performs the following operations:
 
 - It requests the `from` field of Dagger's `Container` object type, passing it the address of a container image. To resolve this, Dagger will initialize a container using the specified image and return a `Container` object representing the `alpine:latest` container image.
 - Next, it requests the `withExec` field of the `Container` object from the previous step, passing  the `uname -a` command to the field as an array of arguments. To resolve this, Dagger will return a `Container` object containing the execution plan.
 - Finally, it requests the `stdout` field of the `Container` object returned in the previous step. To resolve this, Dagger will execute the command and return a `String` containing the results.
 - The result of the query is returned as a JSON object. This object is processed with `jq` and the result string is printed to the console.
 
-Add the executable bit to the shell script and then run the script by executing the commands below:
-
-```shell
-chmod +x ./build.sh
-./build.sh
-```
-
-The script outputs a string similar to the one below.
+The command outputs a string similar to the one below:
 
 ```shell
 Linux buildkitsandbox 5.15.0-53-generic #59-Ubuntu SMP Mon Oct 17 18:53:30 UTC 2022 x86_64 Linux
@@ -59,20 +58,33 @@ Linux buildkitsandbox 5.15.0-53-generic #59-Ubuntu SMP Mon Oct 17 18:53:30 UTC 2
 
 ## Step 3: Build an application from a remote Git repository
 
-Now that the shell script is functional, the next step is to flesh it out to actually build an application. This tutorial demonstrates the process by cloning the [canonical Git repository for Go](https://go.googlesource.com/example/+/HEAD/hello) and building the "Hello, world" example program from it using the Dagger CLI.
+This tutorial demonstrates the process by cloning the [canonical Git repository for Go](https://go.googlesource.com/example/+/HEAD/hello) and building the "Hello, world" example program from it using the Dagger CLI.
 
-Replace the `build.sh` file from the previous step with the version below (highlighted lines indicate changes):
+The content of `document.gql` for first query:
 
-```shell file=snippets/get-started/step3/build.sh
+```graphql file=snippets/get-started/step3/document-1.gql
 ```
 
-This revision of the script contains two queries stitched together.
+```shell
+source=$(dagger query --doc document.gql | jq -r .git.branch.tree.id)
+```
 
 The first query:
 
 - requests the `master` branch of the Git source code repository (returned as a `GitRef` object);
 - requests the filesystem of that branch (returned as a `Directory` object);
-- requests the content-addressed identifier of that `Directory` (returned as a base64-encoded value and interpolated into the second query).
+- requests the content-addressed identifier of that `Directory` (returned as a base64-encoded value and interpolated into the second query) and saves it `$source` bash variable for later use.
+
+The content of `document.gql` for second query:
+
+```graphql file=snippets/get-started/step3/document-2.gql
+```
+
+Use the `--var` flag in `name=value` format to specify each GraphQL variable value:
+
+```shell
+dagger query --doc document.gql --var source=$source | jq -r .container.from.withMountedDirectory.withWorkdir.withExec.file.export
+```
 
 The second query:
 
@@ -83,20 +95,14 @@ The second query:
 - retrieves the build artifact (returned as a `File`);
 - writes the `File` from the container to the host as a binary file named `dagger-builds-hello`.
 
-The return value of the final `export` field is a Boolean value indicating whether the file was successfully written to the host or not. This value is extracted from the GraphQL API response document using `jq` and evaluated with Bash.
+The return value of the final `export` field is a Boolean value indicating whether the file was successfully written to the host or not. This value is extracted from the GraphQL API response document using `jq`.
 
-Run the shell script by executing the command below:
-
-```shell
-./build.sh
-```
-
-As described above, the script retrieves the source code repository, mounts and builds it in a container, and writes the resulting binary file to the host. At the end of the process, the built Go application is available in the working directory on the host, as shown below:
+As described, the two queries above retrieves the source code repository, mounts and builds it in a container, and writes the resulting binary file to the host. At the end of the process, the built Go application is available in the working directory on the host, as shown below:
 
 ```shell
 tree
 .
-├── build.sh
+├── document.gql
 └── dagger-builds-hello
 ```
 

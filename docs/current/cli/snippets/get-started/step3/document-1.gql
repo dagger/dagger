@@ -1,0 +1,9 @@
+{
+  git(url:"https://go.googlesource.com/example") {
+    branch(name:"master") {
+      tree {
+        id
+      }
+    }
+  }
+}

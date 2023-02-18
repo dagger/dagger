@@ -1,0 +1,15 @@
+query buildHello($source: DirectoryID!) {
+  container {
+    from(address: "golang:latest") {
+      withMountedDirectory(path: "/src", source: $source) {
+        withWorkdir(path: "/src") {
+          withExec(args: ["go", "build", "-o", "dagger-builds-hello", "./hello/hello.go"]) {
+            file(path: "./dagger-builds-hello") {
+              export(path: "./dagger-builds-hello")
+            }
+          }
+        }
+      }
+    }
+  }
+}

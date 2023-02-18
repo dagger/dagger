@@ -1,6 +1,3 @@
-#!/bin/bash
-
-alpine=$(dagger query <<EOF | jq -r .container.from.withExec.stdout
 {
   container {
     from(address:"alpine:latest") {
@@ -10,7 +7,3 @@ alpine=$(dagger query <<EOF | jq -r .container.from.withExec.stdout
     }
   }
 }
-EOF
-)
-
-echo $alpine
