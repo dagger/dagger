@@ -308,6 +308,7 @@ name = "dagger-rs"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "color-eyre",
  "dagger-codegen",
  "dagger-core 0.2.0",
  "dirs",

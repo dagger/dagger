@@ -4,6 +4,8 @@ pub mod cli;
 mod cli_generate;
 
 fn main() -> eyre::Result<()> {
+    color_eyre::install().unwrap();
+
     let args = std::env::args();
     let args = args.collect::<Vec<String>>();
     let args = args.iter().map(|s| s.as_str()).collect::<Vec<&str>>();
