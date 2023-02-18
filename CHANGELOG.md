@@ -13,7 +13,29 @@ With smart releaser
 
 ## v0.2.4 (2023-02-17)
 
-## v0.2.3 (2023-02-17)
+## v0.2.3 (2023-02-18)
+
+### New Features
+
+ - <csr-id-3a45202a21b24d8331a2ead72944df9ac7c70839/> some test
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - some test ([`3a45202`](https://github.com/kjuulh/dagger-rs/commit/3a45202a21b24d8331a2ead72944df9ac7c70839))
+</details>
 
 ## v0.2.2 (2023-02-18)
 
