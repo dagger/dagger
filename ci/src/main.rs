@@ -98,10 +98,51 @@ fn get_dependencies(client: Arc<Query>) -> Container {
     let cache_cargo_index_dir = client.cache_volume("cargo_index".into());
     let cache_cargo_deps = client.cache_volume("cargo_deps".into());
 
+    let minio_url = "https://github.com/mozilla/sccache/releases/download/v0.3.3/sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz".into();
+
     let base_image = client
         .container(None)
         .from("rust:latest".into())
         .with_workdir("app".into())
+        .with_exec(vec!["apt-get".into(), "update".into()], None)
+        .with_exec(
+            vec![
+                "apt-get".into(),
+                "install".into(),
+                "--yes".into(),
+                "libpq-dev".into(),
+                "wget".into(),
+            ],
+            None,
+        )
+        .with_exec(vec!["wget".into(), minio_url], None)
+        .with_exec(
+            vec![
+                "tar".into(),
+                "xzf".into(),
+                "sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz".into(),
+            ],
+            None,
+        )
+        .with_exec(
+            vec![
+                "mv".into(),
+                "sccache-v0.3.3-x86_64-unknown-linux-musl/sccache".into(),
+                "/usr/local/bin/sccache".into(),
+            ],
+            None,
+        )
+        .with_exec(
+            vec!["chmod".into(), "+x".into(), "/usr/local/bin/sccache".into()],
+            None,
+        )
+        .with_env_variable("RUSTC_WRAPPER".into(), "/usr/local/bin/sccache".into())
+        .with_env_variable("SCCACHE_BUCKET".into(), "sccache".into())
+        .with_env_variable("SCCACHE_REGION".into(), "auto".into())
+        .with_env_variable(
+            "SCCACHE_ENDPOINT".into(),
+            "https://api-minio.front.kjuulh.io".into(),
+        )
         .with_exec(
             vec!["cargo".into(), "install".into(), "cargo-chef".into()],
             None,
