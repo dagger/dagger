@@ -3,7 +3,6 @@ use cli::Cli;
 pub mod cli;
 mod cli_generate;
 
-// test change
 fn main() -> eyre::Result<()> {
     color_eyre::install().unwrap();
 
