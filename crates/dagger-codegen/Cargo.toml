@@ -1,6 +1,6 @@
 [package]
 name = "dagger-codegen"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
@@ -11,7 +11,7 @@ publish = true
 
 [dependencies]
 convert_case = "0.6.0"
-dagger-core = { path = "../dagger-core", version = "0.2.0" }
+dagger-core = { path = "../dagger-core", version = "^0.2.1" }
 
 eyre = "0.6.8"
 genco = "0.17.3"

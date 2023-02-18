@@ -12,7 +12,7 @@ publish = true
 
 [dependencies]
 base64 = "0.21.0"
-dagger-core = { path = "../dagger-core", version = "0.2.0" }
+dagger-core = { path = "../dagger-core", version = "^0.2.1" }
 eyre = "0.6.8"
 futures = "0.3.26"
 
