@@ -1322,7 +1322,7 @@ func (container *Container) ImageRef(ctx context.Context, gw bkgw.Client) (strin
 		return imgRef, nil
 	}
 
-	return "", errors.Errorf("Image sha can only be retrieved immediately after the 'Container.From' call. Error in fetching sha as the container image is changed")
+	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 }
 
 func (container *Container) containerFromPayload(payload *containerIDPayload) (*Container, error) {
