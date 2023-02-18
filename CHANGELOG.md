@@ -9,9 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 With smart releaser
 
-## v0.2.5 (2023-02-17)
-
-## v0.2.4 (2023-02-18)
+## v0.2.5 (2023-02-18)
 
 ### Bug Fixes
 
@@ -34,6 +32,12 @@ With smart releaser
  * **Uncategorized**
     - trying agian ([`4ac89b6`](https://github.com/kjuulh/dagger-rs/commit/4ac89b645712dd8c357832a817af131c2d2e0686))
 </details>
+
+## v0.2.4 (2023-02-18)
+
+### Bug Fixes
+
+ - <csr-id-4ac89b645712dd8c357832a817af131c2d2e0686/> trying agian
 
 ## v0.2.3 (2023-02-18)
 
