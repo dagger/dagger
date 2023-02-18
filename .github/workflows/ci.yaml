@@ -1,0 +1,15 @@
+name: ci
+on:
+  pull_request:
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Update rust toolchain
+        run: rustup update stable && rustup default stable
+      - name: Run dagger [CI]
+        run: cargo run -p ci -- pr
