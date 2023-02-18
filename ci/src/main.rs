@@ -86,6 +86,7 @@ fn get_dependencies(client: Arc<Query>) -> Container {
                 "chef".into(),
                 "cook".into(),
                 "--release".into(),
+                "--workspace".into(),
                 "--recipe-path".into(),
                 "recipe.json".into(),
             ],
