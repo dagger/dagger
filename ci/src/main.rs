@@ -8,14 +8,17 @@ fn main() -> eyre::Result<()> {
     let matches = clap::Command::new("ci")
         .subcommand_required(true)
         .subcommand(clap::Command::new("pr"))
+        .subcommand(clap::Command::new("release"))
         .get_matches();
 
     let client = dagger_sdk::client::connect()?;
 
-    let base = select_base_image(client.clone());
-
     match matches.subcommand() {
-        Some(("pr", _)) => return validate_pr(client, base),
+        Some(("pr", _)) => {
+            let base = select_base_image(client.clone());
+            return validate_pr(client, base);
+        }
+        Some(("release", subm)) => return release(client, subm),
         Some(_) => {
             panic!("invalid subcommand selected!")
         }
@@ -23,6 +26,51 @@ fn main() -> eyre::Result<()> {
             panic!("no command selected!")
         }
     }
+}
+
+fn release(client: Arc<Query>, subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
+    let src_dir = client.host().directory(
+        ".".into(),
+        Some(HostDirectoryOpts {
+            exclude: Some(vec!["target/".into()]),
+            include: None,
+        }),
+    );
+    let base_image = client
+        .container(None)
+        .from("rust:latest".into())
+        .with_workdir("app".into())
+        .with_mounted_directory("/app/".into(), src_dir.id());
+
+    let container = base_image
+        .with_exec(
+            vec![
+                "cargo".into(),
+                "install".into(),
+                "cargo-smart-release".into(),
+            ],
+            None,
+        )
+        .with_exec(
+            vec![
+                "cargo".into(),
+                "smart-release".into(),
+                "--execute".into(),
+                "--allow-fully-generated-changelogs".into(),
+                "--no-changelog-preview".into(),
+                "dagger-rs".into(),
+                "dagger-sdk".into(),
+            ],
+            None,
+        );
+    let exit = container.exit_code();
+    if exit != 0 {
+        eyre::bail!("container failed with non-zero exit code");
+    }
+
+    println!("released pr succeeded!");
+
+    Ok(())
 }
 
 fn get_dependencies(client: Arc<Query>) -> Container {
