@@ -4,7 +4,6 @@ pub mod cli;
 mod cli_generate;
 
 fn main() -> eyre::Result<()> {
-    // test change
     color_eyre::install().unwrap();
 
     let args = std::env::args();
