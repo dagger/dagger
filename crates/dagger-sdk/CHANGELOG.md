@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 37 commits contributed to the release over the course of 20 calendar days.
+ - 39 commits contributed to the release over the course of 20 calendar days.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 2 unique issues were worked on: [#5](https://github.com/kjuulh/dagger-rs/issues/5), [#6](https://github.com/kjuulh/dagger-rs/issues/6)
 
@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  * **[#6](https://github.com/kjuulh/dagger-rs/issues/6)**
     - feature/add impl ([`4a4c03f`](https://github.com/kjuulh/dagger-rs/commit/4a4c03f3c2ee7f6268c65976715e70767b4ea78d))
  * **Uncategorized**
+    - add dagger-sdk changelog ([`11a5247`](https://github.com/kjuulh/dagger-rs/commit/11a5247933736bc6a4c5300c29599c88597fefb7))
+    - Release dagger-rs v0.2.7, dagger-sdk v0.2.1 ([`20c7118`](https://github.com/kjuulh/dagger-rs/commit/20c71189f6d5d978286ee16f8e958c6045756d80))
     - Adjusting changelogs prior to release of dagger-core v0.2.1, dagger-codegen v0.2.1, dagger-rs v0.2.1 ([`f4a20fd`](https://github.com/kjuulh/dagger-rs/commit/f4a20fda79063b29829cc899793775ba8cb17214))
     - with actual versions ([`7153c24`](https://github.com/kjuulh/dagger-rs/commit/7153c24f0105a05f170efd10ef2535d83ce0c87e))
     - with publish ([`989d5bc`](https://github.com/kjuulh/dagger-rs/commit/989d5bc26036d46a199d939b5cbbe72aff2f8fb1))
