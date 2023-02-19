@@ -8,6 +8,7 @@ env:
   CARGO_TERM_COLOR: always
   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  _EXPERIMENTAL_DAGGER_CACHE_CONFIG: type=gha;mode=max
 jobs:
   deploy:
     runs-on: ubuntu-latest
