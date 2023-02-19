@@ -15,7 +15,7 @@ fn main() -> eyre::Result<()> {
     let source = client
         .container(None)
         .from("node:16".into())
-        .with_mounted_directory("/src".into(), host_source_dir.id());
+        .with_mounted_directory("/src".into(), host_source_dir.id()?);
 
     let runner = source
         .with_workdir("/src".into())
@@ -40,11 +40,11 @@ fn main() -> eyre::Result<()> {
     let ref_ = client
         .container(None)
         .from("nginx".into())
-        .with_directory("/usr/share/nginx/html".into(), build_dir.id(), None)
+        .with_directory("/usr/share/nginx/html".into(), build_dir.id()?, None)
         .publish(
             format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()),
             None,
-        );
+        )?;
 
     println!("published image to: {}", ref_);
 

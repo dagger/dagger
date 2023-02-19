@@ -14,7 +14,7 @@ fn main() -> eyre::Result<()> {
     let source = client
         .container(None)
         .from("node:16".into())
-        .with_mounted_directory("/src".into(), host_source_dir.id());
+        .with_mounted_directory("/src".into(), host_source_dir.id()?);
 
     let runner = source
         .with_workdir("/src".into())

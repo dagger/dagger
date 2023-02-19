@@ -1,4 +1,3 @@
-
 use rand::Rng;
 
 fn main() -> eyre::Result<()> {
@@ -12,11 +11,11 @@ fn main() -> eyre::Result<()> {
 
     let ref_ = client
         .container(None)
-        .build(context_dir.id(), None)
+        .build(context_dir.id()?, None)
         .publish(
             format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()),
             None,
-        );
+        )?;
 
     println!("published image to: {}", ref_);
 

@@ -15,7 +15,8 @@ fn test_example_container() {
             redirect_stderr: None,
             experimental_privileged_nesting: None,
         }))
-        .stdout();
+        .stdout()
+        .unwrap();
 
     assert_eq!(out, "3.16.2\n".to_string())
 }

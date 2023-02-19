@@ -1,5 +1,5 @@
 use convert_case::{Case, Casing};
-use dagger_core::introspection::FullTypeFields;
+use dagger_core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
 use genco::tokens::quoted;
@@ -37,7 +37,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     let output_type = field
         .type_
         .pipe(|t| &t.type_ref)
-        .pipe(|t| funcs.format_output_type(t));
+        .pipe(|t| render_output_type(funcs, t));
 
     Some(quote! {
         $(signature)(
@@ -122,6 +122,20 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
     }
 }
 
+fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Tokens {
+    let output_type = funcs.format_output_type(type_ref);
+
+    if type_ref_is_object(type_ref) || type_ref_is_list_of_objects(type_ref) {
+        return quote! {
+            $(output_type)
+        };
+    }
+
+    quote! {
+        eyre::Result<$output_type>
+    }
+}
+
 fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::Tokens {
     if let Some(true) = field.type_.pipe(|t| type_ref_is_object(&t.type_ref)) {
         let output_type = funcs.format_output_type(&field.type_.as_ref().unwrap().type_ref);
@@ -163,7 +177,7 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     let graphql_client = rust::import("crate::client", "graphql_client");
 
     quote! {
-        query.execute(&$graphql_client(&self.conn)).unwrap()
+        query.execute(&$graphql_client(&self.conn))
     }
 }
 

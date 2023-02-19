@@ -5,7 +5,7 @@ fn main() -> eyre::Result<()> {
         .container(None)
         .from("golang:1.19".into())
         .with_exec(vec!["go".into(), "version".into()], None)
-        .stdout();
+        .stdout()?;
 
     println!("Hello from Dagger and {}", version.trim());
 
