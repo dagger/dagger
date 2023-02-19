@@ -3,7 +3,7 @@ use dagger_sdk::HostDirectoryOpts;
 fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
 
-    let host_source_dir = client.host().directory(
+    let host_source_dir = client.host().directory_opts(
         "examples/test-the-application/app",
         Some(HostDirectoryOpts {
             exclude: Some(vec!["node_modules", "ci/"]),
@@ -12,16 +12,16 @@ fn main() -> eyre::Result<()> {
     );
 
     let source = client
-        .container(None)
+        .container()
         .from("node:16")
         .with_mounted_directory("/src", host_source_dir.id()?);
 
     let runner = source
         .with_workdir("/src")
-        .with_exec(vec!["npm", "install"], None);
+        .with_exec(vec!["npm", "install"]);
 
     let out = runner
-        .with_exec(vec!["npm", "test", "--", "--watchAll=false"], None)
+        .with_exec(vec!["npm", "test", "--", "--watchAll=false"])
         .stderr()?;
 
     println!("{}", out);

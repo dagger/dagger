@@ -39,18 +39,44 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
         .pipe(|t| &t.type_ref)
         .pipe(|t| render_output_type(funcs, t));
 
-    Some(quote! {
-        $(signature)(
-            $(args)
-        ) -> $(output_type) {
-            let mut query = self.selection.select($(quoted(field.name.as_ref())));
+    if let Some((args, true)) = args {
+        let required_args = format_required_function_args(funcs, field);
+        Some(quote! {
+            $(&signature)(
+                $(required_args)
+            ) -> $(output_type.as_ref()) {
+                let mut query = self.selection.select($(quoted(field.name.as_ref())));
 
-            $(render_required_args(funcs, field))
-            $(render_optional_args(funcs, field))
+                $(render_required_args(funcs, field))
 
-            $(render_execution(funcs, field))
-        }
-    })
+                $(render_execution(funcs, field))
+            }
+
+            $(&signature)_opts(
+                $args
+            ) -> $(output_type) {
+                let mut query = self.selection.select($(quoted(field.name.as_ref())));
+
+                $(render_required_args(funcs, field))
+                $(render_optional_args(funcs, field))
+
+                $(render_execution(funcs, field))
+            }
+        })
+    } else {
+        Some(quote! {
+            $(signature)(
+                $(if let Some((args, _)) = args => $args)
+            ) -> $(output_type) {
+                let mut query = self.selection.select($(quoted(field.name.as_ref())));
+
+                $(render_required_args(funcs, field))
+                $(render_optional_args(funcs, field))
+
+                $(render_execution(funcs, field))
+            }
+        })
+    }
 }
 
 fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
@@ -215,7 +241,10 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     }
 }
 
-fn format_function_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+fn format_function_args(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<(rust::Tokens, bool)> {
     if let Some(args) = field.args.as_ref() {
         let args = args
             .into_iter()
@@ -241,13 +270,50 @@ fn format_function_args(funcs: &CommonFunctions, field: &FullTypeFields) -> Opti
         };
 
         if type_field_has_optional(field) {
-            Some(quote! {
-                $(required_args)
-                opts: Option<$(field_options_struct_name(field))>
-            })
+            Some((
+                quote! {
+                    $(required_args)
+                    opts: Option<$(field_options_struct_name(field))>
+                },
+                true,
+            ))
         } else {
-            Some(required_args)
+            Some((required_args, false))
         }
+    } else {
+        None
+    }
+}
+
+fn format_required_function_args(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<rust::Tokens> {
+    if let Some(args) = field.args.as_ref() {
+        let args = args
+            .into_iter()
+            .map(|a| {
+                a.as_ref().and_then(|s| {
+                    if type_ref_is_optional(&s.input_value.type_) {
+                        return None;
+                    }
+
+                    let t = funcs.format_input_type(&s.input_value.type_);
+                    let n = format_struct_name(&s.input_value.name);
+
+                    Some(quote! {
+                        $(n): $(t),
+                    })
+                })
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let required_args = quote! {
+            &self,
+            $(for arg in args join ($['\r']) => $arg)
+        };
+
+        Some(required_args)
     } else {
         None
     }
