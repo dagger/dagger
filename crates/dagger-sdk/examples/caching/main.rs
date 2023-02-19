@@ -1,6 +1,7 @@
 use rand::Rng;
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
 
     let host_source_dir = client.host().directory_opts(
@@ -10,12 +11,12 @@ fn main() -> eyre::Result<()> {
             .build()?,
     );
 
-    let node_cache = client.cache_volume("node").id()?;
+    let node_cache = client.cache_volume("node").id().await?;
 
     let source = client
         .container()
         .from("node:16")
-        .with_mounted_directory("/src", host_source_dir.id()?)
+        .with_mounted_directory("/src", host_source_dir.id().await?)
         .with_mounted_cache("/src/node_modules", node_cache);
 
     let runner = source
@@ -33,8 +34,8 @@ fn main() -> eyre::Result<()> {
     let ref_ = client
         .container()
         .from("nginx")
-        .with_directory("/usr/share/nginx/html", build_dir.id()?)
-        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()))?;
+        .with_directory("/usr/share/nginx/html", build_dir.id().await?)
+        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>())).await?;
 
     println!("published image to: {}", ref_);
 

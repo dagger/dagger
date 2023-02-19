@@ -1,6 +1,7 @@
 use dagger_sdk::HostDirectoryOpts;
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
 
     let host_source_dir = client.host().directory_opts(
@@ -14,7 +15,7 @@ fn main() -> eyre::Result<()> {
     let source = client
         .container()
         .from("node:16")
-        .with_mounted_directory("/src", host_source_dir.id()?);
+        .with_mounted_directory("/src", host_source_dir.id().await?);
 
     let runner = source
         .with_workdir("/src")
@@ -28,7 +29,7 @@ fn main() -> eyre::Result<()> {
 
     let _ = build_dir.export("./build");
 
-    let entries = build_dir.entries();
+    let entries = build_dir.entries().await;
 
     println!("build dir contents: \n {:?}", entries);
 

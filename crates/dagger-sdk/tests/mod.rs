@@ -1,7 +1,7 @@
 use dagger_sdk::{connect, ContainerExecOptsBuilder};
 
-#[test]
-fn test_example_container() {
+#[tokio::test]
+async fn test_example_container() {
     let client = connect().unwrap();
 
     let alpine = client.container().from("alpine:3.16.2");
@@ -14,6 +14,7 @@ fn test_example_container() {
                 .unwrap(),
         )
         .stdout()
+        .await
         .unwrap();
 
     assert_eq!(out, "3.16.2\n".to_string())

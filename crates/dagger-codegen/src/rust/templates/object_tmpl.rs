@@ -5,7 +5,8 @@ use itertools::Itertools;
 
 use crate::functions::{type_ref_is_optional, CommonFunctions};
 use crate::rust::functions::{
-    field_options_struct_name, format_function, format_name, format_struct_name,
+    field_options_struct_name, format_function, format_name, format_optional_args,
+    format_struct_name,
 };
 use crate::utility::OptionExt;
 
@@ -51,16 +52,7 @@ fn render_optional_args(
 
 fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
     let output_type = field_options_struct_name(field);
-    let fields = field
-        .args
-        .pipe(|t| t.into_iter().flatten().collect::<Vec<_>>())
-        .map(|t| {
-            t.into_iter()
-                .filter(|t| type_ref_is_optional(&t.input_value.type_))
-                .collect::<Vec<_>>()
-        })
-        .pipe(|t| render_optional_field_args(funcs, t))
-        .flatten();
+    let fields = format_optional_args(funcs, field);
 
     let builder = rust::import("derive_builder", "Builder");
     let _phantom_data = rust::import("std::marker", "PhantomData");
@@ -79,7 +71,7 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     }
 }
 
-fn render_optional_field_args(
+pub fn render_optional_field_args(
     funcs: &CommonFunctions,
     args: &Vec<&FullTypeFieldsArgs>,
 ) -> Option<(rust::Tokens, bool)> {

@@ -10,6 +10,8 @@ use crate::functions::{
 };
 use crate::utility::OptionExt;
 
+use super::templates::object_tmpl::render_optional_field_args;
+
 pub fn format_name(s: &str) -> String {
     s.to_case(Case::Pascal)
 }
@@ -29,10 +31,33 @@ pub fn field_options_struct_name(field: &FullTypeFields) -> Option<String> {
 }
 
 pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Option<rust::Tokens> {
+    let is_async = field.type_.pipe(|t| &t.type_ref).pipe(|t| {
+        if type_ref_is_object(&t) || type_ref_is_list_of_objects(&t) {
+            return None;
+        } else {
+            return Some(quote! {
+                async
+            });
+        };
+    });
+
     let signature = quote! {
-        pub fn $(field.name.pipe(|n | format_struct_name(n)))
+        pub $(is_async) fn $(field.name.pipe(|n | format_struct_name(n)))
     };
-    let args = format_function_args(funcs, field);
+
+    let lifecycle = format_optional_args(funcs, field)
+        .pipe(|(_, contains_lifecycle)| contains_lifecycle)
+        .and_then(|c| {
+            if *c {
+                Some(quote! {
+                    <'a>
+                })
+            } else {
+                None
+            }
+        });
+
+    let args = format_function_args(funcs, field, lifecycle.as_ref());
 
     let output_type = field
         .type_
@@ -52,7 +77,7 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
                 $(render_execution(funcs, field))
             }
 
-            $(&signature)_opts(
+            $(&signature)_opts$(lifecycle)(
                 $args
             ) -> $(output_type) {
                 let mut query = self.selection.select($(quoted(field.name.as_ref())));
@@ -235,13 +260,14 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     let graphql_client = rust::import("crate::client", "graphql_client");
 
     quote! {
-        query.execute(&$graphql_client(&self.conn))
+        query.execute(&$graphql_client(&self.conn)).await
     }
 }
 
 fn format_function_args(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
+    lifecycle: Option<&rust::Tokens>,
 ) -> Option<(rust::Tokens, bool)> {
     if let Some(args) = field.args.as_ref() {
         let args = args
@@ -271,7 +297,7 @@ fn format_function_args(
             Some((
                 quote! {
                     $(required_args)
-                    opts: $(field_options_struct_name(field))
+                    opts: $(field_options_struct_name(field))$(lifecycle)
                 },
                 true,
             ))
@@ -315,4 +341,20 @@ fn format_required_function_args(
     } else {
         None
     }
+}
+
+pub fn format_optional_args(
+    funcs: &CommonFunctions,
+    field: &FullTypeFields,
+) -> Option<(rust::Tokens, bool)> {
+    field
+        .args
+        .pipe(|t| t.into_iter().flatten().collect::<Vec<_>>())
+        .map(|t| {
+            t.into_iter()
+                .filter(|t| type_ref_is_optional(&t.input_value.type_))
+                .collect::<Vec<_>>()
+        })
+        .pipe(|t| render_optional_field_args(funcs, t))
+        .flatten()
 }

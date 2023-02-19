@@ -93,18 +93,13 @@ impl Selection {
         Ok(fields.join("{") + &"}".repeat(fields.len() - 1))
     }
 
-    pub fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<D>
+    pub async fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<D>
     where
         D: for<'de> Deserialize<'de>,
     {
         let query = self.build()?;
 
-        let basic = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .unwrap();
-
-        let resp: Option<serde_json::Value> = match basic.block_on(gql_client.query(&query)) {
+        let resp: Option<serde_json::Value> = match gql_client.query(&query).await {
             Ok(r) => r,
             Err(e) => eyre::bail!(e),
         };

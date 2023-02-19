@@ -1,7 +1,8 @@
 use dagger_sdk::HostDirectoryOpts;
 use rand::Rng;
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
     let output = "examples/publish-the-application/app/build";
 
@@ -16,7 +17,7 @@ fn main() -> eyre::Result<()> {
     let source = client
         .container()
         .from("node:16")
-        .with_mounted_directory("/src", host_source_dir.id()?);
+        .with_mounted_directory("/src", host_source_dir.id().await?);
 
     let runner = source
         .with_workdir("/src")
@@ -36,9 +37,9 @@ fn main() -> eyre::Result<()> {
         .from("nginx")
         .with_directory(
             "/usr/share/nginx/html",
-            client.host().directory(output).id()?,
+            client.host().directory(output).id().await?,
         )
-        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()))?;
+        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>())).await?;
 
     println!("published image to: {}", ref_);
 
