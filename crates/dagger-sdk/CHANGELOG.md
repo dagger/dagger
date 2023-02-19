@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.6 (2023-02-19)
+
+### Documentation
+
+ - <csr-id-04e70ce964b343e28b3dbd0c46d10ccda958ab8c/> fix readme
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - fix readme ([`04e70ce`](https://github.com/kjuulh/dagger-rs/commit/04e70ce964b343e28b3dbd0c46d10ccda958ab8c))
+</details>
+
 ## v0.2.5 (2023-02-19)
 
 ### New Features
@@ -52,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 6 commits contributed to the release.
+ - 7 commits contributed to the release.
  - 6 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -63,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.5, dagger-codegen v0.2.4 ([`f727318`](https://github.com/kjuulh/dagger-rs/commit/f72731807d8358fdb3d80432136b7a08bb7b1773))
     - cargo clippy ([`c627595`](https://github.com/kjuulh/dagger-rs/commit/c627595fd2695e236924175d137c42f1480ccd6b))
     - without Some in _opts functions ([`f29ff83`](https://github.com/kjuulh/dagger-rs/commit/f29ff836cfd72d5e051ca6a71a230ba1e9933091))
     - with _opts methods ([`9762da8`](https://github.com/kjuulh/dagger-rs/commit/9762da895a164e30c5dc60e89a83e934ceae47ab))
