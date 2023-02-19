@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.5 (2023-02-19)
+
+### New Features
+
+ - <csr-id-978ede68ae52f5b5150a2aa45b8d6e1fbbbee2f4/> add documentation strings
+ - <csr-id-9be6f435d9ea39f31a8906e55dbd3e8b1e5ec598/> Use async runtime instead of blocking.
+   Default to using async runtime instead of blocking. I.e.
+   
+   ```rust
+   fn main() -> eyre::Result<()> {
+     // ...
+   
+     client.container().from("rust").publish("somewhere")?;
+   
+     // ...
+   }
+   
+   // to
+   
+   async fn main() -> eyre::Result<()> {
+     // ...
+   
+     client.container().from("rust").publish("somewhere").await?;
+   
+     // ...
+   }
+   ```
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - add documentation strings ([`978ede6`](https://github.com/kjuulh/dagger-rs/commit/978ede68ae52f5b5150a2aa45b8d6e1fbbbee2f4))
+    - Use async runtime instead of blocking. ([`9be6f43`](https://github.com/kjuulh/dagger-rs/commit/9be6f435d9ea39f31a8906e55dbd3e8b1e5ec598))
+</details>
+
 ## v0.2.4 (2023-02-19)
 
 ### New Features
@@ -51,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 5 commits contributed to the release.
+ - 6 commits contributed to the release.
  - 5 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -62,6 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.5, dagger-codegen v0.2.4 ([`f727318`](https://github.com/kjuulh/dagger-rs/commit/f72731807d8358fdb3d80432136b7a08bb7b1773))
     - cargo clippy ([`c627595`](https://github.com/kjuulh/dagger-rs/commit/c627595fd2695e236924175d137c42f1480ccd6b))
     - without Some in _opts functions ([`f29ff83`](https://github.com/kjuulh/dagger-rs/commit/f29ff836cfd72d5e051ca6a71a230ba1e9933091))
     - with _opts methods ([`9762da8`](https://github.com/kjuulh/dagger-rs/commit/9762da895a164e30c5dc60e89a83e934ceae47ab))
