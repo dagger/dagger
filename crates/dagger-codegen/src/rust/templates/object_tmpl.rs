@@ -63,7 +63,7 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
         .flatten();
 
     let builder = rust::import("derive_builder", "Builder");
-    let phantom_data = rust::import("std::marker", "PhantomData");
+    let _phantom_data = rust::import("std::marker", "PhantomData");
 
     if let Some((fields, contains_lifetime)) = fields {
         Some(quote! {
