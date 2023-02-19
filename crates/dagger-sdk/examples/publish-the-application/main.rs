@@ -1,8 +1,8 @@
-use dagger_sdk::gen::HostDirectoryOpts;
+use dagger_sdk::HostDirectoryOpts;
 use rand::Rng;
 
 fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::client::connect()?;
+    let client = dagger_sdk::connect()?;
     let output = "examples/publish-the-application/app/build";
 
     let host_source_dir = client.host().directory(

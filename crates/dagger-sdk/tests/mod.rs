@@ -1,5 +1,4 @@
-use dagger_sdk::client::connect;
-use dagger_sdk::gen::ContainerExecOpts;
+use dagger_sdk::{connect, ContainerExecOpts};
 
 #[test]
 fn test_example_container() {

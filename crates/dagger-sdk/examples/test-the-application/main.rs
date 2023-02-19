@@ -1,7 +1,7 @@
-use dagger_sdk::gen::HostDirectoryOpts;
+use dagger_sdk::HostDirectoryOpts;
 
 fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::client::connect()?;
+    let client = dagger_sdk::connect()?;
 
     let host_source_dir = client.host().directory(
         "examples/test-the-application/app".into(),

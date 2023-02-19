@@ -1,5 +1,5 @@
 fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::client::connect()?;
+    let client = dagger_sdk::connect()?;
 
     let version = client
         .container(None)
