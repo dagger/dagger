@@ -1,4 +1,4 @@
-# dagger-rs
+# dagger-sdk
 
 A dagger sdk written in rust for rust.
 
@@ -19,20 +19,20 @@ The examples match the folder name in each directory in examples
 Simply install like:
 
 ```bash
-cargo install dagger-sdk
+cargo add dagger-sdk
 ```
 
 ### Usage
 
 ```rust
 fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::client::connect()?;
+    let client = dagger_sdk::connect()?;
 
     let version = client
         .container(None)
         .from("golang:1.19".into())
         .with_exec(vec!["go".into(), "version".into()], None)
-        .stdout();
+        .stdout()?;
 
     println!("Hello from Dagger and {}", version.trim());
 
