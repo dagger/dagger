@@ -46,13 +46,13 @@ impl Selection {
         }
     }
 
-    pub fn arg<S>(&self, name: &str, value: S) -> eyre::Result<Selection>
+    pub fn arg<S>(&self, name: &str, value: S) -> Selection
     where
         S: Serialize,
     {
         let mut s = self.clone();
 
-        let val = serde_json::to_string(&value)?;
+        let val = serde_json::to_string(&value).unwrap();
 
         match s.args.as_mut() {
             Some(args) => {
@@ -65,7 +65,7 @@ impl Selection {
             }
         }
 
-        Ok(s)
+        s
     }
 
     pub fn build(&self) -> eyre::Result<String> {
@@ -93,7 +93,7 @@ impl Selection {
         Ok(fields.join("{") + &"}".repeat(fields.len() - 1))
     }
 
-    pub fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<Option<D>>
+    pub fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<D>
     where
         D: for<'de> Deserialize<'de>,
     {
@@ -111,7 +111,7 @@ impl Selection {
 
         let resp: Option<D> = self.unpack_resp(resp)?;
 
-        Ok(resp)
+        Ok(resp.unwrap())
     }
 
     fn path(&self) -> Vec<Selection> {
@@ -171,10 +171,8 @@ mod tests {
             .select("core")
             .select("image")
             .arg("ref", "alpine")
-            .unwrap()
             .select("file")
-            .arg("path", "/etc/alpine-release")
-            .unwrap();
+            .arg("path", "/etc/alpine-release");
 
         let query = root.build().unwrap();
 
@@ -190,10 +188,8 @@ mod tests {
             .select("core")
             .select("image")
             .arg("ref", "alpine")
-            .unwrap()
             .select_with_alias("foo", "file")
-            .arg("path", "/etc/alpine-release")
-            .unwrap();
+            .arg("path", "/etc/alpine-release");
 
         let query = root.build().unwrap();
 
@@ -208,10 +204,8 @@ mod tests {
         let root = query()
             .select("a")
             .arg("arg", "one")
-            .unwrap()
             .select("b")
-            .arg("arg", "two")
-            .unwrap();
+            .arg("arg", "two");
 
         let query = root.build().unwrap();
 
@@ -222,7 +216,7 @@ mod tests {
     fn test_vec_arg() {
         let input = vec!["some-string"];
 
-        let root = query().select("a").arg("arg", input).unwrap();
+        let root = query().select("a").arg("arg", input);
         let query = root.build().unwrap();
 
         assert_eq!(query, r#"query{a(arg:["some-string"])}"#.to_string())
@@ -232,7 +226,7 @@ mod tests {
     fn test_ref_slice_arg() {
         let input = &["some-string"];
 
-        let root = query().select("a").arg("arg", input).unwrap();
+        let root = query().select("a").arg("arg", input);
         let query = root.build().unwrap();
 
         assert_eq!(query, r#"query{a(arg:["some-string"])}"#.to_string())
@@ -242,7 +236,7 @@ mod tests {
     fn test_stringb_arg() {
         let input = "some-string".to_string();
 
-        let root = query().select("a").arg("arg", input).unwrap();
+        let root = query().select("a").arg("arg", input);
         let query = root.build().unwrap();
 
         assert_eq!(query, r#"query{a(arg:"some-string")}"#.to_string())
@@ -275,7 +269,7 @@ mod tests {
             })),
         };
 
-        let root = query().select("a").arg("arg", input).unwrap();
+        let root = query().select("a").arg("arg", input);
         let query = root.build().unwrap();
 
         assert_eq!(

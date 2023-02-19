@@ -5,8 +5,8 @@ use genco::quote;
 use genco::tokens::quoted;
 
 use crate::functions::{
-    type_field_has_optional, type_ref_is_list_of_objects, type_ref_is_object,
-    type_ref_is_optional, CommonFunctions,
+    type_field_has_optional, type_ref_is_list_of_objects, type_ref_is_object, type_ref_is_optional,
+    CommonFunctions,
 };
 use crate::utility::OptionExt;
 
@@ -67,7 +67,7 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                     let name = &s.input_value.name;
 
                     Some(quote! {
-                        query = query.arg($(quoted(name)), $(n)).unwrap();
+                        query = query.arg($(quoted(name)), $(n));
                     })
                 })
             })
@@ -98,7 +98,7 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
 
                     Some(quote! {
                         if let Some($(&n)) = opts.$(&n) {
-                            query = query.arg($(quoted(name)), $(&n)).unwrap();
+                            query = query.arg($(quoted(name)), $(&n));
                         }
                     })
                 })
@@ -163,7 +163,7 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
     let graphql_client = rust::import("crate::client", "graphql_client");
 
     quote! {
-        query.execute(&$graphql_client(&self.conn)).unwrap().unwrap()
+        query.execute(&$graphql_client(&self.conn)).unwrap()
     }
 }
 
