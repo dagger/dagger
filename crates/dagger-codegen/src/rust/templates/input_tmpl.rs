@@ -9,7 +9,7 @@ pub fn render_input(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust:
     let deserialize = rust::import("serde", "Deserialize");
     let serialize = rust::import("serde", "Serialize");
     Ok(quote! {
-        #[derive($serialize, $deserialize)]
+        #[derive($serialize, $deserialize, Debug, PartialEq, Clone)]
         pub struct $(format_name(t.name.as_ref().unwrap())) {
             $(render_input_fields(funcs, t.input_fields.as_ref().unwrap_or(&Vec::new())  ))
         }
@@ -33,6 +33,6 @@ pub fn render_input_fields(
 
 pub fn render_input_field(funcs: &CommonFunctions, field: &FullTypeInputFields) -> rust::Tokens {
     quote! {
-        pub $(format_struct_name(&field.input_value.name)): $(funcs.format_input_type(&field.input_value.type_)),
+        pub $(format_struct_name(&field.input_value.name)): $(funcs.format_output_type(&field.input_value.type_)),
     }
 }

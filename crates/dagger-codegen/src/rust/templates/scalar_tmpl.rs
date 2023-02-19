@@ -10,7 +10,7 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
     let serialize = rust::import("serde", "Serialize");
 
     Ok(quote! {
-        #[derive($serialize, $deserialize)]
+        #[derive($serialize, $deserialize, PartialEq, Debug, Clone)]
         pub struct $(t.name.pipe(|n|format_name(n)))(String);
     })
 }

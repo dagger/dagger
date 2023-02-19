@@ -1,25 +1,26 @@
 use crate::client::graphql_client;
 use crate::querybuilder::Selection;
 use dagger_core::connect_params::ConnectParams;
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::process::Child;
 use std::sync::Arc;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct DirectoryId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FileId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Platform(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SocketId(String);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
     pub name: String,
     pub value: String,
@@ -43,49 +44,83 @@ pub struct Container {
     pub conn: ConnectParams,
 }
 
-pub struct ContainerBuildOpts {
-    pub dockerfile: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerBuildOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub dockerfile: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub build_args: Option<Vec<BuildArg>>,
-    pub target: Option<String>,
+    #[builder(setter(into, strip_option))]
+    pub target: Option<&'a str>,
 }
-pub struct ContainerExecOpts {
-    pub args: Option<Vec<String>>,
-    pub stdin: Option<String>,
-    pub redirect_stdout: Option<String>,
-    pub redirect_stderr: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExecOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub args: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option))]
+    pub stdin: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
+    pub redirect_stdout: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
+    pub redirect_stderr: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub experimental_privileged_nesting: Option<bool>,
 }
-pub struct ContainerExportOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerExportOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
-pub struct ContainerPipelineOpts {
-    pub description: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerPipelineOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub description: Option<&'a str>,
 }
-pub struct ContainerPublishOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerPublishOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
-pub struct ContainerWithDefaultArgsOpts {
-    pub args: Option<Vec<String>>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithDefaultArgsOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub args: Option<Vec<&'a str>>,
 }
-pub struct ContainerWithDirectoryOpts {
-    pub exclude: Option<Vec<String>>,
-    pub include: Option<Vec<String>>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option))]
+    pub include: Option<Vec<&'a str>>,
 }
-pub struct ContainerWithExecOpts {
-    pub stdin: Option<String>,
-    pub redirect_stdout: Option<String>,
-    pub redirect_stderr: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithExecOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub stdin: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
+    pub redirect_stdout: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
+    pub redirect_stderr: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub experimental_privileged_nesting: Option<bool>,
 }
-pub struct ContainerWithFileOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithFileOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
-pub struct ContainerWithMountedCacheOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedCacheOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub source: Option<DirectoryId>,
+    #[builder(setter(into, strip_option))]
     pub sharing: Option<CacheSharingMode>,
 }
-pub struct ContainerWithNewFileOpts {
-    pub contents: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithNewFileOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub contents: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 
@@ -117,10 +152,10 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn directory(&self, path: String) -> Directory {
+    pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Directory {
             proc: self.proc.clone(),
@@ -133,10 +168,10 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn env_variable(&self, name: String) -> eyre::Result<String> {
+    pub fn env_variable(&self, name: impl Into<String>) -> eyre::Result<String> {
         let mut query = self.selection.select("envVariable");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         query.execute(&graphql_client(&self.conn))
     }
@@ -184,10 +219,14 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn export(&self, path: String, opts: Option<ContainerExportOpts>) -> eyre::Result<bool> {
+    pub fn export(
+        &self,
+        path: impl Into<String>,
+        opts: Option<ContainerExportOpts>,
+    ) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         if let Some(opts) = opts {
             if let Some(platform_variants) = opts.platform_variants {
                 query = query.arg("platformVariants", platform_variants);
@@ -196,10 +235,10 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn file(&self, path: String) -> File {
+    pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return File {
             proc: self.proc.clone(),
@@ -207,10 +246,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn from(&self, address: String) -> Container {
+    pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
 
-        query = query.arg("address", address);
+        query = query.arg("address", address.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -232,10 +271,10 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn label(&self, name: String) -> eyre::Result<String> {
+    pub fn label(&self, name: impl Into<String>) -> eyre::Result<String> {
         let mut query = self.selection.select("label");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         query.execute(&graphql_client(&self.conn))
     }
@@ -253,10 +292,14 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn pipeline(&self, name: String, opts: Option<ContainerPipelineOpts>) -> Container {
+    pub fn pipeline(
+        &self,
+        name: impl Into<String>,
+        opts: Option<ContainerPipelineOpts>,
+    ) -> Container {
         let mut query = self.selection.select("pipeline");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
         if let Some(opts) = opts {
             if let Some(description) = opts.description {
                 query = query.arg("description", description);
@@ -276,12 +319,12 @@ impl Container {
     }
     pub fn publish(
         &self,
-        address: String,
+        address: impl Into<String>,
         opts: Option<ContainerPublishOpts>,
     ) -> eyre::Result<String> {
         let mut query = self.selection.select("publish");
 
-        query = query.arg("address", address);
+        query = query.arg("address", address.into());
         if let Some(opts) = opts {
             if let Some(platform_variants) = opts.platform_variants {
                 query = query.arg("platformVariants", platform_variants);
@@ -331,13 +374,13 @@ impl Container {
     }
     pub fn with_directory(
         &self,
-        path: String,
+        path: impl Into<String>,
         directory: DirectoryId,
         opts: Option<ContainerWithDirectoryOpts>,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("directory", directory);
         if let Some(opts) = opts {
             if let Some(exclude) = opts.exclude {
@@ -354,10 +397,13 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_entrypoint(&self, args: Vec<String>) -> Container {
+    pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withEntrypoint");
 
-        query = query.arg("args", args);
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
 
         return Container {
             proc: self.proc.clone(),
@@ -365,11 +411,15 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_env_variable(&self, name: String, value: String) -> Container {
+    pub fn with_env_variable(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Container {
         let mut query = self.selection.select("withEnvVariable");
 
-        query = query.arg("name", name);
-        query = query.arg("value", value);
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -377,10 +427,17 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_exec(&self, args: Vec<String>, opts: Option<ContainerWithExecOpts>) -> Container {
+    pub fn with_exec(
+        &self,
+        args: Vec<impl Into<String>>,
+        opts: Option<ContainerWithExecOpts>,
+    ) -> Container {
         let mut query = self.selection.select("withExec");
 
-        query = query.arg("args", args);
+        query = query.arg(
+            "args",
+            args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
+        );
         if let Some(opts) = opts {
             if let Some(stdin) = opts.stdin {
                 query = query.arg("stdin", stdin);
@@ -418,13 +475,13 @@ impl Container {
     }
     pub fn with_file(
         &self,
-        path: String,
+        path: impl Into<String>,
         source: FileId,
         opts: Option<ContainerWithFileOpts>,
     ) -> Container {
         let mut query = self.selection.select("withFile");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
         if let Some(opts) = opts {
             if let Some(permissions) = opts.permissions {
@@ -438,11 +495,11 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_label(&self, name: String, value: String) -> Container {
+    pub fn with_label(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
         let mut query = self.selection.select("withLabel");
 
-        query = query.arg("name", name);
-        query = query.arg("value", value);
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -452,13 +509,13 @@ impl Container {
     }
     pub fn with_mounted_cache(
         &self,
-        path: String,
+        path: impl Into<String>,
         cache: CacheId,
         opts: Option<ContainerWithMountedCacheOpts>,
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("cache", cache);
         if let Some(opts) = opts {
             if let Some(source) = opts.source {
@@ -475,10 +532,14 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_mounted_directory(&self, path: String, source: DirectoryId) -> Container {
+    pub fn with_mounted_directory(
+        &self,
+        path: impl Into<String>,
+        source: DirectoryId,
+    ) -> Container {
         let mut query = self.selection.select("withMountedDirectory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
 
         return Container {
@@ -487,10 +548,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_mounted_file(&self, path: String, source: FileId) -> Container {
+    pub fn with_mounted_file(&self, path: impl Into<String>, source: FileId) -> Container {
         let mut query = self.selection.select("withMountedFile");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
 
         return Container {
@@ -499,10 +560,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_mounted_secret(&self, path: String, source: SecretId) -> Container {
+    pub fn with_mounted_secret(&self, path: impl Into<String>, source: SecretId) -> Container {
         let mut query = self.selection.select("withMountedSecret");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
 
         return Container {
@@ -511,10 +572,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_mounted_temp(&self, path: String) -> Container {
+    pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -522,10 +583,14 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_new_file(&self, path: String, opts: Option<ContainerWithNewFileOpts>) -> Container {
+    pub fn with_new_file(
+        &self,
+        path: impl Into<String>,
+        opts: Option<ContainerWithNewFileOpts>,
+    ) -> Container {
         let mut query = self.selection.select("withNewFile");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         if let Some(opts) = opts {
             if let Some(contents) = opts.contents {
                 query = query.arg("contents", contents);
@@ -543,14 +608,14 @@ impl Container {
     }
     pub fn with_registry_auth(
         &self,
-        address: String,
-        username: String,
+        address: impl Into<String>,
+        username: impl Into<String>,
         secret: SecretId,
     ) -> Container {
         let mut query = self.selection.select("withRegistryAuth");
 
-        query = query.arg("address", address);
-        query = query.arg("username", username);
+        query = query.arg("address", address.into());
+        query = query.arg("username", username.into());
         query = query.arg("secret", secret);
 
         return Container {
@@ -570,10 +635,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_secret_variable(&self, name: String, secret: SecretId) -> Container {
+    pub fn with_secret_variable(&self, name: impl Into<String>, secret: SecretId) -> Container {
         let mut query = self.selection.select("withSecretVariable");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
         query = query.arg("secret", secret);
 
         return Container {
@@ -582,10 +647,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_unix_socket(&self, path: String, source: SocketId) -> Container {
+    pub fn with_unix_socket(&self, path: impl Into<String>, source: SocketId) -> Container {
         let mut query = self.selection.select("withUnixSocket");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
 
         return Container {
@@ -594,10 +659,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_user(&self, name: String) -> Container {
+    pub fn with_user(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withUser");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -605,10 +670,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn with_workdir(&self, path: String) -> Container {
+    pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -616,10 +681,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_env_variable(&self, name: String) -> Container {
+    pub fn without_env_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutEnvVariable");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -627,10 +692,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_label(&self, name: String) -> Container {
+    pub fn without_label(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutLabel");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -638,10 +703,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_mount(&self, path: String) -> Container {
+    pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -649,10 +714,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_registry_auth(&self, address: String) -> Container {
+    pub fn without_registry_auth(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutRegistryAuth");
 
-        query = query.arg("address", address);
+        query = query.arg("address", address.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -660,10 +725,10 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_unix_socket(&self, path: String) -> Container {
+    pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Container {
             proc: self.proc.clone(),
@@ -683,29 +748,47 @@ pub struct Directory {
     pub conn: ConnectParams,
 }
 
-pub struct DirectoryDockerBuildOpts {
-    pub dockerfile: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryDockerBuildOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub dockerfile: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub platform: Option<Platform>,
+    #[builder(setter(into, strip_option))]
     pub build_args: Option<Vec<BuildArg>>,
-    pub target: Option<String>,
+    #[builder(setter(into, strip_option))]
+    pub target: Option<&'a str>,
 }
-pub struct DirectoryEntriesOpts {
-    pub path: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryEntriesOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub path: Option<&'a str>,
 }
-pub struct DirectoryPipelineOpts {
-    pub description: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryPipelineOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub description: Option<&'a str>,
 }
-pub struct DirectoryWithDirectoryOpts {
-    pub exclude: Option<Vec<String>>,
-    pub include: Option<Vec<String>>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option))]
+    pub include: Option<Vec<&'a str>>,
 }
-pub struct DirectoryWithFileOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithFileOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
-pub struct DirectoryWithNewDirectoryOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithNewDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
-pub struct DirectoryWithNewFileOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct DirectoryWithNewFileOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 
@@ -721,10 +804,10 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    pub fn directory(&self, path: String) -> Directory {
+    pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Directory {
             proc: self.proc.clone(),
@@ -767,17 +850,17 @@ impl Directory {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn export(&self, path: String) -> eyre::Result<bool> {
+    pub fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn file(&self, path: String) -> File {
+    pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return File {
             proc: self.proc.clone(),
@@ -790,10 +873,10 @@ impl Directory {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn load_project(&self, config_path: String) -> Project {
+    pub fn load_project(&self, config_path: impl Into<String>) -> Project {
         let mut query = self.selection.select("loadProject");
 
-        query = query.arg("configPath", config_path);
+        query = query.arg("configPath", config_path.into());
 
         return Project {
             proc: self.proc.clone(),
@@ -801,10 +884,14 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    pub fn pipeline(&self, name: String, opts: Option<DirectoryPipelineOpts>) -> Directory {
+    pub fn pipeline(
+        &self,
+        name: impl Into<String>,
+        opts: Option<DirectoryPipelineOpts>,
+    ) -> Directory {
         let mut query = self.selection.select("pipeline");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
         if let Some(opts) = opts {
             if let Some(description) = opts.description {
                 query = query.arg("description", description);
@@ -819,13 +906,13 @@ impl Directory {
     }
     pub fn with_directory(
         &self,
-        path: String,
+        path: impl Into<String>,
         directory: DirectoryId,
         opts: Option<DirectoryWithDirectoryOpts>,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("directory", directory);
         if let Some(opts) = opts {
             if let Some(exclude) = opts.exclude {
@@ -844,13 +931,13 @@ impl Directory {
     }
     pub fn with_file(
         &self,
-        path: String,
+        path: impl Into<String>,
         source: FileId,
         opts: Option<DirectoryWithFileOpts>,
     ) -> Directory {
         let mut query = self.selection.select("withFile");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         query = query.arg("source", source);
         if let Some(opts) = opts {
             if let Some(permissions) = opts.permissions {
@@ -866,12 +953,12 @@ impl Directory {
     }
     pub fn with_new_directory(
         &self,
-        path: String,
+        path: impl Into<String>,
         opts: Option<DirectoryWithNewDirectoryOpts>,
     ) -> Directory {
         let mut query = self.selection.select("withNewDirectory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         if let Some(opts) = opts {
             if let Some(permissions) = opts.permissions {
                 query = query.arg("permissions", permissions);
@@ -886,14 +973,14 @@ impl Directory {
     }
     pub fn with_new_file(
         &self,
-        path: String,
-        contents: String,
+        path: impl Into<String>,
+        contents: impl Into<String>,
         opts: Option<DirectoryWithNewFileOpts>,
     ) -> Directory {
         let mut query = self.selection.select("withNewFile");
 
-        query = query.arg("path", path);
-        query = query.arg("contents", contents);
+        query = query.arg("path", path.into());
+        query = query.arg("contents", contents.into());
         if let Some(opts) = opts {
             if let Some(permissions) = opts.permissions {
                 query = query.arg("permissions", permissions);
@@ -917,10 +1004,10 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_directory(&self, path: String) -> Directory {
+    pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Directory {
             proc: self.proc.clone(),
@@ -928,10 +1015,10 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    pub fn without_file(&self, path: String) -> Directory {
+    pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Directory {
             proc: self.proc.clone(),
@@ -970,10 +1057,10 @@ impl File {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn export(&self, path: String) -> eyre::Result<bool> {
+    pub fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         query.execute(&graphql_client(&self.conn))
     }
@@ -1014,8 +1101,11 @@ pub struct GitRef {
     pub conn: ConnectParams,
 }
 
-pub struct GitRefTreeOpts {
-    pub ssh_known_hosts: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct GitRefTreeOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub ssh_known_hosts: Option<&'a str>,
+    #[builder(setter(into, strip_option))]
     pub ssh_auth_socket: Option<SocketId>,
 }
 
@@ -1051,10 +1141,10 @@ pub struct GitRepository {
 }
 
 impl GitRepository {
-    pub fn branch(&self, name: String) -> GitRef {
+    pub fn branch(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("branch");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return GitRef {
             proc: self.proc.clone(),
@@ -1067,10 +1157,10 @@ impl GitRepository {
 
         query.execute(&graphql_client(&self.conn))
     }
-    pub fn commit(&self, id: String) -> GitRef {
+    pub fn commit(&self, id: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("commit");
 
-        query = query.arg("id", id);
+        query = query.arg("id", id.into());
 
         return GitRef {
             proc: self.proc.clone(),
@@ -1078,10 +1168,10 @@ impl GitRepository {
             conn: self.conn.clone(),
         };
     }
-    pub fn tag(&self, name: String) -> GitRef {
+    pub fn tag(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("tag");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return GitRef {
             proc: self.proc.clone(),
@@ -1101,20 +1191,26 @@ pub struct Host {
     pub conn: ConnectParams,
 }
 
-pub struct HostDirectoryOpts {
-    pub exclude: Option<Vec<String>>,
-    pub include: Option<Vec<String>>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct HostDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option))]
+    pub include: Option<Vec<&'a str>>,
 }
-pub struct HostWorkdirOpts {
-    pub exclude: Option<Vec<String>>,
-    pub include: Option<Vec<String>>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct HostWorkdirOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub exclude: Option<Vec<&'a str>>,
+    #[builder(setter(into, strip_option))]
+    pub include: Option<Vec<&'a str>>,
 }
 
 impl Host {
-    pub fn directory(&self, path: String, opts: Option<HostDirectoryOpts>) -> Directory {
+    pub fn directory(&self, path: impl Into<String>, opts: Option<HostDirectoryOpts>) -> Directory {
         let mut query = self.selection.select("directory");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
         if let Some(opts) = opts {
             if let Some(exclude) = opts.exclude {
                 query = query.arg("exclude", exclude);
@@ -1130,10 +1226,10 @@ impl Host {
             conn: self.conn.clone(),
         };
     }
-    pub fn env_variable(&self, name: String) -> HostVariable {
+    pub fn env_variable(&self, name: impl Into<String>) -> HostVariable {
         let mut query = self.selection.select("envVariable");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return HostVariable {
             proc: self.proc.clone(),
@@ -1141,10 +1237,10 @@ impl Host {
             conn: self.conn.clone(),
         };
     }
-    pub fn unix_socket(&self, path: String) -> Socket {
+    pub fn unix_socket(&self, path: impl Into<String>) -> Socket {
         let mut query = self.selection.select("unixSocket");
 
-        query = query.arg("path", path);
+        query = query.arg("path", path.into());
 
         return Socket {
             proc: self.proc.clone(),
@@ -1263,28 +1359,39 @@ pub struct Query {
     pub conn: ConnectParams,
 }
 
-pub struct QueryContainerOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryContainerOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub id: Option<ContainerId>,
+    #[builder(setter(into, strip_option))]
     pub platform: Option<Platform>,
 }
-pub struct QueryDirectoryOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryDirectoryOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub id: Option<DirectoryId>,
 }
-pub struct QueryGitOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryGitOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub keep_git_dir: Option<bool>,
 }
-pub struct QueryPipelineOpts {
-    pub description: Option<String>,
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryPipelineOpts<'a> {
+    #[builder(setter(into, strip_option))]
+    pub description: Option<&'a str>,
 }
-pub struct QuerySocketOpts {
+#[derive(Builder, Debug, PartialEq)]
+pub struct QuerySocketOpts<'a> {
+    #[builder(setter(into, strip_option))]
     pub id: Option<SocketId>,
 }
 
 impl Query {
-    pub fn cache_volume(&self, key: String) -> CacheVolume {
+    pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
 
-        query = query.arg("key", key);
+        query = query.arg("key", key.into());
 
         return CacheVolume {
             proc: self.proc.clone(),
@@ -1341,10 +1448,10 @@ impl Query {
             conn: self.conn.clone(),
         };
     }
-    pub fn git(&self, url: String, opts: Option<QueryGitOpts>) -> GitRepository {
+    pub fn git(&self, url: impl Into<String>, opts: Option<QueryGitOpts>) -> GitRepository {
         let mut query = self.selection.select("git");
 
-        query = query.arg("url", url);
+        query = query.arg("url", url.into());
         if let Some(opts) = opts {
             if let Some(keep_git_dir) = opts.keep_git_dir {
                 query = query.arg("keepGitDir", keep_git_dir);
@@ -1366,10 +1473,10 @@ impl Query {
             conn: self.conn.clone(),
         };
     }
-    pub fn http(&self, url: String) -> File {
+    pub fn http(&self, url: impl Into<String>) -> File {
         let mut query = self.selection.select("http");
 
-        query = query.arg("url", url);
+        query = query.arg("url", url.into());
 
         return File {
             proc: self.proc.clone(),
@@ -1377,10 +1484,10 @@ impl Query {
             conn: self.conn.clone(),
         };
     }
-    pub fn pipeline(&self, name: String, opts: Option<QueryPipelineOpts>) -> Query {
+    pub fn pipeline(&self, name: impl Into<String>, opts: Option<QueryPipelineOpts>) -> Query {
         let mut query = self.selection.select("pipeline");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
         if let Some(opts) = opts {
             if let Some(description) = opts.description {
                 query = query.arg("description", description);
@@ -1393,10 +1500,10 @@ impl Query {
             conn: self.conn.clone(),
         };
     }
-    pub fn project(&self, name: String) -> Project {
+    pub fn project(&self, name: impl Into<String>) -> Project {
         let mut query = self.selection.select("project");
 
-        query = query.arg("name", name);
+        query = query.arg("name", name.into());
 
         return Project {
             proc: self.proc.clone(),
@@ -1462,7 +1569,7 @@ impl Socket {
         query.execute(&graphql_client(&self.conn))
     }
 }
-#[derive(Serialize)]
+#[derive(Serialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
     SHARED,
     PRIVATE,

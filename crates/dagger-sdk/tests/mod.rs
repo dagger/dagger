@@ -1,19 +1,18 @@
-use dagger_sdk::{connect, ContainerExecOpts};
+use dagger_sdk::{connect, ContainerExecOptsBuilder};
 
 #[test]
 fn test_example_container() {
     let client = connect().unwrap();
 
-    let alpine = client.container(None).from("alpine:3.16.2".into());
+    let alpine = client.container(None).from("alpine:3.16.2");
 
     let out = alpine
-        .exec(Some(ContainerExecOpts {
-            args: Some(vec!["cat".into(), "/etc/alpine-release".into()]),
-            stdin: None,
-            redirect_stdout: None,
-            redirect_stderr: None,
-            experimental_privileged_nesting: None,
-        }))
+        .exec(Some(
+            ContainerExecOptsBuilder::default()
+                .args(vec!["cat", "/etc/alpine-release"])
+                .build()
+                .unwrap(),
+        ))
         .stdout()
         .unwrap();
 

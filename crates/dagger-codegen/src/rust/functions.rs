@@ -5,8 +5,8 @@ use genco::quote;
 use genco::tokens::quoted;
 
 use crate::functions::{
-    type_field_has_optional, type_ref_is_list_of_objects, type_ref_is_object, type_ref_is_optional,
-    CommonFunctions,
+    type_field_has_optional, type_ref_is_list, type_ref_is_list_of_objects, type_ref_is_object,
+    type_ref_is_optional, type_ref_is_scalar, CommonFunctions, Scalar,
 };
 use crate::utility::OptionExt;
 
@@ -65,6 +65,40 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
 
                     let n = format_struct_name(&s.input_value.name);
                     let name = &s.input_value.name;
+
+                    if type_ref_is_scalar(&s.input_value.type_) {
+                        if let Scalar::String =
+                            Scalar::from(&*s.input_value.type_.of_type.as_ref().unwrap().clone())
+                        {
+                            return Some(quote! {
+                                query = query.arg($(quoted(name)), $(&n).into());
+                            });
+                        }
+                    }
+
+                    if type_ref_is_list(&s.input_value.type_) {
+                        let inner = *s
+                            .input_value
+                            .type_
+                            .of_type
+                            .as_ref()
+                            .unwrap()
+                            .clone()
+                            .of_type
+                            .as_ref()
+                            .unwrap()
+                            .clone();
+                        println!("type: {:?}", inner);
+                        if type_ref_is_scalar(&inner) {
+                            if let Scalar::String =
+                                Scalar::from(&*inner.of_type.as_ref().unwrap().clone())
+                            {
+                                return Some(quote! {
+                                    query = query.arg($(quoted(name)), $(&n).into_iter().map(|i| i.into()).collect::<Vec<String>>());
+                                });
+                            }
+                        }
+                    }
 
                     Some(quote! {
                         query = query.arg($(quoted(name)), $(n));

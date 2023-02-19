@@ -61,9 +61,15 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
         .pipe(|t| render_optional_field_args(funcs, t))
         .flatten();
 
+    let builder = rust::import("derive_builder", "Builder");
+    let phantom_data = rust::import("std::marker", "PhantomData");
+
     if let Some(fields) = fields {
         Some(quote! {
-            pub struct $output_type {
+            #[derive($builder, Debug, PartialEq)]
+            pub struct $output_type<'a> {
+                //#[builder(default, setter(skip))]
+                //pub marker: $(phantom_data)<&'a ()>,
                 $fields
             }
         })
@@ -81,7 +87,8 @@ fn render_optional_field_args(
     }
     let rendered_args = args.into_iter().map(|a| &a.input_value).map(|a| {
         quote! {
-            pub $(format_struct_name(&a.name)): Option<$(funcs.format_output_type(&a.type_))>,
+            #[builder(setter(into, strip_option))]
+            pub $(format_struct_name(&a.name)): Option<$(funcs.format_immutable_input_type(&a.type_))>,
         }
     });
 

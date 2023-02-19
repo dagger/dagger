@@ -5,13 +5,17 @@ use super::functions::format_name;
 pub struct FormatTypeFunc;
 
 impl FormatTypeFuncs for FormatTypeFunc {
-    fn format_kind_list(&self, representation: &str) -> String {
+    fn format_kind_list(&self, representation: &str, _input: bool, _immutable: bool) -> String {
         format!("Vec<{}>", representation)
     }
 
-    fn format_kind_scalar_string(&self, representation: &str) -> String {
+    fn format_kind_scalar_string(&self, representation: &str, input: bool) -> String {
         let mut rep = representation.to_string();
-        rep.push_str("String");
+        if input {
+            rep.push_str("impl Into<String>");
+        } else {
+            rep.push_str("String");
+        }
         rep
     }
 

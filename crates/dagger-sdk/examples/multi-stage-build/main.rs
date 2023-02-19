@@ -5,42 +5,35 @@ fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
 
     let host_source_dir = client.host().directory(
-        "examples/publish-the-application/app".into(),
+        "examples/publish-the-application/app",
         Some(HostDirectoryOpts {
-            exclude: Some(vec!["node_modules".into(), "ci/".into()]),
+            exclude: Some(vec!["node_modules", "ci/"]),
             include: None,
+            marker: std::marker::PhantomData,
         }),
     );
 
     let source = client
         .container(None)
-        .from("node:16".into())
-        .with_mounted_directory("/src".into(), host_source_dir.id()?);
+        .from("node:16")
+        .with_mounted_directory("/src", host_source_dir.id()?);
 
     let runner = source
-        .with_workdir("/src".into())
-        .with_exec(vec!["npm".into(), "install".into()], None);
+        .with_workdir("/src")
+        .with_exec(vec!["npm", "install"], None);
 
-    let test = runner.with_exec(
-        vec![
-            "npm".into(),
-            "test".into(),
-            "--".into(),
-            "--watchAll=false".into(),
-        ],
-        None,
-    );
+    let test = runner.with_exec(vec!["npm", "test", "--", "--watchAll=false"], None);
 
     let build_dir = test
-        .with_exec(vec!["npm".into(), "run".into(), "build".into()], None)
-        .directory("./build".into());
+        .with_exec(vec!["npm", "run", "build"], None)
+        .directory("./build");
 
     let mut rng = rand::thread_rng();
 
     let ref_ = client
         .container(None)
-        .from("nginx".into())
-        .with_directory("/usr/share/nginx/html".into(), build_dir.id()?, None)
+        .from("nginx")
+        .with_directory("/usr/share/nginx/html", build_dir.id()?, None)
         .publish(
             format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()),
             None,

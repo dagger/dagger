@@ -7,7 +7,7 @@ fn main() -> eyre::Result<()> {
 
     let context_dir = client
         .host()
-        .directory("./examples/existing-dockerfile/app".into(), None);
+        .directory("./examples/existing-dockerfile/app", None);
 
     let ref_ = client
         .container(None)

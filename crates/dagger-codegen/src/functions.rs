@@ -6,8 +6,8 @@ use eyre::ContextCompat;
 use crate::utility::OptionExt;
 
 pub trait FormatTypeFuncs {
-    fn format_kind_list(&self, representation: &str) -> String;
-    fn format_kind_scalar_string(&self, representation: &str) -> String;
+    fn format_kind_list(&self, representation: &str, input: bool, immutable: bool) -> String;
+    fn format_kind_scalar_string(&self, representation: &str, input: bool) -> String;
     fn format_kind_scalar_int(&self, representation: &str) -> String;
     fn format_kind_scalar_float(&self, representation: &str) -> String;
     fn format_kind_scalar_boolean(&self, representation: &str) -> String;
@@ -36,14 +36,18 @@ impl CommonFunctions {
     }
 
     pub fn format_input_type(&self, t: &TypeRef) -> String {
-        self.format_type(t, true)
+        self.format_type(t, true, false)
     }
 
     pub fn format_output_type(&self, t: &TypeRef) -> String {
-        self.format_type(t, false)
+        self.format_type(t, false, false)
     }
 
-    fn format_type(&self, t: &TypeRef, input: bool) -> String {
+    pub fn format_immutable_input_type(&self, t: &TypeRef) -> String {
+        self.format_type(t, true, true)
+    }
+
+    fn format_type(&self, t: &TypeRef, input: bool, immutable: bool) -> String {
         let mut representation = String::new();
         let mut r = Some(t.clone());
         while r.is_some() {
@@ -57,9 +61,14 @@ impl CommonFunctions {
                             Scalar::Float => self
                                 .format_type_funcs
                                 .format_kind_scalar_float(&mut representation),
-                            Scalar::String => self
-                                .format_type_funcs
-                                .format_kind_scalar_string(&mut representation),
+                            Scalar::String => {
+                                if immutable {
+                                    "&'a str".into()
+                                } else {
+                                    self.format_type_funcs
+                                        .format_kind_scalar_string(&mut representation, input)
+                                }
+                            }
                             Scalar::Boolean => self
                                 .format_type_funcs
                                 .format_kind_scalar_boolean(&mut representation),
@@ -87,12 +96,15 @@ impl CommonFunctions {
                                 .as_ref()
                                 .map(|t| t.clone())
                                 .map(|t| *t)
-                                .map(|t| self.format_type(&t, input))
+                                .map(|t| self.format_type(&t, input, immutable))
                                 .context("could not get inner type of list")
                                 .unwrap();
 
-                            representation =
-                                self.format_type_funcs.format_kind_list(&mut inner_type);
+                            representation = self.format_type_funcs.format_kind_list(
+                                &mut inner_type,
+                                input,
+                                immutable,
+                            );
 
                             return representation;
                         }
