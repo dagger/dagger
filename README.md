@@ -24,7 +24,7 @@ See [dagger-sdk](./crates/dagger-sdk/README.md)
 - [x] fix build / release cycle
 - [x] general api stabilisation
 - [x] document usage
-- [ ] make async variant
+- [x] make async variant
 
 ## Architecture
 
