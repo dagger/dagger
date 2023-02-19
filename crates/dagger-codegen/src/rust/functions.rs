@@ -171,9 +171,7 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
         }
 
         let required_args = quote! {
-            if let Some(opts) = opts {
-                $(for arg in args join ($['\r']) => $arg)
-            }
+            $(for arg in args join ($['\r']) => $arg)
         };
 
         Some(required_args)
@@ -273,7 +271,7 @@ fn format_function_args(
             Some((
                 quote! {
                     $(required_args)
-                    opts: Option<$(field_options_struct_name(field))>
+                    opts: $(field_options_struct_name(field))
                 },
                 true,
             ))

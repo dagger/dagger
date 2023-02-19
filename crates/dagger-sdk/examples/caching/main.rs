@@ -5,11 +5,9 @@ fn main() -> eyre::Result<()> {
 
     let host_source_dir = client.host().directory_opts(
         "./examples/caching/app",
-        Some(
-            dagger_sdk::HostDirectoryOptsBuilder::default()
-                .exclude(vec!["node_modules", "ci/"])
-                .build()?,
-        ),
+        dagger_sdk::HostDirectoryOptsBuilder::default()
+            .exclude(vec!["node_modules", "ci/"])
+            .build()?,
     );
 
     let node_cache = client.cache_volume("node").id()?;

@@ -22,8 +22,8 @@ pub struct SecretId(String);
 pub struct SocketId(String);
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
-    pub value: String,
     pub name: String,
+    pub value: String,
 }
 pub struct CacheVolume {
     pub proc: Arc<Child>,
@@ -137,20 +137,18 @@ impl Container {
         };
     }
 
-    pub fn build_opts(&self, context: DirectoryId, opts: Option<ContainerBuildOpts>) -> Container {
+    pub fn build_opts(&self, context: DirectoryId, opts: ContainerBuildOpts) -> Container {
         let mut query = self.selection.select("build");
 
         query = query.arg("context", context);
-        if let Some(opts) = opts {
-            if let Some(dockerfile) = opts.dockerfile {
-                query = query.arg("dockerfile", dockerfile);
-            }
-            if let Some(build_args) = opts.build_args {
-                query = query.arg("buildArgs", build_args);
-            }
-            if let Some(target) = opts.target {
-                query = query.arg("target", target);
-            }
+        if let Some(dockerfile) = opts.dockerfile {
+            query = query.arg("dockerfile", dockerfile);
+        }
+        if let Some(build_args) = opts.build_args {
+            query = query.arg("buildArgs", build_args);
+        }
+        if let Some(target) = opts.target {
+            query = query.arg("target", target);
         }
 
         return Container {
@@ -206,28 +204,26 @@ impl Container {
         };
     }
 
-    pub fn exec_opts(&self, opts: Option<ContainerExecOpts>) -> Container {
+    pub fn exec_opts(&self, opts: ContainerExecOpts) -> Container {
         let mut query = self.selection.select("exec");
 
-        if let Some(opts) = opts {
-            if let Some(args) = opts.args {
-                query = query.arg("args", args);
-            }
-            if let Some(stdin) = opts.stdin {
-                query = query.arg("stdin", stdin);
-            }
-            if let Some(redirect_stdout) = opts.redirect_stdout {
-                query = query.arg("redirectStdout", redirect_stdout);
-            }
-            if let Some(redirect_stderr) = opts.redirect_stderr {
-                query = query.arg("redirectStderr", redirect_stderr);
-            }
-            if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
-                query = query.arg(
-                    "experimentalPrivilegedNesting",
-                    experimental_privileged_nesting,
-                );
-            }
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
+        }
+        if let Some(stdin) = opts.stdin {
+            query = query.arg("stdin", stdin);
+        }
+        if let Some(redirect_stdout) = opts.redirect_stdout {
+            query = query.arg("redirectStdout", redirect_stdout);
+        }
+        if let Some(redirect_stderr) = opts.redirect_stderr {
+            query = query.arg("redirectStderr", redirect_stderr);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
         }
 
         return Container {
@@ -252,15 +248,13 @@ impl Container {
     pub fn export_opts(
         &self,
         path: impl Into<String>,
-        opts: Option<ContainerExportOpts>,
+        opts: ContainerExportOpts,
     ) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
         query = query.arg("path", path.into());
-        if let Some(opts) = opts {
-            if let Some(platform_variants) = opts.platform_variants {
-                query = query.arg("platformVariants", platform_variants);
-            }
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
         }
 
         query.execute(&graphql_client(&self.conn))
@@ -334,18 +328,12 @@ impl Container {
         };
     }
 
-    pub fn pipeline_opts(
-        &self,
-        name: impl Into<String>,
-        opts: Option<ContainerPipelineOpts>,
-    ) -> Container {
+    pub fn pipeline_opts(&self, name: impl Into<String>, opts: ContainerPipelineOpts) -> Container {
         let mut query = self.selection.select("pipeline");
 
         query = query.arg("name", name.into());
-        if let Some(opts) = opts {
-            if let Some(description) = opts.description {
-                query = query.arg("description", description);
-            }
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
         }
 
         return Container {
@@ -370,15 +358,13 @@ impl Container {
     pub fn publish_opts(
         &self,
         address: impl Into<String>,
-        opts: Option<ContainerPublishOpts>,
+        opts: ContainerPublishOpts,
     ) -> eyre::Result<String> {
         let mut query = self.selection.select("publish");
 
         query = query.arg("address", address.into());
-        if let Some(opts) = opts {
-            if let Some(platform_variants) = opts.platform_variants {
-                query = query.arg("platformVariants", platform_variants);
-            }
+        if let Some(platform_variants) = opts.platform_variants {
+            query = query.arg("platformVariants", platform_variants);
         }
 
         query.execute(&graphql_client(&self.conn))
@@ -417,13 +403,11 @@ impl Container {
         };
     }
 
-    pub fn with_default_args_opts(&self, opts: Option<ContainerWithDefaultArgsOpts>) -> Container {
+    pub fn with_default_args_opts(&self, opts: ContainerWithDefaultArgsOpts) -> Container {
         let mut query = self.selection.select("withDefaultArgs");
 
-        if let Some(opts) = opts {
-            if let Some(args) = opts.args {
-                query = query.arg("args", args);
-            }
+        if let Some(args) = opts.args {
+            query = query.arg("args", args);
         }
 
         return Container {
@@ -449,19 +433,17 @@ impl Container {
         &self,
         path: impl Into<String>,
         directory: DirectoryId,
-        opts: Option<ContainerWithDirectoryOpts>,
+        opts: ContainerWithDirectoryOpts,
     ) -> Container {
         let mut query = self.selection.select("withDirectory");
 
         query = query.arg("path", path.into());
         query = query.arg("directory", directory);
-        if let Some(opts) = opts {
-            if let Some(exclude) = opts.exclude {
-                query = query.arg("exclude", exclude);
-            }
-            if let Some(include) = opts.include {
-                query = query.arg("include", include);
-            }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
 
         return Container {
@@ -518,7 +500,7 @@ impl Container {
     pub fn with_exec_opts(
         &self,
         args: Vec<impl Into<String>>,
-        opts: Option<ContainerWithExecOpts>,
+        opts: ContainerWithExecOpts,
     ) -> Container {
         let mut query = self.selection.select("withExec");
 
@@ -526,22 +508,20 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
-        if let Some(opts) = opts {
-            if let Some(stdin) = opts.stdin {
-                query = query.arg("stdin", stdin);
-            }
-            if let Some(redirect_stdout) = opts.redirect_stdout {
-                query = query.arg("redirectStdout", redirect_stdout);
-            }
-            if let Some(redirect_stderr) = opts.redirect_stderr {
-                query = query.arg("redirectStderr", redirect_stderr);
-            }
-            if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
-                query = query.arg(
-                    "experimentalPrivilegedNesting",
-                    experimental_privileged_nesting,
-                );
-            }
+        if let Some(stdin) = opts.stdin {
+            query = query.arg("stdin", stdin);
+        }
+        if let Some(redirect_stdout) = opts.redirect_stdout {
+            query = query.arg("redirectStdout", redirect_stdout);
+        }
+        if let Some(redirect_stderr) = opts.redirect_stderr {
+            query = query.arg("redirectStderr", redirect_stderr);
+        }
+        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
+            query = query.arg(
+                "experimentalPrivilegedNesting",
+                experimental_privileged_nesting,
+            );
         }
 
         return Container {
@@ -578,16 +558,14 @@ impl Container {
         &self,
         path: impl Into<String>,
         source: FileId,
-        opts: Option<ContainerWithFileOpts>,
+        opts: ContainerWithFileOpts,
     ) -> Container {
         let mut query = self.selection.select("withFile");
 
         query = query.arg("path", path.into());
         query = query.arg("source", source);
-        if let Some(opts) = opts {
-            if let Some(permissions) = opts.permissions {
-                query = query.arg("permissions", permissions);
-            }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
 
         return Container {
@@ -625,19 +603,17 @@ impl Container {
         &self,
         path: impl Into<String>,
         cache: CacheId,
-        opts: Option<ContainerWithMountedCacheOpts>,
+        opts: ContainerWithMountedCacheOpts,
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
 
         query = query.arg("path", path.into());
         query = query.arg("cache", cache);
-        if let Some(opts) = opts {
-            if let Some(source) = opts.source {
-                query = query.arg("source", source);
-            }
-            if let Some(sharing) = opts.sharing {
-                query = query.arg("sharing", sharing);
-            }
+        if let Some(source) = opts.source {
+            query = query.arg("source", source);
+        }
+        if let Some(sharing) = opts.sharing {
+            query = query.arg("sharing", sharing);
         }
 
         return Container {
@@ -712,18 +688,16 @@ impl Container {
     pub fn with_new_file_opts(
         &self,
         path: impl Into<String>,
-        opts: Option<ContainerWithNewFileOpts>,
+        opts: ContainerWithNewFileOpts,
     ) -> Container {
         let mut query = self.selection.select("withNewFile");
 
         query = query.arg("path", path.into());
-        if let Some(opts) = opts {
-            if let Some(contents) = opts.contents {
-                query = query.arg("contents", contents);
-            }
-            if let Some(permissions) = opts.permissions {
-                query = query.arg("permissions", permissions);
-            }
+        if let Some(contents) = opts.contents {
+            query = query.arg("contents", contents);
+        }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
 
         return Container {
@@ -951,22 +925,20 @@ impl Directory {
         };
     }
 
-    pub fn docker_build_opts(&self, opts: Option<DirectoryDockerBuildOpts>) -> Container {
+    pub fn docker_build_opts(&self, opts: DirectoryDockerBuildOpts) -> Container {
         let mut query = self.selection.select("dockerBuild");
 
-        if let Some(opts) = opts {
-            if let Some(dockerfile) = opts.dockerfile {
-                query = query.arg("dockerfile", dockerfile);
-            }
-            if let Some(platform) = opts.platform {
-                query = query.arg("platform", platform);
-            }
-            if let Some(build_args) = opts.build_args {
-                query = query.arg("buildArgs", build_args);
-            }
-            if let Some(target) = opts.target {
-                query = query.arg("target", target);
-            }
+        if let Some(dockerfile) = opts.dockerfile {
+            query = query.arg("dockerfile", dockerfile);
+        }
+        if let Some(platform) = opts.platform {
+            query = query.arg("platform", platform);
+        }
+        if let Some(build_args) = opts.build_args {
+            query = query.arg("buildArgs", build_args);
+        }
+        if let Some(target) = opts.target {
+            query = query.arg("target", target);
         }
 
         return Container {
@@ -981,13 +953,11 @@ impl Directory {
         query.execute(&graphql_client(&self.conn))
     }
 
-    pub fn entries_opts(&self, opts: Option<DirectoryEntriesOpts>) -> eyre::Result<Vec<String>> {
+    pub fn entries_opts(&self, opts: DirectoryEntriesOpts) -> eyre::Result<Vec<String>> {
         let mut query = self.selection.select("entries");
 
-        if let Some(opts) = opts {
-            if let Some(path) = opts.path {
-                query = query.arg("path", path);
-            }
+        if let Some(path) = opts.path {
+            query = query.arg("path", path);
         }
 
         query.execute(&graphql_client(&self.conn))
@@ -1038,18 +1008,12 @@ impl Directory {
         };
     }
 
-    pub fn pipeline_opts(
-        &self,
-        name: impl Into<String>,
-        opts: Option<DirectoryPipelineOpts>,
-    ) -> Directory {
+    pub fn pipeline_opts(&self, name: impl Into<String>, opts: DirectoryPipelineOpts) -> Directory {
         let mut query = self.selection.select("pipeline");
 
         query = query.arg("name", name.into());
-        if let Some(opts) = opts {
-            if let Some(description) = opts.description {
-                query = query.arg("description", description);
-            }
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
         }
 
         return Directory {
@@ -1075,19 +1039,17 @@ impl Directory {
         &self,
         path: impl Into<String>,
         directory: DirectoryId,
-        opts: Option<DirectoryWithDirectoryOpts>,
+        opts: DirectoryWithDirectoryOpts,
     ) -> Directory {
         let mut query = self.selection.select("withDirectory");
 
         query = query.arg("path", path.into());
         query = query.arg("directory", directory);
-        if let Some(opts) = opts {
-            if let Some(exclude) = opts.exclude {
-                query = query.arg("exclude", exclude);
-            }
-            if let Some(include) = opts.include {
-                query = query.arg("include", include);
-            }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
 
         return Directory {
@@ -1113,16 +1075,14 @@ impl Directory {
         &self,
         path: impl Into<String>,
         source: FileId,
-        opts: Option<DirectoryWithFileOpts>,
+        opts: DirectoryWithFileOpts,
     ) -> Directory {
         let mut query = self.selection.select("withFile");
 
         query = query.arg("path", path.into());
         query = query.arg("source", source);
-        if let Some(opts) = opts {
-            if let Some(permissions) = opts.permissions {
-                query = query.arg("permissions", permissions);
-            }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
 
         return Directory {
@@ -1146,15 +1106,13 @@ impl Directory {
     pub fn with_new_directory_opts(
         &self,
         path: impl Into<String>,
-        opts: Option<DirectoryWithNewDirectoryOpts>,
+        opts: DirectoryWithNewDirectoryOpts,
     ) -> Directory {
         let mut query = self.selection.select("withNewDirectory");
 
         query = query.arg("path", path.into());
-        if let Some(opts) = opts {
-            if let Some(permissions) = opts.permissions {
-                query = query.arg("permissions", permissions);
-            }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
 
         return Directory {
@@ -1180,16 +1138,14 @@ impl Directory {
         &self,
         path: impl Into<String>,
         contents: impl Into<String>,
-        opts: Option<DirectoryWithNewFileOpts>,
+        opts: DirectoryWithNewFileOpts,
     ) -> Directory {
         let mut query = self.selection.select("withNewFile");
 
         query = query.arg("path", path.into());
         query = query.arg("contents", contents.into());
-        if let Some(opts) = opts {
-            if let Some(permissions) = opts.permissions {
-                query = query.arg("permissions", permissions);
-            }
+        if let Some(permissions) = opts.permissions {
+            query = query.arg("permissions", permissions);
         }
 
         return Directory {
@@ -1330,16 +1286,14 @@ impl GitRef {
         };
     }
 
-    pub fn tree_opts(&self, opts: Option<GitRefTreeOpts>) -> Directory {
+    pub fn tree_opts(&self, opts: GitRefTreeOpts) -> Directory {
         let mut query = self.selection.select("tree");
 
-        if let Some(opts) = opts {
-            if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
-                query = query.arg("sshKnownHosts", ssh_known_hosts);
-            }
-            if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
-                query = query.arg("sshAuthSocket", ssh_auth_socket);
-            }
+        if let Some(ssh_known_hosts) = opts.ssh_known_hosts {
+            query = query.arg("sshKnownHosts", ssh_known_hosts);
+        }
+        if let Some(ssh_auth_socket) = opts.ssh_auth_socket {
+            query = query.arg("sshAuthSocket", ssh_auth_socket);
         }
 
         return Directory {
@@ -1434,21 +1388,15 @@ impl Host {
         };
     }
 
-    pub fn directory_opts(
-        &self,
-        path: impl Into<String>,
-        opts: Option<HostDirectoryOpts>,
-    ) -> Directory {
+    pub fn directory_opts(&self, path: impl Into<String>, opts: HostDirectoryOpts) -> Directory {
         let mut query = self.selection.select("directory");
 
         query = query.arg("path", path.into());
-        if let Some(opts) = opts {
-            if let Some(exclude) = opts.exclude {
-                query = query.arg("exclude", exclude);
-            }
-            if let Some(include) = opts.include {
-                query = query.arg("include", include);
-            }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
 
         return Directory {
@@ -1489,16 +1437,14 @@ impl Host {
         };
     }
 
-    pub fn workdir_opts(&self, opts: Option<HostWorkdirOpts>) -> Directory {
+    pub fn workdir_opts(&self, opts: HostWorkdirOpts) -> Directory {
         let mut query = self.selection.select("workdir");
 
-        if let Some(opts) = opts {
-            if let Some(exclude) = opts.exclude {
-                query = query.arg("exclude", exclude);
-            }
-            if let Some(include) = opts.include {
-                query = query.arg("include", include);
-            }
+        if let Some(exclude) = opts.exclude {
+            query = query.arg("exclude", exclude);
+        }
+        if let Some(include) = opts.include {
+            query = query.arg("include", include);
         }
 
         return Directory {
@@ -1650,16 +1596,14 @@ impl Query {
         };
     }
 
-    pub fn container_opts(&self, opts: Option<QueryContainerOpts>) -> Container {
+    pub fn container_opts(&self, opts: QueryContainerOpts) -> Container {
         let mut query = self.selection.select("container");
 
-        if let Some(opts) = opts {
-            if let Some(id) = opts.id {
-                query = query.arg("id", id);
-            }
-            if let Some(platform) = opts.platform {
-                query = query.arg("platform", platform);
-            }
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
+        }
+        if let Some(platform) = opts.platform {
+            query = query.arg("platform", platform);
         }
 
         return Container {
@@ -1683,13 +1627,11 @@ impl Query {
         };
     }
 
-    pub fn directory_opts(&self, opts: Option<QueryDirectoryOpts>) -> Directory {
+    pub fn directory_opts(&self, opts: QueryDirectoryOpts) -> Directory {
         let mut query = self.selection.select("directory");
 
-        if let Some(opts) = opts {
-            if let Some(id) = opts.id {
-                query = query.arg("id", id);
-            }
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
         }
 
         return Directory {
@@ -1721,14 +1663,12 @@ impl Query {
         };
     }
 
-    pub fn git_opts(&self, url: impl Into<String>, opts: Option<QueryGitOpts>) -> GitRepository {
+    pub fn git_opts(&self, url: impl Into<String>, opts: QueryGitOpts) -> GitRepository {
         let mut query = self.selection.select("git");
 
         query = query.arg("url", url.into());
-        if let Some(opts) = opts {
-            if let Some(keep_git_dir) = opts.keep_git_dir {
-                query = query.arg("keepGitDir", keep_git_dir);
-            }
+        if let Some(keep_git_dir) = opts.keep_git_dir {
+            query = query.arg("keepGitDir", keep_git_dir);
         }
 
         return GitRepository {
@@ -1769,14 +1709,12 @@ impl Query {
         };
     }
 
-    pub fn pipeline_opts(&self, name: impl Into<String>, opts: Option<QueryPipelineOpts>) -> Query {
+    pub fn pipeline_opts(&self, name: impl Into<String>, opts: QueryPipelineOpts) -> Query {
         let mut query = self.selection.select("pipeline");
 
         query = query.arg("name", name.into());
-        if let Some(opts) = opts {
-            if let Some(description) = opts.description {
-                query = query.arg("description", description);
-            }
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
         }
 
         return Query {
@@ -1817,13 +1755,11 @@ impl Query {
         };
     }
 
-    pub fn socket_opts(&self, opts: Option<QuerySocketOpts>) -> Socket {
+    pub fn socket_opts(&self, opts: QuerySocketOpts) -> Socket {
         let mut query = self.selection.select("socket");
 
-        if let Some(opts) = opts {
-            if let Some(id) = opts.id {
-                query = query.arg("id", id);
-            }
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
         }
 
         return Socket {

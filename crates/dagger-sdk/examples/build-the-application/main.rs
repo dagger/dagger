@@ -5,10 +5,10 @@ fn main() -> eyre::Result<()> {
 
     let host_source_dir = client.host().directory_opts(
         "examples/build-the-application/app",
-        Some(HostDirectoryOpts {
+        HostDirectoryOpts {
             exclude: Some(vec!["node_modules".into(), "ci/".into()]),
             include: None,
-        }),
+        },
     );
 
     let source = client

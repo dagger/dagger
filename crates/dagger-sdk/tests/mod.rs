@@ -7,12 +7,12 @@ fn test_example_container() {
     let alpine = client.container().from("alpine:3.16.2");
 
     let out = alpine
-        .exec_opts(Some(
+        .exec_opts(
             ContainerExecOptsBuilder::default()
                 .args(vec!["cat", "/etc/alpine-release"])
                 .build()
                 .unwrap(),
-        ))
+        )
         .stdout()
         .unwrap();
 
