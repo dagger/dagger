@@ -22,7 +22,7 @@ See [dagger-sdk](./crates/dagger-sdk/README.md)
   - [x] Deserializer for nested response (bind)
 - [x] Add codegen to hook into querier
 - [x] fix build / release cycle
-- [ ] general api stabilisation
+- [x] general api stabilisation
 - [x] document usage
 - [ ] make async variant
 
