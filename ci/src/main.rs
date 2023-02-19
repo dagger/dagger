@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use dagger_sdk::{Container, HostDirectoryOpts, Query};
 
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     color_eyre::install().unwrap();
 
     let matches = clap::Command::new("ci")
@@ -15,10 +16,10 @@ fn main() -> eyre::Result<()> {
 
     match matches.subcommand() {
         Some(("pr", _)) => {
-            let base = select_base_image(client.clone())?;
-            return validate_pr(client, base);
+            let base = select_base_image(client.clone()).await?;
+            return validate_pr(client, base).await;
         }
-        Some(("release", subm)) => return release(client, subm),
+        Some(("release", subm)) => return release(client, subm).await,
         Some(_) => {
             panic!("invalid subcommand selected!")
         }
@@ -28,7 +29,7 @@ fn main() -> eyre::Result<()> {
     }
 }
 
-fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
+async fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
     let src_dir = client.host().directory_opts(
         ".",
         HostDirectoryOpts {
@@ -40,7 +41,7 @@ fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyr
         .container()
         .from("rust:latest")
         .with_workdir("app")
-        .with_mounted_directory("/app/", src_dir.id()?);
+        .with_mounted_directory("/app/", src_dir.id().await?);
 
     let container = base_image
         .with_exec(vec!["cargo", "install", "cargo-smart-release"])
@@ -53,7 +54,7 @@ fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyr
             "dagger-rs",
             "dagger-sdk",
         ]);
-    let exit = container.exit_code()?;
+    let exit = container.exit_code().await?;
     if exit != 0 {
         eyre::bail!("container failed with non-zero exit code");
     }
@@ -63,7 +64,7 @@ fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyr
     Ok(())
 }
 
-fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
+async fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
     let cargo_dir = client.host().directory_opts(
         ".",
         HostDirectoryOpts {
@@ -121,16 +122,16 @@ fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
         .with_env_variable("SCCACHE_BUCKET", "sccache")
         .with_env_variable("SCCACHE_REGION", "auto")
         .with_env_variable("SCCACHE_ENDPOINT", "https://api-minio.front.kjuulh.io")
-        .with_mounted_cache("~/.cargo/bin", cache_cargo_bin.id()?)
-        .with_mounted_cache("~/.cargo/registry/index", cache_cargo_bin.id()?)
-        .with_mounted_cache("~/.cargo/registry/cache", cache_cargo_bin.id()?)
-        .with_mounted_cache("~/.cargo/git/db", cache_cargo_bin.id()?)
-        .with_mounted_cache("target/", cache_cargo_bin.id()?)
+        .with_mounted_cache("~/.cargo/bin", cache_cargo_bin.id().await?)
+        .with_mounted_cache("~/.cargo/registry/index", cache_cargo_bin.id().await?)
+        .with_mounted_cache("~/.cargo/registry/cache", cache_cargo_bin.id().await?)
+        .with_mounted_cache("~/.cargo/git/db", cache_cargo_bin.id().await?)
+        .with_mounted_cache("target/", cache_cargo_bin.id().await?)
         .with_exec(vec!["cargo", "install", "cargo-chef"]);
 
     let recipe = base_image
-        .with_mounted_directory(".", cargo_dir.id()?)
-        .with_mounted_cache("~/.cargo/.package-cache", cache_cargo_index_dir.id()?)
+        .with_mounted_directory(".", cargo_dir.id().await?)
+        .with_mounted_cache("~/.cargo/.package-cache", cache_cargo_index_dir.id().await?)
         .with_exec(vec![
             "cargo",
             "chef",
@@ -141,7 +142,7 @@ fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
         .file("/app/recipe.json");
 
     let builder_start = base_image
-        .with_mounted_file("/app/recipe.json", recipe.id()?)
+        .with_mounted_file("/app/recipe.json", recipe.id().await?)
         .with_exec(vec![
             "cargo",
             "chef",
@@ -151,23 +152,23 @@ fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
             "--recipe-path",
             "recipe.json",
         ])
-        .with_mounted_cache("/app/", cache_cargo_deps.id()?)
-        .with_mounted_directory("/app/", src_dir.id()?)
+        .with_mounted_cache("/app/", cache_cargo_deps.id().await?)
+        .with_mounted_directory("/app/", src_dir.id().await?)
         .with_exec(vec!["cargo", "build", "--all", "--release"]);
 
     return Ok(builder_start);
 }
 
-fn select_base_image(client: Arc<Query>) -> eyre::Result<Container> {
-    let src_dir = get_dependencies(client.clone());
+async fn select_base_image(client: Arc<Query>) -> eyre::Result<Container> {
+    let src_dir = get_dependencies(client.clone()).await;
 
     src_dir
 }
 
-fn validate_pr(_client: Arc<Query>, container: Container) -> eyre::Result<()> {
+async fn validate_pr(_client: Arc<Query>, container: Container) -> eyre::Result<()> {
     //let container = container.with_exec(vec!["cargo", "test", "--all"], None);
 
-    let exit = container.exit_code()?;
+    let exit = container.exit_code().await?;
     if exit != 0 {
         eyre::bail!("container failed with non-zero exit code");
     }

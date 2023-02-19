@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 clap = "4.1.6"
 color-eyre = "0.6.2"
-dagger-sdk = "0.2.6"
+dagger-sdk = "0.2.8"
 eyre = "0.6.8"
+tokio = { version = "1.25.0", features = ["full"] }
