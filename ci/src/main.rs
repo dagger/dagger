@@ -97,6 +97,7 @@ fn get_dependencies(client: Arc<Query>) -> Container {
 
     let cache_cargo_index_dir = client.cache_volume("cargo_index".into());
     let cache_cargo_deps = client.cache_volume("cargo_deps".into());
+    let cache_cargo_bin = client.cache_volume("cargo_bin_cache".into());
 
     let minio_url = "https://github.com/mozilla/sccache/releases/download/v0.3.3/sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz".into();
 
@@ -151,6 +152,11 @@ fn get_dependencies(client: Arc<Query>) -> Container {
             "SCCACHE_ENDPOINT".into(),
             "https://api-minio.front.kjuulh.io".into(),
         )
+        .with_mounted_cache("~/.cargo/bin".into(), cache_cargo_bin.id(), None)
+        .with_mounted_cache("~/.cargo/registry/index".into(), cache_cargo_bin.id(), None)
+        .with_mounted_cache("~/.cargo/registry/cache".into(), cache_cargo_bin.id(), None)
+        .with_mounted_cache("~/.cargo/git/db".into(), cache_cargo_bin.id(), None)
+        .with_mounted_cache("target/".into(), cache_cargo_bin.id(), None)
         .with_exec(
             vec!["cargo".into(), "install".into(), "cargo-chef".into()],
             None,
