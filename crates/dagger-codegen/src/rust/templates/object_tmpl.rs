@@ -6,7 +6,7 @@ use itertools::Itertools;
 use crate::functions::{type_ref_is_optional, CommonFunctions};
 use crate::rust::functions::{
     field_options_struct_name, format_function, format_name, format_optional_args,
-    format_struct_name,
+    format_struct_comment, format_struct_name,
 };
 use crate::utility::OptionExt;
 
@@ -85,6 +85,7 @@ pub fn render_optional_field_args(
             contains_lifetime = true;
         }
         quote! {
+            $(a.description.pipe(|d| format_struct_comment(d)))
             #[builder(setter(into, strip_option))]
             pub $(format_struct_name(&a.name)): Option<$(type_)>,
         }

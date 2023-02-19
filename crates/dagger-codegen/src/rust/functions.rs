@@ -64,9 +64,11 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
         .pipe(|t| &t.type_ref)
         .pipe(|t| render_output_type(funcs, t));
 
-    if let Some((args, true)) = args {
+    if let Some((args, desc, true)) = args {
         let required_args = format_required_function_args(funcs, field);
         Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            $(&desc)
             $(&signature)(
                 $(required_args)
             ) -> $(output_type.as_ref()) {
@@ -77,6 +79,8 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
                 $(render_execution(funcs, field))
             }
 
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            $(&desc)
             $(&signature)_opts$(lifecycle)(
                 $args
             ) -> $(output_type) {
@@ -90,8 +94,10 @@ pub fn format_function(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
         })
     } else {
         Some(quote! {
+            $(field.description.pipe(|d| format_struct_comment(d)))
+            $(if let Some((_, desc, _)) = &args => $desc)
             $(signature)(
-                $(if let Some((args, _)) = args => $args)
+                $(if let Some((args, _, _)) = &args => $args)
             ) -> $(output_type) {
                 let mut query = self.selection.select($(quoted(field.name.as_ref())));
 
@@ -268,7 +274,8 @@ fn format_function_args(
     funcs: &CommonFunctions,
     field: &FullTypeFields,
     lifecycle: Option<&rust::Tokens>,
-) -> Option<(rust::Tokens, bool)> {
+) -> Option<(rust::Tokens, rust::Tokens, bool)> {
+    let mut argument_description = Vec::new();
     if let Some(args) = field.args.as_ref() {
         let args = args
             .into_iter()
@@ -280,6 +287,18 @@ fn format_function_args(
 
                     let t = funcs.format_input_type(&s.input_value.type_);
                     let n = format_struct_name(&s.input_value.name);
+
+                    if let Some(desc) = s.input_value.description.as_ref().and_then(|d| {
+                        if d != "" {
+                            Some(write_comment_line(&format!("* `{n}` - {}", d)))
+                        } else {
+                            None
+                        }
+                    }) {
+                        argument_description.push(quote! {
+                            $(desc)
+                        });
+                    }
 
                     Some(quote! {
                         $(n): $(t),
@@ -294,15 +313,34 @@ fn format_function_args(
         };
 
         if type_field_has_optional(field) {
+            let field_name = field_options_struct_name(field);
+            argument_description.push(quote! {
+                $(field_name.pipe(|_| write_comment_line(&format!("* `opt` - optional argument, see inner type for documentation, use <func>_opts to use"))))
+            });
+
+            let description = quote! {
+                $(if argument_description.len() > 0 => $(format!("/// ")))
+                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
+                $(if argument_description.len() > 0 => $(format!("/// ")))
+                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            };
+
             Some((
                 quote! {
                     $(required_args)
-                    opts: $(field_options_struct_name(field))$(lifecycle)
+                    opts: $(field_name)$(lifecycle)
                 },
+                description,
                 true,
             ))
         } else {
-            Some((required_args, false))
+            let description = quote! {
+                $(if argument_description.len() > 0 => $(format!("/// ")))
+                $(if argument_description.len() > 0 => $(format!("/// # Arguments")))
+                $(if argument_description.len() > 0 => $(format!("/// ")))
+                $(for arg_desc in argument_description join ($['\r']) => $arg_desc)
+            };
+            Some((required_args, description, false))
         }
     } else {
         None
@@ -357,4 +395,37 @@ pub fn format_optional_args(
         })
         .pipe(|t| render_optional_field_args(funcs, t))
         .flatten()
+}
+
+pub fn write_comment_line(content: &str) -> Option<rust::Tokens> {
+    let cnt = content.trim();
+    if cnt == "" {
+        return None;
+    }
+
+    let mut tokens = rust::Tokens::new();
+
+    for line in content.split('\n') {
+        tokens.append(format!("/// {}", line.trim()));
+        tokens.push();
+    }
+
+    Some(tokens)
+}
+
+pub fn format_struct_comment(desc: &str) -> Option<rust::Tokens> {
+    let lines = desc.trim().split("\n");
+
+    let formatted_lines = lines
+        .into_iter()
+        .map(write_comment_line)
+        .collect::<Vec<_>>();
+
+    if formatted_lines.len() > 0 {
+        Some(quote! {
+            $(for line in formatted_lines join($['\r']) => $line)
+        })
+    } else {
+        None
+    }
 }
