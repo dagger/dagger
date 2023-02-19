@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.2 (2023-02-19)
+
+### New Features
+
+ - <csr-id-6e5f4074329ab0462445b31d4153f8497c483438/> update to dagger v0.3.12
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - update to dagger v0.3.12 ([`6e5f407`](https://github.com/kjuulh/dagger-rs/commit/6e5f4074329ab0462445b31d4153f8497c483438))
+</details>
+
 ## v0.2.1 (2023-02-18)
 
 ### Bug Fixes
@@ -15,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 15 commits contributed to the release over the course of 19 calendar days.
+ - 16 commits contributed to the release over the course of 19 calendar days.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 2 unique issues were worked on: [#5](https://github.com/kjuulh/dagger-rs/issues/5), [#6](https://github.com/kjuulh/dagger-rs/issues/6)
 
@@ -30,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  * **[#6](https://github.com/kjuulh/dagger-rs/issues/6)**
     - feature/add impl ([`4a4c03f`](https://github.com/kjuulh/dagger-rs/commit/4a4c03f3c2ee7f6268c65976715e70767b4ea78d))
  * **Uncategorized**
+    - Release dagger-core v0.2.1, dagger-codegen v0.2.1, dagger-rs v0.2.1 ([`1332bc8`](https://github.com/kjuulh/dagger-rs/commit/1332bc842ce2ea0254c651419813b63b36ca590c))
     - add changelogs ([`a064684`](https://github.com/kjuulh/dagger-rs/commit/a064684fcf80196188a57d9ff9067c0b5769fb09))
     - Adjusting changelogs prior to release of dagger-core v0.2.1, dagger-codegen v0.2.1, dagger-rs v0.2.1 ([`f4a20fd`](https://github.com/kjuulh/dagger-rs/commit/f4a20fda79063b29829cc899793775ba8cb17214))
     - with publish ([`989d5bc`](https://github.com/kjuulh/dagger-rs/commit/989d5bc26036d46a199d939b5cbbe72aff2f8fb1))

@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.8 (2023-02-19)
+
+### New Features
+
+ - <csr-id-f42da8416a5450c7c3c924353c3cc9112afd18f0/> with sccache
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - with sccache ([`f42da84`](https://github.com/kjuulh/dagger-rs/commit/f42da8416a5450c7c3c924353c3cc9112afd18f0))
+    - test change ([`98781f2`](https://github.com/kjuulh/dagger-rs/commit/98781f2496deaea4bc13c9e90e60543b7daac9d7))
+</details>
+
 ## v0.2.7 (2023-02-18)
 
 ### Bug Fixes

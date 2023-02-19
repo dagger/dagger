@@ -1,6 +1,6 @@
 [package]
 name = "dagger-rs"
-version = "0.2.7"
+version = "0.2.8"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
@@ -19,8 +19,8 @@ members = [
 ]
 
 [dependencies]
-dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.1" }
-dagger-core = { path = "crates/dagger-core", version = "^0.2.1" }
+dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.2" }
+dagger-core = { path = "crates/dagger-core", version = "^0.2.2" }
 
 clap = "4.1.6"
 dirs = "4.0.0"
