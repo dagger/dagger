@@ -28,7 +28,7 @@ fn main() -> eyre::Result<()> {
     }
 }
 
-fn release(client: Arc<Query>, subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
+fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
     let src_dir = client.host().directory(
         ".".into(),
         Some(HostDirectoryOpts {

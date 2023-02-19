@@ -8,7 +8,6 @@ fn main() -> eyre::Result<()> {
         Some(HostDirectoryOpts {
             exclude: Some(vec!["node_modules", "ci/"]),
             include: None,
-            marker: std::marker::PhantomData,
         }),
     );
 

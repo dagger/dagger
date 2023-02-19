@@ -67,7 +67,7 @@ pub struct ContainerExecOpts<'a> {
     pub experimental_privileged_nesting: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerExportOpts<'a> {
+pub struct ContainerExportOpts {
     #[builder(setter(into, strip_option))]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
@@ -77,7 +77,7 @@ pub struct ContainerPipelineOpts<'a> {
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerPublishOpts<'a> {
+pub struct ContainerPublishOpts {
     #[builder(setter(into, strip_option))]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
@@ -105,12 +105,12 @@ pub struct ContainerWithExecOpts<'a> {
     pub experimental_privileged_nesting: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithFileOpts<'a> {
+pub struct ContainerWithFileOpts {
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithMountedCacheOpts<'a> {
+pub struct ContainerWithMountedCacheOpts {
     #[builder(setter(into, strip_option))]
     pub source: Option<DirectoryId>,
     #[builder(setter(into, strip_option))]
@@ -777,17 +777,17 @@ pub struct DirectoryWithDirectoryOpts<'a> {
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryWithFileOpts<'a> {
+pub struct DirectoryWithFileOpts {
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryWithNewDirectoryOpts<'a> {
+pub struct DirectoryWithNewDirectoryOpts {
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct DirectoryWithNewFileOpts<'a> {
+pub struct DirectoryWithNewFileOpts {
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
@@ -1360,19 +1360,19 @@ pub struct Query {
 }
 
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryContainerOpts<'a> {
+pub struct QueryContainerOpts {
     #[builder(setter(into, strip_option))]
     pub id: Option<ContainerId>,
     #[builder(setter(into, strip_option))]
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryDirectoryOpts<'a> {
+pub struct QueryDirectoryOpts {
     #[builder(setter(into, strip_option))]
     pub id: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QueryGitOpts<'a> {
+pub struct QueryGitOpts {
     #[builder(setter(into, strip_option))]
     pub keep_git_dir: Option<bool>,
 }
@@ -1382,7 +1382,7 @@ pub struct QueryPipelineOpts<'a> {
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct QuerySocketOpts<'a> {
+pub struct QuerySocketOpts {
     #[builder(setter(into, strip_option))]
     pub id: Option<SocketId>,
 }

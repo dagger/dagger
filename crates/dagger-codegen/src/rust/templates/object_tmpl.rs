@@ -1,6 +1,7 @@
 use dagger_core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
 use genco::prelude::rust;
 use genco::quote;
+use itertools::Itertools;
 
 use crate::functions::{type_ref_is_optional, CommonFunctions};
 use crate::rust::functions::{
@@ -64,10 +65,10 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
     let builder = rust::import("derive_builder", "Builder");
     let phantom_data = rust::import("std::marker", "PhantomData");
 
-    if let Some(fields) = fields {
+    if let Some((fields, contains_lifetime)) = fields {
         Some(quote! {
             #[derive($builder, Debug, PartialEq)]
-            pub struct $output_type<'a> {
+            pub struct $output_type$(if contains_lifetime => <'a>) {
                 //#[builder(default, setter(skip))]
                 //pub marker: $(phantom_data)<&'a ()>,
                 $fields
@@ -81,20 +82,28 @@ fn render_optional_arg(funcs: &CommonFunctions, field: &FullTypeFields) -> Optio
 fn render_optional_field_args(
     funcs: &CommonFunctions,
     args: &Vec<&FullTypeFieldsArgs>,
-) -> Option<rust::Tokens> {
+) -> Option<(rust::Tokens, bool)> {
     if args.len() == 0 {
         return None;
     }
+    let mut contains_lifetime = false;
     let rendered_args = args.into_iter().map(|a| &a.input_value).map(|a| {
+        let type_ = funcs.format_immutable_input_type(&a.type_);
+        if type_.contains("str") {
+            contains_lifetime = true;
+        }
         quote! {
             #[builder(setter(into, strip_option))]
-            pub $(format_struct_name(&a.name)): Option<$(funcs.format_immutable_input_type(&a.type_))>,
+            pub $(format_struct_name(&a.name)): Option<$(type_)>,
         }
     });
 
-    Some(quote! {
-        $(for arg in rendered_args join ($['\r']) => $arg)
-    })
+    Some((
+        quote! {
+            $(for arg in rendered_args join ($['\r']) => $arg)
+        },
+        contains_lifetime,
+    ))
 }
 
 fn render_functions(funcs: &CommonFunctions, fields: &Vec<FullTypeFields>) -> Option<rust::Tokens> {
