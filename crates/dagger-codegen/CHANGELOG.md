@@ -5,6 +5,70 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.4 (2023-02-19)
+
+### New Features
+
+ - <csr-id-f29ff836cfd72d5e051ca6a71a230ba1e9933091/> without Some in _opts functions
+   Option has been removed as a wrapper around opts. This makes it much
+   more convenient to use
+   
+   ```rust
+   client.container_opts(Some(ContainerOpts{}))
+   // ->
+   client.container_opts(ContainerOpts{})
+   ```
+   
+   The same options are still available, either an empty object can be
+   passed, or a non _opts function can be used
+ - <csr-id-9762da895a164e30c5dc60e89a83e934ceae47ab/> with _opts methods
+   Now all opt values enter into a _opts function instead of the original.
+   This avoids a lot of verbosity for both None in the case opts are
+   unwanted, and Some() if they actually are.
+   
+   They are used like so:
+   
+   ```rust
+   client.container().from("...");
+   client.container_opts(Some(ContainerOpts{ ... }))
+   ```
+   
+   Some from opts will be removed in a future commit/pr
+ - <csr-id-94336d06378f035464e233b921dc3858070f582d/> move to &str instead of String and introduce builder.
+   This will make the api much easier to use, as we can now rely on ""
+   instead of "".into() for normal string values.
+   
+   Introduced builder as well, which makes it much easier to use *Opts, as
+   it can handle the building of that, and get the benefits from String ->
+   &str, as that is currently not allowed for optional values
+
+### Bug Fixes
+
+ - <csr-id-c627595fd2695e236924175d137c42f1480ccd6b/> cargo clippy
+ - <csr-id-02006d40fc2c0383e0412c15c36db9af7eda991f/> without phantom data
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 5 commits contributed to the release.
+ - 5 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - cargo clippy ([`c627595`](https://github.com/kjuulh/dagger-rs/commit/c627595fd2695e236924175d137c42f1480ccd6b))
+    - without Some in _opts functions ([`f29ff83`](https://github.com/kjuulh/dagger-rs/commit/f29ff836cfd72d5e051ca6a71a230ba1e9933091))
+    - with _opts methods ([`9762da8`](https://github.com/kjuulh/dagger-rs/commit/9762da895a164e30c5dc60e89a83e934ceae47ab))
+    - without phantom data ([`02006d4`](https://github.com/kjuulh/dagger-rs/commit/02006d40fc2c0383e0412c15c36db9af7eda991f))
+    - move to &str instead of String and introduce builder. ([`94336d0`](https://github.com/kjuulh/dagger-rs/commit/94336d06378f035464e233b921dc3858070f582d))
+</details>
+
 ## v0.2.3 (2023-02-19)
 
 ### New Features
@@ -16,7 +80,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 2 commits contributed to the release.
+ - 3 commits contributed to the release.
  - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -27,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.3, dagger-codegen v0.2.3, dagger-rs v0.2.9 ([`9235030`](https://github.com/kjuulh/dagger-rs/commit/92350306b3f0da40b4fc6dcaffcd90b891e83f70))
     - with return result instead of unwrap ([`de063ea`](https://github.com/kjuulh/dagger-rs/commit/de063eae858eb3335d2558a57ee6a88689635200))
     - remove unnecessary option returns ([`5d66736`](https://github.com/kjuulh/dagger-rs/commit/5d667369900a47d3a6015cd3814c240bc5c54436))
 </details>
