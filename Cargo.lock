@@ -114,7 +114,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "color-eyre",
- "dagger-sdk 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dagger-sdk 0.2.6",
  "eyre",
 ]
 
@@ -331,6 +331,23 @@ dependencies = [
 [[package]]
 name = "dagger-sdk"
 version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "654625e954f59d70eb897bb681936c3e8b69c5f6e528f85c0b307554883db63f"
+dependencies = [
+ "base64",
+ "dagger-core 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "derive_builder",
+ "eyre",
+ "futures",
+ "gql_client",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "dagger-sdk"
+version = "0.2.7"
 dependencies = [
  "base64",
  "dagger-core 0.2.2",
@@ -341,23 +358,6 @@ dependencies = [
  "gql_client",
  "pretty_assertions",
  "rand",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "dagger-sdk"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "654625e954f59d70eb897bb681936c3e8b69c5f6e528f85c0b307554883db63f"
-dependencies = [
- "base64",
- "dagger-core 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "derive_builder",
- "eyre",
- "futures",
- "gql_client",
  "serde",
  "serde_json",
  "tokio",

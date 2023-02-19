@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.7 (2023-02-19)
+
+### Documentation
+
+ - <csr-id-93f40b356c48f14e910968516bed9487912095c1/> change to await syntax
+
+### New Features
+
+ - <csr-id-9be6f435d9ea39f31a8906e55dbd3e8b1e5ec598/> Use async runtime instead of blocking.
+   Default to using async runtime instead of blocking. I.e.
+   
+   ```rust
+   fn main() -> eyre::Result<()> {
+     // ...
+   
+     client.container().from("rust").publish("somewhere")?;
+   
+     // ...
+   }
+   
+   // to
+   
+   async fn main() -> eyre::Result<()> {
+     // ...
+   
+     client.container().from("rust").publish("somewhere").await?;
+   
+     // ...
+   }
+   ```
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - change to await syntax ([`93f40b3`](https://github.com/kjuulh/dagger-rs/commit/93f40b356c48f14e910968516bed9487912095c1))
+    - Use async runtime instead of blocking. ([`9be6f43`](https://github.com/kjuulh/dagger-rs/commit/9be6f435d9ea39f31a8906e55dbd3e8b1e5ec598))
+</details>
+
 ## v0.2.6 (2023-02-19)
 
 ### Documentation
@@ -15,7 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -26,6 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.6 ([`c312bc5`](https://github.com/kjuulh/dagger-rs/commit/c312bc57ad3e5380b6a2a927f3bb758aa5344efd))
     - fix readme ([`04e70ce`](https://github.com/kjuulh/dagger-rs/commit/04e70ce964b343e28b3dbd0c46d10ccda958ab8c))
 </details>
 
