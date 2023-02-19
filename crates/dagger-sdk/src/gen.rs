@@ -21,8 +21,8 @@ pub struct SecretId(String);
 pub struct SocketId(String);
 #[derive(Serialize, Deserialize)]
 pub struct BuildArg {
-    pub name: String,
     pub value: String,
+    pub name: String,
 }
 pub struct CacheVolume {
     pub proc: Arc<Child>,
@@ -67,7 +67,10 @@ pub struct ContainerPublishOpts {
 pub struct ContainerWithDefaultArgsOpts {
     pub args: Option<Vec<String>>,
 }
-pub struct ContainerWithDirectoryOpts {}
+pub struct ContainerWithDirectoryOpts {
+    pub exclude: Option<Vec<String>>,
+    pub include: Option<Vec<String>>,
+}
 pub struct ContainerWithExecOpts {
     pub stdin: Option<String>,
     pub redirect_stdout: Option<String>,
@@ -1459,7 +1462,6 @@ impl Socket {
         query.execute(&graphql_client(&self.conn)).unwrap().unwrap()
     }
 }
-
 #[derive(Serialize)]
 pub enum CacheSharingMode {
     SHARED,
