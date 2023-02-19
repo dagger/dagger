@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.3 (2023-02-19)
+
+### New Features
+
+ - <csr-id-19ed6c267f779b72430422c463ceed553f6fc618/> re-export through lib.rs
+   this means that you can now use dagger_sdk::connect() instead of
+   dagger_sdk::client::connect();
+ - <csr-id-de063eae858eb3335d2558a57ee6a88689635200/> with return result instead of unwrap
+ - <csr-id-5d667369900a47d3a6015cd3814c240bc5c54436/> remove unnecessary option returns
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 3 commits contributed to the release.
+ - 3 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - re-export through lib.rs ([`19ed6c2`](https://github.com/kjuulh/dagger-rs/commit/19ed6c267f779b72430422c463ceed553f6fc618))
+    - with return result instead of unwrap ([`de063ea`](https://github.com/kjuulh/dagger-rs/commit/de063eae858eb3335d2558a57ee6a88689635200))
+    - remove unnecessary option returns ([`5d66736`](https://github.com/kjuulh/dagger-rs/commit/5d667369900a47d3a6015cd3814c240bc5c54436))
+</details>
+
 ## v0.2.2 (2023-02-19)
 
 ### New Features
@@ -19,7 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 3 commits contributed to the release.
+ - 4 commits contributed to the release.
  - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -30,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.2 ([`e921ba1`](https://github.com/kjuulh/dagger-rs/commit/e921ba13638987ccf5beaa48c4be9be5fd879bd0))
     - Release dagger-core v0.2.2, dagger-codegen v0.2.2, dagger-rs v0.2.8 ([`1638f15`](https://github.com/kjuulh/dagger-rs/commit/1638f15fba9d16512e8452f87b908d6dce417cd9))
     - fixed fmt errors ([`10bc6f3`](https://github.com/kjuulh/dagger-rs/commit/10bc6f3846b65cc82c2fb343d8cfe921784bef1b))
     - update to dagger v0.3.12 ([`6e5f407`](https://github.com/kjuulh/dagger-rs/commit/6e5f4074329ab0462445b31d4153f8497c483438))
