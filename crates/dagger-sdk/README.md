@@ -25,14 +25,15 @@ cargo add dagger-sdk
 ### Usage
 
 ```rust
-fn main() -> eyre::Result<()> {
+#[tokio::main]
+async fn main() -> eyre::Result<()> {
     let client = dagger_sdk::connect()?;
 
     let version = client
         .container()
         .from("golang:1.19")
         .with_exec(vec!["go", "version"])
-        .stdout()?;
+        .stdout().await?;
 
     println!("Hello from Dagger and {}", version.trim());
 
@@ -45,3 +46,9 @@ And run it like a normal application:
 ```bash
 cargo run
 ```
+
+### Disclaimer
+
+You are free to use something else than `tokio`, I haven't tested it with
+anything else, but it should work with any other runtime. We don't rely on it
+specifically. That might change in the future though.
