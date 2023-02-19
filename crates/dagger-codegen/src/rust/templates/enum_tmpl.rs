@@ -10,7 +10,7 @@ fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
         .map(|values| {
             values
                 .into_iter()
-                .map(|val| quote! { $(val.name.as_ref()) })
+                .map(|val| quote! { $(val.name.as_ref()), })
         })
         .flatten()
         .collect::<Vec<_>>();
@@ -25,7 +25,10 @@ fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
 }
 
 pub fn render_enum(t: &FullType) -> eyre::Result<rust::Tokens> {
+    let serialize = rust::import("serde", "Serialize");
+
     Ok(quote! {
+        #[derive($serialize)]
         pub enum $(t.name.as_ref()) {
             $(render_enum_values(t))
         }

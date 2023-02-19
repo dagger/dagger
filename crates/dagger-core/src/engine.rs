@@ -12,7 +12,7 @@ impl Engine {
     }
 
     fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, Child)> {
-        let cli = Downloader::new("0.3.10".into())?.get_cli()?;
+        let cli = Downloader::new("0.3.12".into())?.get_cli()?;
 
         let cli_session = CliSession::new();
 
