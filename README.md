@@ -21,7 +21,7 @@ See [dagger-sdk](./crates/dagger-sdk/README.md)
   - [x] Context
   - [x] Deserializer for nested response (bind)
 - [x] Add codegen to hook into querier
-- [ ] fix build / release cycle
+- [x] fix build / release cycle
 - [ ] general api stabilisation
 - [x] document usage
 - [ ] make async variant
