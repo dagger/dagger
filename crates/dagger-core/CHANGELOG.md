@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.6 (2023-02-20)
+
+### Chore
+
+ - <csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/> ran clippy
+
+### Bug Fixes
+
+ - <csr-id-8dfecf976c5537cc2c03881de2b2fd2b2508683a/> cli session keep session alive
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - ran clippy ([`1f77d90`](https://github.com/kjuulh/dagger-rs/commit/1f77d90c0f0ac832a181b2322350ea395612986c))
+    - cli session keep session alive ([`8dfecf9`](https://github.com/kjuulh/dagger-rs/commit/8dfecf976c5537cc2c03881de2b2fd2b2508683a))
+</details>
+
 ## v0.2.5 (2023-02-20)
 
 ### Bug Fixes
@@ -15,7 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -26,6 +55,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.5, dagger-sdk v0.2.12, dagger-codegen v0.2.7 ([`1725c51`](https://github.com/kjuulh/dagger-rs/commit/1725c5188e8a81069ec4a4de569484c921a94927))
     - race condition in process ([`a13a2a9`](https://github.com/kjuulh/dagger-rs/commit/a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de))
 </details>
 

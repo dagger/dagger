@@ -8,6 +8,10 @@ and this project adheres to
 
 ## v0.2.12 (2023-02-20)
 
+### Chore
+
+ - <csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/> ran clippy
+
 ### Bug Fixes
 
  - <csr-id-a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de/> race condition in process
@@ -16,8 +20,8 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
- - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 3 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
 ### Commit Details
@@ -27,6 +31,8 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - ran clippy ([`1f77d90`](https://github.com/kjuulh/dagger-rs/commit/1f77d90c0f0ac832a181b2322350ea395612986c))
+    - Release dagger-core v0.2.5, dagger-sdk v0.2.12, dagger-codegen v0.2.7 ([`1725c51`](https://github.com/kjuulh/dagger-rs/commit/1725c5188e8a81069ec4a4de569484c921a94927))
     - race condition in process ([`a13a2a9`](https://github.com/kjuulh/dagger-rs/commit/a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de))
 </details>
 

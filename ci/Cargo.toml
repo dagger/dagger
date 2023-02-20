@@ -8,6 +8,6 @@ edition = "2021"
 [dependencies]
 clap = "4.1.6"
 color-eyre = "0.6.2"
-dagger-sdk = { path = "../crates/dagger-sdk/", version = "0.2.11" }
+dagger-sdk = { path = "../crates/dagger-sdk/", version = "^0.2.12" }
 eyre = "0.6.8"
 tokio = { version = "1.25.0", features = ["full"] }
