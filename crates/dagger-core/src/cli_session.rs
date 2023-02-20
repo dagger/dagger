@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+use tokio::io::AsyncBufReadExt;
+
 use crate::{config::Config, connect_params::ConnectParams};
 
 #[derive(Clone, Debug)]
@@ -24,7 +26,7 @@ impl CliSession {
         &self,
         config: &Config,
         cli_path: &PathBuf,
-    ) -> eyre::Result<(ConnectParams, Child)> {
+    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         self.inner.connect(config, cli_path).await
     }
 }
@@ -37,13 +39,13 @@ impl InnerCliSession {
         &self,
         config: &Config,
         cli_path: &PathBuf,
-    ) -> eyre::Result<(ConnectParams, Child)> {
+    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         let proc = self.start(config, cli_path)?;
         let params = self.get_conn(proc).await?;
         Ok(params)
     }
 
-    fn start(&self, config: &Config, cli_path: &PathBuf) -> eyre::Result<std::process::Child> {
+    fn start(&self, config: &Config, cli_path: &PathBuf) -> eyre::Result<tokio::process::Child> {
         let mut args: Vec<String> = vec!["session".into()];
         if let Some(workspace) = &config.workdir_path {
             let abs_path = canonicalize(workspace)?;
@@ -54,7 +56,7 @@ impl InnerCliSession {
             args.extend(["--project".into(), abs_path.to_string_lossy().to_string()])
         }
 
-        let proc = std::process::Command::new(
+        let proc = tokio::process::Command::new(
             cli_path
                 .to_str()
                 .ok_or(eyre::anyhow!("could not get string from path"))?,
@@ -72,8 +74,8 @@ impl InnerCliSession {
 
     async fn get_conn(
         &self,
-        mut proc: std::process::Child,
-    ) -> eyre::Result<(ConnectParams, std::process::Child)> {
+        mut proc: tokio::process::Child,
+    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         let stdout = proc
             .stdout
             .take()
@@ -87,22 +89,22 @@ impl InnerCliSession {
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
         tokio::spawn(async move {
-            let stdout_bufr = BufReader::new(stdout);
-            for line in stdout_bufr.lines() {
+            let stdout_bufr = tokio::io::BufReader::new(stdout);
+            for line in stdout_bufr.lines().next_line().await {
                 let out = line.as_ref().unwrap();
                 if let Ok(conn) = serde_json::from_str::<ConnectParams>(&out) {
                     sender.send(conn).await.unwrap();
                 }
-                if let Ok(line) = line {
+                if let Some(line) = line {
                     println!("dagger: {}", line);
                 }
             }
         });
 
         tokio::spawn(async move {
-            let stderr_bufr = BufReader::new(stderr);
-            for line in stderr_bufr.lines() {
-                if let Ok(line) = line {
+            let stdout_bufr = tokio::io::BufReader::new(stderr);
+            for line in stdout_bufr.lines().next_line().await {
+                if let Some(line) = line {
                     println!("dagger: {}", line);
                 }
                 //panic!("could not start dagger session: {}", out)

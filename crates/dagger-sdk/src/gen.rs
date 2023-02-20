@@ -3,8 +3,8 @@ use crate::querybuilder::Selection;
 use dagger_core::connect_params::ConnectParams;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
-use std::process::Child;
 use std::sync::Arc;
+use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct CacheId(String);
@@ -35,7 +35,7 @@ impl CacheVolume {
     pub async fn id(
         &self,
     ) -> eyre::Result<CacheId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -216,7 +216,7 @@ impl Container {
     pub async fn default_args(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("defaultArgs");
+        let mut query = self.selection.select("defaultArgs");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -239,7 +239,7 @@ impl Container {
     pub async fn entrypoint(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("entrypoint");
+        let mut query = self.selection.select("entrypoint");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -258,7 +258,7 @@ impl Container {
     pub fn env_variables(
         &self,
     ) -> Vec<EnvVariable> {
-        let query = self.selection.select("envVariables");
+        let mut query = self.selection.select("envVariables");
 
         return vec![EnvVariable {
             proc: self.proc.clone(),
@@ -274,7 +274,7 @@ impl Container {
     pub fn exec(
         &self,
     ) -> Container {
-        let query = self.selection.select("exec");
+        let mut query = self.selection.select("exec");
 
         return Container {
             proc: self.proc.clone(),
@@ -321,7 +321,7 @@ impl Container {
     pub async fn exit_code(
         &self,
     ) -> eyre::Result<isize> {
-        let query = self.selection.select("exitCode");
+        let mut query = self.selection.select("exitCode");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -405,7 +405,7 @@ impl Container {
     pub fn fs(
         &self,
     ) -> Directory {
-        let query = self.selection.select("fs");
+        let mut query = self.selection.select("fs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -417,7 +417,7 @@ impl Container {
     pub async fn id(
         &self,
     ) -> eyre::Result<ContainerId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -436,7 +436,7 @@ impl Container {
     pub fn labels(
         &self,
     ) -> Vec<Label> {
-        let query = self.selection.select("labels");
+        let mut query = self.selection.select("labels");
 
         return vec![Label {
             proc: self.proc.clone(),
@@ -448,7 +448,7 @@ impl Container {
     pub async fn mounts(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("mounts");
+        let mut query = self.selection.select("mounts");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -499,7 +499,7 @@ impl Container {
     pub async fn platform(
         &self,
     ) -> eyre::Result<Platform> {
-        let query = self.selection.select("platform");
+        let mut query = self.selection.select("platform");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -546,7 +546,7 @@ impl Container {
     pub fn rootfs(
         &self,
     ) -> Directory {
-        let query = self.selection.select("rootfs");
+        let mut query = self.selection.select("rootfs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -559,7 +559,7 @@ impl Container {
     pub async fn stderr(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("stderr");
+        let mut query = self.selection.select("stderr");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -568,7 +568,7 @@ impl Container {
     pub async fn stdout(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("stdout");
+        let mut query = self.selection.select("stdout");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -576,7 +576,7 @@ impl Container {
     pub async fn user(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("user");
+        let mut query = self.selection.select("user");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -588,7 +588,7 @@ impl Container {
     pub fn with_default_args(
         &self,
     ) -> Container {
-        let query = self.selection.select("withDefaultArgs");
+        let mut query = self.selection.select("withDefaultArgs");
 
         return Container {
             proc: self.proc.clone(),
@@ -1188,7 +1188,7 @@ impl Container {
     pub async fn workdir(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("workdir");
+        let mut query = self.selection.select("workdir");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1298,7 +1298,7 @@ impl Directory {
     pub fn docker_build(
         &self,
     ) -> Container {
-        let query = self.selection.select("dockerBuild");
+        let mut query = self.selection.select("dockerBuild");
 
         return Container {
             proc: self.proc.clone(),
@@ -1345,7 +1345,7 @@ impl Directory {
     pub async fn entries(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("entries");
+        let mut query = self.selection.select("entries");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1397,7 +1397,7 @@ impl Directory {
     pub async fn id(
         &self,
     ) -> eyre::Result<DirectoryId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1703,7 +1703,7 @@ impl EnvVariable {
     pub async fn name(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1711,7 +1711,7 @@ impl EnvVariable {
     pub async fn value(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1727,7 +1727,7 @@ impl File {
     pub async fn contents(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("contents");
+        let mut query = self.selection.select("contents");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1746,7 +1746,7 @@ impl File {
     pub async fn id(
         &self,
     ) -> eyre::Result<FileId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1754,7 +1754,7 @@ impl File {
     pub fn secret(
         &self,
     ) -> Secret {
-        let query = self.selection.select("secret");
+        let mut query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -1766,7 +1766,7 @@ impl File {
     pub async fn size(
         &self,
     ) -> eyre::Result<isize> {
-        let query = self.selection.select("size");
+        let mut query = self.selection.select("size");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1806,7 +1806,7 @@ impl GitRef {
     pub async fn digest(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("digest");
+        let mut query = self.selection.select("digest");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1818,7 +1818,7 @@ impl GitRef {
     pub fn tree(
         &self,
     ) -> Directory {
-        let query = self.selection.select("tree");
+        let mut query = self.selection.select("tree");
 
         return Directory {
             proc: self.proc.clone(),
@@ -1878,7 +1878,7 @@ impl GitRepository {
     pub async fn branches(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("branches");
+        let mut query = self.selection.select("branches");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1916,7 +1916,7 @@ impl GitRepository {
     pub async fn tags(
         &self,
     ) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("tags");
+        let mut query = self.selection.select("tags");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2029,7 +2029,7 @@ impl Host {
     pub fn workdir(
         &self,
     ) -> Directory {
-        let query = self.selection.select("workdir");
+        let mut query = self.selection.select("workdir");
 
         return Directory {
             proc: self.proc.clone(),
@@ -2074,7 +2074,7 @@ impl HostVariable {
     pub fn secret(
         &self,
     ) -> Secret {
-        let query = self.selection.select("secret");
+        let mut query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -2086,7 +2086,7 @@ impl HostVariable {
     pub async fn value(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2102,7 +2102,7 @@ impl Label {
     pub async fn name(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2110,7 +2110,7 @@ impl Label {
     pub async fn value(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2126,7 +2126,7 @@ impl Project {
     pub fn extensions(
         &self,
     ) -> Vec<Project> {
-        let query = self.selection.select("extensions");
+        let mut query = self.selection.select("extensions");
 
         return vec![Project {
             proc: self.proc.clone(),
@@ -2138,7 +2138,7 @@ impl Project {
     pub fn generated_code(
         &self,
     ) -> Directory {
-        let query = self.selection.select("generatedCode");
+        let mut query = self.selection.select("generatedCode");
 
         return Directory {
             proc: self.proc.clone(),
@@ -2150,7 +2150,7 @@ impl Project {
     pub async fn install(
         &self,
     ) -> eyre::Result<bool> {
-        let query = self.selection.select("install");
+        let mut query = self.selection.select("install");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2158,7 +2158,7 @@ impl Project {
     pub async fn name(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2166,7 +2166,7 @@ impl Project {
     pub async fn schema(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("schema");
+        let mut query = self.selection.select("schema");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2174,7 +2174,7 @@ impl Project {
     pub async fn sdk(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("sdk");
+        let mut query = self.selection.select("sdk");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2248,7 +2248,7 @@ impl Query {
     pub fn container(
         &self,
     ) -> Container {
-        let query = self.selection.select("container");
+        let mut query = self.selection.select("container");
 
         return Container {
             proc: self.proc.clone(),
@@ -2287,7 +2287,7 @@ impl Query {
     pub async fn default_platform(
         &self,
     ) -> eyre::Result<Platform> {
-        let query = self.selection.select("defaultPlatform");
+        let mut query = self.selection.select("defaultPlatform");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2299,7 +2299,7 @@ impl Query {
     pub fn directory(
         &self,
     ) -> Directory {
-        let query = self.selection.select("directory");
+        let mut query = self.selection.select("directory");
 
         return Directory {
             proc: self.proc.clone(),
@@ -2391,7 +2391,7 @@ impl Query {
     pub fn host(
         &self,
     ) -> Host {
-        let query = self.selection.select("host");
+        let mut query = self.selection.select("host");
 
         return Host {
             proc: self.proc.clone(),
@@ -2495,7 +2495,7 @@ impl Query {
     pub fn socket(
         &self,
     ) -> Socket {
-        let query = self.selection.select("socket");
+        let mut query = self.selection.select("socket");
 
         return Socket {
             proc: self.proc.clone(),
@@ -2537,7 +2537,7 @@ impl Secret {
     pub async fn id(
         &self,
     ) -> eyre::Result<SecretId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2545,7 +2545,7 @@ impl Secret {
     pub async fn plaintext(
         &self,
     ) -> eyre::Result<String> {
-        let query = self.selection.select("plaintext");
+        let mut query = self.selection.select("plaintext");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2561,7 +2561,7 @@ impl Socket {
     pub async fn id(
         &self,
     ) -> eyre::Result<SocketId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }

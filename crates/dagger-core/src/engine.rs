@@ -11,7 +11,7 @@ impl Engine {
         Self {}
     }
 
-    async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, Child)> {
+    async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         let cli = Downloader::new("0.3.12".into())?.get_cli().await?;
 
         let cli_session = CliSession::new();
@@ -19,7 +19,7 @@ impl Engine {
         Ok(cli_session.connect(cfg, &cli).await?)
     }
 
-    pub async fn start(&self, cfg: &Config) -> eyre::Result<(ConnectParams, Child)> {
+    pub async fn start(&self, cfg: &Config) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         // TODO: Add from existing session as well
         self.from_cli(cfg).await
     }
