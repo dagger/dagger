@@ -5,11 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v0.2.2 (2023-02-19)
+## v0.2.3 (2023-02-20)
 
-### New Features
+### Bug Fixes
 
- - <csr-id-6e5f4074329ab0462445b31d4153f8497c483438/> update to dagger v0.3.12
+ - <csr-id-75bc17e57db222492c6ffd2dfe80208d2bda75c9/> Fix async panic on blocking #19
+   Replaced internal threads with tokio spawn functions
 
 ### Commit Statistics
 
@@ -26,6 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Fix async panic on blocking #19 ([`75bc17e`](https://github.com/kjuulh/dagger-rs/commit/75bc17e57db222492c6ffd2dfe80208d2bda75c9))
+</details>
+
+## v0.2.2 (2023-02-19)
+
+### New Features
+
+ - <csr-id-6e5f4074329ab0462445b31d4153f8497c483438/> update to dagger v0.3.12
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Release dagger-core v0.2.2, dagger-codegen v0.2.2, dagger-rs v0.2.8 ([`1638f15`](https://github.com/kjuulh/dagger-rs/commit/1638f15fba9d16512e8452f87b908d6dce417cd9))
     - update to dagger v0.3.12 ([`6e5f407`](https://github.com/kjuulh/dagger-rs/commit/6e5f4074329ab0462445b31d4153f8497c483438))
 </details>
 
