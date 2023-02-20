@@ -13,9 +13,9 @@ use crate::querybuilder::query;
 
 pub type DaggerConn = Arc<Query>;
 
-pub fn connect() -> eyre::Result<DaggerConn> {
+pub async fn connect() -> eyre::Result<DaggerConn> {
     let cfg = Config::default();
-    let (conn, proc) = DaggerEngine::new().start(&cfg)?;
+    let (conn, proc) = DaggerEngine::new().start(&cfg).await?;
 
     Ok(Arc::new(Query {
         conn,
@@ -44,8 +44,8 @@ pub fn graphql_client(conn: &ConnectParams) -> gql_client::Client {
 mod test {
     use super::connect;
 
-    #[test]
-    fn test_connect() {
-        let _ = connect().unwrap();
+    #[tokio::test]
+    async fn test_connect() {
+        let _ = connect().await.unwrap();
     }
 }

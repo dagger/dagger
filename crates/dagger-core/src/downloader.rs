@@ -119,7 +119,7 @@ impl Downloader {
         Ok(path)
     }
 
-    pub fn get_cli(&self) -> eyre::Result<PathBuf> {
+    pub async fn get_cli(&self) -> eyre::Result<PathBuf> {
         let version = &self.version;
         let mut cli_bin_path = self.cache_dir()?;
         cli_bin_path.push(format!("{CLI_BIN_PREFIX}{version}"));
@@ -129,7 +129,7 @@ impl Downloader {
 
         if !cli_bin_path.exists() {
             cli_bin_path = self
-                .download(cli_bin_path)
+                .download(cli_bin_path).await
                 .context("failed to download CLI from archive")?;
         }
 
@@ -145,8 +145,8 @@ impl Downloader {
         Ok(cli_bin_path)
     }
 
-    fn download(&self, path: PathBuf) -> eyre::Result<PathBuf> {
-        let expected_checksum = self.expected_checksum()?;
+    async fn download(&self, path: PathBuf) -> eyre::Result<PathBuf> {
+        let expected_checksum = self.expected_checksum().await?;
 
         let mut bytes = vec![];
         let actual_hash = self.extract_cli_archive(&mut bytes)?;
@@ -165,15 +165,15 @@ impl Downloader {
         Ok(path)
     }
 
-    fn expected_checksum(&self) -> eyre::Result<String> {
+    async fn expected_checksum(&self) -> eyre::Result<String> {
         let archive_url = &self.archive_url();
         let archive_path = PathBuf::from(&archive_url);
         let archive_name = archive_path
             .file_name()
             .ok_or(eyre::anyhow!("could not get file_name from archive_url"))?;
-        let resp = reqwest::blocking::get(self.checksum_url())?;
+        let resp = reqwest::get(self.checksum_url()).await?;
         let resp = resp.error_for_status()?;
-        for line in resp.text()?.lines() {
+        for line in resp.text().await?.lines() {
             let mut content = line.split_whitespace();
             let checksum = content
                 .next()
@@ -240,9 +240,9 @@ impl Downloader {
 mod test {
     use super::Downloader;
 
-    #[test]
-    fn download() {
-        let cli_path = Downloader::new("0.3.10".into()).unwrap().get_cli().unwrap();
+    #[tokio::test]
+    async fn download() {
+        let cli_path = Downloader::new("0.3.10".into()).unwrap().get_cli().await.unwrap();
 
         assert_eq!(
             Some("dagger-0.3.10"),

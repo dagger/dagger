@@ -4,7 +4,7 @@ use rand::Rng;
 async fn main() -> eyre::Result<()> {
     let mut rng = rand::thread_rng();
 
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
 
     let context_dir = client
         .host()

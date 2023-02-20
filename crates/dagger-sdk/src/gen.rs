@@ -22,8 +22,8 @@ pub struct SecretId(String);
 pub struct SocketId(String);
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
-    pub name: String,
     pub value: String,
+    pub name: String,
 }
 pub struct CacheVolume {
     pub proc: Arc<Child>,

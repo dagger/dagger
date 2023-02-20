@@ -2,7 +2,7 @@ use dagger_sdk::HostDirectoryOpts;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
 
     let host_source_dir = client.host().directory_opts(
         "examples/test-the-application/app",

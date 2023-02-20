@@ -278,6 +278,7 @@ dependencies = [
  "sha2",
  "tar",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -327,6 +328,7 @@ dependencies = [
  "sha2",
  "tar",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]

@@ -13,11 +13,11 @@ impl Cli {
         })
     }
 
-    pub fn execute(self, args: &[&str]) -> eyre::Result<()> {
+    pub async fn execute(self, args: &[&str]) -> eyre::Result<()> {
         let matches = self.cmd.get_matches_from(args);
 
         match matches.subcommand() {
-            Some(("generate", args)) => cli_generate::GenerateCommand::exec(args)?,
+            Some(("generate", args)) => cli_generate::GenerateCommand::exec(args).await?,
             _ => eyre::bail!("command missing"),
         }
 

@@ -17,12 +17,12 @@ impl GenerateCommand {
         clap::Command::new("generate").arg(Arg::new("output").long("output"))
     }
 
-    pub fn exec(arg_matches: &ArgMatches) -> eyre::Result<()> {
+    pub async fn exec(arg_matches: &ArgMatches) -> eyre::Result<()> {
         let cfg = Config::default();
-        let (conn, _proc) = Engine::new().start(&cfg)?;
+        let (conn, _proc) = Engine::new().start(&cfg).await?;
         let session = Session::new();
         let req = session.start(&cfg, &conn)?;
-        let schema = session.schema(req)?;
+        let schema = session.schema(req).await?;
         let code = generate(
             schema.into_schema().schema.unwrap(),
             Arc::new(RustGenerator {}),

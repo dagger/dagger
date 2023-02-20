@@ -1,7 +1,7 @@
 use graphql_client::GraphQLQuery;
 use reqwest::{
-    blocking::{Client, RequestBuilder},
     header::{HeaderMap, HeaderValue, ACCEPT, CONTENT_TYPE},
+    Client, RequestBuilder,
 };
 
 use crate::{config::Config, connect_params::ConnectParams, introspection::IntrospectionResponse};
@@ -37,14 +37,14 @@ impl Session {
         Ok(req_builder)
     }
 
-    pub fn schema(&self, req_builder: RequestBuilder) -> eyre::Result<IntrospectionResponse> {
+    pub async fn schema(&self, req_builder: RequestBuilder) -> eyre::Result<IntrospectionResponse> {
         let request_body: graphql_client::QueryBody<()> = graphql_client::QueryBody {
             variables: (),
             query: introspection_query::QUERY,
             operation_name: introspection_query::OPERATION_NAME,
         };
 
-        let res = req_builder.json(&request_body).send()?;
+        let res = req_builder.json(&request_body).send().await?;
 
         if res.status().is_success() {
             // do nothing
@@ -52,7 +52,7 @@ impl Session {
             return Err(eyre::anyhow!("server error!"));
         } else {
             let status = res.status();
-            let error_message = match res.text() {
+            let error_message = match res.text().await {
                 Ok(msg) => match serde_json::from_str::<serde_json::Value>(&msg) {
                     Ok(json) => {
                         format!("HTTP {}\n{}", status, serde_json::to_string_pretty(&json)?)
@@ -64,7 +64,7 @@ impl Session {
             return Err(eyre::anyhow!(error_message));
         }
 
-        let json: IntrospectionResponse = res.json()?;
+        let json: IntrospectionResponse = res.json().await?;
 
         Ok(json)
     }

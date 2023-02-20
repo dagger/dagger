@@ -3,7 +3,7 @@ use rand::Rng;
 
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
     let output = "examples/publish-the-application/app/build";
 
     let host_source_dir = client.host().directory_opts(

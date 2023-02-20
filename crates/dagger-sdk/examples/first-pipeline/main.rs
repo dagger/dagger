@@ -1,6 +1,6 @@
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
 
     let version = client
         .container()

@@ -29,3 +29,4 @@ serde_json = "1.0.93"
 sha2 = "0.10.6"
 tar = "0.4.38"
 tempfile = "3.3.0"
+tokio = { version = "1.25.0", features = ["full"] }
