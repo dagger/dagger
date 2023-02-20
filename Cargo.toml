@@ -19,7 +19,7 @@ members = [
 ]
 
 [dependencies]
-dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.3" }
+dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
 dagger-core = { path = "crates/dagger-core", version = "^0.2.3" }
 
 clap = "4.1.6"
