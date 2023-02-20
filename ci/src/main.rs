@@ -12,7 +12,7 @@ async fn main() -> eyre::Result<()> {
         .subcommand(clap::Command::new("release"))
         .get_matches();
 
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
 
     match matches.subcommand() {
         Some(("pr", _)) => {
