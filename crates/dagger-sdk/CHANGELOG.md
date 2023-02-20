@@ -8,6 +8,8 @@ and this project adheres to
 
 ## v0.2.11 (2023-02-20)
 
+<csr-id-803cfc4f8c4d72ab7d011be5523b3bfc6039de39/>
+
 ### Chore
 
  - <csr-id-803cfc4f8c4d72ab7d011be5523b3bfc6039de39/> ran clippy
@@ -16,7 +18,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -27,6 +29,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.4, dagger-codegen v0.2.6, dagger-sdk v0.2.11 ([`17ec62a`](https://github.com/kjuulh/dagger-rs/commit/17ec62a5d58232ff57391523b9851fb7b07d02ab))
     - ran clippy ([`803cfc4`](https://github.com/kjuulh/dagger-rs/commit/803cfc4f8c4d72ab7d011be5523b3bfc6039de39))
 </details>
 

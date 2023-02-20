@@ -10,13 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Bug Fixes
 
  - <csr-id-8385aa8a15ff7b45fecc3462c482b998118c14eb/> remove blocking
+ - <csr-id-921e61b5e248013cb5fbf4f1bad3eef5a2673145/> remove blocking
 
 ### Commit Statistics
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
- - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 3 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
 ### Commit Details
@@ -26,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - remove blocking ([`921e61b`](https://github.com/kjuulh/dagger-rs/commit/921e61b5e248013cb5fbf4f1bad3eef5a2673145))
+    - Release dagger-core v0.2.4, dagger-codegen v0.2.6, dagger-sdk v0.2.11 ([`17ec62a`](https://github.com/kjuulh/dagger-rs/commit/17ec62a5d58232ff57391523b9851fb7b07d02ab))
     - remove blocking ([`8385aa8`](https://github.com/kjuulh/dagger-rs/commit/8385aa8a15ff7b45fecc3462c482b998118c14eb))
 </details>
 
