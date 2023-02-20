@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Adjusting changelogs prior to release of dagger-sdk v0.2.10, dagger-rs v0.2.10 ([`76bb1fc`](https://github.com/kjuulh/dagger-rs/commit/76bb1fcedd03bd2d3b1e0f841f10325e4a85e108))
     - Release dagger-rs v0.2.10 ([`dc3487b`](https://github.com/kjuulh/dagger-rs/commit/dc3487b840beb9543699f72d4282147e4ebc72f2))
 </details>
 
