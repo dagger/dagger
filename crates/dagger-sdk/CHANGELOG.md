@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.10 (2023-02-20)
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 0 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Release dagger-rs v0.2.10 ([`dc3487b`](https://github.com/kjuulh/dagger-rs/commit/dc3487b840beb9543699f72d4282147e4ebc72f2))
+</details>
+
 ## v0.2.9 (2023-02-20)
 
 ### Bug Fixes
@@ -16,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -27,6 +47,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.3, dagger-sdk v0.2.9, dagger-rs v0.2.10 ([`82de43a`](https://github.com/kjuulh/dagger-rs/commit/82de43aa91d6a5e09a247d1959137fdc36a40d35))
     - Fix async panic on blocking #19 ([`75bc17e`](https://github.com/kjuulh/dagger-rs/commit/75bc17e57db222492c6ffd2dfe80208d2bda75c9))
 </details>
 
