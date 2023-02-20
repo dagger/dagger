@@ -114,7 +114,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "color-eyre",
- "dagger-sdk 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dagger-sdk 0.2.11",
  "eyre",
  "tokio",
 ]
@@ -246,39 +246,16 @@ dependencies = [
 
 [[package]]
 name = "dagger-codegen"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "convert_case",
- "dagger-core 0.2.4",
+ "dagger-core 0.2.5",
  "eyre",
  "genco",
  "itertools",
  "pretty_assertions",
  "serde",
  "serde_json",
-]
-
-[[package]]
-name = "dagger-core"
-version = "0.2.4"
-dependencies = [
- "clap",
- "dirs",
- "eyre",
- "flate2",
- "genco",
- "graphql-introspection-query",
- "graphql_client",
- "hex",
- "hex-literal",
- "platform-info",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
@@ -307,13 +284,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "dagger-core"
+version = "0.2.5"
+dependencies = [
+ "clap",
+ "dirs",
+ "eyre",
+ "flate2",
+ "genco",
+ "graphql-introspection-query",
+ "graphql_client",
+ "hex",
+ "hex-literal",
+ "platform-info",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "dagger-rs"
 version = "0.2.10"
 dependencies = [
  "clap",
  "color-eyre",
  "dagger-codegen",
- "dagger-core 0.2.4",
+ "dagger-core 0.2.5",
  "dirs",
  "eyre",
  "flate2",
@@ -335,16 +335,15 @@ dependencies = [
 [[package]]
 name = "dagger-sdk"
 version = "0.2.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d86c5bf1ad09a730d6fc5c73c39664eb38b9843fc21dedfee4629976ae04cba4"
 dependencies = [
  "base64",
  "dagger-core 0.2.4",
  "derive_builder",
  "eyre",
  "futures",
- "genco",
  "gql_client",
- "pretty_assertions",
- "rand",
  "serde",
  "serde_json",
  "tokio",
@@ -352,16 +351,17 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d86c5bf1ad09a730d6fc5c73c39664eb38b9843fc21dedfee4629976ae04cba4"
+version = "0.2.12"
 dependencies = [
  "base64",
- "dagger-core 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "dagger-core 0.2.5",
  "derive_builder",
  "eyre",
  "futures",
+ "genco",
  "gql_client",
+ "pretty_assertions",
+ "rand",
  "serde",
  "serde_json",
  "tokio",
