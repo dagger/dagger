@@ -1,8 +1,7 @@
 use std::{
     fs::canonicalize,
-    io::{BufRead, BufReader},
     path::PathBuf,
-    process::{Child, Stdio},
+    process::Stdio,
     sync::Arc,
 };
 
@@ -89,25 +88,20 @@ impl InnerCliSession {
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
         tokio::spawn(async move {
-            let stdout_bufr = tokio::io::BufReader::new(stdout);
-            for line in stdout_bufr.lines().next_line().await {
-                let out = line.as_ref().unwrap();
-                if let Ok(conn) = serde_json::from_str::<ConnectParams>(&out) {
+            let mut stdout_bufr = tokio::io::BufReader::new(stdout).lines();
+            while let Ok(Some(line)) = stdout_bufr.next_line().await {
+                if let Ok(conn) = serde_json::from_str::<ConnectParams>(&line) {
                     sender.send(conn).await.unwrap();
                 }
-                if let Some(line) = line {
-                    println!("dagger: {}", line);
-                }
+
+                println!("dagger: {}", line);
             }
         });
 
         tokio::spawn(async move {
-            let stdout_bufr = tokio::io::BufReader::new(stderr);
-            for line in stdout_bufr.lines().next_line().await {
-                if let Some(line) = line {
-                    println!("dagger: {}", line);
-                }
-                //panic!("could not start dagger session: {}", out)
+            let mut stdout_bufr = tokio::io::BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = stdout_bufr.next_line().await {
+                println!("dagger: {}", line);
             }
         });
 
