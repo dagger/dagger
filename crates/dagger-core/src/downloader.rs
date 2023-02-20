@@ -149,7 +149,7 @@ impl Downloader {
         let expected_checksum = self.expected_checksum().await?;
 
         let mut bytes = vec![];
-        let actual_hash = self.extract_cli_archive(&mut bytes)?;
+        let actual_hash = self.extract_cli_archive(&mut bytes).await?;
 
         if expected_checksum != actual_hash {
             eyre::bail!("downloaded CLI binary checksum doesn't match checksum from checksums.txt")
@@ -190,17 +190,13 @@ impl Downloader {
         eyre::bail!("could not find a matching version or binary in checksums.txt")
     }
 
-    pub fn extract_cli_archive(&self, dest: &mut Vec<u8>) -> eyre::Result<String> {
+    pub async fn extract_cli_archive(&self, dest: &mut Vec<u8>) -> eyre::Result<String> {
         let archive_url = self.archive_url();
-        let resp = reqwest::blocking::get(&archive_url)?;
-        let mut resp = resp.error_for_status()?;
-        let mut bytes = vec![];
-        let lines = resp.read_to_end(&mut bytes)?;
-        if lines == 0 {
-            eyre::bail!("nothing was downloaded")
-        }
+        let resp = reqwest::get(&archive_url).await?;
+        let resp = resp.error_for_status()?;
+        let bytes = resp.bytes().await?;
         let mut hasher = sha2::Sha256::new();
-        hasher.update(bytes.as_slice());
+        hasher.update(&bytes);
         let res = hasher.finalize();
 
         println!("{}", hex::encode(&res));
@@ -209,7 +205,7 @@ impl Downloader {
             // TODO:  Nothing for now
             todo!()
         } else {
-            self.extract_from_tar(bytes.as_slice(), dest)?;
+            self.extract_from_tar(&bytes, dest)?;
         }
 
         Ok(hex::encode(res))
