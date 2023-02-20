@@ -3,7 +3,7 @@ use genco::prelude::rust;
 use genco::quote;
 use itertools::Itertools;
 
-use crate::functions::{type_ref_is_optional, CommonFunctions};
+use crate::functions::{CommonFunctions};
 use crate::rust::functions::{
     field_options_struct_name, format_function, format_name, format_optional_args,
     format_struct_comment, format_struct_name,
