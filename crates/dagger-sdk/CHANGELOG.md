@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.11 (2023-02-20)
+
+### Chore
+
+ - <csr-id-803cfc4f8c4d72ab7d011be5523b3bfc6039de39/> ran clippy
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - ran clippy ([`803cfc4`](https://github.com/kjuulh/dagger-rs/commit/803cfc4f8c4d72ab7d011be5523b3bfc6039de39))
+</details>
+
 ## v0.2.10 (2023-02-20)
 
 Alignment release
@@ -18,7 +42,7 @@ Alignment release
 
 <csr-read-only-do-not-edit/>
 
- - 7 commits contributed to the release.
+ - 8 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -29,6 +53,7 @@ Alignment release
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.10 ([`5cb9729`](https://github.com/kjuulh/dagger-rs/commit/5cb97296b61677fb37e4bdb8519d30a484f93621))
     - changelog ([`b100285`](https://github.com/kjuulh/dagger-rs/commit/b100285312df522218bfd4bc00bbf41b857a81bf))
     - Adjusting changelogs prior to release of dagger-sdk v0.2.10 ([`8ed0647`](https://github.com/kjuulh/dagger-rs/commit/8ed06476e56f3290a419d2a67e7f25da575c63ad))
     - update changelog ([`09aa658`](https://github.com/kjuulh/dagger-rs/commit/09aa658b6fb3c1e9a2de668c4a69bbe5be13202f))
