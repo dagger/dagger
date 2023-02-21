@@ -129,6 +129,13 @@ async def test_execute_timeout():
             )
 
 
+async def test_query_error():
+    async with dagger.Connection() as client:
+        with pytest.raises(dagger.QueryError) as exc_info:
+            await client.container().from_("ALPINE404").id()
+    assert "repository name must be lowercase" in str(exc_info.value)
+
+
 async def test_object_sequence(tmp_path):
     # Test that a sequence of objects doesn't fail.
     # In this case, we're using Container.export's
