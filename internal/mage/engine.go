@@ -23,8 +23,9 @@ const (
 	alpineVersion = "3.17"
 	runcVersion   = "v1.1.4"
 	buildkitRepo  = "github.com/moby/buildkit"
-	buildkitRef   = "v0.11.1"
-	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
+	// https://github.com/moby/buildkit/commit/34a576c411eaab55c40f3e06478a628ef73bdfc7
+	buildkitRef  = "34a576c411eaab55c40f3e06478a628ef73bdfc7"
+	qemuBinImage = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
@@ -114,6 +115,12 @@ func (t Engine) Lint(ctx context.Context) error {
 		repo, version := parts[0], parts[1]
 		if repo != buildkitRepo {
 			continue
+		}
+		buildkitRef := buildkitRef
+		if strings.Contains(version, "-") {
+			// not a semver, for now just assume that it ends in a git commit hash
+			version = version[strings.LastIndex(version, "-")+1:]
+			buildkitRef = buildkitRef[:12]
 		}
 		if version != buildkitRef {
 			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitRef, version)
