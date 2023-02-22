@@ -322,13 +322,10 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 		Branch("fork").
 		Tree()
 
-	return c.Container(dagger.ContainerOpts{
-		Platform: dagger.Platform("linux/" + arch),
-	}).
-		From("golang").
-		WithMountedDirectory("/src", src).
-		WithWorkdir("/src").
-		WithEnvVariable("CGO_ENABLED", "0").
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithMountedDirectory("/app", src).
 		WithExec([]string{"make", "binaries"}).
 		File("./bin/dnsname")
 }
