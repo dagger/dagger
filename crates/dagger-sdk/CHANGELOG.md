@@ -6,7 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.14 (2023-02-22)
+
+### Chore
+
+ - <csr-id-e331ca003546f4ebe00f33b65c3b45c6b0586514/> fix whitespace
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - fix whitespace ([`e331ca0`](https://github.com/kjuulh/dagger-rs/commit/e331ca003546f4ebe00f33b65c3b45c6b0586514))
+</details>
+
 ## v0.2.13 (2023-02-22)
+
+<csr-id-7c3654d276bb5f66e692a210cb60cdf46b19e226/>
+<csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/>
 
 ### Chore
 
@@ -25,7 +52,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 6 commits contributed to the release over the course of 2 calendar days.
+ - 7 commits contributed to the release over the course of 2 calendar days.
  - 2 days passed between releases.
  - 4 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -37,6 +64,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-codegen v0.2.8, dagger-sdk v0.2.13 ([`456f483`](https://github.com/kjuulh/dagger-rs/commit/456f48389b5514d7f743a600a7732fb02dd87418))
     - ran clippy ([`7c3654d`](https://github.com/kjuulh/dagger-rs/commit/7c3654d276bb5f66e692a210cb60cdf46b19e226))
     - with clone ([`266ad32`](https://github.com/kjuulh/dagger-rs/commit/266ad32dff4c8957c7cdd291f9ef6f8a8c1d055c))
     - Release dagger-core v0.2.6, dagger-codegen v0.2.7, dagger-sdk v0.2.12 ([`7179f8b`](https://github.com/kjuulh/dagger-rs/commit/7179f8b598ef04e62925e39d3f55740253c01686))
