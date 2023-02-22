@@ -47,7 +47,7 @@ require (
 	golang.org/x/sys v0.5.0
 	golang.org/x/term v0.5.0
 	google.golang.org/grpc v1.52.3
-	oss.terrastruct.com/d2 v0.1.5
+	oss.terrastruct.com/d2 v0.2.0
 )
 
 require (
@@ -90,7 +90,7 @@ require (
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
-	github.com/dop251/goja v0.0.0-20221118162653-d4bf6fde1b86 // indirect
+	github.com/dop251/goja v0.0.0-20230122112309-96b1610dd4f7 // indirect
 	github.com/fatih/color v1.13.0 // indirect
 	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
@@ -140,10 +140,10 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.12.0 // indirect
 	go.opentelemetry.io/otel/metric v0.34.0 // indirect
 	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9 // indirect
-	golang.org/x/image v0.1.0 // indirect
+	golang.org/x/image v0.3.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	gonum.org/v1/plot v0.12.0 // indirect
-	oss.terrastruct.com/util-go v0.0.0-20221226181616-c04ce7d1b79f // indirect
+	oss.terrastruct.com/util-go v0.0.0-20230212154233-14479bbd1147 // indirect
 )
 
 require (
