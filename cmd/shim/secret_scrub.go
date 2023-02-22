@@ -11,11 +11,10 @@ import (
 )
 
 type SecretScrubWriter struct {
-	mu            sync.Mutex
-	w             io.Writer
-	secretToScrub core.SecretToScrubInfo
-	secretValues  []string
-	fs            fs.FS
+	mu           sync.Mutex
+	w            io.Writer
+	secretValues []string
+	fs           fs.FS
 }
 
 func (w *SecretScrubWriter) Write(b []byte) (int, error) {
@@ -52,10 +51,9 @@ func NewSecretScrubWriter(w io.Writer, fsys fs.FS, env []string, secretsToScrub 
 	secrets = append(secrets, fileSecrets...)
 
 	return &SecretScrubWriter{
-		fs:            fsys,
-		w:             w,
-		secretValues:  secrets,
-		secretToScrub: secretsToScrub,
+		fs:           fsys,
+		w:            w,
+		secretValues: secrets,
 	}, nil
 }
 
