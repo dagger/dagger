@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/network"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -97,11 +96,6 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"--privileged",
 	}
 
-	dnsFlags, err := network.DockerDNSFlags()
-	if err != nil {
-		return "", err
-	}
-	runArgs = append(runArgs, dnsFlags...)
 	runArgs = append(runArgs, imageRef, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {

@@ -1,6 +1,7 @@
 package mage
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"time"
 
 	"dagger.io/dagger"
@@ -39,11 +41,13 @@ const (
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 )
 
-// setting cgroup v2 nesting. ref: https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
-var engineEntrypoint = fmt.Sprintf(`#!/bin/sh
+var engineEntrypoint string
+
+const engineEntrypointTmpl = `#!/bin/sh
 set -e
 
 # cgroup v2: enable nesting
+# see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	# move the processes from the root group to the /init group,
 	# otherwise writing subtree_control fails with EBUSY.
@@ -55,9 +59,37 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-# wrap with dumb-init to clean up dnsmasq commands
-exec dumb-init %s
-`, engineEntrypointCommand)
+# add dnsmasq to resolver so buildkit can reach local services
+echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf.new
+echo 'search {{.SearchDomain}}' >> /etc/resolv.conf.new
+cat /etc/resolv.conf >> /etc/resolv.conf.new
+umount /etc/resolv.conf
+mv /etc/resolv.conf.new /etc/resolv.conf
+
+exec {{.EntrypointCommand}}
+`
+
+func init() {
+	type tmplParams struct {
+		Bridge            string
+		SearchDomain      string
+		EntrypointCommand string
+	}
+
+	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
+
+	buf := new(bytes.Buffer)
+	err := tmpl.Execute(buf, tmplParams{
+		Bridge:            network.Bridge,
+		SearchDomain:      network.DNSDomain,
+		EntrypointCommand: engineEntrypointCommand,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	engineEntrypoint = buf.String()
+}
 
 var publishedEngineArches = []string{"amd64", "arm64"}
 
@@ -293,17 +325,12 @@ func (t Engine) Dev(ctx context.Context) error {
 	runArgs := []string{
 		"run",
 		"-d",
-		"--rm",
+		// "--rm",
 		"-e", cacheConfigEnvName,
 		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}
-	dnsFlags, err := network.DockerDNSFlags()
-	if err != nil {
-		return err
-	}
-	runArgs = append(runArgs, dnsFlags...)
 	runArgs = append(runArgs, imageName, "--debug")
 
 	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
@@ -348,7 +375,7 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				// for Buildkit
 				"git", "openssh", "pigz", "xz",
 				// for CNI
-				"dumb-init", "iptables", "ip6tables", "dnsmasq",
+				"iptables", "ip6tables", "dnsmasq",
 			}).
 			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 				Permissions: 0700,
