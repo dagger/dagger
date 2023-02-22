@@ -24,6 +24,9 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 
 	s := string(b)
 	for _, secret := range w.secretValues {
+		if secret == "" {
+			continue
+		}
 		// FIXME: I think we can do better
 		s = strings.ReplaceAll(s, secret, "***")
 	}
