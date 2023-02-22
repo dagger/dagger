@@ -20,39 +20,39 @@ func main() {
 	}
 	defer client.Close()
 
-  // create a cache volume
+	// create a cache volume
 	nodeCache := client.CacheVolume("node")
 
 	hostSourceDir := client.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{"node_modules/", "ci/"},
 	})
 
-  // use a node:16-slim container
-  // mount the source code directory on the host
-  // at /src in the container
-  // mount the cache volume to persist dependencies
+	// use a node:16-slim container
+	// mount the source code directory on the host
+	// at /src in the container
+	// mount the cache volume to persist dependencies
 	source := client.Container().
 		From("node:16-slim").
 		WithMountedDirectory("/src", hostSourceDir).
 		WithMountedCache("/src/node_modules", nodeCache)
 
-  // set the working directory in the container
-  // install application dependencies
+		// set the working directory in the container
+		// install application dependencies
 	runner := source.WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})
 
-  // run application tests
+		// run application tests
 	test := runner.WithExec([]string{"npm", "test", "--", "--watchAll=false"})
 
-  // first stage
-  // build application
+	// first stage
+	// build application
 	buildDir := test.WithExec([]string{"npm", "run", "build"}).
 		Directory("./build")
 
-  // second stage
-  // use an nginx:alpine container
-  // copy the build/ directory from the first stage
-  // publish the resulting container to a registry
+		// second stage
+		// use an nginx:alpine container
+		// copy the build/ directory from the first stage
+		// publish the resulting container to a registry
 	ref, err := client.Container().
 		From("nginx:1.23-alpine").
 		WithDirectory("/usr/share/nginx/html", buildDir).
