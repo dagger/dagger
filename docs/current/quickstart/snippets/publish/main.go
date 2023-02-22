@@ -43,7 +43,7 @@ func main() {
 
 	ref, err := client.Container().
 		From("nginx").
-		WithDirectory("/usr/src/nginx", client.Host().Directory("./build")).
+		WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 	if err != nil {
 		panic(err)
