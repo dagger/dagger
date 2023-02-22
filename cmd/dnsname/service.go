@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,26 +64,17 @@ func (d dnsNameFile) start() error {
 		"root",
 		fmt.Sprintf("--conf-file=%s", d.ConfigFile),
 	}
-	cmd := exec.Command(d.Binary, args...)
+	cmd := exec.Command(d.Binary, args...) //nolint:gosec
 	if b, err := cmd.CombinedOutput(); err != nil {
 		return errors.Wrapf(err, "dnsname error: dnsmasq failed with %q", b)
 	}
 	return nil
 }
 
-// stop stops the dnsmasq instance.
-func (d dnsNameFile) stop() error {
-	pid, err := d.getProcess()
-	if err != nil {
-		return err
-	}
-	return pid.Kill()
-}
-
 // getProcess reads the PID for the dnsmasq instance and returns an
 // *os.Process. Returns an error if the PID does not exist.
 func (d dnsNameFile) getProcess() (*os.Process, error) {
-	pidFileContents, err := ioutil.ReadFile(d.PidFile)
+	pidFileContents, err := os.ReadFile(d.PidFile)
 	if err != nil {
 		return nil, err
 	}

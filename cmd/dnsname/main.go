@@ -28,7 +28,6 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,9 +155,6 @@ func main() {
 }
 
 func cmdCheck(args *skel.CmdArgs) error {
-	var (
-		conffiles []string
-	)
 	if err := findDNSMasq(); err != nil {
 		return ErrBinaryNotFound
 	}
@@ -200,12 +196,13 @@ func cmdCheck(args *skel.CmdArgs) error {
 		return errors.Errorf("dnsmasq instance not running")
 	}
 	// Above will make sure the pidfile exists
-	files, err := ioutil.ReadDir(dnsNameConfPath())
+	files, err := os.ReadDir(dnsNameConfPath())
 	if err != nil {
 		return err
 	}
-	for _, f := range files {
-		conffiles = append(conffiles, f.Name())
+	conffiles := make([]string, len(files))
+	for i, f := range files {
+		conffiles[i] = f.Name()
 	}
 	if !stringInSlice("addnhosts", conffiles) {
 		return errors.Errorf("addnhost file missing from configuration")
@@ -229,7 +226,7 @@ func stringInSlice(s string, slice []string) bool {
 
 type podname struct {
 	types.CommonArgs
-	K8S_POD_NAME types.UnmarshallableString `json:"podname,omitempty"`
+	K8S_POD_NAME types.UnmarshallableString `json:"podname,omitempty"` //nolint:revive,stylecheck
 }
 
 // parseConfig parses the supplied configuration (and prevResult) from stdin.

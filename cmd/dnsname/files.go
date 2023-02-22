@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -69,7 +68,7 @@ func checkForDNSMasqConfFile(conf dnsNameFile) error {
 		}
 	}
 	// Generate the template and compile it.
-	return ioutil.WriteFile(conf.ConfigFile, newConfig, 0700)
+	return os.WriteFile(conf.ConfigFile, newConfig, 0600)
 }
 
 // generateDNSMasqConfig fills out the configuration file template for the dnsmasq service

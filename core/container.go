@@ -327,6 +327,9 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 
 	payload.Services.Merge(ctxPayload.Services)
 
+	// set image ref to empty string
+	payload.ImageRef = ""
+
 	return WithServices(ctx, gw, payload.Services, func() (*Container, error) {
 		platform := payload.Platform
 
@@ -407,18 +410,8 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 			payload.Config = imgSpec.Config
 		}
 
-		id, err := payload.Encode()
-		if err != nil {
-			return nil, err
-		}
-
-		return &Container{ID: id}, nil
+		return container.containerFromPayload(payload)
 	})
-
-	// set image ref to empty string
-	payload.ImageRef = ""
-
-	return container.containerFromPayload(payload)
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
