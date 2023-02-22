@@ -328,7 +328,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// The unique image reference
+// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
 func (r *Container) ImageRef(ctx context.Context) (string, error) {
 	q := r.q.Select("imageRef")
 

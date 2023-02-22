@@ -351,7 +351,8 @@ class Container(Type):
 
     @typecheck
     async def image_ref(self) -> Optional[str]:
-        """The unique image reference
+        """The unique image reference which can only be retrieved immediately
+        after the 'Container.From' call.
 
         Returns
         -------
