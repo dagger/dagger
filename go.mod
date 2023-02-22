@@ -161,7 +161,7 @@ require (
 	github.com/containerd/stargz-snapshotter/estargz v0.14.1 // indirect
 	github.com/containerd/ttrpc v1.1.1-0.20230127163717-32fab2374638 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/cli v23.0.0+incompatible
+	github.com/docker/cli v23.0.1+incompatible
 	github.com/docker/docker v23.0.0+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
