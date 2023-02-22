@@ -333,11 +333,6 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		cniURL := fmt.Sprintf(
-			"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
-			cniVersion, "linux", arch, cniVersion,
-		)
-
 		platformVariants = append(platformVariants, c.
 			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 			From("alpine:"+alpineVersion).
@@ -355,14 +350,11 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-			WithDirectory(engineDefaultStateDir, c.Directory()).
-			WithDirectory("/opt/cni/bin", c.Directory()).
-			WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
-			WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
-			WithExec([]string{"tar", "-xzf", "/tmp/cni-plugins.tgz", "-C", "/opt/cni/bin"}).
+			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
 			WithNewFile("/etc/buildkit/cni.conflist", dagger.ContainerWithNewFileOpts{
 				Contents: cniConfig("dagger", network.CIDR),
 			}).
+			WithDirectory(engineDefaultStateDir, c.Directory()).
 			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 				Contents: buildkitConfig(),
 			}).
@@ -409,6 +401,27 @@ func cniConfig(name, subnet string) string {
 		panic(err)
 	}
 	return string(b)
+}
+
+func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
+	cniURL := fmt.Sprintf(
+		"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
+		cniVersion, "linux", arch, cniVersion,
+	)
+
+	return c.Container().
+		From("alpine:"+alpineVersion).
+		WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
+		WithDirectory("/opt/cni/bin", c.Directory()).
+		WithExec([]string{
+			"tar", "-xzf", "/tmp/cni-plugins.tgz",
+			"-C", "/opt/cni/bin",
+			// only unpack plugins we actually need
+			"./bridge", "./firewall", // required by dagger network stack
+			"./loopback", "./host-local", // implicitly required (container fails without them)
+		}).
+		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
+		Directory("/opt/cni/bin")
 }
 
 func buildkitConfig() string {
