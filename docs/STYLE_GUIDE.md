@@ -75,7 +75,7 @@ Follow the steps below to create an API Playground embed:
     TOKEN=$TOKEN ./create_embed_qs.sh YOUR-SNIPPET-FILE
     ```
 
-8. Add the embed to your document using the format below:
+1. Add the embed to your document using the format below:
 
     ```html
     <iframe class="embed" src="YOUR-EMBED-LINK"></iframe>
