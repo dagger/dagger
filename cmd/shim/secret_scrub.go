@@ -31,15 +31,12 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 		s = strings.ReplaceAll(s, secret, "***")
 	}
 
-	n, err := w.w.Write([]byte(s))
+	_, err := w.w.Write([]byte(s))
 	if err != nil {
 		return -1, err
 	}
-	if n != len(b) {
-		n = len(b)
-	}
 
-	return n, err
+	return len(b), err
 }
 
 // NewSecretScrubWriter replaces known secrets by "***".
