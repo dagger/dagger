@@ -19,7 +19,6 @@ connect(async (client) => {
   const test = runner
     .withExec(["npm", "test", "--", "--watchAll=false"])
 
-  // highlight-start
   // first stage
   // build application
   const buildDir = test
@@ -31,10 +30,9 @@ connect(async (client) => {
   // copy the build/ directory from the first stage
   // publish the resulting container to a registry
   const imageRef = await client.container()
-    .from("nginx:alpine")
+    .from("nginx:1.23-alpine")
     .withDirectory('/usr/share/nginx/html', buildDir)
     .publish('ttl.sh/hello-dagger-' + Math.floor(Math.random() * 10000000))
   console.log(`Published image to: ${imageRef}`)
-  // highlight-end
 
 }, { LogOutput: process.stdout })

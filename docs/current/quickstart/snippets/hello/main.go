@@ -18,6 +18,9 @@ func main() {
 	}
 	defer client.Close()
 
+	// use a node:16-slim container
+	// get version
+	// execute
 	golang := client.Container().From("golang:1.19").WithExec([]string{"go", "version"})
 
 	version, err := golang.Stdout(ctx)
@@ -25,5 +28,6 @@ func main() {
 		panic(err)
 	}
 
+	// print output
 	fmt.Println("Hello from Dagger and " + version)
 }

@@ -9,7 +9,6 @@ async def main():
     config = dagger.Config(log_output=sys.stdout)
 
     async with dagger.Connection(config) as client:
-        # highlight-start
         # create a cache volume
         node_cache = client.cache_volume("node")
 
@@ -26,7 +25,6 @@ async def main():
             )
             .with_mounted_cache("/src/node_modules", node_cache)
         )
-        # highlight-end
 
         # set the working directory in the container
         # install application dependencies
@@ -45,7 +43,7 @@ async def main():
         # publish the resulting container to a registry
         image_ref = await (
             client.container()
-            .from_("nginx:alpine")
+            .from_("nginx:1.23-alpine")
             .with_directory("/usr/share/nginx/html", build_dir)
             .publish(f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}")
         )

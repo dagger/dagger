@@ -28,7 +28,6 @@ async def main():
         # run application tests
         test = runner.with_exec(["npm", "test", "--", "--watchAll=false"])
 
-        # highlight-start
         # first stage
         # build application
         build_dir = test.with_exec(["npm", "run", "build"]).directory("./build")
@@ -39,13 +38,12 @@ async def main():
         # publish the resulting container to a registry
         image_ref = await (
             client.container()
-            .from_("nginx:alpine")
+            .from_("nginx:1.23-alpine")
             .with_directory("/usr/share/nginx/html", build_dir)
             .publish(f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}")
         )
 
     print(f"Published image to: {image_ref}")
-    # highlight-end
 
 
 anyio.run(main)

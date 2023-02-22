@@ -43,7 +43,7 @@ async def main():
         # publish the resulting container to a registry
         image_ref = await (
             client.container()
-            .from_("nginx:alpine")
+            .from_("nginx:1.23-alpine")
             .with_directory("/usr/share/nginx/html", client.host().directory("./build"))
             .publish(f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}")
         )
