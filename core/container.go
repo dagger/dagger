@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -985,9 +986,19 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			secretDest = secret.EnvName
 			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
 			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
+
+			// we sort to avoid non-deterministic order that would break caching
+			sort.SliceStable(secretsToScrub.Envs, func(i, j int) bool {
+				return secretsToScrub.Envs[i] < secretsToScrub.Envs[j]
+			})
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+
+			// we sort to avoid non-deterministic order that would break caching
+			sort.SliceStable(secretsToScrub.Files, func(i, j int) bool {
+				return secretsToScrub.Files[i] < secretsToScrub.Files[j]
+			})
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
