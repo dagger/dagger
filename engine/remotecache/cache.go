@@ -13,21 +13,14 @@ import (
 	"github.com/moby/buildkit/cache/remotecache/gha"
 	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
 	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
-	v1 "github.com/moby/buildkit/cache/remotecache/v1"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 )
 
-const (
-	exporterName = "dagger-exporter"
-)
-
 func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHosts) remotecache.ResolveCacheExporterFunc {
 	return func(ctx context.Context, g session.Group, userAttrs map[string]string) (remotecache.Exporter, error) {
-		cc := v1.NewCacheChains()
-
 		cacheType, attrs, err := cacheConfigFromEnv()
 		if err != nil {
 			return nil, err
@@ -43,10 +36,8 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHos
 		case "azblob":
 			impl, err = azblob.ResolveCacheExporterFunc()(ctx, g, attrs)
 		default:
-			bklog.G(ctx).Debugf("unsupported cache type %s, defaulting to noop", cacheType)
-			impl = &noopExporter{
-				CacheExporterTarget: cc,
-			}
+			bklog.G(ctx).Debugf("unsupported cache type %s, defaulting export off", cacheType)
+			// leaving impl nil will cause buildkit to not export cache
 		}
 		if err != nil {
 			return nil, err

@@ -21,7 +21,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -97,6 +97,9 @@ type containerIDPayload struct {
 
 	// Sockets to expose to the container.
 	Sockets []ContainerSocket `json:"sockets,omitempty"`
+
+	// Image reference
+	ImageRef string `json:"image_ref,omitempty"`
 
 	// Hostname is the computed hostname for the container.
 	Hostname string `json:"hostname,omitempty"`
@@ -249,13 +252,18 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	_, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	digest, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
 		// the pipeline in the vertex name.
 		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	digested, err := reference.WithDigest(refName, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +288,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	return ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
+	ctr, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
 		// merge config.Env with imgSpec.Config.Env
 		newEnv := config.Env
 		if imgSpec.Config.Env != nil {
@@ -289,6 +297,19 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		imgSpec.Config.Env = newEnv
 		return imgSpec.Config
 	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err = ctr.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.ImageRef = digested.String()
+
+	return container.containerFromPayload(payload)
 }
 
 const defaultDockerfileName = "Dockerfile"
@@ -329,8 +350,8 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		}
 
 		inputs := map[string]*pb.Definition{
-			dockerfilebuilder.DefaultLocalNameContext:    ctxPayload.LLB,
-			dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
+			dockerui.DefaultLocalNameContext:    ctxPayload.LLB,
+			dockerui.DefaultLocalNameDockerfile: ctxPayload.LLB,
 		}
 
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
@@ -393,6 +414,11 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 
 		return &Container{ID: id}, nil
 	})
+
+	// set image ref to empty string
+	payload.ImageRef = ""
+
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
@@ -424,12 +450,10 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 
 	payload.Services.Merge(dirPayload.Services)
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
@@ -510,12 +534,10 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 	payload.Mounts = payload.Mounts.With(mount)
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithMountedTemp(ctx context.Context, target string) (*Container, error) {
@@ -531,12 +553,10 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 		Tmpfs:  true,
 	})
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret) (*Container, error) {
@@ -552,12 +572,10 @@ func (container *Container) WithMountedSecret(ctx context.Context, target string
 		MountPath: target,
 	})
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithoutMount(ctx context.Context, target string) (*Container, error) {
@@ -582,12 +600,10 @@ func (container *Container) WithoutMount(ctx context.Context, target string) (*C
 		payload.Mounts = append(payload.Mounts[:foundIdx], payload.Mounts[foundIdx+1:]...)
 	}
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) Mounts(ctx context.Context) ([]string, error) {
@@ -630,12 +646,10 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 		payload.Sockets = append(payload.Sockets, newSocket)
 	}
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithoutUnixSocket(ctx context.Context, target string) (*Container, error) {
@@ -653,12 +667,10 @@ func (container *Container) WithoutUnixSocket(ctx context.Context, target string
 		}
 	}
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithSecretVariable(ctx context.Context, name string, secret *Secret) (*Container, error) {
@@ -672,12 +684,10 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 		EnvName: name,
 	})
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
@@ -800,12 +810,10 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 
 	payload.Services.Merge(svcs)
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
@@ -864,12 +872,7 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 
 	payload.Config = updateFn(payload.Config)
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) Pipeline(ctx context.Context, name, description string) (*Container, error) {
@@ -883,12 +886,7 @@ func (container *Container) Pipeline(ctx context.Context, name, description stri
 		Description: description,
 	})
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
@@ -1101,12 +1099,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	payload.Mounts = mounts
 
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, fmt.Errorf("encode: %w", err)
-	}
+	// set image ref to empty string
+	payload.ImageRef = ""
 
-	return &Container{ID: id}, nil
+	return container.containerFromPayload(payload)
 }
 
 func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error {
@@ -1560,6 +1556,29 @@ func (container *Container) export(
 
 		return res, nil
 	})
+}
+
+func (container *Container) ImageRef(ctx context.Context, gw bkgw.Client) (string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	imgRef := payload.ImageRef
+	if imgRef != "" {
+		return imgRef, nil
+	}
+
+	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+}
+
+func (container *Container) containerFromPayload(payload *containerIDPayload) (*Container, error) {
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	return &Container{ID: id}, nil
 }
 
 type ContainerExecOpts struct {
