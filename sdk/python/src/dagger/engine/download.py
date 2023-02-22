@@ -18,9 +18,9 @@ import httpx
 import platformdirs
 
 from dagger.context import SyncResourceManager
+from dagger.exceptions import DownloadError
 
 from ._version import CLI_VERSION
-from .conn import ProvisionError
 
 DEFAULT_CLI_HOST = "dl.dagger.io"
 
@@ -155,13 +155,7 @@ class Downloader:
             cli_bin_path = cli_bin_path.with_suffix(".exe")
 
         if not cli_bin_path.exists():
-            try:
-                cli_bin_path = self._download(cli_bin_path)
-            # FIXME: create sub-exception and raise where it makes
-            # sense instead of doing a catch-all.
-            except Exception as e:  # noqa: BLE001
-                msg = "Failed to download CLI from archive"
-                raise ProvisionError(msg) from e
+            cli_bin_path = self._download(cli_bin_path)
 
         # garbage collection of old binaries
         for file in self.cache_dir.glob(f"{self.CLI_BIN_PREFIX}*"):
@@ -173,23 +167,23 @@ class Downloader:
     def _download(self, path: Path) -> Path:
         try:
             expected_hash = self.expected_checksum()
-        except httpx.HTTPError:
-            logger.exception("Failed to download checksums")
-            raise
+        except httpx.HTTPError as e:
+            msg = f"Failed to download checksums from {self.checksum_url}: {e}"
+            raise DownloadError(msg) from e
 
         with TempFile(f"temp-{self.CLI_BIN_PREFIX}", self.cache_dir) as tmp_bin:
             try:
                 actual_hash = self.extract_cli_archive(tmp_bin)
-            except httpx.HTTPError:
-                logger.exception("Failed to download CLI archive")
-                raise
+            except httpx.HTTPError as e:
+                msg = f"Failed to download archive from {self.archive_url}: {e}"
+                raise DownloadError(msg) from e
 
             if actual_hash != expected_hash:
                 msg = (
                     f"Downloaded CLI binary checksum ({actual_hash}) "
                     f"does not match expected checksum ({expected_hash})"
                 )
-                raise ValueError(msg)
+                raise DownloadError(msg)
 
         tmp_bin_path = Path(tmp_bin.name)
         tmp_bin_path.chmod(0o700)
@@ -203,8 +197,8 @@ class Downloader:
                 checksum, filename = line.split()
                 if filename == archive_name:
                     return checksum
-        msg = "Could not find checksum for CLI archive"
-        raise KeyError(msg)
+        msg = "Could not find checksum for archive"
+        raise DownloadError(msg)
 
     def extract_cli_archive(self, dest: IO[bytes]) -> str:
         """
@@ -242,7 +236,7 @@ class Downloader:
                     break
             else:
                 msg = "There is no item named 'dagger' in the archive"
-                raise FileNotFoundError(msg)
+                raise DownloadError(msg)
 
     @contextlib.contextmanager
     def _extract_from_zip(self, reader: StreamReader) -> Iterator[IO[bytes]]:
@@ -252,4 +246,5 @@ class Downloader:
                 with zar.open("dagger.exe") as file:
                     yield file
             except KeyError as e:
-                raise FileNotFoundError from e
+                msg = "There is no item named 'dagger.exe' in the archive"
+                raise DownloadError(msg) from e
