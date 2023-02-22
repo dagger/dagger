@@ -2922,3 +2922,25 @@ func TestContainerImageRef(t *testing.T) {
 		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 	})
 }
+
+func TestContainerBuildNilContextError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+
+	require.NoError(t, err)
+	defer c.Close()
+
+	// regression test, this previously caused the engine to panic
+	err = testutil.Query(
+		`{
+			container {
+				build(context: "") {
+					id
+				}
+			}
+		}`, &map[any]any{}, nil)
+	require.ErrorContains(t, err, "invalid nil input definition to definition op")
+}

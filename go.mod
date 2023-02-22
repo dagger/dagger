@@ -20,8 +20,8 @@ require (
 	github.com/google/go-containerregistry v0.13.0
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.2.0
-	// https://github.com/moby/buildkit/commit/664c119b7f23c6e15ff8c457d894ccef0024bf16
-	github.com/moby/buildkit v0.11.0-rc3.0.20230221202117-664c119b7f23
+	// https://github.com/moby/buildkit/commit/34a576c411eaab55c40f3e06478a628ef73bdfc7
+	github.com/moby/buildkit v0.11.0-rc3.0.20230222163458-34a576c411ea
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/opencontainers/runtime-spec v1.0.3-0.20220825212826-86290f6a00fb

@@ -23,8 +23,8 @@ const (
 	alpineVersion = "3.17"
 	runcVersion   = "v1.1.4"
 	buildkitRepo  = "github.com/moby/buildkit"
-	// https://github.com/moby/buildkit/commit/664c119b7f23c6e15ff8c457d894ccef0024bf16
-	buildkitRef  = "664c119b7f23c6e15ff8c457d894ccef0024bf16"
+	// https://github.com/moby/buildkit/commit/34a576c411eaab55c40f3e06478a628ef73bdfc7
+	buildkitRef  = "34a576c411eaab55c40f3e06478a628ef73bdfc7"
 	qemuBinImage = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
