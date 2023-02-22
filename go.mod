@@ -13,6 +13,9 @@ require (
 	github.com/containerd/containerd v1.6.14
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
 	github.com/containerd/stargz-snapshotter v0.13.0
+	github.com/containernetworking/cni v1.1.1
+	github.com/containernetworking/plugins v1.1.1
+	github.com/coreos/go-iptables v0.6.0
 	github.com/coreos/go-systemd/v22 v22.4.0
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
 	github.com/dagger/graphql-go-tools v0.0.0-20221102001222-e68b44170936
@@ -59,6 +62,7 @@ require (
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.6.0 // indirect
 	github.com/PuerkitoBio/goquery v1.8.0 // indirect
 	github.com/alecthomas/chroma v0.10.0 // indirect
+	github.com/alexflint/go-filemutex v1.1.0 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.3 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.1 // indirect
@@ -82,7 +86,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/containerd/go-cni v1.1.6 // indirect
 	github.com/containerd/go-runc v1.0.0 // indirect
-	github.com/containernetworking/cni v1.1.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/dimchansky/utfbom v1.1.1 // indirect
 	github.com/dlclark/regexp2 v1.7.0 // indirect

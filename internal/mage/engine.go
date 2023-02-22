@@ -318,15 +318,15 @@ func (t Engine) Dev(ctx context.Context) error {
 const cniVersion = "v1.2.0"
 
 func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
-	src := c.Git("https://github.com/vito/dnsname", dagger.GitOpts{KeepGitDir: true}).
-		Branch("fork").
-		Tree()
-
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
-		WithMountedDirectory("/app", src).
-		WithExec([]string{"make", "binaries"}).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/dnsname",
+			"-ldflags", "-s -w",
+			"/app/cmd/dnsname",
+		}).
 		File("./bin/dnsname")
 }
 
