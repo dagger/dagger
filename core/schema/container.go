@@ -81,6 +81,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"export":               router.ToResolver(s.export),
 			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
 			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
+			"imageRef":             router.ToResolver(s.imageRef),
 		},
 	}
 }
@@ -601,4 +602,8 @@ func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.C
 	}
 
 	return parents, nil
+}
+
+func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+	return parent.ImageRef(ctx, s.gw)
 }

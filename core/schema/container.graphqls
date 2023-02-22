@@ -557,6 +557,9 @@ type Container {
     """
     address: String!
   ): Container!
+
+  "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
+  imageRef: String
 }
 
 "A simple key value object that represents an environment variable."
