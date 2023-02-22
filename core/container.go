@@ -17,7 +17,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -316,8 +316,8 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	}
 
 	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    ctxPayload.LLB,
-		dockerfilebuilder.DefaultLocalNameDockerfile: ctxPayload.LLB,
+		dockerui.DefaultLocalNameContext:    ctxPayload.LLB,
+		dockerui.DefaultLocalNameDockerfile: ctxPayload.LLB,
 	}
 
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
