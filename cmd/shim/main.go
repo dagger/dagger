@@ -20,6 +20,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
@@ -88,6 +89,8 @@ func check(args []string) error {
 		return fmt.Errorf("usage: check <host> port/tcp [port/udp ...]")
 	}
 
+	logPrefix := fmt.Sprintf("[check %s]", identity.NewID())
+
 	host, ports := args[0], args[1:]
 
 	for _, port := range ports {
@@ -98,20 +101,20 @@ func check(args []string) error {
 
 		pollAddr := net.JoinHostPort(host, port)
 
-		fmt.Println("polling for port", pollAddr)
+		fmt.Println(logPrefix, "polling for port", pollAddr)
 
-		reached, err := pollForPort(network, pollAddr)
+		reached, err := pollForPort(logPrefix, network, pollAddr)
 		if err != nil {
 			return fmt.Errorf("poll %s: %w", pollAddr, err)
 		}
 
-		fmt.Println("port is up at", reached)
+		fmt.Println(logPrefix, "port is up at", reached)
 	}
 
 	return nil
 }
 
-func pollForPort(network, addr string) (string, error) {
+func pollForPort(logPrefix, network, addr string) (string, error) {
 	retry := backoff.NewExponentialBackOff()
 	retry.InitialInterval = 100 * time.Millisecond
 
@@ -127,7 +130,7 @@ func pollForPort(network, addr string) (string, error) {
 
 		conn, err := dialer.Dial(network, addr)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "port not ready: %s; elapsed: %s\n", err, retry.GetElapsedTime())
+			fmt.Fprintf(os.Stderr, "%s port not ready: %s; elapsed: %s\n", logPrefix, err, retry.GetElapsedTime())
 			return err
 		}
 
