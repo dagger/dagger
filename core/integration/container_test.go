@@ -2831,3 +2831,116 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 }
+
+func TestContainerImageRef(t *testing.T) {
+	t.Parallel()
+
+	t.Run("should test query returning imageRef", func(t *testing.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					ImageRef string
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+				container {
+					from(address: "alpine:3.16.2") {
+						imageRef
+					}
+				}
+			}`, &res, nil)
+		require.NoError(t, err)
+		require.Contains(t, res.Container.From.ImageRef, "docker.io/library/alpine:3.16.2@sha256:")
+	})
+
+	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					ImageRef string
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+				container {
+					from(address:"hello-world") {
+						exec(args:["/hello"]) {
+							imageRef
+						}
+					}
+				}
+			}`, &res, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+
+	t.Run("should throw error after the container image modification with exec", func(t *testing.T) {
+		res := struct {
+			Container struct {
+				From struct {
+					ImageRef string
+				}
+			}
+		}{}
+
+		err := testutil.Query(
+			`{
+				container {
+					from(address:"hello-world") {
+						withExec(args:["/hello"]) {
+							imageRef
+						}
+					}
+				}
+			}`, &res, nil)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+
+	t.Run("should throw error after the container image modification with directory", func(t *testing.T) {
+		c, ctx := connect(t)
+		defer c.Close()
+
+		dir := c.Directory().
+			WithNewFile("some-file", "some-content").
+			WithNewFile("some-dir/sub-file", "sub-content").
+			Directory("some-dir")
+
+		ctr := c.Container().
+			From("alpine:3.16.2").
+			WithWorkdir("/workdir").
+			WithDirectory("with-dir", dir)
+
+		_, err := ctr.ImageRef(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+	})
+}
+
+func TestContainerBuildNilContextError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+
+	require.NoError(t, err)
+	defer c.Close()
+
+	// regression test, this previously caused the engine to panic
+	err = testutil.Query(
+		`{
+			container {
+				build(context: "") {
+					id
+				}
+			}
+		}`, &map[any]any{}, nil)
+	require.ErrorContains(t, err, "invalid nil input definition to definition op")
+}

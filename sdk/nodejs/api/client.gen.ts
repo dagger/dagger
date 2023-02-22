@@ -719,6 +719,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+   */
+  async imageRef(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "imageRef",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Retrieves the value of the specified label.
    */
   async label(name: string): Promise<string> {

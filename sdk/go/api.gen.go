@@ -328,6 +328,15 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
+// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+func (r *Container) ImageRef(ctx context.Context) (string, error) {
+	q := r.q.Select("imageRef")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves the value of the specified label.
 func (r *Container) Label(ctx context.Context, name string) (string, error) {
 	q := r.q.Select("label")
