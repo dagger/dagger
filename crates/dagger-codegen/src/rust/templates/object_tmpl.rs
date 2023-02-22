@@ -1,7 +1,6 @@
 use dagger_core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
 use genco::prelude::rust;
 use genco::quote;
-use itertools::Itertools;
 
 use crate::functions::CommonFunctions;
 use crate::rust::functions::{
@@ -17,6 +16,7 @@ pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust
     let arc = rust::import("std::sync", "Arc");
 
     Ok(quote! {
+        #[derive(Debug, Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
             pub proc: $arc<$child>,
             pub selection: $selection,
