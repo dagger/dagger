@@ -246,7 +246,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-codegen"
-version = "0.2.7"
+version = "0.2.8"
 dependencies = [
  "convert_case",
  "dagger-core",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "base64",
  "dagger-core",

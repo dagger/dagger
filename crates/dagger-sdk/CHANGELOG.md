@@ -6,11 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v0.2.12 (2023-02-20)
+## v0.2.13 (2023-02-22)
 
 ### Chore
 
+ - <csr-id-7c3654d276bb5f66e692a210cb60cdf46b19e226/> ran clippy
  - <csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/> ran clippy
+
+### New Features
+
+ - <csr-id-266ad32dff4c8957c7cdd291f9ef6f8a8c1d055c/> with clone
 
 ### Bug Fixes
 
@@ -20,8 +25,9 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 3 commits contributed to the release.
- - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 6 commits contributed to the release over the course of 2 calendar days.
+ - 2 days passed between releases.
+ - 4 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
 ### Commit Details
@@ -31,10 +37,25 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - ran clippy ([`7c3654d`](https://github.com/kjuulh/dagger-rs/commit/7c3654d276bb5f66e692a210cb60cdf46b19e226))
+    - with clone ([`266ad32`](https://github.com/kjuulh/dagger-rs/commit/266ad32dff4c8957c7cdd291f9ef6f8a8c1d055c))
+    - Release dagger-core v0.2.6, dagger-codegen v0.2.7, dagger-sdk v0.2.12 ([`7179f8b`](https://github.com/kjuulh/dagger-rs/commit/7179f8b598ef04e62925e39d3f55740253c01686))
     - ran clippy ([`1f77d90`](https://github.com/kjuulh/dagger-rs/commit/1f77d90c0f0ac832a181b2322350ea395612986c))
     - Release dagger-core v0.2.5, dagger-sdk v0.2.12, dagger-codegen v0.2.7 ([`1725c51`](https://github.com/kjuulh/dagger-rs/commit/1725c5188e8a81069ec4a4de569484c921a94927))
     - race condition in process ([`a13a2a9`](https://github.com/kjuulh/dagger-rs/commit/a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de))
 </details>
+
+## v0.2.12 (2023-02-20)
+
+<csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/>
+
+### Chore
+
+ - <csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/> ran clippy
+
+### Bug Fixes
+
+ - <csr-id-a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de/> race condition in process
 
 ## v0.2.11 (2023-02-20)
 

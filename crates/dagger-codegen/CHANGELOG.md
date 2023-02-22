@@ -5,17 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## v0.2.7 (2023-02-20)
+## v0.2.8 (2023-02-22)
 
-### Bug Fixes
+### New Features
 
- - <csr-id-a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de/> race condition in process
+ - <csr-id-266ad32dff4c8957c7cdd291f9ef6f8a8c1d055c/> with clone
 
 ### Commit Statistics
 
 <csr-read-only-do-not-edit/>
 
- - 2 commits contributed to the release.
+ - 1 commit contributed to the release.
+ - 2 days passed between releases.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -26,6 +27,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - with clone ([`266ad32`](https://github.com/kjuulh/dagger-rs/commit/266ad32dff4c8957c7cdd291f9ef6f8a8c1d055c))
+</details>
+
+## v0.2.7 (2023-02-20)
+
+### Bug Fixes
+
+ - <csr-id-a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de/> race condition in process
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 3 commits contributed to the release.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - Release dagger-core v0.2.6, dagger-codegen v0.2.7, dagger-sdk v0.2.12 ([`7179f8b`](https://github.com/kjuulh/dagger-rs/commit/7179f8b598ef04e62925e39d3f55740253c01686))
     - Release dagger-core v0.2.5, dagger-sdk v0.2.12, dagger-codegen v0.2.7 ([`1725c51`](https://github.com/kjuulh/dagger-rs/commit/1725c5188e8a81069ec4a4de569484c921a94927))
     - race condition in process ([`a13a2a9`](https://github.com/kjuulh/dagger-rs/commit/a13a2a9ecbfdfac80ed8eb0cbb9e9db317da65de))
 </details>
