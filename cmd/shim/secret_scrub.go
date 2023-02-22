@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -81,8 +82,13 @@ func loadSecretsToScrubFromFiles(fsys fs.FS, secretFilePathsToScrub []string) ([
 	secrets := make([]string, 0, len(secretFilePathsToScrub))
 
 	for _, fileToScrub := range secretFilePathsToScrub {
-		// we remove the first `/` from the fileToScrub to work with fs.ReadFile
-		secret, err := fs.ReadFile(fsys, fileToScrub[1:])
+		absFileToScrub, err := filepath.Abs(fileToScrub)
+		if err != nil {
+			return secrets, err
+		}
+
+		// we remove the first `/` from the absolute path to  fileToScrub to work with fs.ReadFile
+		secret, err := fs.ReadFile(fsys, absFileToScrub[1:])
 		if err != nil {
 			return nil, fmt.Errorf("secret value not available for: %w", err)
 		}

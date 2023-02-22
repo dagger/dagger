@@ -15,22 +15,28 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 		"mysecret": &fstest.MapFile{
 			Data: []byte("my secret file"),
 		},
+		"subdir/alsosecret": &fstest.MapFile{
+			Data: []byte("a subdir secret file"),
+		},
 	}
 	env := []string{
 		"MY_SECRET_ID=my secret value",
 	}
 
-	var buf bytes.Buffer
-	w, err := NewSecretScrubWriter(&buf, fsys, env, core.SecretToScrubInfo{
-		Envs:  []string{"MY_SECRET_ID"},
-		Files: []string{"/mysecret"},
-	})
-	require.NoError(t, err)
+	t.Run("scrub files and env", func(t *testing.T) {
+		var buf bytes.Buffer
+		w, err := NewSecretScrubWriter(&buf, fsys, env, core.SecretToScrubInfo{
+			Envs:  []string{"MY_SECRET_ID"},
+			Files: []string{"/mysecret", "/subdir/alsosecret"},
+		})
+		require.NoError(t, err)
 
-	_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself.")
-	require.NoError(t, err)
-	want := "I love to share *** to my close ones. But I keep *** to myself."
-	require.Equal(t, want, buf.String())
+		_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file.")
+		require.NoError(t, err)
+		want := "I love to share *** to my close ones. But I keep *** to myself. As well as ***."
+		require.Equal(t, want, buf.String())
+	})
+
 }
 
 func TestFilterSecretToScrub(t *testing.T) {
