@@ -79,9 +79,8 @@ func TestLoadSecretsToScrubFromEnv(t *testing.T) {
 }
 
 func TestLoadSecretsToScrubFromFiles(t *testing.T) {
-
+	const currentDirPath = "/mnt"
 	t.Run("/mnt, fs relative, secret absolute", func(t *testing.T) {
-		currentDirPath := "/mnt"
 		fsys := fstest.MapFS{
 			"mysecret": &fstest.MapFile{
 				Data: []byte("my secret file"),
@@ -99,7 +98,6 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 	})
 
 	t.Run("/mnt, fs relative, secret relative", func(t *testing.T) {
-		currentDirPath := "/mnt"
 		fsys := fstest.MapFS{
 			"mysecret": &fstest.MapFile{
 				Data: []byte("my secret file"),
@@ -117,7 +115,6 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 	})
 
 	t.Run("/mnt, fs absolute, secret relative", func(t *testing.T) {
-		currentDirPath := "/mnt"
 		fsys := fstest.MapFS{
 			"mnt/mysecret": &fstest.MapFile{
 				Data: []byte("my secret file"),

@@ -186,15 +186,6 @@ func shim() int {
 		stderrPath = stderrRedirect
 	}
 
-	var secretsToScrub core.SecretToScrubInfo
-
-	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
-	if found {
-		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
-		if err != nil {
-			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
-		}
-	}
 	if _, found := internalEnv(core.DebugFailedExecEnv); found {
 		// if we are being requested to just obtain the output of a previously failed exec,
 		// do that and exit
@@ -216,6 +207,21 @@ func shim() int {
 		}
 		return 0
 	}
+
+	var secretsToScrub core.SecretToScrubInfo
+
+	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
+	if found {
+		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
+		if err != nil {
+			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+		}
+	}
+
+	cmd.Env = os.Environ()
+
+	// append nesting envs if any
+	cmd.Env = append(cmd.Env, env...)
 
 	currentDirPath := "/"
 	shimFS := os.DirFS(currentDirPath)
@@ -245,11 +251,6 @@ func shim() int {
 		panic(err)
 	}
 	cmd.Stderr = scrubErrWriter
-
-	cmd.Env = os.Environ()
-
-	// append nesting envs if any
-	cmd.Env = append(cmd.Env, env...)
 
 	exitCode := 0
 	if err := cmd.Run(); err != nil {
