@@ -42,10 +42,10 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 // NewSecretScrubWriter replaces known secrets by "***".
 // The value of the secrets referenced in secretsToScrub are loaded either
 // from env or from the fs.
-func NewSecretScrubWriter(w io.Writer, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Writer, error) {
+func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Writer, error) {
 	secrets := loadSecretsToScrubFromEnv(env, secretsToScrub.Envs)
 
-	fileSecrets, err := loadSecretsToScrubFromFiles(fsys, secretsToScrub.Files)
+	fileSecrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretsToScrub.Files)
 	if err != nil {
 		return nil, fmt.Errorf("could not load secrets from file: %w", err)
 	}
@@ -78,13 +78,19 @@ func loadSecretsToScrubFromEnv(env []string, secretsToScrub []string) []string {
 	return secrets
 }
 
-func loadSecretsToScrubFromFiles(fsys fs.FS, secretFilePathsToScrub []string) ([]string, error) {
+// loadSecretsToScrubFromFiles loads secrets from file path in secretFilePathsToScrub from the fsys, accessed from the absolute currentDirPathAbs.
+// It will attempt to make any file path as absolute file path by joining it with the currentDirPathAbs if need be.
+func loadSecretsToScrubFromFiles(currentDirPathAbs string, fsys fs.FS, secretFilePathsToScrub []string) ([]string, error) {
 	secrets := make([]string, 0, len(secretFilePathsToScrub))
 
 	for _, fileToScrub := range secretFilePathsToScrub {
-		absFileToScrub, err := filepath.Abs(fileToScrub)
-		if err != nil {
-			return secrets, err
+		absFileToScrub := fileToScrub
+		if !filepath.IsAbs(fileToScrub) {
+			absFileToScrub = filepath.Join("/", fileToScrub)
+		}
+		if strings.HasPrefix(fileToScrub, currentDirPathAbs) || strings.HasPrefix(fileToScrub, currentDirPathAbs[1:]) {
+			absFileToScrub = strings.TrimPrefix(fileToScrub, currentDirPathAbs)
+			absFileToScrub = filepath.Join("/", absFileToScrub)
 		}
 
 		// we remove the first `/` from the absolute path to  fileToScrub to work with fs.ReadFile

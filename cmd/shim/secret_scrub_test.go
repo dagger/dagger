@@ -25,7 +25,8 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 
 	t.Run("scrub files and env", func(t *testing.T) {
 		var buf bytes.Buffer
-		w, err := NewSecretScrubWriter(&buf, fsys, env, core.SecretToScrubInfo{
+		currentDirPath := "/"
+		w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
 			Envs:  []string{"MY_SECRET_ID"},
 			Files: []string{"/mysecret", "/subdir/alsosecret"},
 		})
@@ -38,6 +39,7 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 	})
 	t.Run("do not scrub empty env", func(t *testing.T) {
 		env := append(env, "EMPTY_SECRET_ID=")
+		currentDirPath := "/"
 		fsys := fstest.MapFS{
 			"emptysecret": &fstest.MapFile{
 				Data: []byte(""),
@@ -45,7 +47,7 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		w, err := NewSecretScrubWriter(&buf, fsys, env, core.SecretToScrubInfo{
+		w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
 			Envs:  []string{"EMPTY_SECRET_ID"},
 			Files: []string{"/emptysecret"},
 		})
@@ -58,7 +60,7 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 	})
 }
 
-func TestFilterSecretToScrub(t *testing.T) {
+func TestLoadSecretsToScrubFromEnv(t *testing.T) {
 	secretValue := "my secret value"
 	env := []string{
 		fmt.Sprintf("MY_SECRET_ID=%s", secretValue),
@@ -74,4 +76,61 @@ func TestFilterSecretToScrub(t *testing.T) {
 	secrets := loadSecretsToScrubFromEnv(env, secretToScrub.Envs)
 	require.NotContains(t, secrets, "PUBLIC_STUFF")
 	require.Contains(t, secrets, secretValue)
+}
+
+func TestLoadSecretsToScrubFromFiles(t *testing.T) {
+
+	t.Run("/mnt, fs relative, secret absolute", func(t *testing.T) {
+		currentDirPath := "/mnt"
+		fsys := fstest.MapFS{
+			"mysecret": &fstest.MapFile{
+				Data: []byte("my secret file"),
+			},
+			"subdir/alsosecret": &fstest.MapFile{
+				Data: []byte("a subdir secret file"),
+			},
+		}
+		secretFilePathsToScrub := []string{"/mnt/mysecret", "/mnt/subdir/alsosecret"}
+
+		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
+		require.NoError(t, err)
+		require.Contains(t, secrets, "my secret file")
+		require.Contains(t, secrets, "a subdir secret file")
+	})
+
+	t.Run("/mnt, fs relative, secret relative", func(t *testing.T) {
+		currentDirPath := "/mnt"
+		fsys := fstest.MapFS{
+			"mysecret": &fstest.MapFile{
+				Data: []byte("my secret file"),
+			},
+			"subdir/alsosecret": &fstest.MapFile{
+				Data: []byte("a subdir secret file"),
+			},
+		}
+		secretFilePathsToScrub := []string{"mysecret", "subdir/alsosecret"}
+
+		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
+		require.NoError(t, err)
+		require.Contains(t, secrets, "my secret file")
+		require.Contains(t, secrets, "a subdir secret file")
+	})
+
+	t.Run("/mnt, fs absolute, secret relative", func(t *testing.T) {
+		currentDirPath := "/mnt"
+		fsys := fstest.MapFS{
+			"mnt/mysecret": &fstest.MapFile{
+				Data: []byte("my secret file"),
+			},
+			"mnt/subdir/alsosecret": &fstest.MapFile{
+				Data: []byte("a subdir secret file"),
+			},
+		}
+		secretFilePathsToScrub := []string{"mnt/mysecret", "mnt/subdir/alsosecret"}
+
+		secrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretFilePathsToScrub)
+		require.NoError(t, err)
+		require.Contains(t, secrets, "my secret file")
+		require.Contains(t, secrets, "a subdir secret file")
+	})
 }

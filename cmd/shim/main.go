@@ -217,7 +217,8 @@ func shim() int {
 		return 0
 	}
 
-	shimFS := os.DirFS("/")
+	currentDirPath := "/"
+	shimFS := os.DirFS(currentDirPath)
 
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
@@ -226,7 +227,7 @@ func shim() int {
 	defer stdoutFile.Close()
 
 	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
-	scrubOutWriter, err := NewSecretScrubWriter(outWriter, shimFS, cmd.Env, secretsToScrub)
+	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
 	if err != nil {
 		panic(err)
 	}
@@ -239,7 +240,7 @@ func shim() int {
 	defer stderrFile.Close()
 
 	errWriter := io.MultiWriter(stderrFile, os.Stderr)
-	scrubErrWriter, err := NewSecretScrubWriter(errWriter, shimFS, cmd.Env, secretsToScrub)
+	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
 	if err != nil {
 		panic(err)
 	}
