@@ -15,7 +15,6 @@ type SecretScrubWriter struct {
 	mu           sync.Mutex
 	w            io.Writer
 	secretValues []string
-	fs           fs.FS
 }
 
 func (w *SecretScrubWriter) Write(b []byte) (int, error) {
@@ -52,7 +51,6 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	secrets = append(secrets, fileSecrets...)
 
 	return &SecretScrubWriter{
-		fs:           fsys,
 		w:            w,
 		secretValues: secrets,
 	}, nil
