@@ -34,7 +34,7 @@ func (t Go) Lint(ctx context.Context) error {
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("lint")
 
 	_, err = c.Container().
-		From("golangci/golangci-lint:v1.48").
+		From("golangci/golangci-lint:v1.51").
 		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
 		WithWorkdir("/app/sdk/go").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
