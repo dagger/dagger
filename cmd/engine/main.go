@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	goerrors "errors"
 	"fmt"
 	"net"
 	"os"
@@ -110,7 +111,7 @@ func registerWorkerInitializer(wi workerInitializer, flags ...cli.Flag) {
 	appFlags = append(appFlags, flags...)
 }
 
-func main() {
+func main() { //nolint:gocyclo
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
 	}
@@ -239,6 +240,8 @@ func main() {
 
 		streamTracer := otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
 
+		// NOTE: using context.Background because otherwise when the outer context is cancelled the server
+		// stops working. Server shutdown based on context cancellation is handled later in this func.
 		unary := grpc_middleware.ChainUnaryServer(unaryInterceptor(context.Background(), tp), grpcerrors.UnaryServerInterceptor)
 		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
 
@@ -292,6 +295,30 @@ func main() {
 				}
 			}
 		}
+
+		// Create a "private" in memory listener for the server that allows us to do some
+		// server setup before officially starting the server on the unix socket listeners
+		// used by actual clients. This enables, for example, clients to wait for cache
+		// mounts to be synchronized before actually connecting and starting to use them.
+		memListener := newInMemListener(server)
+		memClient, err := memListener.NewClient(ctx)
+		if err != nil {
+			return err
+		}
+
+		daggerClient, stopOperatorSession, err := NewOperatorClient(ctx, memClient)
+		if err != nil {
+			return err
+		}
+		defer stopOperatorSession()
+		stopCacheMountSync, err := daggerremotecache.StartCacheMountSynchronization(ctx, daggerClient)
+		if err != nil {
+			cancel()
+			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
+			return err
+		}
+
+		// start serving on the listeners for actual clients
 		errCh := make(chan error, 1)
 		if err := serveGRPC(cfg.GRPC, server, errCh); err != nil {
 			return err
@@ -306,16 +333,25 @@ func main() {
 		}
 
 		bklog.G(ctx).Infof("stopping server")
+		// TODO:(sipsma) make timeouts configurable
+		stopCacheSyncCtx, cancelCacheSync := context.WithTimeout(context.Background(), 300*time.Second)
+		defer cancelCacheSync()
+		stopCacheMountSyncErr := stopCacheMountSync(stopCacheSyncCtx)
+		if stopCacheMountSyncErr != nil {
+			bklog.G(ctx).WithError(stopCacheMountSyncErr).Error("failed to stop cache mount synchronization")
+		}
+		err = goerrors.Join(err, stopCacheMountSyncErr)
+		stopOperatorSession()
+
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
 		select {
 		case <-remoteCacheDoneCh:
-		case <-time.After(60 * time.Second): // TODO: arbitrary, make configurable
+		case <-time.After(60 * time.Second):
 		}
 		server.GracefulStop()
-
 		return err
 	}
 
