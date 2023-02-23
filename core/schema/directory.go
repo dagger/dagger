@@ -84,7 +84,7 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 		pipeline = parent.Context.Pipeline
 	}
 
-	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform)
+	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform, nil)
 }
 
 type subdirectoryArgs struct {
@@ -101,7 +101,7 @@ type withNewDirectoryArgs struct {
 }
 
 func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, s.gw, args.Path, args.Permissions)
+	return parent.WithNewDirectory(ctx, args.Path, args.Permissions)
 }
 
 type withDirectoryArgs struct {
@@ -146,7 +146,7 @@ type withNewFileArgs struct {
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions)
+	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions)
 }
 
 type withFileArgs struct {

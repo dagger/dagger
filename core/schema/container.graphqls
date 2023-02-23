@@ -562,6 +562,70 @@ type Container {
     """
     address: String!
   ): Container!
+
+  "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
+  imageRef: String
+
+  """
+  Expose a network port.
+  Exposed ports serve two purposes:
+    - For health checks and introspection, when running services
+    - For setting the EXPOSE OCI field when publishing the container
+  """
+  withExposedPort(
+    "Port number to expose"
+    port: Int!,
+    "Transport layer network protocol"
+    protocol: NetworkProtocol = TCP,
+    "Optional port description"
+    description: String
+  ): Container!
+
+  """
+  Unexpose a previously exposed port.
+  """
+  withoutExposedPort(
+    "Port number to unexpose"
+    port: Int!,
+    "Port protocol to unexpose"
+    protocol: NetworkProtocol = TCP
+  ): Container!
+
+  "Retrieves the list of exposed ports"
+  exposedPorts: [Port!]!
+
+  """
+  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+
+  The service will be reachable from the container via the provided hostname alias.
+
+  The service dependency will also convey to any files or directories produced by the container.
+  """
+  withServiceBinding(
+    "A name that can be used to reach the service from the container"
+    alias: String!,
+    "Identifier of the service container"
+    service: ContainerID!
+  ): Container!
+
+  """
+  Retrieves a hostname which can be used by clients to reach this container.
+  """
+  hostname: String!
+
+  """
+  Retrieves an endpoint that clients can use to reach this container.
+
+  If no port is specified, the first exposed port is used. If none exist an error is returned.
+
+  If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+  """
+  endpoint(
+    "The exposed port number for the endpoint"
+    port: Int,
+    "Return a URL with the given scheme, eg. http for http://"
+    scheme: String
+  ): String!
 }
 
 "A simple key value object that represents an environment variable."
@@ -571,6 +635,18 @@ type EnvVariable {
 
   "The environment variable value."
   value: String!
+}
+
+"A port exposed by a container."
+type Port {
+  "The port number."
+  port: Int!
+
+  "The transport layer network protocol."
+  protocol: NetworkProtocol!
+
+  "The port description."
+  description: String
 }
 
 "A simple key value object that represents a label."
@@ -595,4 +671,12 @@ input BuildArg {
   The build argument value.
   """
   value: String!
+}
+
+"Transport layer network protocol associated to a port."
+enum NetworkProtocol {
+  "TCP (Transmission Control Protocol)"
+  TCP
+  "UDP (User Datagram Protocol)"
+  UDP
 }

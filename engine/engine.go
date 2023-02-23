@@ -221,7 +221,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 
 		// Display from `cleanCh`
 		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.LogOutput, cleanCh)
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, cleanCh)
 			for _, w := range warn {
 				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
 			}

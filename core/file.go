@@ -31,6 +31,9 @@ type fileIDPayload struct {
 	File     string         `json:"file"`
 	Pipeline pipeline.Path  `json:"pipeline"`
 	Platform specs.Platform `json:"platform"`
+
+	// Services necessary to provision the file.
+	Services ServiceBindings `json:"services,omitempty"`
 }
 
 func (id FileID) decode() (*fileIDPayload, error) {
@@ -57,7 +60,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
@@ -68,6 +71,7 @@ func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.P
 		File:     file,
 		Pipeline: pipeline,
 		Platform: platform,
+		Services: services,
 	}).ToFile()
 }
 
@@ -77,13 +81,15 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
-	if err != nil {
-		return nil, err
-	}
+	return WithServices(ctx, gw, payload.Services, func() ([]byte, error) {
+		ref, err := gwRef(ctx, gw, payload.LLB)
+		if err != nil {
+			return nil, err
+		}
 
-	return ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: payload.File,
+		return ref.ReadFile(ctx, bkgw.ReadRequest{
+			Filename: payload.File,
+		})
 	})
 }
 
@@ -97,13 +103,15 @@ func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, erro
 		return nil, err
 	}
 
-	ref, err := gwRef(ctx, gw, payload.LLB)
-	if err != nil {
-		return nil, err
-	}
+	return WithServices(ctx, gw, payload.Services, func() (*fstypes.Stat, error) {
+		ref, err := gwRef(ctx, gw, payload.LLB)
+		if err != nil {
+			return nil, err
+		}
 
-	return ref.StatFile(ctx, bkgw.StatRequest{
-		Path: payload.File,
+		return ref.StatFile(ctx, bkgw.StatRequest{
+			Path: payload.File,
+		})
 	})
 }
 
@@ -125,7 +133,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 		payload.Pipeline.LLBOpt(),
 	)
 
-	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform)
+	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform, payload.Services)
 }
 
 func (file *File) Export(
@@ -159,21 +167,23 @@ func (file *File) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: destDir,
 	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		src, err := srcPayload.State()
-		if err != nil {
-			return nil, err
-		}
+		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
+			src, err := srcPayload.State()
+			if err != nil {
+				return nil, err
+			}
 
-		src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename), srcPayload.Pipeline.LLBOpt())
+			src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename), srcPayload.Pipeline.LLBOpt())
 
-		def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
-		if err != nil {
-			return nil, err
-		}
+			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+			if err != nil {
+				return nil, err
+			}
 
-		return gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: def.ToPB(),
+			return gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: def.ToPB(),
+			})
 		})
 	})
 }

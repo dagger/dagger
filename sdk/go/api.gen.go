@@ -150,6 +150,41 @@ func (r *Container) Directory(path string) *Directory {
 	}
 }
 
+// ContainerEndpointOpts contains options for Container.Endpoint
+type ContainerEndpointOpts struct {
+	// The exposed port number for the endpoint
+	Port int
+	// Return a URL with the given scheme, eg. http for http://
+	Scheme string
+}
+
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+	q := r.q.Select("endpoint")
+	// `port` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+			break
+		}
+	}
+	// `scheme` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+			break
+		}
+	}
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves entrypoint to be prepended to the arguments of all commands.
 func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
@@ -278,6 +313,15 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	return response, q.Execute(ctx, r.c)
 }
 
+// Retrieves the list of exposed ports
+func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+	q := r.q.Select("exposedPorts")
+
+	var response []Port
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Retrieves a file at the given path.
 //
 // Mounts are included.
@@ -314,6 +358,15 @@ func (r *Container) FS() *Directory {
 	}
 }
 
+// Retrieves a hostname which can be used by clients to reach this container.
+func (r *Container) Hostname(ctx context.Context) (string, error) {
+	q := r.q.Select("hostname")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	q := r.q.Select("id")
@@ -335,6 +388,15 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+func (r *Container) ImageRef(ctx context.Context) (string, error) {
+	q := r.q.Select("imageRef")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the value of the specified label.
@@ -607,6 +669,42 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	}
 }
 
+// ContainerWithExposedPortOpts contains options for Container.WithExposedPort
+type ContainerWithExposedPortOpts struct {
+	// Transport layer network protocol
+	Protocol NetworkProtocol
+	// Optional port description
+	Description string
+}
+
+// Expose a network port.
+// Exposed ports serve two purposes:
+//   - For health checks and introspection, when running services
+//   - For setting the EXPOSE OCI field when publishing the container
+func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
+	q := r.q.Select("withExposedPort")
+	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Initializes this container from this DirectoryID.
 //
 // Deprecated: Replaced by WithRootfs.
@@ -811,6 +909,22 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
+// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+//
+// The service will be reachable from the container via the provided hostname alias.
+//
+// The service dependency will also convey to any files or directories produced by the container.
+func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+	q := r.q.Select("withServiceBinding")
+	q = q.Arg("alias", alias)
+	q = q.Arg("service", service)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
 	q := r.q.Select("withUnixSocket")
@@ -849,6 +963,30 @@ func (r *Container) WithWorkdir(path string) *Container {
 func (r *Container) WithoutEnvVariable(name string) *Container {
 	q := r.q.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerWithoutExposedPortOpts contains options for Container.WithoutExposedPort
+type ContainerWithoutExposedPortOpts struct {
+	// Port protocol to unexpose
+	Protocol NetworkProtocol
+}
+
+// Unexpose a previously exposed port.
+func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
+	q := r.q.Select("withoutExposedPort")
+	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -1595,6 +1733,39 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A port exposed by a container.
+type Port struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The port description.
+func (r *Port) Description(ctx context.Context) (string, error) {
+	q := r.q.Select("description")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The port number.
+func (r *Port) Port(ctx context.Context) (int, error) {
+	q := r.q.Select("port")
+
+	var response int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The transport layer network protocol.
+func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+	q := r.q.Select("protocol")
+
+	var response NetworkProtocol
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A set of scripts and/or extensions
 type Project struct {
 	q *querybuilder.Selection
@@ -1748,6 +1919,8 @@ func (r *Client) File(id FileID) *File {
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
+	// A service which must be started before the repo is fetched.
+	ExperimentalServiceHost *Container
 }
 
 // Queries a git repository.
@@ -1758,6 +1931,13 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+			break
+		}
+	}
+	// `experimentalServiceHost` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 			break
 		}
 	}
@@ -1778,10 +1958,23 @@ func (r *Client) Host() *Host {
 	}
 }
 
+// HTTPOpts contains options for Query.HTTP
+type HTTPOpts struct {
+	// A service which must be started before the URL is fetched.
+	ExperimentalServiceHost *Container
+}
+
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string) *File {
+func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
+	// `experimentalServiceHost` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+			break
+		}
+	}
 
 	return &File{
 		q: q,
@@ -1938,4 +2131,11 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type NetworkProtocol string
+
+const (
+	Tcp NetworkProtocol = "TCP"
+	Udp NetworkProtocol = "UDP"
 )

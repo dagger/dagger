@@ -1,64 +1,67 @@
 extend type Query {
+  """
+  Queries a git repository.
+  """
+  git(
     """
-    Queries a git repository.
+    Url of the git repository.
+    Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    Suffix ".git" is optional.
     """
-    git(
-        """
-        Url of the git repository.
-        Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
-        Suffix ".git" is optional.
-        """
-        url: String!,
+    url: String!,
 
-        "Set to true to keep .git directory."
-        keepGitDir: Boolean
-    ): GitRepository!
+    "Set to true to keep .git directory."
+    keepGitDir: Boolean,
+
+    "A service which must be started before the repo is fetched."
+    experimentalServiceHost: ContainerID
+  ): GitRepository!
 }
 
 "A git repository."
 type GitRepository {
-    "Lists of branches on the repository."
-    branches: [String!]!
+  "Lists of branches on the repository."
+  branches: [String!]!
 
+  """
+  Returns details on one branch.
+  """
+  branch(
     """
-    Returns details on one branch.
+    Branch's name (e.g., "main").
     """
-    branch(
-        """
-        Branch's name (e.g., "main").
-        """
-        name: String!
-    ): GitRef!
+    name: String!
+  ): GitRef!
 
-    "Lists of tags on the repository."
-    tags: [String!]!
+  "Lists of tags on the repository."
+  tags: [String!]!
 
+  """
+  Returns details on one tag.
+  """
+  tag(
     """
-    Returns details on one tag.
+    Tag's name (e.g., "v0.3.9").
     """
-    tag(
-        """
-        Tag's name (e.g., "v0.3.9").
-        """
-        name: String!
-    ): GitRef!
+    name: String!
+  ): GitRef!
 
+  """
+  Returns details on one commit.
+  """
+  commit(
     """
-    Returns details on one commit.
+    Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     """
-    commit(
-        """
-        Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
-        """
-        id: String!
-    ): GitRef!
+    id: String!
+  ): GitRef!
 }
 
 "A git ref (tag, branch or commit)."
 type GitRef {
-    "The digest of the current value of this ref."
-    digest: String!
+  "The digest of the current value of this ref."
+  digest: String!
 
-    "The filesystem tree at this ref."
-    tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
+  "The filesystem tree at this ref."
+  tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
 }

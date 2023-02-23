@@ -33,8 +33,6 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
-
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
@@ -52,7 +50,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 		require.Equal(t, uname, output)
 	}
 
-	testRef := "127.0.0.1:5000/testplatformemulatedexecandpush:latest"
+	testRef := registryRef("platform-emulated-exec-and-push")
 	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})
@@ -79,8 +77,6 @@ func TestPlatformCrossCompile(t *testing.T) {
 	)
 	require.NoError(t, err)
 	defer c.Close()
-
-	startRegistry(ctx, c, t)
 
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
@@ -131,7 +127,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	}
 
 	// push a multiplatform image
-	testRef := "127.0.0.1:5000/testplatformcrosscompile:latest"
+	testRef := registryRef("platform-cross-compile")
 	_, err = c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
 		PlatformVariants: variants,
 	})

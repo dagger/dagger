@@ -66,5 +66,6 @@ exec dagger-py "$@"
 		"",
 		pipeline.Path{},
 		platform,
+		nil,
 	)
 }

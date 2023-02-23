@@ -86,17 +86,19 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
-	if output, err := exec.CommandContext(ctx,
-		"docker", "run",
+	runArgs := []string{
+		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
 		"-e", CacheConfigEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
-		imageRef,
-		"--debug",
-	).CombinedOutput(); err != nil {
+	}
+
+	runArgs = append(runArgs, imageRef, "--debug")
+
+	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		if !isContainerAlreadyInUseOutput(string(output)) {
 			return "", errors.Wrapf(err, "failed to run container: %s", output)
 		}

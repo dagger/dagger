@@ -1,3 +1,4 @@
+import contextlib
 import enum
 import functools
 import logging
@@ -17,8 +18,14 @@ from beartype.roar import BeartypeCallHintViolation
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
+from gql.transport.exceptions import TransportQueryError
 
-from dagger.exceptions import ExecuteTimeoutError, InvalidQueryError
+from dagger.exceptions import (
+    ExecuteTimeoutError,
+    InvalidQueryError,
+    QueryError,
+    QueryErrorLocation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,11 +52,20 @@ class IDType(typing.Protocol):
 
 
 @attrs.define
+class _QueryError:
+    message: str
+    locations: list[QueryErrorLocation]
+    path: list[str]
+
+
+@attrs.define
 class Context:
     session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
     selections: deque[Field] = attrs.field(factory=deque)
-    converter: cattrs.Converter = attrs.field(factory=make_converter)
+    converter: cattrs.Converter = attrs.field(
+        factory=functools.partial(make_converter, detailed_validation=False)
+    )
 
     def select(
         self,
@@ -85,29 +101,17 @@ class Context:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
-        try:
-            result = await self.session.execute(query, get_execution_result=True)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
-            )
-            raise ExecuteTimeoutError(msg) from e
-        return self.get_value(result.data, return_type)
+        with self._handle_execute(query):
+            result = await self.session.execute(query)
+        return self.get_value(result, return_type)
 
     def execute_sync(self, return_type: type[T]) -> T:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
-        try:
-            result = self.session.execute(query, get_execution_result=True)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
-            )
-            raise ExecuteTimeoutError(msg) from e
-        return self.get_value(result.data, return_type)
+        with self._handle_execute(query):
+            result = self.session.execute(query)
+        return self.get_value(result, return_type)
 
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
@@ -148,6 +152,32 @@ class Context:
                             sel.args[k][seq_i] = seq_v.id()
                 elif isinstance(v, (Type, IDType)):
                     sel.args[k] = v.id()
+
+    @contextlib.contextmanager
+    def _handle_execute(self, query: graphql.DocumentNode):
+        try:
+            yield
+        except httpx.TimeoutException as e:
+            msg = (
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            )
+            raise ExecuteTimeoutError(msg) from e
+        except TransportQueryError as e:
+            if error := self._parse_query_error(e):
+                raise QueryError(
+                    error.message.strip(),
+                    query,
+                    error.path,
+                    error.locations,
+                ) from e
+            raise
+
+    def _parse_query_error(self, exc: TransportQueryError) -> _QueryError | None:
+        try:
+            return self.converter.structure(exc.errors, list[_QueryError])[0]
+        except (TypeError, KeyError, ValueError, IndexError):
+            return None
 
     def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
         if value is not None:
