@@ -11,12 +11,15 @@ import (
 	"github.com/dagger/dagger/core"
 )
 
+// SecretScrubWriter is a writer that will scrub secretValues before writing to the underlying writer.
+// It is safe to write to it concurrently.
 type SecretScrubWriter struct {
 	mu           sync.Mutex
 	w            io.Writer
 	secretValues []string
 }
 
+// Write scrubs secret values from b and replace them with `***`.
 func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -40,7 +43,7 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 
 // NewSecretScrubWriter replaces known secrets by "***".
 // The value of the secrets referenced in secretsToScrub are loaded either
-// from env or from the fs.
+// from env or from the fs accessed at currentDirPath.
 func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Writer, error) {
 	secrets := loadSecretsToScrubFromEnv(env, secretsToScrub.Envs)
 
@@ -56,6 +59,7 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	}, nil
 }
 
+// loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.
 func loadSecretsToScrubFromEnv(env []string, secretsToScrub []string) []string {
 	secrets := []string{}
 
