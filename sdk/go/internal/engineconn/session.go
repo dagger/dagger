@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 type cliSessionConn struct {
 	*http.Client
 	childStdin io.Closer
+	childProc  *exec.Cmd
 }
 
 func (c *cliSessionConn) Host() string {
@@ -25,8 +27,11 @@ func (c *cliSessionConn) Host() string {
 }
 
 func (c *cliSessionConn) Close() error {
-	if c.childStdin != nil {
-		return c.childStdin.Close()
+	if c.childStdin != nil && c.childProc != nil {
+		return errors.Join(
+			c.childStdin.Close(),
+			c.childProc.Wait(),
+		)
 	}
 	return nil
 }
@@ -114,10 +119,6 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	if proc == nil {
 		return nil, fmt.Errorf("failed to start dagger session")
 	}
-	// Wait on the proc, this ensures it doesn't become a zombie in a long-running
-	// process and also ensures that GC won't collect any of its resources (e.g.
-	// pipe fds) until it has exited.
-	go proc.Wait()
 
 	defer func() {
 		if rerr != nil {
@@ -157,6 +158,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	return &cliSessionConn{
 		Client:     defaultHTTPClient(&params),
 		childStdin: childStdin,
+		childProc:  proc,
 	}, nil
 }
 
