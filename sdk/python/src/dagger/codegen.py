@@ -390,7 +390,6 @@ class _ObjectField:
             key=attrgetter("has_default"),
         )
         self.description = field.description
-
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
         self.type = format_output_type(field.type).replace("Query", "Client")
@@ -440,7 +439,8 @@ class _ObjectField:
     def func_doc(self) -> str:
         def _out():
             if self.description:
-                yield (textwrap.fill(line) for line in self.description.splitlines())
+                for line in self.description.split("\n"):
+                    yield wrap(line)
 
             if deprecated := self.deprecated():
                 yield chain(

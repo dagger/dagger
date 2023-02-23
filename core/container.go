@@ -2,6 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/base32"
+	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -23,6 +27,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/zeebo/xxh3"
 )
 
 // Container is a content-addressed container.
@@ -48,6 +53,10 @@ func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform
 
 // ContainerID is an opaque value representing a content-addressed container.
 type ContainerID string
+
+func (id ContainerID) String() string {
+	return string(id)
+}
 
 func (id ContainerID) decode() (*containerIDPayload, error) {
 	if id == "" {
@@ -91,6 +100,21 @@ type containerIDPayload struct {
 
 	// Image reference
 	ImageRef string `json:"image_ref,omitempty"`
+
+	// Hostname is the computed hostname for the container.
+	Hostname string `json:"hostname,omitempty"`
+
+	// Ports to expose from the container.
+	Ports []ContainerPort `json:"ports,omitempty"`
+
+	// Services to start before running the container.
+	Services    ServiceBindings `json:"services,omitempty"`
+	HostAliases []HostAlias     `json:"host_aliases,omitempty"`
+}
+
+type HostAlias struct {
+	Alias  string `json:"alias"`
+	Target string `json:"target"`
 }
 
 // ContainerSecret configures a secret to expose, either as an environment
@@ -106,6 +130,13 @@ type ContainerSecret struct {
 type ContainerSocket struct {
 	Socket   SocketID `json:"socket"`
 	UnixPath string   `json:"unix_path,omitempty"`
+}
+
+// ContainerPort configures a port to expose from the container.
+type ContainerPort struct {
+	Port        int             `json:"port"`
+	Protocol    NetworkProtocol `json:"protocol"`
+	Description *string         `json:"description,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the container.
@@ -247,7 +278,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 			llb.WithCustomNamef("pull %s", ref),
 			pipeline.LLBOpt(),
 		),
-		"/", payload.Pipeline, platform)
+		"/", payload.Pipeline, platform, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -294,89 +325,93 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		return nil, err
 	}
 
-	platform := payload.Platform
-
-	opts := map[string]string{
-		"platform":      platforms.Format(platform),
-		"contextsubdir": ctxPayload.Dir,
-	}
-
-	if dockerfile != "" {
-		opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
-	} else {
-		opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
-	}
-
-	if target != "" {
-		opts["target"] = target
-	}
-
-	for _, buildArg := range buildArgs {
-		opts["build-arg:"+buildArg.Name] = buildArg.Value
-	}
-
-	inputs := map[string]*pb.Definition{
-		dockerui.DefaultLocalNameContext:    ctxPayload.LLB,
-		dockerui.DefaultLocalNameDockerfile: ctxPayload.LLB,
-	}
-
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Frontend:       "dockerfile.v0",
-		FrontendOpt:    opts,
-		FrontendInputs: inputs,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	bkref, err := res.SingleRef()
-	if err != nil {
-		return nil, err
-	}
-
-	var st llb.State
-	if bkref == nil {
-		st = llb.Scratch()
-	} else {
-		st, err = bkref.ToState()
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	def, err := st.Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, err
-	}
-
-	// Override the progress pipeline of every LLB vertex in the DAG.
-	// FIXME: this can't be done in a normal way because Buildkit doesn't currently
-	// allow overriding the metadata of DefinitionOp. See this PR and comment:
-	// https://github.com/moby/buildkit/pull/2819
-	pipeline := payload.Pipeline.Add(Pipeline{
-		Name: "docker build",
-	})
-	for dgst, metadata := range def.Metadata {
-		metadata.ProgressGroup = pipeline.ProgressGroup()
-		def.Metadata[dgst] = metadata
-	}
-
-	payload.FS = def.ToPB()
-
-	cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
-	if found {
-		var imgSpec specs.Image
-		if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-			return nil, err
-		}
-
-		payload.Config = imgSpec.Config
-	}
+	payload.Services.Merge(ctxPayload.Services)
 
 	// set image ref to empty string
 	payload.ImageRef = ""
 
-	return container.containerFromPayload(payload)
+	return WithServices(ctx, gw, payload.Services, func() (*Container, error) {
+		platform := payload.Platform
+
+		opts := map[string]string{
+			"platform":      platforms.Format(platform),
+			"contextsubdir": ctxPayload.Dir,
+		}
+
+		if dockerfile != "" {
+			opts["filename"] = path.Join(ctxPayload.Dir, dockerfile)
+		} else {
+			opts["filename"] = path.Join(ctxPayload.Dir, defaultDockerfileName)
+		}
+
+		if target != "" {
+			opts["target"] = target
+		}
+
+		for _, buildArg := range buildArgs {
+			opts["build-arg:"+buildArg.Name] = buildArg.Value
+		}
+
+		inputs := map[string]*pb.Definition{
+			dockerui.DefaultLocalNameContext:    ctxPayload.LLB,
+			dockerui.DefaultLocalNameDockerfile: ctxPayload.LLB,
+		}
+
+		res, err := gw.Solve(ctx, bkgw.SolveRequest{
+			Frontend:       "dockerfile.v0",
+			FrontendOpt:    opts,
+			FrontendInputs: inputs,
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		bkref, err := res.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		var st llb.State
+		if bkref == nil {
+			st = llb.Scratch()
+		} else {
+			st, err = bkref.ToState()
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		def, err := st.Marshal(ctx, llb.Platform(platform))
+		if err != nil {
+			return nil, err
+		}
+
+		// Override the progress pipeline of every LLB vertex in the DAG.
+		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+		// allow overriding the metadata of DefinitionOp. See this PR and comment:
+		// https://github.com/moby/buildkit/pull/2819
+		pipeline := payload.Pipeline.Add(Pipeline{
+			Name: "docker build",
+		})
+		for dgst, metadata := range def.Metadata {
+			metadata.ProgressGroup = pipeline.ProgressGroup()
+			def.Metadata[dgst] = metadata
+		}
+
+		payload.FS = def.ToPB()
+
+		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
+		if found {
+			var imgSpec specs.Image
+			if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
+				return nil, err
+			}
+
+			payload.Config = imgSpec.Config
+		}
+
+		return container.containerFromPayload(payload)
+	})
 }
 
 func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
@@ -389,6 +424,7 @@ func (container *Container) RootFS(ctx context.Context) (*Directory, error) {
 		LLB:      payload.FS,
 		Platform: payload.Platform,
 		Pipeline: payload.Pipeline,
+		Services: payload.Services,
 	}).ToDirectory()
 }
 
@@ -404,6 +440,8 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	}
 
 	payload.FS = dirPayload.LLB
+
+	payload.Services.Merge(dirPayload.Services)
 
 	// set image ref to empty string
 	payload.ImageRef = ""
@@ -426,7 +464,7 @@ func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, gw, file, content, permissions) // TODO(vito): doesn't this need a name...?
+		return dir.WithNewFile(ctx, file, content, permissions) // TODO(vito): doesn't this need a name...?
 	})
 }
 
@@ -436,7 +474,7 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir)
+	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services)
 }
 
 func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
@@ -445,7 +483,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File)
+	return container.withMounted(target, payload.LLB, payload.File, payload.Services)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode) (*Container, error) {
@@ -690,7 +728,7 @@ func locatePath[T *File | *Directory](
 	container *Container,
 	containerPath string,
 	gw bkgw.Client,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform) (T, error),
+	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ServiceBindings) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -728,7 +766,7 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform)
+			found, err := init(ctx, st, sub, payload.Pipeline, payload.Platform, payload.Services)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -742,14 +780,14 @@ func locatePath[T *File | *Directory](
 		return nil, nil, err
 	}
 
-	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform)
+	found, err = init(ctx, st, containerPath, payload.Pipeline, payload.Platform, payload.Services)
 	if err != nil {
 		return nil, nil, err
 	}
 	return found, nil, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string) (*Container, error) {
+func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs ServiceBindings) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -762,6 +800,8 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		SourcePath: srcPath,
 		Target:     target,
 	})
+
+	payload.Services.Merge(svcs)
 
 	// set image ref to empty string
 	payload.ImageRef = ""
@@ -805,7 +845,7 @@ func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, su
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath)
+	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil)
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -842,7 +882,7 @@ func (container *Container) Pipeline(ctx context.Context, name, description stri
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
@@ -900,6 +940,10 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 
 	if opts.RedirectStderr != "" {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
+	}
+
+	for _, alias := range payload.HostAliases {
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias.Alias, alias.Target))
 	}
 
 	if cfg.User != "" {
@@ -999,6 +1043,21 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
+	// first, build without a hostname
+	execStNoHostname := fsSt.Run(runOpts...)
+
+	// next, marshal it to compute a deterministic hostname
+	constraints := llb.NewConstraints(llb.Platform(platform))
+	rootVtx := execStNoHostname.Root().Output().Vertex(ctx, constraints)
+	digest, _, _, _, err := rootVtx.Marshal(ctx, constraints) //nolint:dogsled
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %w", err)
+	}
+	hostname := hostHash(digest)
+	payload.Hostname = fmt.Sprintf("%s.%s", hostname, network.DNSDomain)
+
+	// finally, build with the hostname set
+	runOpts = append(runOpts, llb.Hostname(hostname))
 	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
@@ -1039,6 +1098,35 @@ func (container *Container) Exec(ctx context.Context, gw bkgw.Client, defaultPla
 	return container.containerFromPayload(payload)
 }
 
+func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return err
+	}
+
+	if payload.FS == nil {
+		return nil
+	}
+
+	_, err = WithServices(ctx, gw, payload.Services, func() (*bkgw.Result, error) {
+		st, err := payload.FSState()
+		if err != nil {
+			return nil, err
+		}
+
+		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: stDef.ToPB(),
+		})
+	})
+	return err
+}
+
 func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
 	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
@@ -1056,14 +1144,75 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int,
 	return &exitCode, nil
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
-	file, err := container.MetaFile(ctx, gw, filePath)
+func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
+	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	if file == nil {
+	health := newHealth(gw, payload.Hostname, payload.Ports)
+
+	svcCtx, stop := context.WithCancel(context.Background())
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- health.Check(ctx)
+	}()
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- container.Evaluate(svcCtx, gw)
+	}()
+
+	select {
+	case err := <-checked:
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
+		_ = stop // leave it running
+
+		return &Service{
+			Container: container,
+			Detach:    stop,
+		}, nil
+	case err := <-exited:
+		stop() // interrupt healthcheck
+
+		if err != nil {
+			return nil, fmt.Errorf("exited: %w", err)
+		}
+
+		return nil, fmt.Errorf("service exited before healthcheck")
+	}
+}
+
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	metaSt, err := payload.MetaState()
+	if err != nil {
+		return nil, err
+	}
+
+	if metaSt == nil {
 		return nil, nil
+	}
+
+	file, err := NewFile(
+		ctx,
+		*metaSt,
+		path.Join(metaSourcePath, filePath),
+		payload.Pipeline,
+		payload.Platform,
+		payload.Services,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	content, err := file.Contents(ctx, gw)
@@ -1072,29 +1221,7 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 	}
 
 	strContent := string(content)
-	if err != nil {
-		return nil, err
-	}
-
 	return &strContent, nil
-}
-
-func (container *Container) MetaFile(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
-	payload, err := container.ID.decode()
-	if err != nil {
-		return nil, err
-	}
-
-	meta, err := payload.MetaState()
-	if err != nil {
-		return nil, err
-	}
-
-	if meta == nil {
-		return nil, nil
-	}
-
-	return NewFile(ctx, *meta, path.Join(metaSourcePath, filePath), payload.Pipeline, payload.Platform)
 }
 
 func (container *Container) Publish(
@@ -1188,12 +1315,121 @@ func (container *Container) Export(
 	})
 }
 
+func (container *Container) Hostname() (string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	return payload.Hostname, nil
+}
+
+func (container *Container) Endpoint(port int, scheme string) (string, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return "", err
+	}
+
+	if port == 0 {
+		if len(payload.Ports) == 0 {
+			return "", fmt.Errorf("no ports exposed")
+		}
+
+		port = payload.Ports[0].Port
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", payload.Hostname, port)
+	if scheme != "" {
+		endpoint = scheme + "://" + endpoint
+	}
+
+	return endpoint, nil
+}
+
+func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Ports = append(payload.Ports, port)
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) WithoutExposedPort(port int, protocol NetworkProtocol) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	filtered := []ContainerPort{}
+	for _, p := range payload.Ports {
+		if p.Port != port || p.Protocol != protocol {
+			filtered = append(filtered, p)
+		}
+	}
+	payload.Ports = filtered
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
+}
+
+func (container *Container) ExposedPorts() ([]ContainerPort, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return payload.Ports, nil
+}
+
+func (container *Container) WithServiceDependency(svc *Container, alias string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Services.Merge(ServiceBindings{
+		svc.ID: AliasSet{alias},
+	})
+
+	if alias != "" {
+		hn, err := svc.Hostname()
+		if err != nil {
+			return nil, fmt.Errorf("get hostname: %w", err)
+		}
+
+		payload.HostAliases = append(payload.HostAliases, HostAlias{
+			Alias:  alias,
+			Target: hn,
+		})
+	}
+
+	id, err := payload.Encode()
+	if err != nil {
+		return nil, fmt.Errorf("encode: %w", err)
+	}
+
+	return &Container{ID: id}, nil
+}
+
 func (container *Container) export(
 	ctx context.Context,
 	gw bkgw.Client,
 	platformVariants []ContainerID,
 ) (*bkgw.Result, error) {
-	var payloads []*containerIDPayload
+	payloads := []*containerIDPayload{}
+	services := ServiceBindings{}
 	if container.ID != "" {
 		payload, err := container.ID.decode()
 		if err != nil {
@@ -1201,6 +1437,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
+			services.Merge(payload.Services)
 		}
 	}
 	for _, id := range platformVariants {
@@ -1210,6 +1447,7 @@ func (container *Container) export(
 		}
 		if payload.FS != nil {
 			payloads = append(payloads, payload)
+			services.Merge(payload.Services)
 		}
 	}
 
@@ -1218,97 +1456,99 @@ func (container *Container) export(
 		return nil, errors.New("no containers to export")
 	}
 
-	if len(payloads) == 1 {
-		payload := payloads[0]
+	return WithServices(ctx, gw, services, func() (*bkgw.Result, error) {
+		if len(payloads) == 1 {
+			payload := payloads[0]
 
-		st, err := payload.FSState()
+			st, err := payload.FSState()
+			if err != nil {
+				return nil, err
+			}
+
+			stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			res, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: stDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			cfgBytes, err := json.Marshal(specs.Image{
+				Architecture: payload.Platform.Architecture,
+				OS:           payload.Platform.OS,
+				OSVersion:    payload.Platform.OSVersion,
+				OSFeatures:   payload.Platform.OSFeatures,
+				Config:       payload.Config,
+			})
+			if err != nil {
+				return nil, err
+			}
+			res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+
+			return res, nil
+		}
+
+		res := bkgw.NewResult()
+		expPlatforms := &exptypes.Platforms{
+			Platforms: make([]exptypes.Platform, len(payloads)),
+		}
+
+		for i, payload := range payloads {
+			st, err := payload.FSState()
+			if err != nil {
+				return nil, err
+			}
+
+			stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+			if err != nil {
+				return nil, err
+			}
+
+			r, err := gw.Solve(ctx, bkgw.SolveRequest{
+				Evaluate:   true,
+				Definition: stDef.ToPB(),
+			})
+			if err != nil {
+				return nil, err
+			}
+			ref, err := r.SingleRef()
+			if err != nil {
+				return nil, err
+			}
+
+			platformKey := platforms.Format(payload.Platform)
+			res.AddRef(platformKey, ref)
+			expPlatforms.Platforms[i] = exptypes.Platform{
+				ID:       platformKey,
+				Platform: payload.Platform,
+			}
+
+			cfgBytes, err := json.Marshal(specs.Image{
+				Architecture: payload.Platform.Architecture,
+				OS:           payload.Platform.OS,
+				OSVersion:    payload.Platform.OSVersion,
+				OSFeatures:   payload.Platform.OSFeatures,
+				Config:       payload.Config,
+			})
+			if err != nil {
+				return nil, err
+			}
+			res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
+		}
+
+		platformBytes, err := json.Marshal(expPlatforms)
 		if err != nil {
 			return nil, err
 		}
-
-		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		cfgBytes, err := json.Marshal(specs.Image{
-			Architecture: payload.Platform.Architecture,
-			OS:           payload.Platform.OS,
-			OSVersion:    payload.Platform.OSVersion,
-			OSFeatures:   payload.Platform.OSFeatures,
-			Config:       payload.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+		res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
 
 		return res, nil
-	}
-
-	res := bkgw.NewResult()
-	expPlatforms := &exptypes.Platforms{
-		Platforms: make([]exptypes.Platform, len(payloads)),
-	}
-
-	for i, payload := range payloads {
-		st, err := payload.FSState()
-		if err != nil {
-			return nil, err
-		}
-
-		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-		if err != nil {
-			return nil, err
-		}
-
-		r, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Evaluate:   true,
-			Definition: stDef.ToPB(),
-		})
-		if err != nil {
-			return nil, err
-		}
-		ref, err := r.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		platformKey := platforms.Format(payload.Platform)
-		res.AddRef(platformKey, ref)
-		expPlatforms.Platforms[i] = exptypes.Platform{
-			ID:       platformKey,
-			Platform: payload.Platform,
-		}
-
-		cfgBytes, err := json.Marshal(specs.Image{
-			Architecture: payload.Platform.Architecture,
-			OS:           payload.Platform.OS,
-			OSVersion:    payload.Platform.OSVersion,
-			OSFeatures:   payload.Platform.OSFeatures,
-			Config:       payload.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
-	}
-
-	platformBytes, err := json.Marshal(expPlatforms)
-	if err != nil {
-		return nil, err
-	}
-	res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-
-	return res, nil
+	})
 }
 
 func (container *Container) ImageRef(ctx context.Context, gw bkgw.Client) (string, error) {
@@ -1356,4 +1596,20 @@ type ContainerExecOpts struct {
 type BuildArg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
+}
+
+func hostHash(val digest.Digest) string {
+	b, err := hex.DecodeString(val.Encoded())
+	if err != nil {
+		panic(err)
+	}
+	return b32(xxh3.Hash(b))
+}
+
+func b32(n uint64) string {
+	var sum [8]byte
+	binary.BigEndian.PutUint64(sum[:], n)
+	return base32.HexEncoding.
+		WithPadding(base32.NoPadding).
+		EncodeToString(sum[:])
 }

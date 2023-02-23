@@ -108,6 +108,18 @@ export type ContainerBuildOpts = {
   target?: string
 }
 
+export type ContainerEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
+}
+
 export type ContainerExecOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
@@ -201,6 +213,18 @@ export type ContainerWithExecOpts = {
   experimentalPrivilegedNesting?: boolean
 }
 
+export type ContainerWithExposedPortOpts = {
+  /**
+   * Transport layer network protocol
+   */
+  protocol?: NetworkProtocol
+
+  /**
+   * Optional port description
+   */
+  description?: string
+}
+
 export type ContainerWithFileOpts = {
   /**
    * Permission given to the copied file (e.g., 0600).
@@ -234,6 +258,13 @@ export type ContainerWithNewFileOpts = {
    * Default: 0644.
    */
   permissions?: number
+}
+
+export type ContainerWithoutExposedPortOpts = {
+  /**
+   * Port protocol to unexpose
+   */
+  protocol?: NetworkProtocol
 }
 
 /**
@@ -365,6 +396,20 @@ export type HostWorkdirOpts = {
 export type ID = string & { __ID: never }
 
 /**
+ * Transport layer network protocol associated to a port.
+ */
+export enum NetworkProtocol {
+  /**
+   * TCP (Transmission Control Protocol)
+   */
+  Tcp,
+
+  /**
+   * UDP (User Datagram Protocol)
+   */
+  Udp,
+}
+/**
  * The platform config OS and architecture in a Container.
  *
  * The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
@@ -385,6 +430,18 @@ export type ClientGitOpts = {
    * Set to true to keep .git directory.
    */
   keepGitDir?: boolean
+
+  /**
+   * A service which must be started before the repo is fetched.
+   */
+  experimentalServiceHost?: Container
+}
+
+export type ClientHttpOpts = {
+  /**
+   * A service which must be started before the URL is fetched.
+   */
+  experimentalServiceHost?: Container
 }
 
 export type ClientPipelineOpts = {
@@ -524,6 +581,30 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Retrieves entrypoint to be prepended to the arguments of all commands.
    */
   async entrypoint(): Promise<string[]> {
@@ -645,6 +726,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves the list of exposed ports
+   */
+  async exposedPorts(): Promise<Port[]> {
+    const response: Awaited<Port[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exposedPorts",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Retrieves a file at the given path.
    *
    * Mounts are included.
@@ -699,6 +797,23 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   */
+  async hostname(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -1022,6 +1137,32 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Expose a network port.
+   * Exposed ports serve two purposes:
+   *   - For health checks and introspection, when running services
+   *   - For setting the EXPOSE OCI field when publishing the container
+   * @param port Port number to expose
+   * @param opts.protocol Transport layer network protocol
+   * @param opts.description Optional port description
+   */
+  withExposedPort(
+    port: number,
+    opts?: ContainerWithExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withExposedPort",
+          args: { port, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Initializes this container from this DirectoryID.
    * @deprecated Replaced by withRootfs.
    */
@@ -1268,6 +1409,29 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+   *
+   * The service will be reachable from the container via the provided hostname alias.
+   *
+   * The service dependency will also convey to any files or directories produced by the container.
+   * @param alias A name that can be used to reach the service from the container
+   * @param service Identifier of the service container
+   */
+  withServiceBinding(alias: string, service: Container): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withServiceBinding",
+          args: { alias, service },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
    * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
    * @param source Identifier of the socket to forward.
@@ -1333,6 +1497,28 @@ export class Container extends BaseClient {
         {
           operation: "withoutEnvVariable",
           args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Unexpose a previously exposed port.
+   * @param port Port number to unexpose
+   * @param opts.protocol Port protocol to unexpose
+   */
+  withoutExposedPort(
+    port: number,
+    opts?: ContainerWithoutExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutExposedPort",
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2433,6 +2619,88 @@ export class Label extends BaseClient {
 }
 
 /**
+ * A port exposed by a container.
+ */
+
+export class Port extends BaseClient {
+  /**
+   * The port description.
+   */
+  async description(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The port number.
+   */
+  async port(): Promise<number> {
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "port",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The transport layer network protocol.
+   */
+  async protocol(): Promise<NetworkProtocol> {
+    const response: Awaited<NetworkProtocol> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "protocol",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Port) => Port) {
+    return arg(this)
+  }
+}
+
+/**
  * A set of scripts and/or extensions
  */
 
@@ -2661,6 +2929,7 @@ export default class Client extends BaseClient {
    * Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
+   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -2695,14 +2964,15 @@ export default class Client extends BaseClient {
   /**
    * Returns a file containing an http remote url content.
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
+   * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  http(url: string): File {
+  http(url: string, opts?: ClientHttpOpts): File {
     return new File({
       queryTree: [
         ...this._queryTree,
         {
           operation: "http",
-          args: { url },
+          args: { url, ...opts },
         },
       ],
       host: this.clientHost,

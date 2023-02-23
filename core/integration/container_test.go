@@ -2487,15 +2487,10 @@ func TestContainerMultiFrom(t *testing.T) {
 }
 
 func TestContainerPublish(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
+	c, ctx := connect(t)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
-
-	testRef := "127.0.0.1:5000/testimagepush:latest"
+	testRef := registryRef("container-publish")
 	pushedRef, err := c.Container().
 		From("alpine:3.16.2").
 		Publish(ctx, testRef)
@@ -2516,8 +2511,6 @@ func TestExecFromScratch(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startRegistry(ctx, c, t)
-
 	// execute it from scratch, where there is no default platform, make sure it works and can be pushed
 	execBusybox := c.Container().
 		// /bin/busybox is a static binary
@@ -2526,7 +2519,7 @@ func TestExecFromScratch(t *testing.T) {
 
 	_, err = execBusybox.Stdout(ctx)
 	require.NoError(t, err)
-	_, err = execBusybox.Publish(ctx, "127.0.0.1:5000/testexecfromscratch:latest")
+	_, err = execBusybox.Publish(ctx, registryRef("from-scratch"))
 	require.NoError(t, err)
 }
 
@@ -2612,8 +2605,6 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
 	defer c.Close()
-
-	startRegistry(ctx, c, t)
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
@@ -2807,9 +2798,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	startPrivateRegistry(ctx, c, t)
-
-	testRef := "127.0.0.1:5010/testimagepush:latest"
+	testRef := privateRegistryRef("container-with-registry-auth")
 	container := c.Container().From("alpine:3.16.2")
 
 	// Push without credentials should fail
@@ -2818,7 +2807,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 
 	pushedRef, err := container.
 		WithRegistryAuth(
-			"127.0.0.1:5010/testimagepush:latest",
+			privateRegistryHost,
 			"john",
 			c.Container().
 				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).

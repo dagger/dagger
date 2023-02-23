@@ -52,6 +52,16 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class NetworkProtocol(Enum):
+    """Transport layer network protocol associated to a port."""
+
+    TCP = "TCP"
+    """TCP (Transmission Control Protocol)"""
+
+    UDP = "UDP"
+    """UDP (User Datagram Protocol)"""
+
+
 class BuildArg(Input):
     """Key value object that represents a build argument."""
 
@@ -134,6 +144,8 @@ class Container(Type):
     def directory(self, path: str) -> "Directory":
         """Retrieves a directory at the given path.
 
+
+
         Mounts are included.
 
         Parameters
@@ -146,6 +158,45 @@ class Container(Type):
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def endpoint(
+        self,
+        port: Optional[int] = None,
+        scheme: Optional[str] = None,
+    ) -> str:
+        """Retrieves an endpoint that clients can use to reach this container.
+
+
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Parameters
+        ----------
+        port:
+            The exposed port number for the endpoint
+        scheme:
+            Return a URL with the given scheme, eg. http for http://
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args = [
+            Arg("port", port, None),
+            Arg("scheme", scheme, None),
+        ]
+        _ctx = self._select("endpoint", _args)
+        return _ctx.execute_sync(str)
 
     @typecheck
     def entrypoint(self) -> Optional[list[str]]:
@@ -240,6 +291,7 @@ class Container(Type):
     @typecheck
     def exit_code(self) -> Optional[int]:
         """Exit code of the last executed command. Zero means success.
+
         Null if no command has been executed.
 
         Returns
@@ -262,7 +314,10 @@ class Container(Type):
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
 
+
+
         Return true on success.
+
         It can also publishes platform variants.
 
         Parameters
@@ -287,8 +342,17 @@ class Container(Type):
         return _ctx.execute_sync(bool)
 
     @typecheck
+    def exposed_ports(self) -> "Port":
+        """Retrieves the list of exposed ports"""
+        _args: list[Arg] = []
+        _ctx = self._select("exposedPorts", _args)
+        return Port(_ctx)
+
+    @typecheck
     def file(self, path: str) -> "File":
         """Retrieves a file at the given path.
+
+
 
         Mounts are included.
 
@@ -330,6 +394,22 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("fs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def hostname(self) -> str:
+        """Retrieves a hostname which can be used by clients to reach this
+        container.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hostname", _args)
+        return _ctx.execute_sync(str)
 
     @typecheck
     def id(self) -> ContainerID:
@@ -441,7 +521,10 @@ class Container(Type):
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
+
+
         Publish returns a fully qualified ref.
+
         It can also publish platform variants.
 
         Parameters
@@ -478,6 +561,7 @@ class Container(Type):
     @typecheck
     def stderr(self) -> Optional[str]:
         """The error stream of the last executed command.
+
         Null if no command has been executed.
 
         Returns
@@ -494,6 +578,7 @@ class Container(Type):
     @typecheck
     def stdout(self) -> Optional[str]:
         """The output stream of the last executed command.
+
         Null if no command has been executed.
 
         Returns
@@ -647,6 +732,38 @@ class Container(Type):
             Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
         ]
         _ctx = self._select("withExec", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def with_exposed_port(
+        self,
+        port: int,
+        protocol: Optional[NetworkProtocol] = None,
+        description: Optional[str] = None,
+    ) -> "Container":
+        """Expose a network port.
+
+        Exposed ports serve two purposes:
+
+          - For health checks and introspection, when running services
+
+          - For setting the EXPOSE OCI field when publishing the container
+
+        Parameters
+        ----------
+        port:
+            Port number to expose
+        protocol:
+            Transport layer network protocol
+        description:
+            Optional port description
+        """
+        _args = [
+            Arg("port", port),
+            Arg("protocol", protocol, None),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)
 
     @typecheck
@@ -896,6 +1013,36 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
+    def with_service_binding(self, alias: str, service: "Container") -> "Container":
+        """Establish a runtime dependency on a service. The service will be
+        started automatically when needed and detached when it is no longer
+        needed.
+
+
+
+        The service will be reachable from the container via the provided
+        hostname alias.
+
+
+
+        The service dependency will also convey to any files or directories
+        produced by the container.
+
+        Parameters
+        ----------
+        alias:
+            A name that can be used to reach the service from the container
+        service:
+            Identifier of the service container
+        """
+        _args = [
+            Arg("alias", alias),
+            Arg("service", service),
+        ]
+        _ctx = self._select("withServiceBinding", _args)
+        return Container(_ctx)
+
+    @typecheck
     def with_unix_socket(self, path: str, source: "Socket") -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
@@ -957,6 +1104,28 @@ class Container(Type):
             Arg("name", name),
         ]
         _ctx = self._select("withoutEnvVariable", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_exposed_port(
+        self,
+        port: int,
+        protocol: Optional[NetworkProtocol] = None,
+    ) -> "Container":
+        """Unexpose a previously exposed port.
+
+        Parameters
+        ----------
+        port:
+            Port number to unexpose
+        protocol:
+            Port protocol to unexpose
+        """
+        _args = [
+            Arg("port", port),
+            Arg("protocol", protocol, None),
+        ]
+        _ctx = self._select("withoutExposedPort", _args)
         return Container(_ctx)
 
     @typecheck
@@ -1752,6 +1921,53 @@ class Label(Type):
         return _ctx.execute_sync(str)
 
 
+class Port(Type):
+    """A port exposed by a container."""
+
+    @typecheck
+    def description(self) -> Optional[str]:
+        """The port description.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return _ctx.execute_sync(Optional[str])
+
+    @typecheck
+    def port(self) -> int:
+        """The port number.
+
+        Returns
+        -------
+        int
+            The `Int` scalar type represents non-fractional signed whole
+            numeric values. Int can represent values between -(2^31) and 2^31
+            - 1.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("port", _args)
+        return _ctx.execute_sync(int)
+
+    @typecheck
+    def protocol(self) -> NetworkProtocol:
+        """The transport layer network protocol.
+
+        Returns
+        -------
+        NetworkProtocol
+            Transport layer network protocol associated to a port.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("protocol", _args)
+        return _ctx.execute_sync(NetworkProtocol)
+
+
 class Project(Type):
     """A set of scripts and/or extensions"""
 
@@ -1853,9 +2069,13 @@ class Client(Root):
     ) -> Container:
         """Loads a container from ID.
 
+
+
         Null ID returns an empty container (scratch).
+
         Optional platform argument initializes new containers to execute and
         publish as that platform.
+
         Platform defaults to that of the builder's host.
         """
         _args = [
@@ -1903,6 +2123,7 @@ class Client(Root):
         self,
         url: str,
         keep_git_dir: Optional[bool] = None,
+        experimental_service_host: Optional[Container] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -1915,10 +2136,13 @@ class Client(Root):
             Suffix ".git" is optional.
         keep_git_dir:
             Set to true to keep .git directory.
+        experimental_service_host:
+            A service which must be started before the repo is fetched.
         """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, None),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -1931,16 +2155,23 @@ class Client(Root):
         return Host(_ctx)
 
     @typecheck
-    def http(self, url: str) -> File:
+    def http(
+        self,
+        url: str,
+        experimental_service_host: Optional[Container] = None,
+    ) -> File:
         """Returns a file containing an http remote url content.
 
         Parameters
         ----------
         url:
             HTTP url to get the content from (e.g., "https://docs.dagger.io").
+        experimental_service_host:
+            A service which must be started before the URL is fetched.
         """
         _args = [
             Arg("url", url),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)
@@ -2052,6 +2283,7 @@ __all__ = [
     "SecretID",
     "SocketID",
     "CacheSharingMode",
+    "NetworkProtocol",
     "BuildArg",
     "CacheVolume",
     "Container",
@@ -2063,6 +2295,7 @@ __all__ = [
     "Host",
     "HostVariable",
     "Label",
+    "Port",
     "Project",
     "Client",
     "Secret",

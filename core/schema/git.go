@@ -44,9 +44,10 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL        string            `json:"url"`
-	KeepGitDir bool              `json:"keepGitDir"`
-	Pipeline   core.PipelinePath `json:"pipeline"`
+	URL         string            `json:"url"`
+	KeepGitDir  bool              `json:"keepGitDir"`
+	Pipeline    core.PipelinePath `json:"pipeline"`
+	ServiceHost *core.ContainerID `json:"serviceHost,omitempty"`
 }
 
 type gitRef struct {
@@ -55,14 +56,16 @@ type gitRef struct {
 }
 
 type gitArgs struct {
-	URL        string `json:"url"`
-	KeepGitDir bool   `json:"keepGitDir"`
+	URL                     string            `json:"url"`
+	KeepGitDir              bool              `json:"keepGitDir"`
+	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
 func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
 	r := gitRepository{
-		URL:        args.URL,
-		KeepGitDir: args.KeepGitDir,
+		URL:         args.URL,
+		KeepGitDir:  args.KeepGitDir,
+		ServiceHost: args.ExperimentalServiceHost,
 	}
 	if parent != nil {
 		r.Pipeline = parent.Context.Pipeline
@@ -135,6 +138,10 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 	if args.SSHAuthSocket != "" {
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
+	var svcs core.ServiceBindings
+	if parent.Repository.ServiceHost != nil {
+		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
+	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform)
+	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

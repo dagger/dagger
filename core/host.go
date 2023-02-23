@@ -96,7 +96,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, pipeline Pipeli
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
-	dir, err := NewDirectory(ctx, st, "", pipeline, platform)
+	dir, err := NewDirectory(ctx, st, "", pipeline, platform, nil)
 	if err != nil {
 		return nil, err
 	}
