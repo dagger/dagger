@@ -464,16 +464,31 @@ class _ObjectField:
                     (arg.as_doc() for arg in self.args),
                 )
 
-            if self.is_leaf and (
-                return_doc := output_type_description(self.graphql.type)
-            ):
+            if self.is_leaf:
+                if return_doc := output_type_description(self.graphql.type):
+                    yield chain(
+                        (
+                            "Returns",
+                            "-------",
+                            self.type,
+                        ),
+                        wrap_indent(return_doc),
+                    )
+
                 yield chain(
                     (
-                        "Returns",
-                        "-------",
-                        self.type,
+                        "Raises",
+                        "------",
+                        "ExecuteTimeoutError",
                     ),
-                    wrap_indent(return_doc),
+                    wrap_indent(
+                        "If the time to execute the query exceeds the "
+                        "configured timeout."
+                    ),
+                    (
+                        "QueryError",
+                        indent("If the API returns an error."),
+                    ),
                 )
 
         return "\n\n".join("\n".join(section) for section in _out())
