@@ -204,6 +204,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("port", port, None),
@@ -448,6 +455,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("hostname", _args)
@@ -2151,6 +2165,13 @@ class Port(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
@@ -2166,6 +2187,13 @@ class Port(Type):
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("port", _args)
@@ -2179,6 +2207,13 @@ class Port(Type):
         -------
         NetworkProtocol
             Transport layer network protocol associated to a port.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
