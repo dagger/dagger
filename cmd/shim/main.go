@@ -208,24 +208,49 @@ func shim() int {
 		return 0
 	}
 
+	var secretsToScrub core.SecretToScrubInfo
+
+	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
+	if found {
+		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
+		if err != nil {
+			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+		}
+	}
+
+	cmd.Env = os.Environ()
+
+	// append nesting envs if any
+	cmd.Env = append(cmd.Env, env...)
+
+	currentDirPath := "/"
+	shimFS := os.DirFS(currentDirPath)
+
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stdoutFile.Close()
-	cmd.Stdout = io.MultiWriter(stdoutFile, os.Stdout)
+
+	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
+	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stdout = scrubOutWriter
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
-	cmd.Stderr = io.MultiWriter(stderrFile, os.Stderr)
 
-	cmd.Env = os.Environ()
-
-	// append nesting envs if any
-	cmd.Env = append(cmd.Env, env...)
+	errWriter := io.MultiWriter(stderrFile, os.Stderr)
+	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stderr = scrubErrWriter
 
 	exitCode := 0
 	if err := cmd.Run(); err != nil {

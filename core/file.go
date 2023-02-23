@@ -187,6 +187,7 @@ func (file *File) Export(
 	})
 }
 
+// gwRef returns the buildkit reference from the solved def.
 func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: def,

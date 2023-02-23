@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -975,6 +976,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
+	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range payload.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
 
@@ -983,13 +985,27 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.EnvName != "":
 			secretDest = secret.EnvName
 			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
+			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
+			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
 
 		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
+	}
+
+	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
+		// we sort to avoid non-deterministic order that would break caching
+		sort.Strings(secretsToScrub.Envs)
+		sort.Strings(secretsToScrub.Files)
+
+		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
+		if err != nil {
+			return nil, fmt.Errorf("scrub secrets json: %w", err)
+		}
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_SCRUB_SECRETS", string(secretsToScrubJSON)))
 	}
 
 	for _, socket := range payload.Sockets {
