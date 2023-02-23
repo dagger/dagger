@@ -79,7 +79,7 @@ query='
   }
 }
 '
-lang='ts'
+lang='typescript'
 	;;
 	"js") echo 2 or 3
 query='
@@ -102,7 +102,7 @@ query='
   }
 }
 '
-lang='js'
+lang='javascript'
 	;;
 	"mjs") echo 2 or 3
 query='
