@@ -379,7 +379,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 		return nil, err
 	}
 
-	var perm *fs.FileMode = nil
+	var perm *fs.FileMode
 
 	if permissions != 0 {
 		perm = &permissions

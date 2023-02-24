@@ -27,7 +27,7 @@ func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 	if err := withEngine(ctx, "", func(ctx context.Context, r *router.Router) error {
 		fmt.Fprintf(os.Stderr, "==> server listening on http://%s/query\n", listenAddress)
-		return http.ListenAndServe(listenAddress, r)
+		return http.ListenAndServe(listenAddress, r) //nolint:gosec
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

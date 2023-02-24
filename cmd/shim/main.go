@@ -486,7 +486,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 		}
 		go func() {
 			err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-				return http.Serve(l, r)
+				return http.Serve(l, r) //nolint:gosec
 			})
 			if err != nil {
 				fmt.Printf("Error starting engine: %v\n", err)
