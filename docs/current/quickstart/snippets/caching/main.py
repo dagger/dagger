@@ -4,7 +4,6 @@ import sys
 import anyio
 import dagger
 
-
 async def main():
     config = dagger.Config(log_output=sys.stdout)
 
