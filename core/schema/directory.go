@@ -79,12 +79,7 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 	}
 
 	platform := s.baseSchema.platform
-	pipeline := pipeline.Path{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
-
-	return core.NewDirectory(ctx, llb.Scratch(), "", pipeline, platform, nil)
+	return core.NewDirectory(ctx, llb.Scratch(), "", parent.PipelinePath(), platform, nil)
 }
 
 type subdirectoryArgs struct {

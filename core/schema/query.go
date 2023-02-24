@@ -45,7 +45,7 @@ func (s *querySchema) pipeline(ctx *router.Context, parent *core.Query, args pip
 	parent.Context.Pipeline = parent.Context.Pipeline.Add(pipeline.Pipeline{
 		Name:        args.Name,
 		Description: args.Description,
-		Labels:      pipeline.MergeLabels(args.Labels...),
+		Labels:      args.Labels,
 	})
 	return parent, nil
 }

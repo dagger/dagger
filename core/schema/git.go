@@ -63,16 +63,12 @@ type gitArgs struct {
 }
 
 func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
-	r := gitRepository{
+	return gitRepository{
 		URL:         args.URL,
 		KeepGitDir:  args.KeepGitDir,
 		ServiceHost: args.ExperimentalServiceHost,
-	}
-	if parent != nil {
-		r.Pipeline = parent.Context.Pipeline
-	}
-
-	return r, nil
+		Pipeline:    parent.PipelinePath(),
+	}, nil
 }
 
 type branchArgs struct {

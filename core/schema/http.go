@@ -2,7 +2,6 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 )
@@ -39,10 +38,7 @@ type httpArgs struct {
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
-	pipeline := pipeline.Path{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
+	pipeline := parent.PipelinePath()
 
 	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
 

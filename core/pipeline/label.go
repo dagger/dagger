@@ -17,37 +17,27 @@ type Label struct {
 	Value string `json:"value"`
 }
 
-// MergeLabels merges a set of labels with the defaults.
-// `LoadDefaultLabels` *must* be called before invoking this function.
-// `MergeLabels` will wait until `LoadDefaultLabels` has completed.
-func MergeLabels(labels ...Label) []Label {
-	merged := []Label{}
-	merged = append(merged, DefaultLabels()...)
-	merged = append(merged, labels...)
-	return merged
-}
-
-// DefaultLabels returns default labels for Pipelines.
+// RootLabels returns default labels for Pipelines.
 //
-// `LoadDefaultLabels` *must* be called before invoking this function.
-// `DefaultLabels` will wait until `LoadDefaultLabels` has completed.
-func DefaultLabels() []Label {
+// `LoadRootLabels` *must* be called before invoking this function.
+// `RootLabels` will wait until `LoadRootLabels` has completed.
+func RootLabels() []Label {
 	<-loadDoneCh
 	return defaultLabels
 }
 
-// LoadDefaultLabels loads default Pipeline labels from a workdir.
-func LoadDefaultLabels(workdir string) error {
+// LoadRootLabels loads default Pipeline labels from a workdir.
+func LoadRootLabels(workdir string) error {
 	var err error
 	loadOnce.Do(func() {
 		defer close(loadDoneCh)
 
-		defaultLabels, err = loadDefaultTags(workdir)
+		defaultLabels, err = loadRootLabels(workdir)
 	})
 	return err
 }
 
-func loadDefaultTags(workdir string) ([]Label, error) {
+func loadRootLabels(workdir string) ([]Label, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})

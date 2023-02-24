@@ -111,7 +111,7 @@ func (dir *Directory) Pipeline(ctx context.Context, name, description string, la
 	payload.Pipeline = payload.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: description,
-		Labels:      pipeline.MergeLabels(labels...),
+		Labels:      labels,
 	})
 	return payload.ToDirectory()
 }

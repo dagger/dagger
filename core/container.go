@@ -878,7 +878,7 @@ func (container *Container) Pipeline(ctx context.Context, name, description stri
 	payload.Pipeline = payload.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: description,
-		Labels:      pipeline.MergeLabels(labels...),
+		Labels:      labels,
 	})
 
 	return container.containerFromPayload(payload)
