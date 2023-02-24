@@ -66,7 +66,6 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	for i := 0; i < 10; i++ {
 		proc = exec.CommandContext(ctx, binPath, args...)
 		proc.Env = env
-		setPlatformOpts(proc)
 
 		var err error
 		stdout, err = proc.StdoutPipe()
