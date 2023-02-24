@@ -129,7 +129,8 @@ impl Downloader {
 
         if !cli_bin_path.exists() {
             cli_bin_path = self
-                .download(cli_bin_path).await
+                .download(cli_bin_path)
+                .await
                 .context("failed to download CLI from archive")?;
         }
 
@@ -238,7 +239,11 @@ mod test {
 
     #[tokio::test]
     async fn download() {
-        let cli_path = Downloader::new("0.3.10".into()).unwrap().get_cli().await.unwrap();
+        let cli_path = Downloader::new("0.3.10".into())
+            .unwrap()
+            .get_cli()
+            .await
+            .unwrap();
 
         assert_eq!(
             Some("dagger-0.3.10"),

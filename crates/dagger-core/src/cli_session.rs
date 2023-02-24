@@ -1,9 +1,4 @@
-use std::{
-    fs::canonicalize,
-    path::PathBuf,
-    process::Stdio,
-    sync::Arc,
-};
+use std::{fs::canonicalize, path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncBufReadExt;
 
@@ -105,7 +100,9 @@ impl InnerCliSession {
             }
         });
 
-        let conn = receiver.recv().await.ok_or(eyre::anyhow!("could not receive ok signal from dagger-engine"))?;
+        let conn = receiver.recv().await.ok_or(eyre::anyhow!(
+            "could not receive ok signal from dagger-engine"
+        ))?;
 
         Ok((conn, proc))
     }

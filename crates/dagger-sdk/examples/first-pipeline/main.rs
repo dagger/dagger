@@ -6,7 +6,8 @@ async fn main() -> eyre::Result<()> {
         .container()
         .from("golang:1.19")
         .with_exec(vec!["go", "version"])
-        .stdout().await?;
+        .stdout()
+        .await?;
 
     println!("Hello from Dagger and {}", version.trim());
 

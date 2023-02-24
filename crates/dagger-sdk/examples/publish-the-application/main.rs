@@ -39,7 +39,8 @@ async fn main() -> eyre::Result<()> {
             "/usr/share/nginx/html",
             client.host().directory(output).id().await?,
         )
-        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>())).await?;
+        .publish(format!("ttl.sh/hello-dagger-rs-{}:1h", rng.gen::<u64>()))
+        .await?;
 
     println!("published image to: {}", ref_);
 

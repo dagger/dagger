@@ -23,7 +23,8 @@ async fn main() -> eyre::Result<()> {
 
     let out = runner
         .with_exec(vec!["npm", "test", "--", "--watchAll=false"])
-        .stderr().await?;
+        .stderr()
+        .await?;
 
     println!("{}", out);
 

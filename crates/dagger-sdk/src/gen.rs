@@ -34,7 +34,7 @@ pub struct CacheVolume {
 
 impl CacheVolume {
     pub async fn id(&self) -> eyre::Result<CacheId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -49,7 +49,7 @@ pub struct Container {
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerBuildOpts<'a> {
     /// Path to the Dockerfile to use.
-    /// Defaults to './Dockerfile'.
+    /// Default: './Dockerfile'.
     #[builder(setter(into, strip_option))]
     pub dockerfile: Option<&'a str>,
     /// Additional build arguments.
@@ -60,17 +60,26 @@ pub struct ContainerBuildOpts<'a> {
     pub target: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerEndpointOpts<'a> {
+    /// The exposed port number for the endpoint
+    #[builder(setter(into, strip_option))]
+    pub port: Option<isize>,
+    /// Return a URL with the given scheme, eg. http for http://
+    #[builder(setter(into, strip_option))]
+    pub scheme: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExecOpts<'a> {
-    /// Command to run instead of the container's default command.
+    /// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     #[builder(setter(into, strip_option))]
     pub args: Option<Vec<&'a str>>,
-    /// Content to write to the command's standard input before closing.
+    /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option))]
     pub stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container.
+    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option))]
     pub redirect_stdout: Option<&'a str>,
-    /// Redirect the command's standard error to a file in the container.
+    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
     #[builder(setter(into, strip_option))]
     pub redirect_stderr: Option<&'a str>,
     /// Provide dagger access to the executed command.
@@ -100,41 +109,55 @@ pub struct ContainerPublishOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultArgsOpts<'a> {
+    /// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
     #[builder(setter(into, strip_option))]
     pub args: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
+    /// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
     #[builder(setter(into, strip_option))]
     pub exclude: Option<Vec<&'a str>>,
+    /// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
     #[builder(setter(into, strip_option))]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
-    /// Content to write to the command's standard input before closing.
+    /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option))]
     pub stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container.
+    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option))]
     pub redirect_stdout: Option<&'a str>,
-    /// Redirect the command's standard error to a file in the container.
+    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
     #[builder(setter(into, strip_option))]
     pub redirect_stderr: Option<&'a str>,
-    /// Provide dagger access to the executed command.
+    /// Provides dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed.
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option))]
     pub experimental_privileged_nesting: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithExposedPortOpts<'a> {
+    /// Transport layer network protocol
+    #[builder(setter(into, strip_option))]
+    pub protocol: Option<NetworkProtocol>,
+    /// Optional port description
+    #[builder(setter(into, strip_option))]
+    pub description: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts {
+    /// Permission given to the copied file (e.g., 0600).
+    /// Default: 0644.
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts {
-    /// Directory to use as the cache volume's root.
+    /// Identifier of the directory to use as the cache volume's root.
     #[builder(setter(into, strip_option))]
     pub source: Option<DirectoryId>,
     /// Sharing mode of the cache volume.
@@ -143,14 +166,23 @@ pub struct ContainerWithMountedCacheOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
+    /// Content of the file to write (e.g., "Hello world!").
     #[builder(setter(into, strip_option))]
     pub contents: Option<&'a str>,
+    /// Permission given to the written file (e.g., 0600).
+    /// Default: 0644.
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithoutExposedPortOpts {
+    /// Port protocol to unexpose
+    #[builder(setter(into, strip_option))]
+    pub protocol: Option<NetworkProtocol>,
+}
 
 impl Container {
-    /// Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+    /// Initializes this container from a Dockerfile build.
     ///
     /// # Arguments
     ///
@@ -168,7 +200,7 @@ impl Container {
         };
     }
 
-    /// Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+    /// Initializes this container from a Dockerfile build.
     ///
     /// # Arguments
     ///
@@ -196,11 +228,16 @@ impl Container {
     }
     /// Retrieves default arguments for future commands.
     pub async fn default_args(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("defaultArgs");
+        let mut query = self.selection.select("defaultArgs");
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Retrieves a directory at the given path. Mounts are included.
+    /// Retrieves a directory at the given path.
+    /// Mounts are included.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the directory to retrieve (e.g., "./src").
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
 
@@ -212,13 +249,49 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
+    /// Retrieves an endpoint that clients can use to reach this container.
+    /// If no port is specified, the first exposed port is used. If none exist an error is returned.
+    /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn endpoint(&self) -> eyre::Result<String> {
+        let mut query = self.selection.select("endpoint");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
+
+    /// Retrieves an endpoint that clients can use to reach this container.
+    /// If no port is specified, the first exposed port is used. If none exist an error is returned.
+    /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn endpoint_opts<'a>(&self, opts: ContainerEndpointOpts<'a>) -> eyre::Result<String> {
+        let mut query = self.selection.select("endpoint");
+
+        if let Some(port) = opts.port {
+            query = query.arg("port", port);
+        }
+        if let Some(scheme) = opts.scheme {
+            query = query.arg("scheme", scheme);
+        }
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
     /// Retrieves entrypoint to be prepended to the arguments of all commands.
     pub async fn entrypoint(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("entrypoint");
+        let mut query = self.selection.select("entrypoint");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Retrieves the value of the specified environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable to retrieve (e.g., "PATH").
     pub async fn env_variable(&self, name: impl Into<String>) -> eyre::Result<String> {
         let mut query = self.selection.select("envVariable");
 
@@ -228,7 +301,7 @@ impl Container {
     }
     /// Retrieves the list of environment variables passed to commands.
     pub fn env_variables(&self) -> Vec<EnvVariable> {
-        let query = self.selection.select("envVariables");
+        let mut query = self.selection.select("envVariables");
 
         return vec![EnvVariable {
             proc: self.proc.clone(),
@@ -242,7 +315,7 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn exec(&self) -> Container {
-        let query = self.selection.select("exec");
+        let mut query = self.selection.select("exec");
 
         return Container {
             proc: self.proc.clone(),
@@ -287,16 +360,17 @@ impl Container {
     /// Exit code of the last executed command. Zero means success.
     /// Null if no command has been executed.
     pub async fn exit_code(&self) -> eyre::Result<isize> {
-        let query = self.selection.select("exitCode");
+        let mut query = self.selection.select("exitCode");
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+    /// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
     /// Return true on success.
+    /// It can also publishes platform variants.
     ///
     /// # Arguments
     ///
-    /// * `path` - Host's destination path.
+    /// * `path` - Host's destination path (e.g., "./tarball").
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
@@ -307,12 +381,13 @@ impl Container {
         query.execute(&graphql_client(&self.conn)).await
     }
 
-    /// Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+    /// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
     /// Return true on success.
+    /// It can also publishes platform variants.
     ///
     /// # Arguments
     ///
-    /// * `path` - Host's destination path.
+    /// * `path` - Host's destination path (e.g., "./tarball").
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export_opts(
@@ -329,7 +404,22 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Retrieves a file at the given path. Mounts are included.
+    /// Retrieves the list of exposed ports
+    pub fn exposed_ports(&self) -> Vec<Port> {
+        let mut query = self.selection.select("exposedPorts");
+
+        return vec![Port {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        }];
+    }
+    /// Retrieves a file at the given path.
+    /// Mounts are included.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path of the file to retrieve (e.g., "./README.md").
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
 
@@ -341,12 +431,13 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    /// Initializes this container from the base image published at the given address.
+    /// Initializes this container from a pulled base image.
     ///
     /// # Arguments
     ///
     /// * `address` - Image's address from its registry.
-    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    ///
+    /// Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
     pub fn from(&self, address: impl Into<String>) -> Container {
         let mut query = self.selection.select("from");
 
@@ -360,7 +451,7 @@ impl Container {
     }
     /// Retrieves this container's root filesystem. Mounts are not included.
     pub fn fs(&self) -> Directory {
-        let query = self.selection.select("fs");
+        let mut query = self.selection.select("fs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -368,9 +459,21 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
+    /// Retrieves a hostname which can be used by clients to reach this container.
+    pub async fn hostname(&self) -> eyre::Result<String> {
+        let mut query = self.selection.select("hostname");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
     /// A unique identifier for this container.
     pub async fn id(&self) -> eyre::Result<ContainerId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
+    /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+    pub async fn image_ref(&self) -> eyre::Result<String> {
+        let mut query = self.selection.select("imageRef");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -384,7 +487,7 @@ impl Container {
     }
     /// Retrieves the list of labels passed to container.
     pub fn labels(&self) -> Vec<Label> {
-        let query = self.selection.select("labels");
+        let mut query = self.selection.select("labels");
 
         return vec![Label {
             proc: self.proc.clone(),
@@ -394,7 +497,7 @@ impl Container {
     }
     /// Retrieves the list of paths where a directory is mounted.
     pub async fn mounts(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("mounts");
+        let mut query = self.selection.select("mounts");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -440,16 +543,19 @@ impl Container {
     }
     /// The platform this container executes and publishes as.
     pub async fn platform(&self) -> eyre::Result<Platform> {
-        let query = self.selection.select("platform");
+        let mut query = self.selection.select("platform");
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+    /// Publishes this container as a new image to the specified address.
+    /// Publish returns a fully qualified ref.
+    /// It can also publish platform variants.
     ///
     /// # Arguments
     ///
     /// * `address` - Registry's address to publish the image to.
-    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    ///
+    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn publish(&self, address: impl Into<String>) -> eyre::Result<String> {
         let mut query = self.selection.select("publish");
@@ -459,12 +565,15 @@ impl Container {
         query.execute(&graphql_client(&self.conn)).await
     }
 
-    /// Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+    /// Publishes this container as a new image to the specified address.
+    /// Publish returns a fully qualified ref.
+    /// It can also publish platform variants.
     ///
     /// # Arguments
     ///
     /// * `address` - Registry's address to publish the image to.
-    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+    ///
+    /// Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn publish_opts(
         &self,
@@ -482,7 +591,7 @@ impl Container {
     }
     /// Retrieves this container's root filesystem. Mounts are not included.
     pub fn rootfs(&self) -> Directory {
-        let query = self.selection.select("rootfs");
+        let mut query = self.selection.select("rootfs");
 
         return Directory {
             proc: self.proc.clone(),
@@ -493,20 +602,20 @@ impl Container {
     /// The error stream of the last executed command.
     /// Null if no command has been executed.
     pub async fn stderr(&self) -> eyre::Result<String> {
-        let query = self.selection.select("stderr");
+        let mut query = self.selection.select("stderr");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// The output stream of the last executed command.
     /// Null if no command has been executed.
     pub async fn stdout(&self) -> eyre::Result<String> {
-        let query = self.selection.select("stdout");
+        let mut query = self.selection.select("stdout");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Retrieves the user to be set for all commands.
     pub async fn user(&self) -> eyre::Result<String> {
-        let query = self.selection.select("user");
+        let mut query = self.selection.select("user");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -516,7 +625,7 @@ impl Container {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_default_args(&self) -> Container {
-        let query = self.selection.select("withDefaultArgs");
+        let mut query = self.selection.select("withDefaultArgs");
 
         return Container {
             proc: self.proc.clone(),
@@ -547,6 +656,8 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written directory (e.g., "/tmp/directory").
+    /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory(&self, path: impl Into<String>, directory: DirectoryId) -> Container {
         let mut query = self.selection.select("withDirectory");
@@ -565,6 +676,8 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written directory (e.g., "/tmp/directory").
+    /// * `directory` - Identifier of the directory to write
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory_opts<'a>(
         &self,
@@ -590,6 +703,10 @@ impl Container {
         };
     }
     /// Retrieves this container but with a different command entrypoint.
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - Entrypoint to use for future executions (e.g., ["go", "run"]).
     pub fn with_entrypoint(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withEntrypoint");
 
@@ -605,6 +722,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus the given environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable (e.g., "HOST").
+    /// * `value` - The value of the environment variable. (e.g., "localhost").
     pub fn with_env_variable(
         &self,
         name: impl Into<String>,
@@ -625,7 +747,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `args` - Command to run instead of the container's default command.
+    /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exec(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withExec");
@@ -646,7 +768,7 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `args` - Command to run instead of the container's default command.
+    /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exec_opts<'a>(
         &self,
@@ -681,6 +803,57 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
+    /// Expose a network port.
+    /// Exposed ports serve two purposes:
+    /// - For health checks and introspection, when running services
+    /// - For setting the EXPOSE OCI field when publishing the container
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port number to expose
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_exposed_port(&self, port: isize) -> Container {
+        let mut query = self.selection.select("withExposedPort");
+
+        query = query.arg("port", port);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
+
+    /// Expose a network port.
+    /// Exposed ports serve two purposes:
+    /// - For health checks and introspection, when running services
+    /// - For setting the EXPOSE OCI field when publishing the container
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port number to expose
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_exposed_port_opts<'a>(
+        &self,
+        port: isize,
+        opts: ContainerWithExposedPortOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withExposedPort");
+
+        query = query.arg("port", port);
+        if let Some(protocol) = opts.protocol {
+            query = query.arg("protocol", protocol);
+        }
+        if let Some(description) = opts.description {
+            query = query.arg("description", description);
+        }
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
     /// Initializes this container from this DirectoryID.
     pub fn with_fs(&self, id: DirectoryId) -> Container {
         let mut query = self.selection.select("withFS");
@@ -697,6 +870,8 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
+    /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_file(&self, path: impl Into<String>, source: FileId) -> Container {
         let mut query = self.selection.select("withFile");
@@ -715,6 +890,8 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
+    /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_file_opts(
         &self,
@@ -737,6 +914,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus the given label.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the label (e.g., "org.opencontainers.artifact.created").
+    /// * `value` - The value of the label (e.g., "2023-01-01T00:00:00Z").
     pub fn with_label(&self, name: impl Into<String>, value: impl Into<String>) -> Container {
         let mut query = self.selection.select("withLabel");
 
@@ -753,8 +935,8 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to mount the cache volume at.
-    /// * `cache` - ID of the cache to mount.
+    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_cache(&self, path: impl Into<String>, cache: CacheId) -> Container {
         let mut query = self.selection.select("withMountedCache");
@@ -773,8 +955,8 @@ impl Container {
     ///
     /// # Arguments
     ///
-    /// * `path` - Path to mount the cache volume at.
-    /// * `cache` - ID of the cache to mount.
+    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
+    /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_cache_opts(
         &self,
@@ -800,6 +982,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus a directory mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
+    /// * `source` - Identifier of the mounted directory.
     pub fn with_mounted_directory(
         &self,
         path: impl Into<String>,
@@ -817,6 +1004,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus a file mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
+    /// * `source` - Identifier of the mounted file.
     pub fn with_mounted_file(&self, path: impl Into<String>, source: FileId) -> Container {
         let mut query = self.selection.select("withMountedFile");
 
@@ -830,6 +1022,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus a secret mounted into a file at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
+    /// * `source` - Identifier of the secret to mount.
     pub fn with_mounted_secret(&self, path: impl Into<String>, source: SecretId) -> Container {
         let mut query = self.selection.select("withMountedSecret");
 
@@ -843,6 +1040,10 @@ impl Container {
         };
     }
     /// Retrieves this container plus a temporary directory mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the temporary directory (e.g., "/tmp/temp_dir").
     pub fn with_mounted_temp(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withMountedTemp");
 
@@ -858,6 +1059,7 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withNewFile");
@@ -875,6 +1077,7 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written file (e.g., "/tmp/file.txt").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file_opts<'a>(
         &self,
@@ -936,6 +1139,11 @@ impl Container {
         };
     }
     /// Retrieves this container plus an env variable containing the given secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the secret variable (e.g., "API_SECRET").
+    /// * `secret` - The identifier of the secret value.
     pub fn with_secret_variable(&self, name: impl Into<String>, secret: SecretId) -> Container {
         let mut query = self.selection.select("withSecretVariable");
 
@@ -948,7 +1156,36 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
+    /// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+    /// The service will be reachable from the container via the provided hostname alias.
+    /// The service dependency will also convey to any files or directories produced by the container.
+    ///
+    /// # Arguments
+    ///
+    /// * `alias` - A name that can be used to reach the service from the container
+    /// * `service` - Identifier of the service container
+    pub fn with_service_binding(
+        &self,
+        alias: impl Into<String>,
+        service: ContainerId,
+    ) -> Container {
+        let mut query = self.selection.select("withServiceBinding");
+
+        query = query.arg("alias", alias.into());
+        query = query.arg("service", service);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
     /// Retrieves this container plus a socket forwarded to the given Unix socket path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
+    /// * `source` - Identifier of the socket to forward.
     pub fn with_unix_socket(&self, path: impl Into<String>, source: SocketId) -> Container {
         let mut query = self.selection.select("withUnixSocket");
 
@@ -961,7 +1198,11 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
-    /// Retrieves this containers with a different command user.
+    /// Retrieves this container with a different command user.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The user to set (e.g., "root").
     pub fn with_user(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withUser");
 
@@ -974,6 +1215,10 @@ impl Container {
         };
     }
     /// Retrieves this container with a different working directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to set as the working directory (e.g., "/app").
     pub fn with_workdir(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withWorkdir");
 
@@ -986,6 +1231,10 @@ impl Container {
         };
     }
     /// Retrieves this container minus the given environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable (e.g., "HOST").
     pub fn without_env_variable(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutEnvVariable");
 
@@ -997,7 +1246,53 @@ impl Container {
             conn: self.conn.clone(),
         };
     }
+    /// Unexpose a previously exposed port.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port number to unexpose
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_exposed_port(&self, port: isize) -> Container {
+        let mut query = self.selection.select("withoutExposedPort");
+
+        query = query.arg("port", port);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
+
+    /// Unexpose a previously exposed port.
+    ///
+    /// # Arguments
+    ///
+    /// * `port` - Port number to unexpose
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn without_exposed_port_opts(
+        &self,
+        port: isize,
+        opts: ContainerWithoutExposedPortOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withoutExposedPort");
+
+        query = query.arg("port", port);
+        if let Some(protocol) = opts.protocol {
+            query = query.arg("protocol", protocol);
+        }
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
     /// Retrieves this container minus the given environment label.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the label to remove (e.g., "org.opencontainers.artifact.created").
     pub fn without_label(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutLabel");
 
@@ -1010,6 +1305,10 @@ impl Container {
         };
     }
     /// Retrieves this container after unmounting everything at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     pub fn without_mount(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutMount");
 
@@ -1039,6 +1338,10 @@ impl Container {
         };
     }
     /// Retrieves this container with a previously added Unix socket removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the socket to remove (e.g., "/tmp/socket").
     pub fn without_unix_socket(&self, path: impl Into<String>) -> Container {
         let mut query = self.selection.select("withoutUnixSocket");
 
@@ -1052,7 +1355,7 @@ impl Container {
     }
     /// Retrieves the working directory for all commands.
     pub async fn workdir(&self) -> eyre::Result<String> {
-        let query = self.selection.select("workdir");
+        let mut query = self.selection.select("workdir");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1066,14 +1369,14 @@ pub struct Directory {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDockerBuildOpts<'a> {
-    /// Path to the Dockerfile to use.
-    /// Defaults to './Dockerfile'.
+    /// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+    /// Defaults: './Dockerfile'.
     #[builder(setter(into, strip_option))]
     pub dockerfile: Option<&'a str>,
     /// The platform to build.
     #[builder(setter(into, strip_option))]
     pub platform: Option<Platform>,
-    /// Additional build arguments.
+    /// Build arguments to use in the build.
     #[builder(setter(into, strip_option))]
     pub build_args: Option<Vec<BuildArg>>,
     /// Target build stage to build.
@@ -1082,6 +1385,7 @@ pub struct DirectoryDockerBuildOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryEntriesOpts<'a> {
+    /// Location of the directory to look at (e.g., "/src").
     #[builder(setter(into, strip_option))]
     pub path: Option<&'a str>,
 }
@@ -1092,33 +1396,41 @@ pub struct DirectoryPipelineOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
-    /// Exclude artifacts that match the given pattern.
-    /// (e.g. ["node_modules/", ".git*"]).
+    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option))]
     pub exclude: Option<Vec<&'a str>>,
-    /// Include only artifacts that match the given pattern.
-    /// (e.g. ["app/", "package.*"]).
+    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option))]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFileOpts {
+    /// Permission given to the copied file (e.g., 0600).
+    /// Default: 0644.
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewDirectoryOpts {
+    /// Permission granted to the created directory (e.g., 0777).
+    /// Default: 0755.
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewFileOpts {
+    /// Permission given to the copied file (e.g., 0600).
+    /// Default: 0644.
     #[builder(setter(into, strip_option))]
     pub permissions: Option<isize>,
 }
 
 impl Directory {
     /// Gets the difference between this directory and an another directory.
+    ///
+    /// # Arguments
+    ///
+    /// * `other` - Identifier of the directory to compare.
     pub fn diff(&self, other: DirectoryId) -> Directory {
         let mut query = self.selection.select("diff");
 
@@ -1131,6 +1443,10 @@ impl Directory {
         };
     }
     /// Retrieves a directory at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to retrieve (e.g., "/src").
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
 
@@ -1148,7 +1464,7 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn docker_build(&self) -> Container {
-        let query = self.selection.select("dockerBuild");
+        let mut query = self.selection.select("dockerBuild");
 
         return Container {
             proc: self.proc.clone(),
@@ -1190,7 +1506,7 @@ impl Directory {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn entries(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("entries");
+        let mut query = self.selection.select("entries");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1213,6 +1529,10 @@ impl Directory {
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Writes the contents of the directory to a path on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the copied directory (e.g., "logs/").
     pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
@@ -1221,6 +1541,10 @@ impl Directory {
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Retrieves a file at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to retrieve (e.g., "README.md").
     pub fn file(&self, path: impl Into<String>) -> File {
         let mut query = self.selection.select("file");
 
@@ -1234,7 +1558,7 @@ impl Directory {
     }
     /// The content-addressed identifier of the directory.
     pub async fn id(&self) -> eyre::Result<DirectoryId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1294,6 +1618,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written directory (e.g., "/src/").
+    /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory(&self, path: impl Into<String>, directory: DirectoryId) -> Directory {
         let mut query = self.selection.select("withDirectory");
@@ -1312,6 +1638,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written directory (e.g., "/src/").
+    /// * `directory` - Identifier of the directory to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_directory_opts<'a>(
         &self,
@@ -1340,6 +1668,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the copied file (e.g., "/file.txt").
+    /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_file(&self, path: impl Into<String>, source: FileId) -> Directory {
         let mut query = self.selection.select("withFile");
@@ -1358,6 +1688,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the copied file (e.g., "/file.txt").
+    /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_file_opts(
         &self,
@@ -1383,6 +1715,7 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the directory created (e.g., "/logs").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withNewDirectory");
@@ -1400,6 +1733,7 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the directory created (e.g., "/logs").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_directory_opts(
         &self,
@@ -1423,6 +1757,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written file (e.g., "/file.txt").
+    /// * `contents` - Content of the written file (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file(&self, path: impl Into<String>, contents: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withNewFile");
@@ -1441,6 +1777,8 @@ impl Directory {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the written file (e.g., "/file.txt").
+    /// * `contents` - Content of the written file (e.g., "Hello world!").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_new_file_opts(
         &self,
@@ -1462,7 +1800,13 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    /// Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
+    /// Retrieves this directory with all file/dir timestamps set to the given time.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - Timestamp to set dir/files in.
+    ///
+    /// Formatted in seconds following Unix epoch (e.g., 1672531199).
     pub fn with_timestamps(&self, timestamp: isize) -> Directory {
         let mut query = self.selection.select("withTimestamps");
 
@@ -1475,6 +1819,10 @@ impl Directory {
         };
     }
     /// Retrieves this directory with the directory at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the directory to remove (e.g., ".github/").
     pub fn without_directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutDirectory");
 
@@ -1487,6 +1835,10 @@ impl Directory {
         };
     }
     /// Retrieves this directory with the file at the given path removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to remove (e.g., "/file.txt").
     pub fn without_file(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("withoutFile");
 
@@ -1509,13 +1861,13 @@ pub struct EnvVariable {
 impl EnvVariable {
     /// The environment variable name.
     pub async fn name(&self) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// The environment variable value.
     pub async fn value(&self) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1530,11 +1882,15 @@ pub struct File {
 impl File {
     /// Retrieves the contents of the file.
     pub async fn contents(&self) -> eyre::Result<String> {
-        let query = self.selection.select("contents");
+        let mut query = self.selection.select("contents");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Writes the file to a file path on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the written directory (e.g., "output.txt").
     pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
         let mut query = self.selection.select("export");
 
@@ -1544,13 +1900,13 @@ impl File {
     }
     /// Retrieves the content-addressed identifier of the file.
     pub async fn id(&self) -> eyre::Result<FileId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Retrieves a secret referencing the contents of this file.
     pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
+        let mut query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -1560,11 +1916,17 @@ impl File {
     }
     /// Gets the size of the file, in bytes.
     pub async fn size(&self) -> eyre::Result<isize> {
-        let query = self.selection.select("size");
+        let mut query = self.selection.select("size");
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
+    /// Retrieves this file with its created/modified timestamps set to the given time.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestamp` - Timestamp to set dir/files in.
+    ///
+    /// Formatted in seconds following Unix epoch (e.g., 1672531199).
     pub fn with_timestamps(&self, timestamp: isize) -> File {
         let mut query = self.selection.select("withTimestamps");
 
@@ -1595,7 +1957,7 @@ pub struct GitRefTreeOpts<'a> {
 impl GitRef {
     /// The digest of the current value of this ref.
     pub async fn digest(&self) -> eyre::Result<String> {
-        let query = self.selection.select("digest");
+        let mut query = self.selection.select("digest");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1605,7 +1967,7 @@ impl GitRef {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn tree(&self) -> Directory {
-        let query = self.selection.select("tree");
+        let mut query = self.selection.select("tree");
 
         return Directory {
             proc: self.proc.clone(),
@@ -1645,6 +2007,10 @@ pub struct GitRepository {
 
 impl GitRepository {
     /// Returns details on one branch.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Branch's name (e.g., "main").
     pub fn branch(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("branch");
 
@@ -1658,11 +2024,15 @@ impl GitRepository {
     }
     /// Lists of branches on the repository.
     pub async fn branches(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("branches");
+        let mut query = self.selection.select("branches");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// Returns details on one commit.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
     pub fn commit(&self, id: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("commit");
 
@@ -1675,6 +2045,10 @@ impl GitRepository {
         };
     }
     /// Returns details on one tag.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Tag's name (e.g., "v0.3.9").
     pub fn tag(&self, name: impl Into<String>) -> GitRef {
         let mut query = self.selection.select("tag");
 
@@ -1688,7 +2062,7 @@ impl GitRepository {
     }
     /// Lists of tags on the repository.
     pub async fn tags(&self) -> eyre::Result<Vec<String>> {
-        let query = self.selection.select("tags");
+        let mut query = self.selection.select("tags");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1702,15 +2076,19 @@ pub struct Host {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
+    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option))]
     pub exclude: Option<Vec<&'a str>>,
+    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option))]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostWorkdirOpts<'a> {
+    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option))]
     pub exclude: Option<Vec<&'a str>>,
+    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     #[builder(setter(into, strip_option))]
     pub include: Option<Vec<&'a str>>,
 }
@@ -1720,6 +2098,7 @@ impl Host {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self, path: impl Into<String>) -> Directory {
         let mut query = self.selection.select("directory");
@@ -1737,6 +2116,7 @@ impl Host {
     ///
     /// # Arguments
     ///
+    /// * `path` - Location of the directory to access (e.g., ".").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory_opts<'a>(
         &self,
@@ -1760,6 +2140,10 @@ impl Host {
         };
     }
     /// Accesses an environment variable on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the environment variable (e.g., "PATH").
     pub fn env_variable(&self, name: impl Into<String>) -> HostVariable {
         let mut query = self.selection.select("envVariable");
 
@@ -1772,6 +2156,10 @@ impl Host {
         };
     }
     /// Accesses a Unix socket on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the Unix socket (e.g., "/var/run/docker.sock").
     pub fn unix_socket(&self, path: impl Into<String>) -> Socket {
         let mut query = self.selection.select("unixSocket");
 
@@ -1789,7 +2177,7 @@ impl Host {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn workdir(&self) -> Directory {
-        let query = self.selection.select("workdir");
+        let mut query = self.selection.select("workdir");
 
         return Directory {
             proc: self.proc.clone(),
@@ -1830,7 +2218,7 @@ pub struct HostVariable {
 impl HostVariable {
     /// A secret referencing the value of this variable.
     pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
+        let mut query = self.selection.select("secret");
 
         return Secret {
             proc: self.proc.clone(),
@@ -1840,7 +2228,7 @@ impl HostVariable {
     }
     /// The value of this variable.
     pub async fn value(&self) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1855,13 +2243,40 @@ pub struct Label {
 impl Label {
     /// The label name.
     pub async fn name(&self) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// The label value.
     pub async fn value(&self) -> eyre::Result<String> {
-        let query = self.selection.select("value");
+        let mut query = self.selection.select("value");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
+}
+#[derive(Debug, Clone)]
+pub struct Port {
+    pub proc: Arc<Child>,
+    pub selection: Selection,
+    pub conn: ConnectParams,
+}
+
+impl Port {
+    /// The port description.
+    pub async fn description(&self) -> eyre::Result<String> {
+        let mut query = self.selection.select("description");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
+    /// The port number.
+    pub async fn port(&self) -> eyre::Result<isize> {
+        let mut query = self.selection.select("port");
+
+        query.execute(&graphql_client(&self.conn)).await
+    }
+    /// The transport layer network protocol.
+    pub async fn protocol(&self) -> eyre::Result<NetworkProtocol> {
+        let mut query = self.selection.select("protocol");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1876,7 +2291,7 @@ pub struct Project {
 impl Project {
     /// extensions in this project
     pub fn extensions(&self) -> Vec<Project> {
-        let query = self.selection.select("extensions");
+        let mut query = self.selection.select("extensions");
 
         return vec![Project {
             proc: self.proc.clone(),
@@ -1886,7 +2301,7 @@ impl Project {
     }
     /// Code files generated by the SDKs in the project
     pub fn generated_code(&self) -> Directory {
-        let query = self.selection.select("generatedCode");
+        let mut query = self.selection.select("generatedCode");
 
         return Directory {
             proc: self.proc.clone(),
@@ -1896,25 +2311,25 @@ impl Project {
     }
     /// install the project's schema
     pub async fn install(&self) -> eyre::Result<bool> {
-        let query = self.selection.select("install");
+        let mut query = self.selection.select("install");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// name of the project
     pub async fn name(&self) -> eyre::Result<String> {
-        let query = self.selection.select("name");
+        let mut query = self.selection.select("name");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// schema provided by the project
     pub async fn schema(&self) -> eyre::Result<String> {
-        let query = self.selection.select("schema");
+        let mut query = self.selection.select("schema");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// sdk used to generate code for and/or execute this project
     pub async fn sdk(&self) -> eyre::Result<String> {
-        let query = self.selection.select("sdk");
+        let mut query = self.selection.select("sdk");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -1940,8 +2355,18 @@ pub struct QueryDirectoryOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts {
+    /// Set to true to keep .git directory.
     #[builder(setter(into, strip_option))]
     pub keep_git_dir: Option<bool>,
+    /// A service which must be started before the repo is fetched.
+    #[builder(setter(into, strip_option))]
+    pub experimental_service_host: Option<ContainerId>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryHttpOpts {
+    /// A service which must be started before the URL is fetched.
+    #[builder(setter(into, strip_option))]
+    pub experimental_service_host: Option<ContainerId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
@@ -1959,7 +2384,7 @@ impl Query {
     ///
     /// # Arguments
     ///
-    /// * `key` - A string identifier to target this cache volume (e.g. "myapp-cache").
+    /// * `key` - A string identifier to target this cache volume (e.g., "modules-cache").
     pub fn cache_volume(&self, key: impl Into<String>) -> CacheVolume {
         let mut query = self.selection.select("cacheVolume");
 
@@ -1973,13 +2398,14 @@ impl Query {
     }
     /// Loads a container from ID.
     /// Null ID returns an empty container (scratch).
-    /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+    /// Optional platform argument initializes new containers to execute and publish as that platform.
+    /// Platform defaults to that of the builder's host.
     ///
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn container(&self) -> Container {
-        let query = self.selection.select("container");
+        let mut query = self.selection.select("container");
 
         return Container {
             proc: self.proc.clone(),
@@ -1990,7 +2416,8 @@ impl Query {
 
     /// Loads a container from ID.
     /// Null ID returns an empty container (scratch).
-    /// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+    /// Optional platform argument initializes new containers to execute and publish as that platform.
+    /// Platform defaults to that of the builder's host.
     ///
     /// # Arguments
     ///
@@ -2013,7 +2440,7 @@ impl Query {
     }
     /// The default platform of the builder.
     pub async fn default_platform(&self) -> eyre::Result<Platform> {
-        let query = self.selection.select("defaultPlatform");
+        let mut query = self.selection.select("defaultPlatform");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2023,7 +2450,7 @@ impl Query {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn directory(&self) -> Directory {
-        let query = self.selection.select("directory");
+        let mut query = self.selection.select("directory");
 
         return Directory {
             proc: self.proc.clone(),
@@ -2066,6 +2493,9 @@ impl Query {
     ///
     /// # Arguments
     ///
+    /// * `url` - Url of the git repository.
+    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git(&self, url: impl Into<String>) -> GitRepository {
         let mut query = self.selection.select("git");
@@ -2083,6 +2513,9 @@ impl Query {
     ///
     /// # Arguments
     ///
+    /// * `url` - Url of the git repository.
+    /// Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+    /// Suffix ".git" is optional.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn git_opts(&self, url: impl Into<String>, opts: QueryGitOpts) -> GitRepository {
         let mut query = self.selection.select("git");
@@ -2090,6 +2523,9 @@ impl Query {
         query = query.arg("url", url.into());
         if let Some(keep_git_dir) = opts.keep_git_dir {
             query = query.arg("keepGitDir", keep_git_dir);
+        }
+        if let Some(experimental_service_host) = opts.experimental_service_host {
+            query = query.arg("experimentalServiceHost", experimental_service_host);
         }
 
         return GitRepository {
@@ -2100,7 +2536,7 @@ impl Query {
     }
     /// Queries the host environment.
     pub fn host(&self) -> Host {
-        let query = self.selection.select("host");
+        let mut query = self.selection.select("host");
 
         return Host {
             proc: self.proc.clone(),
@@ -2109,10 +2545,36 @@ impl Query {
         };
     }
     /// Returns a file containing an http remote url content.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn http(&self, url: impl Into<String>) -> File {
         let mut query = self.selection.select("http");
 
         query = query.arg("url", url.into());
+
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            conn: self.conn.clone(),
+        };
+    }
+
+    /// Returns a file containing an http remote url content.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - HTTP url to get the content from (e.g., "https://docs.dagger.io").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn http_opts(&self, url: impl Into<String>, opts: QueryHttpOpts) -> File {
+        let mut query = self.selection.select("http");
+
+        query = query.arg("url", url.into());
+        if let Some(experimental_service_host) = opts.experimental_service_host {
+            query = query.arg("experimentalServiceHost", experimental_service_host);
+        }
 
         return File {
             proc: self.proc.clone(),
@@ -2186,7 +2648,7 @@ impl Query {
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn socket(&self) -> Socket {
-        let query = self.selection.select("socket");
+        let mut query = self.selection.select("socket");
 
         return Socket {
             proc: self.proc.clone(),
@@ -2224,13 +2686,13 @@ pub struct Secret {
 impl Secret {
     /// The identifier for this secret.
     pub async fn id(&self) -> eyre::Result<SecretId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// The value of this secret.
     pub async fn plaintext(&self) -> eyre::Result<String> {
-        let query = self.selection.select("plaintext");
+        let mut query = self.selection.select("plaintext");
 
         query.execute(&graphql_client(&self.conn)).await
     }
@@ -2245,14 +2707,19 @@ pub struct Socket {
 impl Socket {
     /// The content-addressed identifier of the socket.
     pub async fn id(&self) -> eyre::Result<SocketId> {
-        let query = self.selection.select("id");
+        let mut query = self.selection.select("id");
 
         query.execute(&graphql_client(&self.conn)).await
     }
 }
 #[derive(Serialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
+    PRIVATE,
     LOCKED,
     SHARED,
-    PRIVATE,
+}
+#[derive(Serialize, Clone, PartialEq, Debug)]
+pub enum NetworkProtocol {
+    TCP,
+    UDP,
 }
