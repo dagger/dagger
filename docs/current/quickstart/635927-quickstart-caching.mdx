@@ -9,6 +9,16 @@ title: "Use caching"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from "@site/src/components/molecules/quickstartDoc.js"
+import Embed from "@site/src/components/atoms/embed.js"
+
+export const ids = {
+    Go: "faz9rMJNQca",
+    Node: "2DhNPJQ6pUU",
+    Python: "ZxqkCRsSlGU"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Use caching
 
@@ -22,10 +32,10 @@ This step is, therefore, a good candidate for a cache. Let's update the pipeline
 The `npm install` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/faz9rMJNQca"></iframe>
+<Embed id="faz9rMJNQca" />
 
 This revised pipeline now uses a cache for the application dependencies.
 
@@ -40,9 +50,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/2DhNPJQ6pUU"></iframe>
+<Embed id="2DhNPJQ6pUU" />
 
 This revised pipeline now uses a cache for the application dependencies.
 
@@ -59,7 +69,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/ZxqkCRsSlGU"></iframe>
+<Embed id="ZxqkCRsSlGU" />
 
 This revised pipeline now uses a cache for the application dependencies.
 
@@ -79,3 +89,5 @@ python ci/main.py
 This revised pipeline produces the same result as before.
 
 Run the pipeline a few times. Notice that on the first run, the application dependencies are downloaded as usual. However, since the dependencies are cached, subsequent pipeline runs will skip the download operation and be significantly faster (assuming that there are no other changes to the application code).
+
+</QuickstartDoc>

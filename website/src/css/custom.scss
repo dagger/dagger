@@ -729,9 +729,23 @@ img[alt="github-contribute"] {
   }
 }
 
-.embed {
 
-	width: 100%;
-	height: 800px;
+.docs-doc-id-current\/quickstart\/quickstart-hello,
+.docs-doc-id-current\/quickstart\/quickstart-test,
+.docs-doc-id-current\/quickstart\/quickstart-build,
+.docs-doc-id-current\/quickstart\/quickstart-publish,
+.docs-doc-id-current\/quickstart\/quickstart-build-multi,
+.docs-doc-id-current\/quickstart\/quickstart-caching,
+.docs-doc-id-current\/quickstart\/quickstart-build-dockerfile {
+  main {
+    padding-right: 0px !important;
+  }
+  main .container {
+    margin: 0;
+    max-width: unset !important;
+  }
 
+  .container > .row .col {
+    padding-right: 20px !important;
+  }
 }
