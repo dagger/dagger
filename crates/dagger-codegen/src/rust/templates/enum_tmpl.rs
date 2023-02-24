@@ -26,9 +26,10 @@ fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
 
 pub fn render_enum(t: &FullType) -> eyre::Result<rust::Tokens> {
     let serialize = rust::import("serde", "Serialize");
+    let deserialize = rust::import("serde", "Deserialize");
 
     Ok(quote! {
-        #[derive($serialize, Clone, PartialEq, Debug)]
+        #[derive($serialize, $deserialize, Clone, PartialEq, Debug)]
         pub enum $(t.name.as_ref()) {
             $(render_enum_values(t))
         }
