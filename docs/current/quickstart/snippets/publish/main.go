@@ -50,5 +50,5 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Printf("Published image to :%s\n", ref)
+	fmt.Printf("Published image to: %s\n", ref)
 }
