@@ -144,7 +144,7 @@ def generate(  # noqa: C901
     # used to replace custom scalars by objects in inputs
     for name, t in schema.type_map.items():
         if is_wrapping_type(t):
-            t = t.of_type
+            t = t.of_type  # noqa: PLW2901
         if not is_object_type(t):
             continue
         fields: dict[str, GraphQLField] = t.fields
