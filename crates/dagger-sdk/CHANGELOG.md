@@ -6,7 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.15 (2023-02-24)
+
+### New Features
+
+ - <csr-id-3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f/> update to dagger-v0.3.13
+
+### Bug Fixes
+
+ - <csr-id-e578b0e371e13bc30ada793b7cd6ebe75ba83a07/> set deserialize on enums as well
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 2 days passed between releases.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - set deserialize on enums as well ([`e578b0e`](https://github.com/kjuulh/dagger-rs/commit/e578b0e371e13bc30ada793b7cd6ebe75ba83a07))
+    - update to dagger-v0.3.13 ([`3e8ca8d`](https://github.com/kjuulh/dagger-rs/commit/3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f))
+</details>
+
 ## v0.2.14 (2023-02-22)
+
+<csr-id-e331ca003546f4ebe00f33b65c3b45c6b0586514/>
 
 ### Chore
 
@@ -16,7 +48,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -27,6 +59,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.14 ([`88b055c`](https://github.com/kjuulh/dagger-rs/commit/88b055cb47d3d474e2c37d8fa8259df5faad9da5))
     - fix whitespace ([`e331ca0`](https://github.com/kjuulh/dagger-rs/commit/e331ca003546f4ebe00f33b65c3b45c6b0586514))
 </details>
 

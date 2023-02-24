@@ -5,7 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.7 (2023-02-24)
+
+### New Features
+
+ - <csr-id-3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f/> update to dagger-v0.3.13
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 4 days passed between releases.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - update to dagger-v0.3.13 ([`3e8ca8d`](https://github.com/kjuulh/dagger-rs/commit/3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f))
+</details>
+
 ## v0.2.6 (2023-02-20)
+
+<csr-id-1f77d90c0f0ac832a181b2322350ea395612986c/>
 
 ### Chore
 
@@ -19,7 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 2 commits contributed to the release.
+ - 3 commits contributed to the release.
  - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
 
@@ -30,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.6, dagger-codegen v0.2.7, dagger-sdk v0.2.12 ([`7179f8b`](https://github.com/kjuulh/dagger-rs/commit/7179f8b598ef04e62925e39d3f55740253c01686))
     - ran clippy ([`1f77d90`](https://github.com/kjuulh/dagger-rs/commit/1f77d90c0f0ac832a181b2322350ea395612986c))
     - cli session keep session alive ([`8dfecf9`](https://github.com/kjuulh/dagger-rs/commit/8dfecf976c5537cc2c03881de2b2fd2b2508683a))
 </details>

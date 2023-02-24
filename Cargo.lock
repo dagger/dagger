@@ -260,7 +260,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-core"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "clap",
  "dirs",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "base64",
  "dagger-core",
