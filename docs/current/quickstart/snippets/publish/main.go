@@ -15,6 +15,7 @@ func main() {
 
 	// initialize Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+
 	if err != nil {
 		panic(err)
 	}
@@ -42,12 +43,12 @@ func main() {
 	}
 
 	ref, err := client.Container().
-		From("nginx").
-		WithDirectory("/usr/src/nginx", client.Host().Directory("./build")).
+		From("nginx:1.23-alpine").
+		WithDirectory("/usr/share/nginx/html", client.Host().Directory("./build")).
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Printf("Published image to :%s\n", ref)
+	fmt.Printf("Published image to: %s\n", ref)
 }
