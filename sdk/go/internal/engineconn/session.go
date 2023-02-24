@@ -18,8 +18,8 @@ import (
 
 type cliSessionConn struct {
 	*http.Client
-	childStdin io.Closer
-	childProc  *exec.Cmd
+	childCancel func()
+	childProc   *exec.Cmd
 }
 
 func (c *cliSessionConn) Host() string {
@@ -27,11 +27,17 @@ func (c *cliSessionConn) Host() string {
 }
 
 func (c *cliSessionConn) Close() error {
-	if c.childStdin != nil && c.childProc != nil {
-		return errors.Join(
-			c.childStdin.Close(),
-			c.childProc.Wait(),
-		)
+	if c.childCancel != nil && c.childProc != nil {
+		c.childCancel()
+		err := c.childProc.Wait()
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				// expected
+				return nil
+			}
+
+			return err
+		}
 	}
 	return nil
 }
@@ -46,6 +52,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}
 
 	env := os.Environ()
+
+	cmdCtx, cmdCancel := context.WithCancel(ctx)
 
 	// Workaround https://github.com/golang/go/issues/22315
 	// Basically, if any other code in this process does fork/exec, it may
@@ -64,18 +72,20 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var stderrBuf *bytes.Buffer
 	var childStdin io.WriteCloser
 	for i := 0; i < 10; i++ {
-		proc = exec.CommandContext(ctx, binPath, args...)
+		proc = exec.CommandContext(cmdCtx, binPath, args...)
 		proc.Env = env
 
 		var err error
 		stdout, err = proc.StdoutPipe()
 		if err != nil {
+			cmdCancel()
 			return nil, err
 		}
 		defer stdout.Close() // don't need it after we read the port
 
 		stderrPipe, err := proc.StderrPipe()
 		if err != nil {
+			cmdCancel()
 			return nil, err
 		}
 		if cfg.LogOutput == nil {
@@ -96,8 +106,16 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// we don't leak child processes even if this process is SIGKILL'd.
 		childStdin, err = proc.StdinPipe()
 		if err != nil {
+			cmdCancel()
 			return nil, err
 		}
+
+		// Kill the child process by closing stdin, not via SIGKILL, so it has a
+		// chance to drain logs.
+		proc.Cancel = childStdin.Close
+
+		// Set a long timeout, just in case something get wedged.
+		proc.WaitDelay = 10 * time.Second
 
 		if err := proc.Start(); err != nil {
 			if strings.Contains(err.Error(), "text file busy") {
@@ -111,11 +129,13 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 				childStdin = nil
 				continue
 			}
+			cmdCancel()
 			return nil, err
 		}
 		break
 	}
 	if proc == nil {
+		cmdCancel()
 		return nil, fmt.Errorf("failed to start dagger session")
 	}
 
@@ -143,21 +163,24 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, 300*time.Second) // really long time to account for extensions that need to build, though that path should be optimized in future
-	defer cancel()
 	select {
 	case err := <-paramCh:
 		if err != nil {
+			cmdCancel()
 			return nil, err
 		}
-	case <-ctx.Done():
-		return nil, ctx.Err()
+
+	case <-time.After(300 * time.Second):
+		// really long time to account for extensions that need to build, though
+		// that path should be optimized in future
+		cmdCancel()
+		return nil, fmt.Errorf("timed out waiting for session params")
 	}
 
 	return &cliSessionConn{
-		Client:     defaultHTTPClient(&params),
-		childStdin: childStdin,
-		childProc:  proc,
+		Client:      defaultHTTPClient(&params),
+		childCancel: cmdCancel,
+		childProc:   proc,
 	}, nil
 }
 
