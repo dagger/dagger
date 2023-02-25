@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 mod functions;
 mod generator;
 pub mod rust;

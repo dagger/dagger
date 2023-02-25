@@ -153,6 +153,7 @@ impl From<&TypeRef> for Scalar {
     }
 }
 
+#[allow(dead_code)]
 pub fn get_type_from_name<'t>(types: &'t [FullType], name: &'t str) -> Option<&'t FullType> {
     types
         .into_iter()
@@ -258,6 +259,7 @@ pub fn input_values_has_optionals(input_values: &[&InputValue]) -> bool {
         > 0
 }
 
+#[allow(dead_code)]
 pub fn input_values_is_empty(input_values: &[InputValue]) -> bool {
     input_values.len() > 0
 }

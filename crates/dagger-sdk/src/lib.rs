@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 mod client;
 mod gen;
 mod querybuilder;

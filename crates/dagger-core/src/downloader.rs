@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{copy, Read, Write},
+    io::{copy, Write},
     os::unix::prelude::PermissionsExt,
     path::PathBuf,
 };

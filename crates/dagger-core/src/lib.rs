@@ -1,3 +1,5 @@
+#![deny(warnings)]
+
 pub mod cli_session;
 pub mod config;
 pub mod connect_params;

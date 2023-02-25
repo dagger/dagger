@@ -241,6 +241,7 @@ pub struct SchemaTypes {
     pub full_type: FullType,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchemaDirectivesArgs {
@@ -257,6 +258,7 @@ pub struct SchemaDirectives {
     pub args: Option<Vec<Option<SchemaDirectivesArgs>>>,
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schema {
