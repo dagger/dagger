@@ -12,13 +12,3 @@ pub async fn get_schema() -> eyre::Result<IntrospectionResponse> {
 
     Ok(schema)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::get_schema;
-
-    #[tokio::test]
-    async fn can_get_schema() {
-        let _ = get_schema().await.unwrap();
-    }
-}

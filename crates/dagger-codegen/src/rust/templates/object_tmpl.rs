@@ -86,7 +86,7 @@ pub fn render_optional_field_args(
         }
         quote! {
             $(a.description.pipe(|d| format_struct_comment(d)))
-            #[builder(setter(into, strip_option))]
+            #[builder(setter(into, strip_option), default)]
             pub $(format_struct_name(&a.name)): Option<$(type_)>,
         }
     });

@@ -50,134 +50,134 @@ pub struct Container {
 pub struct ContainerBuildOpts<'a> {
     /// Path to the Dockerfile to use.
     /// Default: './Dockerfile'.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
     /// Additional build arguments.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub build_args: Option<Vec<BuildArg>>,
     /// Target build stage to build.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerEndpointOpts<'a> {
     /// The exposed port number for the endpoint
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub port: Option<isize>,
     /// Return a URL with the given scheme, eg. http for http://
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub scheme: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExecOpts<'a> {
     /// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Provide dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed.
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPipelineOpts<'a> {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDefaultArgsOpts<'a> {
     /// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
     /// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
     /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub redirect_stderr: Option<&'a str>,
     /// Provides dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed.
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
     /// Transport layer network protocol
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
     /// Optional port description
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts {
     /// Permission given to the copied file (e.g., 0600).
     /// Default: 0644.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts {
     /// Identifier of the directory to use as the cache volume's root.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub source: Option<DirectoryId>,
     /// Sharing mode of the cache volume.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
     /// Content of the file to write (e.g., "Hello world!").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub contents: Option<&'a str>,
     /// Permission given to the written file (e.g., 0600).
     /// Default: 0644.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutExposedPortOpts {
     /// Port protocol to unexpose
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub protocol: Option<NetworkProtocol>,
 }
 
@@ -1371,57 +1371,57 @@ pub struct Directory {
 pub struct DirectoryDockerBuildOpts<'a> {
     /// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
     /// Defaults: './Dockerfile'.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
     /// The platform to build.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
     /// Build arguments to use in the build.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub build_args: Option<Vec<BuildArg>>,
     /// Target build stage to build.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryEntriesOpts<'a> {
     /// Location of the directory to look at (e.g., "/src").
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub path: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryPipelineOpts<'a> {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithFileOpts {
     /// Permission given to the copied file (e.g., 0600).
     /// Default: 0644.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewDirectoryOpts {
     /// Permission granted to the created directory (e.g., 0777).
     /// Default: 0755.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithNewFileOpts {
     /// Permission given to the copied file (e.g., 0600).
     /// Default: 0644.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 
@@ -1948,9 +1948,9 @@ pub struct GitRef {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts<'a> {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub ssh_known_hosts: Option<&'a str>,
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub ssh_auth_socket: Option<SocketId>,
 }
 
@@ -2077,19 +2077,19 @@ pub struct Host {
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostWorkdirOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
     /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
 }
 
@@ -2343,39 +2343,39 @@ pub struct Query {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryContainerOpts {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub id: Option<ContainerId>,
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryDirectoryOpts {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub id: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts {
     /// Set to true to keep .git directory.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub keep_git_dir: Option<bool>,
     /// A service which must be started before the repo is fetched.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ContainerId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts {
     /// A service which must be started before the URL is fetched.
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ContainerId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySocketOpts {
-    #[builder(setter(into, strip_option))]
+    #[builder(setter(into, strip_option), default)]
     pub id: Option<SocketId>,
 }
 
@@ -2720,6 +2720,6 @@ pub enum CacheSharingMode {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {
-    TCP,
     UDP,
+    TCP,
 }
