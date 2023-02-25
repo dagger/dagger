@@ -87,7 +87,7 @@ func TestContainer(t *testing.T) {
 	// Ensure we can grab the container ID back and re-run the same query
 	id, err := alpine.ID(ctx)
 	require.NoError(t, err)
-	contents = c.
+	contents, err = c.
 		Container(ContainerOpts{
 			ID: id,
 		}).
