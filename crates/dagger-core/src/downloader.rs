@@ -27,6 +27,7 @@ impl Platform {
         let normalize_arch = match arch.as_str() {
             "x86_64" => "amd64",
             "aarch" => "arm64",
+            "aarch64" => "arm64",
             arch => arch,
         };
 
@@ -138,6 +139,10 @@ impl Downloader {
             if let Ok(entry) = file {
                 let path = entry.path();
                 if path != cli_bin_path {
+                    println!(
+                        "deleting client: path: {:?} vs cli_bin_path: {:?}",
+                        path, cli_bin_path
+                    );
                     std::fs::remove_file(path)?;
                 }
             }
@@ -200,8 +205,6 @@ impl Downloader {
         hasher.update(&bytes);
         let res = hasher.finalize();
 
-        println!("{}", hex::encode(&res));
-
         if archive_url.ends_with(".zip") {
             // TODO:  Nothing for now
             todo!()
@@ -219,8 +222,6 @@ impl Downloader {
         for entry in archive.entries()? {
             let mut entry = entry?;
             let path = entry.path()?;
-
-            println!("path: {:?}", path);
 
             if path.ends_with("dagger") {
                 copy(&mut entry, output)?;

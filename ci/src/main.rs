@@ -165,8 +165,21 @@ async fn select_base_image(client: Arc<Query>) -> eyre::Result<Container> {
     src_dir
 }
 
-async fn validate_pr(_client: Arc<Query>, container: Container) -> eyre::Result<()> {
-    //let container = container.with_exec(vec!["cargo", "test", "--all"], None);
+async fn validate_pr(client: Arc<Query>, container: Container) -> eyre::Result<()> {
+    let exit = container.exit_code().await?;
+    if exit != 0 {
+        eyre::bail!("container failed with non-zero exit code");
+    }
+    let docker_cli = client
+        .container()
+        .from("docker:cli")
+        .file("/usr/local/bin/docker");
+    let socket = client.host().unix_socket("/var/run/docker.sock");
+
+    let container = container
+        .with_mounted_file("/usr/bin/docker", docker_cli.id().await?)
+        .with_unix_socket("/var/run/docker.sock", socket.id().await?)
+        .with_exec(vec!["cargo", "test", "--all"]);
 
     let exit = container.exit_code().await?;
     if exit != 0 {
