@@ -8,17 +8,15 @@ type Query struct {
 	Context QueryContext
 }
 
-const RootPipelineName = "root"
-
 // PipelinePath returns the current pipeline path prepended with a "root"
-// pipeline containing default labels.
+// pipeline containing default labels. The pipeline has no name, so it won't
+// confuse the user in the UI.
 //
 // When called against a nil receiver, as will happen if no pipelines have
 // been created, it will return a path with only the root pipeline.
 func (query *Query) PipelinePath() pipeline.Path {
 	pipeline := pipeline.Path{
 		{
-			Name:   RootPipelineName,
 			Labels: pipeline.RootLabels(),
 		},
 	}
