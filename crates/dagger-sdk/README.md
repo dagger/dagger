@@ -27,7 +27,7 @@ cargo add dagger-sdk
 ```rust
 #[tokio::main]
 async fn main() -> eyre::Result<()> {
-    let client = dagger_sdk::connect()?;
+    let client = dagger_sdk::connect().await?;
 
     let version = client
         .container()
@@ -46,9 +46,3 @@ And run it like a normal application:
 ```bash
 cargo run
 ```
-
-### Disclaimer
-
-You are free to use something else than `tokio`, I haven't tested it with
-anything else, but it should work with any other runtime. We don't rely on it
-specifically. That might change in the future though.
