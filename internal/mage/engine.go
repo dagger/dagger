@@ -161,7 +161,7 @@ func (t Engine) Lint(ctx context.Context) error {
 	}
 
 	_, err = c.Container().
-		From("golangci/golangci-lint:v1.48").
+		From("golangci/golangci-lint:v1.51").
 		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).

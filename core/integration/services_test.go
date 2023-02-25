@@ -859,23 +859,23 @@ func TestFileServiceSecret(t *testing.T) {
 	}).Secret()
 
 	t.Run("secret env", func(t *testing.T) {
-		stdout, err := c.Container().
+		exitCode, err := c.Container().
 			From("alpine:3.16.2").
 			WithSecretVariable("SEKRIT", secret).
-			WithExec([]string{"sh", "-c", "echo -n $SEKRIT"}).
-			Stdout(ctx)
+			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
+			ExitCode(ctx)
 		require.NoError(t, err)
-		require.Equal(t, content, stdout)
+		require.Equal(t, 0, exitCode)
 	})
 
 	t.Run("secret mount", func(t *testing.T) {
-		stdout, err := c.Container().
+		exitCode, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedSecret("/sekrit", secret).
-			WithExec([]string{"cat", "/sekrit"}).
-			Stdout(ctx)
+			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
+			ExitCode(ctx)
 		require.NoError(t, err)
-		require.Equal(t, content, stdout)
+		require.Equal(t, 0, exitCode)
 	})
 }
 

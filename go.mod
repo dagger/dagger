@@ -10,6 +10,10 @@ replace cloud.google.com/go => cloud.google.com/go v0.100.2
 require (
 	dagger.io/dagger v0.4.1
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
+	github.com/aws/aws-sdk-go v1.34.0
+	github.com/aws/aws-sdk-go-v2/config v1.15.5
+	github.com/aws/aws-sdk-go-v2/credentials v1.12.0
+	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
 	github.com/containerd/containerd v1.7.0-beta.4
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
 	github.com/containerd/stargz-snapshotter v0.14.1
@@ -72,8 +76,6 @@ require (
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.3 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.1 // indirect
-	github.com/aws/aws-sdk-go-v2/config v1.15.5 // indirect
-	github.com/aws/aws-sdk-go-v2/credentials v1.12.0 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.12.4 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/configsources v1.1.10 // indirect
@@ -84,7 +86,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/internal/checksum v1.1.5 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.9.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/internal/s3shared v1.13.4 // indirect
-	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.11.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.16.4 // indirect
 	github.com/aws/smithy-go v1.11.2 // indirect

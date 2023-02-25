@@ -116,6 +116,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		},
 		CacheExports: []bkclient.CacheOptionsEntry{{
 			Type: "dagger",
+			Attrs: map[string]string{
+				"mode": "max",
+			},
 		}},
 		CacheImports: []bkclient.CacheOptionsEntry{{
 			Type: "dagger",

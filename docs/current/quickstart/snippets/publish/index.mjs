@@ -1,5 +1,6 @@
 import { connect } from "@dagger.io/dagger"
 
+
 connect(async (client) => {
 
   // use a node:16-slim container
@@ -32,7 +33,7 @@ connect(async (client) => {
   // at the nginx server root
   // publish the resulting container to a registry
   const imageRef = await client.container()
-    .from("nginx:alpine")
+    .from("nginx:1.23-alpine")
     .withDirectory('/usr/share/nginx/html', client.host().directory('./build'))
     .publish('ttl.sh/hello-dagger-' + Math.floor(Math.random() * 10000000))
   console.log(`Published image to: ${imageRef}`)

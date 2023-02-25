@@ -3,7 +3,6 @@ import sys
 import anyio
 import dagger
 
-
 async def main():
     config = dagger.Config(log_output=sys.stdout)
 
@@ -27,7 +26,6 @@ async def main():
         # run application tests
         test = runner.with_exec(["npm", "test", "--", "--watchAll=false"])
 
-        # highlight-start
         # build application
         # writhe the build output to the host
         build_dir = (
@@ -40,7 +38,5 @@ async def main():
         e = await build_dir.entries()
 
         print(f"build dir contents:\n{e}")
-        # highlight-end
-
 
 anyio.run(main)

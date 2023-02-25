@@ -9,6 +9,16 @@ title: "Test the application"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
+import Embed from '@site/src/components/atoms/embed.js'
+
+export const ids = {
+    Go: "M8NHUR0WTWT",
+    Node: "XyDYQWN2edq",
+    Python: "SF9BGtA_py3"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Test the application
 
@@ -20,10 +30,11 @@ The code listing below demonstrates a Dagger pipeline that runs tests for the ex
 The `npm run test` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
 :::
 
-<Tabs groupId="language">
+
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/XE3hNGQNWAd"></iframe>
+<Embed id="M8NHUR0WTWT" />
 
 This code listing does the following:
 
@@ -42,9 +53,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/paxuz43IvLq"></iframe>
+<Embed id="XyDYQWN2edq" />
 
 This code listing does the following:
 
@@ -65,7 +76,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/R6X6enRsArH"></iframe>
+<Embed id="SF9BGtA_py3" />
 
 This code listing does the following:
 
@@ -89,3 +100,5 @@ python ci/main.py
 :::tip
 The `from()`, `withMountedDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
 :::
+
+</QuickstartDoc>
