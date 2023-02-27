@@ -563,9 +563,12 @@ type Container {
 
   """
   Expose a network port.
+
   Exposed ports serve two purposes:
     - For health checks and introspection, when running services
     - For setting the EXPOSE OCI field when publishing the container
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
   """
   withExposedPort(
     "Port number to expose"
@@ -578,6 +581,8 @@ type Container {
 
   """
   Unexpose a previously exposed port.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
   """
   withoutExposedPort(
     "Port number to unexpose"
@@ -586,7 +591,11 @@ type Container {
     protocol: NetworkProtocol = TCP
   ): Container!
 
-  "Retrieves the list of exposed ports"
+  """
+  Retrieves the list of exposed ports.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+  """
   exposedPorts: [Port!]!
 
   """
@@ -595,6 +604,8 @@ type Container {
   The service will be reachable from the container via the provided hostname alias.
 
   The service dependency will also convey to any files or directories produced by the container.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
   """
   withServiceBinding(
     "A name that can be used to reach the service from the container"
@@ -605,6 +616,8 @@ type Container {
 
   """
   Retrieves a hostname which can be used by clients to reach this container.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
   """
   hostname: String!
 
@@ -614,6 +627,8 @@ type Container {
   If no port is specified, the first exposed port is used. If none exist an error is returned.
 
   If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
   """
   endpoint(
     "The exposed port number for the endpoint"
