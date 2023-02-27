@@ -1,6 +1,10 @@
 ---
-slug: /sdk/go/759201/gitlab-google-cloud
+slug: /759201/gitlab-google-cloud
 displayed_sidebar: "current"
+category: "guides"
+tags: ["go", "gitlab-ci", "google-cloud"]
+authors: ["Vikram Vaswani"]
+date: "2023-02-11"
 ---
 
 # Use Dagger with GitLab CI/CD and Google Cloud
@@ -30,11 +34,11 @@ This tutorial assumes that:
 
 ## Step 1: Create a Google Cloud service account
 
-{@include: ../../../partials/_google-cloud-service-account-key-setup.md}
+{@include: ../partials/_google-cloud-service-account-key-setup.md}
 
 ## Step 2: Configure Google Cloud APIs and a Google Cloud Run service
 
-{@include: ../../../partials/_google-cloud-api-run-setup.md}
+{@include: ../partials/_google-cloud-api-run-setup.md}
 
 ## Step 3: Create the Dagger pipeline
 
@@ -49,7 +53,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it. Replace the PROJECT placeholder with your Google Cloud project identifier and adjust the region (`us-central1`) and service name (`myapp`) if you specified different values when creating the Google Cloud Run service in Step 2.
 
-  ```go file=../snippets/gitlab-google-cloud/main.go
+  ```go file=./snippets/gitlab-google-cloud/main.go
   ```
 
   This code listing performs the following operations:
@@ -79,7 +83,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 Configure credentials for the Google Cloud SDK on the local host, as follows:
 
-{@include: ../../../partials/_google-cloud-sdk-credentials-setup.md}
+{@include: ../partials/_google-cloud-sdk-credentials-setup.md}
 
 Once credentials are configured, test the Dagger pipeline by running the command below:
 
@@ -109,7 +113,7 @@ This also means that it's very easy to move your Dagger pipeline from your local
 
 1. Create a new GitLab CI/CD pipeline configuration file in your application directory at `.gitlab-ci.yml` with the following content:
 
-  ```yaml file=../snippets/gitlab-google-cloud/gitlab-ci.yml
+  ```yaml file=./snippets/gitlab-google-cloud/gitlab-ci.yml
   ```
 
   This GitLab CI/CD pipeline runs on every commit to the repository `master` branch. It consists of three jobs, as below:
@@ -128,7 +132,7 @@ This also means that it's very easy to move your Dagger pipeline from your local
         - Flags: `Protect variable`
     1. Click `Add variable` to save the variable.
 
-    ![Create GitLab variable](/img/current/sdk/go/guides/gitlab-google-cloud/create-gitlab-variable.png)
+    ![Create GitLab variable](/img/current/guides/gitlab-google-cloud/create-gitlab-variable.png)
 
 1. Commit and push the changes to the GitLab repository:
 
@@ -175,7 +179,7 @@ This tutorial walked you through the process of creating a Dagger pipeline to co
 
 Dagger executes your pipelines entirely as standard OCI containers. This means that pipelines can be tested and debugged locally, and that the same pipeline will run consistently on your local machine, a CI runner, a dedicated server, or any container hosting service. This portability is one of Dagger's key advantages, and this tutorial demonstrated it in action by using the same pipeline on the local host and on GitLab.
 
-Use the [API Key Concepts](../../../api/975146-concepts.md) page and the [Go SDK Reference](https://pkg.go.dev/dagger.io/dagger) to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.md) page and the [Go SDK Reference](https://pkg.go.dev/dagger.io/dagger) to learn more about Dagger.
 
 ## Appendix A: Create a GitLab repository with an example Go application
 
@@ -245,11 +249,11 @@ To use GitLab's managed runners, you must [associate a valid credit card with yo
 1. Navigate to the `Settings` -> `CI/CD` -> `Runners` page in the GitLab Web interface.
 1. Disable shared runners by unchecking the `Enable shared runners for this project` option.
 
-  ![Disable shared runners](/img/current/sdk/go/guides/gitlab-google-cloud/gitlab-disable-shared-runners.png)
+  ![Disable shared runners](/img/current/guides/gitlab-google-cloud/gitlab-disable-shared-runners.png)
 
 1. Copy the project-specific registration token, as shown below:
 
-  ![Runner registration token](/img/current/sdk/go/guides/gitlab-google-cloud/gitlab-self-hosted-runner-token.png)
+  ![Runner registration token](/img/current/guides/gitlab-google-cloud/gitlab-self-hosted-runner-token.png)
 
 1. On your local host, register the runner using the command below. Replace the TOKEN placeholder with the registration token.
 
@@ -267,4 +271,4 @@ To use GitLab's managed runners, you must [associate a valid credit card with yo
 
 1. Navigate to the `Settings` -> `CI/CD` -> `Runners` page in the GitLab Web interface. Confirm that the newly-registered runner is active for the project, as shown below:
 
-  ![Runner registration](/img/current/sdk/go/guides/gitlab-google-cloud/gitlab-self-hosted-runner-active.png)
+  ![Runner registration](/img/current/guides/gitlab-google-cloud/gitlab-self-hosted-runner-active.png)
