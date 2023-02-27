@@ -20,6 +20,7 @@ const (
 	DefaultStateDir = "/var/lib/dagger"
 
 	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	ServicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
@@ -92,6 +93,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 		"-d",
 		"--restart", "always",
 		"-e", CacheConfigEnvName,
+		"-e", ServicesDNSEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
 	}
