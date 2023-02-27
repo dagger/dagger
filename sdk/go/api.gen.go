@@ -41,6 +41,15 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// Key value object that represents a Pipeline label.
+type PipelineLabel struct {
+	// Label name.
+	Name string `json:"name"`
+
+	// Label value.
+	Value string `json:"value"`
+}
+
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -426,7 +435,10 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 
 // ContainerPipelineOpts contains options for Container.Pipeline
 type ContainerPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline
@@ -437,6 +449,13 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -1200,10 +1219,13 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline.
+// Creates a named sub-pipeline
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1211,6 +1233,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -1968,10 +1997,13 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 
 // PipelineOpts contains options for Query.Pipeline
 type PipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1979,6 +2011,13 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}

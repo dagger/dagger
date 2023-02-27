@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
@@ -142,7 +142,7 @@ func (c *TraceExporter) attributes(attributes ...attribute.KeyValue) []attribute
 	return attributes
 }
 
-func (c *TraceExporter) verticesForPipeline(selector core.PipelinePath) VertexList {
+func (c *TraceExporter) verticesForPipeline(selector pipeline.Path) VertexList {
 	matches := VertexList{}
 	for _, v := range c.vertices {
 		if matchPipeline(v, selector) {
@@ -152,7 +152,7 @@ func (c *TraceExporter) verticesForPipeline(selector core.PipelinePath) VertexLi
 	return matches
 }
 
-func matchPipeline(v Vertex, selector core.PipelinePath) bool {
+func matchPipeline(v Vertex, selector pipeline.Path) bool {
 	pipeline := v.Pipeline()
 	if len(selector) > len(pipeline) {
 		return false

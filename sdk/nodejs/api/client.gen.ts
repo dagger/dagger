@@ -158,7 +158,15 @@ export type ContainerExportOpts = {
 }
 
 export type ContainerPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ContainerPublishOpts = {
@@ -309,7 +317,15 @@ export type DirectoryEntriesOpts = {
 }
 
 export type DirectoryPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -409,6 +425,18 @@ export enum NetworkProtocol {
    */
   Udp,
 }
+export type PipelineLabel = {
+  /**
+   * Label name.
+   */
+  name: string
+
+  /**
+   * Label value.
+   */
+  value: string
+}
+
 /**
  * The platform config OS and architecture in a Container.
  *
@@ -445,7 +473,15 @@ export type ClientHttpOpts = {
 }
 
 export type ClientPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ClientSocketOpts = {
@@ -910,6 +946,9 @@ export class Container extends BaseClient {
 
   /**
    * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ContainerPipelineOpts): Container {
     return new Container({
@@ -1810,7 +1849,10 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
+   * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
     return new Directory({
@@ -2994,7 +3036,10 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline
+   * Creates a named sub-pipeline.
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ClientPipelineOpts): Client {
     return new Client({

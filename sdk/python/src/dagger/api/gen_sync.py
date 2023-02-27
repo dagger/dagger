@@ -72,6 +72,16 @@ class BuildArg(Input):
     """The build argument value."""
 
 
+class PipelineLabel(Input):
+    """Key value object that represents a Pipeline label."""
+
+    name: str
+    """Label name."""
+
+    value: str
+    """Label value."""
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -571,11 +581,23 @@ class Container(Type):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Container":
-        """Creates a named sub-pipeline"""
+        """Creates a named sub-pipeline
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Container(_ctx)
@@ -1504,11 +1526,23 @@ class Directory(Type):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Directory":
-        """Creates a named sub-pipeline."""
+        """Creates a named sub-pipeline
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Directory(_ctx)
@@ -2460,11 +2494,23 @@ class Client(Root):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Client":
-        """Creates a named sub-pipeline"""
+        """Creates a named sub-pipeline.
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Client(_ctx)
@@ -2585,6 +2631,7 @@ __all__ = [
     "CacheSharingMode",
     "NetworkProtocol",
     "BuildArg",
+    "PipelineLabel",
     "CacheVolume",
     "Container",
     "Directory",

@@ -38,10 +38,7 @@ type httpArgs struct {
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
-	pipeline := core.PipelinePath{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
+	pipeline := parent.PipelinePath()
 
 	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
 

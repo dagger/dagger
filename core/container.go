@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
@@ -36,7 +37,7 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
-func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform) (*Container, error) {
+func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
 	if id == "" {
 		payload := &containerIDPayload{
 			Pipeline: pipeline.Copy(),
@@ -82,7 +83,7 @@ type containerIDPayload struct {
 	Config specs.ImageConfig `json:"cfg"`
 
 	// Pipeline
-	Pipeline PipelinePath `json:"pipeline"`
+	Pipeline pipeline.Path `json:"pipeline"`
 
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
@@ -242,7 +243,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
 	// We create a sub-pipeline to encapsulate both.
-	pipeline := payload.Pipeline.Add(Pipeline{
+	p := payload.Pipeline.Add(pipeline.Pipeline{
 		Name: fmt.Sprintf("from %s", addr),
 	})
 
@@ -258,7 +259,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		ResolveMode: llb.ResolveModeDefault.String(),
 		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
 		// the pipeline in the vertex name.
-		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
+		LogName: pipeline.CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: p}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -277,7 +278,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	dir, err := NewDirectory(ctx,
 		llb.Image(addr,
 			llb.WithCustomNamef("pull %s", ref),
-			pipeline.LLBOpt(),
+			p.LLBOpt(),
 		),
 		"/", payload.Pipeline, platform, nil)
 	if err != nil {
@@ -391,7 +392,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
 		// allow overriding the metadata of DefinitionOp. See this PR and comment:
 		// https://github.com/moby/buildkit/pull/2819
-		pipeline := payload.Pipeline.Add(Pipeline{
+		pipeline := payload.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
 		})
 		for dgst, metadata := range def.Metadata {
@@ -728,7 +729,7 @@ func locatePath[T *File | *Directory](
 	ctx context.Context,
 	container *Container,
 	containerPath string,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ServiceBindings) (T, error),
+	init func(context.Context, llb.State, string, pipeline.Path, specs.Platform, ServiceBindings) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -868,15 +869,16 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) Pipeline(ctx context.Context, name, description string) (*Container, error) {
+func (container *Container) Pipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
 	}
 
-	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+	payload.Pipeline = payload.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: description,
+		Labels:      labels,
 	})
 
 	return container.containerFromPayload(payload)
@@ -931,7 +933,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
+			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
