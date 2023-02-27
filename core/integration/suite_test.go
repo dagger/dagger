@@ -267,3 +267,9 @@ func tarEntries(t *testing.T, path string) []string {
 
 	return entries
 }
+
+func checkEnabled(t *testing.T, env string) {
+	if os.Getenv(env) == "" {
+		t.Skipf("set $%s to enable", env)
+	}
+}

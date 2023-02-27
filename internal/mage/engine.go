@@ -39,6 +39,7 @@ const (
 	engineEntrypointCommand = "/usr/local/bin/" + engineBinName + " --debug --config " + engineTomlPath + " --oci-worker-binary /usr/local/bin/" + shimBinName
 
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 var engineEntrypoint string
@@ -59,12 +60,14 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-# add dnsmasq to resolver so buildkit can reach local services
-echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf.new
-echo 'search {{.SearchDomain}}' >> /etc/resolv.conf.new
-cat /etc/resolv.conf >> /etc/resolv.conf.new
-umount /etc/resolv.conf
-mv /etc/resolv.conf.new /etc/resolv.conf
+if [ -n "$` + servicesDNSEnvName + `" ]; then
+	# add dnsmasq to resolver so buildkit can reach local services
+	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf.new
+	echo 'search {{.SearchDomain}}' >> /etc/resolv.conf.new
+	cat /etc/resolv.conf >> /etc/resolv.conf.new
+	umount /etc/resolv.conf
+	mv /etc/resolv.conf.new /etc/resolv.conf
+fi
 
 exec {{.EntrypointCommand}}
 `
@@ -327,6 +330,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		// "--rm",
 		"-e", cacheConfigEnvName,
+		"-e", servicesDNSEnvName,
 		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
