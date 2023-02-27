@@ -18,7 +18,7 @@ func main() {
 	}
 	defer client.Close()
 
-	// use a node:16-slim container
+	// use a golang:1.19 container
 	// get version
 	// execute
 	golang := client.Container().From("golang:1.19").WithExec([]string{"go", "version"})
