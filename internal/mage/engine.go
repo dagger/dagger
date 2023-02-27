@@ -67,6 +67,17 @@ if [ -n "$` + servicesDNSEnvName + `" ]; then
 	cat /etc/resolv.conf >> /etc/resolv.conf.new
 	umount /etc/resolv.conf
 	mv /etc/resolv.conf.new /etc/resolv.conf
+
+	cat >> ` + engineTomlPath + ` <<EOF
+# configure bridge networking
+[worker.oci]
+networkMode = "cni"
+cniConfigPath = "/etc/dagger/cni.conflist"
+
+[worker.containerd]
+networkMode = "cni"
+cniConfigPath = "/etc/dagger/cni.conflist"
+EOF
 fi
 
 exec {{.EntrypointCommand}}
@@ -389,7 +400,7 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
-			WithNewFile("/etc/buildkit/cni.conflist", dagger.ContainerWithNewFileOpts{
+			WithNewFile("/etc/dagger/cni.conflist", dagger.ContainerWithNewFileOpts{
 				Contents: cniConfig("dagger", network.CIDR),
 			}).
 			WithDirectory(engineDefaultStateDir, c.Directory()).
@@ -465,15 +476,16 @@ func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 func buildkitConfig() string {
 	return strings.Join([]string{
 		fmt.Sprintf("root = %q", engineDefaultStateDir),
-		``,
-		`# configure bridge networking`,
-		`[worker.oci]`,
-		`networkMode = "cni"`,
-		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
-		``,
-		`[worker.containerd]`,
-		`networkMode = "cni"`,
-		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
+		// TODO(vito): re-enable when stable
+		// ``,
+		// `# configure bridge networking`,
+		// `[worker.oci]`,
+		// `networkMode = "cni"`,
+		// `cniConfigPath = "/etc/dagger/cni.conflist"`,
+		// ``,
+		// `[worker.containerd]`,
+		// `networkMode = "cni"`,
+		// `cniConfigPath = "/etc/dagger/cni.conflist"`,
 	}, "\n")
 }
 
