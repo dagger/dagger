@@ -1,6 +1,10 @@
 ---
-slug: /sdk/go/406009/multiplatform-support
+slug: /406009/multiplatform-support
 displayed_sidebar: "current"
+category: "guides"
+tags: ["go"]
+authors: ["Erik Sipsma"]
+date: "2022-11-20"
 ---
 
 # Understand Multi-Platform Support
@@ -18,7 +22,7 @@ This document explores these features through the lens of the Go SDK.
 This guide assumes that:
 
 - You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
-- You are familiar with the basics of the Go SDK and have it installed. If not, read the [Go SDK guide](../959738-get-started.md) and the [Go SDK installation instructions](../371491-install.md).
+- You are familiar with the basics of the Go SDK and have it installed. If not, read the [Go SDK guide](../sdk/go/959738-get-started.md) and the [Go SDK installation instructions](../sdk/go/371491-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have `binfmt_misc` configured on the host kernel (that is, on the machine where Dagger will run containers). This is necessary to execute binaries in containers that use a different architecture than that of the host.
 
@@ -57,7 +61,7 @@ This guide assumes that:
 
 This example demonstrates how to pull images for multiple different architectures and execute commands on each of them.
 
-```go file=../snippets/multiplatform-support/pull-images/main.go
+```go file=./snippets/multiplatform-support/pull-images/main.go
 
 ```
 
@@ -80,7 +84,7 @@ Start by running builds using emulation. The next example will show the changes 
 This example will fail to push the final image unless you change the registry to one that you control and have write permissions for.
 :::
 
-```go file=../snippets/multiplatform-support/build-images-emulation/main.go
+```go file=./snippets/multiplatform-support/build-images-emulation/main.go
 
 ```
 
@@ -96,7 +100,7 @@ While cross-compilation is sometimes much easier said than done, it's a great op
 
 Fortunately, Go has great built-in support for cross-compilation, so modifying the previous example to use this feature instead is straightforward (changes are highlighted):
 
-```go file=../snippets/multiplatform-support/build-images-cross-compilation/main.go
+```go file=./snippets/multiplatform-support/build-images-cross-compilation/main.go
 
 ```
 
@@ -111,11 +115,11 @@ The final image is still multi-platform because each `Container` set as a `Platf
 
 The previous examples work with different architectures but the OS of the platform is always `linux`.
 
-As explored in our [Get Started tutorial](../959738-get-started.md), Dagger can run cross-compilation builds that create binaries targeting other OSes such as Darwin (MacOS) and Windows.
+As explored in our [Get Started tutorial](../sdk/go/959738-get-started.md), Dagger can run cross-compilation builds that create binaries targeting other OSes such as Darwin (MacOS) and Windows.
 
 Additionally, Dagger has _limited_ support for some operations involving non-Linux container images. Specifically, it is often possible to pull these images and perform basic file operations, but attempting to execute commands will result in an error:
 
-```go file=../snippets/multiplatform-support/non-linux-support/main.go
+```go file=./snippets/multiplatform-support/non-linux-support/main.go
 
 ```
 

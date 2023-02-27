@@ -146,15 +146,16 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			gwClient := core.NewGatewayClient(gw)
 			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				Workdir:       startOpts.Workdir,
-				Gateway:       gwClient,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       solveCh,
-				Platform:      *platform,
-				DisableHostRW: startOpts.DisableHostRW,
-				Auth:          registryAuth,
+				Router:         router,
+				Workdir:        startOpts.Workdir,
+				Gateway:        gwClient,
+				BKClient:       c,
+				SolveOpts:      solveOpts,
+				SolveCh:        solveCh,
+				Platform:       *platform,
+				DisableHostRW:  startOpts.DisableHostRW,
+				Auth:           registryAuth,
+				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "",
 			})
 			if err != nil {
 				return nil, err

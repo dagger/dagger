@@ -608,6 +608,10 @@ func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, 
 }
 
 func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
 	return parent.Hostname()
 }
 
@@ -617,6 +621,10 @@ type containerEndpointArgs struct {
 }
 
 func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
 	return parent.Endpoint(args.Port, args.Scheme)
 }
 
@@ -626,6 +634,10 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
 }
 
@@ -636,6 +648,10 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithExposedPort(core.ContainerPort{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
@@ -649,6 +665,10 @@ type containerWithoutExposedPortArgs struct {
 }
 
 func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
@@ -661,6 +681,10 @@ type ExposedPort struct {
 }
 
 func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Container, args any) ([]ExposedPort, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	ports, err := parent.ExposedPorts()
 	if err != nil {
 		return nil, err

@@ -20,6 +20,9 @@ type InitializeArgs struct {
 	Platform      specs.Platform
 	DisableHostRW bool
 	Auth          *auth.RegistryAuthProvider
+
+	// TODO(vito): remove when stable
+	EnableServices bool
 }
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
@@ -31,6 +34,9 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		solveCh:   params.SolveCh,
 		platform:  params.Platform,
 		auth:      params.Auth,
+
+		// TODO(vito): remove when stable
+		servicesEnabled: params.EnableServices,
 	}
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
@@ -60,4 +66,7 @@ type baseSchema struct {
 	solveCh   chan *bkclient.SolveStatus
 	platform  specs.Platform
 	auth      *auth.RegistryAuthProvider
+
+	// TODO(vito): remove when stable
+	servicesEnabled bool
 }

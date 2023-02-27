@@ -1,6 +1,10 @@
 ---
 slug: /544174/multistage-build
 displayed_sidebar: "current"
+category: "guides"
+tags: ["go"]
+authors: ["Kyle Penfound"]
+date: "2022-11-09"
 ---
 
 # Use Dagger with Multi-stage Container Builds
@@ -19,14 +23,14 @@ This guide explains how to perform multi-stage builds with the Go SDK.
 This guide assumes that:
 
 - You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
-- You are familiar with the basics of the Go SDK and have it installed. If not, read the [Go SDK guide](../959738-get-started.md) and the [Go SDK installation instructions](../371491-install.md).
+- You are familiar with the basics of the Go SDK and have it installed. If not, read the [Go SDK guide](../sdk/go/959738-get-started.md) and the [Go SDK installation instructions](../sdk/go/371491-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Example
 
 The following code snippet demonstrates a multi-stage build with the Go SDK.
 
-```go file=../snippets/multistage-build/main.go
+```go file=./snippets/multistage-build/main.go
 
 ```
 

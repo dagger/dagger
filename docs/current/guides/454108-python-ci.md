@@ -1,6 +1,10 @@
 ---
 slug: /454108/python-ci
 displayed_sidebar: "current"
+category: "guides"
+tags: ["python", "gitlab-ci", "github-actions", "circle-ci", "jenkins"]
+authors: ["Jeremy Adams"]
+date: "2022-12-13"
 ---
 
 # Dagger Python SDK in CI
@@ -18,28 +22,28 @@ values={[
 
 <TabItem value="github-actions">
 
-```yaml title=".github/workflows/dagger.yaml" file=../snippets/python-ci/actions.yml
+```yaml title=".github/workflows/dagger.yaml" file=./snippets/python-ci/actions.yml
 ```
 
 </TabItem>
 
 <TabItem value="circleci">
 
-```yaml title=".circleci/config.yml" file=../snippets/python-ci/circle.yml
+```yaml title=".circleci/config.yml" file=./snippets/python-ci/circle.yml
 ```
 
 </TabItem>
 
 <TabItem value="gitlab">
 
-```yaml title=".gitlab-ci.yml" file=../snippets/python-ci/gitlab.yml
+```yaml title=".gitlab-ci.yml" file=./snippets/python-ci/gitlab.yml
 ```
 
 </TabItem>
 
 <TabItem value="jenkins">
 
-```groovy title="Jenkinsfile" file=../snippets/python-ci/Jenkinsfile
+```groovy title="Jenkinsfile" file=./snippets/python-ci/Jenkinsfile
 ```
 
 Requires `docker` client and `python` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.

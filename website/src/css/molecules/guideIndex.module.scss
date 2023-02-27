@@ -1,0 +1,99 @@
+.guideIndex {
+  ul {
+   display: flex;
+   flex-wrap: wrap;
+   width: 100%;
+   gap: 1.5rem;
+   justify-content: center;
+   padding-left: 0px;
+  }
+
+  li {
+    list-style: none;
+    text-decoration: none;
+    margin-top: 0px !important;
+    min-width: 350px;
+    max-width: 600px;
+    flex: 1 1 400px;
+  }
+}
+
+.selectedTags {
+    height: 50px;
+    display: flex;
+    gap: 5px;
+    flex-grow: inherit;
+    align-items: flex-start;
+}
+
+.guideCard {
+  height: 100%;
+  border: 1px solid var(--ifm-color-primary-darker);
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  background-color: transparent;
+  color: var(--ifm-color-primary-dark) !important;
+  text-decoration: none !important;
+  box-shadow: 4px 4px 0px #40b9bc;
+  padding: 3%;
+
+  p {
+    font-size: 1rem;
+    margin: 0;
+  }
+
+  html[data-theme="dark"] & {
+
+    border: 1px solid var(--ifm-color-primary-light);
+
+    p,
+    h4,
+    time {
+      color: var(--ifm-color-primary-light) !important;
+    }
+
+    a div {
+      background-color: var(--ifm-color-primary-darker);
+      color: var(--ifm-color-primary-light);
+
+      &:hover {
+        background-color: var(--ifm-color-grey-dark);
+      }
+    }
+  }
+
+}
+
+.info {
+    min-width: fit-content;
+    width: 100%;
+    a h3:hover {
+        width: initial;
+        text-decoration: underline;
+    }
+
+    time {
+        font-size: 0.8rem;
+    }
+
+    h3, h4 {
+        margin: 0;
+    }
+}
+
+.author {
+    font-size: 0.8rem;
+}
+
+.date {
+    font-size: 0.8rem;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  flex-grow: inherit;
+  align-items: flex-start;
+  gap: 5px;
+}

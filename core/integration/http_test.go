@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,6 +21,8 @@ func TestHTTP(t *testing.T) {
 }
 
 func TestHTTPService(t *testing.T) {
+	checkEnabled(t, engine.ServicesDNSEnvName)
+
 	t.Parallel()
 
 	c, ctx := connect(t)

@@ -1,6 +1,10 @@
 ---
 slug: /205271/replace-dockerfile
 displayed_sidebar: 'current'
+category: "guides"
+tags: ["go"]
+authors: ["Kyle Penfound", "Vikram Vaswani"]
+date: "2023-01-07"
 ---
 
 # Replace a Dockerfile with Go
@@ -23,7 +27,7 @@ This guide assumes that:
 
 - You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
-- You have a Go module with the Dagger Go SDK installed. If not, [install the Dagger Go SDK](../371491-install.md).
+- You have a Go module with the Dagger Go SDK installed. If not, [install the Dagger Go SDK](../sdk/go/371491-install.md).
 - You have a Docker Hub account. If not, [register for a Docker Hub account](https://hub.docker.com/signup).
 
 ## Step 1: Understand the source Dockerfile
@@ -49,7 +53,7 @@ The Dagger Go SDK enables you to develop a CI/CD pipeline in Go to achieve the s
 
 To see how this works, add the following code to your Go module as `main.go`. Replace the DOCKER-HUB-USERNAME placeholder with your Docker Hub username.
 
-```go file=../snippets/replace-dockerfile/main.go
+```go file=./snippets/replace-dockerfile/main.go
 ```
 
 :::warning
