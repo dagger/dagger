@@ -185,6 +185,9 @@ class Container(Type):
         If a scheme is specified, a URL is returned. Otherwise, a host:port
         pair is returned.
 
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
+
         Parameters
         ----------
         port:
@@ -382,7 +385,11 @@ class Container(Type):
 
     @typecheck
     def exposed_ports(self) -> "Port":
-        """Retrieves the list of exposed ports"""
+        """Retrieves the list of exposed ports.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
+        """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
         return Port(_ctx)
@@ -436,6 +443,9 @@ class Container(Type):
     async def hostname(self) -> str:
         """Retrieves a hostname which can be used by clients to reach this
         container.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
 
         Returns
         -------
@@ -844,9 +854,13 @@ class Container(Type):
         description: Optional[str] = None,
     ) -> "Container":
         """Expose a network port.
+
         Exposed ports serve two purposes:
           - For health checks and introspection, when running services
           - For setting the EXPOSE OCI field when publishing the container
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
 
         Parameters
         ----------
@@ -1123,6 +1137,9 @@ class Container(Type):
         The service dependency will also convey to any files or directories
         produced by the container.
 
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
+
         Parameters
         ----------
         alias:
@@ -1208,6 +1225,9 @@ class Container(Type):
         protocol: Optional[NetworkProtocol] = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
+        enable.
 
         Parameters
         ----------
