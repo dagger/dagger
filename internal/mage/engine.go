@@ -61,12 +61,18 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 fi
 
 if [ -n "$` + servicesDNSEnvName + `" ]; then
-	# add dnsmasq to resolver so buildkit can reach local services
-	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf.new
-	echo 'search {{.SearchDomain}}' >> /etc/resolv.conf.new
-	cat /etc/resolv.conf >> /etc/resolv.conf.new
+	# relocate resolv.conf mount
+	touch /etc/resolv.conf.upstream
+	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
 	umount /etc/resolv.conf
-	mv /etc/resolv.conf.new /etc/resolv.conf
+
+	# add dnsmasq to resolver so buildkit can reach local services
+	echo '# dagger dnsmasq server' > /etc/resolv.conf
+	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf
+
+	# preserve DNS search/options config, but let dnsmasq delegate to
+	# /etc/resolv.conf.upstream for upstream nameservers
+	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
 
 	cat >> ` + engineTomlPath + ` <<EOF
 # configure bridge networking
