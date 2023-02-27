@@ -158,8 +158,6 @@ class Container(Type):
     def directory(self, path: str) -> "Directory":
         """Retrieves a directory at the given path.
 
-
-
         Mounts are included.
 
         Parameters
@@ -181,12 +179,8 @@ class Container(Type):
     ) -> str:
         """Retrieves an endpoint that clients can use to reach this container.
 
-
-
         If no port is specified, the first exposed port is used. If none exist
         an error is returned.
-
-
 
         If a scheme is specified, a URL is returned. Otherwise, a host:port
         pair is returned.
@@ -326,7 +320,6 @@ class Container(Type):
     @typecheck
     def exit_code(self) -> Optional[int]:
         """Exit code of the last executed command. Zero means success.
-
         Null if no command has been executed.
 
         Returns
@@ -356,10 +349,7 @@ class Container(Type):
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
 
-
-
         Return true on success.
-
         It can also publishes platform variants.
 
         Parameters
@@ -400,8 +390,6 @@ class Container(Type):
     @typecheck
     def file(self, path: str) -> "File":
         """Retrieves a file at the given path.
-
-
 
         Mounts are included.
 
@@ -612,10 +600,7 @@ class Container(Type):
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
-
-
         Publish returns a fully qualified ref.
-
         It can also publish platform variants.
 
         Parameters
@@ -659,7 +644,6 @@ class Container(Type):
     @typecheck
     def stderr(self) -> Optional[str]:
         """The error stream of the last executed command.
-
         Null if no command has been executed.
 
         Returns
@@ -683,7 +667,6 @@ class Container(Type):
     @typecheck
     def stdout(self) -> Optional[str]:
         """The output stream of the last executed command.
-
         Null if no command has been executed.
 
         Returns
@@ -861,11 +844,8 @@ class Container(Type):
         description: Optional[str] = None,
     ) -> "Container":
         """Expose a network port.
-
         Exposed ports serve two purposes:
-
           - For health checks and introspection, when running services
-
           - For setting the EXPOSE OCI field when publishing the container
 
         Parameters
@@ -1137,12 +1117,8 @@ class Container(Type):
         started automatically when needed and detached when it is no longer
         needed.
 
-
-
         The service will be reachable from the container via the provided
         hostname alias.
-
-
 
         The service dependency will also convey to any files or directories
         produced by the container.
@@ -2349,13 +2325,9 @@ class Client(Root):
     ) -> Container:
         """Loads a container from ID.
 
-
-
         Null ID returns an empty container (scratch).
-
         Optional platform argument initializes new containers to execute and
         publish as that platform.
-
         Platform defaults to that of the builder's host.
         """
         _args = [
