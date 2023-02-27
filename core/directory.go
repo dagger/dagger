@@ -198,7 +198,7 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	})
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
 	err := validateFileName(dest)
 	if err != nil {
 		return nil, err
