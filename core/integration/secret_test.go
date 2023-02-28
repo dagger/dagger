@@ -138,3 +138,18 @@ func TestSecretPlaintext(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "hi", plaintext)
 }
+
+func TestNewSecret(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	secretValue := "very-secret-text"
+
+	s := c.SetSecret("aws_key", secretValue)
+
+	exitCode, err := c.Container().From("alpine").WithSecretVariable("AWS_KEY", s).WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
+}
