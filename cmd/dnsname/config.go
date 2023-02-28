@@ -29,7 +29,9 @@ except-interface=lo
 bind-dynamic
 no-hosts
 interface={{.NetworkInterface}}
-addn-hosts={{.AddOnHostsFile}}`
+addn-hosts={{.AddOnHostsFile}}
+resolv-file=/etc/resolv.conf.upstream
+`
 
 var (
 	// ErrBinaryNotFound means that the dnsmasq binary was not found

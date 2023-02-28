@@ -18,13 +18,18 @@ from beartype.roar import BeartypeCallHintViolation
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
-from gql.transport.exceptions import TransportQueryError
+from gql.transport.exceptions import (
+    TransportClosed,
+    TransportProtocolError,
+    TransportQueryError,
+    TransportServerError,
+)
 
 from dagger.exceptions import (
     ExecuteTimeoutError,
     InvalidQueryError,
     QueryError,
-    QueryErrorLocation,
+    TransportError,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,13 +54,6 @@ class Field:
 class IDType(typing.Protocol):
     def id(self) -> str:  # noqa: A003
         ...
-
-
-@attrs.define
-class _QueryError:
-    message: str
-    locations: list[QueryErrorLocation]
-    path: list[str]
 
 
 @attrs.define
@@ -155,29 +153,36 @@ class Context:
 
     @contextlib.contextmanager
     def _handle_execute(self, query: graphql.DocumentNode):
+        # Reduces duplication when handling errors, between sync and async.
         try:
             yield
+
         except httpx.TimeoutException as e:
             msg = (
                 "Request timed out. Try setting a higher value in 'execute_timeout' "
                 "config for this `dagger.Connection()`."
             )
             raise ExecuteTimeoutError(msg) from e
-        except TransportQueryError as e:
-            if error := self._parse_query_error(e):
-                raise QueryError(
-                    error.message.strip(),
-                    query,
-                    error.path,
-                    error.locations,
-                ) from e
-            raise
 
-    def _parse_query_error(self, exc: TransportQueryError) -> _QueryError | None:
-        try:
-            return self.converter.structure(exc.errors, list[_QueryError])[0]
-        except (TypeError, KeyError, ValueError, IndexError):
-            return None
+        except httpx.RequestError as e:
+            msg = f"Failed to make request: {e}"
+            raise TransportError(msg) from e
+
+        except TransportClosed as e:
+            msg = (
+                "Connection to engine has been closed. Make sure you're "
+                "calling the API within a `dagger.Connection()` context."
+            )
+            raise TransportError(msg) from e
+
+        except (TransportProtocolError, TransportServerError) as e:
+            msg = f"Unexpected response from engine: {e}"
+            raise TransportError(msg) from e
+
+        except TransportQueryError as e:
+            if error := QueryError.from_transport(e, query):
+                raise error from e
+            raise
 
     def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
         if value is not None:

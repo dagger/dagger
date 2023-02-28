@@ -2,6 +2,7 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 )
@@ -46,7 +47,7 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 type gitRepository struct {
 	URL         string            `json:"url"`
 	KeepGitDir  bool              `json:"keepGitDir"`
-	Pipeline    core.PipelinePath `json:"pipeline"`
+	Pipeline    pipeline.Path     `json:"pipeline"`
 	ServiceHost *core.ContainerID `json:"serviceHost,omitempty"`
 }
 
@@ -62,16 +63,12 @@ type gitArgs struct {
 }
 
 func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
-	r := gitRepository{
+	return gitRepository{
 		URL:         args.URL,
 		KeepGitDir:  args.KeepGitDir,
 		ServiceHost: args.ExperimentalServiceHost,
-	}
-	if parent != nil {
-		r.Pipeline = parent.Context.Pipeline
-	}
-
-	return r, nil
+		Pipeline:    parent.PipelinePath(),
+	}, nil
 }
 
 type branchArgs struct {

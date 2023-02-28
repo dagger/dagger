@@ -6,7 +6,7 @@ import pytest
 
 import dagger
 from dagger.api.gen_sync import Platform
-from dagger.exceptions import ExecuteTimeoutError
+from dagger.exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.slow,
@@ -84,12 +84,6 @@ def test_execute_timeout():
             )
 
 
-def test_query_error():
-    with dagger.Connection() as client, pytest.raises(dagger.QueryError) as exc_info:
-        client.container().from_("ALPINE404").id()
-    assert "repository name must be lowercase" in str(exc_info.value)
-
-
 def test_object_sequence(tmp_path):
     # Test that a sequence of objects doesn't fail.
     # In this case, we're using Container.export's
@@ -105,3 +99,10 @@ def test_object_sequence(tmp_path):
             path=str(tmp_path / "export.tar.gz"),
             platform_variants=variants,
         )
+
+
+def test_connection_closed_error():
+    with dagger.Connection() as client:
+        ...
+    with pytest.raises(TransportError, match="Connection to engine has been closed"):
+        client.container().id()

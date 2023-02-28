@@ -158,7 +158,15 @@ export type ContainerExportOpts = {
 }
 
 export type ContainerPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ContainerPublishOpts = {
@@ -309,7 +317,15 @@ export type DirectoryEntriesOpts = {
 }
 
 export type DirectoryPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -409,6 +425,18 @@ export enum NetworkProtocol {
    */
   Udp,
 }
+export type PipelineLabel = {
+  /**
+   * Label name.
+   */
+  name: string
+
+  /**
+   * Label value.
+   */
+  value: string
+}
+
 /**
  * The platform config OS and architecture in a Container.
  *
@@ -445,7 +473,15 @@ export type ClientHttpOpts = {
 }
 
 export type ClientPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ClientSocketOpts = {
@@ -586,6 +622,8 @@ export class Container extends BaseClient {
    * If no port is specified, the first exposed port is used. If none exist an error is returned.
    *
    * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    * @param opts.port The exposed port number for the endpoint
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
    */
@@ -726,7 +764,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the list of exposed ports
+   * Retrieves the list of exposed ports.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    */
   async exposedPorts(): Promise<Port[]> {
     const response: Awaited<Port[]> = await computeQuery(
@@ -801,6 +841,8 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    */
   async hostname(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -904,6 +946,9 @@ export class Container extends BaseClient {
 
   /**
    * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ContainerPipelineOpts): Container {
     return new Container({
@@ -1138,9 +1183,12 @@ export class Container extends BaseClient {
 
   /**
    * Expose a network port.
+   *
    * Exposed ports serve two purposes:
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -1414,6 +1462,8 @@ export class Container extends BaseClient {
    * The service will be reachable from the container via the provided hostname alias.
    *
    * The service dependency will also convey to any files or directories produced by the container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
@@ -1506,6 +1556,8 @@ export class Container extends BaseClient {
 
   /**
    * Unexpose a previously exposed port.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
@@ -1797,7 +1849,10 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
+   * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
     return new Directory({
@@ -2981,7 +3036,10 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline
+   * Creates a named sub-pipeline.
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ClientPipelineOpts): Client {
     return new Client({

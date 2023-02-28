@@ -22,6 +22,11 @@ module.exports = {
       label: "Quickstart",
     },
     {
+      type: "doc",
+      id: "current/guides",
+      label: "Guides",
+    },
+    {
       type: "category",
       label: "Go SDK",
       collapsible: false,
@@ -37,11 +42,6 @@ module.exports = {
           type: "doc",
           label: "Get Started",
           id: "current/sdk/go/get-started",
-        },
-        {
-          type: "doc",
-          label: "Guides",
-          id: "current/sdk/go/guides",
         },
         {
           type: "link",
@@ -69,11 +69,6 @@ module.exports = {
         },
         {
           type: "doc",
-          label: "Guides",
-          id: "current/sdk/nodejs/guides",
-        },
-        {
-          type: "doc",
           label: "Reference",
           id: "current/sdk/nodejs/reference/modules",
         },
@@ -95,11 +90,6 @@ module.exports = {
           type: "doc",
           label: "Get Started",
           id: "current/sdk/python/get-started",
-        },
-        {
-          type: "doc",
-          label: "Guides",
-          id: "current/sdk/python/guides",
         },
         {
           type: "link",

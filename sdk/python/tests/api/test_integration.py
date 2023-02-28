@@ -5,7 +5,7 @@ from textwrap import dedent
 import pytest
 
 import dagger
-from dagger.exceptions import ExecuteTimeoutError
+from dagger.exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -129,13 +129,6 @@ async def test_execute_timeout():
             )
 
 
-async def test_query_error():
-    async with dagger.Connection() as client:
-        with pytest.raises(dagger.QueryError) as exc_info:
-            await client.container().from_("ALPINE404").id()
-    assert "repository name must be lowercase" in str(exc_info.value)
-
-
 async def test_object_sequence(tmp_path):
     # Test that a sequence of objects doesn't fail.
     # In this case, we're using Container.export's
@@ -151,3 +144,10 @@ async def test_object_sequence(tmp_path):
             path=str(tmp_path / "export.tar.gz"),
             platform_variants=variants,
         )
+
+
+async def test_connection_closed_error():
+    async with dagger.Connection() as client:
+        ...
+    with pytest.raises(TransportError, match="Connection to engine has been closed"):
+        await client.container().id()

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -32,7 +33,7 @@ type directoryIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	Dir      string         `json:"dir"`
 	Platform specs.Platform `json:"platform"`
-	Pipeline PipelinePath   `json:"pipeline"`
+	Pipeline pipeline.Path  `json:"pipeline"`
 
 	// Services necessary to provision the directory.
 	Services ServiceBindings `json:"services,omitempty"`
@@ -86,7 +87,7 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline PipelinePath, platform specs.Platform, services ServiceBindings) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	payload := directoryIDPayload{
 		Dir:      cwd,
 		Platform: platform,
@@ -104,14 +105,15 @@ func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline Pipeli
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) Pipeline(ctx context.Context, name, description string) (*Directory, error) {
+func (dir *Directory) Pipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Directory, error) {
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
-	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+	payload.Pipeline = payload.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: description,
+		Labels:      labels,
 	})
 	return payload.ToDirectory()
 }
@@ -414,7 +416,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
 	states := make([]llb.State, 0, len(dirs))
-	var pipeline PipelinePath
+	var pipeline pipeline.Path
 	for _, fs := range dirs {
 		payload, err := fs.ID.Decode()
 		if err != nil {

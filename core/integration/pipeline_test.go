@@ -30,8 +30,6 @@ func (s *safeBuffer) String() string {
 }
 
 func TestPipeline(t *testing.T) {
-	t.Skip("flaky")
-
 	t.Parallel()
 
 	ctx := context.Background()
@@ -54,8 +52,9 @@ func TestPipeline(t *testing.T) {
 			ExitCode(ctx)
 
 		require.NoError(t, err)
-		// FIXME: Wait for logs to be flushed out
-		time.Sleep(100 * time.Millisecond)
+
+		require.NoError(t, c.Close()) // close + flush logs
+
 		require.Contains(t, logs.String(), "container pipeline")
 	})
 
@@ -76,8 +75,9 @@ func TestPipeline(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Equal(t, contents, cacheBuster)
-		// FIXME: Wait for logs to be flushed out
-		time.Sleep(100 * time.Millisecond)
+
+		require.NoError(t, c.Close()) // close + flush logs
+
 		require.Contains(t, logs.String(), "directory pipeline")
 	})
 }
