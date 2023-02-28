@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"time"
@@ -15,6 +16,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
@@ -199,6 +201,11 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 }
 
 func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
+	err := validateFileName(dest)
+	if err != nil {
+		return nil, err
+	}
+
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -250,6 +257,11 @@ func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory,
 }
 
 func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+	err := validateFileName(file)
+	if err != nil {
+		return nil, err
+	}
+
 	payload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -541,4 +553,12 @@ func (dir *Directory) Export(
 			})
 		})
 	})
+}
+
+func validateFileName(file string) error {
+	baseFileName := filepath.Base(file)
+	if len(baseFileName) > 255 {
+		return errors.Errorf("File name length exceeds the maximum supported 255 characters")
+	}
+	return nil
 }
