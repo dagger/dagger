@@ -35,8 +35,7 @@ const (
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	engineDefaultStateDir = "/var/lib/dagger"
 
-	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
-	engineEntrypointCommand = "/usr/local/bin/" + engineBinName + " --debug --config " + engineTomlPath + " --oci-worker-binary /usr/local/bin/" + shimBinName
+	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
 	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
@@ -60,6 +59,10 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
+# config might be a read-only bind mount (e.g. K8s ConfigMap), so make a copy
+# that we can modify
+cp {{.EngineConfig}} {{.EngineConfig}}.real
+
 if [ -n "$` + servicesDNSEnvName + `" ]; then
 	# relocate resolv.conf mount
 	touch /etc/resolv.conf.upstream
@@ -74,7 +77,11 @@ if [ -n "$` + servicesDNSEnvName + `" ]; then
 	# /etc/resolv.conf.upstream for upstream nameservers
 	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
 
-	cat >> ` + engineTomlPath + ` <<EOF
+	# account for no trailing linebreak
+	echo >> {{.EngineConfig}}.real
+
+	# append CNI config for services
+	cat >> {{.EngineConfig}}.real <<EOF
 # configure bridge networking
 [worker.oci]
 networkMode = "cni"
@@ -86,23 +93,25 @@ cniConfigPath = "/etc/dagger/cni.conflist"
 EOF
 fi
 
-exec {{.EntrypointCommand}}
+exec {{.EngineBin}} --debug --config {{.EngineConfig}}.real --oci-worker-binary {{.ShimBin}}
 `
 
 func init() {
 	type tmplParams struct {
-		Bridge            string
-		SearchDomain      string
-		EntrypointCommand string
+		Bridge       string
+		EngineBin    string
+		EngineConfig string
+		ShimBin      string
 	}
 
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
 
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, tmplParams{
-		Bridge:            network.Bridge,
-		SearchDomain:      network.DNSDomain,
-		EntrypointCommand: engineEntrypointCommand,
+		Bridge:       network.Bridge,
+		EngineBin:    "/usr/local/bin/" + engineBinName,
+		EngineConfig: engineTomlPath,
+		ShimBin:      "/usr/local/bin/" + shimBinName,
 	})
 	if err != nil {
 		panic(err)
