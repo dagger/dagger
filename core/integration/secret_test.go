@@ -133,6 +133,7 @@ func TestSecretPlaintext(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
+	//nolint:staticcheck // SA1019 We want to test this API while we support it.
 	plaintext, err := c.Directory().
 		WithNewFile("TOP_SECRET", "hi").File("TOP_SECRET").Secret().Plaintext(ctx)
 	require.NoError(t, err)

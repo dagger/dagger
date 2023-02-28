@@ -940,6 +940,7 @@ func TestFileServiceSecret(t *testing.T) {
 
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
+	//nolint:staticcheck // SA1019 We want to test this API while we support it.
 	secret := c.HTTP(httpURL, dagger.HTTPOpts{
 		ExperimentalServiceHost: httpSrv,
 	}).Secret()

@@ -2772,6 +2772,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 		WithRegistryAuth(
 			privateRegistryHost,
 			"john",
+			//nolint:staticcheck // SA1019 We want to test this API while we support it.
 			c.Container().
 				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
 				File("secret.txt").
