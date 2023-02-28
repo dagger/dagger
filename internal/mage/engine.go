@@ -3,7 +3,6 @@ package mage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,10 +58,6 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-# config might be a read-only bind mount (e.g. K8s ConfigMap), so make a copy
-# that we can modify
-cp {{.EngineConfig}} {{.EngineConfig}}.real
-
 if [ -n "$` + servicesDNSEnvName + `" ]; then
 	# relocate resolv.conf mount
 	touch /etc/resolv.conf.upstream
@@ -76,24 +71,9 @@ if [ -n "$` + servicesDNSEnvName + `" ]; then
 	# preserve DNS search/options config, but let dnsmasq delegate to
 	# /etc/resolv.conf.upstream for upstream nameservers
 	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
-
-	# account for no trailing linebreak
-	echo >> {{.EngineConfig}}.real
-
-	# append CNI config for services
-	cat >> {{.EngineConfig}}.real <<EOF
-# configure bridge networking
-[worker.oci]
-networkMode = "cni"
-cniConfigPath = "/etc/dagger/cni.conflist"
-
-[worker.containerd]
-networkMode = "cni"
-cniConfigPath = "/etc/dagger/cni.conflist"
-EOF
 fi
 
-exec {{.EngineBin}} --debug --config {{.EngineConfig}}.real --oci-worker-binary {{.ShimBin}}
+exec {{.EngineBin}} --debug --config {{.EngineConfig}} --oci-worker-binary {{.ShimBin}}
 `
 
 func init() {
@@ -415,13 +395,8 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
-			WithNewFile("/etc/dagger/cni.conflist", dagger.ContainerWithNewFileOpts{
-				Contents: cniConfig("dagger", network.CIDR),
-			}).
 			WithDirectory(engineDefaultStateDir, c.Directory()).
-			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
-				Contents: buildkitConfig(),
-			}).
+			WithNewFile(engineTomlPath). // stub config that user can override
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
 				Permissions: 755,
@@ -431,40 +406,6 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	}
 
 	return platformVariants
-}
-
-func cniConfig(name, subnet string) string {
-	b, err := json.Marshal(map[string]any{
-		"cniVersion": "0.4.0",
-		"name":       name,
-		"plugins": []any{
-			map[string]any{
-				"type":             "bridge",
-				"bridge":           name + "0",
-				"isDefaultGateway": true,
-				"ipMasq":           true,
-				"hairpinMode":      true,
-				"ipam": map[string]any{
-					"type":   "host-local",
-					"ranges": []any{[]any{map[string]any{"subnet": subnet}}},
-				},
-			},
-			map[string]any{
-				"type": "firewall",
-			},
-			map[string]any{
-				"type":       "dnsname",
-				"domainName": "dns.dagger",
-				"capabilities": map[string]any{
-					"aliases": true,
-				},
-			},
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
 }
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
@@ -486,22 +427,6 @@ func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 		}).
 		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
 		Directory("/opt/cni/bin")
-}
-
-func buildkitConfig() string {
-	return strings.Join([]string{
-		fmt.Sprintf("root = %q", engineDefaultStateDir),
-		// TODO(vito): re-enable when stable
-		// ``,
-		// `# configure bridge networking`,
-		// `[worker.oci]`,
-		// `networkMode = "cni"`,
-		// `cniConfigPath = "/etc/dagger/cni.conflist"`,
-		// ``,
-		// `[worker.containerd]`,
-		// `networkMode = "cni"`,
-		// `cniConfigPath = "/etc/dagger/cni.conflist"`,
-	}, "\n")
 }
 
 func engineBin(c *dagger.Client, arch string) *dagger.File {

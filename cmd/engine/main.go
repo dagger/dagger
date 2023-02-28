@@ -211,7 +211,12 @@ func main() {
 			return err
 		}
 
+		if err := setDaggerDefaults(&cfg); err != nil {
+			return err
+		}
+
 		setDefaultConfig(&cfg)
+
 		if err := applyMainFlags(c, &cfg); err != nil {
 			return err
 		}
