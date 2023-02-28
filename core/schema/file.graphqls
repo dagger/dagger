@@ -15,7 +15,7 @@ type File {
   contents: String!
 
   "Retrieves a secret referencing the contents of this file."
-  secret: Secret!
+  secret: Secret! @deprecated(reason: "insecure, leaves secret in cache")
 
   "Gets the size of the file, in bytes."
   size: Int!

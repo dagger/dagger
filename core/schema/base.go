@@ -5,6 +5,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -20,6 +21,7 @@ type InitializeArgs struct {
 	Platform      specs.Platform
 	DisableHostRW bool
 	Auth          *auth.RegistryAuthProvider
+	Secrets       *secret.Store
 
 	// TODO(vito): remove when stable
 	EnableServices bool
@@ -34,6 +36,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		solveCh:   params.SolveCh,
 		platform:  params.Platform,
 		auth:      params.Auth,
+		secrets:   params.Secrets,
 
 		// TODO(vito): remove when stable
 		servicesEnabled: params.EnableServices,
@@ -66,6 +69,7 @@ type baseSchema struct {
 	solveCh   chan *bkclient.SolveStatus
 	platform  specs.Platform
 	auth      *auth.RegistryAuthProvider
+	secrets   *secret.Store
 
 	// TODO(vito): remove when stable
 	servicesEnabled bool

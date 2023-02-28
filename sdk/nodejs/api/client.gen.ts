@@ -2188,6 +2188,7 @@ export class File extends BaseClient {
 
   /**
    * Retrieves a secret referencing the contents of this file.
+   * @deprecated insecure, leaves secret in cache
    */
   secret(): Secret {
     return new Secret({
@@ -3094,6 +3095,25 @@ export default class Client extends BaseClient {
         {
           operation: "secret",
           args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Set a secret given a user defined name to its plaintext and returns the secret.
+   * @param name The user defined name for this secret
+   * @param plaintext The plaintext of the secret
+   */
+  setSecret(name: string, plaintext: string): Secret {
+    return new Secret({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setSecret",
+          args: { name, plaintext },
         },
       ],
       host: this.clientHost,
