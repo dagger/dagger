@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/google/uuid"
 )
 
@@ -19,24 +18,6 @@ const (
 
 	pushURL = "https://api.us-east.tinybird.co/v0/events?name=events"
 )
-
-const eventVersion = "2023-02-21.01"
-
-type Event struct {
-	Version   string    `json:"v"`
-	Timestamp time.Time `json:"ts"`
-
-	RunID    string        `json:"run_id"`
-	OpID     string        `json:"op_id"`
-	OpName   string        `json:"op_name"`
-	Pipeline pipeline.Path `json:"pipeline"`
-	Internal bool          `json:"internal"`
-	Inputs   []string      `json:"inputs"`
-
-	Started   *time.Time `json:"started"`
-	Completed *time.Time `json:"completed"`
-	Cached    bool       `json:"cached"`
-}
 
 type Telemetry struct {
 	enable bool
@@ -92,12 +73,18 @@ func (t *Telemetry) SetRunID(id string) {
 	t.runID = id
 }
 
-func (t *Telemetry) Push(ev *Event) {
+func (t *Telemetry) Push(p Payload, ts time.Time) {
 	if !t.enable {
 		return
 	}
 
-	ev.RunID = t.runID
+	ev := &Event{
+		Version:   eventVersion,
+		Timestamp: ts,
+		RunID:     t.runID,
+		Type:      p.Type(),
+		Payload:   p,
+	}
 
 	t.mu.Lock()
 	t.queue = append(t.queue, ev)

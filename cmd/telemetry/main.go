@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/google/uuid"
 )
 
 func main() {
@@ -49,8 +48,6 @@ func main() {
 }
 
 func processJournal(t *Telemetry, entries chan *JournalEntry) error {
-	runID := uuid.NewString()
-
 	for entry := range entries {
 		for _, v := range entry.Event.Vertexes {
 			id := v.Digest.String()
@@ -65,11 +62,7 @@ func processJournal(t *Telemetry, entries chan *JournalEntry) error {
 				}
 			}
 
-			ev := Event{
-				Version:   eventVersion,
-				Timestamp: entry.TS,
-				RunID:     runID,
-
+			payload := OpPayload{
 				OpID:     id,
 				OpName:   custom.Name,
 				Internal: custom.Internal,
@@ -80,12 +73,20 @@ func processJournal(t *Telemetry, entries chan *JournalEntry) error {
 				Cached:    v.Cached,
 			}
 
-			ev.Inputs = []string{}
+			payload.Inputs = []string{}
 			for _, input := range v.Inputs {
-				ev.Inputs = append(ev.Inputs, input.String())
+				payload.Inputs = append(payload.Inputs, input.String())
 			}
 
-			t.Push(&ev)
+			t.Push(payload, entry.TS)
+		}
+
+		for _, l := range entry.Event.Logs {
+			t.Push(LogPayload{
+				OpID:   l.Vertex.String(),
+				Data:   string(l.Data),
+				Stream: l.Stream,
+			}, l.Timestamp)
 		}
 	}
 
