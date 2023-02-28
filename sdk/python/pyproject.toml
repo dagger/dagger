@@ -61,6 +61,7 @@ pytest = ">=7.2.0"
 pytest-mock = ">=3.10.0"
 pytest-subprocess = ">=1.4.2"
 pytest-lazy-fixture = "^0.6.3"
+pytest-httpx = ">=0.21.3"
 
 [tool.poetry.group.lint.dependencies]
 black = ">=22.3.0"
@@ -227,6 +228,8 @@ extend-immutable-calls = ["typer.Option"]
     "S", 
     # Magic value comparison doesn't apply to tests.
     "PLR2004",
+    # Allow more than one statement in pytest.raises.
+    "PT012",
 ]
 # Allow some patterns to redefine imports in __init__.
 "__init__.py" = ["F401", "F403", "PLC0414"]

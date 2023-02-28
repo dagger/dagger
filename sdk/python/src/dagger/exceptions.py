@@ -1,5 +1,7 @@
 import attrs
+import cattrs
 import graphql
+from gql.transport.exceptions import TransportQueryError
 
 
 class DaggerError(Exception):
@@ -21,11 +23,29 @@ class SessionError(ProvisionError):
     """Error while starting an engine session."""
 
     def __str__(self) -> str:
-        return f"Dagger engine failed to start: {super().__str__()}"
+        return f"Failed to start Dagger engine session: {super().__str__()}"
 
 
 class ClientError(DaggerError):
     """Base class for client errors."""
+
+
+class ClientConnectionError(ClientError):
+    """Error while establishing a client connection to the server."""
+
+    def __str__(self) -> str:
+        return (
+            "Failed to establish client connection to the Dagger session: "
+            f"{super().__str__()}"
+        )
+
+
+class TransportError(ClientError):
+    """Error processing request/response during query execution."""
+
+
+class ExecuteTimeoutError(TransportError):
+    """Timeout while executing a query."""
 
 
 class InvalidQueryError(ClientError):
@@ -34,31 +54,50 @@ class InvalidQueryError(ClientError):
 
 @attrs.define
 class QueryErrorLocation:
+    """Error location returned by the API."""
+
     line: int
     column: int
+
+
+@attrs.define
+class QueryErrorValue:
+    """Error value returned by the API."""
+
+    message: str
+    locations: list[QueryErrorLocation]
+    path: list[str]
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class QueryError(ClientError):
     """The server returned an error for a specific query."""
 
-    def __init__(
-        self,
-        msg: str,
-        query: graphql.DocumentNode,
-        path: list[str],
-        locations: list[QueryErrorLocation],
-    ):
-        super().__init__(msg.strip())
+    def __init__(self, errors: list[QueryErrorValue], query: graphql.DocumentNode):
+        if not errors:
+            msg = "Errors list is empty"
+            raise ValueError(msg)
+        super().__init__(errors[0])
+        self.errors = errors
         self.query = query
-        self.path = path
-        self.locations = locations
+
+    @classmethod
+    def from_transport(cls, exc: TransportQueryError, query: graphql.DocumentNode):
+        """Create instance from a gql exception."""
+        try:
+            errors = cattrs.structure(exc.errors, list[QueryErrorValue])
+        except (TypeError, KeyError, ValueError):
+            return None
+        return QueryError(errors, query) if errors else None
 
     def debug_query(self):
         """Return GraphQL query for debugging purposes."""
         lines = graphql.print_ast(self.query).splitlines()
         # count number of digits from line count
         pad = len(str(len(lines)))
-        locations = {loc.line: loc.column for loc in self.locations}
+        locations = {loc.line: loc.column for loc in self.errors[0].locations}
         res = []
         for nr, line in enumerate(lines, start=1):
             # prepend line number
@@ -67,7 +106,3 @@ class QueryError(ClientError):
                 # add caret below line, pointing to start of error
                 res.append(" " * (pad + 1 + locations[nr]) + "^")
         return "\n".join(res)
-
-
-class ExecuteTimeoutError(ClientError):
-    """Timeout while executing a query."""
