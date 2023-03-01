@@ -1,4 +1,4 @@
-## Introduction to Dagger 
+## Introduction to Dagger
 
 [![Watch the video](https://user-images.githubusercontent.com/101831275/220751200-add7a2be-884f-4d59-b24d-62b22ffb3a00.png)](https://youtu.be/HHhttaiHtm4)
 
