@@ -195,8 +195,8 @@ class Container(Type):
         If a scheme is specified, a URL is returned. Otherwise, a host:port
         pair is returned.
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -397,8 +397,8 @@ class Container(Type):
     def exposed_ports(self) -> "Port":
         """Retrieves the list of exposed ports.
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
@@ -454,8 +454,8 @@ class Container(Type):
         """Retrieves a hostname which can be used by clients to reach this
         container.
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Returns
         -------
@@ -881,8 +881,8 @@ class Container(Type):
           - For health checks and introspection, when running services
           - For setting the EXPOSE OCI field when publishing the container
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1159,8 +1159,8 @@ class Container(Type):
         The service dependency will also convey to any files or directories
         produced by the container.
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1248,8 +1248,8 @@ class Container(Type):
     ) -> "Container":
         """Unexpose a previously exposed port.
 
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to
-        enable.
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------

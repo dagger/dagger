@@ -164,7 +164,7 @@ type ContainerEndpointOpts struct {
 //
 // If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
 	q := r.q.Select("endpoint")
 	// `port` optional argument
@@ -317,7 +317,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 
 // Retrieves the list of exposed ports.
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
@@ -364,7 +364,7 @@ func (r *Container) FS() *Directory {
 
 // Retrieves a hostname which can be used by clients to reach this container.
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Hostname(ctx context.Context) (string, error) {
 	q := r.q.Select("hostname")
 
@@ -689,7 +689,7 @@ type ContainerWithExposedPortOpts struct {
 //   - For health checks and introspection, when running services
 //   - For setting the EXPOSE OCI field when publishing the container
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	q = q.Arg("port", port)
@@ -924,7 +924,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 //
 // The service dependency will also convey to any files or directories produced by the container.
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
@@ -989,7 +989,7 @@ type ContainerWithoutExposedPortOpts struct {
 
 // Unexpose a previously exposed port.
 //
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
 	q := r.q.Select("withoutExposedPort")
 	q = q.Arg("port", port)

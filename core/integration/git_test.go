@@ -65,7 +65,7 @@ func TestGit(t *testing.T) {
 }
 
 func TestGitSSHAuthSock(t *testing.T) {
-	checkEnabled(t, engine.ServicesDNSEnvName)
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()

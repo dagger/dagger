@@ -58,7 +58,7 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-if [ -n "$` + servicesDNSEnvName + `" ]; then
+if [ "$` + servicesDNSEnvName + `" != "0" ]; then
 	# relocate resolv.conf mount
 	touch /etc/resolv.conf.upstream
 	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
