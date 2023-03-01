@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/network"
 	"github.com/jackpal/gateway"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
+	"github.com/sirupsen/logrus"
 )
 
 // engineDefaultStateDir is the directory that we map to a volume by default.
@@ -73,34 +74,36 @@ func setNetworkDefaults(cfg *config.NetworkConfig) {
 }
 
 func cniConfig(name, subnet string) ([]byte, error) {
-	ip, err := gateway.DiscoverInterface()
-	if err != nil {
-		return nil, err
+	bridgePlugin := map[string]any{
+		"type":             "bridge",
+		"bridge":           name + "0",
+		"isDefaultGateway": true,
+		"ipMasq":           true,
+		"hairpinMode":      true,
+		"ipam": map[string]any{
+			"type": "host-local",
+			"ranges": []any{
+				[]any{map[string]any{"subnet": subnet}},
+			},
+		},
 	}
 
-	networkIface, err := findIfaceWithIP(ip.String())
-	if err != nil {
-		return nil, err
+	if ip, err := gateway.DiscoverInterface(); err == nil {
+		if iface, err := findIfaceWithIP(ip.String()); err == nil {
+			logrus.Infof("detected mtu %d via interface %s", iface.MTU, iface.Name)
+			bridgePlugin["mtu"] = iface.MTU
+		} else {
+			logrus.Warnf("could not determine mtu: %s", err)
+		}
+	} else {
+		logrus.Warnf("could not detect mtu: %s", err)
 	}
 
 	return json.Marshal(map[string]any{
 		"cniVersion": "0.4.0",
 		"name":       name,
 		"plugins": []any{
-			map[string]any{
-				"type":             "bridge",
-				"bridge":           name + "0",
-				"isDefaultGateway": true,
-				"ipMasq":           true,
-				"hairpinMode":      true,
-				"mtu":              networkIface.MTU,
-				"ipam": map[string]any{
-					"type": "host-local",
-					"ranges": []any{
-						[]any{map[string]any{"subnet": subnet}},
-					},
-				},
-			},
+			bridgePlugin,
 			map[string]any{
 				"type": "firewall",
 			},
