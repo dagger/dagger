@@ -440,6 +440,14 @@ type Container {
     The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     """
     experimentalPrivilegedNesting: Boolean
+
+    """
+    Execute the command with all root capabilities. This is similar to running a command
+    with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+    does not provide any security guarantees when using this option. It should only be used
+    when absolutely necessary and only with trusted commands.
+    """
+    insecureRootCapabilities: Boolean
   ): Container!
 
   """
@@ -577,9 +585,9 @@ type Container {
   """
   withExposedPort(
     "Port number to expose"
-    port: Int!,
+    port: Int!
     "Transport layer network protocol"
-    protocol: NetworkProtocol = TCP,
+    protocol: NetworkProtocol = TCP
     "Optional port description"
     description: String
   ): Container!
@@ -591,7 +599,7 @@ type Container {
   """
   withoutExposedPort(
     "Port number to unexpose"
-    port: Int!,
+    port: Int!
     "Port protocol to unexpose"
     protocol: NetworkProtocol = TCP
   ): Container!
@@ -614,7 +622,7 @@ type Container {
   """
   withServiceBinding(
     "A name that can be used to reach the service from the container"
-    alias: String!,
+    alias: String!
     "Identifier of the service container"
     service: ContainerID!
   ): Container!
@@ -637,7 +645,7 @@ type Container {
   """
   endpoint(
     "The exposed port number for the endpoint"
-    port: Int,
+    port: Int
     "Return a URL with the given scheme, eg. http for http://"
     scheme: String
   ): String!
