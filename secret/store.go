@@ -59,7 +59,16 @@ func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	plaintext := []byte(store.idToPlaintext[core.SecretID(id)])
+	secretID := core.SecretID(id)
+	// we check if it's the new SecretID format
+	_, err := secretID.Digest()
+	if err != nil {
+		// if not, we use the legacy SecretID format
+		return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
+	}
+
+	// if it is, we use it
+	plaintext := []byte(store.idToPlaintext[secretID])
 
 	return plaintext, nil
 }

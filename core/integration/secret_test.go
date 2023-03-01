@@ -150,7 +150,7 @@ func TestNewSecret(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	exitCode, err := c.Container().From("alpine").WithSecretVariable("AWS_KEY", s).WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).ExitCode(ctx)
+	exitCode, err := c.Container().From("alpine:3.16.2").WithSecretVariable("AWS_KEY", s).WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).ExitCode(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 }
