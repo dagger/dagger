@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -21,7 +23,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/progress/progressui"
@@ -77,6 +78,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
+	// Load default labels asynchronously in the background.
+	go func() {
+		err := pipeline.LoadRootLabels(startOpts.Workdir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to load default labels: %v\n", err)
+		}
+	}()
+
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
 	case err == nil:
@@ -97,12 +106,23 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
 	}
 
+	registryAuth := auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr))
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
+			registryAuth,
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)),
 		},
+		CacheExports: []bkclient.CacheOptionsEntry{{
+			Type: "dagger",
+			Attrs: map[string]string{
+				"mode": "max",
+			},
+		}},
+		CacheImports: []bkclient.CacheOptionsEntry{{
+			Type: "dagger",
+		}},
 	}
 
 	if !startOpts.DisableHostRW {
@@ -124,15 +144,18 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			// Thankfully we can just yeet the gateway into the store.
 			secretStore.SetGateway(gw)
 
+			gwClient := core.NewGatewayClient(gw)
 			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				Workdir:       startOpts.Workdir,
-				Gateway:       gw,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       solveCh,
-				Platform:      *platform,
-				DisableHostRW: startOpts.DisableHostRW,
+				Router:         router,
+				Workdir:        startOpts.Workdir,
+				Gateway:        gwClient,
+				BKClient:       c,
+				SolveOpts:      solveOpts,
+				SolveCh:        solveCh,
+				Platform:       *platform,
+				DisableHostRW:  startOpts.DisableHostRW,
+				Auth:           registryAuth,
+				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "",
 			})
 			if err != nil {
 				return nil, err
@@ -160,7 +183,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			return bkgw.NewResult(), nil
+			// Return a result that contains every reference that was solved in this session.
+			// If cache export is enabled server-side, all these references will be exported.
+			return gwClient.CombinedResult(), nil
 		}, solveCh)
 		return err
 	})
@@ -188,7 +213,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 			defer close(cleanCh)
 			for ev := range ch {
 				for _, v := range ev.Vertexes {
-					customName := core.CustomName{}
+					customName := pipeline.CustomName{}
 					if json.Unmarshal([]byte(v.Name), &customName) == nil {
 						v.Name = customName.Name
 					}
@@ -200,7 +225,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 
 		// Display from `cleanCh`
 		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), "", nil, startOpts.LogOutput, cleanCh)
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, cleanCh)
 			for _, w := range warn {
 				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
 			}

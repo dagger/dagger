@@ -54,7 +54,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 
 			// embedded files
 			"**/*.go.tmpl",
-			"**/*.ts.tmpl",
+			"**/*.ts.gtpl",
 			"**/*.graphqls",
 			"**/*.graphql",
 
@@ -96,7 +96,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 	}
 
 	return c.Container().
-		From("golang:1.19-alpine").
+		From("golang:1.20.0-alpine").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 		Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "build-base"}}).
 		WithEnvVariable("CGO_ENABLED", "0").
@@ -108,7 +108,9 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithMountedDirectory("/app", goMods).
 		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
-		WithMountedDirectory("/app", repo)
+		WithMountedDirectory("/app", repo).
+		// include a cache for go build
+		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build"))
 }
 
 // GoBase is a standardized base image for running Go, cache optimized for the layout
@@ -120,13 +122,16 @@ func GoBase(c *dagger.Client) *dagger.Container {
 	return AdvertiseDevEngine(c, goBase(c))
 }
 
-func daggerBinary(c *dagger.Client, goos, goarch string) *dagger.File {
+func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {
 	base := goBase(c)
 	if goos != "" {
 		base = base.WithEnvVariable("GOOS", goos)
 	}
 	if goarch != "" {
 		base = base.WithEnvVariable("GOARCH", goarch)
+	}
+	if goarm != "" {
+		base = base.WithEnvVariable("GOARM", goarm)
 	}
 	return base.
 		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"}).
@@ -135,12 +140,16 @@ func daggerBinary(c *dagger.Client, goos, goarch string) *dagger.File {
 
 // DaggerBinary returns a compiled dagger binary
 func DaggerBinary(c *dagger.Client) *dagger.File {
-	return daggerBinary(c, "", "")
+	return PlatformDaggerBinary(c, "", "", "")
 }
 
 // HostDaggerBinary returns a dagger binary compiled to target the host's OS+arch
 func HostDaggerBinary(c *dagger.Client) *dagger.File {
-	return daggerBinary(c, runtime.GOOS, runtime.GOARCH)
+	var goarm string
+	if runtime.GOARCH == "arm" {
+		goarm = "7" // not always correct but not sure of better way right now
+	}
+	return PlatformDaggerBinary(c, runtime.GOOS, runtime.GOARCH, goarm)
 }
 
 // ClientGenBinary returns a compiled dagger binary

@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"time"
 
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
@@ -31,7 +29,6 @@ dagger run -- sh -c 'curl \
 }
 
 func Run(cmd *cobra.Command, args []string) {
-	rand.Seed(time.Now().UnixNano())
 	ctx := context.Background()
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
@@ -49,7 +46,7 @@ func Run(cmd *cobra.Command, args []string) {
 		}
 		listening <- fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port)
 		if err := withEngine(ctx, sessionToken.String(), func(ctx context.Context, r *router.Router) error {
-			return http.Serve(l, r)
+			return http.Serve(l, r) //nolint:gosec
 		}); err != nil {
 			panic(err)
 		}

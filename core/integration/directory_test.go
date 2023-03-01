@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"regexp"
 	"testing"
 	"time"
 
@@ -395,9 +396,15 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
-	dir := c.Directory().
-		WithNewFile("some-file", "some-content").
-		WithNewFile("sub-dir/sub-file", "sub-content").
+	dir := c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"sh", "-c", `
+		  mkdir output
+			touch output/some-file
+			mkdir output/sub-dir
+			touch output/sub-dir/sub-file
+		`}).
+		Directory("output").
 		WithTimestamps(int(reallyImportantTime.Unix()))
 
 	t.Run("changes file and directory timestamps recursively", func(t *testing.T) {
@@ -408,9 +415,9 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		require.Contains(t, ls, "-rw-r--r--    1 root     root            12 Oct 26  1985 some-file")
-		require.Contains(t, ls, "drwxr-xr-x    2 root     root          4096 Oct 26  1985 sub-dir")
-		require.Contains(t, ls, "-rw-r--r--    1 root     root            11 Oct 26  1985 sub-file")
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 some-file`), ls)
+		require.Regexp(t, regexp.MustCompile(`drwxr-xr-x\s+2 root\s+root\s+\d+ Oct 26  1985 sub-dir`), ls)
+		require.Regexp(t, regexp.MustCompile(`-rw-r--r--\s+1 root\s+root\s+\d+ Oct 26  1985 sub-file`), ls)
 	})
 
 	t.Run("results in stable tar archiving", func(t *testing.T) {
@@ -742,4 +749,54 @@ CMD echo "stage2"
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
 	})
+}
+
+func TestDirectoryWithNewFileExceedingLength(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
+					id
+				}
+			}
+		}`, &res, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+}
+
+func TestDirectoryWithFileExceedingLength(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				file struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
+					file(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt") {
+						id
+					}
+				}
+			}
+		}`, &res, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
 }

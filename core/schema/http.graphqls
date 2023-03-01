@@ -1,4 +1,14 @@
 extend type Query {
-    "Returns a file containing an http remote url content."
-    http(url: String!): File!
+  """
+  Returns a file containing an http remote url content.
+  """
+  http(
+    """
+    HTTP url to get the content from (e.g., "https://docs.dagger.io").
+    """
+    url: String!,
+
+    "A service which must be started before the URL is fetched."
+    experimentalServiceHost: ContainerID
+  ): File!
 }

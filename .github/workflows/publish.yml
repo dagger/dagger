@@ -6,6 +6,11 @@ on:
 
   # Run tests in a PR when an SDK has a default CLI version bump
   pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
     paths:
       - sdk/go/internal/engineconn/version.gen.go
       - sdk/python/src/dagger/engine/_version.py
@@ -21,7 +26,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: '1.20'
 
       - uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
@@ -57,6 +62,7 @@ jobs:
             This PR was auto-generated.
           delete-branch: true
           branch: bump-engine
+          draft: true
 
   test-provision-macos:
     name: "Test SDK Provision / macos"
@@ -103,7 +109,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: "1.19"
+          go-version: '1.20'
 
       - name: "Test Go SDK"
         run: |
@@ -178,7 +184,7 @@ jobs:
         shell: bash
       - uses: actions/setup-go@v3
         with:
-          go-version: 1.19
+          go-version: '1.20'
       - name: "Test Go SDK"
         run: |
           cd sdk/go

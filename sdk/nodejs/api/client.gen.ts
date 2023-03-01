@@ -53,7 +53,14 @@ class BaseClient {
 }
 
 export type BuildArg = {
+  /**
+   * The build argument name.
+   */
   name: string
+
+  /**
+   * The build argument value.
+   */
   value: string
 }
 
@@ -62,10 +69,31 @@ export type BuildArg = {
  */
 export type CacheID = string & { __CacheID: never }
 
+/**
+ * Sharing mode of the cache volume.
+ */
+export enum CacheSharingMode {
+  /**
+   * Shares the cache volume amongst many build pipelines,
+   * but will serialize the writes
+   */
+  Locked,
+
+  /**
+   * Keeps a cache volume for a single build pipeline
+   */
+  Private,
+
+  /**
+   * Shares the cache volume amongst many build pipelines
+   */
+  Shared,
+}
 export type ContainerBuildOpts = {
   /**
    * Path to the Dockerfile to use.
-   * Defaults to './Dockerfile'.
+   *
+   * Default: './Dockerfile'.
    */
   dockerfile?: string
 
@@ -80,24 +108,36 @@ export type ContainerBuildOpts = {
   target?: string
 }
 
+export type ContainerEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
+}
+
 export type ContainerExecOpts = {
   /**
-   * Command to run instead of the container's default command.
+   * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    */
   args?: string[]
 
   /**
-   * Content to write to the command's standard input before closing.
+   * Content to write to the command's standard input before closing (e.g., "Hello world").
    */
   stdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container.
+   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container.
+   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
    */
   redirectStderr?: string
 
@@ -118,7 +158,15 @@ export type ContainerExportOpts = {
 }
 
 export type ContainerPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ContainerPublishOpts = {
@@ -130,49 +178,101 @@ export type ContainerPublishOpts = {
 }
 
 export type ContainerWithDefaultArgsOpts = {
+  /**
+   * Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
+   */
   args?: string[]
 }
 
 export type ContainerWithDirectoryOpts = {
+  /**
+   * Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
+   */
   exclude?: string[]
+
+  /**
+   * Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
+   */
   include?: string[]
 }
 
 export type ContainerWithExecOpts = {
   /**
-   * Content to write to the command's standard input before closing.
+   * Content to write to the command's standard input before closing (e.g., "Hello world").
    */
   stdin?: string
 
   /**
-   * Redirect the command's standard output to a file in the container.
+   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    */
   redirectStdout?: string
 
   /**
-   * Redirect the command's standard error to a file in the container.
+   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
    */
   redirectStderr?: string
 
   /**
-   * Provide dagger access to the executed command.
+   * Provides dagger access to the executed command.
+   *
    * Do not use this option unless you trust the command being executed.
    * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
 }
 
+export type ContainerWithExposedPortOpts = {
+  /**
+   * Transport layer network protocol
+   */
+  protocol?: NetworkProtocol
+
+  /**
+   * Optional port description
+   */
+  description?: string
+}
+
 export type ContainerWithFileOpts = {
+  /**
+   * Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
+   */
   permissions?: number
 }
 
 export type ContainerWithMountedCacheOpts = {
+  /**
+   * Identifier of the directory to use as the cache volume's root.
+   */
   source?: Directory
+
+  /**
+   * Sharing mode of the cache volume.
+   */
+  sharing?: CacheSharingMode
 }
 
 export type ContainerWithNewFileOpts = {
+  /**
+   * Content of the file to write (e.g., "Hello world!").
+   */
   contents?: string
+
+  /**
+   * Permission given to the written file (e.g., 0600).
+   *
+   * Default: 0644.
+   */
   permissions?: number
+}
+
+export type ContainerWithoutExposedPortOpts = {
+  /**
+   * Port protocol to unexpose
+   */
+  protocol?: NetworkProtocol
 }
 
 /**
@@ -187,8 +287,9 @@ export type DateTime = string & { __DateTime: never }
 
 export type DirectoryDockerBuildOpts = {
   /**
-   * Path to the Dockerfile to use.
-   * Defaults to './Dockerfile'.
+   * Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+   *
+   * Defaults: './Dockerfile'.
    */
   dockerfile?: string
 
@@ -198,7 +299,7 @@ export type DirectoryDockerBuildOpts = {
   platform?: Platform
 
   /**
-   * Additional build arguments.
+   * Build arguments to use in the build.
    */
   buildArgs?: BuildArg[]
 
@@ -209,36 +310,60 @@ export type DirectoryDockerBuildOpts = {
 }
 
 export type DirectoryEntriesOpts = {
+  /**
+   * Location of the directory to look at (e.g., "/src").
+   */
   path?: string
 }
 
 export type DirectoryPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type DirectoryWithDirectoryOpts = {
   /**
-   * Exclude artifacts that match the given pattern.
-   * (e.g. ["node_modules/", ".git*"]).
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
    */
   exclude?: string[]
 
   /**
-   * Include only artifacts that match the given pattern.
-   * (e.g. ["app/", "package.*"]).
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   include?: string[]
 }
 
 export type DirectoryWithFileOpts = {
+  /**
+   * Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
+   */
   permissions?: number
 }
 
 export type DirectoryWithNewDirectoryOpts = {
+  /**
+   * Permission granted to the created directory (e.g., 0777).
+   *
+   * Default: 0755.
+   */
   permissions?: number
 }
 
 export type DirectoryWithNewFileOpts = {
+  /**
+   * Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
+   */
   permissions?: number
 }
 
@@ -258,12 +383,26 @@ export type GitRefTreeOpts = {
 }
 
 export type HostDirectoryOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
   exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
   include?: string[]
 }
 
 export type HostWorkdirOpts = {
+  /**
+   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   */
   exclude?: string[]
+
+  /**
+   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
+   */
   include?: string[]
 }
 
@@ -273,8 +412,35 @@ export type HostWorkdirOpts = {
 export type ID = string & { __ID: never }
 
 /**
+ * Transport layer network protocol associated to a port.
+ */
+export enum NetworkProtocol {
+  /**
+   * TCP (Transmission Control Protocol)
+   */
+  Tcp,
+
+  /**
+   * UDP (User Datagram Protocol)
+   */
+  Udp,
+}
+export type PipelineLabel = {
+  /**
+   * Label name.
+   */
+  name: string
+
+  /**
+   * Label value.
+   */
+  value: string
+}
+
+/**
  * The platform config OS and architecture in a Container.
- * The format is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
+ *
+ * The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
  */
 export type Platform = string & { __Platform: never }
 
@@ -288,11 +454,34 @@ export type ClientDirectoryOpts = {
 }
 
 export type ClientGitOpts = {
+  /**
+   * Set to true to keep .git directory.
+   */
   keepGitDir?: boolean
+
+  /**
+   * A service which must be started before the repo is fetched.
+   */
+  experimentalServiceHost?: Container
+}
+
+export type ClientHttpOpts = {
+  /**
+   * A service which must be started before the URL is fetched.
+   */
+  experimentalServiceHost?: Container
 }
 
 export type ClientPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ClientSocketOpts = {
@@ -320,6 +509,7 @@ export type __TypeFieldsOpts = {
 /**
  * A directory whose contents persist across runs.
  */
+
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
@@ -334,17 +524,44 @@ export class CacheVolume extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: CacheVolume) => CacheVolume) {
+    return arg(this)
+  }
 }
 
 /**
  * An OCI-compatible container, also known as a docker container.
  */
+
 export class Container extends BaseClient {
   /**
-   * Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+   * Initializes this container from a Dockerfile build.
    * @param context Directory context used by the Dockerfile.
    * @param opts.dockerfile Path to the Dockerfile to use.
-Defaults to './Dockerfile'.
+   *
+   * Default: './Dockerfile'.
    * @param opts.buildArgs Additional build arguments.
    * @param opts.target Target build stage to build.
    */
@@ -380,7 +597,10 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Retrieves a directory at the given path. Mounts are included.
+   * Retrieves a directory at the given path.
+   *
+   * Mounts are included.
+   * @param path The path of the directory to retrieve (e.g., "./src").
    */
   directory(path: string): Directory {
     return new Directory({
@@ -394,6 +614,32 @@ Defaults to './Dockerfile'.
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -415,6 +661,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves the value of the specified environment variable.
+   * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
   async envVariable(name: string): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -450,13 +697,13 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this container after executing the specified command inside it.
-   * @param opts.args Command to run instead of the container's default command.
-   * @param opts.stdin Content to write to the command's standard input before closing.
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container.
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container.
+   * @param opts.args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
    * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
-Do not use this option unless you trust the command being executed.
-The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    * @deprecated Replaced by withExec.
    */
   exec(opts?: ContainerExecOpts): Container {
@@ -492,12 +739,14 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
-   * Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+   * Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
+   *
    * Return true on success.
-   * @param path Host's destination path.
-Path can be relative to the engine's workdir or absolute.
+   * It can also publishes platform variants.
+   * @param path Host's destination path (e.g., "./tarball").
+   * Path can be relative to the engine's workdir or absolute.
    * @param opts.platformVariants Identifiers for other platform specific containers.
-Used for multi-platform image.
+   * Used for multi-platform image.
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -515,7 +764,29 @@ Used for multi-platform image.
   }
 
   /**
-   * Retrieves a file at the given path. Mounts are included.
+   * Retrieves the list of exposed ports.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   */
+  async exposedPorts(): Promise<Port[]> {
+    const response: Awaited<Port[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "exposedPorts",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves a file at the given path.
+   *
+   * Mounts are included.
+   * @param path The path of the file to retrieve (e.g., "./README.md").
    */
   file(path: string): File {
     return new File({
@@ -532,9 +803,10 @@ Used for multi-platform image.
   }
 
   /**
-   * Initializes this container from the base image published at the given address.
+   * Initializes this container from a pulled base image.
    * @param address Image's address from its registry.
-Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   *
+   * Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
    */
   from(address: string): Container {
     return new Container({
@@ -568,6 +840,25 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
   }
 
   /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   */
+  async hostname(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
@@ -576,6 +867,23 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
         ...this._queryTree,
         {
           operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+   */
+  async imageRef(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "imageRef",
         },
       ],
       this.client
@@ -638,6 +946,9 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
 
   /**
    * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ContainerPipelineOpts): Container {
     return new Container({
@@ -671,11 +982,15 @@ Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
   }
 
   /**
-   * Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+   * Publishes this container as a new image to the specified address.
+   *
+   * Publish returns a fully qualified ref.
+   * It can also publish platform variants.
    * @param address Registry's address to publish the image to.
-Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   *
+   * Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
    * @param opts.platformVariants Identifiers for other platform specific containers.
-Used for multi-platform image.
+   * Used for multi-platform image.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -763,6 +1078,7 @@ Used for multi-platform image.
 
   /**
    * Configures default arguments for future commands.
+   * @param opts.args Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
    */
   withDefaultArgs(opts?: ContainerWithDefaultArgsOpts): Container {
     return new Container({
@@ -780,6 +1096,10 @@ Used for multi-platform image.
 
   /**
    * Retrieves this container plus a directory written at the given path.
+   * @param path Location of the written directory (e.g., "/tmp/directory").
+   * @param directory Identifier of the directory to write
+   * @param opts.exclude Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
+   * @param opts.include Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
    */
   withDirectory(
     path: string,
@@ -801,6 +1121,7 @@ Used for multi-platform image.
 
   /**
    * Retrieves this container but with a different command entrypoint.
+   * @param args Entrypoint to use for future executions (e.g., ["go", "run"]).
    */
   withEntrypoint(args: string[]): Container {
     return new Container({
@@ -818,6 +1139,8 @@ Used for multi-platform image.
 
   /**
    * Retrieves this container plus the given environment variable.
+   * @param name The name of the environment variable (e.g., "HOST").
+   * @param value The value of the environment variable. (e.g., "localhost").
    */
   withEnvVariable(name: string, value: string): Container {
     return new Container({
@@ -835,13 +1158,14 @@ Used for multi-platform image.
 
   /**
    * Retrieves this container after executing the specified command inside it.
-   * @param args Command to run instead of the container's default command.
-   * @param opts.stdin Content to write to the command's standard input before closing.
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container.
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container.
-   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
-Do not use this option unless you trust the command being executed.
-The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * @param opts.experimentalPrivilegedNesting Provides dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   withExec(args: string[], opts?: ContainerWithExecOpts): Container {
     return new Container({
@@ -850,6 +1174,35 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withExec",
           args: { args, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Expose a network port.
+   *
+   * Exposed ports serve two purposes:
+   *   - For health checks and introspection, when running services
+   *   - For setting the EXPOSE OCI field when publishing the container
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * @param port Port number to expose
+   * @param opts.protocol Transport layer network protocol
+   * @param opts.description Optional port description
+   */
+  withExposedPort(
+    port: number,
+    opts?: ContainerWithExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withExposedPort",
+          args: { port, ...opts },
         },
       ],
       host: this.clientHost,
@@ -877,6 +1230,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus the contents of the given file copied to the given path.
+   * @param path Location of the copied file (e.g., "/tmp/file.txt").
+   * @param source Identifier of the file to copy.
+   * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
    */
   withFile(
     path: string,
@@ -898,6 +1256,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus the given label.
+   * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
+   * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
    */
   withLabel(name: string, value: string): Container {
     return new Container({
@@ -915,6 +1275,10 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a cache volume mounted at the given path.
+   * @param path Location of the cache directory (e.g., "/cache/node_modules").
+   * @param cache Identifier of the cache volume to mount.
+   * @param opts.source Identifier of the directory to use as the cache volume's root.
+   * @param opts.sharing Sharing mode of the cache volume.
    */
   withMountedCache(
     path: string,
@@ -936,6 +1300,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a directory mounted at the given path.
+   * @param path Location of the mounted directory (e.g., "/mnt/directory").
+   * @param source Identifier of the mounted directory.
    */
   withMountedDirectory(path: string, source: Directory): Container {
     return new Container({
@@ -953,6 +1319,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a file mounted at the given path.
+   * @param path Location of the mounted file (e.g., "/tmp/file.txt").
+   * @param source Identifier of the mounted file.
    */
   withMountedFile(path: string, source: File): Container {
     return new Container({
@@ -970,6 +1338,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a secret mounted into a file at the given path.
+   * @param path Location of the secret file (e.g., "/tmp/secret.txt").
+   * @param source Identifier of the secret to mount.
    */
   withMountedSecret(path: string, source: Secret): Container {
     return new Container({
@@ -987,6 +1357,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a temporary directory mounted at the given path.
+   * @param path Location of the temporary directory (e.g., "/tmp/temp_dir").
    */
   withMountedTemp(path: string): Container {
     return new Container({
@@ -1004,6 +1375,11 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus a new file written at the given path.
+   * @param path Location of the written file (e.g., "/tmp/file.txt").
+   * @param opts.contents Content of the file to write (e.g., "Hello world!").
+   * @param opts.permissions Permission given to the written file (e.g., 0600).
+   *
+   * Default: 0644.
    */
   withNewFile(path: string, opts?: ContainerWithNewFileOpts): Container {
     return new Container({
@@ -1012,6 +1388,31 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
         {
           operation: "withNewFile",
           args: { path, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves this container with a registry authentication for a given address.
+   * @param address Registry's address to bind the authentication to.
+   * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   * @param username The username of the registry's account (e.g., "Dagger").
+   * @param secret The API key, password or token to authenticate to this registry.
+   */
+  withRegistryAuth(
+    address: string,
+    username: string,
+    secret: Secret
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withRegistryAuth",
+          args: { address, username, secret },
         },
       ],
       host: this.clientHost,
@@ -1038,6 +1439,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container plus an env variable containing the given secret.
+   * @param name The name of the secret variable (e.g., "API_SECRET").
+   * @param secret The identifier of the secret value.
    */
   withSecretVariable(name: string, secret: Secret): Container {
     return new Container({
@@ -1054,7 +1457,34 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
+   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+   *
+   * The service will be reachable from the container via the provided hostname alias.
+   *
+   * The service dependency will also convey to any files or directories produced by the container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * @param alias A name that can be used to reach the service from the container
+   * @param service Identifier of the service container
+   */
+  withServiceBinding(alias: string, service: Container): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withServiceBinding",
+          args: { alias, service },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container plus a socket forwarded to the given Unix socket path.
+   * @param path Location of the forwarded Unix socket (e.g., "/tmp/socket").
+   * @param source Identifier of the socket to forward.
    */
   withUnixSocket(path: string, source: Socket): Container {
     return new Container({
@@ -1071,7 +1501,8 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
-   * Retrieves this containers with a different command user.
+   * Retrieves this container with a different command user.
+   * @param name The user to set (e.g., "root").
    */
   withUser(name: string): Container {
     return new Container({
@@ -1089,6 +1520,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container with a different working directory.
+   * @param path The path to set as the working directory (e.g., "/app").
    */
   withWorkdir(path: string): Container {
     return new Container({
@@ -1106,6 +1538,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container minus the given environment variable.
+   * @param name The name of the environment variable (e.g., "HOST").
    */
   withoutEnvVariable(name: string): Container {
     return new Container({
@@ -1122,7 +1555,32 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
+   * Unexpose a previously exposed port.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * @param port Port number to unexpose
+   * @param opts.protocol Port protocol to unexpose
+   */
+  withoutExposedPort(
+    port: number,
+    opts?: ContainerWithoutExposedPortOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutExposedPort",
+          args: { port, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container minus the given environment label.
+   * @param name The name of the label to remove (e.g., "org.opencontainers.artifact.created").
    */
   withoutLabel(name: string): Container {
     return new Container({
@@ -1140,6 +1598,7 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
   /**
    * Retrieves this container after unmounting everything at the given path.
+   * @param path Location of the cache directory (e.g., "/cache/node_modules").
    */
   withoutMount(path: string): Container {
     return new Container({
@@ -1156,7 +1615,27 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
   }
 
   /**
+   * Retrieves this container without the registry authentication of a given address.
+   * @param address Registry's address to remove the authentication from.
+   * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
+   */
+  withoutRegistryAuth(address: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutRegistryAuth",
+          args: { address },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container with a previously added Unix socket removed.
+   * @param path Location of the socket to remove (e.g., "/tmp/socket").
    */
   withoutUnixSocket(path: string): Container {
     return new Container({
@@ -1188,14 +1667,41 @@ The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Container) => Container) {
+    return arg(this)
+  }
 }
 
 /**
  * A directory.
  */
+
 export class Directory extends BaseClient {
   /**
    * Gets the difference between this directory and an another directory.
+   * @param other Identifier of the directory to compare.
    */
   diff(other: Directory): Directory {
     return new Directory({
@@ -1213,6 +1719,7 @@ export class Directory extends BaseClient {
 
   /**
    * Retrieves a directory at the given path.
+   * @param path Location of the directory to retrieve (e.g., "/src").
    */
   directory(path: string): Directory {
     return new Directory({
@@ -1230,10 +1737,11 @@ export class Directory extends BaseClient {
 
   /**
    * Builds a new Docker container from this directory.
-   * @param opts.dockerfile Path to the Dockerfile to use.
-Defaults to './Dockerfile'.
+   * @param opts.dockerfile Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+   *
+   * Defaults: './Dockerfile'.
    * @param opts.platform The platform to build.
-   * @param opts.buildArgs Additional build arguments.
+   * @param opts.buildArgs Build arguments to use in the build.
    * @param opts.target Target build stage to build.
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
@@ -1252,6 +1760,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Returns a list of files and directories at the given path.
+   * @param opts.path Location of the directory to look at (e.g., "/src").
    */
   async entries(opts?: DirectoryEntriesOpts): Promise<string[]> {
     const response: Awaited<string[]> = await computeQuery(
@@ -1270,6 +1779,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Writes the contents of the directory to a path on the host.
+   * @param path Location of the copied directory (e.g., "logs/").
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1288,6 +1798,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves a file at the given path.
+   * @param path Location of the file to retrieve (e.g., "README.md").
    */
   file(path: string): File {
     return new File({
@@ -1338,7 +1849,10 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Creates a named sub-pipeline.
+   * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
     return new Directory({
@@ -1356,10 +1870,10 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory plus a directory written at the given path.
-   * @param opts.exclude Exclude artifacts that match the given pattern.
-(e.g. ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern.
-(e.g. ["app/", "package.*"]).
+   * @param path Location of the written directory (e.g., "/src/").
+   * @param directory Identifier of the directory to copy.
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   withDirectory(
     path: string,
@@ -1381,6 +1895,11 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory plus the contents of the given file copied to the given path.
+   * @param path Location of the copied file (e.g., "/file.txt").
+   * @param source Identifier of the file to copy.
+   * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
    */
   withFile(
     path: string,
@@ -1402,6 +1921,10 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory plus a new directory created at the given path.
+   * @param path Location of the directory created (e.g., "/logs").
+   * @param opts.permissions Permission granted to the created directory (e.g., 0777).
+   *
+   * Default: 0755.
    */
   withNewDirectory(
     path: string,
@@ -1422,6 +1945,11 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory plus a new file written at the given path.
+   * @param path Location of the written file (e.g., "/file.txt").
+   * @param contents Content of the written file (e.g., "Hello world!").
+   * @param opts.permissions Permission given to the copied file (e.g., 0600).
+   *
+   * Default: 0644.
    */
   withNewFile(
     path: string,
@@ -1442,7 +1970,10 @@ Defaults to './Dockerfile'.
   }
 
   /**
-   * Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
+   * Retrieves this directory with all file/dir timestamps set to the given time.
+   * @param timestamp Timestamp to set dir/files in.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
   withTimestamps(timestamp: number): Directory {
     return new Directory({
@@ -1460,6 +1991,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory with the directory at the given path removed.
+   * @param path Location of the directory to remove (e.g., ".github/").
    */
   withoutDirectory(path: string): Directory {
     return new Directory({
@@ -1477,6 +2009,7 @@ Defaults to './Dockerfile'.
 
   /**
    * Retrieves this directory with the file at the given path removed.
+   * @param path Location of the file to remove (e.g., "/file.txt").
    */
   withoutFile(path: string): Directory {
     return new Directory({
@@ -1491,11 +2024,37 @@ Defaults to './Dockerfile'.
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Directory) => Directory) {
+    return arg(this)
+  }
 }
 
 /**
  * A simple key value object that represents an environment variable.
  */
+
 export class EnvVariable extends BaseClient {
   /**
    * The environment variable name.
@@ -1530,11 +2089,37 @@ export class EnvVariable extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: EnvVariable) => EnvVariable) {
+    return arg(this)
+  }
 }
 
 /**
  * A file.
  */
+
 export class File extends BaseClient {
   /**
    * Retrieves the contents of the file.
@@ -1555,6 +2140,7 @@ export class File extends BaseClient {
 
   /**
    * Writes the file to a file path on the host.
+   * @param path Location of the written directory (e.g., "output.txt").
    */
   async export(path: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1622,7 +2208,10 @@ export class File extends BaseClient {
   }
 
   /**
-   * Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
+   * Retrieves this file with its created/modified timestamps set to the given time.
+   * @param timestamp Timestamp to set dir/files in.
+   *
+   * Formatted in seconds following Unix epoch (e.g., 1672531199).
    */
   withTimestamps(timestamp: number): File {
     return new File({
@@ -1637,11 +2226,37 @@ export class File extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: File) => File) {
+    return arg(this)
+  }
 }
 
 /**
  * A git ref (tag, branch or commit).
  */
+
 export class GitRef extends BaseClient {
   /**
    * The digest of the current value of this ref.
@@ -1676,14 +2291,41 @@ export class GitRef extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: GitRef) => GitRef) {
+    return arg(this)
+  }
 }
 
 /**
  * A git repository.
  */
+
 export class GitRepository extends BaseClient {
   /**
    * Returns details on one branch.
+   * @param name Branch's name (e.g., "main").
    */
   branch(name: string): GitRef {
     return new GitRef({
@@ -1718,6 +2360,7 @@ export class GitRepository extends BaseClient {
 
   /**
    * Returns details on one commit.
+   * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
   commit(id: string): GitRef {
     return new GitRef({
@@ -1735,6 +2378,7 @@ export class GitRepository extends BaseClient {
 
   /**
    * Returns details on one tag.
+   * @param name Tag's name (e.g., "v0.3.9").
    */
   tag(name: string): GitRef {
     return new GitRef({
@@ -1766,14 +2410,43 @@ export class GitRepository extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: GitRepository) => GitRepository) {
+    return arg(this)
+  }
 }
 
 /**
  * Information about the host execution environment.
  */
+
 export class Host extends BaseClient {
   /**
    * Accesses a directory on the host.
+   * @param path Location of the directory to access (e.g., ".").
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    */
   directory(path: string, opts?: HostDirectoryOpts): Directory {
     return new Directory({
@@ -1791,6 +2464,7 @@ export class Host extends BaseClient {
 
   /**
    * Accesses an environment variable on the host.
+   * @param name Name of the environment variable (e.g., "PATH").
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({
@@ -1808,6 +2482,7 @@ export class Host extends BaseClient {
 
   /**
    * Accesses a Unix socket on the host.
+   * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
    */
   unixSocket(path: string): Socket {
     return new Socket({
@@ -1825,6 +2500,8 @@ export class Host extends BaseClient {
 
   /**
    * Retrieves the current working directory on the host.
+   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
+   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
    * @deprecated Use directory with path set to '.' instead.
    */
   workdir(opts?: HostWorkdirOpts): Directory {
@@ -1840,11 +2517,37 @@ export class Host extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Host) => Host) {
+    return arg(this)
+  }
 }
 
 /**
  * An environment variable on the host environment.
  */
+
 export class HostVariable extends BaseClient {
   /**
    * A secret referencing the value of this variable.
@@ -1878,11 +2581,37 @@ export class HostVariable extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: HostVariable) => HostVariable) {
+    return arg(this)
+  }
 }
 
 /**
  * A simple key value object that represents a label.
  */
+
 export class Label extends BaseClient {
   /**
    * The label name.
@@ -1917,11 +2646,119 @@ export class Label extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Label) => Label) {
+    return arg(this)
+  }
+}
+
+/**
+ * A port exposed by a container.
+ */
+
+export class Port extends BaseClient {
+  /**
+   * The port description.
+   */
+  async description(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The port number.
+   */
+  async port(): Promise<number> {
+    const response: Awaited<number> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "port",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The transport layer network protocol.
+   */
+  async protocol(): Promise<NetworkProtocol> {
+    const response: Awaited<NetworkProtocol> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "protocol",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Port) => Port) {
+    return arg(this)
+  }
 }
 
 /**
  * A set of scripts and/or extensions
  */
+
 export class Project extends BaseClient {
   /**
    * extensions in this project
@@ -2023,12 +2860,37 @@ export class Project extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Project) => Project) {
+    return arg(this)
+  }
 }
 
 export default class Client extends BaseClient {
   /**
    * Constructs a cache volume for a given cache key.
-   * @param key A string identifier to target this cache volume (e.g. "myapp-cache").
+   * @param key A string identifier to target this cache volume (e.g., "modules-cache").
    */
   cacheVolume(key: string): CacheVolume {
     return new CacheVolume({
@@ -2046,8 +2908,10 @@ export default class Client extends BaseClient {
 
   /**
    * Loads a container from ID.
+   *
    * Null ID returns an empty container (scratch).
-   * Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+   * Optional platform argument initializes new containers to execute and publish as that platform.
+   * Platform defaults to that of the builder's host.
    */
   container(opts?: ClientContainerOpts): Container {
     return new Container({
@@ -2116,6 +2980,11 @@ export default class Client extends BaseClient {
 
   /**
    * Queries a git repository.
+   * @param url Url of the git repository.
+   * Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
+   * Suffix ".git" is optional.
+   * @param opts.keepGitDir Set to true to keep .git directory.
+   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -2149,14 +3018,16 @@ export default class Client extends BaseClient {
 
   /**
    * Returns a file containing an http remote url content.
+   * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
+   * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  http(url: string): File {
+  http(url: string, opts?: ClientHttpOpts): File {
     return new File({
       queryTree: [
         ...this._queryTree,
         {
           operation: "http",
-          args: { url },
+          args: { url, ...opts },
         },
       ],
       host: this.clientHost,
@@ -2165,7 +3036,10 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline
+   * Creates a named sub-pipeline.
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ClientPipelineOpts): Client {
     return new Client({
@@ -2236,6 +3110,7 @@ export default class Client extends BaseClient {
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
+
 export class Secret extends BaseClient {
   /**
    * The identifier for this secret.
@@ -2270,6 +3145,31 @@ export class Secret extends BaseClient {
 
     return response
   }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Secret) => Secret) {
+    return arg(this)
+  }
 }
 
 export class Socket extends BaseClient {
@@ -2288,5 +3188,30 @@ export class Socket extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Socket) => Socket) {
+    return arg(this)
   }
 }

@@ -22,7 +22,8 @@ type DirectoryID string
 type FileID string
 
 // The platform config OS and architecture in a Container.
-// The format is [os]/[platform]/[version] (e.g. darwin/arm64/v7, windows/amd64, linux/arm64).
+//
+// The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
 
 // A unique identifier for a secret.
@@ -31,9 +32,21 @@ type SecretID string
 // A content-addressed socket identifier.
 type SocketID string
 
+// Key value object that represents a build argument.
 type BuildArg struct {
+	// The build argument name.
 	Name string `json:"name"`
 
+	// The build argument value.
+	Value string `json:"value"`
+}
+
+// Key value object that represents a Pipeline label.
+type PipelineLabel struct {
+	// Label name.
+	Name string `json:"name"`
+
+	// Label value.
 	Value string `json:"value"`
 }
 
@@ -74,7 +87,8 @@ type Container struct {
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
 	// Path to the Dockerfile to use.
-	// Defaults to './Dockerfile'.
+	//
+	// Default: './Dockerfile'.
 	Dockerfile string
 	// Additional build arguments.
 	BuildArgs []BuildArg
@@ -82,7 +96,7 @@ type ContainerBuildOpts struct {
 	Target string
 }
 
-// Initializes this container from a Dockerfile build, using the context, a dockerfile file path and some additional buildArgs.
+// Initializes this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	q := r.q.Select("build")
 	q = q.Arg("context", context)
@@ -123,7 +137,9 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves a directory at the given path. Mounts are included.
+// Retrieves a directory at the given path.
+//
+// Mounts are included.
 func (r *Container) Directory(path string) *Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
@@ -132,6 +148,43 @@ func (r *Container) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// ContainerEndpointOpts contains options for Container.Endpoint
+type ContainerEndpointOpts struct {
+	// The exposed port number for the endpoint
+	Port int
+	// Return a URL with the given scheme, eg. http for http://
+	Scheme string
+}
+
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+	q := r.q.Select("endpoint")
+	// `port` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+			break
+		}
+	}
+	// `scheme` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+			break
+		}
+	}
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
@@ -164,13 +217,13 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 
 // ContainerExecOpts contains options for Container.Exec
 type ContainerExecOpts struct {
-	// Command to run instead of the container's default command.
+	// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
 	Args []string
-	// Content to write to the command's standard input before closing.
+	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
-	// Redirect the command's standard output to a file in the container.
+	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container.
+	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
 	// Provide dagger access to the executed command.
 	// Do not use this option unless you trust the command being executed.
@@ -242,8 +295,10 @@ type ContainerExportOpts struct {
 	PlatformVariants []*Container
 }
 
-// Writes the container as an OCI tarball to the destination file path on the host for the specified platformVariants.
+// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
+//
 // Return true on success.
+// It can also publishes platform variants.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
@@ -260,7 +315,20 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves a file at the given path. Mounts are included.
+// Retrieves the list of exposed ports.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+	q := r.q.Select("exposedPorts")
+
+	var response []Port
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves a file at the given path.
+//
+// Mounts are included.
 func (r *Container) File(path string) *File {
 	q := r.q.Select("file")
 	q = q.Arg("path", path)
@@ -271,7 +339,7 @@ func (r *Container) File(path string) *File {
 	}
 }
 
-// Initializes this container from the base image published at the given address.
+// Initializes this container from a pulled base image.
 func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
@@ -292,6 +360,17 @@ func (r *Container) FS() *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Retrieves a hostname which can be used by clients to reach this container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) Hostname(ctx context.Context) (string, error) {
+	q := r.q.Select("hostname")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this container.
@@ -315,6 +394,15 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
+func (r *Container) ImageRef(ctx context.Context) (string, error) {
+	q := r.q.Select("imageRef")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the value of the specified label.
@@ -347,7 +435,10 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 
 // ContainerPipelineOpts contains options for Container.Pipeline
 type ContainerPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline
@@ -358,6 +449,13 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -384,7 +482,10 @@ type ContainerPublishOpts struct {
 	PlatformVariants []*Container
 }
 
-// Publishes this container as a new image to the specified address, for the platformVariants, returning a fully qualified ref.
+// Publishes this container as a new image to the specified address.
+//
+// Publish returns a fully qualified ref.
+// It can also publish platform variants.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
@@ -442,6 +543,7 @@ func (r *Container) User(ctx context.Context) (string, error) {
 
 // ContainerWithDefaultArgsOpts contains options for Container.WithDefaultArgs
 type ContainerWithDefaultArgsOpts struct {
+	// Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
 	Args []string
 }
 
@@ -464,8 +566,9 @@ func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Conta
 
 // ContainerWithDirectoryOpts contains options for Container.WithDirectory
 type ContainerWithDirectoryOpts struct {
+	// Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
 	Exclude []string
-
+	// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
 	Include []string
 }
 
@@ -520,13 +623,14 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// Content to write to the command's standard input before closing.
+	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
-	// Redirect the command's standard output to a file in the container.
+	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
 	RedirectStdout string
-	// Redirect the command's standard error to a file in the container.
+	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
 	RedirectStderr string
-	// Provide dagger access to the executed command.
+	// Provides dagger access to the executed command.
+	//
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
@@ -571,6 +675,45 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	}
 }
 
+// ContainerWithExposedPortOpts contains options for Container.WithExposedPort
+type ContainerWithExposedPortOpts struct {
+	// Transport layer network protocol
+	Protocol NetworkProtocol
+	// Optional port description
+	Description string
+}
+
+// Expose a network port.
+//
+// Exposed ports serve two purposes:
+//   - For health checks and introspection, when running services
+//   - For setting the EXPOSE OCI field when publishing the container
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
+	q := r.q.Select("withExposedPort")
+	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
+	// `description` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Initializes this container from this DirectoryID.
 //
 // Deprecated: Replaced by WithRootfs.
@@ -586,6 +729,9 @@ func (r *Container) WithFS(id *Directory) *Container {
 
 // ContainerWithFileOpts contains options for Container.WithFile
 type ContainerWithFileOpts struct {
+	// Permission given to the copied file (e.g., 0600).
+	//
+	// Default: 0644.
 	Permissions int
 }
 
@@ -622,7 +768,10 @@ func (r *Container) WithLabel(name string, value string) *Container {
 
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
+	// Identifier of the directory to use as the cache volume's root.
 	Source *Directory
+	// Sharing mode of the cache volume.
+	Sharing CacheSharingMode
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
@@ -634,6 +783,13 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
+			break
+		}
+	}
+	// `sharing` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Sharing) {
+			q = q.Arg("sharing", opts[i].Sharing)
 			break
 		}
 	}
@@ -693,8 +849,11 @@ func (r *Container) WithMountedTemp(path string) *Container {
 
 // ContainerWithNewFileOpts contains options for Container.WithNewFile
 type ContainerWithNewFileOpts struct {
+	// Content of the file to write (e.g., "Hello world!").
 	Contents string
-
+	// Permission given to the written file (e.g., 0600).
+	//
+	// Default: 0644.
 	Permissions int
 }
 
@@ -716,6 +875,19 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 			break
 		}
 	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container with a registry authentication for a given address.
+func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+	q := r.q.Select("withRegistryAuth")
+	q = q.Arg("address", address)
+	q = q.Arg("username", username)
+	q = q.Arg("secret", secret)
 
 	return &Container{
 		q: q,
@@ -746,6 +918,24 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
+// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+//
+// The service will be reachable from the container via the provided hostname alias.
+//
+// The service dependency will also convey to any files or directories produced by the container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+	q := r.q.Select("withServiceBinding")
+	q = q.Arg("alias", alias)
+	q = q.Arg("service", service)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
 	q := r.q.Select("withUnixSocket")
@@ -758,7 +948,7 @@ func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
 	}
 }
 
-// Retrieves this containers with a different command user.
+// Retrieves this container with a different command user.
 func (r *Container) WithUser(name string) *Container {
 	q := r.q.Select("withUser")
 	q = q.Arg("name", name)
@@ -791,6 +981,32 @@ func (r *Container) WithoutEnvVariable(name string) *Container {
 	}
 }
 
+// ContainerWithoutExposedPortOpts contains options for Container.WithoutExposedPort
+type ContainerWithoutExposedPortOpts struct {
+	// Port protocol to unexpose
+	Protocol NetworkProtocol
+}
+
+// Unexpose a previously exposed port.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
+	q := r.q.Select("withoutExposedPort")
+	q = q.Arg("port", port)
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container minus the given environment label.
 func (r *Container) WithoutLabel(name string) *Container {
 	q := r.q.Select("withoutLabel")
@@ -806,6 +1022,17 @@ func (r *Container) WithoutLabel(name string) *Container {
 func (r *Container) WithoutMount(path string) *Container {
 	q := r.q.Select("withoutMount")
 	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container without the registry authentication of a given address.
+func (r *Container) WithoutRegistryAuth(address string) *Container {
+	q := r.q.Select("withoutRegistryAuth")
+	q = q.Arg("address", address)
 
 	return &Container{
 		q: q,
@@ -863,12 +1090,13 @@ func (r *Directory) Directory(path string) *Directory {
 
 // DirectoryDockerBuildOpts contains options for Directory.DockerBuild
 type DirectoryDockerBuildOpts struct {
-	// Path to the Dockerfile to use.
-	// Defaults to './Dockerfile'.
+	// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+	//
+	// Defaults: './Dockerfile'.
 	Dockerfile string
 	// The platform to build.
 	Platform Platform
-	// Additional build arguments.
+	// Build arguments to use in the build.
 	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
@@ -914,6 +1142,7 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 
 // DirectoryEntriesOpts contains options for Directory.Entries
 type DirectoryEntriesOpts struct {
+	// Location of the directory to look at (e.g., "/src").
 	Path string
 }
 
@@ -990,10 +1219,13 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline.
+// Creates a named sub-pipeline
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1001,6 +1233,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -1013,11 +1252,9 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory
 type DirectoryWithDirectoryOpts struct {
-	// Exclude artifacts that match the given pattern.
-	// (e.g. ["node_modules/", ".git*"]).
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
 	Exclude []string
-	// Include only artifacts that match the given pattern.
-	// (e.g. ["app/", "package.*"]).
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
 }
 
@@ -1049,6 +1286,9 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 
 // DirectoryWithFileOpts contains options for Directory.WithFile
 type DirectoryWithFileOpts struct {
+	// Permission given to the copied file (e.g., 0600).
+	//
+	// Default: 0644.
 	Permissions int
 }
 
@@ -1073,6 +1313,9 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 
 // DirectoryWithNewDirectoryOpts contains options for Directory.WithNewDirectory
 type DirectoryWithNewDirectoryOpts struct {
+	// Permission granted to the created directory (e.g., 0777).
+	//
+	// Default: 0755.
 	Permissions int
 }
 
@@ -1096,6 +1339,9 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 
 // DirectoryWithNewFileOpts contains options for Directory.WithNewFile
 type DirectoryWithNewFileOpts struct {
+	// Permission given to the copied file (e.g., 0600).
+	//
+	// Default: 0644.
 	Permissions int
 }
 
@@ -1118,7 +1364,7 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 	}
 }
 
-// Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch.
+// Retrieves this directory with all file/dir timestamps set to the given time.
 func (r *Directory) WithTimestamps(timestamp int) *Directory {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
@@ -1242,7 +1488,7 @@ func (r *File) Size(ctx context.Context) (int, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves this file with its created/modified timestamps set to the given time, in seconds from the Unix epoch.
+// Retrieves this file with its created/modified timestamps set to the given time.
 func (r *File) WithTimestamps(timestamp int) *File {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
@@ -1364,8 +1610,9 @@ type Host struct {
 
 // HostDirectoryOpts contains options for Host.Directory
 type HostDirectoryOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
 	Exclude []string
-
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
 }
 
@@ -1418,8 +1665,9 @@ func (r *Host) UnixSocket(path string) *Socket {
 
 // HostWorkdirOpts contains options for Host.Workdir
 type HostWorkdirOpts struct {
+	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
 	Exclude []string
-
+	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
 	Include []string
 }
 
@@ -1494,6 +1742,39 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 	q := r.q.Select("value")
 
 	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A port exposed by a container.
+type Port struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// The port description.
+func (r *Port) Description(ctx context.Context) (string, error) {
+	q := r.q.Select("description")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The port number.
+func (r *Port) Port(ctx context.Context) (int, error) {
+	q := r.q.Select("port")
+
+	var response int
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The transport layer network protocol.
+func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+	q := r.q.Select("protocol")
+
+	var response NetworkProtocol
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1578,8 +1859,10 @@ type ContainerOpts struct {
 }
 
 // Loads a container from ID.
+//
 // Null ID returns an empty container (scratch).
-// Optional platform argument initializes new containers to execute and publish as that platform. Platform defaults to that of the builder's host.
+// Optional platform argument initializes new containers to execute and publish as that platform.
+// Platform defaults to that of the builder's host.
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
 	// `id` optional argument
@@ -1647,7 +1930,10 @@ func (r *Client) File(id FileID) *File {
 
 // GitOpts contains options for Query.Git
 type GitOpts struct {
+	// Set to true to keep .git directory.
 	KeepGitDir bool
+	// A service which must be started before the repo is fetched.
+	ExperimentalServiceHost *Container
 }
 
 // Queries a git repository.
@@ -1658,6 +1944,13 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
+			break
+		}
+	}
+	// `experimentalServiceHost` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 			break
 		}
 	}
@@ -1678,10 +1971,23 @@ func (r *Client) Host() *Host {
 	}
 }
 
+// HTTPOpts contains options for Query.HTTP
+type HTTPOpts struct {
+	// A service which must be started before the URL is fetched.
+	ExperimentalServiceHost *Container
+}
+
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string) *File {
+func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
+	// `experimentalServiceHost` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
+			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
+			break
+		}
+	}
 
 	return &File{
 		q: q,
@@ -1691,10 +1997,13 @@ func (r *Client) HTTP(url string) *File {
 
 // PipelineOpts contains options for Query.Pipeline
 type PipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1702,6 +2011,13 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -1821,3 +2137,18 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 	}
 	return string(id), nil
 }
+
+type CacheSharingMode string
+
+const (
+	Locked  CacheSharingMode = "LOCKED"
+	Private CacheSharingMode = "PRIVATE"
+	Shared  CacheSharingMode = "SHARED"
+)
+
+type NetworkProtocol string
+
+const (
+	Tcp NetworkProtocol = "TCP"
+	Udp NetworkProtocol = "UDP"
+)

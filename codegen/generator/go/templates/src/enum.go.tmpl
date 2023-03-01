@@ -1,0 +1,12 @@
+{{- if IsEnum . }}
+	{{- $enumName := .Name }}
+type {{ $enumName }} string
+
+
+const (
+	{{- range $index, $field :=  .EnumValues | SortEnumFields }}
+	{{ $field.Name | FormatEnum}} {{ $enumName }} = "{{ $field.Name }}"
+	{{- end }}
+)
+
+{{- end }}

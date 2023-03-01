@@ -1,9 +1,11 @@
+import contextlib
+import enum
 import functools
 import logging
 import typing
 from collections import deque
-from collections.abc import Sequence
-from typing import Any, Callable, ParamSpec, TypeVar
+from collections.abc import Callable, Sequence
+from typing import Any, ParamSpec, TypeVar
 
 import anyio
 import attrs
@@ -16,8 +18,19 @@ from beartype.roar import BeartypeCallHintViolation
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
+from gql.transport.exceptions import (
+    TransportClosed,
+    TransportProtocolError,
+    TransportQueryError,
+    TransportServerError,
+)
 
-from dagger.exceptions import ExecuteTimeoutError, InvalidQueryError
+from dagger.exceptions import (
+    ExecuteTimeoutError,
+    InvalidQueryError,
+    QueryError,
+    TransportError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +61,9 @@ class Context:
     session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
     selections: deque[Field] = attrs.field(factory=deque)
-    converter: cattrs.Converter = attrs.field(factory=make_converter)
+    converter: cattrs.Converter = attrs.field(
+        factory=functools.partial(make_converter, detailed_validation=False)
+    )
 
     def select(
         self,
@@ -84,32 +99,21 @@ class Context:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
-        try:
-            result = await self.session.execute(query, get_execution_result=True)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
-            )
-            raise ExecuteTimeoutError(msg) from e
-        return self._get_value(result.data, return_type)
+        with self._handle_execute(query):
+            result = await self.session.execute(query)
+        return self.get_value(result, return_type)
 
     def execute_sync(self, return_type: type[T]) -> T:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
-        try:
-            result = self.session.execute(query, get_execution_result=True)
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
-            )
-            raise ExecuteTimeoutError(msg) from e
-        return self._get_value(result.data, return_type)
+        with self._handle_execute(query):
+            result = self.session.execute(query)
+        return self.get_value(result, return_type)
 
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
+
         # mutating to avoid re-fetching on forked pipeline
         async def _resolve_id(pos: int, k: str, v: IDType):
             sel = self.selections[pos]
@@ -126,8 +130,8 @@ class Context:
                     # check if it's a sequence of Type objects
                     if TypeSequence.is_bearable(v):
                         # make sure it's a list, to mutate by index
-                        sel.args[k] = v = list(v)
-                        for seq_i, seq_v in enumerate(v):
+                        sel.args[k] = list(v)
+                        for seq_i, seq_v in enumerate(sel.args[k]):
                             if isinstance(seq_v, IDType):
                                 tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
                     elif isinstance(v, (Type, IDType)):
@@ -140,16 +144,49 @@ class Context:
                 # check if it's a sequence of Type objects
                 if TypeSequence.is_bearable(v):
                     # make sure it's a list, to mutate by index
-                    sel.args[k] = v = list(v)
-                    for seq_i, seq_v in enumerate(v):
+                    sel.args[k] = list(v)
+                    for seq_i, seq_v in enumerate(sel.args[k]):
                         if isinstance(seq_v, IDType):
                             sel.args[k][seq_i] = seq_v.id()
                 elif isinstance(v, (Type, IDType)):
                     sel.args[k] = v.id()
 
-    def _get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
+    @contextlib.contextmanager
+    def _handle_execute(self, query: graphql.DocumentNode):
+        # Reduces duplication when handling errors, between sync and async.
+        try:
+            yield
+
+        except httpx.TimeoutException as e:
+            msg = (
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            )
+            raise ExecuteTimeoutError(msg) from e
+
+        except httpx.RequestError as e:
+            msg = f"Failed to make request: {e}"
+            raise TransportError(msg) from e
+
+        except TransportClosed as e:
+            msg = (
+                "Connection to engine has been closed. Make sure you're "
+                "calling the API within a `dagger.Connection()` context."
+            )
+            raise TransportError(msg) from e
+
+        except (TransportProtocolError, TransportServerError) as e:
+            msg = f"Unexpected response from engine: {e}"
+            raise TransportError(msg) from e
+
+        except TransportQueryError as e:
+            if error := QueryError.from_transport(e, query):
+                raise error from e
+            raise
+
+    def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
         if value is not None:
-            value = self._structure_response(value, return_type)
+            value = self.structure_response(value, return_type)
         if value is None and not TypeHint(return_type).is_bearable(None):
             msg = (
                 "Required field got a null response. Check if parent fields are valid."
@@ -157,7 +194,7 @@ class Context:
             raise InvalidQueryError(msg)
         return value
 
-    def _structure_response(self, response: dict[str, Any], return_type: type[T]) -> T:
+    def structure_response(self, response: dict[str, Any], return_type: type[T]) -> T:
         for f in self.selections:
             response = response[f.name]
             if response is None:
@@ -173,6 +210,13 @@ class Arg(typing.NamedTuple):
 
 class Scalar(str):
     """Custom scalar."""
+
+
+class Enum(str, enum.Enum):
+    """Custom enumeration."""
+
+    def __str__(self) -> str:
+        return str(self.value)
 
 
 class Object:

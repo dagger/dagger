@@ -1,6 +1,5 @@
 
 export type ContainerExecOpts = {
-
   /**
    * Command to run instead of the container's default command
    */

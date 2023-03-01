@@ -11,79 +11,209 @@ type Directory {
   "The content-addressed identifier of the directory."
   id: DirectoryID!
 
-  "Creates a named sub-pipeline."
-  pipeline(name: String!, description: String): Directory!
+  "Creates a named sub-pipeline"
+  pipeline(
+    "Pipeline name."
+    name: String!
+    "Pipeline description."
+    description: String
+    "Pipeline labels."
+    labels: [PipelineLabel!]
+  ): Directory!
 
-  "Returns a list of files and directories at the given path."
-  entries(path: String): [String!]!
-
-  "Retrieves a file at the given path."
-  file(path: String!): File!
-
-  "Retrieves this directory plus the contents of the given file copied to the given path."
-  withFile(path: String!, source: FileID!, permissions: Int): Directory!
-
-  "Retrieves this directory plus a new file written at the given path."
-  withNewFile(path: String!, contents: String!, permissions: Int): Directory!
-
-  "Retrieves this directory with the file at the given path removed."
-  withoutFile(path: String!): Directory!
-
-  "Retrieves a directory at the given path."
-  directory(path: String!): Directory!
-
-  "Retrieves this directory plus a directory written at the given path."
-  withDirectory(
-    path: String!
-    directory: DirectoryID!
+  """
+  Returns a list of files and directories at the given path.
+  """
+  entries(
     """
-    Exclude artifacts that match the given pattern.
-    (e.g. ["node_modules/", ".git*"]).
+    Location of the directory to look at (e.g., "/src").
+    """
+    path: String
+  ): [String!]!
+
+  """
+  Retrieves a file at the given path.
+  """
+  file(
+    """
+    Location of the file to retrieve (e.g., "README.md").
+    """
+    path: String!
+  ): File!
+
+  """
+  Retrieves this directory plus the contents of the given file copied to the given path.
+  """
+  withFile(
+    """
+    Location of the copied file (e.g., "/file.txt").
+    """
+    path: String!
+
+    """
+    Identifier of the file to copy.
+    """
+    source: FileID!
+
+    """
+    Permission given to the copied file (e.g., 0600).
+
+    Default: 0644.
+    """
+    permissions: Int
+  ): Directory!
+
+  """
+  Retrieves this directory plus a new file written at the given path.
+  """
+  withNewFile(
+    """
+    Location of the written file (e.g., "/file.txt").
+    """
+    path: String!
+
+    """
+    Content of the written file (e.g., "Hello world!").
+    """
+    contents: String!
+
+    """
+    Permission given to the copied file (e.g., 0600).
+
+    Default: 0644.
+    """
+    permissions: Int
+  ): Directory!
+
+  """
+  Retrieves this directory with the file at the given path removed.
+  """
+  withoutFile(
+    """
+    Location of the file to remove (e.g., "/file.txt").
+    """
+    path: String!
+  ): Directory!
+
+  """
+  Retrieves a directory at the given path.
+  """
+  directory(
+    """
+    Location of the directory to retrieve (e.g., "/src").
+    """
+    path: String!
+  ): Directory!
+
+  """
+  Retrieves this directory plus a directory written at the given path.
+  """
+  withDirectory(
+    """
+    Location of the written directory (e.g., "/src/").
+    """
+    path: String!
+
+    "Identifier of the directory to copy."
+    directory: DirectoryID!
+
+    """
+    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     """
     exclude: [String!]
 
     """
-    Include only artifacts that match the given pattern.
-    (e.g. ["app/", "package.*"]).
+    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
     """
     include: [String!]
   ): Directory!
 
-  "Retrieves this directory plus a new directory created at the given path."
-  withNewDirectory(path: String!, permissions: Int): Directory!
+  """
+  Retrieves this directory plus a new directory created at the given path.
+  """
+  withNewDirectory(
+    """
+    Location of the directory created (e.g., "/logs").
+    """
+    path: String!
 
-  "Retrieves this directory with the directory at the given path removed."
-  withoutDirectory(path: String!): Directory!
+    """
+    Permission granted to the created directory (e.g., 0777).
+
+    Default: 0755.
+    """
+    permissions: Int
+  ): Directory!
+
+  """
+  Retrieves this directory with the directory at the given path removed.
+  """
+  withoutDirectory(
+    """
+    Location of the directory to remove (e.g., ".github/").
+    """
+    path: String!
+  ): Directory!
 
   "Gets the difference between this directory and an another directory."
-  diff(other: DirectoryID!): Directory!
+  diff(
+    "Identifier of the directory to compare."
+    other: DirectoryID!
+  ): Directory!
 
-  "Writes the contents of the directory to a path on the host."
-  export(path: String!): Boolean!
+  """
+  Writes the contents of the directory to a path on the host.
+  """
+  export(
+    """
+    Location of the copied directory (e.g., "logs/").
+    """
+    path: String!
+  ): Boolean!
 
-  "Builds a new Docker container from this directory."
+  """
+  Builds a new Docker container from this directory.
+  """
   dockerBuild(
     """
-    Path to the Dockerfile to use.
-    Defaults to './Dockerfile'.
+    Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
+
+    Defaults: './Dockerfile'.
     """
     dockerfile: String
 
     "The platform to build."
     platform: Platform
 
-    "Additional build arguments."
+    "Build arguments to use in the build."
     buildArgs: [BuildArg!]
 
     "Target build stage to build."
     target: String
   ): Container!
 
-  "Retrieves this directory with all file/dir timestamps set to the given time, in seconds from the Unix epoch."
-  withTimestamps(timestamp: Int!): Directory!
+  """
+  Retrieves this directory with all file/dir timestamps set to the given time.
+  """
+  withTimestamps(
+    """
+    Timestamp to set dir/files in.
+
+    Formatted in seconds following Unix epoch (e.g., 1672531199).
+    """
+    timestamp: Int!
+  ): Directory!
 }
 
+"Key value object that represents a build argument."
 input BuildArg {
+  """
+  The build argument name.
+  """
   name: String!
+
+  """
+  The build argument value.
+  """
   value: String!
 }

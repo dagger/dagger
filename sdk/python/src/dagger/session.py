@@ -1,9 +1,18 @@
+import contextlib
 import logging
 from typing import TypeAlias, TypeVar
 
+import httpx
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.client import Client as GraphQLClient
 from gql.transport import AsyncTransport, Transport
+from gql.transport.exceptions import (
+    TransportProtocolError,
+    TransportQueryError,
+    TransportServerError,
+)
+
+from dagger.exceptions import ClientConnectionError
 
 from .config import Config, ConnectParams
 from .context import ResourceManager, SyncResourceManager
@@ -60,9 +69,9 @@ class Session(ResourceManager, SyncResourceManager):
         client = self.make_graphql_client(transport)
 
         async with self.get_stack() as stack:
-            # FIXME: handle errors from establishing session
             # FIXME: handle cancellation, retries and timeout (self.cfg.timeout)
-            session = await stack.enter_async_context(client)
+            with self._handle_connection():
+                session = await stack.enter_async_context(client)
 
         return session
 
@@ -70,9 +79,29 @@ class Session(ResourceManager, SyncResourceManager):
         transport = self.make_sync_transport()
         client = self.make_graphql_client(transport)
 
-        with self.get_sync_stack() as stack:
-            # FIXME: handle errors from establishing session
+        with self.get_sync_stack() as stack, self._handle_connection():
             # FIXME: handle cancellation, retries and timeout (self.cfg.timeout)
             session = stack.enter_context(client)
 
         return session
+
+    @contextlib.contextmanager
+    def _handle_connection(self):
+        # Reduces duplication when handling errors, between sync and async.
+        try:
+            yield
+        except httpx.RequestError as e:
+            msg = f"Could not make request: {e}"
+            raise ClientConnectionError(msg) from e
+        except (TransportProtocolError, TransportServerError) as e:
+            msg = f"Got unexpected response from engine: {e}"
+            raise ClientConnectionError(msg) from e
+        except TransportQueryError as e:
+            # Only query during connection is the introspection query
+            # for building the schema.
+            msg = str(e)
+            # Extract only the error message.
+            if e.errors and "message" in e.errors[0]:
+                msg = e.errors[0]["message"].strip()
+            msg = f"Failed to build schema from introspection query: {msg}"
+            raise ClientConnectionError(msg) from e

@@ -33,19 +33,19 @@ func (s *httpSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL string `json:"url"`
+	URL                     string            `json:"url"`
+	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
-	pipeline := core.PipelinePath{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
+	pipeline := parent.PipelinePath()
 
 	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
-	f, err := core.NewFile(ctx, st, "contents", pipeline, s.platform)
-	if err != nil {
-		return nil, err
+
+	svcs := core.ServiceBindings{}
+	if args.ExperimentalServiceHost != nil {
+		svcs[*args.ExperimentalServiceHost] = nil
 	}
-	return f, nil
+
+	return core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs)
 }

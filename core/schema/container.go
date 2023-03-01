@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -79,6 +80,15 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"publish":              router.ToResolver(s.publish),
 			"platform":             router.ToResolver(s.platform),
 			"export":               router.ToResolver(s.export),
+			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
+			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
+			"imageRef":             router.ToResolver(s.imageRef),
+			"withExposedPort":      router.ToResolver(s.withExposedPort),
+			"withoutExposedPort":   router.ToResolver(s.withoutExposedPort),
+			"exposedPorts":         router.ToResolver(s.exposedPorts),
+			"hostname":             router.ToResolver(s.hostname),
+			"endpoint":             router.ToResolver(s.endpoint),
+			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
 		},
 	}
 }
@@ -100,11 +110,7 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
-	pipeline := core.PipelinePath{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
-	ctr, err := core.NewContainer(args.ID, pipeline, platform)
+	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
 	if err != nil {
 		return nil, err
 	}
@@ -131,21 +137,17 @@ func (s *containerSchema) build(ctx *router.Context, parent *core.Container, arg
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
-	ctr, err := parent.WithRootFS(ctx, &arg)
-	if err != nil {
-		return nil, err
-	}
-
-	return ctr, nil
+	return parent.WithRootFS(ctx, &arg)
 }
 
 type containerPipelineArgs struct {
 	Name        string
 	Description string
+	Labels      []pipeline.Label
 }
 
 func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.Pipeline(ctx, args.Name, args.Description)
+	return parent.Pipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
@@ -157,7 +159,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.Exec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
+	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
@@ -417,9 +419,10 @@ func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Cont
 }
 
 type containerWithMountedCacheArgs struct {
-	Path   string
-	Cache  core.CacheID
-	Source core.DirectoryID
+	Path        string                `json:"path"`
+	Cache       core.CacheID          `json:"cache"`
+	Source      core.DirectoryID      `json:"source"`
+	Concurrency core.CacheSharingMode `json:"sharing"`
 }
 
 func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
@@ -428,7 +431,7 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Con
 		dir = &core.Directory{ID: args.Source}
 	}
 
-	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir)
+	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir, args.Concurrency)
 }
 
 type containerWithMountedTempArgs struct {
@@ -567,4 +570,134 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 	}
 
 	return true, nil
+}
+
+type containerWithRegistryAuthArgs struct {
+	Address  string        `json:"address"`
+	Username string        `json:"username"`
+	Secret   core.SecretID `json:"secret"`
+}
+
+func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+	secret, err := core.NewSecret(args.Secret).Plaintext(ctx, s.gw)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.auth.AddCredential(args.Address, args.Username, string(secret)); err != nil {
+		return nil, err
+	}
+
+	return parents, nil
+}
+
+type containerWithoutRegistryAuthArgs struct {
+	Address string
+}
+
+func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+	if err := s.auth.RemoveCredential(args.Address); err != nil {
+		return nil, err
+	}
+
+	return parents, nil
+}
+
+func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+	return parent.ImageRef(ctx, s.gw)
+}
+
+func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
+	return parent.Hostname()
+}
+
+type containerEndpointArgs struct {
+	Port   int
+	Scheme string
+}
+
+func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
+	return parent.Endpoint(args.Port, args.Scheme)
+}
+
+type containerWithServiceDependencyArgs struct {
+	Service core.ContainerID
+	Alias   string
+}
+
+func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
+	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
+}
+
+type containerWithExposedPortArgs struct {
+	Protocol    core.NetworkProtocol
+	Port        int
+	Description *string
+}
+
+func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
+	return parent.WithExposedPort(core.ContainerPort{
+		Protocol:    args.Protocol,
+		Port:        args.Port,
+		Description: args.Description,
+	})
+}
+
+type containerWithoutExposedPortArgs struct {
+	Protocol core.NetworkProtocol
+	Port     int
+}
+
+func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
+	return parent.WithoutExposedPort(args.Port, args.Protocol)
+}
+
+// NB(vito): we have to use a different type with a regular string Protocol
+// field so that the enum mapping works.
+type ExposedPort struct {
+	Port        int     `json:"port"`
+	Protocol    string  `json:"protocol"`
+	Description *string `json:"description,omitempty"`
+}
+
+func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Container, args any) ([]ExposedPort, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
+	ports, err := parent.ExposedPorts()
+	if err != nil {
+		return nil, err
+	}
+
+	exposedPorts := []ExposedPort{}
+	for _, p := range ports {
+		exposedPorts = append(exposedPorts, ExposedPort{
+			Port:        p.Port,
+			Protocol:    string(p.Protocol),
+			Description: p.Description,
+		})
+	}
+
+	return exposedPorts, nil
 }

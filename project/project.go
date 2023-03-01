@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/language/ast"
@@ -200,7 +201,7 @@ func (p *State) Extensions(
 				}
 				p.extensions = append(p.extensions, depState)
 			case dep.Git != nil:
-				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref), "", core.PipelinePath{}, platform)
+				gitFS, err := core.NewDirectory(ctx, llb.Git(dep.Git.Remote, dep.Git.Ref), "", pipeline.Path{}, platform, nil)
 				if err != nil {
 					rerr = err
 					return

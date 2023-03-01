@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 )
 
@@ -28,15 +28,15 @@ func (w WrappedVertex) FullName() string {
 }
 
 func (w WrappedVertex) Name() string {
-	var custom core.CustomName
+	var custom pipeline.CustomName
 	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
 		return custom.Name
 	}
 	return w.v.Name
 }
 
-func (w WrappedVertex) Pipeline() core.PipelinePath {
-	var custom core.CustomName
+func (w WrappedVertex) Pipeline() pipeline.Path {
+	var custom pipeline.CustomName
 	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
 		if len(custom.Pipeline) > 0 {
 			return custom.Pipeline
@@ -45,16 +45,16 @@ func (w WrappedVertex) Pipeline() core.PipelinePath {
 
 	pg := w.v.ProgressGroup.GetId()
 	if pg != "" {
-		var pipeline core.PipelinePath
+		var pipeline pipeline.Path
 		if json.Unmarshal([]byte(pg), &pipeline) == nil {
 			return pipeline
 		}
 	}
-	return core.PipelinePath{}
+	return pipeline.Path{}
 }
 
 func (w WrappedVertex) Internal() bool {
-	var custom core.CustomName
+	var custom pipeline.CustomName
 	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
 		if custom.Internal {
 			return true

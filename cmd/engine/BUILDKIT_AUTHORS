@@ -1,0 +1,35 @@
+# This directory was originally extracted from Buildkit v0.11.1 with
+# contributions from the following authors.
+
+Aaron Lehmann <alehmann@netflix.com>
+Akihiro Suda <akihiro.suda.cz@hco.ntt.co.jp>
+Alex Couture-Beil <alex@earthly.dev>
+Anders F Björklund <anders.f.bjorklund@gmail.com>
+Avi Deitcher <avi@deitcher.net>
+Bertrand Paquet <bertrand.paquet@gmail.com>
+Brian Goff <cpuguy83@gmail.com>
+CrazyMax <crazy-max@users.noreply.github.com>
+Darren Shepherd <darren@rancher.com>
+Dave Chen <dave.chen@arm.com>
+Gabriel Adrian Samfira <gsamfira@cloudbasesolutions.com>
+Ian Campbell <ijc@docker.com>
+Jacob MacElroy <jacob@okteto.com>
+Jeffrey Huang <jeffreyhuang23@gmail.com>
+John Howard <jhoward@microsoft.com>
+Justin Chadwell <me@jedevc.com>
+Kohei Tokunaga <ktokunaga.mail@gmail.com>
+Koichi Shiraishi <zchee.io@gmail.com>
+Kunal Kushwaha <kushwaha_kunal_v7@lab.ntt.co.jp>
+Morlay <morlay.null@gmail.com>
+Nikhil Pandeti <nikhil.pandeti@utexas.edu>
+Paul "TBBle" Hampson <Paul.Hampson@Pobox.com>
+Pranav Pandit <pranavp@microsoft.com>
+Sam Whited <sam@samwhited.com>
+Sebastiaan van Stijn <github@gone.nl>
+Tibor Vass <tibor@docker.com>
+Tino Rusch <tino.rusch@gmail.com>
+Tõnis Tiigi <tonistiigi@gmail.com>
+Vlad A. Ionescu <vladaionescu@users.noreply.github.com>
+Wei Fu <fuweid89@gmail.com>
+ktock <ktokunaga.mail@gmail.com>
+masibw <masi19bw@gmail.com>

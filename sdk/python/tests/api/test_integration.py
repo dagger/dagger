@@ -5,7 +5,7 @@ from textwrap import dedent
 import pytest
 
 import dagger
-from dagger.exceptions import ExecuteTimeoutError
+from dagger.exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -144,3 +144,10 @@ async def test_object_sequence(tmp_path):
             path=str(tmp_path / "export.tar.gz"),
             platform_variants=variants,
         )
+
+
+async def test_connection_closed_error():
+    async with dagger.Connection() as client:
+        ...
+    with pytest.raises(TransportError, match="Connection to engine has been closed"):
+        await client.container().id()

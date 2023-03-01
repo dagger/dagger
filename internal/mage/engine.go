@@ -1,6 +1,7 @@
 package mage
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -8,34 +9,44 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"text/template"
 	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
+	"github.com/dagger/dagger/network"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 )
 
 const (
-	daggerCliBinName = "dagger"
-	shimBinName      = "dagger-shim"
-	buildkitRepo     = "github.com/moby/buildkit"
-	buildkitBranch   = "v0.11.1"
+	engineBinName = "dagger-engine"
+	shimBinName   = "dagger-shim"
+	alpineVersion = "3.17"
+	runcVersion   = "v1.1.4"
+	buildkitRepo  = "github.com/moby/buildkit"
+	// https://github.com/moby/buildkit/commit/34a576c411eaab55c40f3e06478a628ef73bdfc7
+	buildkitRef  = "34a576c411eaab55c40f3e06478a628ef73bdfc7"
+	qemuBinImage = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	engineDefaultStateDir = "/var/lib/dagger"
 
-	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
-	engineEntrypointCommand = "buildkitd --config " + engineTomlPath + " --oci-worker-binary /usr/bin/" + shimBinName
+	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
+
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
-// setting cgroup v2 nesting. ref: https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
-var engineEntrypoint = fmt.Sprintf(`#!/bin/sh
+var engineEntrypoint string
+
+const engineEntrypointTmpl = `#!/bin/sh
 set -e
 
 # cgroup v2: enable nesting
+# see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
 if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 	# move the processes from the root group to the /init group,
 	# otherwise writing subtree_control fails with EBUSY.
@@ -47,10 +58,49 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-exec %s
-`, engineEntrypointCommand)
+if [ -n "$` + servicesDNSEnvName + `" ]; then
+	# relocate resolv.conf mount
+	touch /etc/resolv.conf.upstream
+	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
+	umount /etc/resolv.conf
 
-var engineToml = fmt.Sprintf("root = %q\n", engineDefaultStateDir)
+	# add dnsmasq to resolver so buildkit can reach local services
+	echo '# dagger dnsmasq server' > /etc/resolv.conf
+	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf
+
+	# preserve DNS search/options config, but let dnsmasq delegate to
+	# /etc/resolv.conf.upstream for upstream nameservers
+	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
+fi
+
+exec {{.EngineBin}} --debug --config {{.EngineConfig}} --oci-worker-binary {{.ShimBin}}
+`
+
+func init() {
+	type tmplParams struct {
+		Bridge       string
+		EngineBin    string
+		EngineConfig string
+		ShimBin      string
+	}
+
+	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
+
+	buf := new(bytes.Buffer)
+	err := tmpl.Execute(buf, tmplParams{
+		Bridge:       network.Bridge,
+		EngineBin:    "/usr/local/bin/" + engineBinName,
+		EngineConfig: engineTomlPath,
+		ShimBin:      "/usr/local/bin/" + shimBinName,
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	engineEntrypoint = buf.String()
+}
+
+var publishedEngineArches = []string{"amd64", "arm64"}
 
 func parseRef(tag string) error {
 	if tag == "main" {
@@ -108,13 +158,19 @@ func (t Engine) Lint(ctx context.Context) error {
 		if repo != buildkitRepo {
 			continue
 		}
-		if version != buildkitBranch {
-			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitBranch, version)
+		buildkitRef := buildkitRef
+		if strings.Contains(version, "-") {
+			// not a semver, for now just assume that it ends in a git commit hash
+			version = version[strings.LastIndex(version, "-")+1:]
+			buildkitRef = buildkitRef[:12]
+		}
+		if version != buildkitRef {
+			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitRef, version)
 		}
 	}
 
 	_, err = c.Container().
-		From("golangci/golangci-lint:v1.48").
+		From("golangci/golangci-lint:v1.51").
 		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
@@ -141,10 +197,8 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	}
 	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
-	arches := []string{"amd64", "arm64"}
-
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: devEngineContainer(c, arches),
+		PlatformVariants: devEngineContainer(c, publishedEngineArches),
 	})
 	if err != nil {
 		return err
@@ -163,6 +217,22 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	fmt.Println("PUBLISHED IMAGE REF:", digest)
 
 	return nil
+}
+
+// Verify that all arches for the engine can be built. Just do a local export to avoid setting up
+// a registry
+func (t Engine) TestPublish(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("engine").Pipeline("test-publish")
+	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
+		PlatformVariants: devEngineContainer(c, publishedEngineArches),
+	})
+	return err
 }
 
 func (t Engine) test(ctx context.Context, race bool) error {
@@ -261,16 +331,19 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker rm: %w: %s", err, output)
 	}
 
-	if output, err := exec.CommandContext(ctx, "docker",
+	runArgs := []string{
 		"run",
 		"-d",
-		"--rm",
-		"-v", volumeName+":"+engineDefaultStateDir,
+		// "--rm",
+		"-e", cacheConfigEnvName,
+		"-e", servicesDNSEnvName,
+		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
-		imageName,
-		"--debug",
-	).CombinedOutput(); err != nil {
+	}
+	runArgs = append(runArgs, imageName, "--debug")
+
+	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		return fmt.Errorf("docker run: %w: %s", err, output)
 	}
 
@@ -286,45 +359,127 @@ func (t Engine) Dev(ctx context.Context) error {
 	return nil
 }
 
-func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
-	buildkitRepo := c.Git(buildkitRepo, dagger.GitOpts{KeepGitDir: true}).Branch(buildkitBranch).Tree()
+const cniVersion = "v1.2.0"
 
+func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/dnsname",
+			"-ldflags", "-s -w",
+			"/app/cmd/dnsname",
+		}).
+		File("./bin/dnsname")
+}
+
+func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
-		buildkitBase := c.Container(dagger.ContainerOpts{
-			Platform: dagger.Platform("linux/" + arch),
-		}).Build(buildkitRepo)
-
-		// build the shim binary
-		shimBin := util.GoBase(c).
-			WithEnvVariable("GOOS", "linux").
-			WithEnvVariable("GOARCH", arch).
+		platformVariants = append(platformVariants, c.
+			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+			From("alpine:"+alpineVersion).
 			WithExec([]string{
-				"go", "build",
-				"-o", "./bin/" + shimBinName,
-				"-ldflags", "-s -w",
-				"/app/cmd/shim",
+				"apk", "add",
+				// for Buildkit
+				"git", "openssh", "pigz", "xz",
+				// for CNI
+				"iptables", "ip6tables", "dnsmasq",
 			}).
-			File("./bin/" + shimBinName)
-		buildkitBase = buildkitBase.WithRootfs(
-			buildkitBase.Rootfs().
-				WithFile("/usr/bin/"+shimBinName, shimBin).
-				WithNewFile(engineTomlPath, engineToml).
-				WithNewDirectory(engineDefaultStateDir),
-		)
-
-		// setup entrypoint and CMD
-		buildkitBase = buildkitBase.
+			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
+				Permissions: 0700,
+			}).
+			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
+			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
+			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
+			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
+			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
+			WithDirectory(engineDefaultStateDir, c.Directory()).
+			WithNewFile(engineTomlPath). // stub config that user can override
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
 				Permissions: 755,
 			}).
-			WithEntrypoint([]string{
-				"dagger-entrypoint.sh",
-			})
-
-		platformVariants = append(platformVariants, buildkitBase)
+			WithEntrypoint([]string{"dagger-entrypoint.sh"}),
+		)
 	}
 
 	return platformVariants
+}
+
+func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
+	cniURL := fmt.Sprintf(
+		"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
+		cniVersion, "linux", arch, cniVersion,
+	)
+
+	return c.Container().
+		From("alpine:"+alpineVersion).
+		WithMountedFile("/tmp/cni-plugins.tgz", c.HTTP(cniURL)).
+		WithDirectory("/opt/cni/bin", c.Directory()).
+		WithExec([]string{
+			"tar", "-xzf", "/tmp/cni-plugins.tgz",
+			"-C", "/opt/cni/bin",
+			// only unpack plugins we actually need
+			"./bridge", "./firewall", // required by dagger network stack
+			"./loopback", "./host-local", // implicitly required (container fails without them)
+		}).
+		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
+		Directory("/opt/cni/bin")
+}
+
+func engineBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/" + engineBinName,
+			"-ldflags", "-s -w",
+			"/app/cmd/engine",
+		}).
+		File("./bin/" + engineBinName)
+}
+
+func shimBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/" + shimBinName,
+			"-ldflags", "-s -w",
+			"/app/cmd/shim",
+		}).
+		File("./bin/" + shimBinName)
+}
+
+func buildctlBin(c *dagger.Client, arch string) *dagger.File {
+	return util.GoBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithMountedDirectory("/app", c.Git(buildkitRepo).Branch(buildkitRef).Tree()).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/buildctl",
+			"-ldflags", "-s -w",
+			"/app/cmd/buildctl",
+		}).
+		File("./bin/buildctl")
+}
+
+func runcBin(c *dagger.Client, arch string) *dagger.File {
+	return c.HTTP(fmt.Sprintf(
+		"https://github.com/opencontainers/runc/releases/download/%s/runc.%s",
+		runcVersion,
+		arch,
+	))
+}
+
+func qemuBins(c *dagger.Client, arch string) *dagger.Directory {
+	return c.
+		Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+		From(qemuBinImage).
+		Rootfs()
 }

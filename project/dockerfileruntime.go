@@ -6,7 +6,8 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
-	dockerfilebuilder "github.com/moby/buildkit/frontend/dockerfile/builder"
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -24,8 +25,8 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		"filename": filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), subpath, "Dockerfile")),
 	}
 	inputs := map[string]*pb.Definition{
-		dockerfilebuilder.DefaultLocalNameContext:    payload.LLB,
-		dockerfilebuilder.DefaultLocalNameDockerfile: payload.LLB,
+		dockerui.DefaultLocalNameContext:    payload.LLB,
+		dockerui.DefaultLocalNameDockerfile: payload.LLB,
 	}
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Frontend:       "dockerfile.v0",
@@ -46,5 +47,5 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		return nil, err
 	}
 
-	return core.NewDirectory(ctx, newSt, "", core.PipelinePath{}, platform)
+	return core.NewDirectory(ctx, newSt, "", pipeline.Path{}, platform, nil)
 }

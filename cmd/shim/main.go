@@ -13,11 +13,14 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
+	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
+	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
@@ -26,7 +29,7 @@ const (
 	metaMountPath = "/.dagger_meta_mount"
 	stdinPath     = metaMountPath + "/stdin"
 	exitCodePath  = metaMountPath + "/exitCode"
-	runcPath      = "/usr/bin/buildkit-runc"
+	runcPath      = "/usr/local/bin/runc"
 	shimPath      = "/_shim"
 )
 
@@ -45,6 +48,11 @@ There are two "subcommands" of this binary:
 */
 func main() {
 	if os.Args[0] == shimPath {
+		if _, found := internalEnv("_DAGGER_INTERNAL_COMMAND"); found {
+			os.Exit(internalCommand())
+			return
+		}
+
 		// If we're being executed as `/_shim`, then we're inside the container and should shim
 		// the user command.
 		os.Exit(shim())
@@ -52,6 +60,91 @@ func main() {
 		// Otherwise, we're being invoked directly by buildkitd and should setup the bundle.
 		os.Exit(setupBundle())
 	}
+}
+
+func internalCommand() int {
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "usage: %s <command> [<args>]\n", os.Args[0])
+		return 1
+	}
+
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	switch cmd {
+	case "check":
+		if err := check(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
+	default:
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
+		return 1
+	}
+}
+
+func check(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("usage: check <host> port/tcp [port/udp ...]")
+	}
+
+	logPrefix := fmt.Sprintf("[check %s]", identity.NewID())
+
+	host, ports := args[0], args[1:]
+
+	for _, port := range ports {
+		port, network, ok := strings.Cut(port, "/")
+		if !ok {
+			network = "tcp"
+		}
+
+		pollAddr := net.JoinHostPort(host, port)
+
+		fmt.Println(logPrefix, "polling for port", pollAddr)
+
+		reached, err := pollForPort(logPrefix, network, pollAddr)
+		if err != nil {
+			return fmt.Errorf("poll %s: %w", pollAddr, err)
+		}
+
+		fmt.Println(logPrefix, "port is up at", reached)
+	}
+
+	return nil
+}
+
+func pollForPort(logPrefix, network, addr string) (string, error) {
+	retry := backoff.NewExponentialBackOff()
+	retry.InitialInterval = 100 * time.Millisecond
+
+	dialer := net.Dialer{
+		Timeout: time.Second,
+	}
+
+	var reached string
+	err := backoff.Retry(func() error {
+		// NB(vito): it's a _little_ silly to dial a UDP network to see that it's
+		// up, since it'll be a false positive even if they're not listening yet,
+		// but it at least checks that we're able to resolve the container address.
+
+		conn, err := dialer.Dial(network, addr)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s port not ready: %s; elapsed: %s\n", logPrefix, err, retry.GetElapsedTime())
+			return err
+		}
+
+		reached = conn.RemoteAddr().String()
+
+		_ = conn.Close()
+
+		return nil
+	}, retry)
+	if err != nil {
+		return "", err
+	}
+
+	return reached, nil
 }
 
 func shim() int {
@@ -75,10 +168,6 @@ func shim() int {
 	}
 
 	cmd := exec.Command(name, args...)
-	cmd.Env = os.Environ()
-
-	// append nesting envs if any
-	cmd.Env = append(cmd.Env, env...)
 
 	if stdinFile, err := os.Open(stdinPath); err == nil {
 		defer stdinFile.Close()
@@ -119,19 +208,49 @@ func shim() int {
 		return 0
 	}
 
+	var secretsToScrub core.SecretToScrubInfo
+
+	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
+	if found {
+		err := json.Unmarshal([]byte(secretsToScrubVar), &secretsToScrub)
+		if err != nil {
+			panic(fmt.Errorf("cannot load secrets to scrub: %w", err))
+		}
+	}
+
+	cmd.Env = os.Environ()
+
+	// append nesting envs if any
+	cmd.Env = append(cmd.Env, env...)
+
+	currentDirPath := "/"
+	shimFS := os.DirFS(currentDirPath)
+
 	stdoutFile, err := os.Create(stdoutPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stdoutFile.Close()
-	cmd.Stdout = io.MultiWriter(stdoutFile, os.Stdout)
+
+	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
+	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stdout = scrubOutWriter
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
-	cmd.Stderr = io.MultiWriter(stderrFile, os.Stderr)
+
+	errWriter := io.MultiWriter(stderrFile, os.Stderr)
+	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	if err != nil {
+		panic(err)
+	}
+	cmd.Stderr = scrubErrWriter
 
 	exitCode := 0
 	if err := cmd.Run(); err != nil {
@@ -190,6 +309,14 @@ func setupBundle() int {
 			break
 		}
 	}
+	// We're running an internal shim command, i.e. a service health check
+	for _, env := range spec.Process.Env {
+		if strings.HasPrefix(env, "_DAGGER_INTERNAL_COMMAND=") {
+			isDaggerExec = true
+			break
+		}
+	}
+
 	if isDaggerExec {
 		// mount this executable into the container so it can be invoked as the shim
 		selfPath, err := os.Executable()
@@ -213,10 +340,20 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-checkenv:
+	var hostsFilePath string
+	for _, mnt := range spec.Mounts {
+		if mnt.Destination == "/etc/hosts" {
+			hostsFilePath = mnt.Source
+		}
+	}
+
+	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
+			// keep the env var; we use it at runtime
+			keepEnv = append(keepEnv, env)
+
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.runner.sock",
@@ -224,9 +361,19 @@ checkenv:
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-			break checkenv
+		case strings.HasPrefix(env, aliasPrefix):
+			// NB: don't keep this env var, it's only for the bundling step
+			// keepEnv = append(keepEnv, env)
+
+			if err := appendHostAlias(hostsFilePath, env); err != nil {
+				fmt.Fprintln(os.Stderr, "host alias:", err)
+				return 1
+			}
+		default:
+			keepEnv = append(keepEnv, env)
 		}
 	}
+	spec.Process.Env = keepEnv
 
 	// write the updated config
 	configBytes, err = json.Marshal(spec)
@@ -272,6 +419,33 @@ checkenv:
 	return 0
 }
 
+const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
+
+func appendHostAlias(hostsFilePath string, env string) error {
+	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
+	if !ok {
+		return fmt.Errorf("malformed host alias: %s", env)
+	}
+
+	ips, err := net.LookupIP(target)
+	if err != nil {
+		return err
+	}
+
+	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
+	if err != nil {
+		return err
+	}
+
+	for _, ip := range ips {
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+			return err
+		}
+	}
+
+	return hostsFile.Close()
+}
+
 // nolint: unparam
 func execRunc() int {
 	args := []string{runcPath}
@@ -312,7 +486,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 		}
 		go func() {
 			err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-				return http.Serve(l, r)
+				return http.Serve(l, r) //nolint:gosec
 			})
 			if err != nil {
 				fmt.Printf("Error starting engine: %v\n", err)

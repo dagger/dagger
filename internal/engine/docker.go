@@ -19,6 +19,9 @@ const (
 	// NOTE: this needs to be consistent with engineDefaultStateDir in internal/mage/engine.go
 	DefaultStateDir = "/var/lib/dagger"
 
+	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	ServicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
+
 	// trim image digests to 16 characters to makeoutput more readable
 	hashLen             = 16
 	containerNamePrefix = "dagger-engine-"
@@ -84,16 +87,20 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL) (string, erro
 
 	// run the container using that id in the name
 	containerName := containerNamePrefix + id
-	if output, err := exec.CommandContext(ctx,
-		"docker", "run",
+	runArgs := []string{
+		"run",
 		"--name", containerName,
 		"-d",
 		"--restart", "always",
+		"-e", CacheConfigEnvName,
+		"-e", ServicesDNSEnvName,
 		"-v", DefaultStateDir,
 		"--privileged",
-		imageRef,
-		"--debug",
-	).CombinedOutput(); err != nil {
+	}
+
+	runArgs = append(runArgs, imageRef, "--debug")
+
+	if output, err := exec.CommandContext(ctx, "docker", runArgs...).CombinedOutput(); err != nil {
 		if !isContainerAlreadyInUseOutput(string(output)) {
 			return "", errors.Wrapf(err, "failed to run container: %s", output)
 		}

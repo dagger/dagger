@@ -82,7 +82,7 @@ func TestProvision(t *testing.T) {
 		checksumFileContents := fmt.Sprintf("%x  %s\n", checksum, archiveName)
 		checksumPath := path.Join(basePath, "checksums.txt")
 
-		go http.Serve(l, http.FileServer(http.FS(fstest.MapFS{
+		go http.Serve(l, http.FileServer(http.FS(fstest.MapFS{ //nolint:gosec
 			checksumPath: &fstest.MapFile{
 				Data:    []byte(checksumFileContents),
 				Mode:    0o644,

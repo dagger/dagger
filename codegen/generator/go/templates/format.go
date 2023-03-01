@@ -55,3 +55,8 @@ func (f *FormatTypeFunc) FormatKindInputObject(representation string, refName st
 	representation += formatName(refName)
 	return representation
 }
+
+func (f *FormatTypeFunc) FormatKindEnum(representation string, refName string) string {
+	representation += refName
+	return representation
+}

@@ -1,11 +1,28 @@
 "A global cache volume identifier."
 scalar CacheID
 
+"Sharing mode of the cache volume."
+enum CacheSharingMode {
+  "Shares the cache volume amongst many build pipelines"
+  SHARED
+
+  "Keeps a cache volume for a single build pipeline"
+  PRIVATE
+
+  """
+  Shares the cache volume amongst many build pipelines,
+  but will serialize the writes
+  """
+  LOCKED
+}
+
 extend type Query {
-  "Constructs a cache volume for a given cache key."
+  """
+  Constructs a cache volume for a given cache key.
+  """
   cacheVolume(
     """
-    A string identifier to target this cache volume (e.g. "myapp-cache").
+    A string identifier to target this cache volume (e.g., "modules-cache").
     """
     key: String!
   ): CacheVolume!

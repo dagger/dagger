@@ -42,14 +42,16 @@ python = "^3.10"
 anyio = ">=3.6.2"
 attrs = ">=22.1.0"
 cattrs = ">=22.2.0"
+graphql-core = ">=3.2.3"
 # FIXME: replace next two lines with the following when gql version 3.5.0 is released
 # gql = {version = ">=3.5.0", extras = ["httpx"]}
 gql = ">=3.4.0"
 httpx = ">=0.23.1"
-strawberry-graphql = {version = ">=0.133.5", optional = true}
-typer = {version = ">=0.6.1", extras = ["all"]}
 beartype = ">=0.11.0"
 platformdirs = ">=2.6.2"
+rich = ">=12.6.0"
+typer = {version = ">=0.6.1", extras = ["all"]}
+strawberry-graphql = {version = ">=0.133.5", optional = true}
 
 [tool.poetry.extras]
 server = ["strawberry-graphql"]
@@ -59,6 +61,7 @@ pytest = ">=7.2.0"
 pytest-mock = ">=3.10.0"
 pytest-subprocess = ">=1.4.2"
 pytest-lazy-fixture = "^0.6.3"
+pytest-httpx = ">=0.21.3"
 
 [tool.poetry.group.lint.dependencies]
 black = ">=22.3.0"
@@ -155,7 +158,7 @@ warn_unused_ignores = true
 
 [tool.black]
 include = '\.pyi?$'
-target-version = ["py310"]
+target-version = ["py310", "py311"]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -176,6 +179,8 @@ ignore = [
     "D401",
     # Not using timezones in this project.
     "DTZ",
+    # Allow logging with default %. You need custom setup to use `extra`.
+    "G002",
     # Valid use in pytest, docs and examples.
     "INP001",
     # Unnecessary variable assignment before `return` statement
@@ -183,6 +188,8 @@ ignore = [
     "RET504",
     # We don't use asserts as runtime validation guarantees.
     "S101",
+    # Don't guard types. Don't want to stringize them. 
+    "TCH",
     # Pandas
     "PD", 
 ]
@@ -208,6 +215,8 @@ extend-immutable-calls = ["typer.Option"]
     # code so no need to bother.
     "A", 
     "D", 
+    # Too many arguments to function call.
+    "PLR0913",
     # `Optional` is preferred over `| None` because of how 
     # beartype handles forward references.
     "UP007",
@@ -219,6 +228,8 @@ extend-immutable-calls = ["typer.Option"]
     "S", 
     # Magic value comparison doesn't apply to tests.
     "PLR2004",
+    # Allow more than one statement in pytest.raises.
+    "PT012",
 ]
 # Allow some patterns to redefine imports in __init__.
 "__init__.py" = ["F401", "F403", "PLC0414"]

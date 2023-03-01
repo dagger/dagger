@@ -19,6 +19,7 @@ async function createConfig() {
       sidebarCollapsed: false,
       metadata: [{ name: 'og:image', content: '/img/favicon.png' }],
       prism: {
+        additionalLanguages: ["php", "rust"],
         theme: require("prism-react-renderer/themes/okaidia"),
       },
       navbar: {
@@ -129,6 +130,7 @@ async function createConfig() {
       ],
       "docusaurus-plugin-image-zoom",
       path.resolve(__dirname, "plugins/docusaurus-plugin-hotjar"),
+      path.resolve(__dirname, "plugins/docusaurus-plugin-guides"),
       path.resolve(__dirname, "plugins/docusaurus-plugin-dagger-version"),
       "docusaurus-plugin-includes",
       [
