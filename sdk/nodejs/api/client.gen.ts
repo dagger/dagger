@@ -623,7 +623,7 @@ export class Container extends BaseClient {
    *
    * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param opts.port The exposed port number for the endpoint
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
    */
@@ -766,7 +766,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves the list of exposed ports.
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {
     const response: Awaited<Port[]> = await computeQuery(
@@ -842,7 +842,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves a hostname which can be used by clients to reach this container.
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async hostname(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1188,7 +1188,7 @@ export class Container extends BaseClient {
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -1463,7 +1463,7 @@ export class Container extends BaseClient {
    *
    * The service dependency will also convey to any files or directories produced by the container.
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
@@ -1557,7 +1557,7 @@ export class Container extends BaseClient {
   /**
    * Unexpose a previously exposed port.
    *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=1 to enable.
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */

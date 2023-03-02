@@ -13,7 +13,7 @@ import (
 // yet.
 var ErrNotImplementedYet = errors.New("not implemented yet")
 
-var ErrServicesDisabled = fmt.Errorf("services are disabled; set %s to enable", engine.ServicesDNSEnvName)
+var ErrServicesDisabled = fmt.Errorf("services are disabled; unset %s to enable", engine.ServicesDNSEnvName)
 
 // stringResolver is used to generate a scalar resolver for a stringable type.
 func stringResolver[T ~string](sample T) router.ScalarResolver {

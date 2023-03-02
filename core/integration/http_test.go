@@ -21,7 +21,7 @@ func TestHTTP(t *testing.T) {
 }
 
 func TestHTTPService(t *testing.T) {
-	checkEnabled(t, engine.ServicesDNSEnvName)
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	t.Parallel()
 

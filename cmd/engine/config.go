@@ -34,7 +34,7 @@ func setDaggerDefaults(cfg *config.Config) error {
 		cfg.Root = engineDefaultStateDir
 	}
 
-	if os.Getenv(servicesDNSEnvName) != "" {
+	if os.Getenv(servicesDNSEnvName) != "0" {
 		// check if CNI config already exists, just so we can respect a
 		// user-provided config
 		if _, err := os.Stat(cniConfigPath); os.IsNotExist(err) {

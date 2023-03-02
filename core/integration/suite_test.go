@@ -268,8 +268,8 @@ func tarEntries(t *testing.T, path string) []string {
 	return entries
 }
 
-func checkEnabled(t *testing.T, env string) { //nolint:unparam
-	if os.Getenv(env) == "" {
-		t.Skipf("set $%s to enable", env)
+func checkNotDisabled(t *testing.T, env string) { //nolint:unparam
+	if os.Getenv(env) == "0" {
+		t.Skipf("disabled via %s=0", env)
 	}
 }

@@ -155,7 +155,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				Platform:       *platform,
 				DisableHostRW:  startOpts.DisableHostRW,
 				Auth:           registryAuth,
-				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "",
+				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
 			})
 			if err != nil {
 				return nil, err
