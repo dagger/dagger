@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"os"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -66,8 +65,8 @@ type secretIDPayload struct {
 	FromFile    FileID `json:"file,omitempty"`
 	FromHostEnv string `json:"host_env,omitempty"`
 
-	Name   string
-	Digest string
+	Name   string `json:"name,omitempty"`
+	Digest string `json:"digest,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the secret.
@@ -94,7 +93,6 @@ func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	log.Println("DBGTHE: SECRET: PLAINTEXT:", payload)
 	if payload.FromFile != "" {
 		file := &File{ID: payload.FromFile}
 		return file.Contents(ctx, gw)

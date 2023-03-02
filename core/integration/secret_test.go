@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/testutil"
@@ -125,6 +126,42 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, res.Container.From.WithMountedSecret.WithMountedFile.Exec.ExitCode)
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
+}
+
+func TestSecretFromFileGoSDK(t *testing.T) {
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	//nolint:staticcheck // SA1019 We want to test this API while we support it.
+	file := c.Directory().
+		WithNewFile("TOP_SECRET", "hi Go SDK").File("TOP_SECRET")
+
+	cont := c.Container().From("alpine:3.17.2").
+		WithEnvVariable("CACHEBUSTER", time.Now().String()).
+		WithSecretVariable("TOP_SECRET_ENV", file.Secret()).
+		WithMountedFile("/myplaintext", file).
+		WithExec([]string{"sh", "-c", "echo \"$TOP_SECRET_ENV\" > echoenv"}).
+		WithExec([]string{"sh", "-c", "echo -e Why oh Why \"$TOP_SECRET_ENV\""})
+
+	out, err := cont.
+		Stdout(ctx)
+	require.NoError(t, err)
+
+	ok, err := cont.
+		File("/echoenv").
+		Export(ctx, "echoenv.host")
+	require.NoError(t, err)
+
+	ok, err = cont.
+		File("/myplaintext").
+		Export(ctx, "myplaintext.host")
+	require.NoError(t, err)
+
+	t.Log("ok:", ok)
+	t.Log("stdout:", out)
+	require.NoError(t, err)
 }
 
 func TestSecretPlaintext(t *testing.T) {
