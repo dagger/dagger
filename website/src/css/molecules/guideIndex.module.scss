@@ -1,11 +1,11 @@
 .guideIndex {
   ul {
-   display: flex;
-   flex-wrap: wrap;
-   width: 100%;
-   gap: 1.5rem;
-   justify-content: center;
-   padding-left: 0px;
+    display: flex;
+    flex-wrap: wrap;
+    width: 100%;
+    gap: 1.5rem;
+    justify-content: center;
+    padding-left: 0px;
   }
 
   li {
@@ -19,11 +19,76 @@
 }
 
 .selectedTags {
-    height: 50px;
-    display: flex;
-    gap: 5px;
-    flex-grow: inherit;
-    align-items: flex-start;
+  height: 50px;
+  display: flex;
+  gap: 5px;
+  flex-grow: inherit;
+  align-items: flex-start;
+}
+
+.filterWrapper {
+  position: relative;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--ifm-color-primary-darker);
+  min-width: 300px;
+  max-width: 600px;
+  width: 80%;
+}
+
+.filter {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 1rem 1rem;
+  min-height: 50px;
+  gap: 10px;
+}
+
+.filterTags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.filterInput {
+  border: none;
+
+  &:focus, 
+  &:focus-visible {
+    outline: none;
+  }
+}
+
+.filterDropdown {
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  border: 1px solid var(--ifm-color-primary-darker);
+  background-color: white;
+  max-height: 200px;
+  overflow-y: scroll;
+
+  ul {
+    padding: 0px;
+    margin: 0px;
+    gap: 0;
+  }
+
+  li {
+    font-size: 0.8rem;
+    margin: 0px;
+    padding: 0.5rem 0.5rem;
+    min-width: initial;
+    cursor: pointer;
+  }
+
+  li:last-of-type {
+    border-bottom: none;
+  }
+
+  li:hover {
+    background-color: lightgray;
+  }
 }
 
 .guideCard {
@@ -44,7 +109,6 @@
   }
 
   html[data-theme="dark"] & {
-
     border: 1px solid var(--ifm-color-primary-light);
 
     p,
@@ -62,32 +126,32 @@
       }
     }
   }
-
 }
 
 .info {
-    min-width: fit-content;
-    width: 100%;
-    a h3:hover {
-        width: initial;
-        text-decoration: underline;
-    }
+  min-width: fit-content;
+  width: 100%;
+  a h3:hover {
+    width: initial;
+    text-decoration: underline;
+  }
 
-    time {
-        font-size: 0.8rem;
-    }
+  time {
+    font-size: 0.8rem;
+  }
 
-    h3, h4 {
-        margin: 0;
-    }
+  h3,
+  h4 {
+    margin: 0;
+  }
 }
 
 .author {
-    font-size: 0.8rem;
+  font-size: 0.8rem;
 }
 
 .date {
-    font-size: 0.8rem;
+  font-size: 0.8rem;
 }
 
 .tags {
