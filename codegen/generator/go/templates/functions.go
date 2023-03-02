@@ -120,7 +120,7 @@ func getArrayField(f *introspection.Field) []*introspection.Field {
 }
 
 func formatArrayField(fields []*introspection.Field) string {
-	var result []string
+	result := []string{}
 
 	for _, f := range fields {
 		result = append(result, fmt.Sprintf("%s: &field.%s", f.Name, toUpperCase(f.Name)))
