@@ -3,19 +3,16 @@ package core
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
-	"errors"
 	"fmt"
+	"log"
 	"os"
-	"strings"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 )
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	ID     SecretID `json:"id"`
-	Digest string   `json:"digest"`
+	ID SecretID `json:"id"`
 }
 
 func NewSecret(id SecretID) *Secret {
@@ -46,27 +43,22 @@ type SecretID string
 func (id SecretID) String() string { return string(id) }
 
 func (id SecretID) Digest() (string, error) {
-	b, err := base64.StdEncoding.DecodeString(string(id))
+	secretIDPayload, err := id.decode()
 	if err != nil {
 		return "", err
 	}
 
-	_, digest, ok := strings.Cut(string(b), "\x00")
-	if !ok {
-		// FIXME create a dedicated error
-		return "", errors.New("malformed secret ID")
-	}
-
-	return digest, nil
+	return secretIDPayload.Digest, nil
 }
 
-func NewSecretID(name, plaintext string) SecretID {
+func NewSecretID(name, plaintext string) (SecretID, error) {
 	digestBytes := sha256.Sum256([]byte(plaintext))
 
-	idBytes := []byte(name + "\x00" + string(digestBytes[:]))
-
-	id := base64.StdEncoding.EncodeToString(idBytes)
-	return SecretID(id)
+	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
+	if err != nil {
+		return id, err
+	}
+	return id, nil
 }
 
 // secretIDPayload is the inner content of a SecretID.
@@ -102,7 +94,7 @@ func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-
+	log.Println("DBGTHE: SECRET: PLAINTEXT:", payload)
 	if payload.FromFile != "" {
 		file := &File{ID: payload.FromFile}
 		return file.Contents(ctx, gw)

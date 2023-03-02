@@ -32,11 +32,14 @@ func (store *Store) SetGateway(gw bkgw.Client) {
 
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *Store) AddSecret(_ context.Context, name, plaintext string) core.SecretID {
+func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.SecretID, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	id := core.NewSecretID(name, plaintext)
+	id, err := core.NewSecretID(name, plaintext)
+	if err != nil {
+		return id, err
+	}
 
 	digest, err := id.Digest()
 	if err != nil {
@@ -51,7 +54,7 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) core.Se
 	// add the plaintext to the map
 	store.idToPlaintext[id] = plaintext
 
-	return id
+	return id, nil
 }
 
 // GetSecret returns the plaintext from the id.
