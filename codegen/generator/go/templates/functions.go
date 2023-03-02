@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"text/template"
+	"unicode"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -15,16 +16,22 @@ import (
 var (
 	commonFunc = generator.NewCommonFunctions(&FormatTypeFunc{})
 	funcMap    = template.FuncMap{
-		"Comment":                comment,
-		"FormatDeprecation":      formatDeprecation,
-		"FormatInputType":        commonFunc.FormatInputType,
-		"FormatOutputType":       commonFunc.FormatOutputType,
-		"FormatName":             formatName,
-		"FormatEnum":             formatEnum,
-		"SortEnumFields":         sortEnumFields,
-		"FieldOptionsStructName": fieldOptionsStructName,
-		"FieldFunction":          fieldFunction,
-		"IsEnum":                 isEnum,
+		"Comment":                 comment,
+		"FormatDeprecation":       formatDeprecation,
+		"FormatInputType":         commonFunc.FormatInputType,
+		"FormatOutputType":        commonFunc.FormatOutputType,
+		"FormatName":              formatName,
+		"FormatEnum":              formatEnum,
+		"SortEnumFields":          sortEnumFields,
+		"FieldOptionsStructName":  fieldOptionsStructName,
+		"FieldFunction":           fieldFunction,
+		"IsEnum":                  isEnum,
+		"GetArrayField":           getArrayField,
+		"IsListOfObject":          isListOfObject,
+		"ToLowerCase":             toLowerCase,
+		"ToUpperCase":             toUpperCase,
+		"FormatArrayField":        formatArrayField,
+		"FormatArrayToSingleType": formatArrayToSingleType,
 	}
 )
 
@@ -84,6 +91,54 @@ func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 		return s[i].Name < s[j].Name
 	})
 	return s
+}
+
+func isListOfObject(t *introspection.TypeRef) bool {
+	return t.OfType.OfType.IsObject()
+}
+
+func getArrayField(f *introspection.Field) []*introspection.Field {
+	schema := generator.GetSchema()
+	var fieldType string
+
+	if f.TypeRef.OfType.OfType.OfType != nil {
+		fieldType = f.TypeRef.OfType.OfType.OfType.Name
+	} else {
+		fieldType = f.ParentObject.Name
+	}
+
+	var fields []*introspection.Field
+	// Only include scalar fields for now
+	// TODO: include subtype too
+	for _, typeField := range schema.Types.Get(fieldType).Fields {
+		if typeField.TypeRef.IsScalar() {
+			fields = append(fields, typeField)
+		}
+	}
+
+	return fields
+}
+
+func formatArrayField(fields []*introspection.Field) string {
+	var result []string
+
+	for _, f := range fields {
+		result = append(result, fmt.Sprintf("%s: &field.%s", f.Name, toUpperCase(f.Name)))
+	}
+
+	return strings.Join(result, ", ")
+}
+
+func formatArrayToSingleType(arrType string) string {
+	return arrType[2:]
+}
+
+func toLowerCase(s string) string {
+	return fmt.Sprintf("%c%s", unicode.ToLower(rune(s[0])), s[1:])
+}
+
+func toUpperCase(s string) string {
+	return fmt.Sprintf("%c%s", unicode.ToUpper(rune(s[0])), s[1:])
 }
 
 // fieldOptionsStructName returns the options struct name for a given field

@@ -17,6 +17,8 @@ type GoGenerator struct {
 }
 
 func (g *GoGenerator) Generate(_ context.Context, schema *introspection.Schema) ([]byte, error) {
+	generator.SetSchema(schema)
+
 	headerData := struct {
 		Package string
 		Schema  *introspection.Schema
