@@ -94,6 +94,14 @@ func loadRootLabels(workdir string) ([]Label, error) {
 				Name:  "github.com/event.name",
 				Value: os.Getenv("GITHUB_EVENT_NAME"),
 			},
+			Label{
+				Name:  "github.com/workflow.name",
+				Value: os.Getenv("GITHUB_WORKFLOW"),
+			},
+			Label{
+				Name:  "github.com/workflow.job",
+				Value: os.Getenv("GITHUB_JOB"),
+			},
 		)
 
 		eventPath := os.Getenv("GITHUB_EVENT_PATH")
