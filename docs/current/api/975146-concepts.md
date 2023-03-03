@@ -8,7 +8,7 @@ import LinkPlayground from "@site/src/components/atoms/linkPlayground.js";
 
 ## Introduction
 
-One of Dagger's key aspects is cross-language instrumentation: teams can leverage their familiar languages  without the need to learn a new SDL to write their CI/CD pipelines . Dagger allows this by exposing its functionality through GraphQL which serves as a low-level language-agnostic API framework for all Dagger operations.
+One of Dagger's key aspects is cross-language instrumentation: teams can leverage their familiar languages  without the need to learn a new DSL to write their CI/CD pipelines . Dagger allows this by exposing its functionality through GraphQL which serves as a low-level language-agnostic API framework for all Dagger operations.
 
 This approach has multiple benefits:
 
