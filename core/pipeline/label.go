@@ -31,17 +31,14 @@ func RootLabels() []Label {
 }
 
 // LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string) error {
-	var err error
+func LoadRootLabels(workdir string) {
 	loadOnce.Do(func() {
 		defer close(loadDoneCh)
-
-		defaultLabels, err = loadRootLabels(workdir)
+		defaultLabels = loadRootLabels(workdir)
 	})
-	return err
 }
 
-func loadRootLabels(workdir string) ([]Label, error) {
+func loadRootLabels(workdir string) []Label {
 	labels := []Label{}
 
 	if gitLabels, err := loadGitLabels(workdir); err == nil {
@@ -56,7 +53,7 @@ func loadRootLabels(workdir string) ([]Label, error) {
 		logrus.Warnf("failed to collect GitHub labels: %s", err)
 	}
 
-	return labels, nil
+	return labels
 }
 
 func loadGitLabels(workdir string) ([]Label, error) {
