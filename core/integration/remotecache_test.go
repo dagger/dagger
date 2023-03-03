@@ -229,9 +229,25 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	err := cmd.Start()
 	require.NoError(t, err)
 
-	currentVal := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	currentRunnerHost, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+name)
-	defer os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", currentVal)
+	if ok {
+		defer os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", currentRunnerHost)
+	} else {
+		defer os.Unsetenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	}
+
+	// TODO: temporarily disable networking to fix flakiness around containers in the
+	// same netns interfering with each other.
+	// Real fix is to either override CNI settings for each engine or to remove the need
+	// for them to be in the same netns.
+	currentDNSEnabled, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_SERVICES_DNS")
+	os.Setenv("_EXPERIMENTAL_DAGGER_SERVICES_DNS", "0")
+	if ok {
+		defer os.Setenv("_EXPERIMENTAL_DAGGER_SERVICES_DNS", currentDNSEnabled)
+	} else {
+		defer os.Unsetenv("_EXPERIMENTAL_DAGGER_SERVICES_DNS")
+	}
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
