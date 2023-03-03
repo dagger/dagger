@@ -19,7 +19,24 @@ import (
 	"github.com/pkg/errors"
 )
 
-func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHosts) remotecache.ResolveCacheExporterFunc {
+func StartDaggerCache(ctx context.Context, sm *session.Manager, cs content.Store, hosts docker.RegistryHosts) (remotecache.ResolveCacheExporterFunc, remotecache.ResolveCacheImporterFunc, <-chan struct{}, error) {
+	cacheType, attrs, err := cacheConfigFromEnv()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	doneCh := make(chan struct{}, 1)
+	var s3Manager *s3CacheManager
+	if cacheType == experimentalDaggerS3CacheType {
+		s3Manager, err = newS3CacheManager(ctx, attrs, doneCh)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	return resolveCacheExporterFunc(sm, hosts, s3Manager), resolveCacheImporterFunc(sm, cs, hosts, s3Manager), doneCh, nil
+}
+
+func resolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHosts, s3Manager *s3CacheManager) remotecache.ResolveCacheExporterFunc {
 	return func(ctx context.Context, g session.Group, userAttrs map[string]string) (remotecache.Exporter, error) {
 		cacheType, attrs, err := cacheConfigFromEnv()
 		if err != nil {
@@ -33,8 +50,8 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHos
 			impl, err = gha.ResolveCacheExporterFunc()(ctx, g, attrs)
 		case "s3":
 			impl, err = s3.ResolveCacheExporterFunc()(ctx, g, attrs)
-		case "experimental_dagger_s3":
-			impl, err = s3Exporter(ctx, g, attrs)
+		case experimentalDaggerS3CacheType:
+			impl = newS3CacheExporter(s3Manager)
 		case "azblob":
 			impl, err = azblob.ResolveCacheExporterFunc()(ctx, g, attrs)
 		default:
@@ -51,7 +68,7 @@ func ResolveCacheExporterFunc(sm *session.Manager, resolverFn docker.RegistryHos
 	}
 }
 
-func ResolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docker.RegistryHosts) remotecache.ResolveCacheImporterFunc {
+func resolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docker.RegistryHosts, s3Manager *s3CacheManager) remotecache.ResolveCacheImporterFunc {
 	return func(ctx context.Context, g session.Group, userAttrs map[string]string) (remotecache.Importer, ocispecs.Descriptor, error) {
 		cacheType, attrs, err := cacheConfigFromEnv()
 		if err != nil {
@@ -66,8 +83,8 @@ func ResolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docke
 			impl, desc, err = gha.ResolveCacheImporterFunc()(ctx, g, attrs)
 		case "s3":
 			impl, desc, err = s3.ResolveCacheImporterFunc()(ctx, g, attrs)
-		case "experimental_dagger_s3":
-			impl, desc, err = s3Importer(ctx, g, attrs)
+		case experimentalDaggerS3CacheType:
+			impl = s3Manager
 		case "azblob":
 			impl, desc, err = azblob.ResolveCacheImporterFunc()(ctx, g, attrs)
 		default:

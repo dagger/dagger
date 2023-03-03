@@ -239,7 +239,7 @@ func main() {
 
 		streamTracer := otelgrpc.StreamServerInterceptor(otelgrpc.WithTracerProvider(tp), otelgrpc.WithPropagators(propagators))
 
-		unary := grpc_middleware.ChainUnaryServer(unaryInterceptor(ctx, tp), grpcerrors.UnaryServerInterceptor)
+		unary := grpc_middleware.ChainUnaryServer(unaryInterceptor(context.Background(), tp), grpcerrors.UnaryServerInterceptor)
 		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
 
 		opts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
@@ -270,7 +270,7 @@ func main() {
 			os.RemoveAll(lockPath)
 		}()
 
-		controller, err := newController(c, &cfg)
+		controller, remoteCacheDoneCh, err := newController(ctx, c, &cfg)
 		if err != nil {
 			return err
 		}
@@ -309,6 +309,10 @@ func main() {
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
+		}
+		select {
+		case <-remoteCacheDoneCh:
+		case <-time.After(60 * time.Second): // TODO: arbitrary, make configurable
 		}
 		server.GracefulStop()
 
@@ -623,15 +627,15 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(c *cli.Context, cfg *config.Config) (*control.Controller, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*control.Controller, <-chan struct{}, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	tc, err := detect.Exporter()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var traceSocket string
@@ -649,7 +653,7 @@ func newController(c *cli.Context, cfg *config.Config) (*control.Controller, err
 		traceSocket:    traceSocket,
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	frontends := map[string]frontend.Frontend{}
 	frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(wc, dockerfile.Build)
@@ -657,28 +661,34 @@ func newController(c *cli.Context, cfg *config.Config) (*control.Controller, err
 
 	cacheStorage, err := bboltcachestorage.NewStore(filepath.Join(cfg.Root, "cache.db"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	historyDB, err := bbolt.Open(filepath.Join(cfg.Root, "history.db"), 0600, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	resolverFn := resolverFunc(cfg)
 
 	w, err := wc.GetDefault()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	cacheExporterFunc, cacheImporterFunc, remoteCacheDoneCh, err := daggerremotecache.StartDaggerCache(ctx,
+		sessionManager, w.ContentStore(), resolverFn)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	remoteCacheExporterFuncs := map[string]remotecache.ResolveCacheExporterFunc{
-		"dagger": daggerremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
+		"dagger": cacheExporterFunc,
 	}
 	remoteCacheImporterFuncs := map[string]remotecache.ResolveCacheImporterFunc{
-		"dagger": daggerremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
+		"dagger": cacheImporterFunc,
 	}
-	return control.NewController(control.Opt{
+	ctrler, err := control.NewController(control.Opt{
 		SessionManager:            sessionManager,
 		WorkerController:          wc,
 		Frontends:                 frontends,
@@ -692,6 +702,10 @@ func newController(c *cli.Context, cfg *config.Config) (*control.Controller, err
 		ContentStore:              w.ContentStore(),
 		HistoryConfig:             cfg.History,
 	})
+	if err != nil {
+		return nil, nil, err
+	}
+	return ctrler, remoteCacheDoneCh, nil
 }
 
 func resolverFunc(cfg *config.Config) docker.RegistryHosts {
