@@ -270,7 +270,7 @@ func TestNonExistingHostVariableWithStatus(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	variabl := c.Host().EnvVariable("HELLO_TEST")
+	variabl := c.Host().EnvVariable("HELLO_TEST_NON_EXISTING")
 
 	status, err := variabl.ValueWithStatus().Status(ctx)
 	require.NoError(t, err)
