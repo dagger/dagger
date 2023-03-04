@@ -289,10 +289,12 @@ func TestExistingHostVariableWithStatus(t *testing.T) {
 
 	variabl := c.Host().EnvVariable("HELLO_TEST")
 
-	val, err := variabl.ValueWithStatus().Value(ctx)
-	status, err := variabl.ValueWithStatus().Status(ctx)
+	valWithStatus := variabl.ValueWithStatus()
+	val, vErr := valWithStatus.Value(ctx)
+	status, sErr := valWithStatus.Status(ctx)
 
-	require.NoError(t, err)
+	require.NoError(t, vErr)
+	require.NoError(t, sErr)
 	require.Equal(t, "hello", val)
 	require.True(t, status)
 }
