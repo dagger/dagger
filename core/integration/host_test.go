@@ -261,3 +261,38 @@ func TestHostVariable(t *testing.T) {
 
 	require.Contains(t, env, "SECRET=***")
 }
+
+func TestNonExistingHostVariableWithStatus(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	variabl := c.Host().EnvVariable("HELLO_TEST")
+
+	status, err := variabl.ValueWithStatus().Status(ctx)
+	require.NoError(t, err)
+	require.False(t, status)
+}
+
+func TestExistingHostVariableWithStatus(t *testing.T) {
+	t.Parallel()
+
+	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
+
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	variabl := c.Host().EnvVariable("HELLO_TEST")
+
+	val, err := variabl.ValueWithStatus().Value(ctx)
+	status, err := variabl.ValueWithStatus().Status(ctx)
+
+	require.NoError(t, err)
+	require.Equal(t, "hello", val)
+	require.True(t, status)
+}

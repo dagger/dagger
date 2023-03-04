@@ -2581,6 +2581,18 @@ export class HostVariable extends BaseClient {
 
     return response
   }
+  valueWithStatus(): ValueWithStatus {
+    return new ValueWithStatus({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "valueWithStatus",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * Chain objects together
@@ -3212,6 +3224,73 @@ export class Socket extends BaseClient {
    *```
    */
   with(arg: (param: Socket) => Socket) {
+    return arg(this)
+  }
+}
+
+/**
+ * Variable value with status.
+ * If the variable is present, then value is returned and the status is true.
+ * Otherwise the returned value will be empty and the status will be false.
+ */
+
+export class ValueWithStatus extends BaseClient {
+  /**
+   * Status indicating whether the value is set
+   */
+  async status(): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "status",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The value of this variable
+   */
+  async value(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "value",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: ValueWithStatus) => ValueWithStatus) {
     return arg(this)
   }
 }

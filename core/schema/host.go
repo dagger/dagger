@@ -35,8 +35,9 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"unixSocket":  router.ToResolver(s.socket),
 		},
 		"HostVariable": router.ObjectResolver{
-			"value":  router.ToResolver(s.envVariableValue),
-			"secret": router.ToResolver(s.envVariableSecret),
+			"value":           router.ToResolver(s.envVariableValue),
+			"secret":          router.ToResolver(s.envVariableSecret),
+			"valueWithStatus": router.ToResolver(s.envVariableValueWithStatus),
 		},
 	}
 }
@@ -65,6 +66,17 @@ func (s *hostSchema) envVariable(ctx *router.Context, parent any, args hostVaria
 
 func (s *hostSchema) envVariableValue(ctx *router.Context, parent *core.HostVariable, args any) (string, error) {
 	return os.Getenv(parent.Name), nil
+}
+
+func (s *hostSchema) envVariableValueWithStatus(ctx *router.Context, parent *core.HostVariable, args any) (*core.VariableWithStatus, error) {
+	val, ok := os.LookupEnv(parent.Name)
+
+	valWithStatus := &core.VariableWithStatus{
+		Value:  val,
+		Status: ok,
+	}
+
+	return valWithStatus, nil
 }
 
 func (s *hostSchema) envVariableSecret(ctx *router.Context, parent *core.HostVariable, args any) (*core.Secret, error) {

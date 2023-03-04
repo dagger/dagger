@@ -67,6 +67,21 @@ type HostVariable {
   "The value of this variable."
   value: String!
 
+  valueWithStatus: ValueWithStatus
+
   "A secret referencing the value of this variable."
   secret: Secret!
+}
+
+"""
+Variable value with status.
+If the variable is present, then value is returned and the status is true.
+Otherwise the returned value will be empty and the status will be false.
+"""
+type ValueWithStatus {
+  "The value of this variable"
+  value: String!
+
+  "Status indicating whether the value is set"
+  status: Boolean
 }

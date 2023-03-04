@@ -34,6 +34,11 @@ type CopyFilter struct {
 	Include []string
 }
 
+type VariableWithStatus struct {
+	Value  string
+	Status bool
+}
+
 func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled

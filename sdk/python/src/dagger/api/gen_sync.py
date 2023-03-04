@@ -2133,6 +2133,12 @@ class HostVariable(Type):
         _ctx = self._select("value", _args)
         return _ctx.execute_sync(str)
 
+    @typecheck
+    def value_with_status(self) -> "ValueWithStatus":
+        _args: list[Arg] = []
+        _ctx = self._select("valueWithStatus", _args)
+        return ValueWithStatus(_ctx)
+
 
 class Label(Type):
     """A simple key value object that represents a label."""
@@ -2620,6 +2626,54 @@ class Socket(Type):
         return _ctx.execute_sync(SocketID)
 
 
+class ValueWithStatus(Type):
+    """Variable value with status. If the variable is present, then value
+    is returned and the status is true. Otherwise the returned value will
+    be empty and the status will be false."""
+
+    @typecheck
+    def status(self) -> Optional[bool]:
+        """Status indicating whether the value is set
+
+        Returns
+        -------
+        Optional[bool]
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("status", _args)
+        return _ctx.execute_sync(Optional[bool])
+
+    @typecheck
+    def value(self) -> str:
+        """The value of this variable
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("value", _args)
+        return _ctx.execute_sync(str)
+
+
 __all__ = [
     "CacheID",
     "ContainerID",
@@ -2647,4 +2701,5 @@ __all__ = [
     "Client",
     "Secret",
     "Socket",
+    "ValueWithStatus",
 ]

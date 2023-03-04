@@ -1722,6 +1722,15 @@ func (r *HostVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+func (r *HostVariable) ValueWithStatus() *ValueWithStatus {
+	q := r.q.Select("valueWithStatus")
+
+	return &ValueWithStatus{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	q *querybuilder.Selection
@@ -2136,6 +2145,32 @@ func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return string(id), nil
+}
+
+// Variable value with status.
+// If the variable is present, then value is returned and the status is true.
+// Otherwise the returned value will be empty and the status will be false.
+type ValueWithStatus struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Status indicating whether the value is set
+func (r *ValueWithStatus) Status(ctx context.Context) (bool, error) {
+	q := r.q.Select("status")
+
+	var response bool
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The value of this variable
+func (r *ValueWithStatus) Value(ctx context.Context) (string, error) {
+	q := r.q.Select("value")
+
+	var response string
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 type CacheSharingMode string
