@@ -1722,6 +1722,7 @@ func (r *HostVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Variable value with status.
 func (r *HostVariable) ValueWithStatus() *ValueWithStatus {
 	q := r.q.Select("valueWithStatus")
 

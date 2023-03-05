@@ -2581,6 +2581,10 @@ export class HostVariable extends BaseClient {
 
     return response
   }
+
+  /**
+   * Variable value with status.
+   */
   valueWithStatus(): ValueWithStatus {
     return new ValueWithStatus({
       queryTree: [

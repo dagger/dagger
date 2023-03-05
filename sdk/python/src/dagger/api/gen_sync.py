@@ -2135,6 +2135,7 @@ class HostVariable(Type):
 
     @typecheck
     def value_with_status(self) -> "ValueWithStatus":
+        """Variable value with status."""
         _args: list[Arg] = []
         _ctx = self._select("valueWithStatus", _args)
         return ValueWithStatus(_ctx)
