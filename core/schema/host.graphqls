@@ -67,6 +67,7 @@ type HostVariable {
   "The value of this variable."
   value: String!
 
+  "Variable value with status."
   valueWithStatus: ValueWithStatus
 
   "A secret referencing the value of this variable."
