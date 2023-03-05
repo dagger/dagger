@@ -272,8 +272,13 @@ func TestNonExistingHostVariableWithStatus(t *testing.T) {
 
 	variabl := c.Host().EnvVariable("HELLO_TEST_NON_EXISTING")
 
-	status, err := variabl.ValueWithStatus().Status(ctx)
-	require.NoError(t, err)
+	valWithStatus := variabl.ValueWithStatus()
+	val, vErr := valWithStatus.Value(ctx)
+	status, sErr := valWithStatus.Status(ctx)
+
+	require.NoError(t, vErr)
+	require.NoError(t, sErr)
+	require.Equal(t, "", val)
 	require.False(t, status)
 }
 
