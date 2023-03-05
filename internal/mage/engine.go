@@ -15,7 +15,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/sdk"
 	"github.com/dagger/dagger/internal/mage/util"
-	"github.com/dagger/dagger/network"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
 )
@@ -58,21 +57,6 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-if [ "$` + servicesDNSEnvName + `" != "0" ]; then
-	# relocate resolv.conf mount
-	touch /etc/resolv.conf.upstream
-	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
-	umount /etc/resolv.conf
-
-	# add dnsmasq to resolver so buildkit can reach local services
-	echo '# dagger dnsmasq server' > /etc/resolv.conf
-	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf
-
-	# preserve DNS search/options config, but let dnsmasq delegate to
-	# /etc/resolv.conf.upstream for upstream nameservers
-	grep -v '^nameserver' /etc/resolv.conf.upstream || true >> /etc/resolv.conf
-fi
-
 exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
 `
 
@@ -90,7 +74,6 @@ func init() {
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
 	buf := new(bytes.Buffer)
 	err := tmpl.Execute(buf, entrypointTmplParams{
-		Bridge:       network.Bridge,
 		EngineBin:    "/usr/local/bin/" + engineBinName,
 		EngineConfig: engineTomlPath,
 	})

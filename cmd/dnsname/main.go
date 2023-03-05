@@ -28,69 +28,51 @@ package main
 
 import (
 	"encoding/json"
-	"os"
-	"os/exec"
-	"path/filepath"
+	"fmt"
 
 	"github.com/containernetworking/cni/pkg/skel"
 	"github.com/containernetworking/cni/pkg/types"
 	current "github.com/containernetworking/cni/pkg/types/100"
 	"github.com/containernetworking/cni/pkg/version"
+	"github.com/gofrs/flock"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
 func cmdAdd(args *skel.CmdArgs) error {
-	if err := findDNSMasq(); err != nil {
-		return ErrBinaryNotFound
-	}
 	netConf, result, podname, err := parseConfig(args.StdinData, args.Args)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse config")
 	}
+
 	if netConf.PrevResult == nil {
 		return errors.Errorf("must be called as chained plugin")
 	}
+
 	ips, err := getIPs(result)
 	if err != nil {
 		return err
 	}
-	dnsNameConf, err := newDNSMasqFile(netConf.DomainName, result.Interfaces[0].Name, netConf.Name)
-	if err != nil {
-		return err
-	}
-	domainBaseDir := filepath.Dir(dnsNameConf.PidFile)
-	// Check if the configuration file directory exists, else make it
-	if _, err := os.Stat(domainBaseDir); os.IsNotExist(err) {
-		if makeDirErr := os.MkdirAll(domainBaseDir, 0700); makeDirErr != nil {
-			return makeDirErr
-		}
-	}
-	// we use the configuration directory for our locking mechanism but read/write and hup
-	lock, err := getLock(domainBaseDir)
-	if err != nil {
-		return err
-	}
-	if err := lock.acquire(); err != nil {
+
+	lock := flock.New(netConf.Hosts)
+	if err := lock.Lock(); err != nil {
 		return err
 	}
 	defer func() {
-		if err := lock.release(); err != nil {
-			logrus.Errorf("unable to release lock for %q: %v", dnsNameConf.AddOnHostsFile, err)
+		if err := lock.Unlock(); err != nil {
+			logrus.Errorf("unable to release lock for %q: %v", netConf.Hosts, err)
 		}
 	}()
-	if err := checkForDNSMasqConfFile(dnsNameConf); err != nil {
-		return err
-	}
+
 	aliases := netConf.RuntimeConfig.Aliases[netConf.Name]
-	if err := appendToFile(dnsNameConf.AddOnHostsFile, podname, aliases, ips); err != nil {
+	if err := appendToFile(netConf.Hosts, podname, aliases, ips); err != nil {
 		return err
 	}
 	// Now we need to HUP
-	if err := dnsNameConf.hup(); err != nil {
+	if err := hup(netConf.Pidfile); err != nil {
 		return err
 	}
-	nameservers, err := getInterfaceAddresses(dnsNameConf)
+	nameservers, err := getInterfaceAddresses(result.Interfaces[0].Name)
 	if err != nil {
 		return err
 	}
@@ -106,10 +88,6 @@ func cmdAdd(args *skel.CmdArgs) error {
 // Do not return an error, otherwise cni will stop
 // and not invoke the following plugins del command.
 func cmdDel(args *skel.CmdArgs) error {
-	if err := findDNSMasq(); err != nil {
-		logrus.Error(ErrBinaryNotFound)
-		return nil
-	}
 	netConf, result, podname, err := parseConfig(args.StdinData, args.Args)
 	if err != nil {
 		logrus.Error(errors.Wrap(err, "failed to parse config"))
@@ -117,33 +95,24 @@ func cmdDel(args *skel.CmdArgs) error {
 	} else if result == nil {
 		return nil
 	}
-	dnsNameConf, err := newDNSMasqFile(netConf.DomainName, result.Interfaces[0].Name, netConf.Name)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-	domainBaseDir := filepath.Dir(dnsNameConf.PidFile)
-	lock, err := getLock(domainBaseDir)
-	if err != nil {
-		logrus.Error(err)
-		return nil
-	}
-	if err := lock.acquire(); err != nil {
-		logrus.Error(err)
-		return nil
+
+	lock := flock.New(netConf.Hosts)
+	if err := lock.Lock(); err != nil {
+		return err
 	}
 	defer func() {
-		// if the lock isn't given up by another process
-		if err := lock.release(); err != nil {
-			logrus.Errorf("unable to release lock for %q: %v", domainBaseDir, err)
+		if err := lock.Unlock(); err != nil {
+			logrus.Errorf("unable to release lock for %q: %v", netConf.Hosts, err)
 		}
 	}()
-	if err := removeFromFile(filepath.Join(domainBaseDir, hostsFileName), podname); err != nil {
+
+	if err := removeFromFile(netConf.Hosts, podname); err != nil {
 		logrus.Error(err)
 		return nil
 	}
+
 	// Now we need to HUP
-	err = dnsNameConf.hup()
+	err = hup(netConf.Pidfile)
 	if err != nil {
 		logrus.Error(err)
 	}
@@ -155,9 +124,6 @@ func main() {
 }
 
 func cmdCheck(args *skel.CmdArgs) error {
-	if err := findDNSMasq(); err != nil {
-		return ErrBinaryNotFound
-	}
 	netConf, result, _, err := parseConfig(args.StdinData, args.Args)
 	if err != nil {
 		return errors.Wrap(err, "failed to parse config")
@@ -167,49 +133,21 @@ func cmdCheck(args *skel.CmdArgs) error {
 	if result == nil {
 		return errors.Errorf("Required prevResult missing")
 	}
-	dnsNameConf, err := newDNSMasqFile(netConf.DomainName, result.Interfaces[0].Name, netConf.Name)
-	if err != nil {
-		return err
-	}
-	domainBaseDir := filepath.Dir(dnsNameConf.PidFile)
-	lock, err := getLock(domainBaseDir)
-	if err != nil {
-		return err
-	}
-	if err := lock.acquire(); err != nil {
+
+	lock := flock.New(netConf.Hosts)
+	if err := lock.Lock(); err != nil {
 		return err
 	}
 	defer func() {
-		// if the lock isn't given up by another process
-		if err := lock.release(); err != nil {
-			logrus.Errorf("unable to release lock for %q: %v", domainBaseDir, err)
+		if err := lock.Unlock(); err != nil {
+			logrus.Errorf("unable to release lock for %q: %v", netConf.Hosts, err)
 		}
 	}()
 
-	pid, err := dnsNameConf.getProcess()
-	if err != nil {
-		return err
+	if _, err := getProcess(netConf.Pidfile); err != nil {
+		return fmt.Errorf("dnsmasq instance not running: %w", err)
 	}
 
-	// Ensure the dnsmasq instance is running
-	if !isRunning(pid) {
-		return errors.Errorf("dnsmasq instance not running")
-	}
-	// Above will make sure the pidfile exists
-	files, err := os.ReadDir(dnsNameConfPath())
-	if err != nil {
-		return err
-	}
-	conffiles := make([]string, len(files))
-	for i, f := range files {
-		conffiles[i] = f.Name()
-	}
-	if !stringInSlice("addnhosts", conffiles) {
-		return errors.Errorf("addnhost file missing from configuration")
-	}
-	if !stringInSlice("dnsmasq.conf", conffiles) {
-		return errors.Errorf("dnsmasq.conf file missing from configuration")
-	}
 	return nil
 }
 
@@ -253,9 +191,4 @@ func parseConfig(stdin []byte, args string) (*DNSNameConf, *current.Result, stri
 		return nil, nil, "", err
 	}
 	return &conf, result, string(e.K8S_POD_NAME), nil
-}
-
-func findDNSMasq() error {
-	_, err := exec.LookPath("dnsmasq")
-	return err
 }

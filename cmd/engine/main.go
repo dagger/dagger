@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	daggerremotecache "github.com/dagger/dagger/engine/remotecache"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -195,6 +196,16 @@ func main() { //nolint:gocyclo
 			Name:  "allow-insecure-entitlement",
 			Usage: "allows insecure entitlements e.g. network.host, security.insecure",
 		},
+		cli.StringFlag{
+			Name:  "network-name",
+			Usage: "short name for the engine's container network; used for interface name",
+			Value: "dagger",
+		},
+		cli.StringFlag{
+			Name:  "network-cidr",
+			Usage: "address range to use for networked containers",
+			Value: "10.87.0.0/16",
+		},
 	)
 	app.Flags = append(app.Flags, appFlags...)
 
@@ -212,7 +223,33 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
-		if err := setDaggerDefaults(&cfg); err != nil {
+		var cniConfigPath string
+		if os.Getenv(servicesDNSEnvName) != "0" {
+			netName := c.GlobalString("network-name")
+			netCIDR := c.GlobalString("network-cidr")
+
+			err := network.InstallDnsmasq(netName)
+			if err != nil {
+				return err
+			}
+
+			cniConfigPath, err = network.InstallCNIConfig(netName, netCIDR)
+			if err != nil {
+				return err
+			}
+
+			bridge, err := network.Bridge(netCIDR)
+			if err != nil {
+				return err
+			}
+
+			err = network.InstallResolvconf(netName, bridge.String())
+			if err != nil {
+				return err
+			}
+		}
+
+		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
 			return err
 		}
 
