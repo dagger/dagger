@@ -223,30 +223,12 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
-		var cniConfigPath string
-		if os.Getenv(servicesDNSEnvName) != "0" {
-			netName := c.GlobalString("network-name")
-			netCIDR := c.GlobalString("network-cidr")
-
-			err := network.InstallDnsmasq(netName)
-			if err != nil {
-				return err
-			}
-
-			cniConfigPath, err = network.InstallCNIConfig(netName, netCIDR)
-			if err != nil {
-				return err
-			}
-
-			bridge, err := network.Bridge(netCIDR)
-			if err != nil {
-				return err
-			}
-
-			err = network.InstallResolvconf(netName, bridge.String())
-			if err != nil {
-				return err
-			}
+		cniConfigPath, err := setupNetwork(
+			c.GlobalString("network-name"),
+			c.GlobalString("network-cidr"),
+		)
+		if err != nil {
+			return err
 		}
 
 		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
@@ -926,4 +908,32 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 		return nil, err
 	}
 	return &tracev1.ExportTraceServiceResponse{}, nil
+}
+
+func setupNetwork(netName, netCIDR string) (string, error) {
+	if os.Getenv(servicesDNSEnvName) == "0" {
+		return "", nil
+	}
+
+	err := network.InstallDnsmasq(netName)
+	if err != nil {
+		return "", err
+	}
+
+	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	if err != nil {
+		return "", err
+	}
+
+	bridge, err := network.Bridge(netCIDR)
+	if err != nil {
+		return "", err
+	}
+
+	err = network.InstallResolvconf(netName, bridge.String())
+	if err != nil {
+		return "", err
+	}
+
+	return cniConfigPath, nil
 }

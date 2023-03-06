@@ -151,17 +151,6 @@ func cmdCheck(args *skel.CmdArgs) error {
 	return nil
 }
 
-// stringInSlice is simple util to check for the presence of a string
-// in a string slice
-func stringInSlice(s string, slice []string) bool {
-	for _, sl := range slice {
-		if s == sl {
-			return true
-		}
-	}
-	return false
-}
-
 type podname struct {
 	types.CommonArgs
 	K8S_POD_NAME types.UnmarshallableString `json:"podname,omitempty"` //nolint:revive,stylecheck
