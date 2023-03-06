@@ -1,4 +1,14 @@
+@use "../custom.scss";
+
 .guideIndex {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+
+  @include custom.desktop {
+    align-items: start;
+  }
+
   ul {
     display: flex;
     flex-wrap: wrap;
@@ -33,6 +43,9 @@
   min-width: 300px;
   max-width: 600px;
   width: 80%;
+    html[data-theme="dark"] & {
+    border: 1px solid var(--ifm-color-primary-light);
+  }
 }
 
 .filter {
@@ -53,9 +66,14 @@
 .filterInput {
   border: none;
 
-  &:focus, 
+  &:focus,
   &:focus-visible {
     outline: none;
+  }
+
+  html[data-theme="dark"] & {
+    color: var(--ifm-color-primary-light);
+    background: transparent;
   }
 }
 
@@ -67,6 +85,10 @@
   background-color: white;
   max-height: 200px;
   overflow-y: scroll;
+
+  html[data-theme="dark"] & {
+    border: 1px solid var(--ifm-color-primary-light);
+  }
 
   ul {
     padding: 0px;
@@ -88,6 +110,14 @@
 
   li:hover {
     background-color: lightgray;
+  }
+
+  html[data-theme="dark"] & {
+    color: var(--ifm-color-primary-light);
+    background: var(--ifm-color-primary-dark);
+    li:hover {
+      background-color: rgba(211, 211, 211, 0.118);
+    }
   }
 }
 
