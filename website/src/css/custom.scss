@@ -766,3 +766,8 @@ img[alt="github-contribute"] {
     }
   }
 }
+
+// adds padding to doc embeds (not quickstart)
+.markdown > #embedWrapper {
+  margin-bottom: 20px;
+}
