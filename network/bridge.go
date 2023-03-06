@@ -2,7 +2,7 @@ package network
 
 import "net"
 
-func Bridge(subnet string) (net.IP, error) {
+func BridgeFromCIDR(subnet string) (net.IP, error) {
 	_, ipNet, err := net.ParseCIDR(subnet)
 	if err != nil {
 		return nil, err

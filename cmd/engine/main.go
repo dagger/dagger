@@ -917,22 +917,22 @@ func setupNetwork(netName, netCIDR string) (string, error) {
 
 	err := network.InstallDnsmasq(netName)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("install dnsmasq: %w", err)
 	}
 
 	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("install cni: %w", err)
 	}
 
-	bridge, err := network.Bridge(netCIDR)
+	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("bridge from cidr: %w", err)
 	}
 
 	err = network.InstallResolvconf(netName, bridge.String())
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("install resolv.conf: %w", err)
 	}
 
 	return cniConfigPath, nil

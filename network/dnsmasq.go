@@ -40,7 +40,7 @@ func InstallDnsmasq(name string) error {
 	}
 
 	if err := setupIPTables(config.NetworkInterface); err != nil {
-		return err
+		return fmt.Errorf("setup iptables: %w", err)
 	}
 
 	dnsmasqConfigFile, err := xdg.RuntimeFile("dagger/net/" + name + "/dnsmasq.conf")
@@ -49,13 +49,13 @@ func InstallDnsmasq(name string) error {
 	}
 
 	if err := writeDnsmasqConfig(dnsmasqConfigFile, config); err != nil {
-		return err
+		return fmt.Errorf("write dnsmasq.conf: %w", err)
 	}
 
 	dnsmasq := exec.Command(dnsmasqPath, "-u", "root", "--conf-file="+dnsmasqConfigFile)
 
 	if b, err := dnsmasq.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to start dnsmasq: %w\n%s", err, string(b))
+		return fmt.Errorf("start dnsmasq: %w; output:\n%s", err, string(b))
 	}
 
 	return nil
