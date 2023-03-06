@@ -244,7 +244,12 @@ func runRegistryInDocker(ctx context.Context, t *testing.T) string {
 	return name
 }
 
-var connectLock sync.Mutex
+var (
+	connectLock sync.Mutex
+
+	// keep track of how many networks we've created
+	netInstance int
+)
 
 func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string, network string) (_ *dagger.Client, gracefulStop func() error) {
 	// Setting the RUNNER_HOST env var is global so while silly we need to lock here. This also seems to help with
@@ -252,8 +257,10 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	connectLock.Lock()
 	defer connectLock.Unlock()
 
+	netInstance++
+
 	t.Helper()
-	name := "dagger-test-remote-cache-" + identity.NewID()
+	name := "dagger-test-separate-engine-" + identity.NewID()
 
 	allArgs := []string{"run"}
 	dockerRunArgs := []string{
@@ -272,6 +279,9 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	allArgs = append(allArgs,
 		"localhost/dagger-engine.dev:latest", // set in internal/mage/engine.go
 		"--debug",
+		// configure non-overlapping networks
+		"--network-name", fmt.Sprintf("testdagger%d", netInstance),
+		"--network-cidr", fmt.Sprintf("10.88.%d.0/24", netInstance),
 	)
 
 	cmd := exec.Command("docker", allArgs...)
