@@ -1,45 +1,45 @@
 package main
 
 import (
-  "context"
-  "fmt"
-  "os"
+	"context"
+	"fmt"
+	"os"
 
-  "dagger.io/dagger"
+	"dagger.io/dagger"
 )
 
 func main() {
-  ctx := context.Background()
+	ctx := context.Background()
 
-  // create Dagger client
-  client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	// create Dagger client
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 
-  if err != nil {
-    panic(err)
-  }
-  defer client.Close()
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
 
-  // create Redis service container
-  redisSrv := client.Container().
-    From("redis").
-    WithExposedPort(6379).
-    WithExec(nil)
+	// create Redis service container
+	redisSrv := client.Container().
+		From("redis").
+		WithExposedPort(6379).
+		WithExec(nil)
 
-  // create Redis client container
-  redisCLI := client.Container().
-    From("redis").
-    WithServiceBinding("redis-srv", redisSrv).
-    WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
+	// create Redis client container
+	redisCLI := client.Container().
+		From("redis").
+		WithServiceBinding("redis-srv", redisSrv).
+		WithEntrypoint([]string{"redis-cli", "-h", "redis-srv"})
 
-  // send ping from client to server
-  ping := redisCLI.WithExec([]string{"ping"})
+	// send ping from client to server
+	ping := redisCLI.WithExec([]string{"ping"})
 
-  val, err := ping.
-    Stdout(ctx)
+	val, err := ping.
+		Stdout(ctx)
 
-  if err != nil {
-    panic(err)
-  }
+	if err != nil {
+		panic(err)
+	}
 
-  fmt.Println(val)
+	fmt.Println(val)
 }
