@@ -7,37 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/containernetworking/plugins/plugins/ipam/host-local/backend/disk"
 	"github.com/sirupsen/logrus"
 )
-
-// dnsNameLock embeds the CNI disk lock so we can hang methods from it
-type dnsNameLock struct {
-	lock *disk.FileLock
-}
-
-// release unlocks and closes the disk lock.
-func (m *dnsNameLock) release() error {
-	if err := m.lock.Unlock(); err != nil {
-		return err
-	}
-	return m.lock.Close()
-}
-
-// acquire locks the disk lock.
-func (m *dnsNameLock) acquire() error {
-	return m.lock.Lock()
-}
-
-// getLock returns a dnsNameLock synchronizing the configuration directory for
-// the domain.
-func getLock(path string) (*dnsNameLock, error) {
-	l, err := disk.NewFileLock(path)
-	if err != nil {
-		return nil, err
-	}
-	return &dnsNameLock{l}, nil
-}
 
 // appendToFile appends a new entry to the dnsmasqs hosts file
 func appendToFile(path, podname string, aliases []string, ips []*net.IPNet) error {
