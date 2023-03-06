@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
@@ -275,6 +276,38 @@ func TestContainerExecServicesError(t *testing.T) {
 	_, err = client.ExitCode(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
+}
+
+func TestContainerServiceNoExecError(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := c.Container().
+		From("alpine:3.16.2").
+		WithExposedPort(8080)
+
+	_, err := srv.Hostname(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithServiceBinding("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.ExitCode(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = client.Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = client.Stderr(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 }
 
 //go:embed testdata/udp-service.go

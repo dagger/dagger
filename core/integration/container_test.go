@@ -3005,3 +3005,20 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
 }
+
+func TestContainerNoExecError(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	_, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = c.Container().From("alpine:3.16.2").Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = c.Container().From("alpine:3.16.2").Stderr(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+}
