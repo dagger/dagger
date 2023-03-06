@@ -212,13 +212,19 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 		eg.Go(func() error {
 			defer close(cleanCh)
 			for ev := range ch {
-				for _, v := range ev.Vertexes {
+				cleaned := *ev
+				cleaned.Vertexes = make([]*bkclient.Vertex, len(ev.Vertexes))
+				for i, v := range ev.Vertexes {
 					customName := pipeline.CustomName{}
 					if json.Unmarshal([]byte(v.Name), &customName) == nil {
-						v.Name = customName.Name
+						cp := *v
+						cp.Name = customName.Name
+						cleaned.Vertexes[i] = &cp
+					} else {
+						cleaned.Vertexes[i] = v
 					}
 				}
-				cleanCh <- ev
+				cleanCh <- &cleaned
 			}
 			return nil
 		})
