@@ -1,0 +1,21 @@
+.docker:
+  image: python:3-alpine
+  services:
+    - docker:${DOCKER_VERSION}-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_VERIFY: '1'
+    DOCKER_TLS_CERTDIR: '/certs'
+    DOCKER_CERT_PATH: '/certs/client'
+    DOCKER_DRIVER: overlay2
+    DOCKER_VERSION: '20.10.16'
+.dagger:
+  extends: [.docker]
+  before_script:
+    - apk add docker-cli
+    - cat $GOOGLE_APPLICATION_CREDENTIALS | docker login -u _json_key --password-stdin https://gcr.io
+build-deploy:
+  extends: [.dagger]
+  script:
+    - pip install dagger-io google-cloud-run
+    - python ci/main.py
