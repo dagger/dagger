@@ -1,0 +1,81 @@
+name: deleteme macOS Publish Repo
+on:
+  # Run tests in a PR when an SDK has a default CLI version bump
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+jobs:
+  test-provision-macos:
+    name: "Test SDK Provision / macos"
+    runs-on: macos-latest
+    steps:
+      - name: "Set CLI Test URL"
+        run: |
+          BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
+          # this is a push to the main branch
+          ARCHIVE_URL="${BASE_URL}/main/d02d4559743a944d16a21981188919f7e45a7d73/dagger_d02d4559743a944d16a21981188919f7e45a7d73_darwin_amd64.tar.gz"
+          CHECKSUMS_URL="${BASE_URL}/main/d02d4559743a944d16a21981188919f7e45a7d73/checksums.txt"
+          RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
+          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
+          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
+          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
+        shell: bash
+
+      - name: "Install Docker"
+        run: |
+          echo "Install docker CLI..."
+          brew install docker
+          echo "Start Docker daemon via Colima..."
+          echo "⚠️ Use mount-type 9p so that launched containers can chown: https://github.com/abiosoft/colima/issues/54#issuecomment-1250217077"
+          colima start --mount-type 9p
+
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.20'
+
+      - name: "Test Go SDK"
+        run: |
+          cd sdk/go
+          go test -v -run TestProvision ./...
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+        # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
+      - name: "Bootstrap Poetry"
+        run: |
+          curl -sL https://install.python-poetry.org | python - -y
+
+      - name: "Add Poetry & deps to PATH"
+        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: "Test Python SDK"
+        run: |
+          cd sdk/python
+          poetry install --only main,test
+          poetry run pytest -xm provision
+
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 16
+
+      - name: "Test NodeJS SDK"
+        run: |
+          cd sdk/nodejs
+          yarn install
+          yarn test -g 'Automatic Provisioned CLI Binary'
+
+      - name: "ALWAYS print engine logs - especially useful on failure"
+        if: always()
+        run: docker logs $(docker ps -q --filter name=dagger-engine)
+
+      - name: "ALWAYS print kernel logs - especially useful on failure"
+        if: always()
+        run: sudo dmesg
