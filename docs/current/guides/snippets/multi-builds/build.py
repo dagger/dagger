@@ -4,7 +4,6 @@ import itertools
 import sys
 
 import anyio
-import graphql
 
 import dagger
 
@@ -52,9 +51,4 @@ async def build():
         await outputs.export(".")
 
 
-if __name__ == "__main__":
-    try:
-        anyio.run(build)
-    except graphql.GraphQLError as e:
-        print(e.message, file=sys.stderr)
-        sys.exit(1)
+anyio.run(build)
