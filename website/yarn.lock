@@ -5610,11 +5610,6 @@ forwarded@0.2.0:
   resolved "https://registry.npmjs.org/forwarded/-/forwarded-0.2.0.tgz"
   integrity sha512-buRG0fpBtRHSTCOASe6hD258tEubFoRLb4ZNA6NxMVHNw2gOcwHo9wyablzMzOA5z9xA9L1KNjk/Nt6MT9aYow==
 
-foundation-sites@^6.7.2:
-  version "6.7.5"
-  resolved "https://registry.yarnpkg.com/foundation-sites/-/foundation-sites-6.7.5.tgz#6bc2bdd06819e6ed4d7fd8e3090246a0b6ac81c0"
-  integrity sha512-MEjAENdF/IV2XQvlQmg20o+iDTyyWu0N/j440e8fKbEylbKxARzgg5S7vcnxtjukC1Lqg+rRm7ZDSSyGhVVoUQ==
-
 fraction.js@^4.2.0:
   version "4.2.0"
   resolved "https://registry.npmjs.org/fraction.js/-/fraction.js-4.2.0.tgz"
@@ -6189,7 +6184,7 @@ grunt-sass@^3.0.2:
   resolved "https://registry.yarnpkg.com/grunt-sass/-/grunt-sass-3.1.0.tgz#a5936cc2a80ec08092d9f31c101dc307d1e4f71c"
   integrity sha512-90s27H7FoCDcA8C8+R0GwC+ntYD3lG6S/jqcavWm3bn9RiJTmSfOvfbFa1PXx4NbBWuiGQMLfQTj/JvvqT5w6A==
 
-grunt@^1.5.3:
+grunt@~1.5.3:
   version "1.5.3"
   resolved "https://registry.yarnpkg.com/grunt/-/grunt-1.5.3.tgz#3214101d11257b7e83cf2b38ea173b824deab76a"
   integrity sha512-mKwmo4X2d8/4c/BmcOETHek675uOqw0RuA/zy12jaspWqvTp4+ZeQF1W+OTpcbncnaBsfbQJ6l0l4j+Sn/GmaQ==
@@ -10674,10 +10669,10 @@ spdy@^4.0.2:
     select-hose "^2.0.0"
     spdy-transport "^3.0.0"
 
-spectaql@^2.0.4:
-  version "2.0.4"
-  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.4.tgz#ee4568535fb77520d6bed455d19fefd63fa81826"
-  integrity sha512-AZt403ABZ7M3U6EkIHVvtzLUBlHogIBzeBsV5qJcumPcfmrG5YogSfw0mV8I8GKonzOzF/RR0IQUcO2Bc0EnvQ==
+spectaql@^2.0.5:
+  version "2.0.5"
+  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.5.tgz#af692cfee4ef0c396424b2a349d9d65d3bcd933f"
+  integrity sha512-AkODv4O42XomRFBCKc2f9Knmd4f4N/TTsgs9tuv8drojPiT0Tc0Q4R8xo97o+S1OawnhRxzCK+OYkfAUzEXRCg==
   dependencies:
     "@anvilco/apollo-server-plugin-introspection-metadata" "^2.0.1"
     "@graphql-tools/load-files" "^6.3.2"
@@ -10688,11 +10683,10 @@ spectaql@^2.0.4:
     coffeescript "^2.6.1"
     commander "^10.0.0"
     fast-glob "^3.2.12"
-    foundation-sites "^6.7.2"
     graceful-fs "~4.2.10"
     graphql "^16.3.0"
     graphql-scalars "^1.15.0"
-    grunt "^1.5.3"
+    grunt "~1.5.3"
     grunt-contrib-clean "^2.0.0"
     grunt-contrib-concat "^2.1.0"
     grunt-contrib-connect "^3.0.0"
