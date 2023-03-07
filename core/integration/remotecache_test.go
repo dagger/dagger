@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"sync"
@@ -21,9 +23,10 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	registryContainerName := runRegistryInDocker(ctx, t)
 	getClient := func() *dagger.Client {
-		return runSeparateEngine(ctx, t, map[string]string{
+		c, _ := runSeparateEngine(ctx, t, map[string]string{
 			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=127.0.0.1:5000/test-cache,mode=max",
 		}, "container:"+registryContainerName)
+		return c
 	}
 
 	pipelineOutput := func(c *dagger.Client) string {
@@ -57,9 +60,10 @@ func TestRemoteCacheS3(t *testing.T) {
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 		s3ContainerName := runS3InDocker(ctx, t, bucket)
 		getClient := func() *dagger.Client {
-			return runSeparateEngine(ctx, t, map[string]string{
+			c, _ := runSeparateEngine(ctx, t, map[string]string{
 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket,
 			}, "container:"+s3ContainerName)
+			return c
 		}
 
 		pipelineOutput := func(c *dagger.Client) string {
@@ -88,9 +92,9 @@ func TestRemoteCacheS3(t *testing.T) {
 	t.Run("dagger s3 caching (with pooling)", func(t *testing.T) {
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 		s3ContainerName := runS3InDocker(ctx, t, bucket)
-		getClient := func() *dagger.Client {
+		getClient := func(engineName string) (*dagger.Client, func() error) {
 			return runSeparateEngine(ctx, t, map[string]string{
-				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/",
+				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
 				// TODO: temporarily disable networking to fix flakiness around containers in the
 				// same netns interfering with each other.
 				// Real fix is to either override CNI settings for each engine or to remove the need
@@ -111,22 +115,23 @@ func TestRemoteCacheS3(t *testing.T) {
 		}
 
 		generatedOutputs := map[string]string{} // map of unique id set in exec -> output
+		const numEngines = 3
 		var mu sync.Mutex
 		var eg errgroup.Group
-		for i := 0; i < 5; i++ {
+		for i := 0; i < numEngines; i++ {
 			eg.Go(func() error {
 				id := identity.NewID()
-				client := getClient()
+				client, stopEngine := getClient(id)
 				mu.Lock()
 				defer mu.Unlock()
 				generatedOutputs[id] = pipelineOutput(client, id)
-				return client.Close()
+				return errors.Join(client.Close(), stopEngine())
 			})
 		}
 		require.NoError(t, eg.Wait())
-		require.Len(t, generatedOutputs, 5)
+		require.Len(t, generatedOutputs, numEngines)
 		eg = errgroup.Group{}
-		client := getClient()
+		client, stopEngine := getClient(identity.NewID())
 		for id, cachedOutput := range generatedOutputs {
 			id, cachedOutput := id, cachedOutput
 			eg.Go(func() error {
@@ -136,6 +141,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		}
 		require.NoError(t, eg.Wait())
 		require.NoError(t, client.Close())
+		require.NoError(t, stopEngine())
 	})
 }
 
@@ -199,7 +205,7 @@ func runRegistryInDocker(ctx context.Context, t *testing.T) string {
 
 var connectLock sync.Mutex
 
-func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string, network string) *dagger.Client {
+func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string, network string) (_ *dagger.Client, gracefulStop func() error) {
 	// Setting the RUNNER_HOST env var is global so while silly we need to lock here. This also seems to help with
 	// some race conditions setting up the engine network when they are all sharing one netns
 	connectLock.Lock()
@@ -244,7 +250,15 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
-	return c
+	return c, func() error {
+		out, err := exec.Command("docker", "stop", "-s", "SIGTERM", "-t", "30", name).CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("error stopping docker container: %v: %s", err, out)
+		}
+		// wait for the container to stop
+		exec.CommandContext(ctx, "docker", "wait", name).Run()
+		return nil
+	}
 }
 
 func stopDockerRun(cmd *exec.Cmd, ctrName string) {
