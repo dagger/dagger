@@ -506,6 +506,11 @@ export type SecretID = string & { __SecretID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
+/**
+ * Nothing. Used by SDK codegen to skip the return value.
+ */
+export type Void = string & { __Void: never }
+
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
 }
@@ -1029,6 +1034,24 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Evaluates the command and returns an error if it exits with a nonzero exit
+   * code.
+   */
+  async run(): Promise<Void> {
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "run",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**

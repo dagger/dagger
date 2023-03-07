@@ -50,13 +50,15 @@ type {{ $field | FieldOptionsStructName }} struct {
 		c: r.c,
 	}
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
-	var response {{ $field.TypeRef | FormatOutputType }}
-	q = q.Bind(&response)
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
-	{{- if ne $typeName "Client" }}
-	return response, q.Execute(ctx, r.c)
-	{{- else }}
+	var response {{ $typeName }}
+	q = q.Bind(&response)
+  {{- if $field.TypeRef.IsVoid }}
+	return q.Execute(ctx, r.c)
+  {{- else if eq $typeName "Client" }}
 	return response, q.Execute(ctx, r.gql)
+	{{- else }}
+	return response, q.Execute(ctx, r.c)
 	{{- end }}
 	{{- end }}
 }
