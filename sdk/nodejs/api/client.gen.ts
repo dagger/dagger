@@ -730,7 +730,7 @@ export class Container extends BaseClient {
 
   /**
    * Exit code of the last executed command. Zero means success.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async exitCode(): Promise<number> {
     const response: Awaited<number> = await computeQuery(
@@ -1033,7 +1033,7 @@ export class Container extends BaseClient {
 
   /**
    * The error stream of the last executed command.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async stderr(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1051,7 +1051,7 @@ export class Container extends BaseClient {
 
   /**
    * The output stream of the last executed command.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async stdout(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
