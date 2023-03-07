@@ -250,7 +250,7 @@ func (m Model) statusBarTimerView() string {
 		return "0.0s"
 	}
 	current := time.Now()
-	if m.done {
+	if m.done && m.root.Completed() != nil {
 		current = *m.root.Completed()
 	}
 	diff := current.Sub(*m.root.Started())
