@@ -32,6 +32,9 @@ type SecretID string
 // A content-addressed socket identifier.
 type SocketID string
 
+// Nothing. Used by SDK codegen to skip the return value.
+type Void string
+
 // Key value object that represents a build argument.
 type BuildArg struct {
 	// The build argument name.
@@ -510,6 +513,16 @@ func (r *Container) Rootfs() *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// Evaluates the command and returns an error if it exits with a nonzero exit
+// code.
+func (r *Container) Run(ctx context.Context) error {
+	q := r.q.Select("run")
+
+	var response Void
+	q = q.Bind(&response)
+	return q.Execute(ctx, r.c)
 }
 
 // The error stream of the last executed command.

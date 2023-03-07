@@ -4,6 +4,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
+	"github.com/dagger/graphql/language/ast"
 )
 
 type querySchema struct {
@@ -24,6 +25,17 @@ func (s *querySchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
 			"pipeline": router.ToResolver(s.pipeline),
+		},
+		"Void": router.ScalarResolver{
+			Serialize: func(_ any) any {
+				return core.Void("")
+			},
+			ParseValue: func(_ any) any {
+				return core.Void("")
+			},
+			ParseLiteral: func(_ ast.Value) any {
+				return core.Void("")
+			},
 		},
 	}
 }

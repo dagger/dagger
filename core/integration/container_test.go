@@ -318,6 +318,34 @@ func TestContainerExecExitCode(t *testing.T) {
 	*/
 }
 
+func TestContainerRun(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	err := c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"true"}).
+		Run(ctx)
+	require.NoError(t, err)
+
+	err = c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"false"}).
+		Run(ctx)
+	require.Error(t, err)
+
+	err = c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"sh", "-exc", "echo hello; echo goodbye >/dev/stderr; exit 42"}).
+		Run(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exit code: 42")
+	require.Contains(t, err.Error(), "hello")
+	require.Contains(t, err.Error(), "goodbye")
+}
+
 func TestContainerExecStdoutStderr(t *testing.T) {
 	t.Parallel()
 

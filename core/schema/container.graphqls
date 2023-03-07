@@ -12,6 +12,9 @@ extend type Query {
 "A unique container identifier. Null designates an empty container (scratch)."
 scalar ContainerID
 
+"Nothing. Used by SDK codegen to skip the return value."
+scalar Void
+
 """
 An OCI-compatible container, also known as a docker container.
 """
@@ -499,6 +502,12 @@ type Container {
   Null if no command has been executed.
   """
   stderr: String
+
+  """
+  Evaluates the command and returns an error if it exits with a nonzero exit
+  code.
+  """
+  run: Void!
 
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.

@@ -77,6 +77,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
+			"run":                  router.ToResolver(s.run),
 			"publish":              router.ToResolver(s.publish),
 			"platform":             router.ToResolver(s.platform),
 			"export":               router.ToResolver(s.export),
@@ -172,6 +173,10 @@ func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, ar
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*string, error) {
 	return parent.MetaFileContents(ctx, s.gw, "stderr")
+}
+
+func (s *containerSchema) run(ctx *router.Context, parent *core.Container, args any) (core.Void, error) {
+	return "", parent.Evaluate(ctx, s.gw)
 }
 
 type containerWithEntrypointArgs struct {
