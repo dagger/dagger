@@ -137,11 +137,12 @@ func fieldFunction(f introspection.Field) string {
 	signature += "(" + strings.Join(args, ", ") + ")"
 
 	retType := ""
-	if f.TypeRef.IsVoid() {
+	switch {
+	case f.TypeRef.IsVoid():
 		retType = "error"
-	} else if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", commonFunc.FormatOutputType(f.TypeRef))
-	} else {
+	default:
 		retType = "*" + commonFunc.FormatOutputType(f.TypeRef)
 	}
 	signature += " " + retType
