@@ -8,12 +8,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 )
 
 func NewItem(v *bkclient.Vertex) *Item {
-	var name core.CustomName
+	var name pipeline.CustomName
 	if json.Unmarshal([]byte(v.Name), &name) != nil {
 		name.Name = v.Name
 		if pg := v.ProgressGroup.GetId(); pg != "" {
