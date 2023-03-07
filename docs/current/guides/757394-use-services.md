@@ -30,13 +30,12 @@ This tutorial teaches you the basics of using services in Dagger.
 This tutorial assumes that:
 
 - You have a Go, Python or Node.js development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
+- You have a Dagger SDK installed for one of the above languages. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md), [Python](../sdk/python/866944-install.md) or [Node.js](../sdk/nodejs/835948-install.md) SDK.
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Key concepts
 
-Let's start with some important concepts.
-
-Dagger services are just containers, which have the following abilities:
+Dagger services are just containers, which have the following characteristics:
 
 - Each container has its own network namespace and IP address
 - Each container has a unique, deterministic DNS address
@@ -45,7 +44,7 @@ Dagger services are just containers, which have the following abilities:
 
 Service containers come with the following built-in features:
 
-- Service containers are started just-in-time, deduped, and stopped when no longer needed
+- Service containers are started just-in-time, de-duplicated, and stopped when no longer needed
 - Service containers are health checked prior to running clients
 - Service containers are given an alias for the client container to use as its hostname
 
@@ -95,7 +94,7 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 
 This hash value is derived from the same value that determines whether an operation is a cache hit in Buildkit: the vertex digest.
 
-To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the hostname API, which returns a domain name reachable by other containers:
+To get a container's address, you wouldn't normally run the `hostname` command, because you'd just be getting the hostname of a container that runs `hostname`, which isn't very helpful. Instead, you would use the `Hostname()` (Go) or `hostname()` (Python and Node.js) SDK method, which returns a domain name reachable by other containers:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
@@ -116,19 +115,19 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 </TabItem>
 </Tabs>
 
-In practice, you are more likely to use aliases with `withServiceBinding()`, or `Endpoint()`, which are covered in the next section.
+In practice, you are more likely to use aliases with service bindings or endpoints, which are covered in the next section.
 
 ## Exposing ports
 
-Dagger offers the `withExposedPort()` and `Endpoint()` methods to define service ports.
-
-- Use the `withExposedPort()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `Endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
-
-Here's an example:
+Dagger offers two methods to work with service ports:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
+
+- Use the `WithExposedPort()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `Endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+
+Here's an example:
 
 <Embed id="kDBfYoh2uau" />
 
@@ -136,10 +135,20 @@ Here's an example:
 
 <TabItem value="Python">
 
+- Use the `with_exposed_port()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+
+Here's an example:
+
 <Embed id="" />
 
 </TabItem>
 <TabItem value="Node.js">
+
+- Use the `withExposedPort()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+
+Here's an example:
 
 <Embed id="" />
 
@@ -148,7 +157,7 @@ Here's an example:
 
 ## Binding services
 
-Use the `withServiceBinding()` method to bind a service container to a client container with an alias (such as `redis`) that the client container can use as a hostname.
+Dagger enables users to bind a service container to a client container with an alias (such as `redis`) that the client container can use as a hostname.
 
 Binding a service to a container expresses a dependency: the service container needs to be running when the client container runs. The bound service container is started automatically whenever its client container runs.
 
@@ -281,6 +290,10 @@ Note that this example relies on the 10-second grace period, which you should tr
 </TabItem>
 </Tabs>
 
+:::note
+Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
+:::
+
 ## Persisting service state
 
 Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
@@ -306,42 +319,8 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 
 Note that this example uses Redis's `SAVE` command to ensure data is synced. By default, Redis flushes data to disk periodically.
 
-## Example: Provisioning and testing a Redis service
-
-The following composite example uses Dagger to provision a Redis server with data persisted to a named cache and runs a user-provided command against it.
-
-<Tabs groupId="language" className="embeds">
-<TabItem value="Go">
-
-```go file=./snippets/use-services/use-redis-service/main.go
-```
-
-Build and test the application as shown below:
-
-```shell
-$ go build -o ./shredis main.go
-$ ./shredis redis1 ping
-PONG
-$ ./shredis redis1 set abc hello
-OK
-$ ./shredis redis1 get abc
-hello
-$ ./shredis redis2 get abc
-
-```
-
-</TabItem>
-
-<TabItem value="Python">
-
-</TabItem>
-<TabItem value="Node.js">
-
-</TabItem>
-</Tabs>
-
 ## Conclusion
 
-This tutorial walked you through the basics of using services with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger. Finally, it wrapped things up with a comprehensive example of provisioning and testing a Redis service using a Dagger pipeline.
+This tutorial walked you through the basics of using services with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
 
 Use the [API Key Concepts](../api/975146-concepts.md) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
