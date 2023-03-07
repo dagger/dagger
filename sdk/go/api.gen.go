@@ -634,6 +634,11 @@ type ContainerWithExecOpts struct {
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command
+	// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+	// does not provide any security guarantees when using this option. It should only be used
+	// when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
 }
 
 // Retrieves this container after executing the specified command inside it.
@@ -665,6 +670,13 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+			break
+		}
+	}
+	// `insecureRootCapabilities` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
 			break
 		}
 	}

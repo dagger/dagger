@@ -833,6 +833,7 @@ class Container(Type):
         redirect_stdout: Optional[str] = None,
         redirect_stderr: Optional[str] = None,
         experimental_privileged_nesting: Optional[bool] = None,
+        insecure_root_capabilities: Optional[bool] = None,
     ) -> "Container":
         """Retrieves this container after executing the specified command inside
         it.
@@ -857,6 +858,14 @@ class Container(Type):
             executed.
             The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
             HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command
+            with "sudo" or executing `docker run` with the `--privileged`
+            flag. Containerization
+            does not provide any security guarantees when using this option.
+            It should only be used
+            when absolutely necessary and only with trusted commands.
         """
         _args = [
             Arg("args", args),
@@ -864,6 +873,7 @@ class Container(Type):
             Arg("redirectStdout", redirect_stdout, None),
             Arg("redirectStderr", redirect_stderr, None),
             Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)

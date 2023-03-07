@@ -17,6 +17,9 @@ import (
 // engineDefaultStateDir is the directory that we map to a volume by default.
 const engineDefaultStateDir = "/var/lib/dagger"
 
+// engineDefaultShimBin is the path to the shim binary we use as our oci runtime.
+const engineDefaultShimBin = "/usr/local/bin/dagger-shim"
+
 // daggerConfigPath is the path containing Dagger-specific configuration, which
 // might be provided by the user.
 const daggerConfigPath = "/etc/dagger"
@@ -32,6 +35,10 @@ const servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 func setDaggerDefaults(cfg *config.Config) error {
 	if cfg.Root == "" {
 		cfg.Root = engineDefaultStateDir
+	}
+
+	if cfg.Workers.OCI.Binary == "" {
+		cfg.Workers.OCI.Binary = engineDefaultShimBin
 	}
 
 	if os.Getenv(servicesDNSEnvName) != "0" {
