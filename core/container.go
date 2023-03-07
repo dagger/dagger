@@ -1060,6 +1060,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
 	}
 
+	if opts.InsecureRootCapabilities {
+		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
+	}
+
 	// first, build without a hostname
 	execStNoHostname := fsSt.Run(runOpts...)
 
@@ -1608,6 +1612,9 @@ type ContainerExecOpts struct {
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 	ExperimentalPrivilegedNesting bool
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool
 }
 
 type BuildArg struct {

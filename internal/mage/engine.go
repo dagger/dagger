@@ -73,30 +73,30 @@ if [ "$` + servicesDNSEnvName + `" != "0" ]; then
 	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
 fi
 
-exec {{.EngineBin}} --debug --config {{.EngineConfig}} --oci-worker-binary {{.ShimBin}}
+exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
+`
+
+const engineConfig = `
+debug = true
+insecure-entitlements = ["security.insecure"]
 `
 
 func init() {
-	type tmplParams struct {
+	type entrypointTmplParams struct {
 		Bridge       string
 		EngineBin    string
 		EngineConfig string
-		ShimBin      string
 	}
-
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
-
 	buf := new(bytes.Buffer)
-	err := tmpl.Execute(buf, tmplParams{
+	err := tmpl.Execute(buf, entrypointTmplParams{
 		Bridge:       network.Bridge,
 		EngineBin:    "/usr/local/bin/" + engineBinName,
 		EngineConfig: engineTomlPath,
-		ShimBin:      "/usr/local/bin/" + shimBinName,
 	})
 	if err != nil {
 		panic(err)
 	}
-
 	engineEntrypoint = buf.String()
 }
 
@@ -396,7 +396,10 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
 			WithDirectory(engineDefaultStateDir, c.Directory()).
-			WithNewFile(engineTomlPath). // stub config that user can override
+			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
+				Contents:    engineConfig,
+				Permissions: 0600,
+			}).
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
 				Permissions: 755,
