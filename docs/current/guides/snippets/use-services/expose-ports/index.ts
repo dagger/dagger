@@ -22,4 +22,3 @@ connect(
   },
   { LogOutput: process.stdout }
 );
-
