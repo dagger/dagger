@@ -66,7 +66,7 @@ async def main():
         # wait for service request completion
         response = await gcr_operation.result()
 
-        print(f"Deployment for image {addr} now available at {response.uri}.")
+    print(f"Deployment for image {addr} now available at {response.uri}.")
 
 
 anyio.run(main)
