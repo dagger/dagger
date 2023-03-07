@@ -91,6 +91,11 @@ func TestRemoteCacheS3(t *testing.T) {
 		getClient := func() *dagger.Client {
 			return runSeparateEngine(ctx, t, map[string]string{
 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/",
+				// TODO: temporarily disable networking to fix flakiness around containers in the
+				// same netns interfering with each other.
+				// Real fix is to either override CNI settings for each engine or to remove the need
+				// for them to be in the same netns.
+				"_EXPERIMENTAL_DAGGER_SERVICES_DNS": "0",
 			}, "container:"+s3ContainerName)
 		}
 
@@ -229,9 +234,13 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	err := cmd.Start()
 	require.NoError(t, err)
 
-	currentVal := os.Getenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	currentRunnerHost, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
 	os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+name)
-	defer os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", currentVal)
+	if ok {
+		defer os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", currentRunnerHost)
+	} else {
+		defer os.Unsetenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	}
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)

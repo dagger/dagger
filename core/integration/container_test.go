@@ -2933,3 +2933,75 @@ func TestContainerBuildNilContextError(t *testing.T) {
 		}`, &map[any]any{}, nil)
 	require.ErrorContains(t, err, "invalid nil input definition to definition op")
 }
+
+func TestContainerInsecureRootCapabilites(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	out, err := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"cat", "/proc/self/status"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "CapInh:\t0000000000000000")
+	require.Contains(t, out, "CapPrm:\t00000000a80425fb")
+	require.Contains(t, out, "CapEff:\t00000000a80425fb")
+	require.Contains(t, out, "CapBnd:\t00000000a80425fb")
+	require.Contains(t, out, "CapAmb:\t0000000000000000")
+
+	out, err = c.Container().From("alpine:3.16.2").
+		WithExec([]string{"cat", "/proc/self/status"}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, out, "CapInh:\t0000003fffffffff")
+	require.Contains(t, out, "CapPrm:\t0000003fffffffff")
+	require.Contains(t, out, "CapEff:\t0000003fffffffff")
+	require.Contains(t, out, "CapBnd:\t0000003fffffffff")
+	require.Contains(t, out, "CapAmb:\t0000003fffffffff")
+}
+
+func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// verify the root capabilities setting works by executing dockerd with it and
+	// testing it can startup, create containers and bind mount from its filesystem to
+	// them.
+	dockerd := c.Container().From("docker:23.0.1-dind").
+		WithMountedCache("/var/lib/docker", c.CacheVolume("docker-lib"), dagger.ContainerWithMountedCacheOpts{
+			Sharing: dagger.Private,
+		}).
+		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
+		WithExposedPort(2375).
+		WithExec([]string{"dockerd",
+			"--host=tcp://0.0.0.0:2375",
+			"--tls=false",
+		}, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		})
+
+	dockerHost, err := dockerd.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "tcp",
+	})
+	require.NoError(t, err)
+
+	randID := identity.NewID()
+	out, err := c.Container().From("docker:23.0.1-cli").
+		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
+		WithServiceBinding("docker", dockerd).
+		WithEnvVariable("DOCKER_HOST", dockerHost).
+		WithExec([]string{"sh", "-e", "-c", strings.Join([]string{
+			fmt.Sprintf("echo %s-from-outside > /tmp/from-outside", randID),
+			"docker run --rm -v /tmp:/tmp alpine cat /tmp/from-outside",
+			fmt.Sprintf("docker run --rm -v /tmp:/tmp alpine sh -c 'echo %s-from-inside > /tmp/from-inside'", randID),
+			"cat /tmp/from-inside",
+		}, "\n")}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
+}

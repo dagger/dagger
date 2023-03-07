@@ -167,7 +167,7 @@ This tutorial walked you through the process of creating a Dagger pipeline to co
 
 Dagger executes your pipelines entirely as standard OCI containers. This means that pipelines can be tested and debugged locally, and that the same pipeline will run consistently on your local machine, a CI runner, a dedicated server, or any container hosting service. This portability is one of Dagger's key advantages, and this tutorial demonstrated it in action by using the same pipeline on the local host and on GitHub.
 
-Use the [API Key Concepts](../api/975146-concepts.md) page and the [Node.js SDK Reference](../sdk/nodejs/reference/modules.md) to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Node.js SDK Reference](../sdk/nodejs/reference/modules.md) to learn more about Dagger.
 
 ## Appendix A: Create a GitHub repository with an example Express application
 

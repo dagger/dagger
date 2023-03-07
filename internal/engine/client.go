@@ -16,18 +16,32 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
 )
 
-func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
+// Client returns a buildkit client, whether privileged execs are enabled, or an error
+func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, bool, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
 		buildkitdHost, err = dockerImageProvider(ctx, remote)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
-	if err := waitBuildkit(ctx, buildkitdHost); err != nil {
-		return nil, err
+	workerInfo, err := waitBuildkit(ctx, buildkitdHost)
+	if err != nil {
+		return nil, false, err
+	}
+	var privilegedExecEnabled bool
+	if len(workerInfo) > 0 {
+		for k, v := range workerInfo[0].Labels {
+			// TODO:(sipsma) we set this custom label in the default engine config
+			// toml. It's not the best solution but the only way to get this
+			// information to the client right now.
+			if k == "privilegedEnabled" && v == "true" {
+				privilegedExecEnabled = true
+				break
+			}
+		}
 	}
 
 	opts := []bkclient.ClientOpt{
@@ -37,7 +51,7 @@ func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
 
 	exp, err := detect.Exporter()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	if td, ok := exp.(bkclient.TracerDelegate); ok {
@@ -46,16 +60,17 @@ func Client(ctx context.Context, remote *url.URL) (*bkclient.Client, error) {
 
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
-		return nil, fmt.Errorf("buildkit client: %w", err)
+		return nil, false, fmt.Errorf("buildkit client: %w", err)
 	}
-	return c, nil
+
+	return c, privilegedExecEnabled, nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.
-func waitBuildkit(ctx context.Context, host string) error {
+func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, error) {
 	c, err := bkclient.New(ctx, host)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// FIXME Does output "failed to wait: signal: broken pipe"
@@ -67,14 +82,15 @@ func waitBuildkit(ctx context.Context, host string) error {
 		retryAttempts = 100
 	)
 
+	var workerInfo []*bkclient.WorkerInfo
 	for retry := 0; retry < retryAttempts; retry++ {
-		_, err = c.ListWorkers(ctx)
+		workerInfo, err = c.ListWorkers(ctx)
 		if err == nil {
-			return nil
+			return workerInfo, nil
 		}
 		time.Sleep(retryPeriod)
 	}
 
 	listWorkerError := strings.ReplaceAll(err.Error(), "\\n", "")
-	return fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
+	return nil, fmt.Errorf("buildkit failed to respond: %s", listWorkerError)
 }
