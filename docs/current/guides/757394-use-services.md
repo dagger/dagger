@@ -61,12 +61,12 @@ Containers run in a bridge network. Each container has its own IP address that o
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="bhx9i4LCcD9" />
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="Ac9pAtECYRy" />
 
 </TabItem>
 </Tabs>
@@ -82,7 +82,7 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="2qLVfgdsnI6" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -105,7 +105,7 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="U5SlCIjnDCN" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -140,7 +140,7 @@ Here's an example:
 
 Here's an example:
 
-<Embed id="" />
+<Embed id="d43ukG64Vv-" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -172,7 +172,7 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="T47F8bg5_Eo" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -193,7 +193,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="KgpaTo2NmE-" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -218,7 +218,7 @@ Consider this example:
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="vtG-PyKz2E5" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -259,7 +259,7 @@ Let's put all this together in a full client-server example of running commands 
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="D80RyJ7f8h0" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -280,7 +280,7 @@ Note that this example relies on the 10-second grace period, which you should tr
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="0EGmAzoPXPM" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -307,7 +307,7 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 
 <TabItem value="Python">
 
-<Embed id="" />
+<Embed id="uMNx2j1-GTt" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -323,4 +323,4 @@ Note that this example uses Redis's `SAVE` command to ensure data is synced. By 
 
 This tutorial walked you through the basics of using services with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
 
-Use the [API Key Concepts](../api/975146-concepts.md) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
