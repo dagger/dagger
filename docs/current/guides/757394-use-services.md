@@ -87,7 +87,7 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="p4TAAfexI_a" />
 
 </TabItem>
 </Tabs>
@@ -110,7 +110,7 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="WpUuvEWdtrG" />
 
 </TabItem>
 </Tabs>
@@ -150,7 +150,7 @@ Here's an example:
 
 Here's an example:
 
-<Embed id="" />
+<Embed id="x72_mgQv8hS" />
 
 </TabItem>
 </Tabs>
@@ -177,7 +177,7 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="67ATACE21zB" />
 
 </TabItem>
 </Tabs>
@@ -198,7 +198,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="3AWLZLpSavU" />
 
 </TabItem>
 </Tabs>
@@ -223,7 +223,7 @@ Consider this example:
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="r9lHD3r4fcI" />
 
 </TabItem>
 </Tabs>
@@ -264,7 +264,7 @@ Let's put all this together in a full client-server example of running commands 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="A-ypySBNtVq" />
 
 </TabItem>
 </Tabs>
@@ -285,7 +285,7 @@ Note that this example relies on the 10-second grace period, which you should tr
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="zajuPzL79cf" />
 
 </TabItem>
 </Tabs>
@@ -312,7 +312,7 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+<Embed id="6FdvzPEfBgH" />
 
 </TabItem>
 </Tabs>
