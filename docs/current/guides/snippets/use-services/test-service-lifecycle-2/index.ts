@@ -1,6 +1,5 @@
 import Client, { connect } from '@dagger.io/dagger';
 
-
 connect(
   async (client: Client) => {
     // create Redis service container
@@ -19,11 +18,9 @@ connect(
 
     // set value
     const setter = await redisCLI.withExec(['set', 'foo', 'abc']).stdout();
-
     console.log(setter);
 
     const getter = await redisCLI.withExec(['get', 'foo']).stdout();
-
     console.log(getter);
   },
   { LogOutput: process.stdout }

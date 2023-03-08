@@ -1,6 +1,5 @@
 import Client, { connect } from '@dagger.io/dagger';
 
-
 connect(
   async (client: Client) => {
 
@@ -17,7 +16,6 @@ connect(
       .from('redis')
       .withServiceBinding('redis-srv', redisSrv)
       .withEntrypoint(['redis-cli', '-h', 'redis-srv']);
-
 
     // send ping from client to server
     const val = await redisCLI.withExec(['ping']).stdout();

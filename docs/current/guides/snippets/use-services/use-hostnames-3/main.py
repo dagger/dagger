@@ -10,7 +10,7 @@ async def main():
         # get hostname of service container via API
         val = await (
             client.container()
-            .from_("alpine")
+            .from_("python")
             .with_exec(["python", "-m", "http.server"])
             .hostname()
         )

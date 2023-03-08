@@ -1,6 +1,5 @@
 import Client, { connect } from '@dagger.io/dagger';
 
-
 connect(
   async (client: Client) => {
     // create Redis service container
@@ -24,6 +23,7 @@ connect(
       .stdout();
 
     console.log(val);
+
   },
   { LogOutput: process.stdout }
 );

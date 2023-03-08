@@ -1,15 +1,14 @@
 import Client, { connect } from "@dagger.io/dagger"
 
-
 connect(async (client: Client) => {
 
   // create HTTP service container with exposed port 8080
   const httpSrv = client
     .container()
-    .from("node:slim")
+    .from("python")
     .withDirectory("/srv", client.directory().withNewFile("index.html", "Hello, world!"))
     .withWorkdir("/srv")
-    .withExec(['npx', 'http-server', '-p', '8080'])
+    .withExec(["python", "-m", "http.server", "8080"])
     .withExposedPort(8080)
 
   // create client container with service binding

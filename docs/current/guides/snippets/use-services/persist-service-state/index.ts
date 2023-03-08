@@ -1,6 +1,5 @@
 import Client, { connect } from '@dagger.io/dagger';
 
-
 connect(
   async (client: Client) => {
     const redisSrv = client
@@ -23,8 +22,8 @@ connect(
 
     // get value
     const val = await redisCLI.withExec(['get', 'foo']).stdout();
-
     console.log(val);
+
   },
   { LogOutput: process.stdout }
 );

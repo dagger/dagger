@@ -1,6 +1,5 @@
 import Client, { connect } from '@dagger.io/dagger';
 
-
 connect(
   async (client: Client) => {
     // get hostname of service container
@@ -9,7 +8,6 @@ connect(
       .from('alpine')
       .withExec(['hostname'])
       .stdout();
-
     console.log(val);
   },
   { LogOutput: process.stdout }

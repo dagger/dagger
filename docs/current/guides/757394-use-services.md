@@ -66,7 +66,7 @@ Containers run in a bridge network. Each container has its own IP address that o
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="rjTwyrKtGDl" />
+<Embed id="fR2OAVbNUVH" />
 
 </TabItem>
 </Tabs>
@@ -87,7 +87,7 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="p4TAAfexI_a" />
+<Embed id="Bpu7I8URtpg" />
 
 </TabItem>
 </Tabs>
@@ -105,12 +105,12 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 
 <TabItem value="Python">
 
-<Embed id="U5SlCIjnDCN" />
+<Embed id="YGkCbitVTYY" />
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="WpUuvEWdtrG" />
+<Embed id="uCP-rb3rLeK" />
 
 </TabItem>
 </Tabs>
@@ -150,7 +150,7 @@ Here's an example:
 
 Here's an example:
 
-<Embed id="x72_mgQv8hS" />
+<Embed id="cx-3lzMDn5i" />
 
 </TabItem>
 </Tabs>
@@ -177,7 +177,7 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="67ATACE21zB" />
+<Embed id="VIFYGYc8YRN" />
 
 </TabItem>
 </Tabs>
@@ -198,7 +198,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="3AWLZLpSavU" />
+<Embed id="RhA4m6ji1js" />
 
 </TabItem>
 </Tabs>
@@ -223,7 +223,7 @@ Consider this example:
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="r9lHD3r4fcI" />
+<Embed id="WRo9QMK9GKZ" />
 
 </TabItem>
 </Tabs>
@@ -264,7 +264,7 @@ Let's put all this together in a full client-server example of running commands 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="A-ypySBNtVq" />
+<Embed id="zowrSKqU_0u" />
 
 </TabItem>
 </Tabs>
@@ -285,7 +285,7 @@ Note that this example relies on the 10-second grace period, which you should tr
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="zajuPzL79cf" />
+<Embed id="ptz9Tj6pDLY" />
 
 </TabItem>
 </Tabs>
@@ -312,7 +312,7 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="6FdvzPEfBgH" />
+<Embed id="zhQX8VN750_A" />
 
 </TabItem>
 </Tabs>
