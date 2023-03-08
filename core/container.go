@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
@@ -29,6 +31,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/zeebo/xxh3"
 )
 
@@ -137,6 +140,7 @@ type ContainerSocket struct {
 // ContainerPort configures a port to expose from the container.
 type ContainerPort struct {
 	Port        int             `json:"port"`
+	Publish     *int            `json:"publish,omitempty"`
 	Protocol    NetworkProtocol `json:"protocol"`
 	Description *string         `json:"description,omitempty"`
 }
@@ -1140,12 +1144,64 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 			return nil, err
 		}
 
+		for _, port := range payload.Ports {
+			if port.Publish != nil {
+				err := publish(ctx, port, payload.Hostname)
+				if err != nil {
+					return nil, fmt.Errorf(
+						"publish %s port %d (host) => %d (container): %w",
+						payload.Hostname,
+						port.Publish,
+						port.Port,
+						err,
+					)
+				}
+			}
+		}
+
 		return gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
 		})
 	})
 	return err
+}
+
+func publish(ctx context.Context, port ContainerPort, host string) error {
+	publish := *port.Publish
+
+	// NB: listen synchronously
+	l, err := net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", publish))
+	if err != nil {
+		return err
+	}
+
+	logrus.Debugf("listening on published port :%d => %s:%d", publish, host, port.Port)
+
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				logrus.Warnf("published port :%d accept error: ", publish, err)
+				break
+			}
+
+			proxy := exec.CommandContext(ctx,
+				"docker", "exec", "-i", "dagger-engine.dev",
+				"socat", "-", fmt.Sprintf("%s:%s:%d", port.Protocol, host, port.Port),
+			)
+			proxy.Stdin = conn
+			proxy.Stdout = conn
+
+			err = proxy.Start()
+			if err != nil {
+				logrus.Errorf("published port :%d start error: ", publish, err)
+				return
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {

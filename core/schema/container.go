@@ -650,6 +650,7 @@ type containerWithExposedPortArgs struct {
 	Protocol    core.NetworkProtocol
 	Port        int
 	Description *string
+	Publish     *int
 }
 
 func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
@@ -661,6 +662,7 @@ func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Cont
 		Protocol:    args.Protocol,
 		Port:        args.Port,
 		Description: args.Description,
+		Publish:     args.Publish,
 	})
 }
 

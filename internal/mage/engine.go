@@ -386,6 +386,8 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				"git", "openssh", "pigz", "xz",
 				// for CNI
 				"iptables", "ip6tables", "dnsmasq",
+				// for host->container networking
+				"socat",
 			}).
 			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 				Permissions: 0700,

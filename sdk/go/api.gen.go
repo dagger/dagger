@@ -706,6 +706,8 @@ type ContainerWithExposedPortOpts struct {
 	Protocol NetworkProtocol
 	// Optional port description
 	Description string
+	// Make this port reachable via the given port on the host
+	Publish int
 }
 
 // Expose a network port.
@@ -729,6 +731,13 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `publish` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Publish) {
+			q = q.Arg("publish", opts[i].Publish)
 			break
 		}
 	}

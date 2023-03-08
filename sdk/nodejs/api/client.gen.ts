@@ -239,6 +239,11 @@ export type ContainerWithExposedPortOpts = {
    * Optional port description
    */
   description?: string
+
+  /**
+   * Make this port reachable via the given port on the host
+   */
+  publish?: number
 }
 
 export type ContainerWithFileOpts = {
@@ -1227,6 +1232,7 @@ export class Container extends BaseClient {
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
+   * @param opts.publish Make this port reachable via the given port on the host
    */
   withExposedPort(
     port: number,

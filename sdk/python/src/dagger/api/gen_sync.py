@@ -884,6 +884,7 @@ class Container(Type):
         port: int,
         protocol: Optional[NetworkProtocol] = None,
         description: Optional[str] = None,
+        publish: Optional[int] = None,
     ) -> "Container":
         """Expose a network port.
 
@@ -902,11 +903,14 @@ class Container(Type):
             Transport layer network protocol
         description:
             Optional port description
+        publish:
+            Make this port reachable via the given port on the host
         """
         _args = [
             Arg("port", port),
             Arg("protocol", protocol, None),
             Arg("description", description, None),
+            Arg("publish", publish, None),
         ]
         _ctx = self._select("withExposedPort", _args)
         return Container(_ctx)

@@ -599,6 +599,8 @@ type Container {
     protocol: NetworkProtocol = TCP
     "Optional port description"
     description: String
+    "Make this port reachable via the given port on the host"
+    publish: Int
   ): Container!
 
   """
