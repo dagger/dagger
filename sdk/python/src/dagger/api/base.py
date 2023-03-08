@@ -134,7 +134,7 @@ class Context:
                         for seq_i, seq_v in enumerate(sel.args[k]):
                             if isinstance(seq_v, IDType):
                                 tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
-                    elif isinstance(v, (Type, IDType)):
+                    elif isinstance(v, Type | IDType):
                         tg.start_soon(_resolve_id, i, k, v)
 
     def resolve_ids_sync(self) -> None:
@@ -148,7 +148,7 @@ class Context:
                     for seq_i, seq_v in enumerate(sel.args[k]):
                         if isinstance(seq_v, IDType):
                             sel.args[k][seq_i] = seq_v.id()
-                elif isinstance(v, (Type, IDType)):
+                elif isinstance(v, Type | IDType):
                     sel.args[k] = v.id()
 
     @contextlib.contextmanager
