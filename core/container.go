@@ -234,6 +234,22 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
+type PipelineMetaResolver struct {
+	Resolver llb.ImageMetaResolver
+	Pipeline pipeline.Path
+}
+
+func (r PipelineMetaResolver) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
+	// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
+	// the pipeline in the vertex name.
+	opt.LogName = pipeline.CustomName{
+		Name:     fmt.Sprintf("resolve image config for %s", ref),
+		Pipeline: r.Pipeline,
+	}.String()
+
+	return r.Resolver.ResolveImageConfig(ctx, ref, opt)
+}
+
 func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -254,12 +270,14 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	digest, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	resolver := PipelineMetaResolver{
+		Resolver: gw,
+		Pipeline: p,
+	}
+
+	digest, cfgBytes, err := resolver.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
-		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
-		// the pipeline in the vertex name.
-		LogName: pipeline.CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: p}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -279,6 +297,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		llb.Image(addr,
 			llb.WithCustomNamef("pull %s", ref),
 			p.LLBOpt(),
+			llb.WithMetaResolver(resolver),
 		),
 		"/", payload.Pipeline, platform, nil)
 	if err != nil {
