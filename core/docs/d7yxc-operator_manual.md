@@ -120,6 +120,8 @@ The runner is distributed as a container image at `registry.dagger.io/engine`.
    - Otherwise runner execution may be extremely slow. This is due to the fact that it relies on overlayfs mounts for efficient operation, which isn't possible when `/var/lib/dagger` is itself an overlayfs.
    - For example, this can be provided to a `docker run` command as `-v dagger-engine:/var/lib/dagger`
 1. The container image comes with a default entrypoint which should be used to start the runner, no extra args are needed.
+1. The container image comes with a default config file at `/etc/dagger/engine.toml`
+   - The `insecure-entitlements = ["security.insecure"]` setting enables use of the `InsecureRootCapabilities` flag in `WithExec`. Removing that line will result in an error when trying to use that flag.
 
 ### Configuration
 
@@ -129,6 +131,8 @@ Currently supported is:
 
 1. Custom CA Certs - If you need any extra CA certs to be included in order to, e.g. push images to a private registry, they can be included under `/etc/ssl/certs` in the runner image.
    - This can be accomplished by building a custom engine image using ours as a base or by mounting them into a container created from our image at runtime.
+1. Disabling Privileged Execs - By default, the Dagger engine allows execs to run with root capabilities when the `InsecureRootCapabilities` field is set to true in the `WithExec` API. This can be disabled by overriding the default engine config at `/etc/dagger/engine.toml` to
+   1. Remove `insecure-entitlements = ["security.insecure"]`
 
 > **Warning**
 > The entrypoint currently invokes `buildkitd`, so there are numerous flags available there in addition to buildkit configuration files. However, this is just an implementation detail and it's highly likely the entrypoint may end up pointing to a different wrapper around `buildkitd` with a different interface in the near future, so any reliance on extra entrypoint flags or configuration files should be considered subject to breakage at any time.

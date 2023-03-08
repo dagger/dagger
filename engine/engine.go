@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -24,6 +25,7 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
+	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/tonistiigi/fsutil"
@@ -62,7 +64,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	c, err := engine.Client(ctx, remote)
+	c, privilegedExecEnabled, err := engine.Client(ctx, remote)
 	if err != nil {
 		return err
 	}
@@ -76,6 +78,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
+
+	// Load default labels asynchronously in the background.
+	go func() {
+		err := pipeline.LoadRootLabels(startOpts.Workdir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "unable to load default labels: %v\n", err)
+		}
+	}()
 
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
@@ -99,6 +109,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 	registryAuth := auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr))
 
+	var allowedEntitlements []entitlements.Entitlement
+	if privilegedExecEnabled {
+		// NOTE: this just allows clients to set this if they want. It also needs
+		// to be set in the ExecOp LLB and enabled server-side in order for privileged
+		// execs to actually run.
+		allowedEntitlements = append(allowedEntitlements, entitlements.EntitlementSecurityInsecure)
+	}
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			registryAuth,
@@ -107,10 +125,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		},
 		CacheExports: []bkclient.CacheOptionsEntry{{
 			Type: "dagger",
+			Attrs: map[string]string{
+				"mode": "max",
+			},
 		}},
 		CacheImports: []bkclient.CacheOptionsEntry{{
 			Type: "dagger",
 		}},
+		AllowedEntitlements: allowedEntitlements,
 	}
 
 	if !startOpts.DisableHostRW {
@@ -134,15 +156,16 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			gwClient := core.NewGatewayClient(gw)
 			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:        router,
-				Workdir:       startOpts.Workdir,
-				Gateway:       gwClient,
-				BKClient:      c,
-				SolveOpts:     solveOpts,
-				SolveCh:       solveCh,
-				Platform:      *platform,
-				DisableHostRW: startOpts.DisableHostRW,
-				Auth:          registryAuth,
+				Router:         router,
+				Workdir:        startOpts.Workdir,
+				Gateway:        gwClient,
+				BKClient:       c,
+				SolveOpts:      solveOpts,
+				SolveCh:        solveCh,
+				Platform:       *platform,
+				DisableHostRW:  startOpts.DisableHostRW,
+				Auth:           registryAuth,
+				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
 			})
 			if err != nil {
 				return nil, err
@@ -199,13 +222,19 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 		eg.Go(func() error {
 			defer close(cleanCh)
 			for ev := range ch {
-				for _, v := range ev.Vertexes {
-					customName := core.CustomName{}
+				cleaned := *ev
+				cleaned.Vertexes = make([]*bkclient.Vertex, len(ev.Vertexes))
+				for i, v := range ev.Vertexes {
+					customName := pipeline.CustomName{}
 					if json.Unmarshal([]byte(v.Name), &customName) == nil {
-						v.Name = customName.Name
+						cp := *v
+						cp.Name = customName.Name
+						cleaned.Vertexes[i] = &cp
+					} else {
+						cleaned.Vertexes[i] = v
 					}
 				}
-				cleanCh <- ev
+				cleanCh <- &cleaned
 			}
 			return nil
 		})

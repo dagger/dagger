@@ -9,6 +9,16 @@ title: "Publish the application"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from "@site/src/components/molecules/quickstartDoc.js"
+import Embed from "@site/src/components/atoms/embed.js"
+
+export const ids = {
+    Go: "SYJ885fBPOy",
+    Node: "P8mz6yjC2lM",
+    Python: "Vz6OJ6gIDaP"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Publish the application
 
@@ -16,10 +26,10 @@ At this point, your Dagger pipeline has tested, built and delivered the applicat
 
 Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/hGUZKAeot5K"></iframe>
+<Embed id="SYJ885fBPOy"></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -28,9 +38,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/xlXjwXsjvGt"></iframe>
+<Embed id="P8mz6yjC2lM"></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -41,7 +51,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/2r4dX0l8-zq"></iframe>
+<Embed id="Vz6OJ6gIDaP"></Embed>
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -73,3 +83,5 @@ You may have noticed that the pipeline above is able to publish to the registry 
 
 Dagger SDKs rely on your existing Docker credentials for registry authentication. This means that you must execute `docker login` against your selected container registry on the Dagger host before attempting to publish an image to that registry.
 :::
+
+</QuickstartDoc>

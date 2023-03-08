@@ -158,7 +158,15 @@ export type ContainerExportOpts = {
 }
 
 export type ContainerPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ContainerPublishOpts = {
@@ -211,6 +219,14 @@ export type ContainerWithExecOpts = {
    * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
    */
   experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command
+   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+   * does not provide any security guarantees when using this option. It should only be used
+   * when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithExposedPortOpts = {
@@ -309,7 +325,15 @@ export type DirectoryEntriesOpts = {
 }
 
 export type DirectoryPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type DirectoryWithDirectoryOpts = {
@@ -409,6 +433,18 @@ export enum NetworkProtocol {
    */
   Udp,
 }
+export type PipelineLabel = {
+  /**
+   * Label name.
+   */
+  name: string
+
+  /**
+   * Label value.
+   */
+  value: string
+}
+
 /**
  * The platform config OS and architecture in a Container.
  *
@@ -445,7 +481,15 @@ export type ClientHttpOpts = {
 }
 
 export type ClientPipelineOpts = {
+  /**
+   * Pipeline description.
+   */
   description?: string
+
+  /**
+   * Pipeline labels.
+   */
+  labels?: PipelineLabel[]
 }
 
 export type ClientSocketOpts = {
@@ -586,6 +630,8 @@ export class Container extends BaseClient {
    * If no port is specified, the first exposed port is used. If none exist an error is returned.
    *
    * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param opts.port The exposed port number for the endpoint
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
    */
@@ -684,7 +730,7 @@ export class Container extends BaseClient {
 
   /**
    * Exit code of the last executed command. Zero means success.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async exitCode(): Promise<number> {
     const response: Awaited<number> = await computeQuery(
@@ -726,7 +772,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves the list of exposed ports
+   * Retrieves the list of exposed ports.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {
     const response: Awaited<Port[]> = await computeQuery(
@@ -801,6 +849,8 @@ export class Container extends BaseClient {
 
   /**
    * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async hostname(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -904,6 +954,9 @@ export class Container extends BaseClient {
 
   /**
    * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ContainerPipelineOpts): Container {
     return new Container({
@@ -980,7 +1033,7 @@ export class Container extends BaseClient {
 
   /**
    * The error stream of the last executed command.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async stderr(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -998,7 +1051,7 @@ export class Container extends BaseClient {
 
   /**
    * The output stream of the last executed command.
-   * Null if no command has been executed.
+   * Errors if no command has been executed.
    */
   async stdout(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1121,6 +1174,10 @@ export class Container extends BaseClient {
    *
    * Do not use this option unless you trust the command being executed.
    * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command
+   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+   * does not provide any security guarantees when using this option. It should only be used
+   * when absolutely necessary and only with trusted commands.
    */
   withExec(args: string[], opts?: ContainerWithExecOpts): Container {
     return new Container({
@@ -1138,9 +1195,12 @@ export class Container extends BaseClient {
 
   /**
    * Expose a network port.
+   *
    * Exposed ports serve two purposes:
    *   - For health checks and introspection, when running services
    *   - For setting the EXPOSE OCI field when publishing the container
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to expose
    * @param opts.protocol Transport layer network protocol
    * @param opts.description Optional port description
@@ -1414,6 +1474,8 @@ export class Container extends BaseClient {
    * The service will be reachable from the container via the provided hostname alias.
    *
    * The service dependency will also convey to any files or directories produced by the container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
@@ -1506,6 +1568,8 @@ export class Container extends BaseClient {
 
   /**
    * Unexpose a previously exposed port.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    * @param port Port number to unexpose
    * @param opts.protocol Port protocol to unexpose
    */
@@ -1797,7 +1861,10 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline.
+   * Creates a named sub-pipeline
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: DirectoryPipelineOpts): Directory {
     return new Directory({
@@ -2981,7 +3048,10 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Creates a named sub-pipeline
+   * Creates a named sub-pipeline.
+   * @param name Pipeline name.
+   * @param opts.description Pipeline description.
+   * @param opts.labels Pipeline labels.
    */
   pipeline(name: string, opts?: ClientPipelineOpts): Client {
     return new Client({

@@ -9,7 +9,7 @@ async def main():
 
     # initialize Dagger client
     async with dagger.Connection(config) as client:
-        # use a node:16-slim container
+        # use a python:3.11-slim container
         # get version
         python = (
             client.container().from_("python:3.11-slim").with_exec(["python", "-V"])

@@ -23,7 +23,14 @@ type Container {
   platform: Platform!
 
   "Creates a named sub-pipeline"
-  pipeline(name: String!, description: String): Container!
+  pipeline(
+    "Pipeline name."
+    name: String!
+    "Pipeline description."
+    description: String
+    "Pipeline labels."
+    labels: [PipelineLabel!]
+  ): Container!
 
   """
   Initializes this container from a pulled base image.
@@ -34,7 +41,7 @@ type Container {
 
     Formatted as [host]/[user]/[repo]:[tag] (e.g., "docker.io/dagger/dagger:main").
     """
-    address: String!,
+    address: String!
   ): Container!
 
   """
@@ -42,17 +49,17 @@ type Container {
   """
   build(
     "Directory context used by the Dockerfile."
-    context: DirectoryID!,
+    context: DirectoryID!
 
     """
     Path to the Dockerfile to use.
 
     Default: './Dockerfile'.
     """
-    dockerfile: String,
+    dockerfile: String
 
     "Additional build arguments."
-    buildArgs: [BuildArg!],
+    buildArgs: [BuildArg!]
 
     "Target build stage to build."
     target: String
@@ -141,7 +148,7 @@ type Container {
     """
     The name of the environment variable (e.g., "HOST").
     """
-    name: String!,
+    name: String!
 
     """
     The value of the environment variable. (e.g., "localhost").
@@ -155,9 +162,7 @@ type Container {
   """
   Retrieves the value of the specified label.
   """
-  label(
-    name: String!
-  ): String
+  label(name: String!): String
 
   """
   Retrieves this container plus the given label.
@@ -166,7 +171,7 @@ type Container {
     """
     The name of the label (e.g., "org.opencontainers.artifact.created").
     """
-    name: String!,
+    name: String!
 
     """
     The value of the label (e.g., "2023-01-01T00:00:00Z").
@@ -191,7 +196,7 @@ type Container {
     """
     The name of the secret variable (e.g., "API_SECRET").
     """
-    name: String!,
+    name: String!
 
     "The identifier of the secret value."
     secret: SecretID!
@@ -243,7 +248,7 @@ type Container {
     """
     Location of the mounted directory (e.g., "/mnt/directory").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the mounted directory."
     source: DirectoryID!
@@ -256,7 +261,7 @@ type Container {
     """
     Location of the mounted file (e.g., "/tmp/file.txt").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the mounted file."
     source: FileID!
@@ -279,10 +284,10 @@ type Container {
     """
     Location of the cache directory (e.g., "/cache/node_modules").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the cache volume to mount."
-    cache: CacheID!,
+    cache: CacheID!
 
     "Identifier of the directory to use as the cache volume's root."
     source: DirectoryID
@@ -298,7 +303,7 @@ type Container {
     """
     Location of the secret file (e.g., "/tmp/secret.txt").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the secret to mount."
     source: SecretID!
@@ -321,10 +326,10 @@ type Container {
     """
     Location of the copied file (e.g., "/tmp/file.txt").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the file to copy."
-    source: FileID!,
+    source: FileID!
 
     """
     Permission given to the copied file (e.g., 0600).
@@ -341,12 +346,12 @@ type Container {
     """
     Location of the written file (e.g., "/tmp/file.txt").
     """
-    path: String!,
+    path: String!
 
     """
     Content of the file to write (e.g., "Hello world!").
     """
-    contents: String,
+    contents: String
 
     """
     Permission given to the written file (e.g., 0600).
@@ -363,15 +368,15 @@ type Container {
     """
     Location of the written directory (e.g., "/tmp/directory").
     """
-    path: String!,
+    path: String!
 
     "Identifier of the directory to write"
-    directory: DirectoryID!,
+    directory: DirectoryID!
 
     """
     Patterns to exclude in the written directory (e.g., ["node_modules/**", ".gitignore", ".git/"]).
     """
-    exclude: [String!],
+    exclude: [String!]
 
     """
     Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
@@ -386,7 +391,7 @@ type Container {
     """
     Location of the forwarded Unix socket (e.g., "/tmp/socket").
     """
-    path: String!,
+    path: String!
 
     """
     Identifier of the socket to forward.
@@ -411,22 +416,22 @@ type Container {
     """
     Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     """
-    args: [String!]!,
+    args: [String!]!
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
-    stdin: String,
+    stdin: String
 
     """
     Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     """
-    redirectStdout: String,
+    redirectStdout: String
 
     """
     Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
     """
-    redirectStderr: String,
+    redirectStderr: String
 
     """
     Provides dagger access to the executed command.
@@ -435,6 +440,14 @@ type Container {
     The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     """
     experimentalPrivilegedNesting: Boolean
+
+    """
+    Execute the command with all root capabilities. This is similar to running a command
+    with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+    does not provide any security guarantees when using this option. It should only be used
+    when absolutely necessary and only with trusted commands.
+    """
+    insecureRootCapabilities: Boolean
   ): Container!
 
   """
@@ -444,22 +457,22 @@ type Container {
     """
     Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     """
-    args: [String!],
+    args: [String!]
 
     """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
-    stdin: String,
+    stdin: String
 
     """
     Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     """
-    redirectStdout: String,
+    redirectStdout: String
 
     """
     Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
     """
-    redirectStderr: String,
+    redirectStderr: String
 
     """
     Provide dagger access to the executed command.
@@ -471,21 +484,21 @@ type Container {
 
   """
   Exit code of the last executed command. Zero means success.
-  Null if no command has been executed.
+  Errors if no command has been executed.
   """
-  exitCode: Int
+  exitCode: Int!
 
   """
   The output stream of the last executed command.
-  Null if no command has been executed.
+  Errors if no command has been executed.
   """
-  stdout: String
+  stdout: String!
 
   """
   The error stream of the last executed command.
-  Null if no command has been executed.
+  Errors if no command has been executed.
   """
-  stderr: String
+  stderr: String!
 
   # FIXME: this is the last case of an actual "verb" that cannot cleanly go away.
   #    This may actually be a good candidate for a mutation. To be discussed.
@@ -501,7 +514,7 @@ type Container {
 
     Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     """
-    address: String!,
+    address: String!
 
     """
     Identifiers for other platform specific containers.
@@ -521,7 +534,7 @@ type Container {
     Host's destination path (e.g., "./tarball").
     Path can be relative to the engine's workdir or absolute.
     """
-    path: String!,
+    path: String!
 
     """
     Identifiers for other platform specific containers.
@@ -536,17 +549,17 @@ type Container {
     Registry's address to bind the authentication to.
     Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).
     """
-    address: String!,
+    address: String!
 
     """
     The username of the registry's account (e.g., "Dagger").
     """
-    username: String!,
+    username: String!
 
     """
     The API key, password or token to authenticate to this registry.
     """
-    secret: SecretID!,
+    secret: SecretID!
   ): Container!
 
   "Retrieves this container without the registry authentication of a given address."
@@ -563,30 +576,39 @@ type Container {
 
   """
   Expose a network port.
+
   Exposed ports serve two purposes:
     - For health checks and introspection, when running services
     - For setting the EXPOSE OCI field when publishing the container
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withExposedPort(
     "Port number to expose"
-    port: Int!,
+    port: Int!
     "Transport layer network protocol"
-    protocol: NetworkProtocol = TCP,
+    protocol: NetworkProtocol = TCP
     "Optional port description"
     description: String
   ): Container!
 
   """
   Unexpose a previously exposed port.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withoutExposedPort(
     "Port number to unexpose"
-    port: Int!,
+    port: Int!
     "Port protocol to unexpose"
     protocol: NetworkProtocol = TCP
   ): Container!
 
-  "Retrieves the list of exposed ports"
+  """
+  Retrieves the list of exposed ports.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+  """
   exposedPorts: [Port!]!
 
   """
@@ -595,16 +617,20 @@ type Container {
   The service will be reachable from the container via the provided hostname alias.
 
   The service dependency will also convey to any files or directories produced by the container.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   withServiceBinding(
     "A name that can be used to reach the service from the container"
-    alias: String!,
+    alias: String!
     "Identifier of the service container"
     service: ContainerID!
   ): Container!
 
   """
   Retrieves a hostname which can be used by clients to reach this container.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   hostname: String!
 
@@ -614,10 +640,12 @@ type Container {
   If no port is specified, the first exposed port is used. If none exist an error is returned.
 
   If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
   """
   endpoint(
     "The exposed port number for the endpoint"
-    port: Int,
+    port: Int
     "Return a URL with the given scheme, eg. http for http://"
     scheme: String
   ): String!

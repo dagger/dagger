@@ -13,3 +13,9 @@ Install the Dagger Python SDK in your project's virtual environment using `pip`:
 ```shell
 pip install dagger-io
 ```
+
+You can also install via [Conda](https://anaconda.org/conda-forge/dagger-io), from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel:
+
+```shell
+conda install dagger-io
+```

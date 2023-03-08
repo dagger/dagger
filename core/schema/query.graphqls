@@ -1,4 +1,26 @@
 type Query {
-  "Creates a named sub-pipeline"
-  pipeline(name: String!, description: String): Query!
+  "Creates a named sub-pipeline."
+  pipeline(
+    "Pipeline name."
+    name: String!
+    "Pipeline description."
+    description: String
+    "Pipeline labels."
+    labels: [PipelineLabel!]
+  ): Query!
+}
+
+"""
+Key value object that represents a Pipeline label.
+"""
+input PipelineLabel {
+  """
+  Label name.
+  """
+  name: String!
+
+  """
+  Label value.
+  """
+  value: String!
 }

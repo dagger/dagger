@@ -41,6 +41,15 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// Key value object that represents a Pipeline label.
+type PipelineLabel struct {
+	// Label name.
+	Name string `json:"name"`
+
+	// Label value.
+	Value string `json:"value"`
+}
+
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -154,6 +163,8 @@ type ContainerEndpointOpts struct {
 // If no port is specified, the first exposed port is used. If none exist an error is returned.
 //
 // If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
 	q := r.q.Select("endpoint")
 	// `port` optional argument
@@ -268,7 +279,7 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 }
 
 // Exit code of the last executed command. Zero means success.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	q := r.q.Select("exitCode")
 
@@ -304,7 +315,9 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	return response, q.Execute(ctx, r.c)
 }
 
-// Retrieves the list of exposed ports
+// Retrieves the list of exposed ports.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
@@ -350,6 +363,8 @@ func (r *Container) FS() *Directory {
 }
 
 // Retrieves a hostname which can be used by clients to reach this container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Hostname(ctx context.Context) (string, error) {
 	q := r.q.Select("hostname")
 
@@ -420,7 +435,10 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 
 // ContainerPipelineOpts contains options for Container.Pipeline
 type ContainerPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
 // Creates a named sub-pipeline
@@ -431,6 +449,13 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -488,7 +513,7 @@ func (r *Container) Rootfs() *Directory {
 }
 
 // The error stream of the last executed command.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
 	q := r.q.Select("stderr")
 
@@ -498,7 +523,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 }
 
 // The output stream of the last executed command.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
 	q := r.q.Select("stdout")
 
@@ -609,6 +634,11 @@ type ContainerWithExecOpts struct {
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
 	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command
+	// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+	// does not provide any security guarantees when using this option. It should only be used
+	// when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
 }
 
 // Retrieves this container after executing the specified command inside it.
@@ -643,6 +673,13 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 			break
 		}
 	}
+	// `insecureRootCapabilities` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -659,9 +696,12 @@ type ContainerWithExposedPortOpts struct {
 }
 
 // Expose a network port.
+//
 // Exposed ports serve two purposes:
 //   - For health checks and introspection, when running services
 //   - For setting the EXPOSE OCI field when publishing the container
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
 	q = q.Arg("port", port)
@@ -895,6 +935,8 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service will be reachable from the container via the provided hostname alias.
 //
 // The service dependency will also convey to any files or directories produced by the container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
@@ -958,6 +1000,8 @@ type ContainerWithoutExposedPortOpts struct {
 }
 
 // Unexpose a previously exposed port.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
 	q := r.q.Select("withoutExposedPort")
 	q = q.Arg("port", port)
@@ -1187,10 +1231,13 @@ func (r *Directory) LoadProject(configPath string) *Project {
 
 // DirectoryPipelineOpts contains options for Directory.Pipeline
 type DirectoryPipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline.
+// Creates a named sub-pipeline
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1198,6 +1245,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}
@@ -1955,10 +2009,13 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 
 // PipelineOpts contains options for Query.Pipeline
 type PipelineOpts struct {
+	// Pipeline description.
 	Description string
+	// Pipeline labels.
+	Labels []PipelineLabel
 }
 
-// Creates a named sub-pipeline
+// Creates a named sub-pipeline.
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
@@ -1966,6 +2023,13 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
+			break
+		}
+	}
+	// `labels` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Labels) {
+			q = q.Arg("labels", opts[i].Labels)
 			break
 		}
 	}

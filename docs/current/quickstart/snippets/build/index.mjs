@@ -1,5 +1,6 @@
 import { connect } from "@dagger.io/dagger"
 
+
 connect(async (client) => {
 
   // use a node:16-slim container
@@ -19,7 +20,6 @@ connect(async (client) => {
   const test = runner
     .withExec(["npm", "test", "--", "--watchAll=false"])
 
-  // highlight-start
   // build application
   // write the build output to the host
   const buildDir = test
@@ -27,7 +27,6 @@ connect(async (client) => {
     .directory("./build")
 
   await buildDir.export("./build")
-  // highlight-end
 
   const e = await buildDir.entries()
 

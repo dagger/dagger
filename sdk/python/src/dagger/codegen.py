@@ -144,7 +144,7 @@ def generate(  # noqa: C901
     # used to replace custom scalars by objects in inputs
     for name, t in schema.type_map.items():
         if is_wrapping_type(t):
-            t = t.of_type
+            t = t.of_type  # noqa: PLW2901
         if not is_object_type(t):
             continue
         fields: dict[str, GraphQLField] = t.fields
@@ -390,6 +390,7 @@ class _ObjectField:
             key=attrgetter("has_default"),
         )
         self.description = field.description
+
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
         self.type = format_output_type(field.type).replace("Query", "Client")
@@ -439,8 +440,7 @@ class _ObjectField:
     def func_doc(self) -> str:
         def _out():
             if self.description:
-                for line in self.description.split("\n"):
-                    yield wrap(line)
+                yield (textwrap.fill(line) for line in self.description.splitlines())
 
             if deprecated := self.deprecated():
                 yield chain(
@@ -464,16 +464,31 @@ class _ObjectField:
                     (arg.as_doc() for arg in self.args),
                 )
 
-            if self.is_leaf and (
-                return_doc := output_type_description(self.graphql.type)
-            ):
+            if self.is_leaf:
+                if return_doc := output_type_description(self.graphql.type):
+                    yield chain(
+                        (
+                            "Returns",
+                            "-------",
+                            self.type,
+                        ),
+                        wrap_indent(return_doc),
+                    )
+
                 yield chain(
                     (
-                        "Returns",
-                        "-------",
-                        self.type,
+                        "Raises",
+                        "------",
+                        "ExecuteTimeoutError",
                     ),
-                    wrap_indent(return_doc),
+                    wrap_indent(
+                        "If the time to execute the query exceeds the "
+                        "configured timeout."
+                    ),
+                    (
+                        "QueryError",
+                        indent("If the API returns an error."),
+                    ),
                 )
 
         return "\n\n".join("\n".join(section) for section in _out())

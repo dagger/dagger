@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -33,7 +34,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, pipeline PipelinePath, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -56,7 +57,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, pipeline Pipeli
 	}
 
 	// Create a sub-pipeline to group llb.Local instructions
-	directoryPipeline := pipeline.Add(Pipeline{
+	directoryPipeline := p.Add(pipeline.Pipeline{
 		Name: fmt.Sprintf("host.directory %s", absPath),
 	})
 
@@ -96,11 +97,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, pipeline Pipeli
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
-	dir, err := NewDirectory(ctx, st, "", pipeline, platform, nil)
-	if err != nil {
-		return nil, err
-	}
-	return dir, nil
+	return NewDirectory(ctx, st, "", p, platform, nil)
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

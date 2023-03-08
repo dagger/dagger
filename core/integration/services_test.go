@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -30,6 +32,8 @@ import (
 )
 
 func TestServiceHostnamesAreStable(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -63,6 +67,8 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 }
 
 func TestContainerHostnameEndpoint(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -125,6 +131,8 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 }
 
 func TestContainerPortLifecycle(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -217,6 +225,8 @@ func TestContainerPortLifecycle(t *testing.T) {
 }
 
 func TestContainerExecServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -245,6 +255,8 @@ func TestContainerExecServices(t *testing.T) {
 }
 
 func TestContainerExecServicesError(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -266,10 +278,44 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
+func TestContainerServiceNoExecError(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	srv := c.Container().
+		From("alpine:3.16.2").
+		WithExposedPort(8080)
+
+	_, err := srv.Hostname(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithServiceBinding("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.ExitCode(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = client.Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = client.Stderr(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+}
+
 //go:embed testdata/udp-service.go
 var udpSrc string
 
 func TestContainerExecUDPServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -300,6 +346,8 @@ func TestContainerExecUDPServices(t *testing.T) {
 }
 
 func TestContainerExecServiceAlias(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -328,6 +376,8 @@ func TestContainerExecServiceAlias(t *testing.T) {
 var pipeSrc string
 
 func TestContainerExecServicesDeduping(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -362,6 +412,8 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 }
 
 func TestContainerExecServicesChained(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -398,6 +450,8 @@ func TestContainerExecServicesChained(t *testing.T) {
 }
 
 func TestContainerBuildService(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -478,6 +532,8 @@ CMD cat index.html
 }
 
 func TestContainerExportServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -496,6 +552,8 @@ func TestContainerExportServices(t *testing.T) {
 }
 
 func TestContainerMultiPlatformExportServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -521,6 +579,8 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 }
 
 func TestServicesContainerPublish(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -544,6 +604,8 @@ func TestServicesContainerPublish(t *testing.T) {
 }
 
 func TestContainerRootFSServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -564,6 +626,8 @@ func TestContainerRootFSServices(t *testing.T) {
 }
 
 func TestContainerWithRootFSServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -596,6 +660,8 @@ func TestContainerWithRootFSServices(t *testing.T) {
 }
 
 func TestContainerDirectoryServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -640,6 +706,8 @@ func TestContainerDirectoryServices(t *testing.T) {
 }
 
 func TestContainerFileServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -658,6 +726,8 @@ func TestContainerFileServices(t *testing.T) {
 }
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -704,6 +774,8 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 }
 
 func TestDirectoryServiceEntries(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -720,6 +792,8 @@ func TestDirectoryServiceEntries(t *testing.T) {
 }
 
 func TestDirectoryServiceTimestamp(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -741,6 +815,8 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 }
 
 func TestDirectoryWithDirectoryFileServices(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -764,6 +840,8 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 }
 
 func TestDirectoryServiceExport(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -786,6 +864,8 @@ func TestDirectoryServiceExport(t *testing.T) {
 }
 
 func TestFileServiceContents(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -803,6 +883,8 @@ func TestFileServiceContents(t *testing.T) {
 }
 
 func TestFileServiceExport(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -827,6 +909,8 @@ func TestFileServiceExport(t *testing.T) {
 }
 
 func TestFileServiceTimestamp(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -847,6 +931,8 @@ func TestFileServiceTimestamp(t *testing.T) {
 }
 
 func TestFileServiceSecret(t *testing.T) {
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -859,23 +945,23 @@ func TestFileServiceSecret(t *testing.T) {
 	}).Secret()
 
 	t.Run("secret env", func(t *testing.T) {
-		stdout, err := c.Container().
+		exitCode, err := c.Container().
 			From("alpine:3.16.2").
 			WithSecretVariable("SEKRIT", secret).
-			WithExec([]string{"sh", "-c", "echo -n $SEKRIT"}).
-			Stdout(ctx)
+			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
+			ExitCode(ctx)
 		require.NoError(t, err)
-		require.Equal(t, content, stdout)
+		require.Equal(t, 0, exitCode)
 	})
 
 	t.Run("secret mount", func(t *testing.T) {
-		stdout, err := c.Container().
+		exitCode, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedSecret("/sekrit", secret).
-			WithExec([]string{"cat", "/sekrit"}).
-			Stdout(ctx)
+			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
+			ExitCode(ctx)
 		require.NoError(t, err)
-		require.Equal(t, content, stdout)
+		require.Equal(t, 0, exitCode)
 	})
 }
 

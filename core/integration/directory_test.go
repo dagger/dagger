@@ -750,3 +750,53 @@ CMD echo "stage2"
 		require.NotContains(t, output, "stage2\n")
 	})
 }
+
+func TestDirectoryWithNewFileExceedingLength(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				ID core.DirectoryID
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
+					id
+				}
+			}
+		}`, &res, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+}
+
+func TestDirectoryWithFileExceedingLength(t *testing.T) {
+	t.Parallel()
+
+	var res struct {
+		Directory struct {
+			WithNewFile struct {
+				file struct {
+					ID core.DirectoryID
+				}
+			}
+		}
+	}
+
+	err := testutil.Query(
+		`{
+			directory {
+				withNewFile(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt", contents: "some-content") {
+					file(path: "dir/bhhivbryticrxrjssjtflvkxjsqyltawpjexixdfnzoxpoxtdheuhvqalteblsqspfeblfaayvrxejknhpezrxtwxmqzaxgtjdupwnwyosqbvypdwroozcyplzhdxrrvhpskmocmgtdnoeaecbyvpovpwdwpytdxwwedueyaxytxsnnnsfpfjtnlkrxwxtcikcocnkobvdxdqpbafqhmidqbrnhxlxqynesyijgkfepokrnsfqneixfvgsdy.txt") {
+						id
+					}
+				}
+			}
+		}`, &res, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+}

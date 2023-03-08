@@ -3,7 +3,6 @@ package mage
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -35,10 +34,10 @@ const (
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
 	engineDefaultStateDir = "/var/lib/dagger"
 
-	engineEntrypointPath    = "/usr/local/bin/dagger-entrypoint.sh"
-	engineEntrypointCommand = "/usr/local/bin/" + engineBinName + " --debug --config " + engineTomlPath + " --oci-worker-binary /usr/local/bin/" + shimBinName
+	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
 	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 var engineEntrypoint string
@@ -59,35 +58,45 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-# add dnsmasq to resolver so buildkit can reach local services
-echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf.new
-echo 'search {{.SearchDomain}}' >> /etc/resolv.conf.new
-cat /etc/resolv.conf >> /etc/resolv.conf.new
-umount /etc/resolv.conf
-mv /etc/resolv.conf.new /etc/resolv.conf
+if [ "$` + servicesDNSEnvName + `" != "0" ]; then
+	# relocate resolv.conf mount
+	touch /etc/resolv.conf.upstream
+	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
+	umount /etc/resolv.conf
 
-exec {{.EntrypointCommand}}
+	# add dnsmasq to resolver so buildkit can reach local services
+	echo '# dagger dnsmasq server' > /etc/resolv.conf
+	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf
+
+	# preserve DNS search/options config, but let dnsmasq delegate to
+	# /etc/resolv.conf.upstream for upstream nameservers
+	grep -v '^nameserver' /etc/resolv.conf.upstream || true >> /etc/resolv.conf
+fi
+
+exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
+`
+
+const engineConfig = `
+debug = true
+insecure-entitlements = ["security.insecure"]
 `
 
 func init() {
-	type tmplParams struct {
-		Bridge            string
-		SearchDomain      string
-		EntrypointCommand string
+	type entrypointTmplParams struct {
+		Bridge       string
+		EngineBin    string
+		EngineConfig string
 	}
-
 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
-
 	buf := new(bytes.Buffer)
-	err := tmpl.Execute(buf, tmplParams{
-		Bridge:            network.Bridge,
-		SearchDomain:      network.DNSDomain,
-		EntrypointCommand: engineEntrypointCommand,
+	err := tmpl.Execute(buf, entrypointTmplParams{
+		Bridge:       network.Bridge,
+		EngineBin:    "/usr/local/bin/" + engineBinName,
+		EngineConfig: engineTomlPath,
 	})
 	if err != nil {
 		panic(err)
 	}
-
 	engineEntrypoint = buf.String()
 }
 
@@ -161,7 +170,7 @@ func (t Engine) Lint(ctx context.Context) error {
 	}
 
 	_, err = c.Container().
-		From("golangci/golangci-lint:v1.48").
+		From("golangci/golangci-lint:v1.51").
 		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
@@ -327,6 +336,7 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-d",
 		// "--rm",
 		"-e", cacheConfigEnvName,
+		"-e", servicesDNSEnvName,
 		"-v", volumeName + ":" + engineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
@@ -385,12 +395,10 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
-			WithNewFile("/etc/buildkit/cni.conflist", dagger.ContainerWithNewFileOpts{
-				Contents: cniConfig("dagger", network.CIDR),
-			}).
 			WithDirectory(engineDefaultStateDir, c.Directory()).
 			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
-				Contents: buildkitConfig(),
+				Contents:    engineConfig,
+				Permissions: 0600,
 			}).
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
@@ -401,40 +409,6 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 	}
 
 	return platformVariants
-}
-
-func cniConfig(name, subnet string) string {
-	b, err := json.Marshal(map[string]any{
-		"cniVersion": "0.4.0",
-		"name":       name,
-		"plugins": []any{
-			map[string]any{
-				"type":             "bridge",
-				"bridge":           name + "0",
-				"isDefaultGateway": true,
-				"ipMasq":           true,
-				"hairpinMode":      true,
-				"ipam": map[string]any{
-					"type":   "host-local",
-					"ranges": []any{[]any{map[string]any{"subnet": subnet}}},
-				},
-			},
-			map[string]any{
-				"type": "firewall",
-			},
-			map[string]any{
-				"type":       "dnsname",
-				"domainName": "dns.dagger",
-				"capabilities": map[string]any{
-					"aliases": true,
-				},
-			},
-		},
-	})
-	if err != nil {
-		panic(err)
-	}
-	return string(b)
 }
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
@@ -456,21 +430,6 @@ func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 		}).
 		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
 		Directory("/opt/cni/bin")
-}
-
-func buildkitConfig() string {
-	return strings.Join([]string{
-		fmt.Sprintf("root = %q", engineDefaultStateDir),
-		``,
-		`# configure bridge networking`,
-		`[worker.oci]`,
-		`networkMode = "cni"`,
-		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
-		``,
-		`[worker.containerd]`,
-		`networkMode = "cni"`,
-		`cniConfigPath = "/etc/buildkit/cni.conflist"`,
-	}, "\n")
 }
 
 func engineBin(c *dagger.Client, arch string) *dagger.File {

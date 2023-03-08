@@ -32,6 +32,60 @@ from = "/1241/dagger-cloud"
 to = "/1243/dagger-cloud"
 status = 302
 
+[[redirects]]
+# redirect single-language guide index to unified guides index
+from = "/sdk/go/275922/guides"
+to = "/278912/guides"
+status = 302
+
+[[redirects]]
+# redirect single-language guide index to unified guides index
+from = "/sdk/nodejs/947203/guides"
+to = "/278912/guides"
+status = 302
+
+[[redirects]]
+# redirect single-language guide index to unified guides index
+from = "/sdk/python/234291/guides"
+to = "/278912/guides"
+status = 302
+
+[[redirects]]
+# URL consistency fix
+from = "/sdk/go/406009/multiplatform-support"
+to = "/406009/multiplatform-support"
+status = 302
+
+[[redirects]]
+# URL consistency fix
+from = "/sdk/nodejs/620941/github-google-cloud"
+to = "/620941/github-google-cloud"
+status = 302
+
+[[redirects]]
+# URL consistency fix
+from = "/sdk/python/648384/multi-builds"
+to = "/648384/multi-builds"
+status = 302
+
+[[redirects]]
+# URL consistency fix
+from = "/sdk/go/759201/gitlab-google-cloud"
+to = "/759201/gitlab-google-cloud"
+status = 302
+
+[[redirects]]
+# redirect single-language guide to multi-language guide
+from = "/560223/private-repositories"
+to = "/710884/private-repositories"
+status = 302
+
+[[redirects]]
+# redirect single-language guide to multi-language guide
+from = "/683293/private-repositories"
+to = "/710884/private-repositories"
+status = 302
+
 [[headers]]
   for = "/*"
   [headers.values]

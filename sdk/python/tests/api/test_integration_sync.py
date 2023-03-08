@@ -6,7 +6,7 @@ import pytest
 
 import dagger
 from dagger.api.gen_sync import Platform
-from dagger.exceptions import ExecuteTimeoutError
+from dagger.exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.slow,
@@ -99,3 +99,10 @@ def test_object_sequence(tmp_path):
             path=str(tmp_path / "export.tar.gz"),
             platform_variants=variants,
         )
+
+
+def test_connection_closed_error():
+    with dagger.Connection() as client:
+        ...
+    with pytest.raises(TransportError, match="Connection to engine has been closed"):
+        client.container().id()

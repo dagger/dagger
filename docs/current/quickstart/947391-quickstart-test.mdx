@@ -9,6 +9,16 @@ title: "Test the application"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
+import Embed from '@site/src/components/atoms/embed.js'
+
+export const ids = {
+    Go: "M8NHUR0WTWT",
+    Node: "XyDYQWN2edq",
+    Python: "SF9BGtA_py3"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Test the application
 
@@ -20,10 +30,11 @@ The code listing below demonstrates a Dagger pipeline that runs tests for the ex
 The `npm run test` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
 :::
 
-<Tabs groupId="language">
+
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/XE3hNGQNWAd"></iframe>
+<Embed id="M8NHUR0WTWT" />
 
 This code listing does the following:
 
@@ -32,8 +43,8 @@ This code listing does the following:
 - It uses the `Container.WithMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
   - Notice that the `Container.WithMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
-- It uses the `Container.ExitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
-  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+- It uses the `Container.Stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
+  - Failure, indicated by error output, will cause the pipeline to terminate.
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -42,9 +53,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/paxuz43IvLq"></iframe>
+<Embed id="XyDYQWN2edq" />
 
 This code listing does the following:
 
@@ -53,8 +64,8 @@ This code listing does the following:
 - It uses the `Container.withMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.withWorkdir()` method to set the working directory to that mount point.
   - Notice that the `Container.withMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.withExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
-- It uses the `Container.exitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
-  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+- It uses the `Container.stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
+  - Failure, indicated by error output, will cause the pipeline to terminate.
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -65,7 +76,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/R6X6enRsArH"></iframe>
+<Embed id="SF9BGtA_py3" />
 
 This code listing does the following:
 
@@ -74,8 +85,8 @@ This code listing does the following:
 - It uses the `Container.with_mounted_directory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.with_workdir()` method to set the working directory to that mount point.
   - Notice that the `Container.with_mounted_directory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
-- It uses the `Container.exit_code()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
-  - Failure, indicated by a non-zero exit code, will cause the pipeline to terminate.
+- It uses the `Container.stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
+  - Failure, indicated by error output, will cause the pipeline to terminate.
 
 Run the pipeline by executing the command below from the application directory:
 
@@ -89,3 +100,5 @@ python ci/main.py
 :::tip
 The `from()`, `withMountedDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
 :::
+
+</QuickstartDoc>

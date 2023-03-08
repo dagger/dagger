@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -28,7 +29,7 @@ type FileID string
 type fileIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	File     string         `json:"file"`
-	Pipeline PipelinePath   `json:"pipeline"`
+	Pipeline pipeline.Path  `json:"pipeline"`
 	Platform specs.Platform `json:"platform"`
 
 	// Services necessary to provision the file.
@@ -59,7 +60,7 @@ func (payload *fileIDPayload) ToFile() (*File, error) {
 	}, nil
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline PipelinePath, platform specs.Platform, services ServiceBindings) (*File, error) {
+func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
@@ -187,6 +188,7 @@ func (file *File) Export(
 	})
 }
 
+// gwRef returns the buildkit reference from the solved def.
 func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
 	res, err := gw.Solve(ctx, bkgw.SolveRequest{
 		Definition: def,

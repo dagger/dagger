@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -109,11 +110,7 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
-	pipeline := core.PipelinePath{}
-	if parent != nil {
-		pipeline = parent.Context.Pipeline
-	}
-	ctr, err := core.NewContainer(args.ID, pipeline, platform)
+	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
 	if err != nil {
 		return nil, err
 	}
@@ -146,10 +143,11 @@ func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container
 type containerPipelineArgs struct {
 	Name        string
 	Description string
+	Labels      []pipeline.Label
 }
 
 func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.Pipeline(ctx, args.Name, args.Description)
+	return parent.Pipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
@@ -164,15 +162,15 @@ func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, 
 	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
+func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
 	return parent.ExitCode(ctx, s.gw)
 }
 
-func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
 	return parent.MetaFileContents(ctx, s.gw, "stdout")
 }
 
-func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (string, error) {
 	return parent.MetaFileContents(ctx, s.gw, "stderr")
 }
 
@@ -610,6 +608,10 @@ func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, 
 }
 
 func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
 	return parent.Hostname()
 }
 
@@ -619,6 +621,10 @@ type containerEndpointArgs struct {
 }
 
 func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
+	if !s.servicesEnabled {
+		return "", ErrServicesDisabled
+	}
+
 	return parent.Endpoint(args.Port, args.Scheme)
 }
 
@@ -628,6 +634,10 @@ type containerWithServiceDependencyArgs struct {
 }
 
 func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
 }
 
@@ -638,6 +648,10 @@ type containerWithExposedPortArgs struct {
 }
 
 func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithExposedPort(core.ContainerPort{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
@@ -651,6 +665,10 @@ type containerWithoutExposedPortArgs struct {
 }
 
 func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
@@ -663,6 +681,10 @@ type ExposedPort struct {
 }
 
 func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Container, args any) ([]ExposedPort, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
 	ports, err := parent.ExposedPorts()
 	if err != nil {
 		return nil, err

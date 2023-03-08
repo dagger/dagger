@@ -12,10 +12,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
@@ -35,7 +37,7 @@ type Container struct {
 	ID ContainerID `json:"id"`
 }
 
-func NewContainer(id ContainerID, pipeline PipelinePath, platform specs.Platform) (*Container, error) {
+func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
 	if id == "" {
 		payload := &containerIDPayload{
 			Pipeline: pipeline.Copy(),
@@ -81,7 +83,7 @@ type containerIDPayload struct {
 	Config specs.ImageConfig `json:"cfg"`
 
 	// Pipeline
-	Pipeline PipelinePath `json:"pipeline"`
+	Pipeline pipeline.Path `json:"pipeline"`
 
 	// Mount points configured for the container.
 	Mounts ContainerMounts `json:"mounts,omitempty"`
@@ -241,7 +243,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
 	// We create a sub-pipeline to encapsulate both.
-	pipeline := payload.Pipeline.Add(Pipeline{
+	p := payload.Pipeline.Add(pipeline.Pipeline{
 		Name: fmt.Sprintf("from %s", addr),
 	})
 
@@ -257,7 +259,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		ResolveMode: llb.ResolveModeDefault.String(),
 		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
 		// the pipeline in the vertex name.
-		LogName: CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: pipeline}.String(),
+		LogName: pipeline.CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: p}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -276,7 +278,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	dir, err := NewDirectory(ctx,
 		llb.Image(addr,
 			llb.WithCustomNamef("pull %s", ref),
-			pipeline.LLBOpt(),
+			p.LLBOpt(),
 		),
 		"/", payload.Pipeline, platform, nil)
 	if err != nil {
@@ -390,7 +392,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
 		// allow overriding the metadata of DefinitionOp. See this PR and comment:
 		// https://github.com/moby/buildkit/pull/2819
-		pipeline := payload.Pipeline.Add(Pipeline{
+		pipeline := payload.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
 		})
 		for dgst, metadata := range def.Metadata {
@@ -450,20 +452,20 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 }
 
 func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
-	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
+	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		return dir.WithDirectory(ctx, ".", src, filter)
 	})
 }
 
 func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode) (*Container, error) {
-	return container.updateRootFS(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
+	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		return dir.WithFile(ctx, ".", src, permissions)
 	})
 }
 
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
 	dir, file := filepath.Split(dest)
-	return container.updateRootFS(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
+	return container.updateRootFS(ctx, dir, func(dir *Directory) (*Directory, error) {
 		return dir.WithNewFile(ctx, file, content, permissions) // TODO(vito): doesn't this need a name...?
 	})
 }
@@ -684,7 +686,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 }
 
 func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
-	dir, _, err := locatePath(ctx, container, dirPath, gw, NewDirectory)
+	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -704,7 +706,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 }
 
 func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
-	file, _, err := locatePath(ctx, container, filePath, gw, NewFile)
+	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
 	}
@@ -727,8 +729,7 @@ func locatePath[T *File | *Directory](
 	ctx context.Context,
 	container *Container,
 	containerPath string,
-	gw bkgw.Client,
-	init func(context.Context, llb.State, string, PipelinePath, specs.Platform, ServiceBindings) (T, error),
+	init func(context.Context, llb.State, string, pipeline.Path, specs.Platform, ServiceBindings) (T, error),
 ) (T, *ContainerMount, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -809,8 +810,8 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) updateRootFS(ctx context.Context, gw bkgw.Client, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
-	dir, mount, err := locatePath(ctx, container, subdir, gw, NewDirectory)
+func (container *Container) updateRootFS(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
+	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -868,15 +869,16 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) Pipeline(ctx context.Context, name, description string) (*Container, error) {
+func (container *Container) Pipeline(ctx context.Context, name, description string, labels []pipeline.Label) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, fmt.Errorf("decode id: %w", err)
 	}
 
-	payload.Pipeline = payload.Pipeline.Add(Pipeline{
+	payload.Pipeline = payload.Pipeline.Add(pipeline.Pipeline{
 		Name:        name,
 		Description: description,
+		Labels:      labels,
 	})
 
 	return container.containerFromPayload(payload)
@@ -931,7 +933,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
+			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), payload.Pipeline.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -975,6 +977,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
+	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range payload.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
 
@@ -983,13 +986,27 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.EnvName != "":
 			secretDest = secret.EnvName
 			secretOpts = append(secretOpts, llb.SecretAsEnv(true))
+			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
+			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
 
 		runOpts = append(runOpts, llb.AddSecret(secretDest, secretOpts...))
+	}
+
+	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
+		// we sort to avoid non-deterministic order that would break caching
+		sort.Strings(secretsToScrub.Envs)
+		sort.Strings(secretsToScrub.Files)
+
+		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
+		if err != nil {
+			return nil, fmt.Errorf("scrub secrets json: %w", err)
+		}
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_SCRUB_SECRETS", string(secretsToScrubJSON)))
 	}
 
 	for _, socket := range payload.Sockets {
@@ -1041,6 +1058,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		}
 
 		runOpts = append(runOpts, llb.AddMount(mnt.Target, srcSt, mountOpts...))
+	}
+
+	if opts.InsecureRootCapabilities {
+		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
 	}
 
 	// first, build without a hostname
@@ -1127,27 +1148,23 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
 	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
-		return nil, err
-	}
-	if content == nil {
-		return nil, nil
+		return 0, err
 	}
 
-	exitCode, err := strconv.Atoi(*content)
-	if err != nil {
-		return nil, err
-	}
-
-	return &exitCode, nil
+	return strconv.Atoi(content)
 }
 
 func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
+	}
+
+	if payload.Hostname == "" {
+		return nil, ErrContainerNoExec
 	}
 
 	health := newHealth(gw, payload.Hostname, payload.Ports)
@@ -1188,19 +1205,19 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	metaSt, err := payload.MetaState()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	if metaSt == nil {
-		return nil, nil
+		return "", ErrContainerNoExec
 	}
 
 	file, err := NewFile(
@@ -1212,16 +1229,15 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		payload.Services,
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	content, err := file.Contents(ctx, gw)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	strContent := string(content)
-	return &strContent, nil
+	return string(content), nil
 }
 
 func (container *Container) Publish(
@@ -1319,6 +1335,10 @@ func (container *Container) Hostname() (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
+	}
+
+	if payload.Hostname == "" {
+		return "", ErrContainerNoExec
 	}
 
 	return payload.Hostname, nil
@@ -1591,6 +1611,9 @@ type ContainerExecOpts struct {
 	// Do not use this option unless you trust the command being executed.
 	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM
 	ExperimentalPrivilegedNesting bool
+
+	// Grant the process all root capabilities
+	InsecureRootCapabilities bool
 }
 
 type BuildArg struct {

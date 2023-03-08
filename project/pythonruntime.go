@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -63,7 +64,7 @@ exec dagger-py "$@"
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
 		"",
-		core.PipelinePath{},
+		pipeline.Path{},
 		platform,
 		nil,
 	)

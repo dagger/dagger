@@ -72,6 +72,16 @@ class BuildArg(Input):
     """The build argument value."""
 
 
+class PipelineLabel(Input):
+    """Key value object that represents a Pipeline label."""
+
+    name: str
+    """Label name."""
+
+    value: str
+    """Label value."""
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -85,6 +95,13 @@ class CacheVolume(Type):
         -------
         CacheID
             A global cache volume identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -135,6 +152,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultArgs", _args)
@@ -143,8 +167,6 @@ class Container(Type):
     @typecheck
     def directory(self, path: str) -> "Directory":
         """Retrieves a directory at the given path.
-
-
 
         Mounts are included.
 
@@ -167,15 +189,14 @@ class Container(Type):
     ) -> str:
         """Retrieves an endpoint that clients can use to reach this container.
 
-
-
         If no port is specified, the first exposed port is used. If none exist
         an error is returned.
 
-
-
         If a scheme is specified, a URL is returned. Otherwise, a host:port
         pair is returned.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -190,6 +211,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("port", port, None),
@@ -208,6 +236,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("entrypoint", _args)
@@ -228,6 +263,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("name", name),
@@ -289,21 +331,27 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def exit_code(self) -> Optional[int]:
+    def exit_code(self) -> int:
         """Exit code of the last executed command. Zero means success.
-
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[int]
+        int
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
-        return _ctx.execute_sync(Optional[int])
+        return _ctx.execute_sync(int)
 
     @typecheck
     def export(
@@ -314,10 +362,7 @@ class Container(Type):
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
 
-
-
         Return true on success.
-
         It can also publishes platform variants.
 
         Parameters
@@ -333,6 +378,13 @@ class Container(Type):
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("path", path),
@@ -343,7 +395,11 @@ class Container(Type):
 
     @typecheck
     def exposed_ports(self) -> "Port":
-        """Retrieves the list of exposed ports"""
+        """Retrieves the list of exposed ports.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+        """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
         return Port(_ctx)
@@ -351,8 +407,6 @@ class Container(Type):
     @typecheck
     def file(self, path: str) -> "File":
         """Retrieves a file at the given path.
-
-
 
         Mounts are included.
 
@@ -400,12 +454,22 @@ class Container(Type):
         """Retrieves a hostname which can be used by clients to reach this
         container.
 
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
         Returns
         -------
         str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("hostname", _args)
@@ -424,6 +488,13 @@ class Container(Type):
         ContainerID
             A unique container identifier. Null designates an empty container
             (scratch).
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -440,6 +511,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("imageRef", _args)
@@ -455,6 +533,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("name", name),
@@ -479,6 +564,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("mounts", _args)
@@ -489,11 +581,23 @@ class Container(Type):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Container":
-        """Creates a named sub-pipeline"""
+        """Creates a named sub-pipeline
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Container(_ctx)
@@ -508,6 +612,13 @@ class Container(Type):
             The platform config OS and architecture in a Container.  The
             format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
             "windows/amd64", "linux/arm64").
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("platform", _args)
@@ -521,10 +632,7 @@ class Container(Type):
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
-
-
         Publish returns a fully qualified ref.
-
         It can also publish platform variants.
 
         Parameters
@@ -543,6 +651,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("address", address),
@@ -559,38 +674,50 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def stderr(self) -> Optional[str]:
+    def stderr(self) -> str:
         """The error stream of the last executed command.
-
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[str]
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("stderr", _args)
-        return _ctx.execute_sync(Optional[str])
+        return _ctx.execute_sync(str)
 
     @typecheck
-    def stdout(self) -> Optional[str]:
+    def stdout(self) -> str:
         """The output stream of the last executed command.
-
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[str]
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("stdout", _args)
-        return _ctx.execute_sync(Optional[str])
+        return _ctx.execute_sync(str)
 
     @typecheck
     def user(self) -> Optional[str]:
@@ -602,6 +729,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("user", _args)
@@ -699,6 +833,7 @@ class Container(Type):
         redirect_stdout: Optional[str] = None,
         redirect_stderr: Optional[str] = None,
         experimental_privileged_nesting: Optional[bool] = None,
+        insecure_root_capabilities: Optional[bool] = None,
     ) -> "Container":
         """Retrieves this container after executing the specified command inside
         it.
@@ -723,6 +858,14 @@ class Container(Type):
             executed.
             The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
             HOST FILESYSTEM.
+        insecure_root_capabilities:
+            Execute the command with all root capabilities. This is similar to
+            running a command
+            with "sudo" or executing `docker run` with the `--privileged`
+            flag. Containerization
+            does not provide any security guarantees when using this option.
+            It should only be used
+            when absolutely necessary and only with trusted commands.
         """
         _args = [
             Arg("args", args),
@@ -730,6 +873,7 @@ class Container(Type):
             Arg("redirectStdout", redirect_stdout, None),
             Arg("redirectStderr", redirect_stderr, None),
             Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
+            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
         ]
         _ctx = self._select("withExec", _args)
         return Container(_ctx)
@@ -744,10 +888,11 @@ class Container(Type):
         """Expose a network port.
 
         Exposed ports serve two purposes:
-
           - For health checks and introspection, when running services
-
           - For setting the EXPOSE OCI field when publishing the container
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1018,15 +1163,14 @@ class Container(Type):
         started automatically when needed and detached when it is no longer
         needed.
 
-
-
         The service will be reachable from the container via the provided
         hostname alias.
 
-
-
         The service dependency will also convey to any files or directories
         produced by the container.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1113,6 +1257,9 @@ class Container(Type):
         protocol: Optional[NetworkProtocol] = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
 
         Parameters
         ----------
@@ -1203,6 +1350,13 @@ class Container(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("workdir", _args)
@@ -1288,6 +1442,13 @@ class Directory(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("path", path, None),
@@ -1308,6 +1469,13 @@ class Directory(Type):
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("path", path),
@@ -1342,6 +1510,13 @@ class Directory(Type):
         -------
         DirectoryID
             A content-addressed directory identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -1361,11 +1536,23 @@ class Directory(Type):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Directory":
-        """Creates a named sub-pipeline."""
+        """Creates a named sub-pipeline
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Directory(_ctx)
@@ -1543,6 +1730,13 @@ class EnvVariable(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
@@ -1558,6 +1752,13 @@ class EnvVariable(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
@@ -1577,6 +1778,13 @@ class File(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("contents", _args)
@@ -1595,6 +1803,13 @@ class File(Type):
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args = [
             Arg("path", path),
@@ -1614,6 +1829,13 @@ class File(Type):
         -------
         FileID
             A file identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -1636,6 +1858,13 @@ class File(Type):
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("size", _args)
@@ -1672,6 +1901,13 @@ class GitRef(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("digest", _args)
@@ -1720,6 +1956,13 @@ class GitRepository(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("branches", _args)
@@ -1766,6 +2009,13 @@ class GitRepository(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("tags", _args)
@@ -1881,6 +2131,13 @@ class HostVariable(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
@@ -1900,6 +2157,13 @@ class Label(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
@@ -1915,6 +2179,13 @@ class Label(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
@@ -1934,6 +2205,13 @@ class Port(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
@@ -1949,6 +2227,13 @@ class Port(Type):
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("port", _args)
@@ -1962,6 +2247,13 @@ class Port(Type):
         -------
         NetworkProtocol
             Transport layer network protocol associated to a port.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
@@ -1993,6 +2285,13 @@ class Project(Type):
         -------
         bool
             The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("install", _args)
@@ -2008,6 +2307,13 @@ class Project(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
@@ -2023,6 +2329,13 @@ class Project(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("schema", _args)
@@ -2038,6 +2351,13 @@ class Project(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("sdk", _args)
@@ -2069,13 +2389,9 @@ class Client(Root):
     ) -> Container:
         """Loads a container from ID.
 
-
-
         Null ID returns an empty container (scratch).
-
         Optional platform argument initializes new containers to execute and
         publish as that platform.
-
         Platform defaults to that of the builder's host.
         """
         _args = [
@@ -2095,6 +2411,13 @@ class Client(Root):
             The platform config OS and architecture in a Container.  The
             format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7",
             "windows/amd64", "linux/arm64").
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("defaultPlatform", _args)
@@ -2181,11 +2504,23 @@ class Client(Root):
         self,
         name: str,
         description: Optional[str] = None,
+        labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Client":
-        """Creates a named sub-pipeline"""
+        """Creates a named sub-pipeline.
+
+        Parameters
+        ----------
+        name:
+            Pipeline name.
+        description:
+            Pipeline description.
+        labels:
+            Pipeline labels.
+        """
         _args = [
             Arg("name", name),
             Arg("description", description, None),
+            Arg("labels", labels, None),
         ]
         _ctx = self._select("pipeline", _args)
         return Client(_ctx)
@@ -2234,6 +2569,13 @@ class Secret(Type):
         -------
         SecretID
             A unique identifier for a secret.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -2249,6 +2591,13 @@ class Secret(Type):
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("plaintext", _args)
@@ -2268,6 +2617,13 @@ class Socket(Type):
         -------
         SocketID
             A content-addressed socket identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
@@ -2285,6 +2641,7 @@ __all__ = [
     "CacheSharingMode",
     "NetworkProtocol",
     "BuildArg",
+    "PipelineLabel",
     "CacheVolume",
     "Container",
     "Directory",

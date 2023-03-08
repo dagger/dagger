@@ -9,6 +9,16 @@ title: "Build the application"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
+import Embed from '@site/src/components/atoms/embed.js'
+
+export const ids = {
+    Go: "1H9zPpWRtDi",
+    Node: "HMeWQ18XgxM",
+    Python: "Hh2ra08H6lu"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Build the application
 
@@ -20,10 +30,10 @@ So, let's update the previous pipeline and add a build step to it, by running `n
 The `npm run build` command is appropriate for a React application, but other applications are likely to use different commands. Modify your Dagger pipeline accordingly.
 :::
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/EPvbuzgZ-IH"></iframe>
+<Embed id="1H9zPpWRtDi" />
 
 - It invokes the `Container.WithExec()` method again, this time to define the command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.Directory()` method. This method returns a `Directory` object.
@@ -36,9 +46,9 @@ go run ci/main.go
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/pIYfTUXpztQ"></iframe>
+<Embed id="HMeWQ18XgxM" />
 
 This revised pipeline does everything described in the previous step, and then performs the following additional operations:
 
@@ -55,7 +65,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/B6i-aQ0vluD"></iframe>
+<Embed id="Hh2ra08H6lu" />
 
 This revised pipeline does everything described in the previous step, and then performs the following additional operations:
 
@@ -97,3 +107,5 @@ build
     └── media
         └── logo.6ce24c58023cc2f8fd88fe9d219db6c6.svg
 ```
+
+</QuickstartDoc>

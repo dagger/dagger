@@ -9,6 +9,16 @@ title: "Write your first Dagger pipeline"
 
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
+import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
+import Embed from '@site/src/components/atoms/embed.js'
+
+export const ids = {
+    Go: "rgaPq2gzM_2",
+    Node: "oMQiF1h-W1O",
+    Python: "EDa1xwZ-hll"
+}
+
+<QuickstartDoc embeds={ids}>
 
 ## Write your first Dagger pipeline
 
@@ -16,12 +26,12 @@ You're now ready to dive into Dagger and write your first pipeline!
 
 This first example is fairly simple: it creates a Dagger client using your chosen SDK, initializes a container, executes a command in that container and prints the output.
 
-<Tabs groupId="language">
+<Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
 In the `ci` directory, create a file named `main.go` and add the following code to it.
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/lGhP6fB2G2r"></iframe>
+<Embed id= "rgaPq2gzM_2"/>
 
 This Go program imports the Dagger SDK and defines a `main()` function for the pipeline operations. This function performs the following operations:
 
@@ -43,11 +53,11 @@ Hello from Dagger and go version go1.19.5 linux/amd64
 ```
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node">
 
 In the `ci` directory, create a new file named `index.mjs` and add the following code to it.
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/USkiC0wbQ5k"></iframe>
+<Embed id= "oMQiF1h-W1O"/>
 
 This Node.js script imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
 
@@ -73,7 +83,7 @@ Hello from Dagger and Node v16.18.1
 
 In the `ci` directory, create a new file named `main.py` and add the following code to it.
 
-<iframe class="embed" src="https://play.dagger.cloud/embed/FP6MBw_8qFm"></iframe>
+<Embed id= "EDa1xwZ-hll"/>
 
 This Python script imports the Dagger SDK and defines an asynchronous function. This function performs the following operations:
 
@@ -98,3 +108,5 @@ Hello from Dagger and Python v3.11.1
 </Tabs>
 
 Well done! You've just successfully written and run your first Dagger pipeline!
+
+</QuickstartDoc>
