@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -33,6 +34,11 @@ func proxy(args []string) error {
 
 	eg.Go(func() error {
 		_, err := io.Copy(os.Stdout, conn)
+		if errors.Is(err, net.ErrClosed) {
+			// other side may have closed, either way we're done
+			return nil
+		}
+
 		return err
 	})
 
