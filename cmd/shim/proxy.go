@@ -31,8 +31,19 @@ func proxy(args []string) error {
 
 	eg := new(errgroup.Group)
 
-	eg.Go(func() error { _, err := io.Copy(os.Stdout, conn); return err })
-	eg.Go(func() error { _, err := io.Copy(conn, os.Stdin); return err })
+	eg.Go(func() error {
+		_, err := io.Copy(os.Stdout, conn)
+		return err
+	})
+
+	eg.Go(func() error {
+		// NB: if os.Stdin closes that means the upstream connection has gone away,
+		// so interrupt the other side
+		defer conn.Close()
+
+		_, err := io.Copy(conn, os.Stdin)
+		return err
+	})
 
 	return eg.Wait()
 }
