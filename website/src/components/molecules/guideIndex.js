@@ -5,10 +5,8 @@ import guidesJSON from "@site/static/guides.json";
 import Tag from "../atoms/tag";
 
 export default function GuidesIndex() {
-  const guides = guidesJSON.sort((a, b) => {
-    return b.timestamp - a.timestamp;
-  });
-
+  const guides = guidesJSON.guides;
+  const allTags = guidesJSON.allTags;
   const [filteredGuides, setFilteredGuides] = useState(guides);
   const [selectedTags, setSelectedTags] = useState([]);
 
@@ -52,8 +50,10 @@ export default function GuidesIndex() {
         let newRelativePathQuery = path;
         history.pushState(null, "", newRelativePathQuery);
       } else {
-        searchParams.delete("tags")
-        allSearchParams.forEach(x => x != tag ? searchParams.append("tags", x) : null)
+        searchParams.delete("tags");
+        allSearchParams.forEach((x) =>
+          x != tag ? searchParams.append("tags", x) : null,
+        );
         let newRelativePathQuery = path + "?" + searchParams.toString();
         history.pushState(null, "", newRelativePathQuery);
       }
@@ -63,11 +63,17 @@ export default function GuidesIndex() {
 
   return (
     <div className={styles.guideIndex}>
-      <div className={styles.selectedTags}>
+      {/* <div className={styles.selectedTags}>
         {selectedTags.map((x, i) => (
           <Tag key={i} label={x} onCloseClick={() => popTag(x)} removable></Tag>
         ))}
-      </div>
+      </div> */}
+      <GuideFilter
+        allTags={allTags}
+        selectedTags={selectedTags}
+        onCloseClick={popTag}
+        pushTag={pushTag}
+      />
       <ul>
         {filteredGuides.map((x, i) => (
           <li key={i}>
@@ -111,6 +117,69 @@ function GuideCard({title, url, tags, authors, timestamp, pushTag}) {
             <Tag onTagClick={() => pushTag(x)} key={i} label={x} />
           ))}
       </div>
+    </div>
+  );
+}
+
+function GuideFilter({allTags, selectedTags, onCloseClick, pushTag}) {
+  const [filtering, setFiltering] = useState(false);
+  const [filteredTags, setFilteredTags] = useState(allTags);
+  const [query, setQuery] = useState("");
+
+  const handleChange = (e) => {
+    let newQuery = e.target.value.toLowerCase();
+    const results = allTags.filter((tag) => {
+      if (newQuery === "") return allTags;
+      return tag.toLowerCase().includes(e.target.value.toLowerCase());
+    });
+    setQuery(newQuery);
+    setFilteredTags(results);
+  };
+
+  const handlePushTag = (x) => {
+    pushTag(x)
+    setQuery("");
+    setFilteredTags(allTags);
+  };
+
+  return (
+    <div
+      className={styles.filterWrapper}
+      onMouseLeave={() => setFiltering(false)}>
+      <div className={styles.filter}>
+        <div className={styles.filterTags}>
+          {selectedTags.map((x, i) => (
+            <Tag
+              key={i}
+              label={x}
+              removable
+              onCloseClick={() => onCloseClick(x)}
+            />
+          ))}
+        </div>
+        <input
+          onClick={() => setFiltering(true)}
+          className={styles.filterInput}
+          placeholder="Filter guides by tag"
+          type="search"
+          value={query}
+          onChange={handleChange}></input>
+      </div>
+      {filtering && (
+        <div className={styles.filterDropdown}>
+          <ul>
+            {filteredTags.map((x, i) => (
+              <li
+                key={i}
+                onClick={() => {
+                  handlePushTag(x);
+                }}>
+                {x}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
