@@ -431,50 +431,13 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "goodbye\n", stderr)
 
-	err = testutil.Query(
-		`{
-			container {
-				from(address: "alpine:3.16.2") {
-					exec(
-						args: ["sh", "-c", "echo hello; echo goodbye >/dev/stderr"],
-						redirectStdout: "out",
-						redirectStderr: "err"
-					) {
-						stdout
-						stderr
-					}
-				}
-			}
-		}`, &res, nil)
+	_, err = execWithMount.Stdout(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "stdout: no such file or directory")
+
+	_, err = execWithMount.Stderr(ctx)
+	require.Error(t, err)
 	require.Contains(t, err.Error(), "stderr: no such file or directory")
-}
-
-func TestContainerNullStdoutStderr(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
-		Container struct {
-			From struct {
-				Stdout *string
-				Stderr *string
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`{
-			container {
-				from(address: "alpine:3.16.2") {
-					stdout
-					stderr
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.Nil(t, res.Container.From.Stdout)
-	require.Nil(t, res.Container.From.Stderr)
 }
 
 func TestContainerExecWithWorkdir(t *testing.T) {
@@ -3004,4 +2967,21 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
+}
+
+func TestContainerNoExecError(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	_, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = c.Container().From("alpine:3.16.2").Stdout(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+
+	_, err = c.Container().From("alpine:3.16.2").Stderr(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 }

@@ -1148,27 +1148,23 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
 	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
-		return nil, err
-	}
-	if content == nil {
-		return nil, nil
+		return 0, err
 	}
 
-	exitCode, err := strconv.Atoi(*content)
-	if err != nil {
-		return nil, err
-	}
-
-	return &exitCode, nil
+	return strconv.Atoi(content)
 }
 
 func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
+	}
+
+	if payload.Hostname == "" {
+		return nil, ErrContainerNoExec
 	}
 
 	health := newHealth(gw, payload.Hostname, payload.Ports)
@@ -1209,19 +1205,19 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	metaSt, err := payload.MetaState()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	if metaSt == nil {
-		return nil, nil
+		return "", ErrContainerNoExec
 	}
 
 	file, err := NewFile(
@@ -1233,16 +1229,15 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		payload.Services,
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	content, err := file.Contents(ctx, gw)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	strContent := string(content)
-	return &strContent, nil
+	return string(content), nil
 }
 
 func (container *Container) Publish(
@@ -1340,6 +1335,10 @@ func (container *Container) Hostname() (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
+	}
+
+	if payload.Hostname == "" {
+		return "", ErrContainerNoExec
 	}
 
 	return payload.Hostname, nil

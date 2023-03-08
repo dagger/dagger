@@ -70,7 +70,7 @@ if [ "$` + servicesDNSEnvName + `" != "0" ]; then
 
 	# preserve DNS search/options config, but let dnsmasq delegate to
 	# /etc/resolv.conf.upstream for upstream nameservers
-	grep -v '^nameserver' /etc/resolv.conf.upstream >> /etc/resolv.conf
+	grep -v '^nameserver' /etc/resolv.conf.upstream || true >> /etc/resolv.conf
 fi
 
 exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
