@@ -1705,7 +1705,7 @@ func proxyConn(ctx context.Context, gw bkgw.Client, containerReq bkgw.NewContain
 
 	proxyContainer, err := gw.NewContainer(ctx, containerReq)
 	if err != nil {
-		logrus.Warnf("create publish container for :%d: %s", publish, err)
+		logrus.Errorf("failed to create proxy container: %s", err)
 		return
 	}
 
@@ -1723,7 +1723,7 @@ func proxyConn(ctx context.Context, gw bkgw.Client, containerReq bkgw.NewContain
 		Stderr: os.Stderr, // TODO(vito)
 	})
 	if err != nil {
-		logrus.Warnf("published port :%d proxy error: ", publish, err)
+		logrus.Errorf("failed to start proxy process: %s", err)
 		return
 	}
 
@@ -1732,14 +1732,14 @@ func proxyConn(ctx context.Context, gw bkgw.Client, containerReq bkgw.NewContain
 
 		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
 		if err != nil {
-			logrus.Warnf("published port :%d proxy kill error: ", publish, err)
+			logrus.Warnf("failed to kill proxy: %s", err)
 			return
 		}
 	}()
 
 	err = proc.Wait()
 	if err != nil {
-		logrus.Warn("published port :%d proxy exited with error: ", publish, err)
+		logrus.Warnf("proxy exited with error: %s", err)
 		return
 	}
 }
