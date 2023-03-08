@@ -1682,6 +1682,7 @@ func publish(ctx context.Context, gw bkgw.Client, port ContainerPort, host strin
 				Ref:       scratchRes.Ref,
 			},
 		},
+		NetMode: pb.NetMode_HOST,
 	}
 
 	go func() {
