@@ -8,6 +8,7 @@
 .docusaurus
 .cache-loader
 /static/api/reference
+/static/guides.json
 
 # Misc
 .DS_Store
