@@ -21,6 +21,9 @@ func init() {
 	// Disable logrus output, which only comes from the docker
 	// commandconn library that is used by buildkit's connhelper
 	// and prints unneeded warning logs.
+	//
+	// NB(vito): we now use Logrus in other places so it's a bit unfortunate to
+	// disable this, solution TBD
 	logrus.StandardLogger().SetOutput(io.Discard)
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
