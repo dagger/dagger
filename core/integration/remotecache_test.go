@@ -304,7 +304,7 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	require.NoError(t, err)
 
 	return c, func() error {
-		out, err := exec.Command("docker", "stop", "-s", "SIGTERM", "-t", "30", name).CombinedOutput()
+		out, err := exec.Command("docker", "kill", "-s", "SIGTERM", name).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("error stopping docker container: %v: %s", err, out)
 		}
