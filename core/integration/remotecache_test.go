@@ -95,11 +95,6 @@ func TestRemoteCacheS3(t *testing.T) {
 		getClient := func(engineName string) (*dagger.Client, func() error) {
 			return runSeparateEngine(ctx, t, map[string]string{
 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
-				// TODO: temporarily disable networking to fix flakiness around containers in the
-				// same netns interfering with each other.
-				// Real fix is to either override CNI settings for each engine or to remove the need
-				// for them to be in the same netns.
-				"_EXPERIMENTAL_DAGGER_SERVICES_DNS": "0",
 			}, "container:"+s3ContainerName)
 		}
 
@@ -268,6 +263,12 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 		"-v", "/var/lib/dagger", // path is set in internal/mage/engine.go
 		"--privileged",
 		"--name", name,
+		// share xtables.lock across all engines so iptables --wait works
+		//
+		// NB: technically we're not sharing with the host's xtables.lock, but this
+		// is much easier and should be good enough
+		"-v", "xtables-lock:/run/xtables-lock",
+		"-e", "XTABLES_LOCKFILE=/run/xtables-lock/xtables.lock",
 	}
 	for k, v := range env {
 		dockerRunArgs = append(dockerRunArgs, "-e", k+"="+v)
