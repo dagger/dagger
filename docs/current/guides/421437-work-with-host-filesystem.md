@@ -22,7 +22,7 @@ This guide explains how to work with the host filesystem using the Dagger Go SDK
 
 This guide assumes that:
 
-- You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
+- You have a Go development environment with Go 1.20 or later. If not, [download and install Go](https://go.dev/doc/install).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Go module with the Dagger Go SDK installed. If not, [install the Dagger Go SDK](../sdk/go/371491-install.md).
 
