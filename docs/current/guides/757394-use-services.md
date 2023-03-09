@@ -25,7 +25,7 @@ Some common use cases for services are:
 
 This tutorial teaches you the basics of using services in Dagger.
 
-:::note
+:::tip
 The services feature changes Dagger's entire network stack. If you find that this feature breaks something, you can disable it by setting the following environment variable prior to running the Dagger Engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`. Please also [open an issue](https://github.com/dagger/dagger/issues) for further investigation in this case.
 :::
 
@@ -179,7 +179,7 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 
 <TabItem value="Python">
 
-<Embed id="T47F8bg5_Eo" />
+<Embed id="FkPqDoW3Oo-" />
 
 </TabItem>
 <TabItem value="Node.js">
@@ -200,7 +200,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 
 <TabItem value="Python">
 
-<Embed id="KgpaTo2NmE-" />
+<Embed id="WG0Pqr49pKK" />
 
 </TabItem>
 <TabItem value="Node.js">
