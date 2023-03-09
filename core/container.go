@@ -1657,15 +1657,15 @@ func b32(n uint64) string {
 }
 
 func publish(ctx context.Context, gw bkgw.Client, port ContainerPort, host string) error {
-	publish := *port.Publish
+	publishedPort := *port.Publish
 
 	// NB: listen synchronously
-	l, err := net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", publish))
+	l, err := net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", publishedPort))
 	if err != nil {
 		return err
 	}
 
-	logrus.Debugf("listening on published port :%d => %s:%d", publish, host, port.Port)
+	logrus.Debugf("listening on published port :%d => %s:%d", publishedPort, host, port.Port)
 
 	args := []string{"proxy", host, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())}
 
@@ -1689,7 +1689,7 @@ func publish(ctx context.Context, gw bkgw.Client, port ContainerPort, host strin
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				logrus.Warnf("published port :%d accept error: ", publish, err)
+				logrus.Warnf("published port :%d accept error: %s", publishedPort, err)
 				break
 			}
 
