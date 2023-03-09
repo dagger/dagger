@@ -1,5 +1,5 @@
 ---
-slug: /757394/use-services
+slug: /757394/use-service-containers
 displayed_sidebar: "current"
 category: "guides"
 tags: ["go", "python", "nodejs"]
@@ -11,22 +11,22 @@ import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 import Embed from '@site/src/components/atoms/embed.js'
 
-# Use Services in Dagger
+# Use Service Containers in Dagger
 
 ## Introduction
 
-Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced services, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines.
+Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced service containers, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines.
 
-Some common use cases for services are:
+Some common use cases for service containers are:
 
 - Run a test database
 - Run end-to-end integration tests
 - Run sidecar services
 
-This tutorial teaches you the basics of using services in Dagger.
+This tutorial teaches you the basics of using service containers in Dagger.
 
 :::tip
-The services feature changes Dagger's entire network stack. If you find that this feature breaks something, you can disable it by setting the following environment variable prior to running the Dagger Engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`. Please also [open an issue](https://github.com/dagger/dagger/issues) for further investigation in this case.
+The service containers feature changes Dagger's entire network stack. If you find that this feature breaks something, you can disable it by setting the following environment variable prior to running the Dagger Engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`. Please also [open an issue](https://github.com/dagger/dagger/issues) for further investigation in this case.
 :::
 
 ## Requirements
@@ -39,12 +39,12 @@ This tutorial assumes that:
 
 ## Key concepts
 
-Dagger services are just containers, which have the following characteristics:
+Dagger's service containers have the following characteristics:
 
-- Each container has its own network namespace and IP address
-- Each container has a unique, deterministic DNS address
-- Containers can expose ports and endpoints
-- Containers can bind other containers as services
+- Each service container has its own network namespace and IP address
+- Each service container has a unique, deterministic DNS address
+- Service containers can expose ports and endpoints
+- Service containers can bind other containers as services
 
 Service containers come with the following built-in features:
 
@@ -54,7 +54,7 @@ Service containers come with the following built-in features:
 
 ## Using hostnames
 
-Containers run in a bridge network. Each container has its own IP address that other containers can reach. Here's a simple example:
+Service containers run in a bridge network. Each container has its own IP address that other containers can reach. Here's a simple example:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
@@ -75,7 +75,7 @@ Containers run in a bridge network. Each container has its own IP address that o
 </TabItem>
 </Tabs>
 
-Containers never use IP addresses to reach each other directly. IP addresses are ephemeral, so doing so would nullify the cache. Instead, Dagger gives each container a unique but deterministic hostname, which doubles as a DNS address. Here's an example:
+Service containers never use IP addresses to reach each other directly. IP addresses are ephemeral, so doing so would nullify the cache. Instead, Dagger gives each container a unique but deterministic hostname, which doubles as a DNS address. Here's an example:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
@@ -89,10 +89,7 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 <Embed id="2qLVfgdsnI6" />
 
 </TabItem>
-<TabItem value="Node.js">:::tip
-The new services feature changes Dagger's entire network stack. If something seems to have broken, you can disable it by setting the following environment variable prior to running the engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`
-Please report an issue if this is the case!
-:::
+<TabItem value="Node.js">
 
 <Embed id="Bpu7I8URtpg" />
 
@@ -131,8 +128,8 @@ Dagger offers two methods to work with service ports:
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-- Use the `WithExposedPort()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `Endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+- Use the `WithExposedPort()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `Endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
 
@@ -142,8 +139,8 @@ Here's an example:
 
 <TabItem value="Python">
 
-- Use the `with_exposed_port()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+- Use the `with_exposed_port()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
 
@@ -152,8 +149,8 @@ Here's an example:
 </TabItem>
 <TabItem value="Node.js">
 
-- Use the `withExposedPort()` method to set ports that the container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `endpoint()` method to create a string address to a service's port. You can either specify a port or let Dagger pick the first exposed port.
+- Use the `withExposedPort()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
 
 Here's an example:
 
@@ -328,6 +325,6 @@ Note that this example uses Redis's `SAVE` command to ensure data is synced. By 
 
 ## Conclusion
 
-This tutorial walked you through the basics of using services with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
+This tutorial walked you through the basics of using service containers with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
 
 Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
