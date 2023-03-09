@@ -15,7 +15,7 @@ import Embed from '@site/src/components/atoms/embed.js'
 
 ## Introduction
 
-Dagger v0.4 introduced services, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines.
+Dagger [v0.4.0](https://github.com/dagger/dagger/releases/tag/v0.4.0) introduced services, aka container-to-container networking. This feature enables users to spin up additional long-running services (as containers) and communicate with those services from their Dagger pipelines.
 
 Some common use cases for services are:
 
