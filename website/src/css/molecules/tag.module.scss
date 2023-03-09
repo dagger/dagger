@@ -21,7 +21,7 @@
   align-items: center;
   cursor: pointer;
 
-  html[data-theme="dark"] & {
-    color: white;
+  html[data-theme="dark"] & g {
+    stroke: white !important;
   }
 }

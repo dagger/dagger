@@ -62,9 +62,9 @@ lang='python'
 query='
 {
   container {
-    from(address: "node:slim") {
+    from(address: "node") {
       withWorkdir(path: "/usr/src/app") {
-        withExec(args: ["sh", "-c", "npm install @dagger.io/dagger tsc --save-dev && npm pkg set type=module &&  npx tsc --module esnext --moduleResolution node --init"]) {
+        withExec(args: ["sh", "-c", "npm install @dagger.io/dagger ts-node --save-dev && npm pkg set type=module &&  npx tsc --module esnext --moduleResolution node --init"]) {
           withNewFile(
             contents: """'"$content"'"""
             path: "index.ts"
@@ -85,7 +85,7 @@ lang='typescript'
 query='
 {
   container {
-    from(address: "node:slim") {
+    from(address: "node") {
       withWorkdir(path: "/usr/src/app") {
         withExec(args: ["sh", "-c", "npm install @dagger.io/dagger --save-dev && npm pkg set type=module"]) {
           withNewFile(
@@ -108,7 +108,7 @@ lang='javascript'
 query='
 {
   container {
-    from(address: "node:slim") {
+    from(address: "node") {
       withWorkdir(path: "/usr/src/app") {
         withExec(args: ["sh", "-c", "npm install @dagger.io/dagger --save-dev && npm pkg set type=module"]) {
           withNewFile(

@@ -331,13 +331,13 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    async def exit_code(self) -> Optional[int]:
+    async def exit_code(self) -> int:
         """Exit code of the last executed command. Zero means success.
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[int]
+        int
             The `Int` scalar type represents non-fractional signed whole
             numeric values. Int can represent values between -(2^31) and 2^31
             - 1.
@@ -351,7 +351,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
-        return await _ctx.execute(Optional[int])
+        return await _ctx.execute(int)
 
     @typecheck
     async def export(
@@ -674,13 +674,13 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def stderr(self) -> Optional[str]:
+    async def stderr(self) -> str:
         """The error stream of the last executed command.
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[str]
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -694,16 +694,16 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("stderr", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str)
 
     @typecheck
-    async def stdout(self) -> Optional[str]:
+    async def stdout(self) -> str:
         """The output stream of the last executed command.
-        Null if no command has been executed.
+        Errors if no command has been executed.
 
         Returns
         -------
-        Optional[str]
+        str
             The `String` scalar type represents textual data, represented as
             UTF-8 character sequences. The String type is most often used by
             GraphQL to represent free-form human-readable text.
@@ -717,7 +717,7 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("stdout", _args)
-        return await _ctx.execute(Optional[str])
+        return await _ctx.execute(str)
 
     @typecheck
     async def user(self) -> Optional[str]:

@@ -279,7 +279,7 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 }
 
 // Exit code of the last executed command. Zero means success.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	q := r.q.Select("exitCode")
 
@@ -513,7 +513,7 @@ func (r *Container) Rootfs() *Directory {
 }
 
 // The error stream of the last executed command.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
 	q := r.q.Select("stderr")
 
@@ -523,7 +523,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 }
 
 // The output stream of the last executed command.
-// Null if no command has been executed.
+// Errors if no command has been executed.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
 	q := r.q.Select("stdout")
 

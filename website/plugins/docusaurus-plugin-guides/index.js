@@ -18,20 +18,30 @@ module.exports = async function guidesPlugin(context, options) {
           return [];
         }
 
-        const parsedMarkdown = utils.parseMarkdownString(content)
-        const timestamp = Date.parse(parsedMarkdown.frontMatter.date)
+        const parsedMarkdown = utils.parseMarkdownString(content);
+        const timestamp = Date.parse(parsedMarkdown.frontMatter.date);
 
         if (isNaN(timestamp)) {
-          throw new Error(`Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`)
+          throw new Error(
+            `Given date in ${x} is not ISO 8601 compatible. Please, set the date in this guide to MM-DD-YY format.`,
+          );
         }
 
-        return [{
-          path: guidePath,
-          ...parsedMarkdown,
-          timestamp
-        }];
-      });      
-       fs.writeFileSync(guidesJSONPath, JSON.stringify(guides))
-    }
+        return [
+          {
+            path: guidePath,
+            ...parsedMarkdown,
+            timestamp,
+          },
+        ];
+      });
+      guides.sort((a, b) => {
+        return b.timestamp - a.timestamp;
+      })
+      let allTags = new Set();
+      guides.forEach((guide) => guide.frontMatter.tags.forEach(tag => allTags.add(tag)));
+      allTags = [...allTags]
+      fs.writeFileSync(guidesJSONPath, JSON.stringify({guides, allTags}));
+    },
   };
 };

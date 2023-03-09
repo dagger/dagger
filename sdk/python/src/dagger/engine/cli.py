@@ -56,6 +56,7 @@ class CLISession(SyncResourceManager):
             try:
                 proc = subprocess.Popen(
                     args,
+                    bufsize=0,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=self.cfg.log_output or subprocess.PIPE,

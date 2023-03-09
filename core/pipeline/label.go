@@ -1,13 +1,13 @@
 package pipeline
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"sync"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/google/go-github/v50/github"
+	"github.com/sirupsen/logrus"
 )
 
 var (
@@ -31,17 +31,32 @@ func RootLabels() []Label {
 }
 
 // LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string) error {
-	var err error
+func LoadRootLabels(workdir string) {
 	loadOnce.Do(func() {
 		defer close(loadDoneCh)
-
-		defaultLabels, err = loadRootLabels(workdir)
+		defaultLabels = loadRootLabels(workdir)
 	})
-	return err
 }
 
-func loadRootLabels(workdir string) ([]Label, error) {
+func loadRootLabels(workdir string) []Label {
+	labels := []Label{}
+
+	if gitLabels, err := loadGitLabels(workdir); err == nil {
+		labels = append(labels, gitLabels...)
+	} else {
+		logrus.Warnf("failed to collect git labels: %s", err)
+	}
+
+	if githubLabels, err := loadGitHubLabels(); err == nil {
+		labels = append(labels, githubLabels...)
+	} else {
+		logrus.Warnf("failed to collect GitHub labels: %s", err)
+	}
+
+	return labels
+}
+
+func loadGitLabels(workdir string) ([]Label, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -69,7 +84,7 @@ func loadRootLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
-	labels := []Label{
+	return []Label{
 		{
 			Name:  "dagger.io/git.remote",
 			Value: endpoint,
@@ -82,63 +97,79 @@ func loadRootLabels(workdir string) ([]Label, error) {
 			Name:  "dagger.io/git.ref",
 			Value: head.Hash().String(),
 		},
+	}, nil
+}
+
+func loadGitHubLabels() ([]Label, error) {
+	if os.Getenv("GITHUB_ACTIONS") != "true" {
+		return []Label{}, nil
 	}
 
-	if os.Getenv("GITHUB_ACTIONS") == "true" {
-		labels = append(labels,
-			Label{
-				Name:  "github.com/actor",
-				Value: os.Getenv("GITHUB_ACTOR"),
-			},
-			Label{
-				Name:  "github.com/event.name",
-				Value: os.Getenv("GITHUB_EVENT_NAME"),
-			},
-			Label{
-				Name:  "github.com/workflow.name",
-				Value: os.Getenv("GITHUB_WORKFLOW"),
-			},
-			Label{
-				Name:  "github.com/workflow.job",
-				Value: os.Getenv("GITHUB_JOB"),
-			},
-		)
+	eventType := os.Getenv("GITHUB_EVENT_NAME")
 
-		eventPath := os.Getenv("GITHUB_EVENT_PATH")
-		if eventPath != "" {
-			payload, err := os.ReadFile(eventPath)
-			if err != nil {
-				return nil, fmt.Errorf("read $GITHUB_EVENT_PATH: %w", err)
-			}
+	labels := []Label{
+		{
+			Name:  "github.com/actor",
+			Value: os.Getenv("GITHUB_ACTOR"),
+		},
+		{
+			Name:  "github.com/event.type",
+			Value: eventType,
+		},
+		{
+			Name:  "github.com/workflow.name",
+			Value: os.Getenv("GITHUB_WORKFLOW"),
+		},
+		{
+			Name:  "github.com/workflow.job",
+			Value: os.Getenv("GITHUB_JOB"),
+		},
+	}
 
-			var event GitHubEventPayload
-			if err := json.Unmarshal(payload, &event); err != nil {
-				return nil, fmt.Errorf("unmarshal $GITHUB_EVENT_PATH: %w", err)
-			}
+	eventPath := os.Getenv("GITHUB_EVENT_PATH")
+	if eventPath != "" {
+		payload, err := os.ReadFile(eventPath)
+		if err != nil {
+			return nil, fmt.Errorf("read $GITHUB_EVENT_PATH: %w", err)
+		}
 
-			if event.Action != nil {
-				labels = append(labels, Label{
-					Name:  "github.com/event.action",
-					Value: *event.Action,
-				})
-			}
+		event, err := github.ParseWebHook(eventType, payload)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal $GITHUB_EVENT_PATH: %w", err)
+		}
 
-			if event.PullRequest != nil {
-				labels = append(labels, Label{
-					Name:  "github.com/pr.number",
-					Value: fmt.Sprintf("%d", event.PullRequest.GetNumber()),
-				})
+		var action *string
+		var pr *github.PullRequest
+		switch x := event.(type) {
+		case *github.PushEvent:
+			action = x.Action
+		case *github.PullRequestEvent:
+			action = x.Action
+			pr = x.GetPullRequest()
+		}
 
-				labels = append(labels, Label{
-					Name:  "github.com/pr.title",
-					Value: event.PullRequest.GetTitle(),
-				})
+		if action != nil {
+			labels = append(labels, Label{
+				Name:  "github.com/event.action",
+				Value: *action,
+			})
+		}
 
-				labels = append(labels, Label{
-					Name:  "github.com/pr.url",
-					Value: event.PullRequest.GetHTMLURL(),
-				})
-			}
+		if pr != nil {
+			labels = append(labels, Label{
+				Name:  "github.com/pr.number",
+				Value: fmt.Sprintf("%d", pr.GetNumber()),
+			})
+
+			labels = append(labels, Label{
+				Name:  "github.com/pr.title",
+				Value: pr.GetTitle(),
+			})
+
+			labels = append(labels, Label{
+				Name:  "github.com/pr.url",
+				Value: pr.GetHTMLURL(),
+			})
 		}
 	}
 

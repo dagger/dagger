@@ -234,6 +234,22 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
+type PipelineMetaResolver struct {
+	Resolver llb.ImageMetaResolver
+	Pipeline pipeline.Path
+}
+
+func (r PipelineMetaResolver) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
+	// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
+	// the pipeline in the vertex name.
+	opt.LogName = pipeline.CustomName{
+		Name:     fmt.Sprintf("resolve image config for %s", ref),
+		Pipeline: r.Pipeline,
+	}.String()
+
+	return r.Resolver.ResolveImageConfig(ctx, ref, opt)
+}
+
 func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -254,12 +270,14 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	digest, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	resolver := PipelineMetaResolver{
+		Resolver: gw,
+		Pipeline: p,
+	}
+
+	digest, cfgBytes, err := resolver.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
-		// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
-		// the pipeline in the vertex name.
-		LogName: pipeline.CustomName{Name: fmt.Sprintf("resolve image config for %s", ref), Pipeline: p}.String(),
 	})
 	if err != nil {
 		return nil, err
@@ -279,6 +297,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		llb.Image(addr,
 			llb.WithCustomNamef("pull %s", ref),
 			p.LLBOpt(),
+			llb.WithMetaResolver(resolver),
 		),
 		"/", payload.Pipeline, platform, nil)
 	if err != nil {
@@ -1148,27 +1167,23 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (*int, error) {
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
 	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
-		return nil, err
-	}
-	if content == nil {
-		return nil, nil
+		return 0, err
 	}
 
-	exitCode, err := strconv.Atoi(*content)
-	if err != nil {
-		return nil, err
-	}
-
-	return &exitCode, nil
+	return strconv.Atoi(content)
 }
 
 func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
+	}
+
+	if payload.Hostname == "" {
+		return nil, ErrContainerNoExec
 	}
 
 	health := newHealth(gw, payload.Hostname, payload.Ports)
@@ -1209,19 +1224,19 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (*string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	metaSt, err := payload.MetaState()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	if metaSt == nil {
-		return nil, nil
+		return "", ErrContainerNoExec
 	}
 
 	file, err := NewFile(
@@ -1233,16 +1248,15 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		payload.Services,
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	content, err := file.Contents(ctx, gw)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	strContent := string(content)
-	return &strContent, nil
+	return string(content), nil
 }
 
 func (container *Container) Publish(
@@ -1340,6 +1354,10 @@ func (container *Container) Hostname() (string, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return "", err
+	}
+
+	if payload.Hostname == "" {
+		return "", ErrContainerNoExec
 	}
 
 	return payload.Hostname, nil

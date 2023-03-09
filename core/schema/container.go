@@ -162,15 +162,15 @@ func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, 
 	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (*int, error) {
+func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
 	return parent.ExitCode(ctx, s.gw)
 }
 
-func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
 	return parent.MetaFileContents(ctx, s.gw, "stdout")
 }
 
-func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (*string, error) {
+func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (string, error) {
 	return parent.MetaFileContents(ctx, s.gw, "stderr")
 }
 
