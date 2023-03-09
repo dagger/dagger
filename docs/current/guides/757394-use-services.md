@@ -25,6 +25,10 @@ Some common use cases for services are:
 
 This tutorial teaches you the basics of using services in Dagger.
 
+:::note
+The services feature changes Dagger's entire network stack. If you find that this feature breaks something, you can disable it by setting the following environment variable prior to running the Dagger Engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`. Please also [open an issue](https://github.com/dagger/dagger/issues) for further investigation in this case.
+:::
+
 ## Requirements
 
 This tutorial assumes that:
@@ -85,7 +89,10 @@ Containers never use IP addresses to reach each other directly. IP addresses are
 <Embed id="2qLVfgdsnI6" />
 
 </TabItem>
-<TabItem value="Node.js">
+<TabItem value="Node.js">:::tip
+The new services feature changes Dagger's entire network stack. If something seems to have broken, you can disable it by setting the following environment variable prior to running the engine: `export _EXPERIMENTAL_DAGGER_SERVICES_DNS=0`
+Please report an issue if this is the case!
+:::
 
 <Embed id="Bpu7I8URtpg" />
 
@@ -140,7 +147,7 @@ Here's an example:
 
 Here's an example:
 
-<Embed id="d43ukG64Vv-" />
+<Embed id="OPUGXdIujRC" />
 
 </TabItem>
 <TabItem value="Node.js">

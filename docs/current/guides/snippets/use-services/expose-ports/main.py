@@ -13,7 +13,7 @@ async def main():
             .from_("python")
             .with_directory(
                 "/srv",
-                client.directory().with_new_file("index.html", "Hello world!"),
+                client.directory().with_new_file("index.html", "Hello, world!"),
             )
             .with_workdir("/srv")
             .with_exec(["python", "-m", "http.server", "8080"])
