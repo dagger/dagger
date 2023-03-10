@@ -32,6 +32,8 @@ import (
 )
 
 func TestServiceHostnamesAreStable(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -67,6 +69,8 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 }
 
 func TestContainerHostnameEndpoint(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -131,6 +135,8 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 }
 
 func TestContainerPortLifecycle(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -225,6 +231,8 @@ func TestContainerPortLifecycle(t *testing.T) {
 }
 
 func TestContainerExecServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -255,6 +263,8 @@ func TestContainerExecServices(t *testing.T) {
 }
 
 func TestContainerExecServicesError(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -279,6 +289,8 @@ func TestContainerExecServicesError(t *testing.T) {
 }
 
 func TestContainerServiceNoExecError(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -314,6 +326,8 @@ func TestContainerServiceNoExecError(t *testing.T) {
 var udpSrc string
 
 func TestContainerExecUDPServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -346,6 +360,8 @@ func TestContainerExecUDPServices(t *testing.T) {
 }
 
 func TestContainerExecServiceAlias(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -376,6 +392,8 @@ func TestContainerExecServiceAlias(t *testing.T) {
 var pipeSrc string
 
 func TestContainerExecServicesDeduping(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -412,6 +430,8 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 }
 
 func TestContainerExecServicesChained(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -450,6 +470,8 @@ func TestContainerExecServicesChained(t *testing.T) {
 }
 
 func TestContainerBuildService(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -532,6 +554,8 @@ CMD cat index.html
 }
 
 func TestContainerExportServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -552,6 +576,8 @@ func TestContainerExportServices(t *testing.T) {
 }
 
 func TestContainerMultiPlatformExportServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -579,6 +605,8 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 }
 
 func TestServicesContainerPublish(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -604,6 +632,8 @@ func TestServicesContainerPublish(t *testing.T) {
 }
 
 func TestContainerRootFSServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -626,6 +656,8 @@ func TestContainerRootFSServices(t *testing.T) {
 }
 
 func TestContainerWithRootFSServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -660,6 +692,8 @@ func TestContainerWithRootFSServices(t *testing.T) {
 }
 
 func TestContainerDirectoryServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -706,6 +740,8 @@ func TestContainerDirectoryServices(t *testing.T) {
 }
 
 func TestContainerFileServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -726,6 +762,8 @@ func TestContainerFileServices(t *testing.T) {
 }
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -774,6 +812,8 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 }
 
 func TestDirectoryServiceEntries(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -792,6 +832,8 @@ func TestDirectoryServiceEntries(t *testing.T) {
 }
 
 func TestDirectoryServiceTimestamp(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -815,6 +857,8 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 }
 
 func TestDirectoryWithDirectoryFileServices(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -840,6 +884,8 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 }
 
 func TestDirectoryServiceExport(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -864,6 +910,8 @@ func TestDirectoryServiceExport(t *testing.T) {
 }
 
 func TestFileServiceContents(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -883,6 +931,8 @@ func TestFileServiceContents(t *testing.T) {
 }
 
 func TestFileServiceExport(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -909,6 +959,8 @@ func TestFileServiceExport(t *testing.T) {
 }
 
 func TestFileServiceTimestamp(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
@@ -931,6 +983,8 @@ func TestFileServiceTimestamp(t *testing.T) {
 }
 
 func TestFileServiceSecret(t *testing.T) {
+	t.Parallel()
+
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
