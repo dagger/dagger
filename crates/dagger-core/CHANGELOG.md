@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.8 (2023-03-10)
+
+### New Features
+
+ - <csr-id-41b20b6268db9d8defe333694e4d3ec019d7c923/> bump version
+ - <csr-id-5f9b3a19c0ab6988bc335b020052074f3f101305/> set internal warnings as errors
+ - <csr-id-f9e7af931d94fbedacf74f5da9a2f71b1992324b/> introduce tests again
+
+### Bug Fixes
+
+ - <csr-id-ecca036bc644fee93fbcb69bf6da9f29169e473e/> fix builder pattern to actually work with default values
+   In previous versions the builder pattern required all values to be set.
+   This has not been fixed, so that default values are allowed.
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 4 commits contributed to the release over the course of 13 calendar days.
+ - 13 days passed between releases.
+ - 4 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - bump version ([`41b20b6`](https://github.com/kjuulh/dagger-rs/commit/41b20b6268db9d8defe333694e4d3ec019d7c923))
+    - set internal warnings as errors ([`5f9b3a1`](https://github.com/kjuulh/dagger-rs/commit/5f9b3a19c0ab6988bc335b020052074f3f101305))
+    - introduce tests again ([`f9e7af9`](https://github.com/kjuulh/dagger-rs/commit/f9e7af931d94fbedacf74f5da9a2f71b1992324b))
+    - fix builder pattern to actually work with default values ([`ecca036`](https://github.com/kjuulh/dagger-rs/commit/ecca036bc644fee93fbcb69bf6da9f29169e473e))
+</details>
+
 ## v0.2.7 (2023-02-24)
 
 ### New Features
@@ -15,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 4 days passed between releases.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -27,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.7, dagger-sdk v0.2.15 ([`6a9a560`](https://github.com/kjuulh/dagger-rs/commit/6a9a560cdca097abf23371d44599a2f1b726ae7f))
     - update to dagger-v0.3.13 ([`3e8ca8d`](https://github.com/kjuulh/dagger-rs/commit/3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f))
 </details>
 

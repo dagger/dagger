@@ -6,6 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.16 (2023-03-10)
+
+### Chore
+
+ - <csr-id-e642778d9028726dfb07217814e15ad1dd3b83f2/> fix tasks
+
+### Documentation
+
+ - <csr-id-13b7805e7e6fcf47e0a1318adcc25b4ab773a3c9/> fix missing await in connect
+
+### New Features
+
+ - <csr-id-7133bfae9508bc5977548e373c49342a1248d6e4/> with dagger-engine v.0.4.0
+ - <csr-id-4381af029521c2cbac9325278d261db79a994657/> add tests to sdk
+ - <csr-id-5f9b3a19c0ab6988bc335b020052074f3f101305/> set internal warnings as errors
+
+### Bug Fixes
+
+ - <csr-id-ecca036bc644fee93fbcb69bf6da9f29169e473e/> fix builder pattern to actually work with default values
+   In previous versions the builder pattern required all values to be set.
+   This has not been fixed, so that default values are allowed.
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 6 commits contributed to the release over the course of 13 calendar days.
+ - 13 days passed between releases.
+ - 6 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - fix tasks ([`e642778`](https://github.com/kjuulh/dagger-rs/commit/e642778d9028726dfb07217814e15ad1dd3b83f2))
+    - with dagger-engine v.0.4.0 ([`7133bfa`](https://github.com/kjuulh/dagger-rs/commit/7133bfae9508bc5977548e373c49342a1248d6e4))
+    - fix missing await in connect ([`13b7805`](https://github.com/kjuulh/dagger-rs/commit/13b7805e7e6fcf47e0a1318adcc25b4ab773a3c9))
+    - add tests to sdk ([`4381af0`](https://github.com/kjuulh/dagger-rs/commit/4381af029521c2cbac9325278d261db79a994657))
+    - set internal warnings as errors ([`5f9b3a1`](https://github.com/kjuulh/dagger-rs/commit/5f9b3a19c0ab6988bc335b020052074f3f101305))
+    - fix builder pattern to actually work with default values ([`ecca036`](https://github.com/kjuulh/dagger-rs/commit/ecca036bc644fee93fbcb69bf6da9f29169e473e))
+</details>
+
 ## v0.2.15 (2023-02-24)
 
 ### New Features
@@ -20,7 +66,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 2 commits contributed to the release.
+ - 3 commits contributed to the release.
  - 2 days passed between releases.
  - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -32,6 +78,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.7, dagger-sdk v0.2.15 ([`6a9a560`](https://github.com/kjuulh/dagger-rs/commit/6a9a560cdca097abf23371d44599a2f1b726ae7f))
     - set deserialize on enums as well ([`e578b0e`](https://github.com/kjuulh/dagger-rs/commit/e578b0e371e13bc30ada793b7cd6ebe75ba83a07))
     - update to dagger-v0.3.13 ([`3e8ca8d`](https://github.com/kjuulh/dagger-rs/commit/3e8ca8d86eafdc1f9d5e8b69f14fb60509549e0f))
 </details>
