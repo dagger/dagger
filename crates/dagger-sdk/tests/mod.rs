@@ -1,4 +1,4 @@
-use dagger_sdk::{connect, ContainerExecOpts, ContainerExecOptsBuilder};
+use dagger_sdk::{connect, ContainerExecOptsBuilder};
 use pretty_assertions::assert_eq;
 
 #[tokio::test]

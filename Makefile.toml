@@ -1,0 +1,4 @@
+[tasks.codegen]
+command = "cargo"
+args = ["run", "-p", "ci", "--", "codegen"]
+workspace = false

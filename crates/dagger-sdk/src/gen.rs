@@ -25,6 +25,11 @@ pub struct BuildArg {
     pub name: String,
     pub value: String,
 }
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+pub struct PipelineLabel {
+    pub value: String,
+    pub name: String,
+}
 #[derive(Debug, Clone)]
 pub struct CacheVolume {
     pub proc: Arc<Child>,
@@ -97,8 +102,12 @@ pub struct ContainerExportOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPipelineOpts<'a> {
+    /// Pipeline description.
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Pipeline labels.
+    #[builder(setter(into, strip_option), default)]
+    pub labels: Option<Vec<PipelineLabel>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
@@ -138,6 +147,12 @@ pub struct ContainerWithExecOpts<'a> {
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Execute the command with all root capabilities. This is similar to running a command
+    /// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+    /// does not provide any security guarantees when using this option. It should only be used
+    /// when absolutely necessary and only with trusted commands.
+    #[builder(setter(into, strip_option), default)]
+    pub insecure_root_capabilities: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
@@ -252,6 +267,7 @@ impl Container {
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
     /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -265,6 +281,7 @@ impl Container {
     /// Retrieves an endpoint that clients can use to reach this container.
     /// If no port is specified, the first exposed port is used. If none exist an error is returned.
     /// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -358,7 +375,7 @@ impl Container {
         };
     }
     /// Exit code of the last executed command. Zero means success.
-    /// Null if no command has been executed.
+    /// Errors if no command has been executed.
     pub async fn exit_code(&self) -> eyre::Result<isize> {
         let query = self.selection.select("exitCode");
 
@@ -404,7 +421,8 @@ impl Container {
 
         query.execute(&graphql_client(&self.conn)).await
     }
-    /// Retrieves the list of exposed ports
+    /// Retrieves the list of exposed ports.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     pub fn exposed_ports(&self) -> Vec<Port> {
         let query = self.selection.select("exposedPorts");
 
@@ -460,6 +478,7 @@ impl Container {
         };
     }
     /// Retrieves a hostname which can be used by clients to reach this container.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     pub async fn hostname(&self) -> eyre::Result<String> {
         let query = self.selection.select("hostname");
 
@@ -505,6 +524,7 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Container {
         let mut query = self.selection.select("pipeline");
@@ -522,6 +542,7 @@ impl Container {
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(
         &self,
@@ -533,6 +554,9 @@ impl Container {
         query = query.arg("name", name.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(labels) = opts.labels {
+            query = query.arg("labels", labels);
         }
 
         return Container {
@@ -600,14 +624,14 @@ impl Container {
         };
     }
     /// The error stream of the last executed command.
-    /// Null if no command has been executed.
+    /// Errors if no command has been executed.
     pub async fn stderr(&self) -> eyre::Result<String> {
         let query = self.selection.select("stderr");
 
         query.execute(&graphql_client(&self.conn)).await
     }
     /// The output stream of the last executed command.
-    /// Null if no command has been executed.
+    /// Errors if no command has been executed.
     pub async fn stdout(&self) -> eyre::Result<String> {
         let query = self.selection.select("stdout");
 
@@ -796,6 +820,9 @@ impl Container {
                 experimental_privileged_nesting,
             );
         }
+        if let Some(insecure_root_capabilities) = opts.insecure_root_capabilities {
+            query = query.arg("insecureRootCapabilities", insecure_root_capabilities);
+        }
 
         return Container {
             proc: self.proc.clone(),
@@ -807,6 +834,7 @@ impl Container {
     /// Exposed ports serve two purposes:
     /// - For health checks and introspection, when running services
     /// - For setting the EXPOSE OCI field when publishing the container
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -828,6 +856,7 @@ impl Container {
     /// Exposed ports serve two purposes:
     /// - For health checks and introspection, when running services
     /// - For setting the EXPOSE OCI field when publishing the container
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -1159,6 +1188,7 @@ impl Container {
     /// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
     /// The service will be reachable from the container via the provided hostname alias.
     /// The service dependency will also convey to any files or directories produced by the container.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -1247,6 +1277,7 @@ impl Container {
         };
     }
     /// Unexpose a previously exposed port.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -1265,6 +1296,7 @@ impl Container {
     }
 
     /// Unexpose a previously exposed port.
+    /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     ///
     /// # Arguments
     ///
@@ -1391,8 +1423,12 @@ pub struct DirectoryEntriesOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryPipelineOpts<'a> {
+    /// Pipeline description.
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Pipeline labels.
+    #[builder(setter(into, strip_option), default)]
+    pub labels: Option<Vec<PipelineLabel>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryWithDirectoryOpts<'a> {
@@ -1574,10 +1610,11 @@ impl Directory {
             conn: self.conn.clone(),
         };
     }
-    /// Creates a named sub-pipeline.
+    /// Creates a named sub-pipeline
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Directory {
         let mut query = self.selection.select("pipeline");
@@ -1591,10 +1628,11 @@ impl Directory {
         };
     }
 
-    /// Creates a named sub-pipeline.
+    /// Creates a named sub-pipeline
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(
         &self,
@@ -1606,6 +1644,9 @@ impl Directory {
         query = query.arg("name", name.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(labels) = opts.labels {
+            query = query.arg("labels", labels);
         }
 
         return Directory {
@@ -2370,8 +2411,12 @@ pub struct QueryHttpOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryPipelineOpts<'a> {
+    /// Pipeline description.
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Pipeline labels.
+    #[builder(setter(into, strip_option), default)]
+    pub labels: Option<Vec<PipelineLabel>>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySocketOpts {
@@ -2582,10 +2627,11 @@ impl Query {
             conn: self.conn.clone(),
         };
     }
-    /// Creates a named sub-pipeline
+    /// Creates a named sub-pipeline.
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline(&self, name: impl Into<String>) -> Query {
         let mut query = self.selection.select("pipeline");
@@ -2599,10 +2645,11 @@ impl Query {
         };
     }
 
-    /// Creates a named sub-pipeline
+    /// Creates a named sub-pipeline.
     ///
     /// # Arguments
     ///
+    /// * `name` - Pipeline name.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn pipeline_opts<'a>(&self, name: impl Into<String>, opts: QueryPipelineOpts<'a>) -> Query {
         let mut query = self.selection.select("pipeline");
@@ -2610,6 +2657,9 @@ impl Query {
         query = query.arg("name", name.into());
         if let Some(description) = opts.description {
             query = query.arg("description", description);
+        }
+        if let Some(labels) = opts.labels {
+            query = query.arg("labels", labels);
         }
 
         return Query {
@@ -2714,12 +2764,12 @@ impl Socket {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
+    LOCKED,
     SHARED,
     PRIVATE,
-    LOCKED,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {
-    UDP,
     TCP,
+    UDP,
 }

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use clap::ArgMatches;
 use dagger_sdk::{Container, HostDirectoryOpts, Query};
 
 #[tokio::main]
@@ -10,6 +11,7 @@ async fn main() -> eyre::Result<()> {
         .subcommand_required(true)
         .subcommand(clap::Command::new("pr"))
         .subcommand(clap::Command::new("release"))
+        .subcommand(clap::Command::new("codegen"))
         .get_matches();
 
     let client = dagger_sdk::connect().await?;
@@ -20,6 +22,7 @@ async fn main() -> eyre::Result<()> {
             return validate_pr(client, base).await;
         }
         Some(("release", subm)) => return release(client, subm).await,
+        Some(("codegen", subm)) => return run_codegen(client, subm).await,
         Some(_) => {
             panic!("invalid subcommand selected!")
         }
@@ -27,6 +30,41 @@ async fn main() -> eyre::Result<()> {
             panic!("no command selected!")
         }
     }
+}
+
+async fn run_codegen(client: Arc<Query>, _subm: &ArgMatches) -> eyre::Result<()> {
+    let docker_cli = client
+        .container()
+        .from("docker:cli")
+        .file("/usr/local/bin/docker");
+    let socket = client.host().unix_socket("/var/run/docker.sock");
+
+    let container = get_dependencies(client).await?;
+
+    let generated_image = container
+        .with_exec(vec!["mkdir", "-p", "/mnt/output"])
+        .with_mounted_file("/usr/bin/docker", docker_cli.id().await?)
+        .with_unix_socket("/var/run/docker.sock", socket.id().await?)
+        .with_exec(vec![
+            "cargo",
+            "run",
+            "--",
+            "generate",
+            "--output",
+            "crates/dagger-sdk/gen.rs",
+        ])
+        .with_exec(vec!["cargo", "fmt", "--all"])
+        .with_exec(vec!["cargo", "fix", "--workspace", "--allow-dirty"])
+        .with_exec(vec!["mv", "crates/dagger-sdk/gen.rs", "/mnt/output/gen.rs"]);
+
+    let _ = generated_image.exit_code().await?;
+
+    generated_image
+        .file("/mnt/output/gen.rs")
+        .export("crates/dagger-sdk/src/gen.rs")
+        .await?;
+
+    Ok(())
 }
 
 async fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), color_eyre::Report> {
@@ -87,14 +125,14 @@ async fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
     );
 
     let cache_cargo_index_dir = client.cache_volume("cargo_index");
-    let cache_cargo_deps = client.cache_volume("cargo_deps");
+    let _cache_cargo_deps = client.cache_volume("cargo_deps");
     let cache_cargo_bin = client.cache_volume("cargo_bin_cache");
 
     let minio_url = "https://github.com/mozilla/sccache/releases/download/v0.3.3/sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz";
 
     let base_image = client
         .container()
-        .from("rust:latest")
+        .from("rustlang/rust:nightly")
         .with_workdir("app")
         .with_exec(vec!["apt-get", "update"])
         .with_exec(vec!["apt-get", "install", "--yes", "libpq-dev", "wget"])
@@ -110,7 +148,7 @@ async fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
             "/usr/local/bin/sccache",
         ])
         .with_exec(vec!["chmod", "+x", "/usr/local/bin/sccache"])
-        .with_env_variable("RUSTC_WRAPPER", "/usr/local/bin/sccache")
+        //.with_env_variable("RUSTC_WRAPPER", "/usr/local/bin/sccache")
         .with_env_variable(
             "AWS_ACCESS_KEY_ID",
             std::env::var("AWS_ACCESS_KEY_ID").unwrap_or("".into()),
@@ -152,8 +190,7 @@ async fn get_dependencies(client: Arc<Query>) -> eyre::Result<Container> {
             "--recipe-path",
             "recipe.json",
         ])
-        .with_mounted_cache("/app/", cache_cargo_deps.id().await?)
-        .with_mounted_directory("/app/", src_dir.id().await?)
+        .with_directory("/app/", src_dir.id().await?)
         .with_exec(vec!["cargo", "build", "--all", "--release"]);
 
     return Ok(builder_start);
