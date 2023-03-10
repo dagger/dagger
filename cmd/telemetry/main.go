@@ -71,6 +71,7 @@ func processJournal(t *Telemetry, entries chan *JournalEntry) error {
 				Started:   v.Started,
 				Completed: v.Completed,
 				Cached:    v.Cached,
+				Error:     v.Error,
 			}
 
 			payload.Inputs = []string{}

@@ -36,6 +36,7 @@ type OpPayload struct {
 	Started   *time.Time `json:"started"`
 	Completed *time.Time `json:"completed"`
 	Cached    bool       `json:"cached"`
+	Error     string     `json:"error"`
 }
 
 func (OpPayload) Type() EventType { return EventType("op") }
