@@ -1,3 +1,4 @@
+use crate::DAGGER_ENGINE_VERSION;
 use crate::{
     cli_session::CliSession, config::Config, connect_params::ConnectParams, downloader::Downloader,
 };
@@ -10,7 +11,9 @@ impl Engine {
     }
 
     async fn from_cli(&self, cfg: &Config) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
-        let cli = Downloader::new("0.3.13".into())?.get_cli().await?;
+        let cli = Downloader::new(DAGGER_ENGINE_VERSION.into())?
+            .get_cli()
+            .await?;
 
         let cli_session = CliSession::new();
 

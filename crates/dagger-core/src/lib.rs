@@ -1,5 +1,7 @@
 #![deny(warnings)]
 
+pub const DAGGER_ENGINE_VERSION: &'static str = "0.4.0";
+
 pub mod cli_session;
 pub mod config;
 pub mod connect_params;
