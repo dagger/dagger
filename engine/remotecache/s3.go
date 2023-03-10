@@ -448,8 +448,7 @@ func (e *s3CacheExporter) Name() string {
 
 func (e *s3CacheExporter) Config() remotecache.Config {
 	return remotecache.Config{
-		// TODO: support for faster compression types like zstd
-		Compression: compression.New(compression.Default),
+		Compression: compression.New(compression.Zstd),
 	}
 }
 
