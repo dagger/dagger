@@ -15,7 +15,7 @@ date: "2023-03-02"
 
 ## Introduction
 
-[The AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/home.html) is a framework that enables developers to use their programming language of choice to describe Infrastructure resources on AWS. However there are several things that the CDK will not support, for example: building your application, running your tests, manage your container images, etc... This is where Dagger comes in handy.
+[The AWS CDK](https://docs.aws.amazon.com/cdk/v2/guide/home.html) is a framework that enables developers to use their programming language of choice to describe Infrastructure resources on AWS. Although the CDK provides several helpers to faciliate building your application, this guide shows how to delegate all the CI tasks (build the application, running the tests, etc...) to a Dagger pipeline and interact with the CDK to manage the infrastructure resources.
 
 This tutorial teaches you how to integrate the AWS Cloud Development Kit (CDK) in a Dagger pipeline. You will learn how to:
 
@@ -111,4 +111,4 @@ The code in `aws.go` implements helpers to call the CDK CLI and read Stacks outp
 
 This tutorial walked you through integrating the AWS CDK into a Dagger pipeline and it gave some guidance to reuse the same example with your own CDK Stack.
 
-Use the [API Key Concepts](../api/975146-concepts.md) page and the [Go SDK Reference](https://pkg.go.dev/dagger.io/dagger) to learn more about Dagger.
+Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go SDK Reference](https://pkg.go.dev/dagger.io/dagger) to learn more about Dagger.
