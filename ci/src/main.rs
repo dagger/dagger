@@ -55,6 +55,7 @@ async fn run_codegen(client: Arc<Query>, _subm: &ArgMatches) -> eyre::Result<()>
         ])
         .with_exec(vec!["cargo", "fmt", "--all"])
         .with_exec(vec!["cargo", "fix", "--workspace", "--allow-dirty"])
+        .with_exec(vec!["cargo", "fmt", "--all"])
         .with_exec(vec!["mv", "crates/dagger-sdk/gen.rs", "/mnt/output/gen.rs"]);
 
     let _ = generated_image.exit_code().await?;

@@ -2,3 +2,42 @@
 command = "cargo"
 args = ["run", "-p", "ci", "--", "codegen"]
 workspace = false
+
+[tasks.build]
+command = "cargo"
+args = ["run", "-p", "ci", "--", "ci"]
+dependencies = ["codegen"]
+workspace = false
+
+[tasks.fmt]
+command = "cargo"
+args = ["fmt", "--all"]
+workspace = false
+
+[tasks.fix]
+command = "cargo"
+args = ["fix", "--workspace", "--allow-dirty"]
+dependencies = ["fmt"]
+workspace = false
+
+[tasks.release_crate]
+command = "cargo"
+args = [
+  "smart-release",
+  "--allow-fully-generated-changelogs",
+  "--update-crates-index",
+  "dagger-sdk",
+]
+dependencies = ["codegen", "fix"]
+workspace = false
+
+[tasks.release_crate_commit]
+command = "cargo"
+args = [
+  "smart-release",
+  "-e",
+  "--allow-fully-generated-changelogs",
+  "--update-crates-index",
+  "dagger-sdk",
+]
+workspace = false

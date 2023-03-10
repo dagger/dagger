@@ -22,13 +22,13 @@ pub struct SecretId(String);
 pub struct SocketId(String);
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
-    pub name: String,
     pub value: String,
+    pub name: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
-    pub value: String,
     pub name: String,
+    pub value: String,
 }
 #[derive(Debug, Clone)]
 pub struct CacheVolume {
@@ -2764,12 +2764,12 @@ impl Socket {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
+    PRIVATE,
     LOCKED,
     SHARED,
-    PRIVATE,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {
-    TCP,
     UDP,
+    TCP,
 }
