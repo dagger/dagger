@@ -25,7 +25,7 @@ This guide explains how to use the Dagger Go SDK to perform all the same operati
 
 This guide assumes that:
 
-- You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
+- You have a Go development environment with Go 1.20 or later. If not, [download and install Go](https://go.dev/doc/install).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Go module with the Dagger Go SDK installed. If not, [install the Dagger Go SDK](../sdk/go/371491-install.md).
 - You have a Docker Hub account. If not, [register for a Docker Hub account](https://hub.docker.com/signup).

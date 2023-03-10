@@ -16,7 +16,7 @@ This tutorial teaches you the basics of using Dagger in Go. You will learn how t
 This tutorial assumes that:
 
 - You have a basic understanding of the Go programming language. If not, [read the Go tutorial](https://go.dev/doc/tutorial/getting-started).
-- You have a Go development environment with Go 1.15 or later. If not, [download and install Go](https://go.dev/doc/install).
+- You have a Go development environment with Go 1.20 or later. If not, [download and install Go](https://go.dev/doc/install).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 :::note
