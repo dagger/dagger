@@ -9,4 +9,24 @@ scalar SocketID
 type Socket {
   "The content-addressed identifier of the socket."
   id: SocketID!
+
+  """
+  Bind the socket to the host namespace at the specified address.
+
+  If family is IP, the address can be either an IPv4 or IPv6 address and port.
+
+  If family is UNIX, the address is the path to the socket file.
+  """
+  bind(
+    address: String!
+    family: NetworkFamily = IP
+  ): Void!
+}
+
+"Network address family"
+enum NetworkFamily {
+  "IPv4 or IPv6"
+  IP
+  "Unix"
+  UNIX
 }

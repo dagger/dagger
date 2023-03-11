@@ -525,6 +525,44 @@ func (r *Container) Run(ctx context.Context) error {
 	return q.Execute(ctx, r.c)
 }
 
+// ContainerSocketOpts contains options for Container.Socket
+type ContainerSocketOpts struct {
+	// The port number for the socket to connect to
+	Port int
+	// The transport layer network protocol.
+	Protocol NetworkProtocol
+}
+
+// Retrieves a socket connecting to a port in this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Container) Socket(opts ...ContainerSocketOpts) *Socket {
+	q := r.q.Select("socket")
+	// `port` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+			break
+		}
+	}
+	// `protocol` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Protocol) {
+			q = q.Arg("protocol", opts[i].Protocol)
+			break
+		}
+	}
+
+	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
 // The error stream of the last executed command.
 // Errors if no command has been executed.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
@@ -2149,6 +2187,32 @@ type Socket struct {
 	c graphql.Client
 }
 
+// SocketBindOpts contains options for Socket.Bind
+type SocketBindOpts struct {
+	Family NetworkFamily
+}
+
+// Bind the socket to the host namespace at the specified address.
+//
+// If family is IP, the address can be either an IPv4 or IPv6 address and port.
+//
+// If family is UNIX, the address is the path to the socket file.
+func (r *Socket) Bind(ctx context.Context, address string, opts ...SocketBindOpts) error {
+	q := r.q.Select("bind")
+	q = q.Arg("address", address)
+	// `family` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Family) {
+			q = q.Arg("family", opts[i].Family)
+			break
+		}
+	}
+
+	var response Void
+	q = q.Bind(&response)
+	return q.Execute(ctx, r.c)
+}
+
 // The content-addressed identifier of the socket.
 func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 	q := r.q.Select("id")
@@ -2178,6 +2242,13 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type NetworkFamily string
+
+const (
+	Ip   NetworkFamily = "IP"
+	Unix NetworkFamily = "UNIX"
 )
 
 type NetworkProtocol string

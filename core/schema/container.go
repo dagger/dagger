@@ -90,6 +90,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"hostname":             router.ToResolver(s.hostname),
 			"endpoint":             router.ToResolver(s.endpoint),
 			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
+			"socket":               router.ToResolver(s.socket),
 		},
 	}
 }
@@ -633,6 +634,19 @@ func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, 
 	return parent.Endpoint(args.Port, args.Scheme)
 }
 
+type containerSocketArgs struct {
+	Port     int
+	Protocol core.NetworkProtocol
+}
+
+func (s *containerSchema) socket(ctx *router.Context, parent *core.Container, args containerSocketArgs) (*core.Socket, error) {
+	if !s.servicesEnabled {
+		return nil, ErrServicesDisabled
+	}
+
+	return parent.Socket(args.Port, args.Protocol)
+}
+
 type containerWithServiceDependencyArgs struct {
 	Service core.ContainerID
 	Alias   string
@@ -650,7 +664,6 @@ type containerWithExposedPortArgs struct {
 	Protocol    core.NetworkProtocol
 	Port        int
 	Description *string
-	Publish     *int
 }
 
 func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
@@ -662,7 +675,6 @@ func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Cont
 		Protocol:    args.Protocol,
 		Port:        args.Port,
 		Description: args.Description,
-		Publish:     args.Publish,
 	})
 }
 

@@ -9,14 +9,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
@@ -31,7 +29,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/zeebo/xxh3"
 )
 
@@ -140,7 +137,6 @@ type ContainerSocket struct {
 // ContainerPort configures a port to expose from the container.
 type ContainerPort struct {
 	Port        int             `json:"port"`
-	Publish     *int            `json:"publish,omitempty"`
 	Protocol    NetworkProtocol `json:"protocol"`
 	Description *string         `json:"description,omitempty"`
 }
@@ -1144,21 +1140,6 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 			return nil, err
 		}
 
-		for _, port := range payload.Ports {
-			if port.Publish != nil {
-				err := publish(ctx, gw, port, payload.Hostname)
-				if err != nil {
-					return nil, fmt.Errorf(
-						"publish %s port %d (host) => %d (container): %w",
-						payload.Hostname,
-						port.Publish,
-						port.Port,
-						err,
-					)
-				}
-			}
-		}
-
 		return gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: stDef.ToPB(),
@@ -1383,6 +1364,28 @@ func (container *Container) Endpoint(port int, scheme string) (string, error) {
 	}
 
 	return endpoint, nil
+}
+
+func (container *Container) Socket(port int, protocol NetworkProtocol) (*Socket, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	if port == 0 {
+		if len(payload.Ports) == 0 {
+			return nil, fmt.Errorf("no ports exposed")
+		}
+
+		port = payload.Ports[0].Port
+		protocol = payload.Ports[0].Protocol
+	}
+
+	if protocol == "" {
+		protocol = NetworkProtocolTCP
+	}
+
+	return NewContainerSocket(container.ID, port, protocol)
 }
 
 func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
@@ -1654,92 +1657,4 @@ func b32(n uint64) string {
 	return base32.HexEncoding.
 		WithPadding(base32.NoPadding).
 		EncodeToString(sum[:])
-}
-
-func publish(ctx context.Context, gw bkgw.Client, port ContainerPort, host string) error {
-	publishedPort := *port.Publish
-
-	// NB: listen synchronously
-	l, err := net.Listen(port.Protocol.Network(), fmt.Sprintf(":%d", publishedPort))
-	if err != nil {
-		return err
-	}
-
-	logrus.Debugf("listening on published port :%d => %s:%d", publishedPort, host, port.Port)
-
-	args := []string{"proxy", host, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())}
-
-	scratchRes, err := result(ctx, gw, llb.Scratch())
-	if err != nil {
-		return err
-	}
-
-	containerReq := bkgw.NewContainerRequest{
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				MountType: pb.MountType_BIND,
-				Ref:       scratchRes.Ref,
-			},
-		},
-		NetMode: pb.NetMode_HOST,
-	}
-
-	go func() {
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				logrus.Warnf("published port :%d accept error: %s", publishedPort, err)
-				break
-			}
-
-			go proxyConn(ctx, gw, containerReq, args, conn)
-		}
-	}()
-
-	return nil
-}
-
-func proxyConn(ctx context.Context, gw bkgw.Client, containerReq bkgw.NewContainerRequest, args []string, conn net.Conn) {
-	defer conn.Close()
-
-	proxyContainer, err := gw.NewContainer(ctx, containerReq)
-	if err != nil {
-		logrus.Errorf("failed to create proxy container: %s", err)
-		return
-	}
-
-	// NB: use a different ctx than the one that'll be interrupted for anything
-	// that needs to run as part of post-interruption cleanup
-	cleanupCtx := context.Background()
-
-	defer proxyContainer.Release(cleanupCtx)
-
-	proc, err := proxyContainer.Start(ctx, bkgw.StartRequest{
-		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
-		Stdin:  conn,
-		Stdout: conn,
-		Stderr: os.Stderr, // TODO(vito)
-	})
-	if err != nil {
-		logrus.Errorf("failed to start proxy process: %s", err)
-		return
-	}
-
-	go func() {
-		<-ctx.Done()
-
-		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
-		if err != nil {
-			logrus.Warnf("failed to kill proxy: %s", err)
-			return
-		}
-	}()
-
-	err = proc.Wait()
-	if err != nil {
-		logrus.Warnf("proxy exited with error: %s", err)
-		return
-	}
 }

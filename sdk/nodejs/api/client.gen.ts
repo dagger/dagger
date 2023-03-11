@@ -177,6 +177,18 @@ export type ContainerPublishOpts = {
   platformVariants?: Container[]
 }
 
+export type ContainerSocketOpts = {
+  /**
+   * The port number for the socket to connect to
+   */
+  port?: number
+
+  /**
+   * The transport layer network protocol.
+   */
+  protocol?: NetworkProtocol
+}
+
 export type ContainerWithDefaultArgsOpts = {
   /**
    * Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
@@ -425,6 +437,20 @@ export type HostWorkdirOpts = {
 export type ID = string & { __ID: never }
 
 /**
+ * Network address family
+ */
+export enum NetworkFamily {
+  /**
+   * IPv4 or IPv6
+   */
+  Ip,
+
+  /**
+   * Unix
+   */
+  Unix,
+}
+/**
  * Transport layer network protocol associated to a port.
  */
 export enum NetworkProtocol {
@@ -505,6 +531,10 @@ export type ClientSocketOpts = {
  * A unique identifier for a secret.
  */
 export type SecretID = string & { __SecretID: never }
+
+export type SocketBindOpts = {
+  family?: NetworkFamily
+}
 
 /**
  * A content-addressed socket identifier.
@@ -1057,6 +1087,31 @@ export class Container extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Retrieves a socket connecting to a port in this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   * @param opts.port The port number for the socket to connect to
+   * @param opts.protocol The transport layer network protocol.
+   */
+  socket(opts?: ContainerSocketOpts): Socket {
+    return new Socket({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "socket",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -3214,6 +3269,28 @@ export class Secret extends BaseClient {
 }
 
 export class Socket extends BaseClient {
+  /**
+   * Bind the socket to the host namespace at the specified address.
+   *
+   * If family is IP, the address can be either an IPv4 or IPv6 address and port.
+   *
+   * If family is UNIX, the address is the path to the socket file.
+   */
+  async bind(address: string, opts?: SocketBindOpts): Promise<Void> {
+    const response: Awaited<Void> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "bind",
+          args: { address, ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
   /**
    * The content-addressed identifier of the socket.
    */

@@ -37,6 +37,10 @@ class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
 
+class Void(Scalar):
+    """Nothing. Used by SDK codegen to skip the return value."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -50,6 +54,16 @@ class CacheSharingMode(Enum):
 
     SHARED = "SHARED"
     """Shares the cache volume amongst many build pipelines"""
+
+
+class NetworkFamily(Enum):
+    """Network address family"""
+
+    IP = "IP"
+    """IPv4 or IPv6"""
+
+    UNIX = "UNIX"
+    """Unix"""
 
 
 class NetworkProtocol(Enum):
@@ -672,6 +686,59 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def run(self) -> Void:
+        """Evaluates the command and returns an error if it exits with a nonzero
+        exit
+        code.
+
+        Returns
+        -------
+        Void
+            Nothing. Used by SDK codegen to skip the return value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("run", _args)
+        return _ctx.execute_sync(Void)
+
+    @typecheck
+    def socket(
+        self,
+        port: Optional[int] = None,
+        protocol: Optional[NetworkProtocol] = None,
+    ) -> "Socket":
+        """Retrieves a socket connecting to a port in this container.
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
+        Parameters
+        ----------
+        port:
+            The port number for the socket to connect to
+        protocol:
+            The transport layer network protocol.
+        """
+        _args = [
+            Arg("port", port, None),
+            Arg("protocol", protocol, None),
+        ]
+        _ctx = self._select("socket", _args)
+        return Socket(_ctx)
 
     @typecheck
     def stderr(self) -> str:
@@ -2610,6 +2677,38 @@ class Secret(Type):
 
 class Socket(Type):
     @typecheck
+    def bind(
+        self,
+        address: str,
+        family: Optional[NetworkFamily] = None,
+    ) -> Void:
+        """Bind the socket to the host namespace at the specified address.
+
+        If family is IP, the address can be either an IPv4 or IPv6 address and
+        port.
+
+        If family is UNIX, the address is the path to the socket file.
+
+        Returns
+        -------
+        Void
+            Nothing. Used by SDK codegen to skip the return value.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("address", address),
+            Arg("family", family, None),
+        ]
+        _ctx = self._select("bind", _args)
+        return _ctx.execute_sync(Void)
+
+    @typecheck
     def id(self) -> SocketID:
         """The content-addressed identifier of the socket.
 
@@ -2642,7 +2741,9 @@ __all__ = [
     "Platform",
     "SecretID",
     "SocketID",
+    "Void",
     "CacheSharingMode",
+    "NetworkFamily",
     "NetworkProtocol",
     "BuildArg",
     "PipelineLabel",

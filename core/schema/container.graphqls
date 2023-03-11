@@ -660,6 +660,22 @@ type Container {
     "Return a URL with the given scheme, eg. http for http://"
     scheme: String
   ): String!
+
+  """
+  Retrieves a socket connecting to a port in this container.
+
+  If no port is specified, the first exposed port is used. If none exist an error is returned.
+
+  If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+  """
+  socket(
+    "The port number for the socket to connect to"
+    port: Int
+    "The transport layer network protocol."
+    protocol: NetworkProtocol = TCP
+  ): Socket!
 }
 
 "A simple key value object that represents an environment variable."

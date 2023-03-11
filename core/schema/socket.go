@@ -29,7 +29,9 @@ func (s *socketSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"socket": router.ToResolver(s.socket),
 		},
-		"Socket": router.ObjectResolver{},
+		"Socket": router.ObjectResolver{
+			"bind": router.ToResolver(s.socketBind),
+		},
 	}
 }
 
@@ -44,4 +46,13 @@ type socketArgs struct {
 // nolint: unparam
 func (s *socketSchema) socket(_ *router.Context, _ any, args socketArgs) (*core.Socket, error) {
 	return core.NewSocket(args.ID), nil
+}
+
+type socketBindArgs struct {
+	Address string
+	Family  core.NetworkFamily
+}
+
+func (s *socketSchema) socketBind(ctx *router.Context, parent *core.Socket, args socketBindArgs) (core.Void, error) {
+	return core.Nothing, parent.Bind(ctx, s.gw, args.Address, args.Family)
 }
