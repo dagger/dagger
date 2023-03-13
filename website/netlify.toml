@@ -91,6 +91,12 @@ status = 302
   to = "https://play.dagger.cloud/embed/:splat"
   status = 200
 
+
+[[redirects]]
+  from = "/_next/*"
+  to = "https://play.dagger.cloud/_next/:splat"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
