@@ -63,14 +63,19 @@ func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
 	defer store.mu.Unlock()
 
 	secretID := core.SecretID(id)
-	// we check if it's the new SecretID format
-	digest, err := secretID.Digest()
-	if err != nil || digest == "" {
-		// if not, we use the legacy SecretID format
+
+	// we check if it's the old SecretID format
+	isOldSecretIDFormat, err := secretID.IsOldFormat()
+	if err != nil {
+		return nil, err
+	}
+
+	if isOldSecretIDFormat {
+		// we use the legacy SecretID format
 		return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
 	}
 
-	// if it is, we use it
+	// we use the new SecretID format
 	plaintext := []byte(store.idToPlaintext[secretID])
 
 	return plaintext, nil
