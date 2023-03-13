@@ -86,6 +86,11 @@ from = "/683293/private-repositories"
 to = "/710884/private-repositories"
 status = 302
 
+[[redirects]]
+  from = "/embed/*"
+  to = "https://play.dagger.cloud/embed/:splat"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
