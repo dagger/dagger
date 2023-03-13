@@ -16,7 +16,7 @@ const Embed = ({id, index}) => {
         onLoad={() => setLoading(false)}
         style={{display: loading ? "hidden" : "inherit"}}
         loading={(index === 0 || !index) ? "eager" : "lazy"}
-        src={`https://play.dagger.cloud/embed/${id}`}></iframe>
+        src={`${window.location.origin}/embed/${id}`}></iframe>
     </div>
   );
 };
