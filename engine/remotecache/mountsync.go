@@ -284,8 +284,8 @@ func execRclone(ctx context.Context, c *dagger.Client, args []string, cacheMount
 		if err != nil {
 			return err
 		}
-		// TODO:(sipsma) use dynamic secrets API for this once available
-		ctr = ctr.WithMountedSecret(v, c.Directory().WithNewFile("token", string(contents)).File("token").Secret())
+		secret := c.SetSecret("token", string(contents))
+		ctr = ctr.WithMountedSecret(v, secret)
 	}
 
 	_, err := ctr.WithExec(args).ExitCode(ctx)
