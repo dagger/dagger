@@ -19,7 +19,7 @@
     "@lifeomic/axios-fetch": "^3.0.1",
     "adm-zip": "^0.5.10",
     "env-paths": "^3.0.0",
-    "execa": "^7.0.0",
+    "execa": "^7.1.0",
     "graphql": "^16.5.0",
     "graphql-request": "^5.1.0",
     "graphql-tag": "^2.12.6",
