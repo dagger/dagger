@@ -13,6 +13,7 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
                 platform: Some(platform.to_string().into()),
             })
             .from("alpine")
+            .with_exec(vec!["echo", "'hello'"])
             .exit_code()
             .await?;
 
@@ -35,6 +36,7 @@ async fn test_issue_30() -> eyre::Result<()> {
                     .unwrap(),
             )
             .from("alpine")
+            .with_exec(vec!["echo", "'hello'"])
             .exit_code()
             .await?;
 
