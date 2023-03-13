@@ -3103,7 +3103,7 @@ export default class Client extends BaseClient {
   }
 
   /**
-   * Set a secret given a user defined name to its plaintext and returns the secret.
+   * Sets a secret given a user defined name to its plaintext and returns the secret.
    * @param name The user defined name for this secret
    * @param plaintext The plaintext of the secret
    */

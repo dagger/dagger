@@ -2549,7 +2549,7 @@ class Client(Root):
 
     @typecheck
     def set_secret(self, name: str, plaintext: str) -> "Secret":
-        """Set a secret given a user defined name to its plaintext and returns
+        """Sets a secret given a user defined name to its plaintext and returns
         the secret.
 
         Parameters

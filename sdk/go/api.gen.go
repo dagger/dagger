@@ -2064,7 +2064,7 @@ func (r *Client) Secret(id SecretID) *Secret {
 	}
 }
 
-// Set a secret given a user defined name to its plaintext and returns the secret.
+// Sets a secret given a user defined name to its plaintext and returns the secret.
 func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	q := r.q.Select("setSecret")
 	q = q.Arg("name", name)
