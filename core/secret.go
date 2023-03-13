@@ -68,17 +68,28 @@ func NewSecretID(name, plaintext string) (SecretID, error) {
 
 	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
 	if err != nil {
-		return SecretID(""), err
+		return "", err
 	}
 	return id, nil
 }
 
 // secretIDPayload is the inner content of a SecretID.
 type secretIDPayload struct {
-	FromFile    FileID `json:"file,omitempty"`
+	// FromFile specifies the FileID it is based off.
+	//
+	// Deprecated: this shouldn't be used as it can leak secrets in the cache.
+	// Use the setSecret API instead.
+	FromFile FileID `json:"file,omitempty"`
+
+	// FromHostEnv specifies the FileID it is based off.
+	//
+	// Deprecated: use the setSecret API instead.
 	FromHostEnv string `json:"host_env,omitempty"`
 
-	Name   string `json:"name,omitempty"`
+	// Name specifies the arbitrary name/id of the secret.
+	Name string `json:"name,omitempty"`
+
+	// Digest represents a digest of the plaintext of the secret.
 	Digest string `json:"digest,omitempty"`
 }
 

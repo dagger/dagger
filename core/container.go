@@ -998,9 +998,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range payload.Secrets {
-		// TODO use the digest, not the ID (because it leaks)
-		// TODO find a way to get the digest from the SecretID
-		// TODO maybe the ID can be name + digest concatenated. Use the secretPayload?
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
 
 		var secretDest string
