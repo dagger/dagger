@@ -7,28 +7,70 @@ use std::sync::Arc;
 use tokio::process::Child;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct CacheId(String);
+pub struct CacheId(pub String);
+
+impl Into<CacheId> for &str {
+    fn into(self) -> CacheId {
+        CacheId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct ContainerId(String);
+pub struct ContainerId(pub String);
+
+impl Into<ContainerId> for &str {
+    fn into(self) -> ContainerId {
+        ContainerId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct DirectoryId(String);
+pub struct DirectoryId(pub String);
+
+impl Into<DirectoryId> for &str {
+    fn into(self) -> DirectoryId {
+        DirectoryId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct FileId(String);
+pub struct FileId(pub String);
+
+impl Into<FileId> for &str {
+    fn into(self) -> FileId {
+        FileId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct Platform(String);
+pub struct Platform(pub String);
+
+impl Into<Platform> for &str {
+    fn into(self) -> Platform {
+        Platform(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct SecretId(String);
+pub struct SecretId(pub String);
+
+impl Into<SecretId> for &str {
+    fn into(self) -> SecretId {
+        SecretId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
-pub struct SocketId(String);
+pub struct SocketId(pub String);
+
+impl Into<SocketId> for &str {
+    fn into(self) -> SocketId {
+        SocketId(self.to_string())
+    }
+}
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
-    pub value: String,
     pub name: String,
+    pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
-    pub name: String,
     pub value: String,
+    pub name: String,
 }
 #[derive(Debug, Clone)]
 pub struct CacheVolume {
@@ -2764,12 +2806,12 @@ impl Socket {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
+    SHARED,
     PRIVATE,
     LOCKED,
-    SHARED,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {
-    UDP,
     TCP,
+    UDP,
 }
