@@ -22,7 +22,7 @@ async fn main() -> eyre::Result<()> {
             let ref_ = client
                 .container_opts(QueryContainerOpts {
                     id: None,
-                    platform: Some(platform.into()),
+                    platform: Some(platform.to_string().into()),
                 })
                 .build_opts(
                     context.id().await?,

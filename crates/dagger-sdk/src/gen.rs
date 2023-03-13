@@ -14,12 +14,24 @@ impl Into<CacheId> for &str {
         CacheId(self.to_string())
     }
 }
+
+impl Into<CacheId> for String {
+    fn into(self) -> CacheId {
+        CacheId(self.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct ContainerId(pub String);
 
 impl Into<ContainerId> for &str {
     fn into(self) -> ContainerId {
         ContainerId(self.to_string())
+    }
+}
+
+impl Into<ContainerId> for String {
+    fn into(self) -> ContainerId {
+        ContainerId(self.clone())
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -30,12 +42,24 @@ impl Into<DirectoryId> for &str {
         DirectoryId(self.to_string())
     }
 }
+
+impl Into<DirectoryId> for String {
+    fn into(self) -> DirectoryId {
+        DirectoryId(self.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct FileId(pub String);
 
 impl Into<FileId> for &str {
     fn into(self) -> FileId {
         FileId(self.to_string())
+    }
+}
+
+impl Into<FileId> for String {
+    fn into(self) -> FileId {
+        FileId(self.clone())
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -46,6 +70,12 @@ impl Into<Platform> for &str {
         Platform(self.to_string())
     }
 }
+
+impl Into<Platform> for String {
+    fn into(self) -> Platform {
+        Platform(self.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
 
@@ -54,12 +84,24 @@ impl Into<SecretId> for &str {
         SecretId(self.to_string())
     }
 }
+
+impl Into<SecretId> for String {
+    fn into(self) -> SecretId {
+        SecretId(self.clone())
+    }
+}
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SocketId(pub String);
 
 impl Into<SocketId> for &str {
     fn into(self) -> SocketId {
         SocketId(self.to_string())
+    }
+}
+
+impl Into<SocketId> for String {
+    fn into(self) -> SocketId {
+        SocketId(self.clone())
     }
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]

@@ -18,5 +18,11 @@ pub fn render_scalar(t: &FullType) -> eyre::Result<rust::Tokens> {
                 $(t.name.pipe(|n| format_name(n)))(self.to_string())
             }
         }
+
+        impl Into<$(t.name.pipe(|n| format_name(n)))> for String {
+            fn into(self) -> $(t.name.pipe(|n| format_name(n))) {
+                $(t.name.pipe(|n| format_name(n)))(self.clone())
+            }
+        }
     })
 }
