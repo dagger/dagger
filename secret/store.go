@@ -64,8 +64,8 @@ func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
 
 	secretID := core.SecretID(id)
 	// we check if it's the new SecretID format
-	_, err := secretID.Digest()
-	if err != nil {
+	digest, err := secretID.Digest()
+	if err != nil || digest == "" {
 		// if not, we use the legacy SecretID format
 		return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
 	}
