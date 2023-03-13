@@ -6,7 +6,56 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.17 (2023-03-13)
+
+### Bug Fixes
+
+ - <csr-id-1bfd084cd28e2b984c61de7f3f9a065cc41be007/> make sure tests have a command to execute
+ - <csr-id-5593fce2e16e0aa97a2e6843f15d3bb1121048f5/> remove unused imports
+ - <csr-id-c025d1742482d701946c292dcf104421d3cade8e/> add support for String as well
+ - <csr-id-d7317e5cf34ee84a7b092357f5fbb15cd2bae2e3/> add public tuple field and into func
+ - <csr-id-44fa0240f8197f49fdf942b5c3d89079b59195d1/> update rust crate futures to 0.3.27
+
+### Other
+
+ - <csr-id-f67928155f02076cbb41abd4010523879ff3caf1/> initial issue
+
+### Refactor
+
+ - <csr-id-2cc0231c5f29993081f0f7e15e44cac95a7d6086/> remove export and instead use exitcode
+ - <csr-id-9ba01396cb44ee02cf7a16008e3f0bdae9f78754/> move issues to actual tests and refactor
+ - <csr-id-e9e35edb1cb67eee8cc033212aba3b1888def78f/> move issues to another folder
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 9 commits contributed to the release over the course of 2 calendar days.
+ - 2 days passed between releases.
+ - 9 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - make sure tests have a command to execute ([`1bfd084`](https://github.com/kjuulh/dagger-rs/commit/1bfd084cd28e2b984c61de7f3f9a065cc41be007))
+    - remove unused imports ([`5593fce`](https://github.com/kjuulh/dagger-rs/commit/5593fce2e16e0aa97a2e6843f15d3bb1121048f5))
+    - remove export and instead use exitcode ([`2cc0231`](https://github.com/kjuulh/dagger-rs/commit/2cc0231c5f29993081f0f7e15e44cac95a7d6086))
+    - move issues to actual tests and refactor ([`9ba0139`](https://github.com/kjuulh/dagger-rs/commit/9ba01396cb44ee02cf7a16008e3f0bdae9f78754))
+    - add support for String as well ([`c025d17`](https://github.com/kjuulh/dagger-rs/commit/c025d1742482d701946c292dcf104421d3cade8e))
+    - move issues to another folder ([`e9e35ed`](https://github.com/kjuulh/dagger-rs/commit/e9e35edb1cb67eee8cc033212aba3b1888def78f))
+    - add public tuple field and into func ([`d7317e5`](https://github.com/kjuulh/dagger-rs/commit/d7317e5cf34ee84a7b092357f5fbb15cd2bae2e3))
+    - initial issue ([`f679281`](https://github.com/kjuulh/dagger-rs/commit/f67928155f02076cbb41abd4010523879ff3caf1))
+    - update rust crate futures to 0.3.27 ([`44fa024`](https://github.com/kjuulh/dagger-rs/commit/44fa0240f8197f49fdf942b5c3d89079b59195d1))
+</details>
+
 ## v0.2.16 (2023-03-10)
+
+<csr-id-e642778d9028726dfb07217814e15ad1dd3b83f2/>
 
 ### Chore
 
@@ -32,7 +81,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 6 commits contributed to the release over the course of 13 calendar days.
+ - 7 commits contributed to the release over the course of 13 calendar days.
  - 13 days passed between releases.
  - 6 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -44,6 +93,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-core v0.2.8, dagger-sdk v0.2.16 ([`f390eac`](https://github.com/kjuulh/dagger-rs/commit/f390eac29f1d041d18d2207a5aa0a8d993aab68c))
     - fix tasks ([`e642778`](https://github.com/kjuulh/dagger-rs/commit/e642778d9028726dfb07217814e15ad1dd3b83f2))
     - with dagger-engine v.0.4.0 ([`7133bfa`](https://github.com/kjuulh/dagger-rs/commit/7133bfae9508bc5977548e373c49342a1248d6e4))
     - fix missing await in connect ([`13b7805`](https://github.com/kjuulh/dagger-rs/commit/13b7805e7e6fcf47e0a1318adcc25b4ab773a3c9))
