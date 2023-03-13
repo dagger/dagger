@@ -86,12 +86,14 @@ from = "/683293/private-repositories"
 to = "/710884/private-repositories"
 status = 302
 
+# redirect to the playground's embed to maintain same origin
+# see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
   from = "/embed/*"
   to = "https://play.dagger.cloud/embed/:splat"
   status = 200
 
-
+# redirect to the playground's Next.js build artifacts
 [[redirects]]
   from = "/_next/*"
   to = "https://play.dagger.cloud/_next/:splat"
