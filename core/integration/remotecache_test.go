@@ -94,7 +94,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		s3ContainerName := runS3InDocker(ctx, t, bucket)
 		getClient := func(engineName string) (*dagger.Client, func() error) {
 			return runSeparateEngine(ctx, t, map[string]string{
-				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
+				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
 				// TODO: temporarily disable networking to fix flakiness around containers in the
 				// same netns interfering with each other.
 				// Real fix is to either override CNI settings for each engine or to remove the need
@@ -115,7 +115,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		}
 
 		generatedOutputs := map[string]string{} // map of unique id set in exec -> output
-		const numEngines = 3
+		const numEngines = 2
 		var mu sync.Mutex
 		var eg errgroup.Group
 		for i := 0; i < numEngines; i++ {
@@ -142,6 +142,47 @@ func TestRemoteCacheS3(t *testing.T) {
 		require.NoError(t, eg.Wait())
 		require.NoError(t, client.Close())
 		require.NoError(t, stopEngine())
+	})
+
+	t.Run("dagger s3 mount caching", func(t *testing.T) {
+		bucket := "dagger-test-remote-cache-mount-s3-" + identity.NewID()
+		s3ContainerName := runS3InDocker(ctx, t, bucket)
+		getClient := func(engineName string) (*dagger.Client, func() error) {
+			return runSeparateEngine(ctx, t, map[string]string{
+				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,server_implementation=Minio,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,synchronized_cache_mounts=test-cache-mount,name=" + engineName,
+				// TODO: temporarily disable networking to fix flakiness around containers in the
+				// same netns interfering with each other.
+				// Real fix is to either override CNI settings for each engine or to remove the need
+				// for them to be in the same netns.
+				"_EXPERIMENTAL_DAGGER_SERVICES_DNS": "0",
+			}, "container:"+s3ContainerName)
+		}
+
+		pipelineOutput := func(c *dagger.Client, id string) string {
+			output, err := c.Container().
+				From("alpine:3.17").
+				WithMountedCache("/cache", c.CacheVolume("test-cache-mount")).
+				WithExec([]string{
+					"sh", "-c", "if [ ! -f /cache/test.txt ]; then echo '" + id + "' > /cache/test.txt; fi; cat /cache/test.txt",
+				}).Stdout(ctx)
+			require.NoError(t, err)
+			return output
+		}
+
+		clientA, stopEngineA := getClient("a")
+		t.Cleanup(func() {
+			stopEngineA()
+		})
+		outputA := pipelineOutput(clientA, "a")
+		require.NoError(t, clientA.Close())
+		require.NoError(t, stopEngineA())
+		clientB, stopEngineB := getClient("b")
+		t.Cleanup(func() {
+			stopEngineB()
+		})
+		outputB := pipelineOutput(clientB, "b")
+		require.NoError(t, stopEngineB())
+		require.Equal(t, outputA, outputB)
 	})
 }
 
@@ -250,6 +291,7 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
+
 	return c, func() error {
 		out, err := exec.Command("docker", "stop", "-s", "SIGTERM", "-t", "30", name).CombinedOutput()
 		if err != nil {

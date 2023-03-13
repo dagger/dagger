@@ -110,6 +110,7 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		}
 		platform = *args.Platform
 	}
+
 	ctr, err := core.NewContainer(args.ID, parent.PipelinePath(), platform)
 	if err != nil {
 		return nil, err

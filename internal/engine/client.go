@@ -76,10 +76,12 @@ func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, err
 	// FIXME Does output "failed to wait: signal: broken pipe"
 	defer c.Close()
 
-	// Try to connect every 100ms up to 100 times (10 seconds total)
+	// Try to connect every 100ms up to 1800 times (3 minutes total)
+	// NOTE: the long timeout accounts for startup time of the engine when
+	// it needs to synchronize cache state.
 	const (
 		retryPeriod   = 100 * time.Millisecond
-		retryAttempts = 100
+		retryAttempts = 1800
 	)
 
 	var workerInfo []*bkclient.WorkerInfo

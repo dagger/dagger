@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,8 +30,9 @@ import (
 )
 
 const (
-	blobsSubprefix     = "blobs/"
-	manifestsSubprefix = "manifests/"
+	blobsSubprefix       = "blobs/"
+	manifestsSubprefix   = "manifests/"
+	cacheMountsSubprefix = "cacheMounts/"
 
 	experimentalDaggerS3CacheType = "experimental_dagger_s3"
 )
@@ -79,6 +81,26 @@ func (s settings) secretKey() string {
 
 func (s settings) sessionToken() string {
 	return s["session_token"]
+}
+
+// This changes rclone's behavior to match a particular s3 implementation.
+// It's currently only needed so our tests can specify Minio, which they use
+// instead of the real AWS S3.
+func (s settings) serverImplementation() string {
+	v := s["server_implementation"]
+	if v == "" {
+		return "AWS"
+	}
+	return v
+}
+
+func (s settings) synchronizedCacheMounts() []string {
+	// TODO:(sipsma) breaks w/ ';' in cache mount name, but that'll go away with operator api
+	split := strings.Split(s["synchronized_cache_mounts"], ";")
+	if len(split) == 1 && split[0] == "" {
+		return nil
+	}
+	return split
 }
 
 type s3CacheManager struct {

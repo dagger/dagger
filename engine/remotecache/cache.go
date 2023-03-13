@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/dagger/dagger/internal/engine"
@@ -96,6 +97,21 @@ func resolveCacheImporterFunc(sm *session.Manager, cs content.Store, hosts docke
 		}
 		return impl, desc, nil
 	}
+}
+
+func StartCacheMountSynchronization(ctx context.Context, daggerClient *dagger.Client) (func(ctx context.Context) error, error) {
+	stop := func(ctx context.Context) error { return nil } // default to no-op
+	cacheType, attrs, err := cacheConfigFromEnv()
+	if err != nil {
+		return stop, err
+	}
+	switch cacheType {
+	case "experimental_dagger_s3":
+		stop, err = startS3CacheMountSync(ctx, attrs, daggerClient)
+	default:
+		bklog.G(ctx).Debugf("unsupported cache type %s, defaulting to no cache mount synchronization", cacheType)
+	}
+	return stop, err
 }
 
 func cacheConfigFromEnv() (string, map[string]string, error) {
