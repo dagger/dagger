@@ -65,9 +65,12 @@ func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecret
 }
 
 func (s *secretSchema) plaintext(ctx *router.Context, parent core.Secret, args any) (string, error) {
-	digest, err := parent.ID.Digest()
-	// if it is the old format that doesn't use digests
-	if err != nil || digest == "" {
+	isOld, err := parent.ID.IsOldFormat()
+	if err != nil {
+		return "", err
+	}
+
+	if isOld {
 		bytes, err := parent.Plaintext(ctx, s.gw)
 		return string(bytes), err
 	}

@@ -50,12 +50,25 @@ func (id SecretID) Digest() (string, error) {
 	return secretIDPayload.Digest, nil
 }
 
+func (id SecretID) IsOldFormat() (bool, error) {
+	payload, err := id.decode()
+	if err != nil {
+		return false, err
+	}
+
+	if payload.FromFile == "" && payload.FromHostEnv == "" {
+		return false, nil
+	}
+
+	return true, nil
+}
+
 func NewSecretID(name, plaintext string) (SecretID, error) {
 	digestBytes := sha256.Sum256([]byte(plaintext))
 
 	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
 	if err != nil {
-		return id, err
+		return SecretID(""), err
 	}
 	return id, nil
 }
@@ -93,6 +106,7 @@ func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
+
 	if payload.FromFile != "" {
 		file := &File{ID: payload.FromFile}
 		return file.Contents(ctx, gw)
