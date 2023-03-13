@@ -1,3 +1,5 @@
+mod issues;
+
 use dagger_sdk::{connect, ContainerExecOptsBuilder};
 use pretty_assertions::assert_eq;
 
