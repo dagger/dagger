@@ -141,9 +141,7 @@ func TestSecretPlaintext(t *testing.T) {
 }
 
 func TestNewSecret(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
+	c, ctx := connect(t)
 	defer c.Close()
 
 	secretValue := "very-secret-text"
