@@ -1,4 +1,4 @@
-package main
+package telemetry
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ const (
 	flushInterval = 100 * time.Millisecond
 	queueSize     = 2048
 
-	pushURL = "https://api.us-east.tinybird.co/v0/events?name=events"
+	pushURL = "https://api.dagger.cloud/events"
 )
 
 type Telemetry struct {
@@ -33,7 +33,7 @@ type Telemetry struct {
 	doneCh chan struct{}
 }
 
-func NewTelemetry() *Telemetry {
+func New() *Telemetry {
 	t := &Telemetry{
 		runID:  uuid.NewString(),
 		url:    pushURL,
@@ -46,6 +46,7 @@ func NewTelemetry() *Telemetry {
 	if token := os.Getenv("DAGGER_CLOUD_TOKEN"); token != "" {
 		t.token = token
 		t.enable = true
+		fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
 	}
 	go t.start()
 	return t
@@ -125,8 +126,6 @@ func (t *Telemetry) send() {
 		}
 	}
 
-	fmt.Fprintf(os.Stdout, "===\n%s===\n", payload.String())
-
 	req, err := http.NewRequest(http.MethodPost, t.url, bytes.NewReader(payload.Bytes()))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "err: %v\n", err)
@@ -141,7 +140,6 @@ func (t *Telemetry) send() {
 		return
 	}
 	defer resp.Body.Close()
-	fmt.Fprintf(os.Stderr, "%s %db via %s → %s %s\n", req.Method, req.ContentLength, req.Proto, resp.Status, resp.Proto)
 }
 
 func (t *Telemetry) Flush() {

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/telemetry"
 )
 
 func main() {
@@ -24,7 +25,7 @@ func main() {
 	}
 	journal := args[0]
 
-	t := NewTelemetry()
+	t := telemetry.New()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -47,7 +48,7 @@ func main() {
 	}
 }
 
-func processJournal(t *Telemetry, entries chan *JournalEntry) error {
+func processJournal(t *telemetry.Telemetry, entries chan *JournalEntry) error {
 	for entry := range entries {
 		for _, v := range entry.Event.Vertexes {
 			id := v.Digest.String()
@@ -62,7 +63,7 @@ func processJournal(t *Telemetry, entries chan *JournalEntry) error {
 				}
 			}
 
-			payload := OpPayload{
+			payload := telemetry.OpPayload{
 				OpID:     id,
 				OpName:   custom.Name,
 				Internal: custom.Internal,
@@ -83,7 +84,7 @@ func processJournal(t *Telemetry, entries chan *JournalEntry) error {
 		}
 
 		for _, l := range entry.Event.Logs {
-			t.Push(LogPayload{
+			t.Push(telemetry.LogPayload{
 				OpID:   l.Vertex.String(),
 				Data:   string(l.Data),
 				Stream: l.Stream,

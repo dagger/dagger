@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -207,6 +208,13 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 		readers = append(readers, startOpts.RawBuildkitStatus)
 	}
 
+	// (Optionally) Upload Telemetry
+	telemetryCh := make(chan *bkclient.SolveStatus)
+	readers = append(readers, telemetryCh)
+	eg.Go(func() error {
+		return uploadTelemetry(telemetryCh)
+	})
+
 	// Print events to the console
 	if startOpts.LogOutput != nil {
 		ch := make(chan *bkclient.SolveStatus)
@@ -300,6 +308,57 @@ func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.
 	for _, w := range readers {
 		close(w)
 	}
+}
+
+func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
+	t := telemetry.New()
+
+	for ev := range ch {
+		ts := time.Now().UTC()
+
+		for _, v := range ev.Vertexes {
+			id := v.Digest.String()
+
+			var custom pipeline.CustomName
+			if json.Unmarshal([]byte(v.Name), &custom) != nil {
+				custom.Name = v.Name
+				if pg := v.ProgressGroup.GetId(); pg != "" {
+					if err := json.Unmarshal([]byte(pg), &custom.Pipeline); err != nil {
+						return err
+					}
+				}
+			}
+
+			payload := telemetry.OpPayload{
+				OpID:     id,
+				OpName:   custom.Name,
+				Internal: custom.Internal,
+				Pipeline: custom.Pipeline,
+
+				Started:   v.Started,
+				Completed: v.Completed,
+				Cached:    v.Cached,
+				Error:     v.Error,
+			}
+
+			payload.Inputs = []string{}
+			for _, input := range v.Inputs {
+				payload.Inputs = append(payload.Inputs, input.String())
+			}
+
+			t.Push(payload, ts)
+		}
+
+		for _, l := range ev.Logs {
+			t.Push(telemetry.LogPayload{
+				OpID:   l.Vertex.String(),
+				Data:   string(l.Data),
+				Stream: l.Stream,
+			}, l.Timestamp)
+		}
+	}
+
+	return nil
 }
 
 func NormalizePaths(workdir, configPath string) (string, string, error) {
