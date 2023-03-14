@@ -9,6 +9,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -120,7 +121,7 @@ func TestFileExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	file := c.Container().From("alpine:3.16.2").File("/etc/alpine-release")
+	file := c.Container().From(image.Alpine).File("/etc/alpine-release")
 
 	t.Run("to absolute path", func(t *testing.T) {
 		dest := filepath.Join(targetDir, "some-file")
@@ -131,7 +132,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
-		require.Equal(t, "3.16.2\n", string(contents))
+		require.Equal(t, "3.17.2\n", string(contents))
 
 		entries, err := ls(targetDir)
 		require.NoError(t, err)
@@ -145,7 +146,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
-		require.Equal(t, "3.16.2\n", string(contents))
+		require.Equal(t, "3.17.2\n", string(contents))
 
 		entries, err := ls(wd)
 		require.NoError(t, err)
@@ -183,7 +184,7 @@ func TestFileWithTimestamps(t *testing.T) {
 		WithTimestamps(int(reallyImportantTime.Unix()))
 
 	ls, err := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithMountedFile("/file", file).
 		WithEnvVariable("RANDOM", identity.NewID()).
 		WithExec([]string{"stat", "/file"}).

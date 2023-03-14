@@ -7,6 +7,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -44,7 +45,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 }
 
 func goBase(gw bkgw.Client) llb.State {
-	return llb.Image("golang:1.20.0-alpine", llb.WithMetaResolver(gw)).
+	return llb.Image(image.GoAlpine, llb.WithMetaResolver(gw)).
 		Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root()
 }
 

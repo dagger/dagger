@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 )
 
 func ExampleContainer() {
@@ -18,7 +19,7 @@ func ExampleContainer() {
 	}
 	defer client.Close()
 
-	alpine := client.Container().From("alpine:3.16.2")
+	alpine := client.Container().From(image.Alpine)
 
 	out, err := alpine.Exec(dagger.ContainerExecOpts{
 		Args: []string{"cat", "/etc/alpine-release"},
@@ -88,7 +89,7 @@ func ExampleContainer_WithEnvVariable() {
 	}
 	defer client.Close()
 
-	container := client.Container().From("alpine:3.16.2")
+	container := client.Container().From(image.Alpine)
 
 	container = container.WithEnvVariable("FOO", "bar")
 
@@ -116,7 +117,7 @@ func ExampleContainer_WithMountedDirectory() {
 		WithNewFile("hello.txt", "Hello, world!").
 		WithNewFile("goodbye.txt", "Goodbye, world!")
 
-	container := client.Container().From("alpine:3.16.2")
+	container := client.Container().From(image.Alpine)
 
 	container = container.WithMountedDirectory("/mnt", dir)
 
@@ -144,7 +145,7 @@ func ExampleContainer_WithMountedCache() {
 
 	cache := client.CacheVolume(cacheKey)
 
-	container := client.Container().From("alpine:3.16.2")
+	container := client.Container().From(image.Alpine)
 
 	container = container.WithMountedCache("/cache", cache)
 

@@ -8,6 +8,7 @@ import (
 	"runtime"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 )
 
 const (
@@ -96,7 +97,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 	}
 
 	return c.Container().
-		From("golang:1.20.0-alpine").
+		From(image.GoAlpine).
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 		Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "build-base"}}).
 		WithEnvVariable("CGO_ENABLED", "0").

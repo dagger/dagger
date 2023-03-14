@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -36,7 +37,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithExec([]string{"uname", "-m"})
 		variants = append(variants, ctr)
 
@@ -134,7 +135,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	require.NoError(t, err)
 
 	// pull the images, mount them all into a container and ensure the binaries are the right platform
-	ctr := c.Container().From("alpine:3.16").WithExec([]string{"apk", "add", "file"})
+	ctr := c.Container().From(image.Alpine).WithExec([]string{"apk", "add", "file"})
 
 	cmds := make([]string, 0, len(platformToFileArch))
 	for platform, uname := range platformToFileArch {
@@ -171,7 +172,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
 		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16").
+			From(image.Alpine).
 			WithMountedCache("/cache", cache).
 			WithExec([]string{"sh", "-x", "-c", strings.Join([]string{
 				"mkdir -p /cache/" + randomID + string(platform),
@@ -184,7 +185,7 @@ func TestPlatformCacheMounts(t *testing.T) {
 	}
 
 	exit, err := c.Container().
-		From("alpine:3.16").
+		From(image.Alpine).
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
 		ExitCode(ctx)

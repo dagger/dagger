@@ -16,6 +16,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -240,7 +241,7 @@ func TestContainerWithRootFS(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, exitCode, 0)
 
-	alpine315 := c.Container().From("alpine:3.15.6")
+	alpine315 := c.Container().From(image.Alpine)
 
 	varVal := "testing123"
 
@@ -417,7 +418,7 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	execWithMount := c.Container().From("alpine:3.16.2").
+	execWithMount := c.Container().From(image.Alpine).
 		WithMountedDirectory("/mnt", c.Directory()).
 		WithExec([]string{"sh", "-c", "echo hello; echo goodbye >/dev/stderr"}, dagger.ContainerWithExecOpts{
 			RedirectStdout: "/mnt/out",
@@ -902,7 +903,7 @@ func TestContainerLabel(t *testing.T) {
 	defer c.Close()
 
 	t.Run("container with new label", func(t *testing.T) {
-		label, err := c.Container().From("alpine:3.16.2").WithLabel("FOO", "BAR").Label(ctx, "FOO")
+		label, err := c.Container().From(image.Alpine).WithLabel("FOO", "BAR").Label(ctx, "FOO")
 
 		require.NoError(t, err)
 		require.Contains(t, label, "BAR")
@@ -1511,7 +1512,7 @@ func TestContainerWithDirectory(t *testing.T) {
 		Directory("some-dir")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithWorkdir("/workdir").
 		WithDirectory("with-dir", dir)
 
@@ -1530,7 +1531,7 @@ func TestContainerWithDirectory(t *testing.T) {
 		WithNewFile("mounted-file", "mounted-content")
 
 	ctr = c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithWorkdir("/workdir").
 		WithMountedDirectory("mnt/mount", mount).
 		WithDirectory("mnt/mount/dst/with-dir", dir)
@@ -1547,7 +1548,7 @@ func TestContainerWithDirectory(t *testing.T) {
 	// Test with a relative mount
 	mnt := c.Directory().WithNewDirectory("/a/b/c")
 	ctr = c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithMountedDirectory("/mnt", mnt)
 	dir = c.Directory().
 		WithNewDirectory("/foo").
@@ -1570,7 +1571,7 @@ func TestContainerWithFile(t *testing.T) {
 		File("some-file")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithWorkdir("/workdir").
 		WithFile("target-file", file)
 
@@ -1592,7 +1593,7 @@ func TestContainerWithNewFile(t *testing.T) {
 	defer c.Close()
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithWorkdir("/workdir").
 		WithNewFile("some-file", dagger.ContainerWithNewFileOpts{
 			Contents: "some-content",
@@ -1704,7 +1705,7 @@ func TestContainerReplacedMounts(t *testing.T) {
 	upper := c.Directory().WithNewFile("some-file", "upper-content")
 
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithMountedDirectory("/mnt/dir", lower)
 
 	t.Run("initial content is lower", func(t *testing.T) {
@@ -2455,7 +2456,7 @@ func TestContainerPublish(t *testing.T) {
 
 	testRef := registryRef("container-publish")
 	pushedRef, err := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
@@ -2464,7 +2465,7 @@ func TestContainerPublish(t *testing.T) {
 	contents, err := c.Container().
 		From(pushedRef).Rootfs().File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
-	require.Equal(t, contents, "3.16.2\n")
+	require.Equal(t, contents, "3.17.2\n")
 }
 
 func TestExecFromScratch(t *testing.T) {
@@ -2499,7 +2500,7 @@ func TestContainerMultipleMounts(t *testing.T) {
 	two := c.Host().Directory(dir).File("two")
 	three := c.Host().Directory(dir).File("three")
 
-	build := c.Container().From("alpine:3.16.2").
+	build := c.Container().From(image.Alpine).
 		WithMountedFile("/example/one", one).
 		WithMountedFile("/example/two", two).
 		WithMountedFile("/example/three", three)
@@ -2525,7 +2526,7 @@ func TestContainerExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	ctr := c.Container().From("alpine:3.16.2")
+	ctr := c.Container().From(image.Alpine)
 
 	t.Run("to absolute dir", func(t *testing.T) {
 		imagePath := filepath.Join(dest, "image.tar")
@@ -2572,7 +2573,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	variants := make([]*dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithExec([]string{"uname", "-m"})
 
 		variants = append(variants, ctr)
@@ -2607,7 +2608,7 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 		WithNewDirectory("/top/sub-dir/sub-file").
 		Directory("/top") // <-- the important part!
 	ctr := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithMountedDirectory("/mnt", mnt)
 
 	dir := c.Directory().
@@ -2672,7 +2673,7 @@ func TestContainerWithUnixSocket(t *testing.T) {
 	echo := c.Directory().WithNewFile("main.go", echoSocketSrc).File("main.go")
 
 	ctr := c.Container().
-		From("golang:1.20.0-alpine").
+		From(image.GoAlpine).
 		WithMountedFile("/src/main.go", echo).
 		WithUnixSocket("/tmp/test.sock", c.Host().UnixSocket(sock)).
 		WithExec([]string{"go", "run", "/src/main.go", "/tmp/test.sock", "hello"})
@@ -2720,7 +2721,7 @@ func TestContainerExecError(t *testing.T) {
 
 	t.Run("includes output of failed exec in error", func(t *testing.T) {
 		_, err = c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 			)}).
@@ -2733,7 +2734,7 @@ func TestContainerExecError(t *testing.T) {
 
 	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
 		_, err = c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithExec(
 				[]string{"sh", "-c", fmt.Sprintf(
 					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
@@ -2762,7 +2763,7 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	defer c.Close()
 
 	testRef := privateRegistryRef("container-with-registry-auth")
-	container := c.Container().From("alpine:3.16.2")
+	container := c.Container().From(image.Alpine)
 
 	// Push without credentials should fail
 	_, err = container.Publish(ctx, testRef)
@@ -2865,7 +2866,7 @@ func TestContainerImageRef(t *testing.T) {
 			Directory("some-dir")
 
 		ctr := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithWorkdir("/workdir").
 			WithDirectory("with-dir", dir)
 
@@ -2904,7 +2905,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	out, err := c.Container().From("alpine:3.16.2").
+	out, err := c.Container().From(image.Alpine).
 		WithExec([]string{"cat", "/proc/self/status"}).
 		Stdout(ctx)
 	require.NoError(t, err)
@@ -2914,7 +2915,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	require.Contains(t, out, "CapBnd:\t00000000a80425fb")
 	require.Contains(t, out, "CapAmb:\t0000000000000000")
 
-	out, err = c.Container().From("alpine:3.16.2").
+	out, err = c.Container().From(image.Alpine).
 		WithExec([]string{"cat", "/proc/self/status"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
@@ -2974,15 +2975,15 @@ func TestContainerNoExecError(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	_, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
+	_, err := c.Container().From(image.Alpine).ExitCode(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 
-	_, err = c.Container().From("alpine:3.16.2").Stdout(ctx)
+	_, err = c.Container().From(image.Alpine).Stdout(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 
-	_, err = c.Container().From("alpine:3.16.2").Stderr(ctx)
+	_, err = c.Container().From(image.Alpine).Stderr(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 }

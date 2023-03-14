@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/stretchr/testify/require"
 )
 
@@ -24,7 +25,7 @@ func TestHostWorkdir(t *testing.T) {
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -37,7 +38,7 @@ func TestHostWorkdir(t *testing.T) {
 		require.NoError(t, err)
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -67,7 +68,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -81,7 +82,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -95,7 +96,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -110,7 +111,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -125,7 +126,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -253,7 +254,7 @@ func TestHostVariable(t *testing.T) {
 	require.Equal(t, "hello", varValue)
 
 	env, err := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithSecretVariable("SECRET", secret.Secret()).
 		WithExec([]string{"env"}).
 		Stdout(ctx)

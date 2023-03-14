@@ -5,6 +5,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/dagger/dagger/internal/image"
 	"github.com/stretchr/testify/require"
 )
 
@@ -69,7 +70,7 @@ func TestContainer(t *testing.T) {
 
 	alpine := c.
 		Container().
-		From("alpine:3.16.2")
+		From(image.Alpine)
 
 	contents, err := alpine.
 		FS().
@@ -108,7 +109,7 @@ func TestConnectOption(t *testing.T) {
 
 	_, err = c.
 		Container().
-		From("alpine:3.16.1").
+		From(image.Alpine).
 		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)

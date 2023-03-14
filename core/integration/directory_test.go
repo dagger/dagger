@@ -8,6 +8,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -225,7 +226,7 @@ func TestDirectoryWithDirectory(t *testing.T) {
 			WithNewFile("some-file", "some content", dagger.DirectoryWithNewFileOpts{Permissions: 0444}).
 			WithNewDirectory("some-dir", dagger.DirectoryWithNewDirectoryOpts{Permissions: 0444}).
 			WithNewFile("some-dir/sub-file", "sub-content", dagger.DirectoryWithNewFileOpts{Permissions: 0444})
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr := c.Container().From(image.Alpine).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-ld", "/permissions-test"}).Stdout(ctx)
 
@@ -371,7 +372,7 @@ func TestDirectoryWithFile(t *testing.T) {
 				"this should have rwxrwxrwx permissions",
 				dagger.DirectoryWithNewFileOpts{Permissions: 0777})
 
-		ctr := c.Container().From("alpine").WithDirectory("/permissions-test", dir)
+		ctr := c.Container().From(image.Alpine).WithDirectory("/permissions-test", dir)
 
 		stdout, err := ctr.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -381,7 +382,7 @@ func TestDirectoryWithFile(t *testing.T) {
 			WithNewFile(
 				"file-with-permissions",
 				"this should have rw-r--r-- permissions")
-		ctr2 := c.Container().From("alpine").WithDirectory("/permissions-test", dir2)
+		ctr2 := c.Container().From(image.Alpine).WithDirectory("/permissions-test", dir2)
 		stdout2, err := ctr2.WithExec([]string{"ls", "-l", "/permissions-test/file-with-permissions"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout2, "rw-r--r--")
@@ -397,7 +398,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 	reallyImportantTime := time.Date(1985, 10, 26, 8, 15, 0, 0, time.UTC)
 
 	dir := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithExec([]string{"sh", "-c", `
 		  mkdir output
 			touch output/some-file
@@ -409,7 +410,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 	t.Run("changes file and directory timestamps recursively", func(t *testing.T) {
 		ls, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
 			WithExec([]string{"sh", "-c", "ls -al /dir && ls -al /dir/sub-dir"}).
@@ -422,7 +423,7 @@ func TestDirectoryWithTimestamps(t *testing.T) {
 
 	t.Run("results in stable tar archiving", func(t *testing.T) {
 		content, err := c.Container().
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithMountedDirectory("/dir", dir).
 			WithEnvVariable("RANDOM", identity.NewID()).
 			// NB: there's a gotcha here: we need to tar * and not . because the
@@ -581,7 +582,7 @@ func TestDirectoryExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	dir := c.Container().From("alpine:3.16.2").Directory("/etc/profile.d")
+	dir := c.Container().From(image.Alpine).Directory("/etc/profile.d")
 
 	t.Run("to absolute dir", func(t *testing.T) {
 		ok, err := dir.Export(ctx, dest)

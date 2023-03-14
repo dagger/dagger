@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -30,7 +31,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	}
 
 	pipelineOutput := func(c *dagger.Client) string {
-		output, err := c.Container().From("alpine:3.17").WithExec([]string{
+		output, err := c.Container().From(image.Alpine).WithExec([]string{
 			"sh", "-c", "head -c 128 /dev/random | sha256sum",
 		}).Stdout(ctx)
 		require.NoError(t, err)
@@ -67,7 +68,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		}
 
 		pipelineOutput := func(c *dagger.Client) string {
-			output, err := c.Container().From("alpine:3.17").WithExec([]string{
+			output, err := c.Container().From(image.Alpine).WithExec([]string{
 				"sh", "-c", "head -c 128 /dev/random | sha256sum",
 			}).Stdout(ctx)
 			require.NoError(t, err)
@@ -105,7 +106,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		pipelineOutput := func(c *dagger.Client, id string) string {
 			output, err := c.Container().
-				From("alpine:3.17").
+				From(image.Alpine).
 				WithEnvVariable("ID", id).
 				WithExec([]string{
 					"sh", "-c", "head -c 128 /dev/random | sha256sum",
@@ -160,7 +161,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		pipelineOutput := func(c *dagger.Client, id string) string {
 			output, err := c.Container().
-				From("alpine:3.17").
+				From(image.Alpine).
 				WithMountedCache("/cache", c.CacheVolume("test-cache-mount")).
 				WithExec([]string{
 					"sh", "-c", "if [ ! -f /cache/test.txt ]; then echo '" + id + "' > /cache/test.txt; fi; cat /cache/test.txt",

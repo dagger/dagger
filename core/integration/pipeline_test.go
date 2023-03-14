@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +48,7 @@ func TestPipeline(t *testing.T) {
 		_, err = c.
 			Container().
 			Pipeline("container pipeline").
-			From("alpine:3.16.2").
+			From(image.Alpine).
 			WithExec([]string{"echo", cacheBuster}).
 			ExitCode(ctx)
 

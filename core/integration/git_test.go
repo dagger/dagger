@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/image"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -71,7 +72,7 @@ func TestGitSSHAuthSock(t *testing.T) {
 	defer c.Close()
 
 	gitSSH := c.Container().
-		From("alpine:3.16.2").
+		From(image.Alpine).
 		WithExec([]string{"apk", "add", "git", "openssh"})
 
 	hostKeyGen := gitSSH.
