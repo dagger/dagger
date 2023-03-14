@@ -1,6 +1,7 @@
 use dagger_core::introspection::{FullType, FullTypeInputFields};
 use genco::prelude::rust;
 use genco::quote;
+use itertools::Itertools;
 
 use crate::functions::CommonFunctions;
 use crate::rust::functions::{format_name, format_struct_name};
@@ -20,7 +21,10 @@ pub fn render_input_fields(
     funcs: &CommonFunctions,
     fields: &[FullTypeInputFields],
 ) -> Option<rust::Tokens> {
-    let rendered_fields = fields.iter().map(|f| render_input_field(funcs, f));
+    let rendered_fields = fields
+        .iter()
+        .sorted_by_key(|val| &val.input_value.name)
+        .map(|f| render_input_field(funcs, f));
 
     if rendered_fields.len() == 0 {
         None

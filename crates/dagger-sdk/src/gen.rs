@@ -106,8 +106,8 @@ impl Into<SocketId> for String {
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct BuildArg {
-    pub value: String,
     pub name: String,
+    pub value: String,
 }
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct PipelineLabel {
@@ -137,13 +137,13 @@ pub struct Container {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerBuildOpts<'a> {
+    /// Additional build arguments.
+    #[builder(setter(into, strip_option), default)]
+    pub build_args: Option<Vec<BuildArg>>,
     /// Path to the Dockerfile to use.
     /// Default: './Dockerfile'.
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
-    /// Additional build arguments.
-    #[builder(setter(into, strip_option), default)]
-    pub build_args: Option<Vec<BuildArg>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -162,20 +162,20 @@ pub struct ContainerExecOpts<'a> {
     /// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
     #[builder(setter(into, strip_option), default)]
     pub args: Option<Vec<&'a str>>,
-    /// Content to write to the command's standard input before closing (e.g., "Hello world").
-    #[builder(setter(into, strip_option), default)]
-    pub stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stdout: Option<&'a str>,
-    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stderr: Option<&'a str>,
     /// Provide dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed.
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
     #[builder(setter(into, strip_option), default)]
     pub experimental_privileged_nesting: Option<bool>,
+    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stderr: Option<&'a str>,
+    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stdout: Option<&'a str>,
+    /// Content to write to the command's standard input before closing (e.g., "Hello world").
+    #[builder(setter(into, strip_option), default)]
+    pub stdin: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
@@ -217,15 +217,6 @@ pub struct ContainerWithDirectoryOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
-    /// Content to write to the command's standard input before closing (e.g., "Hello world").
-    #[builder(setter(into, strip_option), default)]
-    pub stdin: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stdout: Option<&'a str>,
-    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stderr: Option<&'a str>,
     /// Provides dagger access to the executed command.
     /// Do not use this option unless you trust the command being executed.
     /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
@@ -237,15 +228,24 @@ pub struct ContainerWithExecOpts<'a> {
     /// when absolutely necessary and only with trusted commands.
     #[builder(setter(into, strip_option), default)]
     pub insecure_root_capabilities: Option<bool>,
+    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stderr: Option<&'a str>,
+    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    #[builder(setter(into, strip_option), default)]
+    pub redirect_stdout: Option<&'a str>,
+    /// Content to write to the command's standard input before closing (e.g., "Hello world").
+    #[builder(setter(into, strip_option), default)]
+    pub stdin: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExposedPortOpts<'a> {
-    /// Transport layer network protocol
-    #[builder(setter(into, strip_option), default)]
-    pub protocol: Option<NetworkProtocol>,
     /// Optional port description
     #[builder(setter(into, strip_option), default)]
     pub description: Option<&'a str>,
+    /// Transport layer network protocol
+    #[builder(setter(into, strip_option), default)]
+    pub protocol: Option<NetworkProtocol>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithFileOpts {
@@ -256,12 +256,12 @@ pub struct ContainerWithFileOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithMountedCacheOpts {
-    /// Identifier of the directory to use as the cache volume's root.
-    #[builder(setter(into, strip_option), default)]
-    pub source: Option<DirectoryId>,
     /// Sharing mode of the cache volume.
     #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
+    /// Identifier of the directory to use as the cache volume's root.
+    #[builder(setter(into, strip_option), default)]
+    pub source: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
@@ -1485,6 +1485,9 @@ pub struct Directory {
 
 #[derive(Builder, Debug, PartialEq)]
 pub struct DirectoryDockerBuildOpts<'a> {
+    /// Build arguments to use in the build.
+    #[builder(setter(into, strip_option), default)]
+    pub build_args: Option<Vec<BuildArg>>,
     /// Path to the Dockerfile to use (e.g., "frontend.Dockerfile").
     /// Defaults: './Dockerfile'.
     #[builder(setter(into, strip_option), default)]
@@ -1492,9 +1495,6 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// The platform to build.
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
-    /// Build arguments to use in the build.
-    #[builder(setter(into, strip_option), default)]
-    pub build_args: Option<Vec<BuildArg>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -2074,9 +2074,9 @@ pub struct GitRef {
 #[derive(Builder, Debug, PartialEq)]
 pub struct GitRefTreeOpts<'a> {
     #[builder(setter(into, strip_option), default)]
-    pub ssh_known_hosts: Option<&'a str>,
-    #[builder(setter(into, strip_option), default)]
     pub ssh_auth_socket: Option<SocketId>,
+    #[builder(setter(into, strip_option), default)]
+    pub ssh_known_hosts: Option<&'a str>,
 }
 
 impl GitRef {
@@ -2480,12 +2480,12 @@ pub struct QueryDirectoryOpts {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryGitOpts {
-    /// Set to true to keep .git directory.
-    #[builder(setter(into, strip_option), default)]
-    pub keep_git_dir: Option<bool>,
     /// A service which must be started before the repo is fetched.
     #[builder(setter(into, strip_option), default)]
     pub experimental_service_host: Option<ContainerId>,
+    /// Set to true to keep .git directory.
+    #[builder(setter(into, strip_option), default)]
+    pub keep_git_dir: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QueryHttpOpts {

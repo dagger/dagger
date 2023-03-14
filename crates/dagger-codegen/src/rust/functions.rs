@@ -3,6 +3,7 @@ use dagger_core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
 use genco::tokens::quoted;
+use itertools::Itertools;
 
 use crate::functions::{
     type_field_has_optional, type_ref_is_enum, type_ref_is_list, type_ref_is_list_of_objects,
@@ -405,6 +406,7 @@ pub fn format_optional_args(
         .map(|t| {
             t.into_iter()
                 .filter(|t| type_ref_is_optional(&t.input_value.type_))
+                .sorted_by_key(|val| &val.input_value.name)
                 .collect::<Vec<_>>()
         })
         .pipe(|t| render_optional_field_args(funcs, t))
