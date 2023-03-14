@@ -6,7 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.19 (2023-03-14)
+
+### Chore
+
+ - <csr-id-6629d2db4fbc7cdba9b2e4a241e4b0a2592cf384/> fix release version
+
+### Bug Fixes
+
+ - <csr-id-8fd6bb983ef00b1aa2cf1ba3088028329033c38f/> serialization of enum args for graphql
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 1 unique issue was worked on: [#34](https://github.com/kjuulh/dagger-rs/issues/34)
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **[#34](https://github.com/kjuulh/dagger-rs/issues/34)**
+    - serialization of enum args for graphql ([`8fd6bb9`](https://github.com/kjuulh/dagger-rs/commit/8fd6bb983ef00b1aa2cf1ba3088028329033c38f))
+ * **Uncategorized**
+    - fix release version ([`6629d2d`](https://github.com/kjuulh/dagger-rs/commit/6629d2db4fbc7cdba9b2e4a241e4b0a2592cf384))
+</details>
+
 ## v0.2.17 (2023-03-13)
+
+<csr-id-f67928155f02076cbb41abd4010523879ff3caf1/>
+<csr-id-2cc0231c5f29993081f0f7e15e44cac95a7d6086/>
+<csr-id-9ba01396cb44ee02cf7a16008e3f0bdae9f78754/>
+<csr-id-e9e35edb1cb67eee8cc033212aba3b1888def78f/>
 
 ### Bug Fixes
 
@@ -30,7 +65,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 9 commits contributed to the release over the course of 2 calendar days.
+ - 10 commits contributed to the release over the course of 2 calendar days.
  - 2 days passed between releases.
  - 9 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -42,6 +77,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.17 ([`a8e6dde`](https://github.com/kjuulh/dagger-rs/commit/a8e6dde615029d9a94d159ed84b5373121cd201f))
     - make sure tests have a command to execute ([`1bfd084`](https://github.com/kjuulh/dagger-rs/commit/1bfd084cd28e2b984c61de7f3f9a065cc41be007))
     - remove unused imports ([`5593fce`](https://github.com/kjuulh/dagger-rs/commit/5593fce2e16e0aa97a2e6843f15d3bb1121048f5))
     - remove export and instead use exitcode ([`2cc0231`](https://github.com/kjuulh/dagger-rs/commit/2cc0231c5f29993081f0f7e15e44cac95a7d6086))
