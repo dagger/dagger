@@ -77,9 +77,6 @@ impl Selection {
         let val = serde_json::to_string(&value).unwrap();
         let val = val[1..val.len() - 1].to_string();
 
-        println!("test");
-        println!("{}", val);
-
         match s.args.as_mut() {
             Some(args) => {
                 let _ = args.insert(name.to_string(), val);
@@ -125,8 +122,7 @@ impl Selection {
     {
         let query = self.build()?;
 
-        let qbs = query.as_str();
-        println!("{}", qbs);
+        tracing::trace!(query = query.as_str(), "dagger-query");
 
         let resp: Option<serde_json::Value> = match gql_client.query(&query).await {
             Ok(r) => r,

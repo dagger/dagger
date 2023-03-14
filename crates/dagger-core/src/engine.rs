@@ -24,6 +24,8 @@ impl Engine {
         &self,
         cfg: &Config,
     ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
+        tracing::info!("starting dagger-engine");
+
         // TODO: Add from existing session as well
         self.from_cli(cfg).await
     }

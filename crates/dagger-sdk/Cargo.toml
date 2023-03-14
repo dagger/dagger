@@ -17,6 +17,8 @@ eyre = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
 
 base64 = "0.21.0"
 futures = "0.3.27"
@@ -27,3 +29,4 @@ derive_builder = "0.12.0"
 pretty_assertions = "1.3.0"
 rand = "0.8.5"
 genco = "0.17.3"
+tracing-test = "0.2.4"

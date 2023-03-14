@@ -139,9 +139,10 @@ impl Downloader {
             if let Ok(entry) = file {
                 let path = entry.path();
                 if path != cli_bin_path {
-                    println!(
-                        "deleting client: path: {:?} vs cli_bin_path: {:?}",
-                        path, cli_bin_path
+                    tracing::debug!(
+                        path = path.display().to_string(),
+                        cli_bin_path = cli_bin_path.display().to_string(),
+                        "deleting existing dagger-engine"
                     );
                     std::fs::remove_file(path)?;
                 }

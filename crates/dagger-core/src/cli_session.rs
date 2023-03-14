@@ -35,7 +35,7 @@ impl InnerCliSession {
         cli_path: &PathBuf,
     ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         let proc = self.start(config, cli_path)?;
-        let params = self.get_conn(proc).await?;
+        let params = self.get_conn(proc, config).await?;
         Ok(params)
     }
 
@@ -69,6 +69,7 @@ impl InnerCliSession {
     async fn get_conn(
         &self,
         mut proc: tokio::process::Child,
+        config: &Config,
     ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
         let stdout = proc
             .stdout
@@ -82,6 +83,7 @@ impl InnerCliSession {
 
         let (sender, mut receiver) = tokio::sync::mpsc::channel(1);
 
+        let logger = config.logger.as_ref().map(|p| p.clone());
         tokio::spawn(async move {
             let mut stdout_bufr = tokio::io::BufReader::new(stdout).lines();
             while let Ok(Some(line)) = stdout_bufr.next_line().await {
@@ -89,14 +91,19 @@ impl InnerCliSession {
                     sender.send(conn).await.unwrap();
                 }
 
-                println!("dagger: {}", line);
+                if let Some(logger) = &logger {
+                    logger.stdout(&line).unwrap();
+                }
             }
         });
 
+        let logger = config.logger.as_ref().map(|p| p.clone());
         tokio::spawn(async move {
-            let mut stdout_bufr = tokio::io::BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = stdout_bufr.next_line().await {
-                println!("dagger: {}", line);
+            let mut stderr_bufr = tokio::io::BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = stderr_bufr.next_line().await {
+                if let Some(logger) = &logger {
+                    logger.stdout(&line).unwrap();
+                }
             }
         });
 

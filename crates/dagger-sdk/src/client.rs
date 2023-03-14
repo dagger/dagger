@@ -3,18 +3,25 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose;
 use base64::Engine;
+use gql_client::ClientConfig;
+
 use dagger_core::config::Config;
 use dagger_core::connect_params::ConnectParams;
 use dagger_core::engine::Engine as DaggerEngine;
-use gql_client::ClientConfig;
 
 use crate::gen::Query;
+use crate::logging::StdLogger;
 use crate::querybuilder::query;
 
 pub type DaggerConn = Arc<Query>;
 
 pub async fn connect() -> eyre::Result<DaggerConn> {
-    let cfg = Config::default();
+    let cfg = Config::new(None, None, None, None, Some(Arc::new(StdLogger::default())));
+
+    connect_opts(cfg).await
+}
+
+pub async fn connect_opts(cfg: Config) -> eyre::Result<DaggerConn> {
     let (conn, proc) = DaggerEngine::new().start(&cfg).await?;
 
     Ok(Arc::new(Query {

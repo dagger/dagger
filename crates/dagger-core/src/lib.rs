@@ -8,6 +8,7 @@ pub mod connect_params;
 pub mod downloader;
 pub mod engine;
 pub mod introspection;
+pub mod logger;
 pub mod schema;
 pub mod session;
 
