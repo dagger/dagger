@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/go-git/go-git/v5"
@@ -89,6 +90,13 @@ func loadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
+	commit, err := repo.CommitObject(head.Hash())
+	if err != nil {
+		return nil, err
+	}
+
+	title, _, _ := strings.Cut(commit.Message, "\n")
+
 	return []Label{
 		{
 			Name:  "dagger.io/git.remote",
@@ -101,6 +109,26 @@ func loadGitLabels(workdir string) ([]Label, error) {
 		{
 			Name:  "dagger.io/git.ref",
 			Value: head.Hash().String(),
+		},
+		{
+			Name:  "dagger.io/git.author.name",
+			Value: commit.Author.Name,
+		},
+		{
+			Name:  "dagger.io/git.author.email",
+			Value: commit.Author.Email,
+		},
+		{
+			Name:  "dagger.io/git.committer.name",
+			Value: commit.Committer.Name,
+		},
+		{
+			Name:  "dagger.io/git.committer.email",
+			Value: commit.Committer.Email,
+		},
+		{
+			Name:  "dagger.io/git.title",
+			Value: title, // first line from commit message
 		},
 	}, nil
 }
