@@ -1,20 +1,26 @@
 [package]
-name = "dagger-core"
-version = "0.2.8"
+name = "dagger-rs"
+version = "0.2.10"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
-description = "dagger sdk core library"
+description = "A dagger sdk for rust, written in rust"
 repository = "https://github.com/kjuulh/dagger-rs"
 publish = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+dagger-core = { workspace = true }
+dagger-codegen = { workspace = true }
+
 eyre = { workspace = true }
+color-eyre = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 
+clap = "4.1.6"
 dirs = "4.0.0"
 flate2 = { version = "1.0.25", features = ["zlib"] }
 graphql-introspection-query = "0.2.0"

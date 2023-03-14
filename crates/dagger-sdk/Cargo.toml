@@ -11,15 +11,16 @@ publish = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dagger-core = { path = "../dagger-core", version = "^0.2.8" }
+dagger-core = { workspace = true }
+
+eyre = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 base64 = "0.21.0"
-eyre = "0.6.8"
 futures = "0.3.27"
 gql_client = "1.0.7"
-serde = { version = "1.0.152", features = ["derive"] }
-serde_json = { version = "1.0.93", features = ["raw_value"] }
-tokio = { version = "1.25.0", features = ["full"] }
 derive_builder = "0.12.0"
 
 [dev-dependencies]

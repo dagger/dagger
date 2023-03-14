@@ -262,11 +262,9 @@ dependencies = [
 name = "dagger-core"
 version = "0.2.8"
 dependencies = [
- "clap",
  "dirs",
  "eyre",
  "flate2",
- "genco",
  "graphql-introspection-query",
  "graphql_client",
  "hex",
@@ -292,7 +290,6 @@ dependencies = [
  "dirs",
  "eyre",
  "flate2",
- "genco",
  "graphql-introspection-query",
  "graphql_client",
  "hex",
