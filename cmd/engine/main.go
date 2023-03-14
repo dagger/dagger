@@ -713,7 +713,11 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	}
 
 	cacheExporterFunc, cacheImporterFunc, remoteCacheDoneCh, err := daggerremotecache.StartDaggerCache(ctx,
-		sessionManager, w.ContentStore(), resolverFn)
+		sessionManager,
+		w.ContentStore(),
+		w.LeaseManager(),
+		resolverFn,
+	)
 	if err != nil {
 		return nil, nil, err
 	}
