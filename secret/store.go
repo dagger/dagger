@@ -2,12 +2,16 @@ package secret
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/dagger/dagger/core"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
 )
+
+// ErrNotFound indicates a secret can not be found.
+var ErrNotFound = errors.New("secret not found")
 
 func NewStore() *Store {
 	return &Store{
@@ -76,7 +80,10 @@ func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
 	}
 
 	// we use the new SecretID format
-	plaintext := []byte(store.idToPlaintext[secretID])
+	plaintext, ok := store.idToPlaintext[secretID]
+	if !ok {
+		return nil, ErrNotFound
+	}
 
-	return plaintext, nil
+	return []byte(plaintext), nil
 }
