@@ -1,6 +1,7 @@
 use dagger_core::introspection::FullType;
 use genco::prelude::rust;
 use genco::quote;
+use itertools::Itertools;
 
 fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
     let values = values
@@ -10,6 +11,7 @@ fn render_enum_values(values: &FullType) -> Option<rust::Tokens> {
         .map(|values| {
             values
                 .into_iter()
+                .sorted_by_key(|a| &a.name)
                 .map(|val| quote! { $(val.name.as_ref()), })
         })
         .flatten()
