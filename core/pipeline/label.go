@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -61,6 +62,10 @@ func loadGitLabels(workdir string) ([]Label, error) {
 		DetectDotGit: true,
 	})
 	if err != nil {
+		if errors.Is(err, git.ErrRepositoryNotExists) {
+			return nil, nil
+		}
+
 		return nil, err
 	}
 
