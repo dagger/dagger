@@ -15,7 +15,6 @@ var ErrNotFound = errors.New("secret not found")
 
 func NewStore() *Store {
 	return &Store{
-		nameToDigest:  map[string]string{},
 		idToPlaintext: map[core.SecretID]string{},
 	}
 }
@@ -26,7 +25,6 @@ type Store struct {
 	gw bkgw.Client
 
 	mu            sync.Mutex
-	nameToDigest  map[string]string
 	idToPlaintext map[core.SecretID]string
 }
 
@@ -44,16 +42,6 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 	if err != nil {
 		return id, err
 	}
-
-	digest, err := id.Digest()
-	if err != nil {
-		// We shouldn't arrive here unless we messed up on our side.
-		// We should stop here to analyze what's wrong.
-		panic(err)
-	}
-
-	// add the digest to the map
-	store.nameToDigest[name] = digest
 
 	// add the plaintext to the map
 	store.idToPlaintext[id] = plaintext

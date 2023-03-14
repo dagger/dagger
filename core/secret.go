@@ -41,15 +41,6 @@ type SecretID string
 
 func (id SecretID) String() string { return string(id) }
 
-func (id SecretID) Digest() (string, error) {
-	secretIDPayload, err := id.decode()
-	if err != nil {
-		return "", err
-	}
-
-	return secretIDPayload.Digest, nil
-}
-
 func (id SecretID) IsOldFormat() (bool, error) {
 	payload, err := id.decode()
 	if err != nil {
