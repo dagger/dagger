@@ -3,6 +3,19 @@ command = "cargo"
 args = ["run", "-p", "ci", "--", "codegen"]
 workspace = false
 
+[tasks.local_codegen]
+command = "cargo"
+args = [
+  "run",
+  "-p",
+  "dagger-rs",
+  "--",
+  "generate",
+  "--output",
+  "crates/dagger-sdk/src/gen.rs",
+]
+workspace = false
+
 [tasks.build]
 command = "cargo"
 args = ["run", "-p", "ci", "--", "ci"]
@@ -18,6 +31,10 @@ workspace = false
 command = "cargo"
 args = ["fix", "--workspace", "--allow-dirty"]
 dependencies = ["fmt"]
+workspace = false
+
+[tasks.gen]
+dependencies = ["local_codegen", "fmt", "fix"]
 workspace = false
 
 [tasks.release_crate]
