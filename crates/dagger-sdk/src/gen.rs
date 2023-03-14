@@ -955,7 +955,7 @@ impl Container {
 
         query = query.arg("port", port);
         if let Some(protocol) = opts.protocol {
-            query = query.arg("protocol", protocol);
+            query = query.arg_enum("protocol", protocol);
         }
         if let Some(description) = opts.description {
             query = query.arg("description", description);
@@ -1085,7 +1085,7 @@ impl Container {
             query = query.arg("source", source);
         }
         if let Some(sharing) = opts.sharing {
-            query = query.arg("sharing", sharing);
+            query = query.arg_enum("sharing", sharing);
         }
 
         return Container {
@@ -1395,7 +1395,7 @@ impl Container {
 
         query = query.arg("port", port);
         if let Some(protocol) = opts.protocol {
-            query = query.arg("protocol", protocol);
+            query = query.arg_enum("protocol", protocol);
         }
 
         return Container {
@@ -2848,9 +2848,9 @@ impl Socket {
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum CacheSharingMode {
+    LOCKED,
     SHARED,
     PRIVATE,
-    LOCKED,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {

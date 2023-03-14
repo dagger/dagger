@@ -68,6 +68,32 @@ impl Selection {
         s
     }
 
+    pub fn arg_enum<S>(&self, name: &str, value: S) -> Selection
+    where
+        S: Serialize,
+    {
+        let mut s = self.clone();
+
+        let val = serde_json::to_string(&value).unwrap();
+        let val = val[1..val.len() - 1].to_string();
+
+        println!("test");
+        println!("{}", val);
+
+        match s.args.as_mut() {
+            Some(args) => {
+                let _ = args.insert(name.to_string(), val);
+            }
+            None => {
+                let mut hm = HashMap::new();
+                let _ = hm.insert(name.to_string(), val);
+                s.args = Some(hm);
+            }
+        }
+
+        s
+    }
+
     pub fn build(&self) -> eyre::Result<String> {
         let mut fields = vec!["query".to_string()];
 
@@ -76,7 +102,7 @@ impl Selection {
                 if let Some(args) = sel.args {
                     let actualargs = args
                         .iter()
-                        .map(|(name, arg)| format!("{name}:{arg}"))
+                        .map(|(name, arg)| format!("{name}:{}", arg.as_str()))
                         .collect::<Vec<_>>();
 
                     query = query.add(&format!("({})", actualargs.join(", ")));
@@ -98,6 +124,9 @@ impl Selection {
         D: for<'de> Deserialize<'de>,
     {
         let query = self.build()?;
+
+        let qbs = query.as_str();
+        println!("{}", qbs);
 
         let resp: Option<serde_json::Value> = match gql_client.query(&query).await {
             Ok(r) => r,

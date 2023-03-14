@@ -5,8 +5,8 @@ use genco::quote;
 use genco::tokens::quoted;
 
 use crate::functions::{
-    type_field_has_optional, type_ref_is_list, type_ref_is_list_of_objects, type_ref_is_object,
-    type_ref_is_optional, type_ref_is_scalar, CommonFunctions, Scalar,
+    type_field_has_optional, type_ref_is_enum, type_ref_is_list, type_ref_is_list_of_objects,
+    type_ref_is_object, type_ref_is_optional, type_ref_is_scalar, CommonFunctions, Scalar,
 };
 use crate::utility::OptionExt;
 
@@ -133,6 +133,12 @@ fn render_required_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
                         }
                     }
 
+                    if type_ref_is_enum(&s.input_value.type_) {
+                        return Some(quote! {
+                            query = query.arg_enum($(quoted(name)), $(n));
+                        })
+                    }
+
                     if type_ref_is_list(&s.input_value.type_) {
                         let inner = *s
                             .input_value
@@ -186,6 +192,14 @@ fn render_optional_args(_funcs: &CommonFunctions, field: &FullTypeFields) -> Opt
 
                     let n = format_struct_name(&s.input_value.name);
                     let name = &s.input_value.name;
+
+                    if type_ref_is_enum(&s.input_value.type_) {
+                        return Some(quote! {
+                            if let Some($(&n)) = opts.$(&n) {
+                                query = query.arg_enum($(quoted(name)), $(n));
+                            }
+                        });
+                    }
 
                     Some(quote! {
                         if let Some($(&n)) = opts.$(&n) {

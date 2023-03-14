@@ -196,6 +196,22 @@ pub fn type_ref_is_scalar(type_ref: &TypeRef) -> bool {
         .unwrap_or(false)
 }
 
+pub fn type_ref_is_enum(type_ref: &TypeRef) -> bool {
+    let mut type_ref = type_ref.clone();
+    if type_ref
+        .kind
+        .pipe(|k| *k == __TypeKind::NON_NULL)
+        .unwrap_or(false)
+    {
+        type_ref = *type_ref.of_type.unwrap().clone();
+    }
+
+    type_ref
+        .kind
+        .pipe(|k| *k == __TypeKind::ENUM)
+        .unwrap_or(false)
+}
+
 pub fn type_ref_is_object(type_ref: &TypeRef) -> bool {
     let mut type_ref = type_ref.clone();
     if type_ref
