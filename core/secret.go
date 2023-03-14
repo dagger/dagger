@@ -39,6 +39,16 @@ func NewSecretFromHostEnv(name string) (*Secret, error) {
 // SecretID is an opaque value representing a content-addressed secret.
 type SecretID string
 
+func NewSecretID(name, plaintext string) (SecretID, error) {
+	digestBytes := sha256.Sum256([]byte(plaintext))
+
+	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 func (id SecretID) String() string { return string(id) }
 
 func (id SecretID) IsOldFormat() (bool, error) {
@@ -52,16 +62,6 @@ func (id SecretID) IsOldFormat() (bool, error) {
 	}
 
 	return true, nil
-}
-
-func NewSecretID(name, plaintext string) (SecretID, error) {
-	digestBytes := sha256.Sum256([]byte(plaintext))
-
-	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
-	if err != nil {
-		return "", err
-	}
-	return id, nil
 }
 
 // secretIDPayload is the inner content of a SecretID.
