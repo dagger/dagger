@@ -7,6 +7,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/leases"
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -20,7 +21,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-func StartDaggerCache(ctx context.Context, sm *session.Manager, cs content.Store, hosts docker.RegistryHosts) (remotecache.ResolveCacheExporterFunc, remotecache.ResolveCacheImporterFunc, <-chan struct{}, error) {
+func StartDaggerCache(ctx context.Context, sm *session.Manager, cs content.Store, lm leases.Manager, hosts docker.RegistryHosts) (remotecache.ResolveCacheExporterFunc, remotecache.ResolveCacheImporterFunc, <-chan struct{}, error) {
 	cacheType, attrs, err := cacheConfigFromEnv()
 	if err != nil {
 		return nil, nil, nil, err
@@ -29,7 +30,7 @@ func StartDaggerCache(ctx context.Context, sm *session.Manager, cs content.Store
 	doneCh := make(chan struct{}, 1)
 	var s3Manager *s3CacheManager
 	if cacheType == experimentalDaggerS3CacheType {
-		s3Manager, err = newS3CacheManager(ctx, attrs, doneCh)
+		s3Manager, err = newS3CacheManager(ctx, attrs, lm, doneCh)
 		if err != nil {
 			return nil, nil, nil, err
 		}

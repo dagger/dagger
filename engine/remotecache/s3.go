@@ -18,11 +18,13 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/smithy-go"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/leases"
 	"github.com/moby/buildkit/cache/remotecache"
 	v1 "github.com/moby/buildkit/cache/remotecache/v1"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/compression"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -107,6 +109,8 @@ type s3CacheManager struct {
 	mu                sync.Mutex
 	config            v1.CacheConfig
 	descProviders     v1.DescriptorProvider
+	leaseManager      leases.Manager
+	lease             leases.Lease
 	exportRequested   chan struct{}
 	settings          settings
 	s3Client          *s3.Client
@@ -114,12 +118,22 @@ type s3CacheManager struct {
 	s3DownloadManager *manager.Downloader
 }
 
-func newS3CacheManager(ctx context.Context, attrs map[string]string, doneCh chan<- struct{}) (*s3CacheManager, error) {
+func newS3CacheManager(ctx context.Context, attrs map[string]string, lm leases.Manager, doneCh chan<- struct{}) (*s3CacheManager, error) {
 	m := &s3CacheManager{
 		descProviders:   v1.DescriptorProvider{},
 		exportRequested: make(chan struct{}, 1),
 		settings:        settings(attrs),
+		leaseManager:    lm,
 	}
+
+	// leaseutil.MakeTemporary results in the lease being removed on startup
+	// by the buildkit worker so we don't have to deal with checking an existing
+	// one here, deleting, re-using, etc.
+	lease, err := lm.Create(ctx, leases.WithID("dagger-s3-exporter"), leaseutil.MakeTemporary)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create lease for s3 cache exporter")
+	}
+	m.lease = lease
 
 	cfg, err := awsConfig.LoadDefaultConfig(ctx, awsConfig.WithRegion(m.settings.region()))
 	if err != nil {
@@ -198,10 +212,27 @@ func (m *s3CacheManager) mergeChains(ctx context.Context, chains *v1.CacheChains
 	return nil
 }
 
-func (m *s3CacheManager) requestExport() {
+func (m *s3CacheManager) requestExport(ctx context.Context) {
 	// put in a request, but if there's already one pending no need to send another
 	select {
 	case m.exportRequested <- struct{}{}:
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		// get a lease on all the content we'll be exporting so it doesn't get gc'd
+		// while we still need it.
+		// TODO: ideally this should just be the content that doesn't exist remotely
+		// yet, not everything
+		for dgst := range m.descProviders {
+			err := m.leaseManager.AddResource(ctx, m.lease, leases.Resource{
+				ID:   dgst.String(),
+				Type: "content",
+			})
+			if err != nil {
+				// Just log for now, if this happens often can be more conditional in logging
+				// It's expected to happen if the content is gone locally (only exists in remote)
+				bklog.G(ctx).WithError(err).Error("failed to add resource to lease")
+			}
+		}
 	default:
 	}
 }
@@ -291,6 +322,18 @@ func (m *s3CacheManager) export(ctx context.Context) error {
 
 	if err := m.uploadToS3(ctx, m.manifestKey(), bytes.NewReader(configBytes)); err != nil {
 		return errors.Wrapf(err, "error writing manifest: %s", m.manifestKey())
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for dgst := range descs {
+		err := m.leaseManager.DeleteResource(ctx, m.lease, leases.Resource{
+			ID:   dgst.String(),
+			Type: "content",
+		})
+		if err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to remove resource from lease")
+		}
 	}
 
 	return nil
@@ -479,7 +522,7 @@ func (e *s3CacheExporter) Finalize(ctx context.Context) (map[string]string, erro
 	if err != nil {
 		return nil, err
 	}
-	e.manager.requestExport()
+	e.manager.requestExport(ctx)
 	return nil, nil
 }
 
