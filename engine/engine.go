@@ -312,6 +312,7 @@ func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.
 
 func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
 	t := telemetry.New()
+	defer t.Flush()
 
 	for ev := range ch {
 		ts := time.Now().UTC()
