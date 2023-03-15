@@ -43,10 +43,10 @@ func New() *Telemetry {
 		stopCh: make(chan struct{}),
 		doneCh: make(chan struct{}),
 	}
-	if url := os.Getenv("DAGGER_CLOUD_URL"); url != "" {
+	if url := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"); url != "" {
 		t.url = url
 	}
-	if token := os.Getenv("DAGGER_CLOUD_TOKEN"); token != "" {
+	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
 		t.token = token
 		t.enable = true
 		fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
