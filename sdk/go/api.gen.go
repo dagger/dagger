@@ -208,11 +208,16 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 
 // Retrieves the list of environment variables passed to commands.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
-	q := r.q.Select("envVariables")
+	return query[[]EnvVariable](ctx, r.c, r.q, "envVariables")
+}
 
-	var response []EnvVariable
+func query[T any](ctx context.Context, c graphql.Client, q *querybuilder.Selection, name string) (T, error){
+	q = q.Select(name)
+
+	var response T
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+	return response, q.Execute(ctx, c)
+
 }
 
 // ContainerExecOpts contains options for Container.Exec
@@ -423,6 +428,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
+
 
 // Retrieves the list of paths where a directory is mounted.
 func (r *Container) Mounts(ctx context.Context) ([]string, error) {
