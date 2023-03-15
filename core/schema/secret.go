@@ -25,7 +25,8 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"SecretID": secretIDResolver,
 		"Query": router.ObjectResolver{
-			"secret": router.ToResolver(s.secret),
+			"secret":    router.ToResolver(s.secret),
+			"setSecret": router.ToResolver(s.setSecret),
 		},
 		"Secret": router.ObjectResolver{
 			"plaintext": router.ToResolver(s.plaintext),
@@ -47,8 +48,35 @@ func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) 
 	}, nil
 }
 
+type setSecretArgs struct {
+	Name      string
+	Plaintext string
+}
+
+func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecretArgs) (*core.Secret, error) {
+	secretID, err := s.secrets.AddSecret(ctx, args.Name, args.Plaintext)
+	if err != nil {
+		return nil, err
+	}
+
+	return &core.Secret{
+		ID: secretID,
+	}, nil
+}
+
 func (s *secretSchema) plaintext(ctx *router.Context, parent core.Secret, args any) (string, error) {
-	bytes, err := parent.Plaintext(ctx, s.gw)
+	isOldSecretIDFormat, err := parent.ID.IsOldFormat()
+	if err != nil {
+		return "", err
+	}
+
+	if isOldSecretIDFormat {
+		bytes, err := parent.Plaintext(ctx, s.gw)
+		return string(bytes), err
+	}
+
+	idStr := parent.ID.String()
+	bytes, err := s.secrets.GetSecret(ctx, idStr)
 	if err != nil {
 		return "", err
 	}

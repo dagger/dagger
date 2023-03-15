@@ -1843,7 +1843,11 @@ class File(Type):
 
     @typecheck
     def secret(self) -> "Secret":
-        """Retrieves a secret referencing the contents of this file."""
+        """Retrieves a secret referencing the contents of this file.
+
+        .. deprecated::
+            insecure, leaves secret in cache
+        """
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
@@ -2541,6 +2545,25 @@ class Client(Root):
             Arg("id", id),
         ]
         _ctx = self._select("secret", _args)
+        return Secret(_ctx)
+
+    @typecheck
+    def set_secret(self, name: str, plaintext: str) -> "Secret":
+        """Sets a secret given a user defined name to its plaintext and returns
+        the secret.
+
+        Parameters
+        ----------
+        name:
+            The user defined name for this secret
+        plaintext:
+            The plaintext of the secret
+        """
+        _args = [
+            Arg("name", name),
+            Arg("plaintext", plaintext),
+        ]
+        _ctx = self._select("setSecret", _args)
         return Secret(_ctx)
 
     @typecheck

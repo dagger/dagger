@@ -1482,6 +1482,8 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 // Retrieves a secret referencing the contents of this file.
+//
+// Deprecated: insecure, leaves secret in cache
 func (r *File) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -2055,6 +2057,18 @@ func (r *Client) Project(name string) *Project {
 func (r *Client) Secret(id SecretID) *Secret {
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Sets a secret given a user defined name to its plaintext and returns the secret.
+func (r *Client) SetSecret(name string, plaintext string) *Secret {
+	q := r.q.Select("setSecret")
+	q = q.Arg("name", name)
+	q = q.Arg("plaintext", plaintext)
 
 	return &Secret{
 		q: q,

@@ -133,8 +133,25 @@ func TestSecretPlaintext(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
+	//nolint:staticcheck // SA1019 We want to test this API while we support it.
 	plaintext, err := c.Directory().
 		WithNewFile("TOP_SECRET", "hi").File("TOP_SECRET").Secret().Plaintext(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hi", plaintext)
+}
+
+func TestNewSecret(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	secretValue := "very-secret-text"
+
+	s := c.SetSecret("aws_key", secretValue)
+
+	exitCode, err := c.Container().From("alpine:3.16.2").
+		WithSecretVariable("AWS_KEY", s).
+		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).
+		ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, exitCode)
 }
