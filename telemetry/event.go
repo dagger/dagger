@@ -13,6 +13,7 @@ type Event struct {
 	Timestamp time.Time `json:"ts"`
 
 	RunID string `json:"run_id"`
+	OrgID string `json:"org_id"`
 
 	Type    EventType `json:"type"`
 	Payload Payload   `json:"payload"`
