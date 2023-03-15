@@ -72,6 +72,7 @@ This code is organized as follows:
 - `infra/`: This subdirectory contains all the code related to the AWS CDK stacks. It is a standalone AWS CDK project that can be used directly from the AWS CDK CLI. It describes two AWS CDK stacks: one for the AWS ECR registry and one for the AWS ECS/Fargate cluster.
 
 This `main.go` file contains three functions:
+
 - The `main()` function creates a Dagger client and an AWS client, initializes an AWS ECR container registry and invokes the `build()` and `deployToEcs()` functions in sequence.
 - The `build()` function obtains the application source code, runs the tests, builds a container image of the application and publishes the image to the AWS ECR registry.
 - The `deployToEcs()` function deploys the built container image to the AWS ECS cluster.
