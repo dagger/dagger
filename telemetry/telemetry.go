@@ -57,7 +57,6 @@ func New() *Telemetry {
 			fmt.Fprintf(os.Stderr, "Supplied Dagger Cloud token doesn't have a JWT shape")
 			t.enable = false
 		} else {
-
 			jwtPayload, err := base64.RawStdEncoding.DecodeString(pts[1])
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "could not decode JWT payload: %v", err)
@@ -72,7 +71,6 @@ func New() *Telemetry {
 			if v, ok := jwtClaims["id"].(string); ok {
 				t.orgID = v
 			}
-
 		}
 	}
 	go t.start()
