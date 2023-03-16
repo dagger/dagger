@@ -3,6 +3,8 @@
 from collections.abc import Sequence
 from typing import Optional
 
+import attrs
+
 from dagger.api.base import Arg, Enum, Input, Root, Scalar, Type, typecheck
 
 
@@ -62,6 +64,7 @@ class NetworkProtocol(Enum):
     """UDP (User Datagram Protocol)"""
 
 
+@attrs.define
 class BuildArg(Input):
     """Key value object that represents a build argument."""
 
@@ -72,6 +75,7 @@ class BuildArg(Input):
     """The build argument value."""
 
 
+@attrs.define
 class PipelineLabel(Input):
     """Key value object that represents a Pipeline label."""
 
