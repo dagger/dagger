@@ -26,11 +26,12 @@ jobs:
           docker run --rm --privileged tonistiigi/binfmt:latest --install all
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - uses: actions/checkout@v3
       - run: ./hack/make engine:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs dagger-engine.dev
@@ -85,7 +86,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - uses: actions/checkout@v3
       - run: ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
@@ -104,7 +105,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - run: ./hack/make sdk:go:test
 
   sdk-python:
@@ -114,7 +115,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - run: ./hack/make sdk:python:test
 
   sdk-nodejs:
@@ -124,5 +125,5 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - run: ./hack/make sdk:nodejs:test
