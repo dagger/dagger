@@ -18,6 +18,16 @@ jobs:
       - name: "Test Publish Engine"
         run: |
           ./hack/make engine:testpublish
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   test-publish-cli:
     runs-on: ubuntu-latest
@@ -31,3 +41,14 @@ jobs:
       - name: "Test Publish CLI"
         run: |
           ./hack/make cli:testpublish
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
