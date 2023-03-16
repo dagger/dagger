@@ -208,12 +208,14 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 
 // Retrieves the list of environment variables passed to commands.
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
-	return query[[]EnvVariable](ctx, r.c, r.q, "envVariables")
+	return query[[]EnvVariable, any](ctx, r.c, r.q, "envVariables")
 }
 
-func query[T any](ctx context.Context, c graphql.Client, q *querybuilder.Selection, name string) (T, error){
+func query[T, TOpts any](ctx context.Context, c graphql.Client, q *querybuilder.Selection, name string, opts ...TOpts) (T, error){
 	q = q.Select(name)
 
+	for i := 0; i < len(opts); i++ {
+	}
 	var response T
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, c)
