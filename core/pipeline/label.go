@@ -173,18 +173,35 @@ func loadGitHubLabels() ([]Label, error) {
 
 		var action *string
 		var pr *github.PullRequest
+		var repoURL, repoFullName string
 		switch x := event.(type) {
 		case *github.PushEvent:
 			action = x.Action
+			repoURL = x.GetRepo().GetHTMLURL()
+			repoFullName = x.GetRepo().GetFullName()
 		case *github.PullRequestEvent:
 			action = x.Action
 			pr = x.GetPullRequest()
+			repoURL = x.GetRepo().GetHTMLURL()
+			repoFullName = x.GetRepo().GetFullName()
 		}
 
 		if action != nil {
 			labels = append(labels, Label{
 				Name:  "github.com/event.action",
 				Value: *action,
+			})
+		}
+
+		if repoURL != "" && repoFullName != "" {
+			labels = append(labels, Label{
+				Name:  "github.com/repo.full_name",
+				Value: repoFullName,
+			})
+
+			labels = append(labels, Label{
+				Name:  "github.com/repo.url",
+				Value: repoURL,
 			})
 		}
 
