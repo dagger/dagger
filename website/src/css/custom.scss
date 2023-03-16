@@ -754,7 +754,7 @@ img[alt="github-contribute"] {
   height: 800px;
 }
 
-[class*=" docs-doc-id-current\/guides"] {
+[class~="docs-doc-id-current\/guides"] {
   .container {
     max-width: initial;
     width: 100%;
