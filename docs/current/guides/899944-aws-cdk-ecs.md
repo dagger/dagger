@@ -10,7 +10,7 @@ date: "2023-03-16"
 # Use Dagger with the AWS Cloud Development Kit (CDK)
 
 :::note
-[Watch a live demo](https://youtu.be/ESZKu8VWSGA) of this tutorial in the Dagger Community Call (23 Feb 2023). For more demos, [join the next Dagger Community Call](https://dagger.io/events).
+You can view of this demo of this use case [here](https://youtu.be/ESZKu8VWSGA).
 :::
 
 ## Introduction
