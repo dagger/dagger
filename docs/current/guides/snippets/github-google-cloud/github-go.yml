@@ -1,0 +1,39 @@
+name: 'ci'
+
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          token_format: 'access_token'
+          credentials_json: '${{ secrets.GOOGLE_CREDENTIALS }}'
+      -
+        name: Login to Google Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: gcr.io
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      -
+        name: Setup node
+        uses: actions/setup-go@v4
+        with:
+          go-version: '>=1.20'
+      -
+        name: Install
+        run: go get dagger.io/dagger@latest cloud.google.com/go/run/apiv2
+      -
+        name: Release and deploy with Dagger
+        run: go run ci/main.go
