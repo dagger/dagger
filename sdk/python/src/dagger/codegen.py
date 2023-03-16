@@ -126,6 +126,8 @@ def generate(  # noqa: C901
         from collections.abc import Sequence
         from typing import Optional
 
+        import attrs
+
         from dagger.api.base import Arg, Enum, Input, Root, Scalar, Type, typecheck
         """,
     )
@@ -607,7 +609,7 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
     predicate: ClassVar[Predicate] = staticmethod(is_input_object_type)
 
     def render_head(self, t: GraphQLInputObjectType) -> str:
-        return super().render_head(t).replace("Type", "Input")
+        return f"@attrs.define\nclass {t.name}(Input):"
 
     def fields(self, t: GraphQLInputObjectType) -> Iterator[_InputField]:
         return (

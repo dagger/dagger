@@ -2,6 +2,7 @@ from collections.abc import Sequence
 
 import pytest
 
+import dagger
 from dagger.api.base import Root, Scalar, Type, typecheck
 
 pytestmark = pytest.mark.filterwarnings("ignore:coroutine")
@@ -119,3 +120,9 @@ def test_required(client: Client):
     client.file(FileID("filehash"))
     with pytest.raises(TypeError):
         client.file()
+
+
+def test_input_object():
+    arg = dagger.BuildArg("NAME", "value")
+
+    assert (arg.name, arg.value) == ("NAME", "value")
