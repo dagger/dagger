@@ -24,7 +24,7 @@ export const ids = {
 
 At this point, your Dagger pipeline has tested, built and delivered the application to your local host. But why not also publish a container image of the application to a registry?
 
-Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX Web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
+Dagger SDKs have built-in support to publish container images. So, let's update the pipeline to copy the built React application into an NGINX web server container and deliver the result to a public registry. Depending on the SDK, you need either the `publish()` method (for Node.js and Python) or the `Publish()` method (for Go).
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
