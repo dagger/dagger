@@ -754,6 +754,7 @@ img[alt="github-contribute"] {
   height: 800px;
 }
 
+// select only the guide index page
 [class~="docs-doc-id-current\/guides"] {
   .container {
     max-width: initial;
@@ -763,6 +764,27 @@ img[alt="github-contribute"] {
     .col {
       max-width: initial !important;
       width: 100%;
+    }
+  }
+}
+
+// select all guides but the guide index page
+[class*="docs-doc-id-current\/guides\/"] {
+  .container {
+    max-width: initial;
+    width: 100%;
+    margin: 0 auto;
+    .col {
+      max-width: initial !important;
+      width: 100%;
+    }
+
+    pre {
+      white-space: pre-wrap; /* css-3 */
+      white-space: -moz-pre-wrap; /* Mozilla, since 1999 */
+      white-space: -pre-wrap; /* Opera 4-6 */
+      white-space: -o-pre-wrap; /* Opera 7 */
+      word-wrap: break-word; /* Internet Explorer 5.5+ */
     }
   }
 }
