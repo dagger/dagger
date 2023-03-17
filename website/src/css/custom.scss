@@ -779,6 +779,10 @@ img[alt="github-contribute"] {
       width: 100%;
     }
 
+    img {
+      max-width: 700px;
+    }
+
     pre {
       white-space: pre-wrap; /* css-3 */
       white-space: -moz-pre-wrap; /* Mozilla, since 1999 */
