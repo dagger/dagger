@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
 
       - uses: docker/login-action@f054a8b539a109f9f41c372932f1ae047eff08c9
         with:
@@ -46,7 +46,7 @@ jobs:
           HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
-          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
         run: ./hack/make dagger:publish ${{ github.ref_name }}
 
       - name: "Bump SDK Engine Dependencies"
@@ -119,7 +119,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
 
       - name: "Test Go SDK"
         run: |
@@ -194,7 +194,7 @@ jobs:
         shell: bash
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.20'
+          go-version: "1.20"
       - name: "Test Go SDK"
         run: |
           cd sdk/go
