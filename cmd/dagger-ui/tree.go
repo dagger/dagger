@@ -13,17 +13,18 @@ import (
 )
 
 var (
-	itemTimerStyle = lipgloss.NewStyle().Faint(true)
-	selectedStyle  = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
-			Background(lipgloss.Color("57")).
+	itemTimerStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("8"))
+	selectedStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("0")).
+			Background(lipgloss.Color("4")).
 			Bold(false)
 	selectedStyleBlur = lipgloss.NewStyle().
 				Background(lipgloss.Color("7")).
 				Foreground(lipgloss.Color("0"))
 
-	completedStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("✔")
-	cachedStatus    = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).SetString("▲  ")
+	completedStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).SetString("✔")
+	cachedStatus    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).SetString("▲  ")
 )
 
 type TreeEntry interface {

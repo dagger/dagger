@@ -87,8 +87,8 @@ func (m Details) headerView() string {
 		title = titleStyle.Render(title)
 		line = strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title)))
 	} else {
-		title = titleStyle.Copy().BorderForeground(lipgloss.Color("57")).Render(title)
-		line = lipgloss.NewStyle().Foreground(lipgloss.Color("57")).Render(strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title))))
+		title = titleStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(title)
+		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(title))))
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, title, line)
 }
@@ -101,8 +101,8 @@ func (m Details) footerView() string {
 		info = infoStyle.Render(info)
 		line = strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info)))
 	} else {
-		info = infoStyle.Copy().BorderForeground(lipgloss.Color("57")).Render(info)
-		line = lipgloss.NewStyle().Foreground(lipgloss.Color("57")).Render(strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info))))
+		info = infoStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(info)
+		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(strings.Repeat("─", max(0, m.viewport.Width-lipgloss.Width(info))))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)

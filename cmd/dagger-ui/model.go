@@ -16,7 +16,7 @@ import (
 
 func New(ch chan *bkclient.SolveStatus) *Model {
 	spinner := spinner.New(
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("63"))),
+		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("3"))),
 	)
 
 	return &Model{
@@ -268,40 +268,43 @@ func (m Model) statusBarTimerView() string {
 var (
 	// Status Bar.
 	statusNugget = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("#FFFDF5")).
+			Foreground(lipgloss.Color("7")).
 			Padding(0, 1)
 
 	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "#343433", Dark: "#C1C6B2"}).
-			Background(lipgloss.AdaptiveColor{Light: "#D9DCCF", Dark: "#353533"})
+			Foreground(lipgloss.AdaptiveColor{Light: "8", Dark: "15"}).
+			Background(lipgloss.AdaptiveColor{Light: "15", Dark: "8"})
 
 	followMode = lipgloss.NewStyle().
 			Inherit(statusBarStyle).
-			Foreground(lipgloss.Color("#FFFDF5")).
-			Background(lipgloss.Color("#A550DF")).
-		// Background(lipgloss.Color("#FF5F87")).
-		Padding(0, 1).
-		MarginRight(1).
-		SetString("FOLLOW")
+			Background(lipgloss.Color("13")).
+			Foreground(lipgloss.Color("0")).
+			Padding(0, 1).
+			MarginRight(1).
+			SetString("FOLLOW")
 
 	browseMode = followMode.Copy().
-			Background(lipgloss.Color("#6124DF")).
-		// Background(lipgloss.Color("#70B4D8")).
-		SetString("BROWSE")
+			Background(lipgloss.Color("5")).
+			Foreground(lipgloss.Color("0")).
+			SetString("BROWSE")
 
 	runningStatus = statusNugget.Copy().
-			Background(lipgloss.Color("#A550DF")).
+			Background(lipgloss.Color("3")).
+			Foreground(lipgloss.Color("0")).
 			Align(lipgloss.Right).
 			SetString("RUNNING")
 
 	completeStatus = runningStatus.Copy().
-			Background(lipgloss.Color("#43BF6D")).
+			Background(lipgloss.Color("6")).
+			Foreground(lipgloss.Color("0")).
 			Align(lipgloss.Right).
 			SetString("COMPLETE")
 
 	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
 
-	timerStyle = statusNugget.Copy().Background(lipgloss.Color("#6124DF"))
+	timerStyle = statusNugget.Copy().
+			Background(lipgloss.Color("3")).
+			Foreground(lipgloss.Color("0"))
 )
 
 func (m Model) statusBarView() string {
