@@ -203,7 +203,9 @@ export class Bin implements EngineConn {
   async Close(): Promise<void> {
     if (this.subProcess?.pid) {
       this.subProcess.kill("SIGTERM", {
-        forceKillAfterTimeout: 2000,
+        // Set a long timeout to give time for any cache exports to pack layers up
+        // which currently has to happen synchronously with the session.
+        forceKillAfterTimeout: 300000, // 5 mins
       })
     }
   }
