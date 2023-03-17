@@ -65,7 +65,8 @@ jobs:
           GRAFANA_CLOUD_URL: "https://logs-prod-017.grafana.net"
           GRAFANA_CLOUD_API_KEY: "glc_eyJvIjoiNzcwNzY0IiwibiI6Im1ldHJpY3Nsb2dzdHJhY2Vzd3JpdGVyLWdpdGh1Yi1kYWdnZXItZGFnZ2VyLXJlcG8tYW5kLWZvcmtzIiwiayI6Ijk4My1MX3M0fHpdLDMjNHo/MyswKyg1MCIsIm0iOnsiciI6InVzIn19"
       - uses: actions/upload-artifact@v3
-        name: "Upload otel-collector journal.log"
+        if: always()
+        name: "Upload journal.log"
         continue-on-error: true
         with:
           name: ${{ github.workflow }}-${{ github.job }}-journal.log
@@ -91,12 +92,22 @@ jobs:
       - run: ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
       - run: ./hack/make engine:testrace
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
       - name: "ALWAYS print engine logs - especialy useful on failure"
         if: always()
         run: docker logs dagger-engine.dev
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
         run: sudo dmesg
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-go:
     name: "sdk / go"
@@ -107,6 +118,16 @@ jobs:
         with:
           go-version: "1.20"
       - run: ./hack/make sdk:go:test
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-python:
     name: "sdk / python"
@@ -117,6 +138,16 @@ jobs:
         with:
           go-version: "1.20"
       - run: ./hack/make sdk:python:test
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-nodejs:
     name: "sdk / nodejs"
@@ -127,3 +158,13 @@ jobs:
         with:
           go-version: "1.20"
       - run: ./hack/make sdk:nodejs:test
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log

@@ -27,6 +27,16 @@ jobs:
         with:
           go-version: '1.20'
       - run: ./hack/make engine:lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   docs:
     runs-on: ubuntu-latest
@@ -36,6 +46,16 @@ jobs:
         with:
           go-version: '1.20'
       - run: ./hack/make docs:lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-go:
     name: "sdk / go"
@@ -46,6 +66,16 @@ jobs:
         with:
           go-version: '1.20'
       - run: ./hack/make sdk:go:lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-python:
     name: "sdk / python"
@@ -56,6 +86,16 @@ jobs:
         with:
           go-version: '1.20'
       - run: ./hack/make sdk:python:lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   sdk-nodejs:
     name: "sdk / nodejs"
@@ -66,3 +106,13 @@ jobs:
         with:
           go-version: '1.20'
       - run: ./hack/make sdk:nodejs:lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log

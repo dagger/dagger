@@ -3,7 +3,7 @@ module github.com/dagger/dagger/internal/mage
 go 1.20
 
 require (
-	dagger.io/dagger v0.4.4
+	dagger.io/dagger v0.5.1
 	github.com/dagger/dagger v0.0.0-00010101000000-000000000000
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.14.0

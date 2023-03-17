@@ -45,6 +45,8 @@ jobs:
           ARTEFACTS_FQDN: ${{ secrets.RELEASE_FQDN }}
           HOMEBREW_TAP_OWNER: ${{ secrets.RELEASE_HOMEBREW_TAP_OWNER }}
           GORELEASER_KEY: ${{ secrets.GORELEASER_PRO_LICENSE_KEY }}
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICI1OTA4YWU3NC1mYjM5LTRiYTQtYTRmNC0yMjE4NWFjNDIxZTMifQ.W0r9ZnWKVBpLuNT82c09Z6AKDbkQFsLv15EpetJ0cZw"
         run: ./hack/make dagger:publish ${{ github.ref_name }}
 
       - name: "Bump SDK Engine Dependencies"
@@ -63,6 +65,14 @@ jobs:
           delete-branch: true
           branch: bump-engine
           draft: true
+
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log
 
   test-provision-macos:
     name: "Test SDK Provision / macos"
