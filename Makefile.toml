@@ -8,7 +8,7 @@ command = "cargo"
 args = [
   "run",
   "-p",
-  "dagger-rs",
+  "dagger-bootstrap",
   "--",
   "generate",
   "--output",

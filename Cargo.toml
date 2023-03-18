@@ -3,14 +3,14 @@ members = [
   "crates/dagger-codegen",
   "crates/dagger-sdk",
   "crates/dagger-core",
-  "crates/dagger-rs",
+  "crates/dagger-bootstrap",
   "ci",
 ]
 
 [workspace.dependencies]
 dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
 dagger-core = { path = "crates/dagger-core", version = "^0.2.8" }
-dagger-rs = { path = "crates/dagger-rs", version = "^0.2.10" }
+dagger-bootstrap = { path = "crates/dagger-bootstrap", version = "^0.2.10" }
 dagger-sdk = { path = "crates/dagger-sdk", version = "^0.2.19" }
 
 eyre = "0.6.8"

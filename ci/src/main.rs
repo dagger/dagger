@@ -90,7 +90,7 @@ async fn release(client: Arc<Query>, _subm: &clap::ArgMatches) -> Result<(), col
             "--execute",
             "--allow-fully-generated-changelogs",
             "--no-changelog-preview",
-            "dagger-rs",
+            "dagger-sdk",
             "dagger-sdk",
         ]);
     let exit = container.exit_code().await?;

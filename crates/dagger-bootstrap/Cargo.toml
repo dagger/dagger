@@ -1,11 +1,11 @@
 [package]
-name = "dagger-rs"
+name = "dagger-bootstrap"
 version = "0.2.10"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
 description = "A dagger sdk for rust, written in rust"
-repository = "https://github.com/kjuulh/dagger-rs"
+repository = "https://github.com/kjuulh/dagger-sdk"
 publish = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

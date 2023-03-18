@@ -5,7 +5,7 @@ edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
 description = "dagger sdk codegen library"
-repository = "https://github.com/kjuulh/dagger-rs"
+repository = "https://github.com/kjuulh/dagger-sdk"
 publish = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
