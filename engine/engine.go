@@ -228,7 +228,16 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 			for ev := range ch {
 				cleaned := *ev
 				cleaned.Vertexes = make([]*bkclient.Vertex, len(ev.Vertexes))
+
+				// Avoid log duplication on multi stage.
+				// See https://github.com/dagger/dagger/issues/4605
+				isAlreadyLogged := false
 				for i, v := range ev.Vertexes {
+					if v.Started == nil && v.Completed == nil {
+						isAlreadyLogged = true
+						continue
+					}
+
 					customName := pipeline.CustomName{}
 					if json.Unmarshal([]byte(v.Name), &customName) == nil {
 						cp := *v
@@ -238,6 +247,11 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 						cleaned.Vertexes[i] = v
 					}
 				}
+
+				if isAlreadyLogged == true {
+					continue
+				}
+
 				cleanCh <- &cleaned
 			}
 			return nil
