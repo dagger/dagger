@@ -1,5 +1,6 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
+use dagger_core::graphql_client::DynGraphQLClient;
 use eyre::Context;
 use serde::{Deserialize, Serialize};
 
@@ -116,7 +117,7 @@ impl Selection {
         Ok(fields.join("{") + &"}".repeat(fields.len() - 1))
     }
 
-    pub async fn execute<D>(&self, gql_client: &gql_client::Client) -> eyre::Result<D>
+    pub async fn execute<D>(&self, gql_client: DynGraphQLClient) -> eyre::Result<D>
     where
         D: for<'de> Deserialize<'de>,
     {

@@ -12,15 +12,15 @@ use crate::utility::OptionExt;
 pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust::Tokens> {
     let selection = rust::import("crate::querybuilder", "Selection");
     let child = rust::import("tokio::process", "Child");
-    let conn = rust::import("dagger_core::connect_params", "ConnectParams");
+    let graphql_client = rust::import("dagger_core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
     Ok(quote! {
-        #[derive(Debug, Clone)]
+        #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
             pub proc: $arc<$child>,
             pub selection: $selection,
-            pub conn: $conn,
+            pub graphql_client: $graphql_client
         }
 
         $(t.fields.pipe(|f| render_optional_args(funcs, f)))

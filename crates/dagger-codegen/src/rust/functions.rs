@@ -247,7 +247,7 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
             return $(output_type) {
                 proc: self.proc.clone(),
                 selection: query,
-                conn: self.conn.clone(),
+                graphql_client: self.graphql_client.clone(),
             }
         };
     }
@@ -273,15 +273,13 @@ fn render_execution(funcs: &CommonFunctions, field: &FullTypeFields) -> rust::To
             return vec![$(output_type) {
                 proc: self.proc.clone(),
                 selection: query,
-                conn: self.conn.clone(),
+                graphql_client: self.graphql_client.clone(),
             }]
         };
     }
 
-    let graphql_client = rust::import("crate::client", "graphql_client");
-
     quote! {
-        query.execute(&$graphql_client(&self.conn)).await
+        query.execute(self.graphql_client.clone()).await
     }
 }
 
