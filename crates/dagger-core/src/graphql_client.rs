@@ -4,9 +4,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use base64::engine::general_purpose;
 use base64::Engine;
-use gql_client::ClientConfig;
 
 use crate::connect_params::ConnectParams;
+use crate::gql_client::{ClientConfig, GQLClient};
 
 #[async_trait]
 pub trait GraphQLClient {
@@ -17,7 +17,7 @@ pub type DynGraphQLClient = Arc<dyn GraphQLClient + Send + Sync>;
 
 #[derive(Debug)]
 pub struct DefaultGraphQLClient {
-    client: gql_client::Client,
+    client: GQLClient,
 }
 
 impl DefaultGraphQLClient {
@@ -28,7 +28,7 @@ impl DefaultGraphQLClient {
         headers.insert("Authorization".to_string(), format!("Basic {}", token));
 
         Self {
-            client: gql_client::Client::new_with_config(ClientConfig {
+            client: GQLClient::new_with_config(ClientConfig {
                 endpoint: conn.url(),
                 timeout: Some(1000),
                 headers: Some(headers),

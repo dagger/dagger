@@ -7,6 +7,7 @@ pub mod config;
 pub mod connect_params;
 pub mod downloader;
 pub mod engine;
+pub mod gql_client;
 pub mod graphql_client;
 pub mod introspection;
 pub mod logger;
