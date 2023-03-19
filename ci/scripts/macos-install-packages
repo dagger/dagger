@@ -1,0 +1,4 @@
+#!/bin/sh
+
+brew install docker
+colima start

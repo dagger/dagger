@@ -20,13 +20,18 @@ tracing-subscriber = { workspace = true }
 base64 = "0.21.0"
 gql_client = "1.0.7"
 dirs = "4.0.0"
-flate2 = { version = "1.0.25", features = ["zlib"] }
-graphql-introspection-query = "0.2.0"
-graphql_client = { version = "0.12.0", features = ["reqwest"] }
+flate2 = { version = "1.0.25", features = ["rust_backend"] }
+graphql_client = { version = "0.12.0", features = [
+  "reqwest-rustls",
+  "graphql_query_derive",
+], default-features = false }
 hex = "0.4.3"
 hex-literal = "0.3.4"
 platform-info = "1.0.2"
-reqwest = { version = "0.11.14", features = ["stream", "deflate"] }
+reqwest = { version = "0.11.14", features = [
+  "stream",
+  "rustls-tls",
+], default-features = false }
 sha2 = "0.10.6"
 tar = "0.4.38"
 tempfile = "3.3.0"

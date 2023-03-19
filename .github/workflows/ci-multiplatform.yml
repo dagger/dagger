@@ -1,0 +1,121 @@
+name: ci-multi-platform
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '00 01 * * *'
+jobs:
+  test:
+    name: test
+    env:
+      # For some builds, we use cross to test on 32-bit and big-endian
+      # systems.
+      CARGO: cargo
+      # When CARGO is set to CROSS, this is set to `--target matrix.target`.
+      TARGET_FLAGS: ""
+      # When CARGO is set to CROSS, TARGET_DIR includes matrix.target.
+      TARGET_DIR: ./target
+      # Emit backtraces on panics.
+      RUST_BACKTRACE: 1
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        build:
+          - pinned
+          - stable
+          - beta
+          - nightly
+          #- nightly-musl
+          #- nightly-32
+          #- nightly-mips
+          #- nightly-arm
+          #- macos
+          # - win-msvc
+          #- win-gnu
+        include:
+          - build: pinned
+            os: ubuntu-22.04
+            rust: 1.65.0
+          - build: stable
+            os: ubuntu-22.04
+            rust: stable
+          - build: beta
+            os: ubuntu-22.04
+            rust: beta
+          - build: nightly
+            os: ubuntu-22.04
+            rust: nightly
+            #- build: nightly-musl
+            #  os: ubuntu-22.04
+            #  rust: nightly
+            #  target: x86_64-unknown-linux-musl
+            #- build: nightly-32
+            #  os: ubuntu-22.04
+            #  rust: nightly
+            #  target: i686-unknown-linux-gnu
+            #- build: nightly-mips
+            #  os: ubuntu-22.04
+            #  rust: nightly
+            #  target: mips64-unknown-linux-gnuabi64
+            #- build: nightly-arm
+            #  os: ubuntu-22.04
+            #  rust: nightly
+            #  target: arm-unknown-linux-gnueabihf
+            #- build: macos
+            #  os: macos-12
+            #  rust: nightly
+            #- build: win-msvc
+            #  os: windows-2022
+            #  rust: nightly
+            #- build: win-gnu
+            #  os: windows-2022
+            #  rust: nightly-x86_64-gnu
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      #- name: Install packages (Ubuntu)
+      #  if: matrix.os == 'ubuntu-22.04'
+      #  run: |
+      #    ci/ubuntu-install-packages
+      - name: Install packages (macOS)
+        if: matrix.os == 'macos-12'
+        run: |
+          ci/scripts/macos-install-packages
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2.0.0
+      - uses: actions-rs/toolchain@v1
+        if: matrix.target == ''
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: actions-rs/toolchain@v1
+        if: matrix.target != ''
+        with:
+          toolchain: ${{ matrix.rust }}
+          target: ${{ matrix.target }}
+          use-cross: true
+      - uses: actions-rs/cargo@v1
+        if: matrix.target != ''
+        with:
+          use-cross: true
+          command: build
+          args: --workspace --verbose --target ${{ matrix.target }}
+      - uses: actions-rs/cargo@v1
+        if: matrix.target == ''
+        with:
+          command: build
+          args: --workspace --verbose
+      - uses: actions-rs/cargo@v1
+        if: matrix.target != ''
+        with:
+          use-cross: true
+          command: test
+          args: --all --verbose --target ${{ matrix.target }}
+      - uses: actions-rs/cargo@v1
+        if: matrix.target == ''
+        with:
+          command: test
+          args: --all --verbose
