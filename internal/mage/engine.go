@@ -60,8 +60,8 @@ fi
 
 if [ "$` + servicesDNSEnvName + `" != "0" ]; then
 	# relocate resolv.conf mount
-	touch /etc/resolv.conf.upstream
-	mount --bind /etc/resolv.conf /etc/resolv.conf.upstream
+	touch /etc/dnsmasq-resolv.conf
+	mount --bind /etc/resolv.conf /etc/dnsmasq-resolv.conf
 	umount /etc/resolv.conf
 
 	# add dnsmasq to resolver so buildkit can reach local services
@@ -69,8 +69,8 @@ if [ "$` + servicesDNSEnvName + `" != "0" ]; then
 	echo 'nameserver {{.Bridge}}' >> /etc/resolv.conf
 
 	# preserve DNS search/options config, but let dnsmasq delegate to
-	# /etc/resolv.conf.upstream for upstream nameservers
-	grep -v '^nameserver' /etc/resolv.conf.upstream || true >> /etc/resolv.conf
+	# /etc/dnsmasq-resolv.conf for upstream nameservers
+	grep -v '^nameserver' /etc/dnsmasq-resolv.conf || true >> /etc/resolv.conf
 fi
 
 exec {{.EngineBin}} --config {{.EngineConfig}} "$@"

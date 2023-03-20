@@ -30,7 +30,7 @@ bind-dynamic
 no-hosts
 interface={{.NetworkInterface}}
 addn-hosts={{.AddOnHostsFile}}
-resolv-file=/etc/resolv.conf.upstream
+resolv-file=/etc/dnsmasq-resolv.conf
 `
 
 var (
