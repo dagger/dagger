@@ -67,7 +67,7 @@ require (
 	github.com/jackpal/gateway v1.0.7
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
-	github.com/vito/vt100 v0.0.0-20230320141225-99d2f9af3465
+	github.com/vito/vt100 v0.0.0-20230320144720-5771057f4dc0
 	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9
 )
 
