@@ -1,6 +1,8 @@
 package generator
 
-import "github.com/dagger/dagger/codegen/introspection"
+import (
+	"github.com/dagger/dagger/codegen/introspection"
+)
 
 const (
 	QueryStructName       = "Query"
