@@ -32,6 +32,9 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 
 	group := []string{}
 	for _, p := range name.Pipeline {
+		if p.Name == "" {
+			p.Name = "pipeline"
+		}
 		group = append(group, p.Name)
 	}
 
