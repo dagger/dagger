@@ -68,6 +68,7 @@ require (
 	github.com/google/go-github/v50 v50.1.0
 	github.com/jackpal/gateway v1.0.7
 	github.com/nxadm/tail v1.4.8
+	github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9
 )
 
 require (

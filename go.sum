@@ -1383,6 +1383,8 @@ github.com/vishvananda/netlink v0.0.0-20181108222139-023a6dafdcdf/go.mod h1:+SR5
 github.com/vishvananda/netlink v1.1.0/go.mod h1:cTgwzPIzzgDAYoQrMm0EdrjRUBkTqKYppBueQtXaqoE=
 github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc/go.mod h1:ZjcWmFBXmLKZu9Nxj3WKYEafiSqer2rnvPr0en9UNpI=
 github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17pCcGlemwknint6hfoeCVQrEMVwxRLRjXpq+BU=
+github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9 h1:w5wq45A37gCoC0c3Tu2TorPVKjHwYV2IMywZJHaYEjU=
+github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9/go.mod h1:tef+Px8jpdyyUTNDDgZjqkm5UZWM+rs3tXclM8NeC7o=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63/go.mod h1:KoQ+3z63GUJzQ7AhU0AWQNU+LPda2EwL/cx1PlbDzVQ=

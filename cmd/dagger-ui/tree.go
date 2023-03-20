@@ -1,15 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	bkclient "github.com/moby/buildkit/client"
+	"golang.org/x/exp/constraints"
 )
 
 var (
@@ -28,6 +28,8 @@ var (
 )
 
 type TreeEntry interface {
+	tea.Model
+
 	ID() string
 	Name() string
 
@@ -37,14 +39,16 @@ type TreeEntry interface {
 	Completed() *time.Time
 	Cached() bool
 
-	Logs() *bytes.Buffer
-	Status() []*bkclient.VertexStatus
+	SetWidth(int)
+	SetHeight(int)
+	ScrollPercent() float64
 }
 
 type Tree struct {
+	viewport viewport.Model
+
 	root    TreeEntry
 	current TreeEntry
-	width   int
 	focus   bool
 
 	spinner   spinner.Model
@@ -69,7 +73,11 @@ func (m *Tree) SetRoot(root TreeEntry) {
 }
 
 func (m *Tree) SetWidth(width int) {
-	m.width = width
+	m.viewport.Width = width
+}
+
+func (m *Tree) SetHeight(height int) {
+	m.viewport.Height = height
 }
 
 func (m Tree) Current() TreeEntry {
@@ -94,7 +102,9 @@ func (m Tree) View() string {
 		}
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, views...)
+	m.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, views...))
+
+	return m.viewport.View()
 }
 
 func (m *Tree) treePrefixView(padding []bool) string {
@@ -167,7 +177,7 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	timerView := m.timerView(item)
 
 	nameView := lipgloss.NewStyle().
-		Width(max(0, m.width-lipgloss.Width(status)-lipgloss.Width(treePrefix)-lipgloss.Width(timerView))).
+		Width(max(0, m.viewport.Width-lipgloss.Width(status)-lipgloss.Width(treePrefix)-lipgloss.Width(timerView))).
 		Render(" " + expandView + item.Name())
 
 	view := status + treePrefix
@@ -205,11 +215,28 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	)
 }
 
-func max(i, j int) int {
+func max[T constraints.Ordered](i, j T) T {
 	if i > j {
 		return i
 	}
 	return j
+}
+
+func clamp[T constraints.Ordered](min, max, val T) T {
+	if val < min {
+		return min
+	}
+	if val > max {
+		return max
+	}
+	return val
+}
+
+func min[T constraints.Ordered](a, b T) T {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (m *Tree) MoveUp() {

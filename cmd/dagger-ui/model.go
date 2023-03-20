@@ -14,30 +14,29 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 )
 
-func New(ch chan *bkclient.SolveStatus) *Model {
-	spinner := spinner.New(
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("3"))),
-	)
-
-	return &Model{
+func New(quit func(), ch chan *bkclient.SolveStatus) *Model {
+	m := &Model{
+		quit: quit,
 		tree: &Tree{
+			viewport:  viewport.New(0, 10),
+			spinner:   newSpinner(),
 			collapsed: make(map[TreeEntry]bool),
-			spinner:   spinner,
 			focus:     true,
 		},
 		root:      NewGroup("root", ""),
 		itemsByID: make(map[string]*Item),
-		details: Details{
-			viewport: viewport.New(0, 10),
-			spinner:  spinner,
-		},
-		follow: true,
-		ch:     ch,
-		help:   help.New(),
+		details:   Details{},
+		follow:    true,
+		ch:        ch,
+		help:      help.New(),
 	}
+
+	return m
 }
 
 type Model struct {
+	quit func()
+
 	ch        chan *bkclient.SolveStatus
 	itemsByID map[string]*Item
 	root      *Group
@@ -55,8 +54,6 @@ type Model struct {
 	follow       bool
 	detailsFocus bool
 }
-
-var _ TreeEntry = &Group{}
 
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(
@@ -106,14 +103,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		m.tree.Follow()
-		m.details.SetItem(m.tree.Current())
+		cmd := m.details.SetItem(m.tree.Current())
 
 		if item == m.tree.Current() {
 			// There was no "next" item (maybe everything is pending)
 			// Try again
-			return m, debounceFollow(string(msg))
+			return m, tea.Batch(cmd, debounceFollow(string(msg)))
 		}
-		return m, nil
+		return m, cmd
 	case *bkclient.SolveStatus:
 		return m.processSolveStatus(msg)
 	case spinner.TickMsg:
@@ -139,6 +136,7 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
 	case key.Matches(msg, keys.Quit):
+		m.quit()
 		return m, tea.Quit
 	case key.Matches(msg, keys.Follow):
 		m.follow = !m.follow
@@ -152,7 +150,7 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.follow = false
 		m.tree.MoveUp()
 		if m.tree.Current() != nil {
-			m.details.SetItem(m.tree.Current())
+			return m, m.details.SetItem(m.tree.Current())
 		}
 	case key.Matches(msg, keys.Down):
 		if m.detailsFocus {
@@ -163,7 +161,7 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.follow = false
 		m.tree.MoveDown()
 		if m.tree.Current() != nil {
-			m.details.SetItem(m.tree.Current())
+			return m, m.details.SetItem(m.tree.Current())
 		}
 	case key.Matches(msg, keys.Collapse):
 		m.tree.Collapse(m.tree.Current(), false)
@@ -180,6 +178,7 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	return m, nil
 }
+
 func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{
 		m.waitForActivity(),
@@ -205,12 +204,13 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 
 		item := m.itemsByID[v.Digest.String()]
 		if item == nil {
-			item = NewItem(v)
+			item = NewItem(v, m.width)
+			cmds = append(cmds, item.Init())
 			m.itemsByID[item.id] = item
 			if !item.Internal() {
 				m.root.Add(item.group, item)
 				m.tree.SetRoot(m.root)
-				m.details.SetItem(m.tree.Current())
+				cmds = append(cmds, m.details.SetItem(m.tree.Current()))
 			}
 		}
 
@@ -339,6 +339,7 @@ func (m Model) View() string {
 	detailsHeight := m.height / 2
 	// Add leftover space to tree
 	treeHeight += m.height - (treeHeight + detailsHeight)
+	m.tree.SetHeight(treeHeight)
 
 	treeView := m.tree.View()
 	treeView += strings.Repeat("\n", max(0, treeHeight-lipgloss.Height(treeView)))
@@ -357,5 +358,23 @@ func (m Model) View() string {
 		detailsView,
 		statusBarView,
 		helpView,
+	)
+}
+
+func (m Model) waitForActivity() tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-m.ch
+		if ok {
+			return msg
+		}
+
+		return nil
+	}
+}
+
+func newSpinner() spinner.Model {
+	return spinner.New(
+		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("3"))),
+		spinner.WithSpinner(spinner.MiniDot),
 	)
 }

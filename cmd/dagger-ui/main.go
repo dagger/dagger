@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -40,10 +41,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	p := tea.NewProgram(New(ch), tea.WithAltScreen())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p := tea.NewProgram(New(cancel, ch), tea.WithAltScreen())
 
 	if len(cmd) > 0 {
-		cmd := exec.Command(cmd[0], cmd[1:]...)
+		cmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 		cmd.Env = append(os.Environ(), "_EXPERIMENTAL_DAGGER_JOURNAL="+journalFile)
 
 		err := cmd.Start()

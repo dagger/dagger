@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -40,12 +41,17 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *bkcli
 
 		for line := range f.Lines {
 			if err := line.Err; err != nil {
-				fmt.Fprintf(os.Stderr, "err: %v\n", err)
+				fmt.Fprintf(os.Stderr, "tail err: %v\n", err)
 				return
 			}
+
 			var entry JournalEntry
 			if err := json.Unmarshal([]byte(line.Text), &entry); err != nil {
-				fmt.Fprintf(os.Stderr, "err: %v\n", err)
+				fmt.Fprintf(os.Stderr, "tail unmarshal error (%s): %v\n", line.Text, err)
+				var syntaxErr *json.SyntaxError
+				if errors.As(err, &syntaxErr) {
+					continue
+				}
 				return
 			}
 
