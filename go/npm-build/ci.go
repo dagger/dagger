@@ -25,20 +25,12 @@ func doCi() error {
 	}
 	defer client.Close()
 
-	// get the projects source directory
-	src := client.Host().Directory(".")
+	src := client.Host().Directory(".")	// get the projects source directory
 
-	// initialize new container from npm image
-	npm := client.Container().From("node")
-
-	// mount source directory to /src
-	npm = npm.WithMountedDirectory("/src", src).WithWorkdir("/src")
-
-	// execute npm install
-	npm = npm.WithExec([]string{"npm", "install"})
-
-	// execute npm test command
-	npm = npm.WithExec([]string{"npm", "run", "test"})
+	npm := client.Container().From("node"). // initialize new container from npm image
+		WithMountedDirectory("/src", src).WithWorkdir("/src"). // mount source directory to /src
+		WithExec([]string{"npm", "install"}).	// execute npm install
+		WithExec([]string{"npm", "run", "test"})	// execute npm test command
 
 	// get test output
 	test, err := npm.Stdout(ctx)
@@ -48,11 +40,8 @@ func doCi() error {
 	// print output to console
 	fmt.Println(test)
 
-	// execute build command
-	npm = npm.WithExec([]string{"npm", "run", "build"})
-
-	// get build output
-	build, err := npm.Stdout(ctx)
+	// execute build command and get build output
+	build, err := npm..WithExec([]string{"npm", "run", "build"}).Stdout(ctx)
 	if err != nil {
 		return err
 	}
