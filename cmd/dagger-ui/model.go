@@ -347,7 +347,7 @@ func (m Model) View() string {
 	helpView := m.helpView()
 	detailsHeight -= lipgloss.Height(helpView)
 
-	statusBarView := "\n" + m.statusBarView()
+	statusBarView := m.statusBarView()
 	detailsHeight -= lipgloss.Height(statusBarView)
 
 	m.details.SetHeight(detailsHeight)

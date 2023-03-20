@@ -68,31 +68,20 @@ func (m *Details) Focus(focus bool) {
 
 func (m Details) headerView() string {
 	title := m.item.Name()
-	line := ""
-
-	if !m.focus {
-		title = titleStyle.Render(title)
-		line = strings.Repeat("─", max(0, m.width-lipgloss.Width(title)))
-	} else {
-		title = titleStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(title)
-		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(strings.Repeat("─", max(0, m.width-lipgloss.Width(title))))
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, title, line)
-}
-
-func (m Details) footerView() string {
 	info := fmt.Sprintf("%3.f%%", m.item.ScrollPercent()*100)
 	line := ""
 
 	if !m.focus {
+		title = titleStyle.Render(title)
 		info = infoStyle.Render(info)
-		line = strings.Repeat("─", max(0, m.width-lipgloss.Width(info)))
+		line = strings.Repeat("─", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info)))
 	} else {
+		title = titleStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(title)
 		info = infoStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(info)
-		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).Render(strings.Repeat("─", max(0, m.width-lipgloss.Width(info))))
+		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).
+			Render(strings.Repeat("─", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))))
 	}
-
-	return lipgloss.JoinHorizontal(lipgloss.Center, line, info)
+	return lipgloss.JoinHorizontal(lipgloss.Center, title, line, info)
 }
 
 func (m Details) View() string {
@@ -100,9 +89,8 @@ func (m Details) View() string {
 		return strings.Repeat("\n", max(0, m.height))
 	}
 	headerView := m.headerView()
-	footerView := m.footerView()
 
-	m.item.SetHeight(m.height - lipgloss.Height(headerView) - lipgloss.Height(footerView))
+	m.item.SetHeight(m.height - lipgloss.Height(headerView))
 
-	return lipgloss.JoinVertical(lipgloss.Left, headerView, m.item.View(), footerView)
+	return lipgloss.JoinVertical(lipgloss.Left, headerView, m.item.View())
 }
