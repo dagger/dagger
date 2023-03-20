@@ -8,20 +8,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-var (
-	titleStyle = func() lipgloss.Style {
-		b := lipgloss.RoundedBorder()
-		b.Right = "├"
-		return lipgloss.NewStyle().Bold(true).BorderStyle(b).Padding(0, 1)
-	}()
-
-	infoStyle = func() lipgloss.Style {
-		b := lipgloss.RoundedBorder()
-		b.Left = "┤"
-		return titleStyle.Copy().BorderStyle(b)
-	}()
-)
-
 type Details struct {
 	item   TreeEntry
 	width  int
@@ -72,16 +58,31 @@ func (m Details) headerView() string {
 	line := ""
 
 	if !m.focus {
-		title = titleStyle.Render(title)
-		info = infoStyle.Render(info)
-		line = strings.Repeat("─", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info)))
+		title = titleStyle.Copy().
+			Render(title)
+		info = infoStyle.Copy().
+			Render(info)
+		space := max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))
+		line = titleBarStyle.Copy().
+			Render(strings.Repeat("─", space))
 	} else {
-		title = titleStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(title)
-		info = infoStyle.Copy().BorderForeground(lipgloss.Color("5")).Render(info)
-		line = lipgloss.NewStyle().Foreground(lipgloss.Color("5")).
-			Render(strings.Repeat("─", max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))))
+		title = titleStyle.Copy().
+			BorderForeground(colorSelected).
+			Render(title)
+		info = infoStyle.Copy().
+			BorderForeground(colorSelected).
+			Render(info)
+		space := max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))
+		line = titleBarStyle.Copy().
+			BorderForeground(colorSelected).
+			Foreground(colorSelected).
+			Render(strings.Repeat("─", space))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, title, line, info)
+
+	return lipgloss.JoinHorizontal(lipgloss.Center,
+		title,
+		line,
+		info)
 }
 
 func (m Details) View() string {

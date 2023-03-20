@@ -262,84 +262,15 @@ func (m Model) statusBarTimerView() string {
 	} else if sec < 100 {
 		prec = 1
 	}
-	return fmt.Sprintf("%.[2]*[1]fs", sec, prec)
-}
-
-var (
-	// Status Bar.
-	statusNugget = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("7")).
-			Padding(0, 1)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "8", Dark: "15"}).
-			Background(lipgloss.AdaptiveColor{Light: "15", Dark: "8"})
-
-	followMode = lipgloss.NewStyle().
-			Inherit(statusBarStyle).
-			Background(lipgloss.Color("13")).
-			Foreground(lipgloss.Color("0")).
-			Padding(0, 1).
-			MarginRight(1).
-			SetString("FOLLOW")
-
-	browseMode = followMode.Copy().
-			Background(lipgloss.Color("5")).
-			Foreground(lipgloss.Color("0")).
-			SetString("BROWSE")
-
-	runningStatus = statusNugget.Copy().
-			Background(lipgloss.Color("3")).
-			Foreground(lipgloss.Color("0")).
-			Align(lipgloss.Right).
-			SetString("RUNNING")
-
-	completeStatus = runningStatus.Copy().
-			Background(lipgloss.Color("6")).
-			Foreground(lipgloss.Color("0")).
-			Align(lipgloss.Right).
-			SetString("COMPLETE")
-
-	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
-
-	timerStyle = statusNugget.Copy().
-			Background(lipgloss.Color("3")).
-			Foreground(lipgloss.Color("0"))
-)
-
-func (m Model) statusBarView() string {
-	mode := browseMode.String()
-	if m.follow {
-		mode = followMode.String()
-	}
-	status := runningStatus.String()
-	if m.done {
-		status = completeStatus.String()
-	}
-
-	timer := timerStyle.Render("⌛ " + m.statusBarTimerView())
-	statusVal := statusText.Copy().
-		Width(m.width - lipgloss.Width(mode) - lipgloss.Width(status) - lipgloss.Width(timer)).
-		Render("")
-
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		mode,
-		statusVal,
-		status,
-		timer,
-	)
-}
-
-func (m Model) helpView() string {
-	return m.help.View(keys)
+	return strings.TrimSpace(fmt.Sprintf("%.[2]*[1]fs", sec, prec))
 }
 
 func (m Model) View() string {
-	treeHeight := m.height / 2
-	detailsHeight := m.height / 2
-	// Add leftover space to tree
-	treeHeight += m.height - (treeHeight + detailsHeight)
+	maxTreeHeight := m.height / 2
+	treeHeight := min(maxTreeHeight, m.tree.UsedHeight())
 	m.tree.SetHeight(treeHeight)
+
+	detailsHeight := m.height - treeHeight
 
 	treeView := m.tree.View()
 	treeView += strings.Repeat("\n", max(0, treeHeight-lipgloss.Height(treeView)))
@@ -354,11 +285,38 @@ func (m Model) View() string {
 	detailsView := m.details.View()
 
 	return lipgloss.JoinVertical(lipgloss.Left,
+		statusBarView,
 		treeView,
 		detailsView,
-		statusBarView,
 		helpView,
 	)
+}
+
+func (m Model) statusBarView() string {
+	mode := browseMode.String()
+	if m.follow {
+		mode = followMode.String()
+	}
+	status := runningStatus.String()
+	if m.done {
+		status = completeStatus.String()
+	}
+
+	timer := timerStyle.Render("⌛" + m.statusBarTimerView())
+	statusVal := statusText.Copy().
+		Width(m.width - lipgloss.Width(mode) - lipgloss.Width(status) - lipgloss.Width(timer)).
+		Render("")
+
+	return lipgloss.JoinHorizontal(lipgloss.Top,
+		mode,
+		statusVal,
+		status,
+		timer,
+	)
+}
+
+func (m Model) helpView() string {
+	return m.help.View(keys)
 }
 
 func (m Model) waitForActivity() tea.Cmd {

@@ -13,21 +13,6 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-var (
-	itemTimerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("8"))
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("0")).
-			Background(lipgloss.Color("4")).
-			Bold(false)
-	selectedStyleBlur = lipgloss.NewStyle().
-				Background(lipgloss.Color("7")).
-				Foreground(lipgloss.Color("0"))
-
-	completedStatus = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).SetString("✔")
-	cachedStatus    = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).SetString("▲  ")
-)
-
 type TreeEntry interface {
 	tea.Model
 
@@ -39,6 +24,7 @@ type TreeEntry interface {
 	Started() *time.Time
 	Completed() *time.Time
 	Cached() bool
+	Error() string
 
 	SetWidth(int)
 	SetHeight(int)
@@ -79,6 +65,14 @@ func (m *Tree) SetWidth(width int) {
 
 func (m *Tree) SetHeight(height int) {
 	m.viewport.Height = height
+}
+
+func (m *Tree) UsedHeight() int {
+	if m.root == nil {
+		return 0
+	}
+
+	return m.height(m.root) - 1 // 'root' node isn't shown
 }
 
 func (m Tree) Current() TreeEntry {
@@ -124,13 +118,13 @@ func (m *Tree) treePrefixView(padding []bool) string {
 
 		switch {
 		case leaf && !last:
-			pad.WriteString("├──")
+			pad.WriteString("├─")
 		case leaf && last:
-			pad.WriteString("└──")
+			pad.WriteString("└─")
 		case !leaf && !last:
-			pad.WriteString("│  ")
+			pad.WriteString("│ ")
 		case !leaf && last:
-			pad.WriteString("   ")
+			pad.WriteString("  ")
 		}
 	}
 	return pad.String()
@@ -140,13 +134,16 @@ func (m *Tree) statusView(item TreeEntry) string {
 	if item.Cached() {
 		return cachedStatus.String()
 	}
+	if item.Error() != "" {
+		return failedStatus.String()
+	}
 	if item.Started() != nil {
 		if item.Completed() != nil {
-			return completedStatus.String() + "  "
+			return completedStatus.String()
 		}
-		return m.spinner.View() + "  "
+		return m.spinner.View()
 	}
-	return "   "
+	return " "
 }
 
 func (m *Tree) timerView(item TreeEntry) string {
@@ -154,7 +151,7 @@ func (m *Tree) timerView(item TreeEntry) string {
 		return ""
 	}
 	if item.Cached() {
-		return itemTimerStyle.Render("CACHED")
+		return itemTimerStyle.Render("CACHED ")
 	}
 	done := item.Completed()
 	if done == nil {
@@ -204,12 +201,12 @@ func (m *Tree) height(item TreeEntry) int {
 }
 
 func (m *Tree) itemView(item TreeEntry, padding []bool) string {
-	status := " " + m.statusView(item)
+	status := " " + m.statusView(item) + " "
 	treePrefix := m.treePrefixView(padding)
 	expandView := ""
 	if item.Entries() != nil {
 		if collapsed := m.collapsed[item]; collapsed {
-			expandView = "► "
+			expandView = "▶ "
 		} else {
 			expandView = "▼ "
 		}
@@ -219,7 +216,7 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	nameWidth := m.viewport.Width - lipgloss.Width(status) - lipgloss.Width(treePrefix) - lipgloss.Width(timerView)
 	nameView := lipgloss.NewStyle().
 		Width(max(0, nameWidth)).
-		Render(" " + expandView + truncate.StringWithTail(item.Name(), uint(nameWidth)-1, "…"))
+		Render(" " + expandView + truncate.StringWithTail(item.Name(), uint(nameWidth)-2, "…"))
 
 	view := status + treePrefix
 	if item == m.current {

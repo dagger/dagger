@@ -56,6 +56,7 @@ type Item struct {
 	started       *time.Time
 	completed     *time.Time
 	cached        bool
+	error         string
 	logs          *bytes.Buffer
 	logsModel     *Vterm
 	statuses      []*bkclient.VertexStatus
@@ -72,6 +73,7 @@ func (i *Item) Entries() []TreeEntry  { return nil }
 func (i *Item) Started() *time.Time   { return i.started }
 func (i *Item) Completed() *time.Time { return i.completed }
 func (i *Item) Cached() bool          { return i.cached }
+func (i *Item) Error() string         { return i.error }
 
 func (i *Item) UpdateVertex(v *bkclient.Vertex) {
 	// Started clock might reset for each layer when pulling images.
@@ -81,6 +83,7 @@ func (i *Item) UpdateVertex(v *bkclient.Vertex) {
 	}
 	i.completed = v.Completed
 	i.cached = v.Cached
+	i.error = v.Error
 }
 
 func (i *Item) UpdateLog(log *bkclient.VertexLog) {
@@ -243,6 +246,15 @@ func (g *Group) Cached() bool {
 		}
 	}
 	return true
+}
+
+func (g *Group) Error() string {
+	for _, e := range g.entries {
+		if e.Error() != "" {
+			return e.Error()
+		}
+	}
+	return ""
 }
 
 func (g *Group) Started() *time.Time {
