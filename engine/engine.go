@@ -248,7 +248,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 					}
 				}
 
-				if isAlreadyLogged == true {
+				if isAlreadyLogged {
 					continue
 				}
 
