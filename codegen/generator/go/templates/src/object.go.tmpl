@@ -64,7 +64,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
 		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
-    q = q.Select("{{ range $v := $field | GetArrayField }}{{ $v.Name }} {{ end }}")
+    q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
 
     type {{ $field.Name | ToLowerCase }} struct {
             {{ range $v := $field | GetArrayField }}

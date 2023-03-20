@@ -241,7 +241,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.q.Select("envVariables")
 
-	q = q.Select("name value ")
+	q = q.Select("name value")
 
 	type envVariables struct {
 		Name  string
@@ -383,7 +383,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
-	q = q.Select("description port protocol ")
+	q = q.Select("description port protocol")
 
 	type exposedPorts struct {
 		Description string
@@ -521,7 +521,7 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q := r.q.Select("labels")
 
-	q = q.Select("name value ")
+	q = q.Select("name value")
 
 	type labels struct {
 		Name  string
@@ -2043,7 +2043,7 @@ type Project struct {
 func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 	q := r.q.Select("extensions")
 
-	q = q.Select("install name schema sdk ")
+	q = q.Select("install name schema sdk")
 
 	type extensions struct {
 		Install bool

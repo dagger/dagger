@@ -111,12 +111,12 @@ func (s *Selection) unpack(data interface{}) error {
 			k = i.alias
 		}
 
-		// Try to asert type of the value
+		// Try to assert type of the value
 		switch f := data.(type) {
 		case map[string]interface{}:
-			data = data.(map[string]interface{})[k]
+			data = f[k]
 		case []interface{}:
-			data = data.([]interface{})
+			data = f
 		default:
 			fmt.Printf("type not found %s\n", f)
 		}
