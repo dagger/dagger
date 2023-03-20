@@ -21,8 +21,6 @@ require (
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
 	github.com/containerd/stargz-snapshotter v0.14.1
 	github.com/containernetworking/cni v1.1.2
-	github.com/containernetworking/plugins v1.2.0
-	github.com/coreos/go-iptables v0.6.0
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
 	github.com/dagger/graphql-go-tools v0.0.0-20221102001222-e68b44170936
@@ -67,8 +65,10 @@ require (
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/google/go-github/v50 v50.1.0
 	github.com/jackpal/gateway v1.0.7
+	github.com/muesli/termenv v0.13.0
 	github.com/nxadm/tail v1.4.8
 	github.com/vito/vt100 v0.0.0-20220721174540-1f9a7c0f76a9
+	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9
 )
 
 require (
@@ -83,7 +83,6 @@ require (
 	github.com/PuerkitoBio/goquery v1.8.0 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/alecthomas/chroma v0.10.0 // indirect
-	github.com/alexflint/go-filemutex v1.2.0 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.16.3 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.4.1 // indirect
@@ -153,7 +152,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
-	github.com/muesli/termenv v0.13.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
 	github.com/onsi/gomega v1.24.2 // indirect
 	github.com/opencontainers/runc v1.1.5 // indirect
@@ -182,7 +180,6 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.14.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.14.0 // indirect
 	go.opentelemetry.io/otel/metric v0.37.0 // indirect
-	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9 // indirect
 	golang.org/x/image v0.5.0 // indirect
 	golang.org/x/oauth2 v0.4.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
