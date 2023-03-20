@@ -121,8 +121,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		updatedTree, cmd := m.tree.Update(msg)
-		tree := updatedTree.(Tree)
-		m.tree = &tree
+		tree := updatedTree.(*Tree)
+		m.tree = tree
 		cmds = append(cmds, cmd)
 
 		return m, tea.Batch(cmds...)

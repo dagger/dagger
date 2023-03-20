@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 	"golang.org/x/exp/constraints"
 )
 
@@ -55,11 +56,11 @@ type Tree struct {
 	collapsed map[TreeEntry]bool
 }
 
-func (m Tree) Init() tea.Cmd {
+func (m *Tree) Init() tea.Cmd {
 	return m.spinner.Tick
 }
 
-func (m Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.spinner, cmd = m.spinner.Update(msg)
 	return m, cmd
@@ -88,7 +89,7 @@ func (m *Tree) Focus(focus bool) {
 	m.focus = focus
 }
 
-func (m Tree) View() string {
+func (m *Tree) View() string {
 	if m.root == nil {
 		return ""
 	}
@@ -107,6 +108,10 @@ func (m Tree) View() string {
 
 	if offset >= m.viewport.YOffset+m.viewport.Height {
 		m.viewport.SetYOffset(offset - m.viewport.Height + 1)
+	}
+
+	if offset < m.viewport.YOffset {
+		m.viewport.SetYOffset(offset)
 	}
 
 	return m.viewport.View()
@@ -211,9 +216,10 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	}
 	timerView := m.timerView(item)
 
+	nameWidth := m.viewport.Width - lipgloss.Width(status) - lipgloss.Width(treePrefix) - lipgloss.Width(timerView)
 	nameView := lipgloss.NewStyle().
-		Width(max(0, m.viewport.Width-lipgloss.Width(status)-lipgloss.Width(treePrefix)-lipgloss.Width(timerView))).
-		Render(" " + expandView + item.Name())
+		Width(max(0, nameWidth)).
+		Render(" " + expandView + truncate.StringWithTail(item.Name(), uint(nameWidth)-1, "…"))
 
 	view := status + treePrefix
 	if item == m.current {
