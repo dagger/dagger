@@ -11,10 +11,11 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/dagger/dagger/internal/engine"
 	bkclient "github.com/moby/buildkit/client"
 )
 
-func New(quit func(), ch chan *bkclient.SolveStatus) *Model {
+func New(quit func(), r engine.JournalReader) *Model {
 	m := &Model{
 		quit: quit,
 		tree: &Tree{
@@ -27,7 +28,7 @@ func New(quit func(), ch chan *bkclient.SolveStatus) *Model {
 		itemsByID: make(map[string]*Item),
 		details:   Details{},
 		follow:    true,
-		ch:        ch,
+		journal:   r,
 		help:      help.New(),
 	}
 
@@ -37,7 +38,7 @@ func New(quit func(), ch chan *bkclient.SolveStatus) *Model {
 type Model struct {
 	quit func()
 
-	ch        chan *bkclient.SolveStatus
+	journal   engine.JournalReader
 	itemsByID map[string]*Item
 	root      *Group
 
@@ -111,8 +112,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, debounceFollow(string(msg)))
 		}
 		return m, cmd
-	case *bkclient.SolveStatus:
-		return m.processSolveStatus(msg)
+	case *engine.JournalEntry:
+		return m.processSolveStatus(msg.Event)
 	case spinner.TickMsg:
 		cmds := []tea.Cmd{}
 
@@ -321,7 +322,7 @@ func (m Model) helpView() string {
 
 func (m Model) waitForActivity() tea.Cmd {
 	return func() tea.Msg {
-		msg, ok := <-m.ch
+		msg, ok := m.journal.ReadStatus()
 		if ok {
 			return msg
 		}
@@ -332,7 +333,7 @@ func (m Model) waitForActivity() tea.Cmd {
 
 func newSpinner() spinner.Model {
 	return spinner.New(
-		spinner.WithStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("3"))),
+		spinner.WithStyle(lipgloss.NewStyle().Foreground(colorStarted)),
 		spinner.WithSpinner(spinner.MiniDot),
 	)
 }

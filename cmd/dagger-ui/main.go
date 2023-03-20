@@ -4,10 +4,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/internal/engine"
 )
 
 var journalFile string
@@ -25,26 +27,34 @@ func main() {
 		os.Exit(1)
 	}
 
-	if journalFile == "" {
-		tmp, err := os.CreateTemp("", "journal*")
+	var r engine.JournalReader
+	var err error
+	if journalFile != "" {
+		r, err = tailJournal(journalFile, true, nil)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "err: %v\n", err)
+			os.Exit(1)
+		}
+	} else {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "err: %v\n", err)
 			os.Exit(1)
 		}
 
-		journalFile = tmp.Name()
-	}
+		r, _, err = engine.ServeRPC(l)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "err: %v\n", err)
+			os.Exit(1)
+		}
 
-	ch, err := tailJournal(journalFile, true, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "err: %v\n", err)
-		os.Exit(1)
+		journalFile = fmt.Sprintf("tcp://%s", l.Addr())
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	p := tea.NewProgram(New(cancel, ch), tea.WithAltScreen())
+	p := tea.NewProgram(New(cancel, r), tea.WithAltScreen())
 
 	if len(cmd) > 0 {
 		cmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...)

@@ -44,7 +44,7 @@ type Config struct {
 	// If true, do not load project extensions
 	NoExtensions  bool
 	LogOutput     io.Writer
-	JournalFile   string
+	JournalURI    string
 	DisableHostRW bool
 	RunnerHost    string
 	SessionToken  string
@@ -254,35 +254,59 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 	}
 
 	// Write events to a journal file
-	if startOpts.JournalFile != "" {
+	if startOpts.JournalURI != "" {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
-		eg.Go(func() error {
-			f, err := os.OpenFile(
-				startOpts.JournalFile,
-				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-				0644,
-			)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			enc := json.NewEncoder(f)
-			for ev := range ch {
-				entry := struct {
-					Event *bkclient.SolveStatus `json:"event"`
-					TS    time.Time             `json:"ts"`
-				}{
-					Event: ev,
-					TS:    time.Now().UTC(),
-				}
+		u, err := url.Parse(startOpts.JournalURI)
+		if err != nil {
+			return fmt.Errorf("journal URI: %w", err)
+		}
 
-				if err := enc.Encode(entry); err != nil {
+		switch u.Scheme {
+		case "":
+			eg.Go(func() error {
+				f, err := os.OpenFile(
+					startOpts.JournalURI,
+					os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+					0644,
+				)
+				if err != nil {
 					return err
 				}
+				defer f.Close()
+				enc := json.NewEncoder(f)
+				for ev := range ch {
+					entry := &engine.JournalEntry{
+						Event: ev,
+						TS:    time.Now().UTC(),
+					}
+
+					if err := enc.Encode(entry); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		case "tcp":
+			w, err := engine.DialRPC("tcp", u.Host)
+			if err != nil {
+				return fmt.Errorf("journal: %w", err)
 			}
-			return nil
-		})
+			defer w.Close()
+			eg.Go(func() error {
+				for ev := range ch {
+					entry := &engine.JournalEntry{
+						Event: ev,
+						TS:    time.Now().UTC(),
+					}
+
+					if err := w.WriteStatus(entry); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
 	}
 
 	eventsMultiReader(ch, readers...)

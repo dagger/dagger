@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/dagger/dagger/internal/engine"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/nxadm/tail"
 )
@@ -16,13 +17,13 @@ type JournalEntry struct {
 	TS    time.Time
 }
 
-func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *bkclient.SolveStatus, error) {
+func tailJournal(journal string, follow bool, stopCh chan struct{}) (engine.JournalReader, error) {
 	f, err := tail.TailFile(journal, tail.Config{Follow: follow})
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan *bkclient.SolveStatus)
+	r, w := engine.Pipe()
 
 	go func() {
 		if stopCh == nil {
@@ -36,7 +37,7 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *bkcli
 	}()
 
 	go func() {
-		defer close(ch)
+		defer w.Close()
 		defer f.Cleanup()
 
 		for line := range f.Lines {
@@ -45,7 +46,7 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *bkcli
 				return
 			}
 
-			var entry JournalEntry
+			var entry engine.JournalEntry
 			if err := json.Unmarshal([]byte(line.Text), &entry); err != nil {
 				fmt.Fprintf(os.Stderr, "tail unmarshal error (%s): %v\n", line.Text, err)
 				var syntaxErr *json.SyntaxError
@@ -55,9 +56,9 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *bkcli
 				return
 			}
 
-			ch <- entry.Event
+			w.WriteStatus(&entry)
 		}
 	}()
 
-	return ch, nil
+	return r, nil
 }
