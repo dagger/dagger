@@ -92,6 +92,7 @@ func (m Tree) View() string {
 	if m.root == nil {
 		return ""
 	}
+	offset := m.currentOffset(m.root) - 1
 	views := []string{}
 	entries := m.root.Entries()
 	for i, item := range entries {
@@ -103,6 +104,10 @@ func (m Tree) View() string {
 	}
 
 	m.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, views...))
+
+	if offset >= m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(offset - m.viewport.Height + 1)
+	}
 
 	return m.viewport.View()
 }
@@ -161,6 +166,36 @@ func (m *Tree) timerView(item TreeEntry) string {
 		prec = 1
 	}
 	return itemTimerStyle.Render(fmt.Sprintf("%.[2]*[1]fs ", sec, prec))
+}
+
+func (m *Tree) currentOffset(item TreeEntry) int {
+	if item == m.current {
+		return 0
+	}
+
+	offset := 1
+
+	entries := item.Entries()
+	for i, entry := range entries {
+		if entry == item {
+			return i
+		}
+
+		if !m.collapsed[entry] {
+			entryOffset := m.currentOffset(entry)
+			if entryOffset != -1 {
+				return offset + entryOffset
+			}
+		}
+
+		offset += m.height(entry)
+	}
+
+	return -1
+}
+
+func (m *Tree) height(item TreeEntry) int {
+	return lipgloss.Height(m.itemView(item, []bool{false}))
 }
 
 func (m *Tree) itemView(item TreeEntry, padding []bool) string {
