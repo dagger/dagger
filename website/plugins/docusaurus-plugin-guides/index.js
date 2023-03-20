@@ -38,10 +38,7 @@ module.exports = async function guidesPlugin(context, options) {
       guides.sort((a, b) => {
         return b.timestamp - a.timestamp;
       })
-      let allTags = new Set();
-      guides.forEach((guide) => guide.frontMatter.tags.forEach(tag => allTags.add(tag)));
-      allTags = [...allTags]
-      fs.writeFileSync(guidesJSONPath, JSON.stringify({guides, allTags}));
+      fs.writeFileSync(guidesJSONPath, JSON.stringify({guides}));
     },
   };
 };

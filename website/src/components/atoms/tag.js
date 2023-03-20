@@ -3,7 +3,7 @@ import styles from "@site/src/css/molecules/tag.module.scss";
 
 export default function Tag({label, onTagClick, onCloseClick, removable}) {
   return (
-    <div onClick={onTagClick} className={styles.tag} style={{cursor: removable ? "initial" : "pointer"}}>
+    <div onClick={onTagClick} className={styles.tag}>
       <span>{label}</span>
       {removable && (
         <div className={styles.close} onClick={onCloseClick}>

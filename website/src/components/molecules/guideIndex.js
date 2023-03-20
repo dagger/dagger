@@ -1,81 +1,35 @@
-import React, {useEffect, useState} from "react";
+import React, { useEffect } from "react";
 import Link from "@docusaurus/Link";
 import styles from "@site/src/css/molecules/guideIndex.module.scss";
 import guidesJSON from "@site/static/guides.json";
 import Tag from "../atoms/tag";
+import { DocSearch } from '@docsearch/react';
 
 export default function GuidesIndex() {
   const guides = guidesJSON.guides;
-  const allTags = guidesJSON.allTags;
-  const [filteredGuides, setFilteredGuides] = useState(guides);
-  const [selectedTags, setSelectedTags] = useState([]);
 
+  const ref = React.useRef(null); 
   useEffect(() => {
-    if (selectedTags.length > 0) {
-      setFilteredGuides(
-        guides.filter((item) =>
-          selectedTags.every((tag) => item.frontMatter.tags.includes(tag)),
-        ),
-      );
-    } else {
-      setFilteredGuides(guides);
-    }
-  }, [selectedTags]);
-
-  useEffect(() => {
-    const tagURLParams = new URL(document.location).searchParams.getAll("tags");
-    tagURLParams && setSelectedTags([...tagURLParams]);
-  }, []);
-
-  const pushTag = (tag) => {
-    if (!selectedTags.some((x) => x === tag)) {
-      if ("URLSearchParams" in window) {
-        var searchParams = new URLSearchParams(window.location.search);
-        searchParams.append("tags", tag);
-        var newRelativePathQuery =
-          window.location.pathname + "?" + searchParams.toString();
-        history.pushState(null, "", newRelativePathQuery);
-      }
-      setSelectedTags([...selectedTags, tag]);
-    }
-  };
-
-  const popTag = (tag) => {
-    if ("URLSearchParams" in window) {
-      var searchParams = new URLSearchParams(window.location.search);
-      const path = window.location.pathname;
-      let allSearchParams = searchParams.getAll("tags");
-      if (allSearchParams.length === 1) {
-        searchParams.delete("tags");
-        let newRelativePathQuery = path;
-        history.pushState(null, "", newRelativePathQuery);
-      } else {
-        searchParams.delete("tags");
-        allSearchParams.forEach((x) =>
-          x != tag ? searchParams.append("tags", x) : null,
-        );
-        let newRelativePathQuery = path + "?" + searchParams.toString();
-        history.pushState(null, "", newRelativePathQuery);
-      }
-    }
-    setSelectedTags(selectedTags.filter((x) => x != tag));
-  };
-
+    console.log(ref.current)
+  }, [ref])
   return (
     <div className={styles.guideIndex}>
-      {/* <div className={styles.selectedTags}>
-        {selectedTags.map((x, i) => (
-          <Tag key={i} label={x} onCloseClick={() => popTag(x)} removable></Tag>
-        ))}
-      </div> */}
-      <GuideFilter
-        allTags={allTags}
-        selectedTags={selectedTags}
-        onCloseClick={popTag}
-        pushTag={pushTag}
-      />
+      <div className={styles.search}>
+        <label>
+          This searchbar is guide focused. Here you can search all the guides by content.
+        </label>
+        <DocSearch
+          forwardRef={ref}
+          apiKey="bffda1490c07dcce81a26a144115cc02"
+          appId="XEIYPBWGOI"
+          indexName="dagger"
+          placeholder="Search in all guides"
+          searchParameters={{ facetFilters: ["guide:true"] }}
+        ></DocSearch>
+      </div>
+      <div>
       <ul>
-        {filteredGuides.map((x, i) => (
+        {guides.map((x, i) => (
           <li key={i}>
             <GuideCard
               title={x.contentTitle}
@@ -83,16 +37,16 @@ export default function GuidesIndex() {
               tags={x.frontMatter.tags}
               authors={x.frontMatter.authors}
               timestamp={x.timestamp}
-              pushTag={pushTag}
             />
           </li>
         ))}
       </ul>
+      </div>
     </div>
   );
 }
 
-function GuideCard({title, url, tags, authors, timestamp, pushTag}) {
+function GuideCard({title, url, tags, authors, timestamp}) {
   const handleAuthors = () => {
     let authorsString = "";
     authors.forEach((x) => (authorsString += `, ${x}`));
@@ -114,72 +68,9 @@ function GuideCard({title, url, tags, authors, timestamp, pushTag}) {
       <div className={styles.tags}>
         {tags &&
           tags.map((x, i) => (
-            <Tag onTagClick={() => pushTag(x)} key={i} label={x} />
+            <Tag key={i} label={x} />
           ))}
       </div>
-    </div>
-  );
-}
-
-function GuideFilter({allTags, selectedTags, onCloseClick, pushTag}) {
-  const [filtering, setFiltering] = useState(false);
-  const [filteredTags, setFilteredTags] = useState(allTags);
-  const [query, setQuery] = useState("");
-
-  const handleChange = (e) => {
-    let newQuery = e.target.value.toLowerCase();
-    const results = allTags.filter((tag) => {
-      if (newQuery === "") return allTags;
-      return tag.toLowerCase().includes(e.target.value.toLowerCase());
-    });
-    setQuery(newQuery);
-    setFilteredTags(results);
-  };
-
-  const handlePushTag = (x) => {
-    pushTag(x)
-    setQuery("");
-    setFilteredTags(allTags);
-  };
-
-  return (
-    <div
-      className={styles.filterWrapper}
-      onMouseLeave={() => setFiltering(false)}>
-      <div className={styles.filter}>
-        <div className={styles.filterTags}>
-          {selectedTags.map((x, i) => (
-            <Tag
-              key={i}
-              label={x}
-              removable
-              onCloseClick={() => onCloseClick(x)}
-            />
-          ))}
-        </div>
-        <input
-          onClick={() => setFiltering(true)}
-          className={styles.filterInput}
-          placeholder="Filter guides by tag"
-          type="search"
-          value={query}
-          onChange={handleChange}></input>
-      </div>
-      {filtering && (
-        <div className={styles.filterDropdown}>
-          <ul>
-            {filteredTags.map((x, i) => (
-              <li
-                key={i}
-                onClick={() => {
-                  handlePushTag(x);
-                }}>
-                {x}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }
