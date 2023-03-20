@@ -18,10 +18,14 @@ type Vterm struct {
 	Height int
 }
 
+var debugVterm = os.Getenv("_DEBUG_VTERM") != ""
+
 func NewVterm(width int) *Vterm {
 	vt := vt100.NewVT100(1, width)
 	vt.AutoResize = true
-	vt.DebugLogs = os.Stderr
+	if debugVterm {
+		vt.DebugLogs = os.Stderr
+	}
 	return &Vterm{
 		vt: vt,
 	}
