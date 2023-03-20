@@ -66,7 +66,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		defer cmd.Wait()
+		go cmd.Wait()
 	}
 
 	if _, err := p.Run(); err != nil {
