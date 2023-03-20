@@ -38,9 +38,11 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 		group = append(group, p.Name)
 	}
 
+	saneName := strings.Join(strings.Fields(name.Name), " ")
+
 	return &Item{
 		id:            v.Digest.String(),
-		name:          name.Name,
+		name:          saneName,
 		group:         group,
 		logs:          &bytes.Buffer{},
 		logsModel:     NewVterm(width),
