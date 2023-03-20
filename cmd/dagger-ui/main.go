@@ -13,7 +13,7 @@ import (
 var journalFile string
 
 func init() {
-	flag.StringVar(&journalFile, "journal", "", "replay journal file")
+	flag.StringVar(&journalFile, "journal", os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"), "replay journal file")
 }
 
 func main() {
