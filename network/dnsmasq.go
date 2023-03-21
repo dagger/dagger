@@ -7,7 +7,6 @@ import (
 	"os/exec"
 
 	"github.com/adrg/xdg"
-	"github.com/coreos/go-iptables/iptables"
 )
 
 func InstallDnsmasq(name string) error {
@@ -37,10 +36,6 @@ func InstallDnsmasq(name string) error {
 		PidFile:            pidFile,
 		AddnHostsFile:      hostsFile,
 		UpstreamResolvFile: upstreamResolvFile,
-	}
-
-	if err := setupIPTables(config.NetworkInterface); err != nil {
-		return fmt.Errorf("setup iptables: %w", err)
 	}
 
 	dnsmasqConfigFile, err := xdg.RuntimeFile("dagger/net/" + name + "/dnsmasq.conf")
@@ -103,21 +98,4 @@ type dnsmasqConfig struct {
 	PidFile            string
 	AddnHostsFile      string
 	UpstreamResolvFile string
-}
-
-func setupIPTables(iface string) error {
-	ip, err := iptables.New()
-	if err != nil {
-		return err
-	}
-	args := []string{"-i", iface, "-p", "udp", "-m", "udp", "--dport", "53", "-j", "ACCEPT"}
-	exists, err := ip.Exists("filter", "INPUT", args...)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
-	return ip.Insert("filter", "INPUT", 1, args...)
 }
