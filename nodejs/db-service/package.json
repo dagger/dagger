@@ -1,0 +1,19 @@
+{
+  "name": "db-service",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "pg": "^8.10.0"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "jest": {
+    "collectCoverage": true
+  },
+  "type": "module",
+  "devDependencies": {
+    "@dagger.io/dagger": "^0.4.1",
+    "jest": "^29.5.0"
+  }
+}
