@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,14 +21,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	userAgentCfg userAgents
+)
+
 func sessionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "session",
 		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
 		Hidden:       true,
 		RunE:         EngineSession,
 		SilenceUsage: true,
 	}
+	cmd.Flags().Var(&userAgentCfg, "ua", "user-agent keys to pass to registry (e.g, --ua 'sdk:python' --ua 'sdk_version:0.5.2' --ua 'sdk_async:false')")
+	return cmd
 }
 
 type connectParams struct {
@@ -47,7 +55,9 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
 		JournalURI:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		UserAgent:    userAgentCfg.String(),
 	}
+
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 
@@ -97,4 +107,39 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
+}
+
+type userAgents []userAgent
+
+type userAgent struct {
+	Key   string
+	Value string
+}
+
+func (kv *userAgents) Type() string {
+	return "useragents"
+}
+
+func (kv *userAgents) Set(s string) error {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("bad format in --ua: '%s' (expected key:value)", s)
+	}
+
+	ua := userAgent{
+		Key:   parts[0],
+		Value: parts[1],
+	}
+
+	*kv = append(*kv, ua)
+
+	return nil
+}
+
+func (kv *userAgents) String() string {
+	var uas string
+	for _, ua := range *kv {
+		uas += fmt.Sprintf("%s:%s,", ua.Key, ua.Value)
+	}
+	return uas
 }
