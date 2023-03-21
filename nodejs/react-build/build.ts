@@ -6,16 +6,13 @@ connect(async (client: Client) => {
   const nodeVersions = ["12", "14", "16"]
 
   // get reference to the local project
-  const source = await client.host().directory(".", ["node_modules/"]).id()
+  const source = await client.host().directory(".", { exclude: ["node_modules/"] })
 
   // for each Node version
   for (const nodeVersion of nodeVersions) {
-    // get Node image
-    const node = client.container().from(`node:${nodeVersion}`)
-
     // mount cloned repository into Node image
     const runner = client
-      .container(node)
+      .container().from(`node:${nodeVersion}`)
       .withMountedDirectory("/src", source)
       .withWorkdir("/src")
       .withExec(["npm", "install"])
