@@ -11,15 +11,15 @@ connect(async (client) => {
   const source = client.host().directory(".", { exclude: ["node_modules/"]})
 
   await client.container().from("node:16")
-  .withServiceBinding("db", database)
-  .withEnvVariable("DB_HOST", "db")
-  .withEnvVariable("DB_PASSWORD", "test")
-  .withEnvVariable("DB_USER", "postgres")
-  .withEnvVariable("DB_NAME", "postgres")
+  .withServiceBinding("db", database) // bind database with the name db
+  .withEnvVariable("DB_HOST", "db") // db refers to the service binding
+  .withEnvVariable("DB_PASSWORD", "test") // password set in db container
+  .withEnvVariable("DB_USER", "postgres") // default user in postgres image
+  .withEnvVariable("DB_NAME", "postgres") // default db name in postgres image
   .withMountedDirectory("/src", source)
   .withWorkdir("/src")
   .withExec(["npm", "install"])
-  .withExec(["npm", "run", "test"])
+  .withExec(["npm", "run", "test"]) // execute npm run test
   .stdout()
 
 }, {LogOutput: process.stdout})

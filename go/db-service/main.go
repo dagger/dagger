@@ -36,7 +36,7 @@ func main() {
 		WithEnvVariable("DB_NAME", "postgres"). // default db name in postgres image
 		WithMountedDirectory("/src", src).
 		WithWorkdir("/src").
-		WithExec([]string{"go", "test"}).
+		WithExec([]string{"go", "test"}). // execute go test
 		Stdout(ctx)
 
 	if err != nil {
