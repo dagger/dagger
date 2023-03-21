@@ -35,7 +35,7 @@ func InstallResolvconf(name, containerDNS string) error {
 	}
 
 	// mount container resolv.conf over /etc/resolv.conf
-	if err := syscall.Mount(containerDNSResolv, resolv, "", syscall.MS_BIND, ""); err != nil {
+	if err := syscall.Mount(containerDNSResolv, resolv, "", syscall.MS_BIND|syscall.MS_RDONLY, ""); err != nil {
 		return fmt.Errorf("mount over /etc/resolv.conf: %w", err)
 	}
 
@@ -49,7 +49,7 @@ func replaceNameservers(containerDNS, containerDNSResolve string) error {
 	}
 	defer src.Close()
 
-	dst, err := os.Create(containerDNSResolve)
+	dst, err := os.OpenFile(containerDNSResolve, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
