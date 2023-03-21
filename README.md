@@ -29,6 +29,7 @@ If you'd like to see a new example, please open an issue.
 - [yarn build](./go/yarn-build/)
 - [gradle build](./go/gradle-build/)
 - [services](./go/db-service/)
+- [aws cdk](./go/aws-cdk/)
 
 ### Python
 

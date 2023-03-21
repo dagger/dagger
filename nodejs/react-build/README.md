@@ -6,6 +6,10 @@ A simple react app is created with `create-react-app` which is built and tested 
 
 Run:
 
+`npm install`
+
+and then:
+
 `node --loader ts-node/esm ./build.ts`
 
 or
