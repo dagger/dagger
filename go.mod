@@ -68,7 +68,7 @@ require (
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
-	github.com/vito/vt100 v0.0.0-20230320144720-5771057f4dc0
+	github.com/vito/vt100 v0.0.0-20230321154713-9b66b23a14a4
 	golang.org/x/exp v0.0.0-20221126150942-6ab00d035af9
 )
 

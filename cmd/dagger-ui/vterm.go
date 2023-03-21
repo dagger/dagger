@@ -129,10 +129,6 @@ func (term *Vterm) View() string {
 }
 
 func renderFormat(f vt100.Format) string {
-	if f == (vt100.Format{}) {
-		return reset
-	}
-
 	styles := []string{}
 	if f.Fg != nil {
 		styles = append(styles, f.Fg.Sequence(false))
@@ -176,5 +172,12 @@ func renderFormat(f vt100.Format) string {
 		styles = append(styles, termenv.OverlineSeq)
 	}
 
-	return fmt.Sprintf("%s%sm", termenv.CSI, strings.Join(styles, ";"))
+	var res string
+	if f.Reset {
+		res = reset
+	}
+	if len(styles) > 0 {
+		res += fmt.Sprintf("%s%sm", termenv.CSI, strings.Join(styles, ";"))
+	}
+	return res
 }
