@@ -41,7 +41,7 @@ func doCi() error {
 	fmt.Println(test)
 
 	// execute build command and get build output
-	build, err := npm..WithExec([]string{"npm", "run", "build"}).Stdout(ctx)
+	build, err := npm.WithExec([]string{"npm", "run", "build"}).Stdout(ctx)
 	if err != nil {
 		return err
 	}
