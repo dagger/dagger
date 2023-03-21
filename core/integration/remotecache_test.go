@@ -166,6 +166,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		clientA, stopEngineA := getClient("a")
 		t.Cleanup(func() {
+			clientA.Close()
 			stopEngineA()
 		})
 		outputA := pipelineOutput(clientA, "a")
@@ -173,9 +174,11 @@ func TestRemoteCacheS3(t *testing.T) {
 		require.NoError(t, stopEngineA())
 		clientB, stopEngineB := getClient("b")
 		t.Cleanup(func() {
+			clientB.Close()
 			stopEngineB()
 		})
 		outputB := pipelineOutput(clientB, "b")
+		require.NoError(t, clientB.Close())
 		require.NoError(t, stopEngineB())
 		require.Equal(t, outputA, outputB)
 	})
