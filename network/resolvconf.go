@@ -2,7 +2,6 @@ package network
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -33,11 +32,6 @@ func InstallResolvconf(name, containerDNS string) error {
 	// if resolv.conf is bind mounted, its source will be bind mounted here
 	if err := syscall.Mount(resolv, upstreamResolv, "", syscall.MS_BIND, ""); err != nil {
 		return fmt.Errorf("remount /etc/resolv.conf to upstream alias: %w", err)
-	}
-
-	// unmount target resolv.conf so we can replace it
-	if err := syscall.Unmount(resolv, 0); err != nil && !errors.Is(err, syscall.EINVAL) {
-		return fmt.Errorf("unmount /etc/resolv.conf: %w", err)
 	}
 
 	// mount container resolv.conf over /etc/resolv.conf
