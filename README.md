@@ -8,6 +8,7 @@ If you'd like to see a new example, please open an issue.
 - [npm build](./go/npm-build/)
 - [yarn build](./go/yarn-build/)
 - [gradle build](./go/gradle-build/)
+- [replace dockerfile](./go/replace-dockerfile/)
 - [aws cdk](./go/aws-cdk/)
 
 ## Python
