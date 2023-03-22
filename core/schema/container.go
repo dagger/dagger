@@ -580,12 +580,12 @@ type containerWithRegistryAuthArgs struct {
 }
 
 func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
-	secret, err := core.NewSecret(args.Secret).Plaintext(ctx, s.gw)
+	secretBytes, err := s.secrets.GetSecret(ctx, args.Secret.String())
 	if err != nil {
 		return nil, err
 	}
 
-	if err := s.auth.AddCredential(args.Address, args.Username, string(secret)); err != nil {
+	if err := s.auth.AddCredential(args.Address, args.Username, string(secretBytes)); err != nil {
 		return nil, err
 	}
 
