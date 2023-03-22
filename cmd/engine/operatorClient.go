@@ -85,7 +85,7 @@ func NewOperatorClient(ctx context.Context, c *bkclient.Client) (_ *dagger.Clien
 	go func() {
 		defer close(doneCh)
 		_, err = c.Build(solveCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-			go pipeline.LoadRootLabels(".")
+			go pipeline.LoadRootLabels(ctx, ".")
 			router := router.New(sessionToken.String())
 			secretStore.SetGateway(gw)
 			gwClient := core.NewGatewayClient(gw)

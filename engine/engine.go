@@ -81,7 +81,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	// Load default labels asynchronously in the background.
-	go pipeline.LoadRootLabels(startOpts.Workdir)
+	go pipeline.LoadRootLabels(ctx, startOpts.Workdir)
 
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {

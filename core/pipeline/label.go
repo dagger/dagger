@@ -1,9 +1,11 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -33,14 +35,14 @@ func RootLabels() []Label {
 }
 
 // LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string) {
+func LoadRootLabels(ctx context.Context, workdir string) {
 	loadOnce.Do(func() {
 		defer close(loadDoneCh)
-		defaultLabels = loadRootLabels(workdir)
+		defaultLabels = loadRootLabels(ctx, workdir)
 	})
 }
 
-func loadRootLabels(workdir string) []Label {
+func loadRootLabels(ctx context.Context, workdir string) []Label {
 	labels := []Label{}
 
 	if gitLabels, err := loadGitLabels(workdir); err == nil {
@@ -49,7 +51,7 @@ func loadRootLabels(workdir string) []Label {
 		logrus.Warnf("failed to collect git labels: %s", err)
 	}
 
-	if githubLabels, err := loadGitHubLabels(); err == nil {
+	if githubLabels, err := loadGitHubLabels(ctx); err == nil {
 		labels = append(labels, githubLabels...)
 	} else {
 		logrus.Warnf("failed to collect GitHub labels: %s", err)
@@ -133,7 +135,7 @@ func loadGitLabels(workdir string) ([]Label, error) {
 	}, nil
 }
 
-func loadGitHubLabels() ([]Label, error) {
+func loadGitHubLabels(ctx context.Context) ([]Label, error) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return []Label{}, nil
 	}
@@ -157,6 +159,18 @@ func loadGitHubLabels() ([]Label, error) {
 			Name:  "github.com/workflow.job",
 			Value: os.Getenv("GITHUB_JOB"),
 		},
+	}
+
+	client := github.NewTokenClient(ctx, os.Getenv("GITHUB_TOKEN"))
+
+	job, err := getGitHubJob(ctx, client)
+	if err != nil {
+		logrus.Warnf("failed to determine current job: %s", err)
+	} else {
+		labels = append(labels, Label{
+			Name:  "github.com/workflow.url",
+			Value: job.GetHTMLURL(),
+		})
 	}
 
 	eventPath := os.Getenv("GITHUB_EVENT_PATH")
@@ -226,24 +240,53 @@ func loadGitHubLabels() ([]Label, error) {
 	return labels, nil
 }
 
-type GitHubEventPayload struct {
-	// set on many events
-	Action *string `json:"action,omitempty"`
+// GitHub doesn't expose the job ID to actions runs for some reason, so we need
+// to find the current job by name instead.
+func getGitHubJob(ctx context.Context, client *github.Client) (*github.WorkflowJob, error) {
+	jobName := os.Getenv("GITHUB_JOB")
+	ownerAndRepo := os.Getenv("GITHUB_REPOSITORY")
+	workflowRunID := os.Getenv("GITHUB_RUN_ID")
 
-	// set on push events
-	After *string `json:"after,omitempty"`
+	owner, repo, ok := strings.Cut(ownerAndRepo, "/")
+	if !ok {
+		return nil, fmt.Errorf("invalid $GITHUB_REPOSITORY: %q", ownerAndRepo)
+	}
 
-	// set on check_suite events
-	CheckSuite *github.CheckSuite `json:"check_suite,omitempty"`
+	workflowID, err := strconv.Atoi(workflowRunID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid $GITHUB_RUN_ID: %q", workflowRunID)
+	}
 
-	// set on check_run events
-	CheckRun *github.CheckRun `json:"check_run,omitempty"`
+	jobs, err := allPages(func(github.ListOptions) ([]*github.WorkflowJob, *github.Response, error) {
+		res, resp, err := client.Actions.ListWorkflowJobs(ctx, owner, repo, int64(workflowID), nil)
+		return res.Jobs, resp, err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list workflow jobs: %w", err)
+	}
 
-	// set on pull_request events
-	PullRequest *github.PullRequest `json:"pull_request,omitempty"`
+	for _, job := range jobs {
+		if job.GetName() == jobName {
+			return job, nil
+		}
+	}
 
-	// set on all events
-	Repo         *github.Repository   `json:"repository,omitempty"`
-	Sender       *github.User         `json:"sender,omitempty"`
-	Installation *github.Installation `json:"installation,omitempty"`
+	return nil, fmt.Errorf("job not found")
+}
+
+func allPages[T any](fn func(github.ListOptions) ([]T, *github.Response, error)) ([]T, error) {
+	var all []T
+	opt := github.ListOptions{PerPage: 100}
+	for {
+		page, resp, err := fn(opt)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, page...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.Page = resp.NextPage
+	}
+	return all, nil
 }
