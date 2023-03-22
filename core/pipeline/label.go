@@ -18,7 +18,13 @@ var (
 	loadOnce      sync.Once
 	loadDoneCh    = make(chan struct{})
 	defaultLabels []Label
+
+	log = logrus.New()
 )
+
+func init() {
+	log.SetOutput(os.Stderr)
+}
 
 type Label struct {
 	Name  string `json:"name"`
@@ -48,13 +54,13 @@ func loadRootLabels(ctx context.Context, workdir string) []Label {
 	if gitLabels, err := loadGitLabels(workdir); err == nil {
 		labels = append(labels, gitLabels...)
 	} else {
-		logrus.Warnf("failed to collect git labels: %s", err)
+		log.Warnf("failed to collect git labels: %s", err)
 	}
 
 	if githubLabels, err := loadGitHubLabels(ctx); err == nil {
 		labels = append(labels, githubLabels...)
 	} else {
-		logrus.Warnf("failed to collect GitHub labels: %s", err)
+		log.Warnf("failed to collect GitHub labels: %s", err)
 	}
 
 	return labels
@@ -165,7 +171,7 @@ func loadGitHubLabels(ctx context.Context) ([]Label, error) {
 
 	job, err := getGitHubJob(ctx, client)
 	if err != nil {
-		logrus.Warnf("failed to determine current job: %s", err)
+		log.Warnf("failed to determine current job: %s", err)
 	} else {
 		labels = append(labels, Label{
 			Name:  "github.com/workflow.url",
