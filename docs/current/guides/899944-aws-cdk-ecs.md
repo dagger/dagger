@@ -35,7 +35,9 @@ The concepts demonstrated in this tutorial can be applied to any other Infrastru
 
 This tutorial assumes that:
 
-- You have a basic understanding of the [Go programming language](https://go.dev/).
+- You have a Go development environment with Go 1.20 or later. If not, install [Go](https://go.dev/doc/install).
+- You have the Dagger Go SDK installed. If not, follow the installation instructions for the Dagger [Go](../sdk/go/371491-install.md).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a basic understanding of [AWS CloudFormation](https://aws.amazon.com/cloudformation/getting-started/).
 - You have access to a [AWS IAM user with permissions to create new resources on an AWS region](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_users_create.html#id_users_create_console).
 - Your [AWS IAM user has access keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_CreateAccessKey) and those keys are [configured to be used from your local host](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html).
