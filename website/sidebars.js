@@ -114,7 +114,7 @@ module.exports = {
         "current/api/build-custom-client",
         {
           type: "link",
-          label: "Reference 🔗",
+          label: "Reference",
           href: "https://docs.dagger.io/api/reference",
         },
       ],
