@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import Link from "@docusaurus/Link";
 import styles from "@site/src/css/molecules/guideIndex.module.scss";
 import guidesJSON from "@site/static/guides.json";
@@ -8,10 +8,6 @@ import { DocSearch } from '@docsearch/react';
 export default function GuidesIndex() {
   const guides = guidesJSON.guides;
 
-  const ref = React.useRef(null); 
-  useEffect(() => {
-    console.log(ref.current)
-  }, [ref])
   return (
     <div className={styles.guideIndex}>
       <div className={styles.search}>
@@ -19,7 +15,6 @@ export default function GuidesIndex() {
           This searchbar is guide focused. Here you can search all the guides by content.
         </label>
         <DocSearch
-          forwardRef={ref}
           apiKey="bffda1490c07dcce81a26a144115cc02"
           appId="XEIYPBWGOI"
           indexName="dagger"
