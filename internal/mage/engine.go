@@ -24,10 +24,7 @@ const (
 	shimBinName   = "dagger-shim"
 	alpineVersion = "3.17"
 	runcVersion   = "v1.1.4"
-	buildkitRepo  = "github.com/moby/buildkit"
-	// https://github.com/moby/buildkit/commit/deba8768c675b8da650bf14281c2b7d03de7d63b
-	buildkitRef  = "deba8768c675b8da650bf14281c2b7d03de7d63b"
-	qemuBinImage = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
+	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
@@ -125,32 +122,6 @@ func (t Engine) Lint(ctx context.Context) error {
 	c = c.Pipeline("engine").Pipeline("lint")
 
 	repo := util.RepositoryGoCodeOnly(c)
-
-	// Ensure buildkitd and client (go.mod) are the same version.
-	goMod, err := repo.File("go.mod").Contents(ctx)
-	if err != nil {
-		return err
-	}
-	for _, l := range strings.Split(goMod, "\n") {
-		l = strings.TrimSpace(l)
-		parts := strings.SplitN(l, " ", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		repo, version := parts[0], parts[1]
-		if repo != buildkitRepo {
-			continue
-		}
-		buildkitRef := buildkitRef
-		if strings.Contains(version, "-") {
-			// not a semver, for now just assume that it ends in a git commit hash
-			version = version[strings.LastIndex(version, "-")+1:]
-			buildkitRef = buildkitRef[:12]
-		}
-		if version != buildkitRef {
-			return fmt.Errorf("buildkit version mismatch: %s (buildkitd) != %s (buildkit in go.mod)", buildkitRef, version)
-		}
-	}
 
 	_, err = c.Container().
 		From("golangci/golangci-lint:v1.51").
@@ -445,12 +416,11 @@ func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
-		WithMountedDirectory("/app", c.Git(buildkitRepo).Branch(buildkitRef).Tree()).
 		WithExec([]string{
 			"go", "build",
 			"-o", "./bin/buildctl",
 			"-ldflags", "-s -w",
-			"/app/cmd/buildctl",
+			"github.com/moby/buildkit/cmd/buildctl",
 		}).
 		File("./bin/buildctl")
 }
