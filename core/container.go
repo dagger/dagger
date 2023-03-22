@@ -18,7 +18,6 @@ import (
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -1094,7 +1093,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
 	hostname := hostHash(digest)
-	payload.Hostname = fmt.Sprintf("%s.%s", hostname, network.DNSDomain)
+	payload.Hostname = hostname
 
 	// finally, build with the hostname set
 	runOpts = append(runOpts, llb.Hostname(hostname))

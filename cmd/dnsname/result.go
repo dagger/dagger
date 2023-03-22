@@ -45,9 +45,9 @@ func isInterfaceIndexSandox(idx int, r *current.Result) bool {
 
 // getInterfaceAddresses gets all globalunicast IP addresses for a given
 // interface
-func getInterfaceAddresses(nameConf dnsNameFile) ([]string, error) {
+func getInterfaceAddresses(iface string) ([]string, error) {
 	var nameservers []string
-	nic, err := net.InterfaceByName(nameConf.NetworkInterface)
+	nic, err := net.InterfaceByName(iface)
 	if err != nil {
 		return nil, err
 	}
