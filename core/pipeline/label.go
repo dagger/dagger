@@ -259,6 +259,10 @@ func getGitHubJob(ctx context.Context, client *github.Client) (*github.WorkflowJ
 
 	jobs, err := allPages(func(github.ListOptions) ([]*github.WorkflowJob, *github.Response, error) {
 		res, resp, err := client.Actions.ListWorkflowJobs(ctx, owner, repo, int64(workflowID), nil)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		return res.Jobs, resp, err
 	})
 	if err != nil {
