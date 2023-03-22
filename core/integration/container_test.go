@@ -2768,21 +2768,36 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	pushedRef, err := container.
-		WithRegistryAuth(
-			privateRegistryHost,
-			"john",
-			//nolint:staticcheck // SA1019 We want to test this API while we support it.
-			c.Container().
-				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
-				File("secret.txt").
-				Secret(),
-		).
-		Publish(ctx, testRef)
+	t.Run("legacy secret API", func(t *testing.T) {
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				//nolint:staticcheck // SA1019 We want to test this API while we support it.
+				c.Container().
+					WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
+					File("secret.txt").
+					Secret(),
+			).
+			Publish(ctx, testRef)
 
-	require.NoError(t, err)
-	require.NotEqual(t, testRef, pushedRef)
-	require.Contains(t, pushedRef, "@sha256:")
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	})
+	t.Run("new secret API", func(t *testing.T) {
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+			).
+			Publish(ctx, testRef)
+
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	})
 }
 
 func TestContainerImageRef(t *testing.T) {
