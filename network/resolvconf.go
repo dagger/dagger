@@ -11,8 +11,8 @@ import (
 const resolv = "/etc/resolv.conf"
 
 func InstallResolvconf(name, containerDNS string) error {
-	containerDNSResolv, err := touchXDGFile("dagger/net/" + name + "/resolv.conf")
-	if err != nil {
+	containerDNSResolv := containerResolvPath(name)
+	if err := createIfNeeded(containerDNSResolv); err != nil {
 		return err
 	}
 
@@ -22,15 +22,14 @@ func InstallResolvconf(name, containerDNS string) error {
 		return fmt.Errorf("replace nameservers: %w", err)
 	}
 
-	upstreamResolv, err := touchXDGFile("dagger/net/" + name + "/resolv.conf.upstream")
-	if err != nil {
+	if err := createIfNeeded(upstreamResolvPath); err != nil {
 		return err
 	}
 
 	// preserve original resolv.conf at upstream path
 	//
 	// if resolv.conf is bind mounted, its source will be bind mounted here
-	if err := syscall.Mount(resolv, upstreamResolv, "", syscall.MS_BIND, ""); err != nil {
+	if err := syscall.Mount(resolv, upstreamResolvPath, "", syscall.MS_BIND, ""); err != nil {
 		return fmt.Errorf("remount /etc/resolv.conf to upstream alias: %w", err)
 	}
 

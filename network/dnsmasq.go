@@ -5,8 +5,7 @@ import (
 	"html/template"
 	"os"
 	"os/exec"
-
-	"github.com/adrg/xdg"
+	"path/filepath"
 )
 
 func InstallDnsmasq(name string) error {
@@ -15,33 +14,15 @@ func InstallDnsmasq(name string) error {
 		return err
 	}
 
-	pidFile, err := xdg.RuntimeFile("dagger/net/" + name + "/dnsmasq.pid")
-	if err != nil {
-		return err
-	}
-
-	hostsFile, err := xdg.RuntimeFile("dagger/net/" + name + "/hosts")
-	if err != nil {
-		return err
-	}
-
-	upstreamResolvFile, err := xdg.RuntimeFile("dagger/net/" + name + "/resolv.conf.upstream")
-	if err != nil {
-		return err
-	}
-
 	config := dnsmasqConfig{
 		Domain:             name + ".local",
 		NetworkInterface:   name + "0",
-		PidFile:            pidFile,
-		AddnHostsFile:      hostsFile,
-		UpstreamResolvFile: upstreamResolvFile,
+		PidFile:            pidfilePath(name),
+		AddnHostsFile:      hostsPath(name),
+		UpstreamResolvFile: upstreamResolvPath,
 	}
 
-	dnsmasqConfigFile, err := xdg.RuntimeFile("dagger/net/" + name + "/dnsmasq.conf")
-	if err != nil {
-		return err
-	}
+	dnsmasqConfigFile := dnsmasqConfPath(name)
 
 	if err := writeDnsmasqConfig(dnsmasqConfigFile, config); err != nil {
 		return fmt.Errorf("write dnsmasq.conf: %w", err)
@@ -57,7 +38,11 @@ func InstallDnsmasq(name string) error {
 }
 
 func writeDnsmasqConfig(dnsmasqConfigFile string, config dnsmasqConfig) error {
-	conf, err := os.Create(dnsmasqConfigFile)
+	if err := os.MkdirAll(filepath.Dir(dnsmasqConfigFile), 0700); err != nil {
+		return err
+	}
+
+	conf, err := os.OpenFile(dnsmasqConfigFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}

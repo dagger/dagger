@@ -2,29 +2,19 @@ package network
 
 import (
 	"os"
-
-	"github.com/adrg/xdg"
+	"path/filepath"
 )
-
-func touchXDGFile(path string) (string, error) {
-	xdgPath, err := xdg.RuntimeFile(path)
-	if err != nil {
-		return "", err
-	}
-
-	if err := createIfNeeded(xdgPath); err != nil {
-		return "", err
-	}
-
-	return xdgPath, nil
-}
 
 func createIfNeeded(path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
 
-	if f, err := os.Create(path); err == nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+
+	if f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600); err == nil {
 		return f.Close()
 	} else if os.IsExist(err) {
 		return nil

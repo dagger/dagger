@@ -5,21 +5,22 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/adrg/xdg"
 	"github.com/jackpal/gateway"
 	"github.com/sirupsen/logrus"
 )
 
 func InstallCNIConfig(name, subnet string) (string, error) {
-	cniConfigPath, err := touchXDGFile("dagger/net/" + name + "/cni.conflist")
+	cni, err := cniConfig(name, subnet)
 	if err != nil {
 		return "", err
 	}
 
-	cni, err := cniConfig(name, subnet)
-	if err != nil {
+	cniConfigPath := cniConfPath(name)
+
+	if err := os.MkdirAll(filepath.Dir(cniConfigPath), 0700); err != nil {
 		return "", err
 	}
 
@@ -56,16 +57,6 @@ func cniConfig(name, subnet string) ([]byte, error) {
 		logrus.Warnf("could not detect mtu: %s", err)
 	}
 
-	pidFile, err := xdg.RuntimeFile("dagger/net/" + name + "/dnsmasq.pid")
-	if err != nil {
-		return nil, err
-	}
-
-	hostsFile, err := xdg.RuntimeFile("dagger/net/" + name + "/hosts")
-	if err != nil {
-		return nil, err
-	}
-
 	return json.Marshal(map[string]any{
 		"cniVersion": "0.4.0",
 		"name":       name,
@@ -77,8 +68,8 @@ func cniConfig(name, subnet string) ([]byte, error) {
 			map[string]any{
 				"type":       "dnsname",
 				"domainName": name + ".local",
-				"pidfile":    pidFile,
-				"hosts":      hostsFile,
+				"pidfile":    pidfilePath(name),
+				"hosts":      hostsPath(name),
 				"capabilities": map[string]any{
 					"aliases": true,
 				},
