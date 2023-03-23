@@ -6,7 +6,7 @@ connect(async (client) => {
   const nodeVersions = ["12", "14", "16"]
 
   // get reference to the local project
-  const source = await client.host().directory(".", { exclude: ["node_modules/"]})
+  const source = client.host().directory(".", { exclude: ["node_modules/"]})
 
   // for each Node version
   for (const nodeVersion of nodeVersions) {
