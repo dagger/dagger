@@ -10,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/reflow/truncate"
-	"golang.org/x/exp/constraints"
 )
 
 type TreeEntry interface {
@@ -251,30 +250,6 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	return lipgloss.JoinVertical(lipgloss.Left,
 		renderedItems...,
 	)
-}
-
-func max[T constraints.Ordered](i, j T) T {
-	if i > j {
-		return i
-	}
-	return j
-}
-
-func clamp[T constraints.Ordered](min, max, val T) T {
-	if val < min {
-		return min
-	}
-	if val > max {
-		return max
-	}
-	return val
-}
-
-func min[T constraints.Ordered](a, b T) T {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func (m *Tree) MoveUp() {

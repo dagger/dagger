@@ -2,6 +2,7 @@ package journal
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"sync"
 )
@@ -9,11 +10,17 @@ import (
 type Sink struct {
 	Reader
 
+	listener net.Listener
 	entriesW Writer
 	sources  *sync.WaitGroup
 }
 
-func ServeWriters(l net.Listener) (*Sink, error) {
+func ServeWriters(network, addr string) (*Sink, error) {
+	l, err := net.Listen(network, addr)
+	if err != nil {
+		return nil, err
+	}
+
 	r, w := Pipe()
 
 	wg := new(sync.WaitGroup)
@@ -21,6 +28,7 @@ func ServeWriters(l net.Listener) (*Sink, error) {
 	sink := &Sink{
 		Reader: r,
 
+		listener: l,
 		entriesW: w,
 		sources:  wg,
 	}
@@ -42,8 +50,23 @@ func (sink *Sink) accept(l net.Listener) {
 	}
 }
 
-func (sink *Sink) Flush() {
+func (sink *Sink) Endpoint() string {
+	addr := sink.Addr()
+	return fmt.Sprintf("%s://%s", addr.Network(), addr)
+}
+
+func (sink *Sink) Addr() net.Addr {
+	return sink.listener.Addr()
+}
+
+func (sink *Sink) Close() error {
+	if err := sink.listener.Close(); err != nil {
+		return err
+	}
+
 	sink.sources.Wait()
+
+	return nil
 }
 
 func (sink *Sink) handle(conn net.Conn) {

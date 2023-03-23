@@ -43,7 +43,7 @@ var (
 
 	runningStatus = statusNugget.Copy().
 			Background(colorStarted).
-			Foreground(lipgloss.Color(colorBackground)).
+			Foreground(colorBackground).
 			Align(lipgloss.Right).
 			PaddingRight(0).
 			SetString("RUNNING")

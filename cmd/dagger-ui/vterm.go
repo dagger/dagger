@@ -68,7 +68,7 @@ func (term *Vterm) Init() tea.Cmd {
 }
 
 func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
+	switch msg := msg.(type) { // nolint:gocritic
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Up):
