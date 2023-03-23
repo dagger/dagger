@@ -64,6 +64,12 @@ func main() {
 		cmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 		cmd.Env = append(os.Environ(), "_EXPERIMENTAL_DAGGER_JOURNAL="+journalFile)
 
+		// NB: mostly a dev convenience. go run lets its child process roam free
+		// when you interrupt it, so make sure they all get signalled. (you don't
+		// normally notice this in a shell because Ctrl+C sends to the process
+		// group.)
+		ensureChildProcessesAreKilled(cmd)
+
 		err := cmd.Start()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "err: %v\n", err)
