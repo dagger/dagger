@@ -14,14 +14,13 @@ func Pipe() (Reader, Writer) {
 
 type unboundedPipe struct {
 	cond   *sync.Cond
-	mu     sync.Mutex
 	buffer []*Entry
 	closed bool
 }
 
 func (p *unboundedPipe) WriteEntry(value *Entry) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.cond.L.Lock()
+	defer p.cond.L.Unlock()
 
 	if p.closed {
 		return errors.New("pipe is closed")
@@ -50,8 +49,8 @@ func (p *unboundedPipe) ReadEntry() (*Entry, bool) {
 }
 
 func (p *unboundedPipe) Close() error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+	p.cond.L.Lock()
+	defer p.cond.L.Unlock()
 
 	p.closed = true
 	p.cond.Broadcast()
