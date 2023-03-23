@@ -8,7 +8,7 @@ async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # create HTTP service container with exposed port 8080
-        http_srv = (
+        httpSrv = (
             client.container()
             .from_("python")
             .with_directory(
@@ -21,10 +21,10 @@ async def main():
         )
 
         # get endpoint
-        val = await http_srv.endpoint()
+        val = await httpSrv.endpoint()
 
         # get HTTP endpoint
-        val_scheme = await http_srv.endpoint(scheme="http")
+        val_scheme = await httpSrv.endpoint(scheme="http")
 
     print(val)
     print(val_scheme)

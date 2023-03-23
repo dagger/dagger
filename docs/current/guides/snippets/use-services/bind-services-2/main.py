@@ -8,7 +8,7 @@ async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # create HTTP service container with exposed port 8080
-        http_srv = (
+        httpSrv = (
             client.container()
             .from_("python")
             .with_directory(
@@ -25,7 +25,7 @@ async def main():
         val = await (
             client.container()
             .from_("alpine")
-            .with_service_binding("www", http_srv)
+            .with_service_binding("www", httpSrv)
             .with_exec(["wget", "http://www:8080"])
             .file("index.html")
             .contents()
