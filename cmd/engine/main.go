@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	daggerremotecache "github.com/dagger/dagger/engine/remotecache"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -195,6 +196,16 @@ func main() { //nolint:gocyclo
 			Name:  "allow-insecure-entitlement",
 			Usage: "allows insecure entitlements e.g. network.host, security.insecure",
 		},
+		cli.StringFlag{
+			Name:  "network-name",
+			Usage: "short name for the engine's container network; used for interface name",
+			Value: "dagger",
+		},
+		cli.StringFlag{
+			Name:  "network-cidr",
+			Usage: "address range to use for networked containers",
+			Value: "10.87.0.0/16",
+		},
 	)
 	app.Flags = append(app.Flags, appFlags...)
 
@@ -212,7 +223,15 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
-		if err := setDaggerDefaults(&cfg); err != nil {
+		cniConfigPath, err := setupNetwork(
+			c.GlobalString("network-name"),
+			c.GlobalString("network-cidr"),
+		)
+		if err != nil {
+			return err
+		}
+
+		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
 			return err
 		}
 
@@ -889,4 +908,32 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 		return nil, err
 	}
 	return &tracev1.ExportTraceServiceResponse{}, nil
+}
+
+func setupNetwork(netName, netCIDR string) (string, error) {
+	if os.Getenv(servicesDNSEnvName) == "0" {
+		return "", nil
+	}
+
+	err := network.InstallDnsmasq(netName)
+	if err != nil {
+		return "", fmt.Errorf("install dnsmasq: %w", err)
+	}
+
+	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	if err != nil {
+		return "", fmt.Errorf("install cni: %w", err)
+	}
+
+	bridge, err := network.BridgeFromCIDR(netCIDR)
+	if err != nil {
+		return "", fmt.Errorf("bridge from cidr: %w", err)
+	}
+
+	err = network.InstallResolvconf(netName, bridge.String())
+	if err != nil {
+		return "", fmt.Errorf("install resolv.conf: %w", err)
+	}
+
+	return cniConfigPath, nil
 }

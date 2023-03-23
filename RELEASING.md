@@ -6,6 +6,7 @@ This describes how to release Dagger:
 - 🐹 Go SDK
 - 🐍 Python SDK
 - ⬢ Node.js SDK
+- 🛝 Playground
 - 📒 Documentation
 
 This is a high-level diagram of how all the pieces fit together:
@@ -330,6 +331,22 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version `$ENGINE_VERSION`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
 
+
+## 🛝 Playground
+
+The [Dagger Playground](https://play.dagger.cloud) is set to automatically update once there's a new release of the Dagger Engine. 
+In order to verify which version the playground is using, an `x-dagger-engine` HTTP header with the deployed Dagger Engine version is
+returned for each playground query. 
+
+Follow these steps to retrieve and verify the playground version:
+
+1. Browse https://play.dagger.cloud and log-in using GitHub credentials.
+2. Open your developer tools and go to the "Network" tab.
+3. Press the "Execute" button in the UI to send a query.
+4. Click in the `/playgrounds` POST request row in the network tab and take onte of the engine commit version.
+5. Verify that the returned commit version matches with the Engine tag commit generated at the beginning of this guide.
+
+![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
 
 
 ## 📒 Documentation

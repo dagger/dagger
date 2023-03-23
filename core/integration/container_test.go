@@ -2768,21 +2768,36 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	pushedRef, err := container.
-		WithRegistryAuth(
-			privateRegistryHost,
-			"john",
-			//nolint:staticcheck // SA1019 We want to test this API while we support it.
-			c.Container().
-				WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
-				File("secret.txt").
-				Secret(),
-		).
-		Publish(ctx, testRef)
+	t.Run("legacy secret API", func(t *testing.T) {
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				//nolint:staticcheck // SA1019 We want to test this API while we support it.
+				c.Container().
+					WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
+					File("secret.txt").
+					Secret(),
+			).
+			Publish(ctx, testRef)
 
-	require.NoError(t, err)
-	require.NotEqual(t, testRef, pushedRef)
-	require.Contains(t, pushedRef, "@sha256:")
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	})
+	t.Run("new secret API", func(t *testing.T) {
+		pushedRef, err := container.
+			WithRegistryAuth(
+				privateRegistryHost,
+				"john",
+				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+			).
+			Publish(ctx, testRef)
+
+		require.NoError(t, err)
+		require.NotEqual(t, testRef, pushedRef)
+		require.Contains(t, pushedRef, "@sha256:")
+	})
 }
 
 func TestContainerImageRef(t *testing.T) {
@@ -2904,27 +2919,41 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	out, err := c.Container().From("alpine:3.16.2").
-		WithExec([]string{"cat", "/proc/self/status"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "CapInh:\t0000000000000000")
-	require.Contains(t, out, "CapPrm:\t00000000a80425fb")
-	require.Contains(t, out, "CapEff:\t00000000a80425fb")
-	require.Contains(t, out, "CapBnd:\t00000000a80425fb")
-	require.Contains(t, out, "CapAmb:\t0000000000000000")
+	// This isn't exhaustive, but it's the major important ones. Being exhaustive
+	// is trickier since the full list of caps is host dependent.
+	privilegedCaps := []string{
+		"cap_sys_admin",
+		"cap_net_admin",
+		"cap_sys_module",
+		"cap_sys_ptrace",
+		"cap_sys_boot",
+		"cap_sys_rawio",
+		"cap_sys_resource",
+	}
 
-	out, err = c.Container().From("alpine:3.16.2").
-		WithExec([]string{"cat", "/proc/self/status"}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Contains(t, out, "CapInh:\t0000003fffffffff")
-	require.Contains(t, out, "CapPrm:\t0000003fffffffff")
-	require.Contains(t, out, "CapEff:\t0000003fffffffff")
-	require.Contains(t, out, "CapBnd:\t0000003fffffffff")
-	require.Contains(t, out, "CapAmb:\t0000003fffffffff")
+	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd"} {
+		out, err := c.Container().From("alpine:3.16.2").
+			WithExec([]string{"apk", "add", "libcap"}).
+			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		for _, privCap := range privilegedCaps {
+			require.NotContains(t, out, privCap)
+		}
+	}
+
+	for _, capSet := range []string{"CapPrm", "CapEff", "CapBnd", "CapInh", "CapAmb"} {
+		out, err := c.Container().From("alpine:3.16.2").
+			WithExec([]string{"apk", "add", "libcap"}).
+			WithExec([]string{"sh", "-c", "capsh --decode=$(grep " + capSet + " /proc/self/status | awk '{print $2}')"}, dagger.ContainerWithExecOpts{
+				InsecureRootCapabilities: true,
+			}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		for _, privCap := range privilegedCaps {
+			require.Contains(t, out, privCap)
+		}
+	}
 }
 
 func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
