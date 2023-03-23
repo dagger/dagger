@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	"github.com/dagger/dagger/telemetry"
@@ -276,7 +277,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 				defer f.Close()
 				enc := json.NewEncoder(f)
 				for ev := range ch {
-					entry := &engine.JournalEntry{
+					entry := &journal.Entry{
 						Event: ev,
 						TS:    time.Now().UTC(),
 					}
@@ -288,14 +289,14 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 				return nil
 			})
 		case "tcp":
-			w, err := engine.DialRPC("tcp", u.Host)
+			w, err := journal.Dial("tcp", u.Host)
 			if err != nil {
 				return fmt.Errorf("journal: %w", err)
 			}
 			defer w.Close()
 			eg.Go(func() error {
 				for ev := range ch {
-					entry := &engine.JournalEntry{
+					entry := &journal.Entry{
 						Event: ev,
 						TS:    time.Now().UTC(),
 					}

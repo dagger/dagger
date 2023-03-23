@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -11,11 +12,11 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/engine/journal"
 	bkclient "github.com/moby/buildkit/client"
 )
 
-func New(quit func(), r engine.JournalReader) *Model {
+func New(quit func(), r journal.Reader) *Model {
 	m := &Model{
 		quit: quit,
 		tree: &Tree{
@@ -38,7 +39,7 @@ func New(quit func(), r engine.JournalReader) *Model {
 type Model struct {
 	quit func()
 
-	journal   engine.JournalReader
+	journal   journal.Reader
 	itemsByID map[string]*Item
 	root      *Group
 
@@ -112,7 +113,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(cmd, debounceFollow(string(msg)))
 		}
 		return m, cmd
-	case *engine.JournalEntry:
+	case *journal.Entry:
 		return m.processSolveStatus(msg.Event)
 	case spinner.TickMsg:
 		cmds := []tea.Cmd{}
@@ -127,6 +128,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		return m, tea.Batch(cmds...)
+	default:
+		log.Printf("unhandled message: %T (%v)", msg, msg)
 	}
 
 	return m, nil

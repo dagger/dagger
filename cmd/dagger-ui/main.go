@@ -9,7 +9,7 @@ import (
 	"os/exec"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/engine/journal"
 )
 
 var journalFile string
@@ -27,7 +27,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var r engine.JournalReader
+	var r journal.Reader
 	var err error
 	if journalFile != "" {
 		r, err = tailJournal(journalFile, true, nil)
@@ -42,11 +42,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		r, _, err = engine.ServeRPC(l)
+		sink, err := journal.ServeWriters(l)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "err: %v\n", err)
 			os.Exit(1)
 		}
+
+		defer sink.Flush()
+
+		r = sink
 
 		journalFile = fmt.Sprintf("tcp://%s", l.Addr())
 	}

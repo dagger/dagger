@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/engine/journal"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/nxadm/tail"
 )
@@ -17,13 +17,13 @@ type JournalEntry struct {
 	TS    time.Time
 }
 
-func tailJournal(journal string, follow bool, stopCh chan struct{}) (engine.JournalReader, error) {
-	f, err := tail.TailFile(journal, tail.Config{Follow: follow})
+func tailJournal(path string, follow bool, stopCh chan struct{}) (journal.Reader, error) {
+	f, err := tail.TailFile(path, tail.Config{Follow: follow})
 	if err != nil {
 		return nil, err
 	}
 
-	r, w := engine.Pipe()
+	r, w := journal.Pipe()
 
 	go func() {
 		if stopCh == nil {
@@ -46,7 +46,7 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (engine.Jour
 				return
 			}
 
-			var entry engine.JournalEntry
+			var entry journal.Entry
 			if err := json.Unmarshal([]byte(line.Text), &entry); err != nil {
 				fmt.Fprintf(os.Stderr, "tail unmarshal error (%s): %v\n", line.Text, err)
 				var syntaxErr *json.SyntaxError
