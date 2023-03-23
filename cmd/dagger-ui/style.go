@@ -2,50 +2,7 @@ package main
 
 import "github.com/charmbracelet/lipgloss"
 
-// status bar
-var (
-	statusNugget = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("7")).
-			Padding(0, 1)
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "8", Dark: "15"}).
-			Background(lipgloss.AdaptiveColor{Light: "15", Dark: "8"})
-
-	followMode = lipgloss.NewStyle().
-			Inherit(statusBarStyle).
-			Background(lipgloss.Color("6")).
-			Foreground(lipgloss.Color("0")).
-			Padding(0, 1).
-			MarginRight(1).
-			SetString("FOLLOW")
-
-	browseMode = followMode.Copy().
-			Background(lipgloss.Color("5")).
-			Foreground(lipgloss.Color("0")).
-			SetString("BROWSE")
-
-	runningStatus = statusNugget.Copy().
-			Background(lipgloss.Color("3")).
-			Foreground(lipgloss.Color("0")).
-			Align(lipgloss.Right).
-			PaddingRight(0).
-			SetString("RUNNING")
-
-	completeStatus = runningStatus.Copy().
-			Background(lipgloss.Color("6")).
-			Foreground(lipgloss.Color("0")).
-			Align(lipgloss.Right).
-			SetString("COMPLETE")
-
-	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
-
-	timerStyle = statusNugget.Copy().
-			Background(lipgloss.Color("3")).
-			Foreground(lipgloss.Color("0"))
-)
-
-// tree
+// palette
 var (
 	colorBackground = lipgloss.Color("0") // black
 	colorFailed     = lipgloss.Color("1") // red
@@ -57,6 +14,55 @@ var (
 	colorForeground = lipgloss.Color("7") // white
 	colorFaint      = lipgloss.Color("8") // bright black
 
+	colorLightForeground = lipgloss.AdaptiveColor{Light: "8", Dark: "15"}
+	colorLightBackground = lipgloss.AdaptiveColor{Light: "15", Dark: "8"}
+)
+
+// status bar
+var (
+	statusNugget = lipgloss.NewStyle().
+			Foreground(colorForeground).
+			Padding(0, 1)
+
+	statusBarStyle = lipgloss.NewStyle().
+			Foreground(colorLightForeground).
+			Background(colorLightBackground)
+
+	followMode = lipgloss.NewStyle().
+			Inherit(statusBarStyle).
+			Background(colorAccent2).
+			Foreground(colorBackground).
+			Padding(0, 1).
+			MarginRight(1).
+			SetString("FOLLOW")
+
+	browseMode = followMode.Copy().
+			Background(colorAccent1).
+			Foreground(colorBackground).
+			SetString("BROWSE")
+
+	runningStatus = statusNugget.Copy().
+			Background(colorStarted).
+			Foreground(lipgloss.Color(colorBackground)).
+			Align(lipgloss.Right).
+			PaddingRight(0).
+			SetString("RUNNING")
+
+	completeStatus = runningStatus.Copy().
+			Background(colorAccent2).
+			Foreground(colorBackground).
+			Align(lipgloss.Right).
+			SetString("COMPLETE")
+
+	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
+
+	timerStyle = statusNugget.Copy().
+			Background(colorStarted).
+			Foreground(colorBackground)
+)
+
+// tree
+var (
 	itemTimerStyle = lipgloss.NewStyle().
 			Foreground(colorFaint)
 
@@ -69,9 +75,15 @@ var (
 				Background(colorForeground).
 				Foreground(colorBackground)
 
-	completedStatus = lipgloss.NewStyle().Foreground(colorCompleted).SetString("✔")
-	failedStatus    = lipgloss.NewStyle().Foreground(colorFailed).SetString("✖")
-	cachedStatus    = lipgloss.NewStyle().Foreground(colorFaint).SetString("●")
+	completedStatus = lipgloss.NewStyle().
+			Foreground(colorCompleted).
+			SetString("✔")
+	failedStatus = lipgloss.NewStyle().
+			Foreground(colorFailed).
+			SetString("✖")
+	cachedStatus = lipgloss.NewStyle().
+			Foreground(colorFaint).
+			SetString("●")
 )
 
 var (
@@ -92,16 +104,16 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Border(borderLeft).
 			Padding(0, 1).
-			Background(lipgloss.Color("0")).
-			Foreground(lipgloss.Color("7"))
+			Background(colorBackground).
+			Foreground(colorForeground)
 
 	titleBarStyle = lipgloss.NewStyle().
-			Background(lipgloss.Color("0")).
-			Foreground(lipgloss.Color("7"))
+			Background(colorBackground).
+			Foreground(colorForeground)
 
 	infoStyle = lipgloss.NewStyle().
 			Border(borderRight).
 			Padding(0, 1).
-			Background(lipgloss.Color("0")).
-			Foreground(lipgloss.Color("7"))
+			Background(colorBackground).
+			Foreground(colorForeground)
 )
