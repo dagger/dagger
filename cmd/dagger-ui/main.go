@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime/pprof"
+	"runtime/trace"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/internal/engine/journal"
@@ -17,6 +19,8 @@ func init() {
 	flag.StringVar(&journalFile, "journal", os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"), "replay journal file")
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+
 func main() {
 	flag.Parse()
 
@@ -27,6 +31,27 @@ func main() {
 }
 
 func run(cmd []string) error {
+	if *cpuprofile != "" {
+		profF, err := os.Create(*cpuprofile)
+		if err != nil {
+			return fmt.Errorf("create profile: %w", err)
+		}
+		pprof.StartCPUProfile(profF)
+		defer pprof.StopCPUProfile()
+
+		tracePath := *cpuprofile + ".trace"
+		traceF, err := os.Create(tracePath)
+		if err != nil {
+			return fmt.Errorf("create trace: %w", err)
+		}
+		defer traceF.Close()
+
+		if err := trace.Start(traceF); err != nil {
+			return fmt.Errorf("start trace: %w", err)
+		}
+		defer trace.Stop()
+	}
+
 	if len(cmd) == 0 && journalFile == "" {
 		return fmt.Errorf("usage: %s ([cmd...] | --journal <file>)", os.Args[0])
 	}
