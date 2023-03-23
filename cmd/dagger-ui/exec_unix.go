@@ -20,6 +20,6 @@ func ensureChildProcessesAreKilled(cmd *exec.Cmd) {
 		if err != nil {
 			return err
 		}
-		return syscall.Kill(-pgid, syscall.SIGINT)
+		return syscall.Kill(-pgid, syscall.SIGKILL)
 	}
 }
