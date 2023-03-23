@@ -27,17 +27,9 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	s := string(b)
+	scrubbedBytes := scrubSecretBytes(w.secretValues, b)
 
-	for _, secret := range w.secretValues {
-		if secret == "" {
-			continue
-		}
-		// FIXME: I think we can do better
-		s = strings.ReplaceAll(s, secret, "***")
-	}
-
-	_, err := w.w.Write([]byte(s))
+	_, err := w.w.Write(scrubbedBytes)
 	if err != nil {
 		return -1, err
 	}
@@ -45,9 +37,33 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	return len(b), err
 }
 
-func (w *SecretScrubWriter) WriteNew(b []byte) (int, error) {
-	// FIXME: TDD the implementation
-	return 0, nil
+func scrubSecretBytes(secretValues []string, b []byte) []byte {
+	s := string(b)
+	ss := strings.Split(s, "\n")
+
+	out := make([]string, 0, len(ss))
+
+	for _, line := range ss {
+		for _, secretValue := range secretValues {
+			var secretLines []string
+
+			lines := strings.Split(secretValue, "\n")
+			secretLines = append(secretLines, lines...)
+			for _, secretLine := range secretLines {
+				secretLine := strings.TrimSpace(secretLine)
+				if secretLine == "" {
+					continue
+				}
+				// FIXME: I think we can do better
+				line = strings.ReplaceAll(line, secretLine, "***")
+			}
+		}
+		out = append(out, line)
+	}
+
+	s = strings.Join(out, "\n")
+
+	return []byte(s)
 }
 
 func (w *SecretScrubWriter) WriteConcourseWIP(b []byte) (int, error) {
