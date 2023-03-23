@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -13,6 +14,8 @@ import (
 
 type Vterm struct {
 	vt *vt100.VT100
+
+	viewBuf *bytes.Buffer
 
 	Offset int
 	Height int
@@ -27,7 +30,8 @@ func NewVterm(width int) *Vterm {
 		vt.DebugLogs = os.Stderr
 	}
 	return &Vterm{
-		vt: vt,
+		vt:      vt,
+		viewBuf: new(bytes.Buffer),
 	}
 }
 
@@ -89,7 +93,10 @@ const reset = termenv.CSI + termenv.ResetSeq + "m"
 func (term *Vterm) View() string {
 	used := term.vt.UsedHeight()
 
-	lines := []string{}
+	buf := term.viewBuf
+	buf.Reset()
+
+	var lines int
 	for row, l := range term.vt.Content {
 		if row < term.Offset {
 			continue
@@ -100,32 +107,31 @@ func (term *Vterm) View() string {
 
 		var lastFormat vt100.Format
 
-		var line string
 		for col, r := range l {
 			f := term.vt.Format[row][col]
 
 			if f != lastFormat {
 				lastFormat = f
-				line += renderFormat(f)
+				buf.Write([]byte(renderFormat(f)))
 			}
 
-			line += string(r)
+			buf.Write([]byte(string(r)))
 		}
 
-		line += reset
-
-		lines = append(lines, line)
+		buf.Write([]byte(reset + "\n"))
+		lines++
 
 		if row > used {
 			break
 		}
 	}
 
-	for i := len(lines); i < term.Height; i++ {
-		lines = append(lines, "")
+	for i := lines; i < term.Height; i++ {
+		buf.Write([]byte("\n"))
 	}
 
-	return strings.Join(lines, "\n")
+	// discard final trailing linebreak
+	return buf.String()[0 : buf.Len()-1]
 }
 
 func renderFormat(f vt100.Format) string {
