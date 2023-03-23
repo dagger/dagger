@@ -196,7 +196,17 @@ func (m *Tree) currentOffset(item TreeEntry) int {
 }
 
 func (m *Tree) height(item TreeEntry) int {
-	return lipgloss.Height(m.itemView(item, []bool{false}))
+	height := 1
+	entries := item.Entries()
+	if entries == nil || m.collapsed[item] {
+		return height
+	}
+
+	for _, e := range entries {
+		height += m.height(e)
+	}
+
+	return height
 }
 
 func (m *Tree) itemView(item TreeEntry, padding []bool) string {
