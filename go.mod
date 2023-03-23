@@ -65,7 +65,6 @@ require (
 	github.com/go-git/go-git/v5 v5.5.2
 	github.com/google/go-github/v50 v50.1.0
 	github.com/jackpal/gateway v1.0.7
-	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
 	github.com/vito/vt100 v0.0.0-20230321154713-9b66b23a14a4
@@ -152,6 +151,7 @@ require (
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
+	github.com/muesli/reflow v0.3.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
 	github.com/onsi/gomega v1.24.2 // indirect
 	github.com/opencontainers/runc v1.1.5 // indirect

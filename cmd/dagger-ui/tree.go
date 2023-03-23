@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/reflow/truncate"
 )
 
 type TreeEntry interface {
@@ -222,10 +221,19 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 	}
 	timerView := m.timerView(item)
 
-	nameWidth := m.viewport.Width - lipgloss.Width(status) - lipgloss.Width(treePrefix) - lipgloss.Width(timerView)
+	nameWidth := m.viewport.Width -
+		lipgloss.Width(status) -
+		lipgloss.Width(treePrefix) -
+		lipgloss.Width(timerView)
+
+	name := item.Name()
+	if len(name) > nameWidth {
+		name = name[:nameWidth-3] + "…"
+	}
+
 	nameView := lipgloss.NewStyle().
 		Width(max(0, nameWidth)).
-		Render(" " + expandView + truncate.StringWithTail(item.Name(), uint(nameWidth)-2, "…"))
+		Render(" " + expandView + name)
 
 	view := status + treePrefix
 	if item == m.current {
