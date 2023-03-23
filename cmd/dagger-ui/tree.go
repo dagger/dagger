@@ -85,18 +85,20 @@ func (m *Tree) View() string {
 	if m.root == nil {
 		return ""
 	}
+
 	offset := m.currentOffset(m.root) - 1
+
 	views := []string{}
 	entries := m.root.Entries()
 	for i, item := range entries {
 		if i == len(entries)-1 {
-			views = append(views, m.itemView(item, []bool{true}))
+			views = append(views, m.itemView(item, []bool{true})...)
 		} else {
-			views = append(views, m.itemView(item, []bool{false}))
+			views = append(views, m.itemView(item, []bool{false})...)
 		}
 	}
 
-	m.viewport.SetContent(lipgloss.JoinVertical(lipgloss.Left, views...))
+	m.viewport.SetContent(strings.Join(views, "\n"))
 
 	if offset >= m.viewport.YOffset+m.viewport.Height {
 		m.viewport.SetYOffset(offset - m.viewport.Height + 1)
@@ -208,7 +210,9 @@ func (m *Tree) height(item TreeEntry) int {
 	return height
 }
 
-func (m *Tree) itemView(item TreeEntry, padding []bool) string {
+func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
+	renderedItems := []string{}
+
 	status := " " + m.statusView(item) + " "
 	treePrefix := m.treePrefixView(padding)
 	expandView := ""
@@ -246,14 +250,13 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 		view += nameView + timerView
 	}
 
+	renderedItems = append(renderedItems, view)
+
 	entries := item.Entries()
 	if entries == nil || m.collapsed[item] {
-		return view
+		return renderedItems
 	}
 
-	renderedItems := []string{
-		view,
-	}
 	for i, s := range entries {
 		pad := append([]bool{}, padding...)
 		if i == len(entries)-1 {
@@ -262,12 +265,10 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) string {
 			pad = append(pad, false)
 		}
 
-		renderedItems = append(renderedItems, m.itemView(s, pad))
+		renderedItems = append(renderedItems, m.itemView(s, pad)...)
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left,
-		renderedItems...,
-	)
+	return renderedItems
 }
 
 func (m *Tree) MoveUp() {
