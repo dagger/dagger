@@ -325,7 +325,7 @@ func (m Model) helpView() string {
 
 func (m Model) waitForActivity() tea.Cmd {
 	return func() tea.Msg {
-		msg, ok := m.journal.ReadStatus()
+		msg, ok := m.journal.ReadEntry()
 		if ok {
 			return msg
 		}

@@ -1,46 +1,59 @@
 package journal
 
 import (
+	"errors"
 	"sync"
 )
 
 func Pipe() (Reader, Writer) {
-	ch := make(chan *Entry)
-	return chanReader(ch), &chanWriter{ch: ch}
+	pipe := &unboundedPipe{
+		cond: sync.NewCond(&sync.Mutex{}),
+	}
+	return pipe, pipe
 }
 
-type chanWriter struct {
-	ch chan<- *Entry
-
-	sync.Mutex
+type unboundedPipe struct {
+	cond   *sync.Cond
+	mu     sync.Mutex
+	buffer []*Entry
+	closed bool
 }
 
-func (doc *chanWriter) WriteStatus(v *Entry) error {
-	doc.Lock()
-	defer doc.Unlock()
+func (p *unboundedPipe) WriteEntry(value *Entry) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-	if doc.ch == nil {
-		// discard
-		return nil
+	if p.closed {
+		return errors.New("pipe is closed")
 	}
 
-	doc.ch <- v
+	p.buffer = append(p.buffer, value)
+	p.cond.Signal()
 	return nil
 }
 
-func (doc *chanWriter) Close() error {
-	doc.Lock()
-	if doc.ch != nil {
-		close(doc.ch)
-		doc.ch = nil
+func (p *unboundedPipe) ReadEntry() (*Entry, bool) {
+	p.cond.L.Lock()
+	defer p.cond.L.Unlock()
+
+	for len(p.buffer) == 0 && !p.closed {
+		p.cond.Wait()
 	}
-	doc.Unlock()
-	return nil
+
+	if len(p.buffer) == 0 && p.closed {
+		return nil, false
+	}
+
+	value := p.buffer[0]
+	p.buffer = p.buffer[1:]
+	return value, true
 }
 
-type chanReader <-chan *Entry
+func (p *unboundedPipe) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 
-func (ch chanReader) ReadStatus() (*Entry, bool) {
-	val, ok := <-ch
-	return val, ok
+	p.closed = true
+	p.cond.Broadcast()
+	return nil
 }

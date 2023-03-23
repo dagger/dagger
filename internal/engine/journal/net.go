@@ -25,12 +25,12 @@ func ServeWriters(l net.Listener) (*Sink, error) {
 		sources:  wg,
 	}
 
-	go sink.Accept(l)
+	go sink.accept(l)
 
 	return sink, nil
 }
 
-func (sink *Sink) Accept(l net.Listener) {
+func (sink *Sink) accept(l net.Listener) {
 	for {
 		conn, err := l.Accept()
 		if err != nil {
@@ -57,8 +57,7 @@ func (sink *Sink) handle(conn net.Conn) {
 			return
 		}
 
-		// TODO: this hangs
-		sink.entriesW.WriteStatus(&status)
+		sink.entriesW.WriteEntry(&status)
 	}
 }
 
@@ -79,7 +78,7 @@ func Dial(network, addr string) (Writer, error) {
 	}, nil
 }
 
-func (w *netWriter) WriteStatus(status *Entry) error {
+func (w *netWriter) WriteEntry(status *Entry) error {
 	return w.enc.Encode(status)
 }
 

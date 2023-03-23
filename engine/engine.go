@@ -301,7 +301,7 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 						TS:    time.Now().UTC(),
 					}
 
-					if err := w.WriteStatus(entry); err != nil {
+					if err := w.WriteEntry(entry); err != nil {
 						return err
 					}
 				}

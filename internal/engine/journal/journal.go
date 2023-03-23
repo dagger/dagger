@@ -7,15 +7,15 @@ import (
 )
 
 type Writer interface {
-	WriteStatus(*Entry) error
+	WriteEntry(*Entry) error
 	Close() error
 }
 
 type Reader interface {
-	ReadStatus() (*Entry, bool)
+	ReadEntry() (*Entry, bool)
 }
 
 type Entry struct {
-	Event *bkclient.SolveStatus
-	TS    time.Time
+	Event *bkclient.SolveStatus `json:"event"`
+	TS    time.Time             `json:"ts"`
 }

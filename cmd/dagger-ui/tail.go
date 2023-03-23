@@ -56,7 +56,7 @@ func tailJournal(path string, follow bool, stopCh chan struct{}) (journal.Reader
 				return
 			}
 
-			w.WriteStatus(&entry)
+			w.WriteEntry(&entry)
 		}
 	}()
 
