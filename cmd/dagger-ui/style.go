@@ -64,24 +64,30 @@ var (
 // tree
 var (
 	itemTimerStyle = lipgloss.NewStyle().
+			Inline(true).
 			Foreground(colorFaint)
 
 	selectedStyle = lipgloss.NewStyle().
+			Inline(true).
 			Foreground(colorBackground).
 			Background(colorSelected).
 			Bold(false)
 
 	selectedStyleBlur = lipgloss.NewStyle().
+				Inline(true).
 				Background(colorForeground).
 				Foreground(colorBackground)
 
 	completedStatus = lipgloss.NewStyle().
+			Inline(true).
 			Foreground(colorCompleted).
 			SetString("✔")
 	failedStatus = lipgloss.NewStyle().
+			Inline(true).
 			Foreground(colorFailed).
 			SetString("✖")
 	cachedStatus = lipgloss.NewStyle().
+			Inline(true).
 			Foreground(colorFaint).
 			SetString("●")
 )
