@@ -236,6 +236,7 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 	}
 
 	nameView := lipgloss.NewStyle().
+		Inline(true).
 		Width(max(0, nameWidth)).
 		Render(" " + expandView + name)
 
