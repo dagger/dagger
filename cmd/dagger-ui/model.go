@@ -78,7 +78,7 @@ func (m Model) adjustLocalTime(t *time.Time) *time.Time {
 type followMsg struct{}
 
 func followTick() tea.Cmd {
-	return tea.Tick(300*time.Millisecond, func(_ time.Time) tea.Msg {
+	return tea.Tick(100*time.Millisecond, func(_ time.Time) tea.Msg {
 		return followMsg{}
 	})
 }
