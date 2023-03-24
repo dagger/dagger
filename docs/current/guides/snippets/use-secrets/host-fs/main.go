@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"dagger.io/dagger"
@@ -19,7 +18,7 @@ func main() {
 	defer client.Close()
 
 	// read file
-	f, err := ioutil.ReadFile("/home/USER/.config/gh/hosts.yml")
+	f, err := os.ReadFile("/home/USER/.config/gh/hosts.yml")
 	if err != nil {
 		panic(err)
 	}
