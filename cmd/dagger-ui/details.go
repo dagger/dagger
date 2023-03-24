@@ -74,7 +74,6 @@ func (m Details) headerView() string {
 			Render(info)
 		space := max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))
 		line = titleBarStyle.Copy().
-			BorderForeground(colorSelected).
 			Foreground(colorSelected).
 			Render(strings.Repeat("─", space))
 	}
@@ -93,5 +92,5 @@ func (m Details) View() string {
 
 	m.item.SetHeight(m.height - lipgloss.Height(headerView))
 
-	return lipgloss.JoinVertical(lipgloss.Left, headerView, m.item.View())
+	return fmt.Sprintf("%s\n%s", headerView, m.item.View())
 }

@@ -269,7 +269,7 @@ func (m Model) View() string {
 	m.details.SetHeight(detailsHeight)
 	detailsView := m.details.View()
 
-	return lipgloss.JoinVertical(lipgloss.Left,
+	return fmt.Sprintf("%s\n%s\n%s\n%s",
 		statusBarView,
 		treeView,
 		detailsView,
@@ -292,12 +292,7 @@ func (m Model) statusBarView() string {
 		Width(m.width - lipgloss.Width(mode) - lipgloss.Width(status) - lipgloss.Width(timer)).
 		Render("")
 
-	return lipgloss.JoinHorizontal(lipgloss.Top,
-		mode,
-		statusVal,
-		status,
-		timer,
-	)
+	return mode + statusVal + status + timer
 }
 
 func (m Model) helpView() string {
