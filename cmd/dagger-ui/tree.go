@@ -323,19 +323,9 @@ func (m *Tree) Follow() {
 		return
 	}
 
-	entry := m.current
-	for {
-		entry = m.findNext(entry)
-		if entry == nil {
-			return
-		}
-		if len(entry.Entries()) > 0 {
-			continue
-		}
-		if entry.Started() != nil && entry.Completed() == nil && !entry.Cached() {
-			m.current = entry
-			return
-		}
+	oldest := findOldestIncompleteEntry(m.root)
+	if oldest != nil {
+		m.current = oldest
 	}
 }
 
@@ -423,4 +413,33 @@ func (m *Tree) findPrev(entry TreeEntry) TreeEntry {
 		}
 		prev = entries[len(entries)-1]
 	}
+}
+
+func findOldestIncompleteEntry(entry TreeEntry) TreeEntry {
+	var oldestIncompleteEntry TreeEntry
+	oldestStartedTime := time.Time{}
+
+	var search func(e TreeEntry)
+
+	search = func(e TreeEntry) {
+		started := e.Started()
+		completed := e.Completed()
+		cached := e.Cached()
+		entries := e.Entries()
+
+		if len(entries) == 0 && started != nil && completed == nil && !cached {
+			if oldestIncompleteEntry == nil || started.Before(oldestStartedTime) {
+				oldestStartedTime = *started
+				oldestIncompleteEntry = e
+			}
+		}
+
+		for _, child := range entries {
+			search(child)
+		}
+	}
+
+	search(entry)
+
+	return oldestIncompleteEntry
 }

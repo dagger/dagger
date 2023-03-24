@@ -62,6 +62,7 @@ func (m Model) Init() tea.Cmd {
 		m.tree.Init(),
 		m.details.Init(),
 		m.waitForActivity(),
+		followTick(),
 	)
 }
 
@@ -74,11 +75,11 @@ func (m Model) adjustLocalTime(t *time.Time) *time.Time {
 	return &adjusted
 }
 
-type followMsg string
+type followMsg struct{}
 
-func debounceFollow(id string) tea.Cmd {
+func followTick() tea.Cmd {
 	return tea.Tick(300*time.Millisecond, func(_ time.Time) tea.Msg {
-		return followMsg(id)
+		return followMsg{}
 	})
 }
 
@@ -94,25 +95,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.follow {
 			return m, nil
 		}
-		item := m.itemsByID[string(msg)]
-		if item == nil {
-			return m, nil
-		}
-
-		if item.Completed() == nil && len(item.Entries()) == 0 {
-			// Not completed -- try again
-			return m, debounceFollow(string(msg))
-		}
 
 		m.tree.Follow()
-		cmd := m.details.SetItem(m.tree.Current())
 
-		if item == m.tree.Current() {
-			// There was no "next" item (maybe everything is pending)
-			// Try again
-			return m, tea.Batch(cmd, debounceFollow(string(msg)))
-		}
-		return m, cmd
+		return m, tea.Batch(
+			m.details.SetItem(m.tree.Current()),
+			followTick(),
+		)
 	case *journal.Entry:
 		return m.processSolveStatus(msg.Event)
 	case spinner.TickMsg:
@@ -144,7 +133,9 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, keys.Follow):
 		m.follow = !m.follow
-		m.tree.Follow()
+		return m, func() tea.Msg {
+			return followMsg{}
+		}
 	case key.Matches(msg, keys.Up):
 		if m.detailsFocus {
 			newDetails, cmd := m.details.Update(msg)
@@ -198,7 +189,6 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		return m, nil
 	}
 
-	// var currentCompleted bool
 	for _, v := range msg.Vertexes {
 		if m.localTimeDiff == 0 && v.Started != nil {
 			m.localTimeDiff = time.Since(*v.Started)
@@ -219,10 +209,8 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		}
 
 		item.UpdateVertex(v)
-		if item == m.tree.Current() && item.completed != nil {
-			// currentCompleted = true
-		}
 	}
+
 	for _, s := range msg.Statuses {
 		item := m.itemsByID[s.Vertex.String()]
 		if item == nil {
@@ -230,6 +218,7 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		}
 		item.UpdateStatus(s)
 	}
+
 	for _, l := range msg.Logs {
 		item := m.itemsByID[l.Vertex.String()]
 		if item == nil {
@@ -237,14 +226,6 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		}
 		item.UpdateLog(l)
 	}
-
-	// if currentCompleted && m.follow {
-	// 	// Ideally we could go to the next item directly,
-	// 	// however buildkit might decide later on this vertex was not completed.
-	// 	// So we need to debounce -- wait 100ms, if it's still finished, then
-	// 	// move to the next one.
-	cmds = append(cmds, debounceFollow(m.tree.Current().ID()))
-	// }
 
 	return m, tea.Batch(cmds...)
 }
