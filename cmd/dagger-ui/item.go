@@ -31,10 +31,12 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 	}
 
 	group := []string{}
-	for _, p := range name.Pipeline {
-		if p.Name == "" {
-			p.Name = "pipeline"
+	for i, p := range name.Pipeline {
+		if i == 0 && p.Name == "" {
+			// skip root pipeline; we show the command logs instead
+			continue
 		}
+
 		group = append(group, p.Name)
 	}
 
@@ -193,7 +195,16 @@ func (i *Item) statusView() string {
 	return strings.Join(statuses, "\n")
 }
 
+type groupModel interface {
+	tea.Model
+
+	SetHeight(int)
+	SetWidth(int)
+}
+
 type Group struct {
+	groupModel
+
 	id          string
 	name        string
 	entries     []TreeEntry
@@ -215,8 +226,10 @@ func (g *Group) Entries() []TreeEntry {
 	return g.entries
 }
 
-func NewGroup(id, name string) *Group {
+func NewGroup(id, name string, logs groupModel) *Group {
 	return &Group{
+		groupModel: logs,
+
 		id:          id,
 		name:        name,
 		entries:     []TreeEntry{},
@@ -233,7 +246,7 @@ func (g *Group) Add(group []string, e TreeEntry) {
 	parent := group[0]
 	sub, ok := g.entriesByID[parent]
 	if !ok {
-		sub = NewGroup(path.Join(g.id, parent), parent)
+		sub = NewGroup(path.Join(g.id, parent), parent, &emptyGroup{})
 		g.entries = append(g.entries, sub)
 		g.entriesByID[sub.Name()] = sub
 	}
@@ -306,18 +319,36 @@ func (g *Group) Completed() *time.Time {
 	return timers[len(timers)-1]
 }
 
-func (g *Group) SetHeight(height int)   { g.height = height }
-func (g *Group) SetWidth(int)           {}
+func (g *Group) SetWidth(w int) {
+	g.groupModel.SetWidth(w)
+}
+
+func (g *Group) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := g.groupModel.Update(msg)
+	g.groupModel = m.(groupModel)
+	return g, cmd
+}
+
 func (g *Group) ScrollPercent() float64 { return 1 }
 
-func (g *Group) Init() tea.Cmd {
+type emptyGroup struct {
+	height int
+}
+
+func (g *emptyGroup) SetHeight(height int) {
+	g.height = height
+}
+
+func (g *emptyGroup) SetWidth(int) {}
+
+func (*emptyGroup) Init() tea.Cmd {
 	return nil
 }
 
-func (g *Group) Update(tea.Msg) (tea.Model, tea.Cmd) {
+func (g *emptyGroup) Update(tea.Msg) (tea.Model, tea.Cmd) {
 	return g, nil
 }
 
-func (g *Group) View() string {
+func (g emptyGroup) View() string {
 	return strings.Repeat("\n", g.height-1)
 }

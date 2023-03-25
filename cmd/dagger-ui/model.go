@@ -16,19 +16,21 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 )
 
-func New(quit func(), r journal.Reader) *Model {
+func New(quit func(), r journal.Reader, rootName string, rootLogs groupModel) *Model {
 	m := &Model{
 		quit: quit,
 		tree: &Tree{
 			viewport:  viewport.New(0, 10),
+			rootName:  rootName,
+			rootLogs:  rootLogs,
 			spinner:   newSpinner(),
 			collapsed: make(map[TreeEntry]bool),
 			focus:     true,
 		},
-		root:      NewGroup("root", ""),
+		root:      NewGroup("", rootName, rootLogs),
 		itemsByID: make(map[string]*Item),
 		details:   Details{},
-		follow:    true,
+		follow:    false,
 		journal:   r,
 		help:      help.New(),
 	}
@@ -252,6 +254,7 @@ func (m Model) statusBarTimerView() string {
 
 func (m Model) View() string {
 	maxTreeHeight := m.height / 2
+	maxTreeHeight -= 2 // hack: make the details header split the view evenly
 	treeHeight := min(maxTreeHeight, m.tree.UsedHeight())
 	m.tree.SetHeight(treeHeight)
 

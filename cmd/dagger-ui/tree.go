@@ -32,6 +32,9 @@ type TreeEntry interface {
 type Tree struct {
 	viewport viewport.Model
 
+	rootName string
+	rootLogs tea.Model
+
 	root    TreeEntry
 	current TreeEntry
 	focus   bool
@@ -52,9 +55,10 @@ func (m *Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Tree) SetRoot(root TreeEntry) {
 	m.root = root
-	if m.current == nil && len(root.Entries()) > 0 {
-		m.current = root.Entries()[0]
+	if m.current == nil {
+		m.current = root
 	}
+	m.root.SetWidth(m.viewport.Width)
 }
 
 func (m *Tree) SetWidth(width int) {
@@ -70,7 +74,7 @@ func (m *Tree) UsedHeight() int {
 		return 0
 	}
 
-	return m.height(m.root) - 1 // 'root' node isn't shown
+	return m.height(m.root)
 }
 
 func (m Tree) Current() TreeEntry {
@@ -86,17 +90,9 @@ func (m *Tree) View() string {
 		return ""
 	}
 
-	offset := m.currentOffset(m.root) - 1
+	offset := m.currentOffset(m.root)
 
-	views := []string{}
-	entries := m.root.Entries()
-	for i, item := range entries {
-		if i == len(entries)-1 {
-			views = append(views, m.itemView(item, []bool{true})...)
-		} else {
-			views = append(views, m.itemView(item, []bool{false})...)
-		}
-	}
+	views := m.itemView(m.root, []bool{})
 
 	m.viewport.SetContent(strings.Join(views, "\n"))
 
@@ -118,13 +114,13 @@ func (m *Tree) treePrefixView(padding []bool) string {
 
 		switch {
 		case leaf && !last:
-			pad.WriteString("├─")
+			pad.WriteString(" ├─")
 		case leaf && last:
-			pad.WriteString("└─")
+			pad.WriteString(" └─")
 		case !leaf && !last:
-			pad.WriteString("│ ")
+			pad.WriteString(" │ ")
 		case !leaf && last:
-			pad.WriteString("  ")
+			pad.WriteString("   ")
 		}
 	}
 	return pad.String()
@@ -274,17 +270,24 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 
 func (m *Tree) MoveUp() {
 	prev := m.findPrev(m.current)
-	if prev == nil || prev == m.root {
-		entries := m.root.Entries()
-		prev = entries[len(entries)-1]
+	if prev == nil {
+		prev = lastEntry(m.root)
 	}
 	m.current = prev
+}
+
+func lastEntry(entry TreeEntry) TreeEntry {
+	entries := entry.Entries()
+	if len(entries) == 0 {
+		return entry
+	}
+	return lastEntry(entries[len(entries)-1])
 }
 
 func (m *Tree) MoveDown() {
 	next := m.findNext(m.current)
 	if next == nil {
-		next = m.root.Entries()[0]
+		next = m.root
 	}
 	m.current = next
 }
@@ -401,6 +404,9 @@ func (m *Tree) findNext(entry TreeEntry) TreeEntry {
 
 func (m *Tree) findPrev(entry TreeEntry) TreeEntry {
 	parent := m.findParent(m.root, entry)
+	if parent == nil {
+		return nil
+	}
 	prev := m.findSibilingBefore(parent, entry)
 	// If there's no previous element, pick the parent.
 	if prev == nil {

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"runtime/pprof"
 	"runtime/trace"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/internal/engine/journal"
@@ -78,11 +79,18 @@ func run(cmd []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	p := tea.NewProgram(New(cancel, r), tea.WithAltScreen())
-
+	var rootName string
+	var rootLogs groupModel
 	if len(cmd) > 0 {
+		rootName = strings.Join(cmd, " ")
+
+		vt := NewVterm(80)
+		rootLogs = vt
+
 		cmd := exec.CommandContext(ctx, cmd[0], cmd[1:]...) // nolint:gosec
 		cmd.Env = append(os.Environ(), "_EXPERIMENTAL_DAGGER_JOURNAL="+journalFile)
+		cmd.Stdout = vt
+		cmd.Stderr = vt
 
 		// NB: go run lets its child process roam free when you interrupt it, so
 		// make sure they all get signalled. (you don't normally notice this in a
@@ -95,11 +103,20 @@ func run(cmd []string) error {
 		}
 
 		defer cmd.Wait()
+	} else {
+		rootLogs = &emptyGroup{}
 	}
+
+	model := New(cancel, r, rootName, rootLogs)
+
+	p := tea.NewProgram(model, tea.WithAltScreen())
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("run UI: %w", err)
 	}
 
 	return nil
+}
+
+type syncBuffer struct {
 }
