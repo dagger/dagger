@@ -179,7 +179,7 @@ func renderFormat(f vt100.Format) string {
 	}
 
 	var res string
-	if f.Reset {
+	if f.Reset || f == (vt100.Format{}) {
 		res = reset
 	}
 	if len(styles) > 0 {
