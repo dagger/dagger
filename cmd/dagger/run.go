@@ -74,8 +74,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
 		return withEngine(ctx, sessionToken.String(), journalW, cmdOut, func(ctx context.Context, api *router.Router) error {
-			// defer journalW.Close()
-			go http.Serve(sessionL, api)
+			go http.Serve(sessionL, api) // nolint:gosec
 			return subCmd.Run()
 		})
 	})

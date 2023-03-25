@@ -209,7 +209,6 @@ type Group struct {
 	name        string
 	entries     []TreeEntry
 	entriesByID map[string]TreeEntry
-	height      int
 }
 
 var _ TreeEntry = &Group{}
