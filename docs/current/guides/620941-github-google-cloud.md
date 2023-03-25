@@ -118,7 +118,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it. Replace the PROJECT placeholder with your Google Cloud project identifier and adjust the region (`us-central1`) and service name (`myapp`) if you specified different values when creating the Google Cloud Run service in Step 2.
 
-  ```javascript file=./snippets/github-google-cloud/main.py
+  ```python file=./snippets/github-google-cloud/main.py
   ```
 
   This file performs the following operations:
