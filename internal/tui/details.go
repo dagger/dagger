@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -86,7 +86,7 @@ func (m Details) headerView() string {
 
 func (m Details) View() string {
 	if m.item == nil {
-		return strings.Repeat("\n", max(0, m.height))
+		return strings.Repeat("\n", max(0, m.height-1))
 	}
 	headerView := m.headerView()
 

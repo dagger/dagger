@@ -7,10 +7,15 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/internal/engine/journal"
+	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 )
 
 var runCmd = &cobra.Command{
@@ -24,41 +29,66 @@ dagger run -- sh -c 'curl \
 -u $DAGGER_SESSION_TOKEN: \
 -H "content-type:application/json" \
 -d "{\"query\":\"{container{id}}\"}" http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
-	Run:  Run,
-	Args: cobra.MinimumNArgs(1),
+	RunE:         Run,
+	Args:         cobra.MinimumNArgs(1),
+	SilenceUsage: true,
 }
 
-func Run(cmd *cobra.Command, args []string) {
+func Run(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
+
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("generate uuid: %w", err)
 	}
 
-	listening := make(chan string)
-	go func() {
-		// allocate the next available port
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-			os.Exit(1)
-		}
-		listening <- fmt.Sprintf("%d", l.Addr().(*net.TCPAddr).Port)
-		if err := withEngine(ctx, sessionToken.String(), func(ctx context.Context, r *router.Router) error {
-			return http.Serve(l, r) //nolint:gosec
-		}); err != nil {
-			panic(err)
-		}
-	}()
+	sessionL, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return fmt.Errorf("session listen: %w", err)
+	}
+	defer sessionL.Close()
 
-	listenPort := <-listening
-	os.Setenv("DAGGER_SESSION_PORT", listenPort)
+	journalR, journalW := journal.Pipe()
+
+	sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
+	os.Setenv("DAGGER_SESSION_PORT", sessionPort)
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
-	c := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
-	c.Stdout = os.Stdout
-	c.Stderr = os.Stderr
-	c.Stdin = os.Stdin
-	c.Run()
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+
+	cmdOut := tui.NewVterm(80)
+	subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
+	subCmd.Stdout = cmdOut
+	subCmd.Stderr = cmdOut
+
+	// NB: go run lets its child process roam free when you interrupt it, so
+	// make sure they all get signalled. (you don't normally notice this in a
+	// shell because Ctrl+C sends to the process group.)
+	ensureChildProcessesAreKilled(subCmd)
+
+	cmdline := strings.Join(args, " ")
+	model := tui.New(quit, journalR, cmdline, cmdOut)
+	program := tea.NewProgram(model, tea.WithAltScreen())
+
+	eg := new(errgroup.Group)
+	eg.Go(func() error {
+		return withEngine(ctx, sessionToken.String(), journalW, cmdOut, func(ctx context.Context, api *router.Router) error {
+			// defer journalW.Close()
+			go http.Serve(sessionL, api)
+			return subCmd.Run()
+		})
+	})
+	eg.Go(func() error {
+		_, err := program.Run()
+		return err
+	})
+	if err := eg.Wait(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		return err
+	}
+	return nil
 }

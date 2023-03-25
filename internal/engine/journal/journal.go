@@ -19,3 +19,8 @@ type Entry struct {
 	Event *bkclient.SolveStatus `json:"event"`
 	TS    time.Time             `json:"ts"`
 }
+
+type Discard struct{}
+
+func (d Discard) WriteEntry(*Entry) error { return nil }
+func (d Discard) Close() error            { return nil }

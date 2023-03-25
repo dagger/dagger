@@ -46,6 +46,7 @@ type Config struct {
 	NoExtensions  bool
 	LogOutput     io.Writer
 	JournalURI    string
+	JournalWriter journal.Writer
 	DisableHostRW bool
 	RunnerHost    string
 	SessionToken  string
@@ -201,7 +202,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	return eg.Wait()
 }
 
-func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
+func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus) error {
 	eg := &errgroup.Group{}
 	readers := []chan *bkclient.SolveStatus{}
 
@@ -310,7 +311,28 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 		}
 	}
 
-	eventsMultiReader(ch, readers...)
+	if startOpts.JournalWriter != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		readers = append(readers, ch)
+
+		journalW := startOpts.JournalWriter
+		eg.Go(func() error {
+			for ev := range ch {
+				entry := &journal.Entry{
+					Event: ev,
+					TS:    time.Now().UTC(),
+				}
+
+				if err := journalW.WriteEntry(entry); err != nil {
+					return err
+				}
+			}
+
+			return journalW.Close()
+		})
+	}
+
+	eventsMultiReader(upstreamCh, readers...)
 	return eg.Wait()
 }
 

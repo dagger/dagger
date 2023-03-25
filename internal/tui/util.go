@@ -1,4 +1,4 @@
-package main
+package tui
 
 import "golang.org/x/exp/constraints"
 

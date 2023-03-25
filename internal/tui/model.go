@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -17,23 +17,24 @@ import (
 )
 
 func New(quit func(), r journal.Reader, rootName string, rootLogs groupModel) *Model {
+	root := NewGroup("", rootName, rootLogs)
 	m := &Model{
 		quit: quit,
 		tree: &Tree{
-			viewport:  viewport.New(0, 10),
-			rootName:  rootName,
-			rootLogs:  rootLogs,
+			viewport:  viewport.New(80, 1),
 			spinner:   newSpinner(),
 			collapsed: make(map[TreeEntry]bool),
 			focus:     true,
 		},
-		root:      NewGroup("", rootName, rootLogs),
+		root:      root,
 		itemsByID: make(map[string]*Item),
 		details:   Details{},
-		follow:    false,
+		follow:    true,
 		journal:   r,
 		help:      help.New(),
 	}
+
+	m.tree.SetRoot(m.root)
 
 	return m
 }
@@ -68,6 +69,8 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
+type endMsg struct{}
+
 func (m Model) adjustLocalTime(t *time.Time) *time.Time {
 	if t == nil {
 		return nil
@@ -91,6 +94,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.tree.SetWidth(msg.Width)
 		m.details.SetWidth(msg.Width)
+		m.root.SetWidth(msg.Width)
 	case tea.KeyMsg:
 		return m.processKeyMsg(msg)
 	case followMsg:
@@ -119,6 +123,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmds = append(cmds, cmd)
 
 		return m, tea.Batch(cmds...)
+	case endMsg:
+		// We've reached the end
+		m.done = true
+		// TODO(vito): print summary before exiting
+		// if m.follow {
+		// 	// automatically quit on completion in follow mode
+		// 	return m, tea.Quit
+		// }
+		return m, nil
+
 	default:
 		log.Printf("unhandled message: %T (%v)", msg, msg)
 	}
@@ -179,16 +193,6 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{
 		m.waitForActivity(),
-	}
-
-	// We've reached the end
-	if msg == nil {
-		m.done = true
-		if m.follow {
-			// automatically quit on completion in follow mode
-			return m, tea.Quit
-		}
-		return m, nil
 	}
 
 	for _, v := range msg.Vertexes {
@@ -254,28 +258,23 @@ func (m Model) statusBarTimerView() string {
 
 func (m Model) View() string {
 	maxTreeHeight := m.height / 2
-	maxTreeHeight -= 2 // hack: make the details header split the view evenly
+	// hack: make the details header split the view evenly
+	// maxTreeHeight = max(0, maxTreeHeight-2)
 	treeHeight := min(maxTreeHeight, m.tree.UsedHeight())
 	m.tree.SetHeight(treeHeight)
 
-	detailsHeight := m.height - treeHeight
-
-	treeView := m.tree.View()
-	treeView += strings.Repeat("\n", max(0, treeHeight-lipgloss.Height(treeView)))
-
 	helpView := m.helpView()
-	detailsHeight -= lipgloss.Height(helpView)
-
 	statusBarView := m.statusBarView()
+
+	detailsHeight := m.height - treeHeight
+	detailsHeight -= lipgloss.Height(helpView)
 	detailsHeight -= lipgloss.Height(statusBarView)
-
 	m.details.SetHeight(detailsHeight)
-	detailsView := m.details.View()
 
-	return fmt.Sprintf("%s\n%s\n%s\n%s",
+	return lipgloss.JoinVertical(lipgloss.Left,
 		statusBarView,
-		treeView,
-		detailsView,
+		m.tree.View(),
+		m.details.View(),
 		helpView,
 	)
 }
@@ -309,7 +308,7 @@ func (m Model) waitForActivity() tea.Cmd {
 			return msg
 		}
 
-		return nil
+		return endMsg{}
 	}
 }
 

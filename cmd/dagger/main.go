@@ -1,8 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"runtime/pprof"
+	"runtime/trace"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
@@ -14,7 +17,8 @@ var (
 	configPath string
 	workdir    string
 
-	debugLogs bool
+	cpuprofile string
+	debugLogs  bool
 )
 
 func init() {
@@ -25,6 +29,7 @@ func init() {
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
+	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
 	rootCmd.PersistentFlags().MarkHidden("project")
@@ -42,9 +47,33 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if cpuprofile != "" {
+			profF, err := os.Create(cpuprofile)
+			if err != nil {
+				return fmt.Errorf("create profile: %w", err)
+			}
+
+			pprof.StartCPUProfile(profF)
+
+			tracePath := cpuprofile + ".trace"
+
+			traceF, err := os.Create(tracePath)
+			if err != nil {
+				return fmt.Errorf("create trace: %w", err)
+			}
+
+			if err := trace.Start(traceF); err != nil {
+				return fmt.Errorf("start trace: %w", err)
+			}
+		}
+
 		var err error
 		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
 		return err
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		pprof.StopCPUProfile()
+		trace.Stop()
 	},
 }
 

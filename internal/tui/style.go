@@ -1,4 +1,4 @@
-package main
+package tui
 
 import "github.com/charmbracelet/lipgloss"
 
@@ -46,13 +46,13 @@ var (
 			Foreground(colorBackground).
 			Align(lipgloss.Right).
 			PaddingRight(0).
-			SetString("RUNNING")
+			SetString("RUNNING ")
 
 	completeStatus = runningStatus.Copy().
 			Background(colorAccent2).
 			Foreground(colorBackground).
 			Align(lipgloss.Right).
-			SetString("COMPLETE")
+			SetString("COMPLETE ")
 
 	statusText = lipgloss.NewStyle().Inherit(statusBarStyle)
 

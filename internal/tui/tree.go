@@ -1,4 +1,4 @@
-package main
+package tui
 
 import (
 	"fmt"
@@ -32,9 +32,6 @@ type TreeEntry interface {
 type Tree struct {
 	viewport viewport.Model
 
-	rootName string
-	rootLogs tea.Model
-
 	root    TreeEntry
 	current TreeEntry
 	focus   bool
@@ -58,7 +55,6 @@ func (m *Tree) SetRoot(root TreeEntry) {
 	if m.current == nil {
 		m.current = root
 	}
-	m.root.SetWidth(m.viewport.Width)
 }
 
 func (m *Tree) SetWidth(width int) {
@@ -389,6 +385,10 @@ func (m *Tree) findNext(entry TreeEntry) TreeEntry {
 
 	// Otherwise, pick the next sibiling in the same parent group
 	parent := m.findParent(m.root, entry)
+	if parent == nil {
+		return nil
+	}
+
 	for {
 		if next := m.findSibilingAfter(parent, entry); next != nil {
 			return next
