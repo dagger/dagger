@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -119,6 +120,10 @@ func init() {
 		cli.BoolFlag{
 			Name:  "oci-worker-selinux",
 			Usage: "apply SELinux labels",
+		},
+		cli.StringFlag{
+			Name:  "oci-max-parallelism",
+			Usage: "maximum number of parallel build steps that can be run at the same time (or \"num-cpus\" to automatically set to the number of CPUs). 0 means unlimited parallelism.",
 		},
 	}
 	n := "oci-worker-rootless"
@@ -256,6 +261,19 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	if c.GlobalIsSet("oci-worker-selinux") {
 		cfg.Workers.OCI.SELinux = c.GlobalBool("oci-worker-selinux")
 	}
+	if c.GlobalIsSet("oci-max-parallelism") {
+		maxParallelismStr := c.GlobalString("oci-max-parallelism")
+		var maxParallelism int
+		if maxParallelismStr == "num-cpu" {
+			maxParallelism = runtime.NumCPU()
+		} else {
+			maxParallelism, err = strconv.Atoi(maxParallelismStr)
+			if err != nil {
+				return errors.Wrap(err, "failed to parse oci-max-parallelism, should be positive integer, 0 for unlimited, or 'num-cpu' for setting to the number of CPUs")
+			}
+		}
+		cfg.Workers.OCI.MaxParallelism = maxParallelism
+	}
 
 	return nil
 }
@@ -314,6 +332,7 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	var parallelismSem *semaphore.Weighted
 	if cfg.MaxParallelism > 0 {
 		parallelismSem = semaphore.NewWeighted(int64(cfg.MaxParallelism))
+		cfg.Labels["maxParallelism"] = strconv.Itoa(cfg.MaxParallelism)
 	}
 
 	opt, err := runc.NewWorkerOpt(common.config.Root, snFactory, cfg.Rootless, processMode, cfg.Labels, idmapping, nc, dns, cfg.Binary, cfg.ApparmorProfile, cfg.SELinux, parallelismSem, common.traceSocket, cfg.DefaultCgroupParent)

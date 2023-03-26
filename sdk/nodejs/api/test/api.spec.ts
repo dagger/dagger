@@ -1,8 +1,10 @@
 import assert from "assert"
+import { randomUUID } from "crypto"
+import fs from "fs"
 
 import { TooManyNestedObjectsError } from "../../common/errors/index.js"
 import Client, { connect } from "../../index.js"
-import { Container, Directory } from "../client.gen.js"
+import { ClientContainerOpts, Container, Directory } from "../client.gen.js"
 import { queryFlatten, buildQuery } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
@@ -242,6 +244,46 @@ describe("NodeJS SDK api", function () {
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
       `{ container { build (context: {"_queryTree":[],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://undefined/query",options:{headers:{Authorization:"Basic dW5kZWZpbmVkOg=="}}}},buildArgs: [{value:"foo",name:"test"}]) } }`
+    )
+  })
+
+  it("Compute nested array of arguments", async function () {
+    this.timeout(60000)
+
+    const platforms: Record<string, string> = {
+      "linux/amd64": "x86_64",
+      "linux/arm64": "aarch64",
+    }
+
+    await connect(
+      async (client) => {
+        const seededPlatformVariants = []
+
+        for (const platform in platforms) {
+          const name = platforms[platform]
+
+          const ctr = client
+            .container({ platform } as ClientContainerOpts)
+            .from("alpine:3.16.2")
+            .withExec(["uname", "-m"])
+
+          const result = await ctr.stdout()
+          assert.strictEqual(result.trim(), name)
+
+          console.log(result)
+          seededPlatformVariants.push(ctr)
+        }
+
+        const exportID = `./export-${randomUUID()}`
+
+        const isSuccess = await client.container().export(exportID, {
+          platformVariants: seededPlatformVariants,
+        })
+
+        await fs.unlinkSync(exportID)
+        assert.strictEqual(isSuccess, true)
+      },
+      { LogOutput: process.stderr }
     )
   })
 })

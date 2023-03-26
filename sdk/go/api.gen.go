@@ -54,12 +54,18 @@ type PipelineLabel struct {
 type CacheVolume struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id *CacheID
 }
 
 func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response CacheID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -82,6 +88,21 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	endpoint    *string
+	envVariable *string
+	exitCode    *int
+	export      *bool
+	hostname    *string
+	id          *ContainerID
+	imageRef    *string
+	label       *string
+	platform    *Platform
+	publish     *string
+	stderr      *string
+	stdout      *string
+	user        *string
+	workdir     *string
 }
 
 // ContainerBuildOpts contains options for Container.Build
@@ -133,6 +154,7 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	q := r.q.Select("defaultArgs")
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -166,6 +188,9 @@ type ContainerEndpointOpts struct {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+	if r.endpoint != nil {
+		return *r.endpoint, nil
+	}
 	q := r.q.Select("endpoint")
 	// `port` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -183,6 +208,7 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 	}
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -192,16 +218,21 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the value of the specified environment variable.
 func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
+	if r.envVariable != nil {
+		return *r.envVariable, nil
+	}
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -210,9 +241,32 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.q.Select("envVariables")
 
-	var response []EnvVariable
+	q = q.Select("name value")
+
+	type envVariables struct {
+		Name  string
+		Value string
+	}
+
+	convert := func(fields []envVariables) []EnvVariable {
+		out := []EnvVariable{}
+
+		for _, field := range fields {
+			out = append(out, EnvVariable{name: &field.Name, value: &field.Value})
+		}
+
+		return out
+	}
+	var response []envVariables
+
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // ContainerExecOpts contains options for Container.Exec
@@ -281,9 +335,13 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 // Exit code of the last executed command. Zero means success.
 // Errors if no command has been executed.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
+	if r.exitCode != nil {
+		return *r.exitCode, nil
+	}
 	q := r.q.Select("exitCode")
 
 	var response int
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -300,6 +358,9 @@ type ContainerExportOpts struct {
 // Return true on success.
 // It can also publishes platform variants.
 func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
 	// `platformVariants` optional argument
@@ -311,6 +372,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	}
 
 	var response bool
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -321,9 +383,33 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
-	var response []Port
+	q = q.Select("description port protocol")
+
+	type exposedPorts struct {
+		Description string
+		Port        int
+		Protocol    NetworkProtocol
+	}
+
+	convert := func(fields []exposedPorts) []Port {
+		out := []Port{}
+
+		for _, field := range fields {
+			out = append(out, Port{description: &field.Description, port: &field.Port, protocol: &field.Protocol})
+		}
+
+		return out
+	}
+	var response []exposedPorts
+
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Retrieves a file at the given path.
@@ -366,18 +452,26 @@ func (r *Container) FS() *Directory {
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) Hostname(ctx context.Context) (string, error) {
+	if r.hostname != nil {
+		return *r.hostname, nil
+	}
 	q := r.q.Select("hostname")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response ContainerID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -398,19 +492,27 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
 func (r *Container) ImageRef(ctx context.Context) (string, error) {
+	if r.imageRef != nil {
+		return *r.imageRef, nil
+	}
 	q := r.q.Select("imageRef")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the value of the specified label.
 func (r *Container) Label(ctx context.Context, name string) (string, error) {
+	if r.label != nil {
+		return *r.label, nil
+	}
 	q := r.q.Select("label")
 	q = q.Arg("name", name)
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -419,9 +521,32 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	q := r.q.Select("labels")
 
-	var response []Label
+	q = q.Select("name value")
+
+	type labels struct {
+		Name  string
+		Value string
+	}
+
+	convert := func(fields []labels) []Label {
+		out := []Label{}
+
+		for _, field := range fields {
+			out = append(out, Label{name: &field.Name, value: &field.Value})
+		}
+
+		return out
+	}
+	var response []labels
+
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Retrieves the list of paths where a directory is mounted.
@@ -429,6 +554,7 @@ func (r *Container) Mounts(ctx context.Context) ([]string, error) {
 	q := r.q.Select("mounts")
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -468,9 +594,13 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 
 // The platform this container executes and publishes as.
 func (r *Container) Platform(ctx context.Context) (Platform, error) {
+	if r.platform != nil {
+		return *r.platform, nil
+	}
 	q := r.q.Select("platform")
 
 	var response Platform
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -487,6 +617,9 @@ type ContainerPublishOpts struct {
 // Publish returns a fully qualified ref.
 // It can also publish platform variants.
 func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
+	if r.publish != nil {
+		return *r.publish, nil
+	}
 	q := r.q.Select("publish")
 	q = q.Arg("address", address)
 	// `platformVariants` optional argument
@@ -498,6 +631,7 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	}
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -515,9 +649,13 @@ func (r *Container) Rootfs() *Directory {
 // The error stream of the last executed command.
 // Errors if no command has been executed.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
+	if r.stderr != nil {
+		return *r.stderr, nil
+	}
 	q := r.q.Select("stderr")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -525,18 +663,26 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 // The output stream of the last executed command.
 // Errors if no command has been executed.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
+	if r.stdout != nil {
+		return *r.stdout, nil
+	}
 	q := r.q.Select("stdout")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
+	if r.user != nil {
+		return *r.user, nil
+	}
 	q := r.q.Select("user")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1065,9 +1211,13 @@ func (r *Container) WithoutUnixSocket(path string) *Container {
 
 // Retrieves the working directory for all commands.
 func (r *Container) Workdir(ctx context.Context) (string, error) {
+	if r.workdir != nil {
+		return *r.workdir, nil
+	}
 	q := r.q.Select("workdir")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1076,6 +1226,9 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 type Directory struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	export *bool
+	id     *DirectoryID
 }
 
 // Gets the difference between this directory and an another directory.
@@ -1170,16 +1323,21 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 	}
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Writes the contents of the directory to a path on the host.
 func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
 
 	var response bool
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1197,9 +1355,13 @@ func (r *Directory) File(path string) *File {
 
 // The content-addressed identifier of the directory.
 func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response DirectoryID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1413,22 +1575,33 @@ func (r *Directory) WithoutFile(path string) *Directory {
 type EnvVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	name  *string
+	value *string
 }
 
 // The environment variable name.
 func (r *EnvVariable) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
 	q := r.q.Select("name")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // The environment variable value.
 func (r *EnvVariable) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
 	q := r.q.Select("value")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1437,32 +1610,49 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 type File struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	contents *string
+	export   *bool
+	id       *FileID
+	size     *int
 }
 
 // Retrieves the contents of the file.
 func (r *File) Contents(ctx context.Context) (string, error) {
+	if r.contents != nil {
+		return *r.contents, nil
+	}
 	q := r.q.Select("contents")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Writes the file to a file path on the host.
 func (r *File) Export(ctx context.Context, path string) (bool, error) {
+	if r.export != nil {
+		return *r.export, nil
+	}
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
 
 	var response bool
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves the content-addressed identifier of the file.
 func (r *File) ID(ctx context.Context) (FileID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response FileID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1495,9 +1685,13 @@ func (r *File) Secret() *Secret {
 
 // Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
+	if r.size != nil {
+		return *r.size, nil
+	}
 	q := r.q.Select("size")
 
 	var response int
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1517,13 +1711,19 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type GitRef struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	digest *string
 }
 
 // The digest of the current value of this ref.
 func (r *GitRef) Digest(ctx context.Context) (string, error) {
+	if r.digest != nil {
+		return *r.digest, nil
+	}
 	q := r.q.Select("digest")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1581,6 +1781,7 @@ func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 	q := r.q.Select("branches")
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1612,6 +1813,7 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 	q := r.q.Select("tags")
 
 	var response []string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1715,6 +1917,8 @@ func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 type HostVariable struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	value *string
 }
 
 // A secret referencing the value of this variable.
@@ -1729,9 +1933,13 @@ func (r *HostVariable) Secret() *Secret {
 
 // The value of this variable.
 func (r *HostVariable) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
 	q := r.q.Select("value")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1740,22 +1948,33 @@ func (r *HostVariable) Value(ctx context.Context) (string, error) {
 type Label struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	name  *string
+	value *string
 }
 
 // The label name.
 func (r *Label) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
 	q := r.q.Select("name")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // The label value.
 func (r *Label) Value(ctx context.Context) (string, error) {
+	if r.value != nil {
+		return *r.value, nil
+	}
 	q := r.q.Select("value")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1764,31 +1983,47 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 type Port struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	description *string
+	port        *int
+	protocol    *NetworkProtocol
 }
 
 // The port description.
 func (r *Port) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
 	q := r.q.Select("description")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // The port number.
 func (r *Port) Port(ctx context.Context) (int, error) {
+	if r.port != nil {
+		return *r.port, nil
+	}
 	q := r.q.Select("port")
 
 	var response int
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // The transport layer network protocol.
 func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+	if r.protocol != nil {
+		return *r.protocol, nil
+	}
 	q := r.q.Select("protocol")
 
 	var response NetworkProtocol
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1797,15 +2032,45 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 type Project struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	install *bool
+	name    *string
+	schema  *string
+	sdk     *string
 }
 
 // extensions in this project
 func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 	q := r.q.Select("extensions")
 
-	var response []Project
+	q = q.Select("install name schema sdk")
+
+	type extensions struct {
+		Install bool
+		Name    string
+		Schema  string
+		Sdk     string
+	}
+
+	convert := func(fields []extensions) []Project {
+		out := []Project{}
+
+		for _, field := range fields {
+			out = append(out, Project{install: &field.Install, name: &field.Name, schema: &field.Schema, sdk: &field.Sdk})
+		}
+
+		return out
+	}
+	var response []extensions
+
 	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // Code files generated by the SDKs in the project
@@ -1820,36 +2085,52 @@ func (r *Project) GeneratedCode() *Directory {
 
 // install the project's schema
 func (r *Project) Install(ctx context.Context) (bool, error) {
+	if r.install != nil {
+		return *r.install, nil
+	}
 	q := r.q.Select("install")
 
 	var response bool
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // name of the project
 func (r *Project) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
 	q := r.q.Select("name")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // schema provided by the project
 func (r *Project) Schema(ctx context.Context) (string, error) {
+	if r.schema != nil {
+		return *r.schema, nil
+	}
 	q := r.q.Select("schema")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
 
 // sdk used to generate code for and/or execute this project
 func (r *Project) SDK(ctx context.Context) (string, error) {
+	if r.sdk != nil {
+		return *r.sdk, nil
+	}
 	q := r.q.Select("sdk")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -1905,6 +2186,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
 
 	var response Platform
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -2102,13 +2384,20 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 type Secret struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id        *SecretID
+	plaintext *string
 }
 
 // The identifier for this secret.
 func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response SecretID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -2129,9 +2418,13 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // The value of this secret.
 func (r *Secret) Plaintext(ctx context.Context) (string, error) {
+	if r.plaintext != nil {
+		return *r.plaintext, nil
+	}
 	q := r.q.Select("plaintext")
 
 	var response string
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }
@@ -2139,13 +2432,19 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 type Socket struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+	id *SocketID
 }
 
 // The content-addressed identifier of the socket.
 func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
 	q := r.q.Select("id")
 
 	var response SocketID
+
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
 }

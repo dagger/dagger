@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"io"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,4 +146,31 @@ func TestErrorMessage(t *testing.T) {
 	_, err = c.Container().From("fake.invalid:latest").ID(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, errorHelpBlurb)
+}
+
+func TestList(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	c, err := Connect(ctx, WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+
+	defer c.Close()
+
+	envs, err := c.
+		Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("FOO", "BAR").
+		EnvVariables(ctx)
+
+	require.NoError(t, err)
+
+	envName, err := envs[0].Name(ctx)
+	require.NoError(t, err)
+
+	envValue, err := envs[0].Value(ctx)
+	require.NoError(t, err)
+
+	require.Equal(t, "FOO", envName)
+	require.Equal(t, "BAR", envValue)
 }

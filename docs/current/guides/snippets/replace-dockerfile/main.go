@@ -49,7 +49,10 @@ func main() {
 		WithFile("/usr/local/bin/docker-entrypoint.sh", entrypoint).
 		WithExec([]string{"ln", "-s", "usr/local/bin/docker-entrypoint.sh", "/entrypoint.sh"}).
 		WithEntrypoint([]string{"docker-entrypoint.sh"}).
-		WithUser("memcache")
+		WithUser("memcache").
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: []string{"memcached"},
+		})
 
 	// publish the container image
 	addr, err := memcached.Publish(ctx, publishAddr)

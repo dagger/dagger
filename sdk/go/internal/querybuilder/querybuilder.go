@@ -110,7 +110,16 @@ func (s *Selection) unpack(data interface{}) error {
 		if i.alias != "" {
 			k = i.alias
 		}
-		data = data.(map[string]interface{})[k]
+
+		// Try to assert type of the value
+		switch f := data.(type) {
+		case map[string]interface{}:
+			data = f[k]
+		case []interface{}:
+			data = f
+		default:
+			fmt.Printf("type not found %s\n", f)
+		}
 
 		if i.bind != nil {
 			marshalled, err := json.Marshal(data)

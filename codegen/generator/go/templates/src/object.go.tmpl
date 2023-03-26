@@ -3,6 +3,12 @@
 type {{ .Name | FormatName }} struct {
 	q *querybuilder.Selection
 	c graphql.Client
+
+    {{ range $field := .Fields }}
+        {{- if $field.TypeRef.IsScalar }}
+        {{ $field.Name }} *{{ $field.TypeRef | FormatOutputType }}
+        {{- end }}
+	{{- end }}
 }
 {{- end }}
 {{ range $field := .Fields }}
@@ -29,7 +35,13 @@ type {{ $field | FieldOptionsStructName }} struct {
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
 {{ $field | FieldFunction }} {
+    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") }}
+    if r.{{ $field.Name }} != nil {
+        return *r.{{ $field.Name }}, nil
+    }
+    {{- end }}
 	q := r.q.Select("{{ $field.Name }}")
+
 	{{- range $arg := $field.Args }}
 	{{- if $arg.TypeRef.IsOptional }}
 	// `{{ $arg.Name }}` optional argument
@@ -49,12 +61,50 @@ type {{ $field | FieldOptionsStructName }} struct {
 		q: q,
 		c: r.c,
 	}
+
 	{{- else if or $field.TypeRef.IsScalar $field.TypeRef.IsList }}
+		{{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+    q = q.Select("{{ range $i, $v := $field | GetArrayField }}{{ if $i }} {{ end }}{{ $v.Name }}{{ end }}")
+
+    type {{ $field.Name | ToLowerCase }} struct {
+            {{ range $v := $field | GetArrayField }}
+      {{ $v.Name | ToUpperCase }} {{ $v.TypeRef | FormatOutputType }}
+            {{- end }}
+    }
+
+    convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
+        out := {{ $field.TypeRef | FormatOutputType }}{}
+
+        for _, field := range fields {
+            out = append(out, {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
+        }
+
+        return out
+    }
+
+        {{- end }}
+
+
+    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+	var response []{{ $field.Name | ToLowerCase }}
+	{{- else }}
 	var response {{ $field.TypeRef | FormatOutputType }}
+	{{- end  }}
+
 	q = q.Bind(&response)
 	{{- $typeName := $field.TypeRef | FormatOutputType }}
 	{{- if ne $typeName "Client" }}
+	    {{- if and $field.TypeRef.IsList (IsListOfObject $field.TypeRef) }}
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+	    return nil, err
+	}
+
+	return convert(response), nil
+	    {{- else }}
 	return response, q.Execute(ctx, r.c)
+	    {{- end }}
 	{{- else }}
 	return response, q.Execute(ctx, r.gql)
 	{{- end }}

@@ -114,8 +114,9 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		// chance to drain logs.
 		proc.Cancel = childStdin.Close
 
-		// Set a long timeout, just in case something get wedged.
-		proc.WaitDelay = 10 * time.Second
+		// Set a long timeout to give time for any cache exports to pack layers up
+		// which currently has to happen synchronously with the session.
+		proc.WaitDelay = 300 * time.Second // 5 mins
 
 		if err := proc.Start(); err != nil {
 			if strings.Contains(err.Error(), "text file busy") {
