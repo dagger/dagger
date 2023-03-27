@@ -307,12 +307,25 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 	require.NoError(t, err)
 
 	return c, func() error {
+		t.Logf("stopping engine %s", name)
 		out, err := exec.Command("docker", "kill", "-s", "SIGTERM", name).CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("error stopping docker container: %v: %s", err, out)
 		}
-		// wait for the container to stop
-		exec.CommandContext(ctx, "docker", "wait", name).Run()
+		waited := make(chan struct{})
+		go func() {
+			defer close(waited)
+			// wait for the container to stop
+			exec.CommandContext(ctx, "docker", "wait", name).Run()
+		}()
+		select {
+		case <-time.After(10 * time.Second):
+			t.Logf("timed out stopping engine %s; killing...", name)
+			exec.Command("docker", "kill", name).Run()
+			<-waited
+		case <-waited:
+		}
+		t.Logf("engine %s exited", name)
 		return nil
 	}
 }
