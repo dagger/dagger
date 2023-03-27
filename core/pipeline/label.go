@@ -171,41 +171,30 @@ func loadGitHubLabels() ([]Label, error) {
 			return nil, fmt.Errorf("unmarshal $GITHUB_EVENT_PATH: %w", err)
 		}
 
-		var action *string
-		var pr *github.PullRequest
-		var repoURL, repoFullName string
-		switch x := event.(type) {
-		case *github.PushEvent:
-			action = x.Action
-			repoURL = x.GetRepo().GetHTMLURL()
-			repoFullName = x.GetRepo().GetFullName()
-		case *github.PullRequestEvent:
-			action = x.Action
-			pr = x.GetPullRequest()
-			repoURL = x.GetRepo().GetHTMLURL()
-			repoFullName = x.GetRepo().GetFullName()
-		}
-
-		if action != nil {
+		if event, ok := event.(interface{ GetAction() string }); ok {
 			labels = append(labels, Label{
 				Name:  "github.com/event.action",
-				Value: *action,
+				Value: event.GetAction(),
 			})
 		}
 
-		if repoURL != "" && repoFullName != "" {
+		if event, ok := event.(interface{ GetRepo() *github.Repository }); ok {
+			repo := event.GetRepo()
+
 			labels = append(labels, Label{
 				Name:  "github.com/repo.full_name",
-				Value: repoFullName,
+				Value: repo.GetFullName(),
 			})
 
 			labels = append(labels, Label{
 				Name:  "github.com/repo.url",
-				Value: repoURL,
+				Value: repo.GetHTMLURL(),
 			})
 		}
 
-		if pr != nil {
+		if event, ok := event.(interface{ GetPullRequest() *github.PullRequest }); ok {
+			pr := event.GetPullRequest()
+
 			labels = append(labels, Label{
 				Name:  "github.com/pr.number",
 				Value: fmt.Sprintf("%d", pr.GetNumber()),
