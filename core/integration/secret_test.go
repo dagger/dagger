@@ -155,3 +155,20 @@ func TestNewSecret(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, exitCode)
 }
+
+func TestWhitespaceSecretScrubbed(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	secretValue := "very\nsecret\ntext"
+
+	s := c.SetSecret("aws_key", secretValue)
+
+	stdout, err := c.Container().From("alpine:3.16.2").
+		WithSecretVariable("AWS_KEY", s).
+		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\""}).
+		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "***", stdout)
+}
