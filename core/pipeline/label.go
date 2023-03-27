@@ -49,7 +49,7 @@ func loadRootLabels(workdir string) []Label {
 		logrus.Warnf("failed to collect git labels: %s", err)
 	}
 
-	if githubLabels, err := loadGitHubLabels(); err == nil {
+	if githubLabels, err := LoadGitHubLabels(); err == nil {
 		labels = append(labels, githubLabels...)
 	} else {
 		logrus.Warnf("failed to collect GitHub labels: %s", err)
@@ -133,7 +133,7 @@ func loadGitLabels(workdir string) ([]Label, error) {
 	}, nil
 }
 
-func loadGitHubLabels() ([]Label, error) {
+func LoadGitHubLabels() ([]Label, error) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return []Label{}, nil
 	}
@@ -171,7 +171,9 @@ func loadGitHubLabels() ([]Label, error) {
 			return nil, fmt.Errorf("unmarshal $GITHUB_EVENT_PATH: %w", err)
 		}
 
-		if event, ok := event.(interface{ GetAction() string }); ok {
+		if event, ok := event.(interface {
+			GetAction() string
+		}); ok && event.GetAction() != "" {
 			labels = append(labels, Label{
 				Name:  "github.com/event.action",
 				Value: event.GetAction(),
@@ -190,7 +192,9 @@ func loadGitHubLabels() ([]Label, error) {
 			})
 		}
 
-		if event, ok := event.(interface{ GetPullRequest() *github.PullRequest }); ok {
+		if event, ok := event.(interface {
+			GetPullRequest() *github.PullRequest
+		}); ok && event.GetPullRequest() != nil {
 			pr := event.GetPullRequest()
 
 			labels = append(labels, Label{
