@@ -178,9 +178,7 @@ func loadGitHubLabels() ([]Label, error) {
 			})
 		}
 
-		if event, ok := event.(interface{ GetRepo() *github.Repository }); ok {
-			repo := event.GetRepo()
-
+		if repo, ok := getRepoIsh(event); ok {
 			labels = append(labels, Label{
 				Name:  "github.com/repo.full_name",
 				Value: repo.GetFullName(),
@@ -215,24 +213,20 @@ func loadGitHubLabels() ([]Label, error) {
 	return labels, nil
 }
 
-type GitHubEventPayload struct {
-	// set on many events
-	Action *string `json:"action,omitempty"`
+type repoIsh interface {
+	GetFullName() string
+	GetHTMLURL() string
+}
 
-	// set on push events
-	After *string `json:"after,omitempty"`
-
-	// set on check_suite events
-	CheckSuite *github.CheckSuite `json:"check_suite,omitempty"`
-
-	// set on check_run events
-	CheckRun *github.CheckRun `json:"check_run,omitempty"`
-
-	// set on pull_request events
-	PullRequest *github.PullRequest `json:"pull_request,omitempty"`
-
-	// set on all events
-	Repo         *github.Repository   `json:"repository,omitempty"`
-	Sender       *github.User         `json:"sender,omitempty"`
-	Installation *github.Installation `json:"installation,omitempty"`
+func getRepoIsh(event any) (repoIsh, bool) {
+	switch x := event.(type) {
+	case *github.PushEvent:
+		// push event repositories aren't quite a *github.Repository for silly
+		// legacy reasons
+		return x.GetRepo(), true
+	case interface{ GetRepo() *github.Repository }:
+		return x.GetRepo(), true
+	default:
+		return nil, false
+	}
 }
