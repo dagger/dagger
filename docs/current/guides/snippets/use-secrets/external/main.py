@@ -22,8 +22,8 @@ async def main():
             .stdout()
         )
 
-        # print result
-        print(out)
+    # print result
+    print(out)
 
 async def gcp_get_secret_plaintext(project_id, secret_id):
     secret_uri = f"projects/{project_id}/secrets/{secret_id}/versions/1"

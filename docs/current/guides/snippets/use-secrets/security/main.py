@@ -10,8 +10,7 @@ async def main():
         os.environ["MY_SECRET_VAR"] = "secret value here"
 
         # set a test host file
-        with open("my_secret_file", "w+") as fh:
-            fh.write("secret file content here")
+        await anyio.Path("my_secret_file").write_text("secret file content here")
 
         # load secrets
         secret_env = (

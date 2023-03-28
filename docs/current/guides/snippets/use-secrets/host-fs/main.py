@@ -6,11 +6,10 @@ import dagger
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # read file
-        with open("/home/USER/.config/gh/hosts.yml") as file:
-          f = file.read()
+        config = await anyio.Path("/home/USER/.config/gh/hosts.yml").read_text()
 
         # set secret to file contents
-        secret = client.set_secret("ghConfig", f)
+        secret = client.set_secret("ghConfig", config)
 
         # mount secret as file in container
         out = await (
