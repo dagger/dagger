@@ -26,7 +26,6 @@ func withEngine(
 		DisableHostRW: disableHostRW,
 		JournalURI:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 		JournalWriter: journalW,
-		LogOutput:     logsW,
 	}
 	if debugLogs {
 		engineConf.LogOutput = logsW
