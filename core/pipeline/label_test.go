@@ -105,6 +105,10 @@ func TestLoadGitHubLabels(t *testing.T) {
 					Name:  "github.com/pr.url",
 					Value: "https://github.com/dagger/testdata/pull/2018",
 				},
+				{
+					Name:  "github.com/pr.head",
+					Value: "81be07d3103b512159628bfa3aae2fbb5d255964",
+				},
 			},
 		},
 		{
