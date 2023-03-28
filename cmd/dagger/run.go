@@ -57,10 +57,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
 
-	cmdOut := tui.NewVterm(80)
 	subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
-	subCmd.Stdout = cmdOut
-	subCmd.Stderr = cmdOut
 
 	// NB: go run lets its child process roam free when you interrupt it, so
 	// make sure they all get signalled. (you don't normally notice this in a
@@ -68,12 +65,14 @@ func Run(cmd *cobra.Command, args []string) error {
 	ensureChildProcessesAreKilled(subCmd)
 
 	cmdline := strings.Join(args, " ")
-	model := tui.New(quit, journalR, cmdline, cmdOut)
+	model := tui.New(quit, journalR, cmdline)
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	subCmd.Stdout = progOutWriter{program}
+	subCmd.Stderr = progOutWriter{program}
 
 	eg := new(errgroup.Group)
 	eg.Go(func() error {
-		return withEngine(ctx, sessionToken.String(), journalW, cmdOut, func(ctx context.Context, api *router.Router) error {
+		return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 			go http.Serve(sessionL, api) // nolint:gosec
 			return subCmd.Run()
 		})
@@ -90,4 +89,13 @@ func Run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return nil
+}
+
+type progOutWriter struct {
+	prog *tea.Program
+}
+
+func (w progOutWriter) Write(p []byte) (int, error) {
+	w.prog.Send(tui.CommandOutMsg(p))
+	return len(p), nil
 }

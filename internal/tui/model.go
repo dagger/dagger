@@ -16,7 +16,8 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 )
 
-func New(quit func(), r journal.Reader, rootName string, rootLogs groupModel) *Model {
+func New(quit func(), r journal.Reader, rootName string) *Model {
+	rootLogs := NewVterm(80)
 	root := NewGroup("", rootName, rootLogs)
 	m := &Model{
 		quit: quit,
@@ -27,6 +28,7 @@ func New(quit func(), r journal.Reader, rootName string, rootLogs groupModel) *M
 			focus:     true,
 		},
 		root:      root,
+		rootLogs:  rootLogs,
 		itemsByID: make(map[string]*Item),
 		details:   Details{},
 		follow:    true,
@@ -45,6 +47,7 @@ type Model struct {
 	journal   journal.Reader
 	itemsByID map[string]*Item
 	root      *Group
+	rootLogs  *Vterm
 
 	tree    *Tree
 	details Details
@@ -68,6 +71,8 @@ func (m Model) Init() tea.Cmd {
 		followTick(),
 	)
 }
+
+type CommandOutMsg []byte
 
 type endMsg struct{}
 
@@ -97,6 +102,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.root.SetWidth(msg.Width)
 	case tea.KeyMsg:
 		return m.processKeyMsg(msg)
+	case CommandOutMsg:
+		m.rootLogs.Write(msg)
 	case followMsg:
 		if !m.follow {
 			return m, nil
