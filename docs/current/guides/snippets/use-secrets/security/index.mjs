@@ -25,4 +25,4 @@ connect(async (client) => {client
 		stdout()
 
   console.log(output)
-}, {LogOutput: process.stdout})
+}, {LogOutput: process.stderr})

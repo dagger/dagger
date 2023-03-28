@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
+	"os"
 
 	secretmanager "cloud.google.com/go/secretmanager/apiv1"
 	"cloud.google.com/go/secretmanager/apiv1/secretmanagerpb"
@@ -20,7 +20,7 @@ func main() {
 	}
 
 	// initialize Dagger client
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(io.Discard))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)
 	}

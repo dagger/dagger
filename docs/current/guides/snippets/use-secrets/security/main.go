@@ -26,7 +26,7 @@ func main() {
 	}
 
 	// create Dagger client
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)
 	}
