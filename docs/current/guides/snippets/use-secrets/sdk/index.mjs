@@ -10,14 +10,14 @@ connect(async (client) => {client
     container().
     from("nginx:1.23-alpine").
     withNewFile("/usr/share/nginx/html/index.html", {
-			contents:    "Hello from Dagger!",
-			permissions: 0o400,
-		})
+      contents:    "Hello from Dagger!",
+      permissions: 0o400,
+    })
 
-	// use secret for registry authentication
-	const addr = await c.
-		withRegistryAuth("docker.io", "DOCKER-HUB-USERNAME", secret).
-		publish("DOCKER-HUB-USERNAME/my-nginx")
+  // use secret for registry authentication
+  const addr = await c.
+    withRegistryAuth("docker.io", "DOCKER-HUB-USERNAME", secret).
+    publish("DOCKER-HUB-USERNAME/my-nginx")
 
   // print result
   console.log(`Published at: ${addr}`)
