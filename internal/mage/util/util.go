@@ -117,6 +117,10 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build"))
 }
 
+func CleanGoBase(c *dagger.Client) *dagger.Container {
+	return goBase(c)
+}
+
 // GoBase is a standardized base image for running Go, cache optimized for the layout
 // of this repository
 //

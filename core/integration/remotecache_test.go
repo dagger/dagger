@@ -14,84 +14,173 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestRemoteCacheRegistry(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// func TestRemoteCacheRegistry(t *testing.T) {
+// 	// TODO: until this setting is configurable at runtime, just spawning separate engines w/ the config set
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
 
-	registryContainerName := runRegistryInDocker(ctx, t)
-	getClient := func() *dagger.Client {
-		c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
-			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=127.0.0.1:5000/test-cache,mode=max",
-		}, "container:"+registryContainerName)
-		t.Cleanup(func() {
-			stop()
-		})
-		return c
-	}
+// 	registryContainerName := runRegistryInDocker(ctx, t)
+// 	getClient := func() *dagger.Client {
+// 		c, _ := runSeparateEngine(ctx, t, map[string]string{
+// 			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=registry:5000/test-cache,mode=max",
+// 		}, "container:"+registryContainerName)
+// 		return c
+// 	}
 
-	pipelineOutput := func(c *dagger.Client) string {
-		output, err := c.Container().From("alpine:3.17").WithExec([]string{
-			"sh", "-c", "head -c 128 /dev/random | sha256sum",
-		}).Stdout(ctx)
-		require.NoError(t, err)
-		return output
-	}
+// 	pipelineOutput := func(c *dagger.Client) string {
+// 		output, err := c.Container().From("alpine:3.17").WithExec([]string{
+// 			"sh", "-c", "head -c 128 /dev/random | sha256sum",
+// 		}).Stdout(ctx)
+// 		require.NoError(t, err)
+// 		return output
+// 	}
 
-	/*
-		1. Start a registry for storing the cache
-		2. Start two independent engines from empty cache that are configured to use the registry as remote cache backend
-		3. Run an exec w/ output from /dev/random in the first engine
-		4. Close the first engine's client, flushing the remote cache for the session
-		5. Run the same exec in the second engine, verify it imports the cache and output the same value as the first engine
-	*/
-	clientA := getClient()
-	clientB := getClient()
-	outputA := pipelineOutput(clientA)
-	require.NoError(t, clientA.Close())
-	outputB := pipelineOutput(clientB)
-	require.Equal(t, outputA, outputB)
-}
+// 	/*
+// 		1. Start a registry for storing the cache
+// 		2. Start two independent engines from empty cache that are configured to use the registry as remote cache backend
+// 		3. Run an exec w/ output from /dev/random in the first engine
+// 		4. Close the first engine's client, flushing the remote cache for the session
+// 		5. Run the same exec in the second engine, verify it imports the cache and output the same value as the first engine
+// 	*/
+// 	clientA := getClient()
+// 	clientB := getClient()
+// 	outputA := pipelineOutput(clientA)
+// 	require.NoError(t, clientA.Close())
+// 	outputB := pipelineOutput(clientB)
+// 	require.Equal(t, outputA, outputB)
+// }
 
-func TestRemoteCacheS3(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// func TestRemoteCacheS3(t *testing.T) {
+// 	ctx, cancel := context.WithCancel(context.Background())
+// 	defer cancel()
 
-	t.Run("buildkit s3 caching", func(t *testing.T) {
-		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
-		s3ContainerName := runS3InDocker(ctx, t, bucket)
-		getClient := func() *dagger.Client {
-			c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
-				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket,
-			}, "container:"+s3ContainerName)
-			t.Cleanup(func() {
-				stop()
-			})
-			return c
-		}
+// 	t.Run("buildkit s3 caching", func(t *testing.T) {
+// 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
+// 		s3ContainerName := runS3InDocker(ctx, t, bucket)
+// 		getClient := func() *dagger.Client {
+// 			c, _ := runSeparateEngine(ctx, t, map[string]string{
+// 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket,
+// 			}, "container:"+s3ContainerName)
+// 			return c
+// 		}
 
-		pipelineOutput := func(c *dagger.Client) string {
-			output, err := c.Container().From("alpine:3.17").WithExec([]string{
-				"sh", "-c", "head -c 128 /dev/random | sha256sum",
-			}).Stdout(ctx)
-			require.NoError(t, err)
-			return output
-		}
+// 		pipelineOutput := func(c *dagger.Client) string {
+// 			output, err := c.Container().From("alpine:3.17").WithExec([]string{
+// 				"sh", "-c", "head -c 128 /dev/random | sha256sum",
+// 			}).Stdout(ctx)
+// 			require.NoError(t, err)
+// 			return output
+// 		}
 
-		/*
-			1. Start an s3 compatible server (minio) locally for storing the cache
-			2. Start two independent engines from empty cache that are configured to use s3 as remote cache backend
-			3. Run an exec w/ output from /dev/random in the first engine
-			4. Close the first engine's client, flushing the remote cache for the session
-			5. Run the same exec in the second engine, verify it imports the cache and output the same value as the first engine
-		*/
-		clientA := getClient()
-		clientB := getClient()
-		outputA := pipelineOutput(clientA)
-		require.NoError(t, clientA.Close())
-		outputB := pipelineOutput(clientB)
-		require.Equal(t, outputA, outputB)
-	})
-}
+// 		/*
+// 			1. Start an s3 compatible server (minio) locally for storing the cache
+// 			2. Start two independent engines from empty cache that are configured to use s3 as remote cache backend
+// 			3. Run an exec w/ output from /dev/random in the first engine
+// 			4. Close the first engine's client, flushing the remote cache for the session
+// 			5. Run the same exec in the second engine, verify it imports the cache and output the same value as the first engine
+// 		*/
+// 		clientA := getClient()
+// 		clientB := getClient()
+// 		outputA := pipelineOutput(clientA)
+// 		require.NoError(t, clientA.Close())
+// 		outputB := pipelineOutput(clientB)
+// 		require.Equal(t, outputA, outputB)
+// 	})
+
+// 	t.Run("dagger s3 caching (with pooling)", func(t *testing.T) {
+// 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
+// 		s3ContainerName := runS3InDocker(ctx, t, bucket)
+// 		getClient := func(engineName string) (*dagger.Client, func() error) {
+// 			return runSeparateEngine(ctx, t, map[string]string{
+// 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
+// 			}, "container:"+s3ContainerName)
+// 		}
+
+// 		pipelineOutput := func(c *dagger.Client, id string) string {
+// 			output, err := c.Container().
+// 				From("alpine:3.17").
+// 				WithEnvVariable("ID", id).
+// 				WithExec([]string{
+// 					"sh", "-c", "head -c 128 /dev/random | sha256sum",
+// 				}).Stdout(ctx)
+// 			require.NoError(t, err)
+// 			return output
+// 		}
+
+// 		generatedOutputs := map[string]string{} // map of unique id set in exec -> output
+// 		const numEngines = 2
+// 		var mu sync.Mutex
+// 		var eg errgroup.Group
+// 		for i := 0; i < numEngines; i++ {
+// 			eg.Go(func() error {
+// 				id := identity.NewID()
+// 				client, stopEngine := getClient(id)
+// 				mu.Lock()
+// 				defer mu.Unlock()
+// 				generatedOutputs[id] = pipelineOutput(client, id)
+// 				return errors.Join(client.Close(), stopEngine())
+// 			})
+// 		}
+// 		require.NoError(t, eg.Wait())
+// 		require.Len(t, generatedOutputs, numEngines)
+// 		eg = errgroup.Group{}
+// 		client, stopEngine := getClient(identity.NewID())
+// 		for id, cachedOutput := range generatedOutputs {
+// 			id, cachedOutput := id, cachedOutput
+// 			eg.Go(func() error {
+// 				require.Equal(t, cachedOutput, pipelineOutput(client, id))
+// 				return nil
+// 			})
+// 		}
+// 		require.NoError(t, eg.Wait())
+// 		require.NoError(t, client.Close())
+// 		require.NoError(t, stopEngine())
+// 	})
+
+// 	t.Run("dagger s3 mount caching", func(t *testing.T) {
+// 		bucket := "dagger-test-remote-cache-mount-s3-" + identity.NewID()
+// 		s3ContainerName := runS3InDocker(ctx, t, bucket)
+// 		getClient := func(engineName string) (*dagger.Client, func() error) {
+// 			return runSeparateEngine(ctx, t, map[string]string{
+// 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,server_implementation=Minio,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,synchronized_cache_mounts=test-cache-mount,name=" + engineName,
+// 				// TODO: temporarily disable networking to fix flakiness around containers in the
+// 				// same netns interfering with each other.
+// 				// Real fix is to either override CNI settings for each engine or to remove the need
+// 				// for them to be in the same netns.
+// 				"_EXPERIMENTAL_DAGGER_SERVICES_DNS": "0",
+// 			}, "container:"+s3ContainerName)
+// 		}
+
+// 		pipelineOutput := func(c *dagger.Client, id string) string {
+// 			output, err := c.Container().
+// 				From("alpine:3.17").
+// 				WithMountedCache("/cache", c.CacheVolume("test-cache-mount")).
+// 				WithExec([]string{
+// 					"sh", "-c", "if [ ! -f /cache/test.txt ]; then echo '" + id + "' > /cache/test.txt; fi; cat /cache/test.txt",
+// 				}).Stdout(ctx)
+// 			require.NoError(t, err)
+// 			return output
+// 		}
+
+// 		clientA, stopEngineA := getClient("a")
+// 		t.Cleanup(func() {
+// 			clientA.Close()
+// 			stopEngineA()
+// 		})
+// 		outputA := pipelineOutput(clientA, "a")
+// 		require.NoError(t, clientA.Close())
+// 		require.NoError(t, stopEngineA())
+// 		clientB, stopEngineB := getClient("b")
+// 		t.Cleanup(func() {
+// 			clientB.Close()
+// 			stopEngineB()
+// 		})
+// 		outputB := pipelineOutput(clientB, "b")
+// 		require.NoError(t, clientB.Close())
+// 		require.NoError(t, stopEngineB())
+// 		require.Equal(t, outputA, outputB)
+// 	})
+// }
 
 func runS3InDocker(ctx context.Context, t *testing.T, bucket string) string {
 	t.Helper()

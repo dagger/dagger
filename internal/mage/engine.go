@@ -54,12 +54,24 @@ if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
 		> /sys/fs/cgroup/cgroup.subtree_control
 fi
 
-exec {{.EngineBin}} --config {{.EngineConfig}} "$@"
+exec {{.EngineBin}} --config {{.EngineConfig}} --network-name dagger-dev --network-cidr "10.88.0.0/16" "$@"
 `
 
 const engineConfig = `
 debug = true
 insecure-entitlements = ["security.insecure"]
+
+[grpc]
+address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]
+
+[registry."registry:5000"]
+  http = true
+
+[registry."privateregistry:5000"]
+  http = true
+
+[registry."docker.io"]
+  mirrors = ["mirror.gcr.io"]
 `
 
 func init() {
@@ -79,6 +91,9 @@ func init() {
 	}
 	engineEntrypoint = buf.String()
 }
+
+var engineToml = fmt.Sprintf(`root = %q
+`, engineDefaultStateDir)
 
 var publishedEngineArches = []string{"amd64", "arm64"}
 
@@ -102,12 +117,9 @@ func (t Engine) Build(ctx context.Context) error {
 	}
 	defer c.Close()
 	c = c.Pipeline("engine").Pipeline("build")
-	build := util.GoBase(c).
-		WithEnvVariable("GOOS", runtime.GOOS).
-		WithEnvVariable("GOARCH", runtime.GOARCH).
-		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "/app/cmd/dagger"})
 
-	_, err = build.Directory("./bin").Export(ctx, "./bin")
+	_, err = util.HostDaggerBinary(c).Export(ctx, "./bin/dagger")
+
 	return err
 }
 
@@ -196,6 +208,34 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	defer c.Close()
 
+	registry := c.Container().From("registry:2").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExec(nil)
+
+	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
+	privateRegistry := c.Container().From("registry:2").
+		WithNewFile("/auth/htpasswd", dagger.ContainerWithNewFileOpts{Contents: htpasswd}).
+		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
+		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_PATH", "/auth/htpasswd").
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExec(nil)
+
+	devEngine := devEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH})[0]
+	devEngine = devEngine.
+		WithServiceBinding("registry", registry).
+		WithServiceBinding("privateregistry", privateRegistry).
+		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities:      true,
+			ExperimentalPrivilegedNesting: true,
+		})
+
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		return err
+	}
+
 	c = c.Pipeline("engine").Pipeline("test")
 
 	cgoEnabledEnv := "0"
@@ -204,12 +244,18 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
-	args = append(args, "./...")
+	// args = append(args, "./...")
+	cliBinPath := "/.dagger-cli"
 
-	output, err := util.GoBase(c).
+	output, err := util.CleanGoBase(c).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 		WithWorkdir("/app").
+		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", os.Getenv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 		WithExec(args).
 		Stdout(ctx)

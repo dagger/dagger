@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -106,10 +107,16 @@ func parseAuthAddress(address string) (string, error) {
 	addressPart := strings.SplitN(address, "/", 2)
 	domain := addressPart[0]
 
+	portStr := domain[strings.LastIndex(domain, ":")+1:]
+	// Parse port to check if it's a valid port.
+	port, _ := strconv.Atoi(portStr)
+
 	switch {
 	// Local registry
 	// E.g., localhost:5000
 	case strings.Contains(domain, "localhost"):
+		return domain, nil
+	case len(address) >= 1 && strings.Contains(domain, ":") && port > 0:
 		return domain, nil
 	// If the address is only an image name without any "."
 	// E.g., ubuntu, alpine, redis
