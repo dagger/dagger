@@ -42,11 +42,24 @@ type connectParams struct {
 	SessionToken string `json:"session_token"`
 }
 
+func isCI() bool {
+	return os.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
+		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
+		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
+}
+
 func EngineSession(cmd *cobra.Command, args []string) error {
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
+
+	// Add the 'ci' user agent
+	isCIValue := "false"
+	if isCI() {
+		isCIValue = "true"
+	}
+	userAgentCfg.Set("ci:" + isCIValue)
 
 	startOpts := &engine.Config{
 		Workdir:      workdir,
