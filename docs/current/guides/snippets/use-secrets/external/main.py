@@ -6,6 +6,7 @@ from google.cloud import secretmanager
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
+        # get secret from Google Cloud Secret Manager
         secretPlaintext = await gcp_get_secret_plaintext("PROJECT-ID", "SECRET-ID")
 
         # read secret from host variable
@@ -25,14 +26,14 @@ async def main():
         print(out)
 
 async def gcp_get_secret_plaintext(project_id, secret_id):
-    client = secretmanager.SecretManagerServiceClient()
-
     secret_uri = f"projects/{project_id}/secrets/{secret_id}/versions/1"
 
+    # initialize Google Cloud API client
+    client = secretmanager.SecretManagerServiceClient()
+
+    # retrieve secret
     response = client.access_secret_version(request={"name": secret_uri})
-
     secret_plaintext = response.payload.data.decode("UTF-8")
-
     return secret_plaintext
 
 anyio.run(main)
