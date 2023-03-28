@@ -18,7 +18,6 @@ type SecretScrubWriter struct {
 	w  io.Writer
 
 	secretValues []string
-	dangling     []byte
 }
 
 // Write scrubs secret values from b and replace them with `***`.
