@@ -190,7 +190,7 @@ This code listing requires the user to replace the PROJECT-ID and SECRET-ID plac
 
 - It imports the Dagger and Google Cloud Secret Manager client libraries.
 - It uses the Google Cloud Secret Manager client to access and read the specified secret's payload.
-- It creates a Dagger secret with that payload using the `Secret()` method.
+- It creates a Dagger secret with that payload using the `SetSecret()` method.
 - It uses the `WithSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
 - It uses the secret to make an authenticated request to the GitHub API, as explained previously.
 
@@ -199,6 +199,14 @@ This code listing requires the user to replace the PROJECT-ID and SECRET-ID plac
 
 ```javascript file=./snippets/use-secrets/external/index.mjs
 ```
+
+This code listing requires the user to replace the PROJECT-ID and SECRET-ID placeholders with  corresponding Google Cloud project and secret identifiers. It performs the following operations:
+
+- It imports the Dagger and Google Cloud Secret Manager client libraries.
+- It uses the Google Cloud Secret Manager client to access and read the specified secret's payload.
+- It creates a Dagger secret with that payload using the `setSecret()` method.
+- It uses the `withSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
+- It uses the secret to make an authenticated request to the GitHub API, as explained previously.
 
 </TabItem>
 <TabItem value="Python">
