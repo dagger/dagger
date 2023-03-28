@@ -28,12 +28,17 @@ This tutorial assumes that:
 
 ## Create and use a secret
 
-The Dagger API provides the following queries and fields for working with secrets:
+The following table provides an overview of the Dagger API queries and fields related to secret management:
 
-- The `setSecret` query creates a new `Secret` from a plaintext value.
-- The `secret` query loads a `Secret` by ID.
-- A `Container`'s `withMountedSecret` field returns the container with a secret mounted into a file at a given path.
-- A `Container`'s `withSecretVariable` field returns the container with an environment variable containing the given secret.
+|Secret is a ...|Load it into Dagger with ...|Use it in a Dagger pipeline with ... |
+|---|---|---|
+| Host environment variable | [`file.secret()`](https://docs.dagger.io/api/reference/#File-secret) | [`Container.withSecretVariable()`](https://docs.dagger.io/api/reference/#Container-withSecretVariable) |
+| Host file | [`host.envVariable().secret()`](https://docs.dagger.io/api/reference/#Host-envVariable) | [`Container.withMountedSecret()`](https://docs.dagger.io/api/reference/#Container-withMountedSecret) |
+| Plaintext string | [`setSecret`](https://docs.dagger.io/api/reference/#query-setSecret) | [`Container.withSecretVariable()`](https://docs.dagger.io/api/reference/#Container-withSecretVariable) |
+
+:::tip
+The `Container.withMountedSecret()` and `Container.withSecretVariable()` fields return the container with the secret mounted into a file at the given path and with the secret stored in a container environment variable with the given name, respectively.
+:::
 
 Let's start with a simple example of setting a secret in a Dagger pipeline and using it in a container.
 
@@ -80,7 +85,7 @@ In this code listing:
 
 ## Use secrets from the host environment
 
-Most of the time, it's neither practical nor secure to define plaintext secrets directly in your pipeline. That's why Dagger lets you read secrets from the host, either from host environment variables or from the host filesystem.
+Most of the time, it's neither practical nor secure to define plaintext secrets directly in your pipeline. That's why Dagger lets you read secrets from the host, either from host environment variables or from the host filesystem, or from external providers.
 
 Here's a revision of the previous example, where the secret is read from a host environment variable. To use this listing, create a host environment variable named `GH_SECRET` and assign it the value of your GitHub personal access token.
 
@@ -95,7 +100,7 @@ This code listing assumes the existence of a host environment variable named `GH
 - It reads the value of the host environment variable using the `Host().EnvVariable()` method.
 - It creates a Dagger secret with that value using the `Secret()` method.
 - It uses the `WithSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
-- The environment variable can then be used in subsequent container operations, as explained previously.
+- It uses the secret in subsequent container operations, as explained previously.
 
 </TabItem>
 <TabItem value="Node.js">
@@ -171,9 +176,39 @@ This code listing assumes the existence of a GitHub CLI configuration file conta
 </TabItem>
 </Tabs>
 
-:::tip
-Dagger automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash. This applies to secrets stored in both environment variables and file mounts.
-:::
+## Use secrets from an external provider
+
+It's also possible to read secrets into Dagger from external secret managers. The following code listing provides an example of using a secret from Google Cloud Secret Manager in a Dagger pipeline.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/use-secrets/external/main.go
+```
+
+This code listing requires the user to replace the PROJECT-ID and SECRET-ID placeholders with  corresponding Google Cloud project and secret identifiers. It performs the following operations:
+
+- It imports the Dagger and Google Cloud Secret Manager client libraries.
+- It uses the Google Cloud Secret Manager client to access and read the specified secret's payload.
+- It creates a Dagger secret with that payload using the `Secret()` method.
+- It uses the `WithSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
+- It uses the secret to make an authenticated request to the GitHub API, as explained previously.
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/use-secrets/external/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/use-secrets/external/main.py
+```
+
+
+</TabItem>
+</Tabs>
 
 ## Use secrets with Dagger SDK methods
 
@@ -217,6 +252,40 @@ In this code listing:
 
 </TabItem>
 </Tabs>
+
+## Understand how Dagger secures secrets
+
+Dagger automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash. This applies to secrets stored in both environment variables and file mounts.
+
+The following example demonstrates this feature:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/use-secrets/security/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/use-secrets/security/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/use-secrets/security/main.py
+```
+
+</TabItem>
+</Tabs>
+
+This listing creates dummy secrets on the host (as an environment variable and a file), loads them into Dagger and then attempts to print them to the console. However, Dagger automatically scrubs the sensitive data before printing it, as shown in the output below:
+
+```shell
+secret env data: *** || secret file data:
+***
+```
 
 ## Conclusion
 
