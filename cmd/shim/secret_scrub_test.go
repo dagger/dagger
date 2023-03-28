@@ -134,11 +134,11 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 }
 
 var (
-	//nolint:typecheck false positive about the pattern not finding the file
+	//nolint:typecheck
 	//go:embed testdata/id_ed25519
 	sshSecretKey string
 
-	//nolint:typecheck false positive about the pattern not finding the file
+	//nolint:typecheck
 	//go:embed testdata/id_ed25519.pub
 	sshPublicKey string
 )
