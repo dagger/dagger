@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["go", "python", "nodejs"]
 authors: ["Vikram Vaswani"]
-date: "2023-03-24"
+date: "2023-03-28"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -37,7 +37,7 @@ The following table provides an overview of the Dagger API queries and fields re
 | Plaintext string | [`setSecret`](https://docs.dagger.io/api/reference/#query-setSecret) | [`Container.withSecretVariable()`](https://docs.dagger.io/api/reference/#Container-withSecretVariable) |
 
 :::tip
-The `Container.withMountedSecret()` and `Container.withSecretVariable()` fields return the container with the secret mounted into a file at the given path and with the secret stored in a container environment variable with the given name, respectively.
+The `Container.withMountedSecret()` and `Container.withSecretVariable()` fields return the container with the secret mounted at the given filesystem path or stored in the given container environment variable, respectively.
 :::
 
 Let's start with a simple example of setting a secret in a Dagger pipeline and using it in a container.

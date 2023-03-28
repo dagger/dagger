@@ -24,8 +24,6 @@ async def main():
         # print result
         print(out)
 
-anyio.run(main)
-
 async def gcp_get_secret_plaintext(project_id, secret_id):
     client = secretmanager.SecretManagerServiceClient()
 
@@ -34,3 +32,7 @@ async def gcp_get_secret_plaintext(project_id, secret_id):
     response = client.access_secret_version(request={"name": secret_uri})
 
     secret_plaintext = response.payload.data.decode("UTF-8")
+
+    return secret_plaintext
+
+anyio.run(main)
