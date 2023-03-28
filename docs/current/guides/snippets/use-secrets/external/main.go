@@ -47,7 +47,7 @@ func main() {
 
 func gcpGetSecretPlaintext(ctx context.Context, projectID, secretID string) (string, error) {
 	version := 1
-	secretVersion := fmt.Sprintf("projects/%s/secrets/%s/versions/%d", projectID, secretID, version)
+	secretUri := fmt.Sprintf("projects/%s/secrets/%s/versions/%d", projectID, secretID, version)
 
 	// initialize Google Cloud API client
 	gcpClient, err := secretmanager.NewClient(ctx)
@@ -58,7 +58,7 @@ func gcpGetSecretPlaintext(ctx context.Context, projectID, secretID string) (str
 
 	// retrieve secret
 	secReq := &secretmanagerpb.AccessSecretVersionRequest{
-		Name: secretVersion,
+		Name: secretUri,
 	}
 
 	res, err := gcpClient.AccessSecretVersion(ctx, secReq)

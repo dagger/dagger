@@ -9,7 +9,7 @@ connect(async (client) => {client
   const secretPlaintext = await gcpGetSecretPlaintext("PROJECT-ID", "SECRET-ID")
 
   // load secret into Dagger
-  const secret = client.setSecret("GH_SECRET", secretPlaintext)
+  const secret = client.setSecret("ghApiToken", secretPlaintext)
 
   // use secret in container environment
   const out = await client.
@@ -28,10 +28,10 @@ async function gcpGetSecretPlaintext(projectID, secretID) {
 
   const client = new SecretManagerServiceClient();
 
-  const secretVersion = `projects/${projectID}/secrets/${secretID}/versions/1`
+  const secretUri = `projects/${projectID}/secrets/${secretID}/versions/1`
 
   const [accessResponse] = await client.accessSecretVersion({
-    name: secretVersion,
+    name: secretUri,
   });
 
   const secretPlaintext = accessResponse.payload.data.toString('utf8');
