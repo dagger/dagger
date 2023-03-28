@@ -170,5 +170,5 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "***", stdout)
+	require.Equal(t, "***\n***\n***", stdout)
 }
