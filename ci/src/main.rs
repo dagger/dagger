@@ -48,6 +48,8 @@ async fn run_codegen(client: Arc<Query>, _subm: &ArgMatches) -> eyre::Result<()>
         .with_exec(vec![
             "cargo",
             "run",
+            "-p",
+            "dagger-bootstrap",
             "--",
             "generate",
             "--output",
