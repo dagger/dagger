@@ -49,7 +49,7 @@ func loadRootLabels(workdir string) []Label {
 		logrus.Warnf("failed to collect git labels: %s", err)
 	}
 
-	if githubLabels, err := loadGitHubLabels(); err == nil {
+	if githubLabels, err := LoadGitHubLabels(); err == nil {
 		labels = append(labels, githubLabels...)
 	} else {
 		logrus.Warnf("failed to collect GitHub labels: %s", err)
@@ -133,7 +133,7 @@ func loadGitLabels(workdir string) ([]Label, error) {
 	}, nil
 }
 
-func loadGitHubLabels() ([]Label, error) {
+func LoadGitHubLabels() ([]Label, error) {
 	if os.Getenv("GITHUB_ACTIONS") != "true" {
 		return []Label{}, nil
 	}
@@ -171,41 +171,32 @@ func loadGitHubLabels() ([]Label, error) {
 			return nil, fmt.Errorf("unmarshal $GITHUB_EVENT_PATH: %w", err)
 		}
 
-		var action *string
-		var pr *github.PullRequest
-		var repoURL, repoFullName string
-		switch x := event.(type) {
-		case *github.PushEvent:
-			action = x.Action
-			repoURL = x.GetRepo().GetHTMLURL()
-			repoFullName = x.GetRepo().GetFullName()
-		case *github.PullRequestEvent:
-			action = x.Action
-			pr = x.GetPullRequest()
-			repoURL = x.GetRepo().GetHTMLURL()
-			repoFullName = x.GetRepo().GetFullName()
-		}
-
-		if action != nil {
+		if event, ok := event.(interface {
+			GetAction() string
+		}); ok && event.GetAction() != "" {
 			labels = append(labels, Label{
 				Name:  "github.com/event.action",
-				Value: *action,
+				Value: event.GetAction(),
 			})
 		}
 
-		if repoURL != "" && repoFullName != "" {
+		if repo, ok := getRepoIsh(event); ok {
 			labels = append(labels, Label{
 				Name:  "github.com/repo.full_name",
-				Value: repoFullName,
+				Value: repo.GetFullName(),
 			})
 
 			labels = append(labels, Label{
 				Name:  "github.com/repo.url",
-				Value: repoURL,
+				Value: repo.GetHTMLURL(),
 			})
 		}
 
-		if pr != nil {
+		if event, ok := event.(interface {
+			GetPullRequest() *github.PullRequest
+		}); ok && event.GetPullRequest() != nil {
+			pr := event.GetPullRequest()
+
 			labels = append(labels, Label{
 				Name:  "github.com/pr.number",
 				Value: fmt.Sprintf("%d", pr.GetNumber()),
@@ -226,24 +217,20 @@ func loadGitHubLabels() ([]Label, error) {
 	return labels, nil
 }
 
-type GitHubEventPayload struct {
-	// set on many events
-	Action *string `json:"action,omitempty"`
+type repoIsh interface {
+	GetFullName() string
+	GetHTMLURL() string
+}
 
-	// set on push events
-	After *string `json:"after,omitempty"`
-
-	// set on check_suite events
-	CheckSuite *github.CheckSuite `json:"check_suite,omitempty"`
-
-	// set on check_run events
-	CheckRun *github.CheckRun `json:"check_run,omitempty"`
-
-	// set on pull_request events
-	PullRequest *github.PullRequest `json:"pull_request,omitempty"`
-
-	// set on all events
-	Repo         *github.Repository   `json:"repository,omitempty"`
-	Sender       *github.User         `json:"sender,omitempty"`
-	Installation *github.Installation `json:"installation,omitempty"`
+func getRepoIsh(event any) (repoIsh, bool) {
+	switch x := event.(type) {
+	case *github.PushEvent:
+		// push event repositories aren't quite a *github.Repository for silly
+		// legacy reasons
+		return x.GetRepo(), true
+	case interface{ GetRepo() *github.Repository }:
+		return x.GetRepo(), true
+	default:
+		return nil, false
+	}
 }

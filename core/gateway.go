@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/armon/circbuf"
+	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
@@ -48,7 +48,7 @@ func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bk
 	}}
 	res, err := g.Client.Solve(ctx, req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to solve: %w", err)
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -67,16 +67,29 @@ func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bk
 
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
 // This is useful for constructing a result for remote caching.
-func (g *GatewayClient) CombinedResult() *bkgw.Result {
+func (g *GatewayClient) CombinedResult(ctx context.Context) (*bkgw.Result, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	res := bkgw.NewResult()
-	i := 0
+
+	mergeInputs := make([]llb.State, 0, len(g.refs))
 	for r := range g.refs {
-		res.AddRef(strconv.Itoa(i), r.Reference)
-		i++
+		state, err := r.ToState()
+		if err != nil {
+			return nil, err
+		}
+		mergeInputs = append(mergeInputs, state)
 	}
-	return res
+	llbdef, err := llb.Merge(mergeInputs).Marshal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	mergedRes, err := g.Client.Solve(ctx, bkgw.SolveRequest{
+		Definition: llbdef.ToPB(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return mergedRes, nil
 }
 
 type ref struct {

@@ -48,27 +48,53 @@ async function computeNestedQuery(
   // Check if there is a nested queryTree to be executed
   const isQueryTree = (value: any) => value["_queryTree"] !== undefined
 
+  // Check if there is a nested array of queryTree to be executed
+  const isArrayQueryTree = (value: any[]) =>
+    value.every((v) => v instanceof Object && isQueryTree(v))
+
+  // Prepare query tree for final query by computing nested queries
+  // and building it with their results.
+  const computeQueryTree = async (value: any): Promise<string> => {
+    // Resolve sub queries if operation's args is a subquery
+    for (const op of value["_queryTree"]) {
+      await computeNestedQuery([op], client)
+    }
+
+    // push an id that will be used by the container
+    return buildQuery([
+      ...value["_queryTree"],
+      {
+        operation: "id",
+      },
+    ])
+  }
+
   // Remove all undefined args and assert args type
   const queryToExec = query.filter((q): q is Required<QueryTree> => !!q.args)
 
   for (const q of queryToExec) {
     await Promise.all(
+      // Compute nested query for single object
       Object.entries(q.args).map(async ([key, value]: any) => {
         if (value instanceof Object && isQueryTree(value)) {
-          // Resolve sub queries if operation's args is a subquery
-          for (const op of value["_queryTree"]) {
-            await computeNestedQuery([op], client)
-          }
-
           // push an id that will be used by the container
-          const getQueryTree = buildQuery([
-            ...value["_queryTree"],
-            {
-              operation: "id",
-            },
-          ])
+          const getQueryTree = await computeQueryTree(value)
 
           q.args[key] = await compute(getQueryTree, client)
+        }
+
+        // Compute nested query for array of object
+        if (Array.isArray(value) && isArrayQueryTree(value)) {
+          const tmp: any = q.args[key]
+
+          for (let i = 0; i < value.length; i++) {
+            // push an id that will be used by the container
+            const getQueryTree = await computeQueryTree(value[i])
+
+            tmp[i] = await compute(getQueryTree, client)
+          }
+
+          q.args[key] = tmp
         }
       })
     )

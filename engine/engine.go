@@ -192,7 +192,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 
 			// Return a result that contains every reference that was solved in this session.
 			// If cache export is enabled server-side, all these references will be exported.
-			return gwClient.CombinedResult(), nil
+			return gwClient.CombinedResult(ctx)
 		}, solveCh)
 		return err
 	})
