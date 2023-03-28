@@ -21,4 +21,4 @@ connect(async (client) => {client
 
   // print result
   console.log(`Published at: ${addr}`)
-}, {LogOutput: process.stdout})
+}, {LogOutput: process.stderr})

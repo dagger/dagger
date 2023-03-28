@@ -6,7 +6,7 @@ connect(async (client) => {client
   const secret = client.host().envVariable("GH_SECRET").secret()
 
   // use secret in container environment
-  const c = await client.
+  const out = await client.
     container().
     from("alpine:3.17").
     withSecretVariable("GITHUB_API_TOKEN", secret).
@@ -15,5 +15,5 @@ connect(async (client) => {client
     stdout()
 
   // print result
-  console.log(c)
-}, {LogOutput: process.stdout})
+  console.log(out)
+}, {LogOutput: process.stderr})
