@@ -248,7 +248,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
-	// args = append(args, "./...")
+	args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
 	output, err := util.CleanGoBase(c).
