@@ -3,7 +3,7 @@ import { connect } from "@dagger.io/dagger"
 // initialize Dagger client
 connect(async (client) => {
   // read secret from host variable
-  const secret = client.host().envVariable("GH_SECRET").secret()
+  const secret = client.setSecret("gh-secret", process.env["GH_SECRET"])
 
   // use secret in container environment
   const out = await client.

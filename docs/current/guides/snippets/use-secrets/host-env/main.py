@@ -6,7 +6,7 @@ import dagger
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # read secret from host variable
-        secret = client.host().env_variable("GH_SECRET").secret()
+        secret = client.set_secret("gh-secret", os.environ["GH_SECRET"])
 
         # use secret in container environment
         out = await (

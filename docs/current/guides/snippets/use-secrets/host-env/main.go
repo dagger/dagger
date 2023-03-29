@@ -18,7 +18,7 @@ func main() {
 	defer client.Close()
 
 	// read secret from host variable
-	secret := client.Host().EnvVariable("GH_SECRET").Secret()
+	secret := client.SetSecret("gh-secret", os.Getenv("GH_SECRET"))
 
 	// use secret in container environment
 	out, err := client.

@@ -11,20 +11,6 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// set a host environment variable
-	const hostEnvName = "MY_SECRET_VAR"
-	err := os.Setenv(hostEnvName, "secret value here")
-	if err != nil {
-		panic(err)
-	}
-
-	// create a test host file
-	const hostFileContent = "secret file content here"
-	err = os.WriteFile("my_secret_file", []byte(hostFileContent), 0o600)
-	if err != nil {
-		panic(err)
-	}
-
 	// create Dagger client
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -32,10 +18,8 @@ func main() {
 	}
 	defer client.Close()
 
-	// load secrets
-	secretEnv := client.Host().EnvVariable("MY_SECRET_VAR").Secret()
-	//nolint:staticcheck
-	secretFile := client.Host().Directory(".").File("my_secret_file").Secret()
+	secretEnv := client.SetSecret("my-secret-var", "secret value here")
+	secretFile := client.SetSecret("my-secret-file", "secret file content here")
 
 	// dump secrets to console
 	output, err := client.Container().
