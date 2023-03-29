@@ -249,7 +249,6 @@ Here's what happens on the last line:
 </TabItem>
 </Tabs>
 
-
 :::note
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
 :::
