@@ -28,7 +28,7 @@ This tutorial assumes that:
 
 ## Create and use a secret
 
-he Dagger API provides the following queries and fields for working with secrets:
+The Dagger API provides the following queries and fields for working with secrets:
 
 - The `setSecret` query creates a new secret from a plaintext value.
 - A `Container`'s `withMountedSecret()` field returns the container with the secret mounted at the named  filesystem path.
