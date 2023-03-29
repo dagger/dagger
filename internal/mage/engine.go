@@ -226,6 +226,10 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithServiceBinding("registry", registry).
 		WithServiceBinding("privateregistry", privateRegistry).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
+		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.
+		// It's important it's a cache mount though because otherwise overlay won't be available
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state")).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
 			ExperimentalPrivilegedNesting: true,
