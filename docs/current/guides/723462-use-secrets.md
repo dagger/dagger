@@ -33,8 +33,8 @@ The following diagram provides an overview of the Dagger API queries and fields 
 ```mermaid
 graph TD
     A[Read secret from host environment] -->|"host.envVariable().secret()"| B(Dagger secret)
-    C[Read secret from host filesystem] -->|"host.file()"| B(Dagger secret)
-    D[Set secret as plaintext string] -->|"setSecret()"| B(Dagger secret)
+    C[Read secret from host filesystem] -->|"file.secret()"| B(Dagger secret)
+    D[Set secret as plaintext string] -->|"client.setSecret()"| B(Dagger secret)
     B -->|"Container.withSecretVariable()"|E[Retrieve container with secret loaded in container environment]
     B -->|"Container.withMountedSecret()"|F[Retrieve container with secret loaded in container filesystem]
 ```
