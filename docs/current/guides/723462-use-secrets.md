@@ -28,13 +28,18 @@ This tutorial assumes that:
 
 ## Create and use a secret
 
-The following table provides an overview of the Dagger API queries and fields related to secret management:
+The following diagram provides an overview of the Dagger API queries and fields related to secret management:
 
-|Secret is a ...|Load it into Dagger with ...|Use it in a Dagger pipeline with ... |
-|---|---|---|
-| Host environment variable | [`file.secret()`](https://docs.dagger.io/api/reference/#File-secret) | [`Container.withSecretVariable()`](https://docs.dagger.io/api/reference/#Container-withSecretVariable) |
-| Host file | [`host.envVariable().secret()`](https://docs.dagger.io/api/reference/#Host-envVariable) | [`Container.withMountedSecret()`](https://docs.dagger.io/api/reference/#Container-withMountedSecret) |
-| Plaintext string | [`setSecret`](https://docs.dagger.io/api/reference/#query-setSecret) | [`Container.withSecretVariable()`](https://docs.dagger.io/api/reference/#Container-withSecretVariable) |
+```mermaid
+graph TD
+    A[Read secret from host environment] -->|"host.envVariable().secret()"| B(Dagger secret)
+    C[Read secret from host filesystem] -->|"host.file()"| B(Dagger secret)
+    D[Set secret as plaintext string] -->|"setSecret()"| B(Dagger secret)
+    B -->|"Container.withSecretVariable()"|E[Retrieve container with secret loaded in container environment]
+    B -->|"Container.withMountedSecret()"|F[Retrieve container with secret loaded in container filesystem]
+```
+
+Once a secret is loaded into Dagger, it can be used in a Dagger pipeline as either a variable or a mounted file. Some Dagger SDK methods additionally accept secrets as native objects.
 
 :::tip
 The `Container.withMountedSecret()` and `Container.withSecretVariable()` fields return the container with the secret mounted at the given filesystem path or stored in the given container environment variable, respectively.
