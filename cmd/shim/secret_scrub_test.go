@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"testing"
 	"testing/fstest"
@@ -16,7 +17,7 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 			Data: []byte("my secret file"),
 		},
 		"subdir/alsosecret": &fstest.MapFile{
-			Data: []byte("a subdir secret file"),
+			Data: []byte("a subdir secret file \nwith line feed"),
 		},
 	}
 	env := []string{
@@ -130,4 +131,26 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 		require.Contains(t, secrets, "my secret file")
 		require.Contains(t, secrets, "a subdir secret file")
 	})
+}
+
+var (
+	//nolint:typecheck
+	//go:embed testdata/id_ed25519
+	sshSecretKey string
+
+	//nolint:typecheck
+	//go:embed testdata/id_ed25519.pub
+	sshPublicKey string
+)
+
+func TestScrubSecretWrite(t *testing.T) {
+	secrets := []string{
+		"secret1",
+		"secret with space ",
+		sshSecretKey,
+		sshPublicKey,
+	}
+	s := "Not secret\nsecret1\nsecret with space\n" + sshSecretKey + "\n" + sshPublicKey
+	got := scrubSecretBytes(secrets, []byte(s))
+	require.Equal(t, "Not secret\n***\n***\n***\n***\n***\n***\n***\n***\n***\n\n***\n", string(got))
 }
