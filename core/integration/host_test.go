@@ -254,6 +254,7 @@ func TestHostVariable(t *testing.T) {
 
 	env, err := c.Container().
 		From("alpine:3.16.2").
+		//nolint:staticcheck // SA1019 We want to test this API while we support it.
 		WithSecretVariable("SECRET", secret.Secret()).
 		WithExec([]string{"env"}).
 		Stdout(ctx)
