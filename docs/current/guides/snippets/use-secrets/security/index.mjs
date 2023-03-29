@@ -3,7 +3,7 @@ import { connect } from "@dagger.io/dagger"
 import { writeFile } from "fs/promises"
 
 // initialize Dagger client
-connect(async (client) => {client
+connect(async (client) => {
 
   // set a test host environment variable
   process.env["MY_SECRET_VAR"] = "secret value here"

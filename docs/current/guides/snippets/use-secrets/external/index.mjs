@@ -3,7 +3,7 @@ import { connect } from "@dagger.io/dagger"
 import { SecretManagerServiceClient } from "@google-cloud/secret-manager"
 
 // initialize Dagger client
-connect(async (client) => {client
+connect(async (client) => {
 
   // get secret from Google Cloud Secret Manager
   const secretPlaintext = await gcpGetSecretPlaintext("PROJECT-ID", "SECRET-ID")

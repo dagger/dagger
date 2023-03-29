@@ -1,7 +1,7 @@
 import { connect } from "@dagger.io/dagger"
 
 // initialize Dagger client
-connect(async (client) => {client
+connect(async (client) => {
   // read secret from host variable
   const secret = client.host().envVariable("GH_SECRET").secret()
 

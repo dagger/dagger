@@ -1,7 +1,7 @@
 import { connect } from "@dagger.io/dagger"
 
 // initialize Dagger client
-connect(async (client) => {client
+connect(async (client) => {
   // set secret as string value
   const secret = client.setSecret("password", "DOCKER-HUB-PASSWORD")
 

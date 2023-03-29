@@ -3,7 +3,7 @@ import { connect } from "@dagger.io/dagger"
 import { readFile } from "fs/promises"
 
 // initialize Dagger client
-connect(async (client) => {client
+connect(async (client) => {
   // read file
   const file = await readFile("/home/USER/.config/gh/hosts.yml")
 
