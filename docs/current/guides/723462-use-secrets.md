@@ -28,22 +28,13 @@ This tutorial assumes that:
 
 ## Create and use a secret
 
-The following diagram provides an overview of the Dagger API queries and fields related to secret management:
+he Dagger API provides the following queries and fields for working with secrets:
 
-```mermaid
-graph TD
-    A[Read secret from host environment] -->|"host.envVariable().secret()"| B(Dagger secret)
-    C[Read secret from host filesystem] -->|"file.secret()"| B(Dagger secret)
-    D[Set secret as plaintext string] -->|"client.setSecret()"| B(Dagger secret)
-    B -->|"Container.withSecretVariable()"|E[Retrieve container with secret loaded in container environment]
-    B -->|"Container.withMountedSecret()"|F[Retrieve container with secret loaded in container filesystem]
-```
+- The `setSecret` query creates a new secret from a plaintext value.
+- A `Container`'s `withMountedSecret()` field returns the container with the secret mounted at the named  filesystem path.
+- A `Container`'s `withSecretVariable()` field returns the container with the secret stored in the named container environment variable.
 
 Once a secret is loaded into Dagger, it can be used in a Dagger pipeline as either a variable or a mounted file. Some Dagger SDK methods additionally accept secrets as native objects.
-
-:::tip
-The `Container.withMountedSecret()` and `Container.withSecretVariable()` fields return the container with the secret mounted at the given filesystem path or stored in the given container environment variable, respectively.
-:::
 
 Let's start with a simple example of setting a secret in a Dagger pipeline and using it in a container.
 

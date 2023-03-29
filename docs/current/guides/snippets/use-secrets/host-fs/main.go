@@ -18,13 +18,13 @@ func main() {
 	defer client.Close()
 
 	// read file
-	f, err := os.ReadFile("/home/USER/.config/gh/hosts.yml")
+	config, err := os.ReadFile("/home/USER/.config/gh/hosts.yml")
 	if err != nil {
 		panic(err)
 	}
 
 	// set secret to file contents
-	secret := client.SetSecret("ghConfig", string(f))
+	secret := client.SetSecret("ghConfig", string(config))
 
 	// mount secret as file in container
 	out, err := client.
