@@ -20,7 +20,7 @@ func main() {
 
 	// create a test host file
 	const hostFileContent = "secret file content here"
-	err = os.WriteFile("my_secret_file", []byte(hostFileContent), 0o644)
+	err = os.WriteFile("my_secret_file", []byte(hostFileContent), 0o600)
 	if err != nil {
 		panic(err)
 	}
@@ -34,6 +34,7 @@ func main() {
 
 	// load secrets
 	secretEnv := client.Host().EnvVariable("MY_SECRET_VAR").Secret()
+	//nolint:staticcheck
 	secretFile := client.Host().Directory(".").File("my_secret_file").Secret()
 
 	// dump secrets to console
