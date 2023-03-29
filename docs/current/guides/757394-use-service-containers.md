@@ -218,19 +218,32 @@ Consider this example:
 
 <Embed id="JwuCvswjsEM" />
 
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
+1. Dagger starts the `redisSrv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
 </TabItem>
 
 <TabItem value="Python">
 
 <Embed id="vtG-PyKz2E5" />
 
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redis_srv`.
+1. Dagger starts the `redis_srv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redis_srv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
 </TabItem>
 <TabItem value="Node.js">
 
 <Embed id="WRo9QMK9GKZ" />
-
-</TabItem>
-</Tabs>
 
 Here's what happens on the last line:
 
@@ -239,6 +252,10 @@ Here's what happens on the last line:
 1. Dagger starts the `redisSrv` container, which recurses into this same process.
 1. Dagger waits for health checks to pass against `redisSrv`.
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+</TabItem>
+</Tabs>
+
 
 :::note
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
