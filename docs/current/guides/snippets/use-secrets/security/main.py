@@ -6,27 +6,8 @@ import dagger
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
-        # set a test host environment variable
-        os.environ["MY_SECRET_VAR"] = "secret value here"
-
-        # set a test host file
-        await anyio.Path("my_secret_file").write_text("secret file content here")
-
-        # load secrets
-        secret_env = (
-          client
-          .host()
-          .env_variable("MY_SECRET_VAR")
-          .secret()
-        )
-
-        secret_file = (
-          client
-          .host()
-          .directory(".")
-          .file("my_secret_file")
-          .secret()
-        )
+        secret_env = client.set_secret("my-secret-var", "secret value here")
+        secret_file = client.set_secret("my-secret-file", "secret file content here")
 
         # dump secrets to console
         output = await (
