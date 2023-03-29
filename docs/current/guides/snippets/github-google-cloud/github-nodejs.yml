@@ -1,0 +1,40 @@
+name: 'ci'
+
+on:
+  push:
+    branches:
+    - master
+
+jobs:
+  dagger:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        id: 'auth'
+        name: 'Authenticate to Google Cloud'
+        uses: 'google-github-actions/auth@v1'
+        with:
+          token_format: 'access_token'
+          credentials_json: '${{ secrets.GOOGLE_CREDENTIALS }}'
+      -
+        name: Login to Google Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: gcr.io
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+      -
+        name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16.13.x
+          cache: npm
+      -
+        name: Install
+        run: npm install
+      -
+        name: Release and deploy with Dagger
+        run: node ci/index.mjs

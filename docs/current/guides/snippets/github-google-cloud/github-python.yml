@@ -27,14 +27,13 @@ jobs:
           username: oauth2accesstoken
           password: ${{ steps.auth.outputs.access_token }}
       -
-        name: Setup node
-        uses: actions/setup-node@v3
+        name: Setup Python
+        uses: actions/setup-python@v4
         with:
-          node-version: 16.13.x
-          cache: npm
+          python-version: '3.10'
       -
         name: Install
-        run: npm install
+        run: pip install dagger-io google-cloud-run
       -
         name: Release and deploy with Dagger
-        run: node ci/main.mjs
+        run: python ci/main.py
