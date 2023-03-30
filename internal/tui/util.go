@@ -15,3 +15,11 @@ func min[T constraints.Ordered](a, b T) T {
 	}
 	return b
 }
+
+func trunc(str string, size int) string {
+	if len(str) <= size {
+		return str
+	}
+
+	return str[:size-1] + "…"
+}

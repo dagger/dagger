@@ -53,25 +53,22 @@ func (m *Details) Focus(focus bool) {
 }
 
 func (m Details) headerView() string {
-	title := m.item.Name()
+	title := trunc(m.item.Name(), m.width)
 	info := fmt.Sprintf("%3.f%%", m.item.ScrollPercent()*100)
 	line := ""
+	borderWidth := lipgloss.Width(titleStyle.Render(""))
 
 	if !m.focus {
-		title = titleStyle.Copy().
-			Render(title)
-		info = infoStyle.Copy().
-			Render(info)
+		info = infoStyle.Copy().Render(info)
+		title = trunc(title, m.width-lipgloss.Width(info)-borderWidth)
+		title = titleStyle.Copy().Render(title)
 		space := max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))
 		line = titleBarStyle.Copy().
 			Render(strings.Repeat("─", space))
 	} else {
-		title = titleStyle.Copy().
-			BorderForeground(colorSelected).
-			Render(title)
-		info = infoStyle.Copy().
-			BorderForeground(colorSelected).
-			Render(info)
+		info = infoStyle.Copy().BorderForeground(colorSelected).Render(info)
+		title = trunc(title, m.width-lipgloss.Width(info)-borderWidth)
+		title = titleStyle.Copy().BorderForeground(colorSelected).Render(title)
 		space := max(0, m.width-lipgloss.Width(title)-lipgloss.Width(info))
 		line = titleBarStyle.Copy().
 			Foreground(colorSelected).

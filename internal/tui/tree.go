@@ -217,30 +217,31 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 	}
 	timerView := m.timerView(item)
 
-	nameWidth := m.viewport.Width -
+	itemWidth := m.viewport.Width -
 		lipgloss.Width(status) -
 		lipgloss.Width(treePrefix) -
 		lipgloss.Width(timerView)
 
-	name := item.Name()
-	if len(name) > nameWidth {
-		name = name[:nameWidth-3] + "…"
-	}
+	nameWidth := itemWidth -
+		lipgloss.Width(expandView) -
+		2 // space on each side
 
-	nameView := lipgloss.NewStyle().
+	name := trunc(item.Name(), nameWidth)
+
+	itemView := lipgloss.NewStyle().
 		Inline(true).
-		Width(max(0, nameWidth)).
-		Render(" " + expandView + name)
+		Width(max(0, itemWidth)).
+		Render(" " + expandView + name + " ")
 
 	view := status + treePrefix
 	if item == m.current {
 		if m.focus {
-			view += selectedStyle.Render(nameView + timerView)
+			view += selectedStyle.Render(itemView + timerView)
 		} else {
-			view += selectedStyleBlur.Render(nameView + timerView)
+			view += selectedStyleBlur.Render(itemView + timerView)
 		}
 	} else {
-		view += nameView + timerView
+		view += itemView + timerView
 	}
 
 	renderedItems = append(renderedItems, view)
