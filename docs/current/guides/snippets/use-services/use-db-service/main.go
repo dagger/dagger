@@ -19,22 +19,22 @@ func main() {
 	}
 	defer client.Close()
 
-    // get MariaDB base image
-		mariadb := client.Container().
-			From("mariadb:10.11.2").
-			WithEnvVariable("MARIADB_USER", "user").
-			WithEnvVariable("MARIADB_PASSWORD", "password").
-			WithEnvVariable("MARIADB_DATABASE", "drupal").
-			WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
-			WithExec(nil)
+	// get MariaDB base image
+	mariadb := client.Container().
+		From("mariadb:10.11.2").
+		WithEnvVariable("MARIADB_USER", "user").
+		WithEnvVariable("MARIADB_PASSWORD", "password").
+		WithEnvVariable("MARIADB_DATABASE", "drupal").
+		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
+		WithExec(nil)
 
-    // get PHP base image
-    // add Composer and install dependencies
-    // install PHP extensions for PDO and MySQL
-		php := client.Container().
-			From("php:8.1-fpm-alpine3.17").
-			WithExec([]string{"apk", "add", "composer", "php81-dom", "php81-gd", "php81-pdo", "php81-tokenizer", "php81-session", "php81-simplexml", "php81-xmlwriter", "php81-xml"}).
-			WithExec([]string{"docker-php-ext-install", "mysqli", "pdo", "pdo_mysql"})
+		// get PHP base image
+		// add Composer and install dependencies
+		// install PHP extensions for PDO and MySQL
+	php := client.Container().
+		From("php:8.1-fpm-alpine3.17").
+		WithExec([]string{"apk", "add", "composer", "php81-dom", "php81-gd", "php81-pdo", "php81-tokenizer", "php81-session", "php81-simplexml", "php81-xmlwriter", "php81-xml"}).
+		WithExec([]string{"docker-php-ext-install", "mysqli", "pdo", "pdo_mysql"})
 
 	// create new Drupal project
 	drupal := php.
