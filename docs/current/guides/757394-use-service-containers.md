@@ -62,15 +62,14 @@ Service containers run in a bridge network. Each container has its own IP addres
 <Embed id="blm2lRNoYzE" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="bhx9i4LCcD9" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="fR2OAVbNUVH" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="bhx9i4LCcD9" />
 
 </TabItem>
 </Tabs>
@@ -83,15 +82,14 @@ Service containers never use IP addresses to reach each other directly. IP addre
 <Embed id="H5Eb0Hs7JMd" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="2qLVfgdsnI6" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="Bpu7I8URtpg" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="2qLVfgdsnI6" />
 
 </TabItem>
 </Tabs>
@@ -106,15 +104,14 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 <Embed id="cwmeT7388mg" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="YGkCbitVTYY" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="uCP-rb3rLeK" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="YGkCbitVTYY" />
 
 </TabItem>
 </Tabs>
@@ -136,17 +133,6 @@ Here's an example:
 <Embed id="kDBfYoh2uau" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-- Use the `with_exposed_port()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
-- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
-
-Here's an example:
-
-<Embed id="OPUGXdIujRC" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 - Use the `withExposedPort()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
@@ -155,6 +141,16 @@ Here's an example:
 Here's an example:
 
 <Embed id="cx-3lzMDn5i" />
+
+</TabItem>
+<TabItem value="Python">
+
+- Use the `with_exposed_port()` method to set ports that the service container will listen on. Dagger checks the health of each exposed port prior to running any clients that use the service, so that clients don't have to implement their own polling logic.
+- Use the `endpoint()` method to create a string address to a service container's port. You can either specify a port or let Dagger pick the first exposed port.
+
+Here's an example:
+
+<Embed id="OPUGXdIujRC" />
 
 </TabItem>
 </Tabs>
@@ -173,15 +169,14 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 <Embed id="pQoE-5_0Ghg" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="FkPqDoW3Oo-" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="VIFYGYc8YRN" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="FkPqDoW3Oo-" />
 
 </TabItem>
 </Tabs>
@@ -194,15 +189,14 @@ When a service is bound to a container, it also conveys to any outputs of that c
 <Embed id="Qoljk5SEPuu" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="WG0Pqr49pKK" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="RhA4m6ji1js" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="WG0Pqr49pKK" />
 
 </TabItem>
 </Tabs>
@@ -218,19 +212,18 @@ Consider this example:
 
 <Embed id="JwuCvswjsEM" />
 
-</TabItem>
+Here's what happens on the last line:
 
-<TabItem value="Python">
-
-<Embed id="vtG-PyKz2E5" />
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redisSrv`.
+1. Dagger starts the `redisSrv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redisSrv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
 
 </TabItem>
 <TabItem value="Node.js">
 
 <Embed id="WRo9QMK9GKZ" />
-
-</TabItem>
-</Tabs>
 
 Here's what happens on the last line:
 
@@ -239,6 +232,22 @@ Here's what happens on the last line:
 1. Dagger starts the `redisSrv` container, which recurses into this same process.
 1. Dagger waits for health checks to pass against `redisSrv`.
 1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="vtG-PyKz2E5" />
+
+Here's what happens on the last line:
+
+1. The client requests the `ping` container's stdout, which requires the container to run.
+1. Dagger sees that the `ping` container has a service binding, `redis_srv`.
+1. Dagger starts the `redis_srv` container, which recurses into this same process.
+1. Dagger waits for health checks to pass against `redis_srv`.
+1. Dagger runs the `ping` container with the `redis-srv` alias magically added to `/etc/hosts`.
+
+</TabItem>
+</Tabs>
 
 :::note
 Dagger cancels each service run after a 10 second grace period to avoid frequent restarts.
@@ -260,15 +269,14 @@ Let's put all this together in a full client-server example of running commands 
 <Embed id="d4SIgAW2Feo" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="D80RyJ7f8h0" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="zowrSKqU_0u" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="D80RyJ7f8h0" />
 
 </TabItem>
 </Tabs>
@@ -281,15 +289,14 @@ Note that this example relies on the 10-second grace period, which you should tr
 <Embed id="avO1QVAIwBZ" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="0EGmAzoPXPM" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="ptz9Tj6pDLY" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="0EGmAzoPXPM" />
 
 </TabItem>
 </Tabs>
@@ -308,15 +315,14 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 <Embed id="23lXKbJiCz0" />
 
 </TabItem>
-
-<TabItem value="Python">
-
-<Embed id="uMNx2j1-GTt" />
-
-</TabItem>
 <TabItem value="Node.js">
 
 <Embed id="zhQX8VN750_A" />
+
+</TabItem>
+<TabItem value="Python">
+
+<Embed id="uMNx2j1-GTt" />
 
 </TabItem>
 </Tabs>
