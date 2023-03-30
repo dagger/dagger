@@ -16,16 +16,17 @@ This tutorial teaches you how to create a custom client for the Dagger GraphQL A
 
 ## Requirements
 
-This tutorial assumes that:
-
-- You have a development environment for your chosen programming language.
-- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
-- You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../cli/465058-install.md).
-
-This tutorial demonstrates the process of creating an API client in two dfferent programming languages:
+You can create a Dagger GraphQL API client in any programming language. This tutorial demonstrates the process in the following languages:
 
 - Rust, using the [gql_client library](https://github.com/arthurkhlghatyan/gql-client-rs) (MIT License)
 - PHP, using the [php-graphql-client library](https://github.com/mghoneimy/php-graphql-client) (MIT License)
+
+This tutorial assumes that:
+
+- You have a basic understanding of the Rust or PHP programming languages. If not, [read the Rust tutorial](https://www.rust-lang.org/learn) or [read the PHP tutorial](https://www.php.net/manual/en/getting-started.php).
+- You have a development environment for Rust 1.65 (or later) or PHP 8.1 (or later). If not, [install Rust](https://www.rust-lang.org/tools/install) or [install PHP](https://www.php.net/manual/en/install.php).
+- You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
+- You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../cli/465058-install.md).
 
 ## Step 1: Select and install your GraphQL client library
 
