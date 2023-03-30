@@ -187,7 +187,7 @@ func (i *Item) statusView() string {
 			progress = fmt.Sprintf("%.2f", units.Bytes(s.Current))
 		}
 
-		pad := strings.Repeat(" ", i.width-lipgloss.Width(status)-lipgloss.Width(name)-lipgloss.Width(progress))
+		pad := strings.Repeat(" ", max(0, i.width-lipgloss.Width(status)-lipgloss.Width(name)-lipgloss.Width(progress)))
 		view := status + name + pad + progress
 		statuses = append(statuses, view)
 	}
