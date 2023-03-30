@@ -355,7 +355,7 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 </TabItem>
 </Tabs>
 
-This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a PHP-FPM container and installs Drupal and related dependencies into it. Next it adds a binding for the MariaDB service (`db`) in the PHP-FPM container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
+This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a PHP-FPM container and installs Drupal and related dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the PHP-FPM container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
 
 ## Conclusion
 
