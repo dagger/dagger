@@ -13,20 +13,11 @@ connect(
       .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
       .withExec([]);
 
-    // get PHP base image
-    // add Composer and install dependencies
-    // install PHP extensions for PDO and MySQL
-    const php = client
+  	// get Drupal base image
+  	// install additional dependencies
+    const drupal = client
       .container()
-      .from("php:8.1-fpm-alpine3.17")
-      .withExec(["apk", "add", "composer", "php81-dom", "php81-gd", "php81-pdo", "php81-tokenizer", "php81-session", "php81-simplexml", "php81-xmlwriter", "php81-xml"])
-      .withExec(["docker-php-ext-install", "mysqli", "pdo", "pdo_mysql"]);
-
-    // create new Drupal project
-    const drupal = php
-      .withWorkdir("/tmp")
-      .withExec(["composer", "create-project", "drupal/recommended-project", "my-project"])
-      .withWorkdir("/tmp/my-project")
+      .from("drupal:10.0.7-php8.2-fpm")
       .withExec(["composer", "require", "drupal/core-dev", "--dev", "--update-with-all-dependencies"]);
 
     // add service binding for MariaDB
@@ -35,7 +26,7 @@ connect(
       .withServiceBinding("db", mariadb)
       .withEnvVariable("SIMPLETEST_DB", "mysql://user:password@db/drupal")
       .withEnvVariable("SYMFONY_DEPRECATIONS_HELPER", "disabled")
-      .withWorkdir("/tmp/my-project/web/core")
+      .withWorkdir("/opt/drupal/web/core")
       .withExec(["../../vendor/bin/phpunit", "-v", "--group", "KernelTests"])
       .stdout();
 
