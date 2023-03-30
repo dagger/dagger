@@ -296,7 +296,7 @@ func (m Model) statusBarView() string {
 		status = completeStatus.String()
 	}
 
-	timer := timerStyle.Render("⌛" + m.statusBarTimerView())
+	timer := timerStyle.Render(m.statusBarTimerView())
 	statusVal := statusText.Copy().
 		Width(m.width - lipgloss.Width(mode) - lipgloss.Width(status) - lipgloss.Width(timer)).
 		Render("")
