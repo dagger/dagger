@@ -52,7 +52,7 @@ Service containers come with the following built-in features:
 - Service containers are health checked prior to running clients
 - Service containers are given an alias for the client container to use as its hostname
 
-## Using hostnames
+## Use hostnames
 
 Service containers run in a bridge network. Each container has its own IP address that other containers can reach. Here's a simple example:
 
@@ -118,7 +118,7 @@ To get a container's address, you wouldn't normally run the `hostname` command, 
 
 In practice, you are more likely to use aliases with service bindings or endpoints, which are covered in the next section.
 
-## Exposing ports
+## Expose ports
 
 Dagger offers two methods to work with service ports:
 
@@ -155,7 +155,7 @@ Here's an example:
 </TabItem>
 </Tabs>
 
-## Binding services
+## Bind services
 
 Dagger enables users to bind a service container to a client container with an alias (such as `redis`) that the client container can use as a hostname.
 
@@ -201,7 +201,7 @@ When a service is bound to a container, it also conveys to any outputs of that c
 </TabItem>
 </Tabs>
 
-## Understanding the service lifecycle
+## Understand the service lifecycle
 
 If you're not interested in what's happening in the background, you can skip this section and just trust that services are running when they need to be. If you're interested in the theory, keep reading.
 
@@ -261,7 +261,7 @@ Run-exactly-once semantics are very convenient. You don't have to come up with n
 If you need multiple instances of a service, just attach something unique to each one, such as an instance ID.
 :::
 
-Let's put all this together in a full client-server example of running commands against a Redis service:
+Here's a more detailed client-server example of running commands against a Redis service:
 
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
@@ -305,7 +305,7 @@ Note that this example relies on the 10-second grace period, which you should tr
 Depending on the 10-second grace period is risky because there are many factors which could cause a 10-second delay between calls to Dagger, such as excessive CPU load, high network latency between the client and Dagger, or Dagger operations that require a variable amount of time to process.
 :::
 
-## Persisting service state
+## Persist service state
 
 Another way to avoid relying on the grace period is to use a cache volume to persist a service's data, as in the following example:
 
@@ -327,7 +327,38 @@ Another way to avoid relying on the grace period is to use a cache volume to per
 </TabItem>
 </Tabs>
 
-Note that this example uses Redis's `SAVE` command to ensure data is synced. By default, Redis flushes data to disk periodically.
+:::info
+This example uses Redis's `SAVE` command to ensure data is synced. By default, Redis flushes data to disk periodically.
+:::
+
+## Example: MariaDB database service for application tests
+
+The following example demonstrates service containers in action, by creating a MariaDB database service container for use in application unit/integration testing.
+
+The application used in this example is [Drupal](https://www.drupal.org/), a popular open-source PHP CMS. Drupal includes a large number of unit tests, including tests which require an active database connection. All Drupal 10.x tests are written and executed using the [PHPUnit](https://phpunit.de/) testing framework. Read more about [running PHPUnit tests in Drupal](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests).
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+```go file=./snippets/use-services/use-db-service/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/use-services/use-db-service/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/use-services/use-db-service/main.py
+```
+
+</TabItem>
+</Tabs>
+
+This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
 
 ## Conclusion
 
