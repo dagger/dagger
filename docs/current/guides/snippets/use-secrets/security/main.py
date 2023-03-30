@@ -19,6 +19,6 @@ async def main():
           .stdout()
         )
 
-        print(output)
+    print(output)
 
 anyio.run(main)
