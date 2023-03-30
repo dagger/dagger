@@ -6,10 +6,10 @@ connect(async (client) => {
   const secret = client.setSecret("password", "DOCKER-HUB-PASSWORD")
 
   // create container
-  const c = client.
-    container().
-    from("nginx:1.23-alpine").
-    withNewFile("/usr/share/nginx/html/index.html", {
+  const c = client
+    .container()
+    .from("nginx:1.23-alpine")
+    .withNewFile("/usr/share/nginx/html/index.html", {
       contents:    "Hello from Dagger!",
       permissions: 0o400,
     })

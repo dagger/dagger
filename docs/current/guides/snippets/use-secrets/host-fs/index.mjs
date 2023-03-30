@@ -11,14 +11,14 @@ connect(async (client) => {
   const secret = client.setSecret("ghConfig", config.toString())
 
   // mount secret as file in container
-  const out = await client.
-    container().
-    from("alpine:3.17").
-    withExec(["apk", "add", "github-cli"]).
-    withMountedSecret("/root/.config/gh/hosts.yml", secret).
-    withWorkdir("/root").
-    withExec(["gh", "auth", "status"]).
-    stdout()
+  const out = await client
+    .container()
+    .from("alpine:3.17")
+    .withExec(["apk", "add", "github-cli"])
+    .withMountedSecret("/root/.config/gh/hosts.yml", secret)
+    .withWorkdir("/root")
+    .withExec(["gh", "auth", "status"])
+    .stdout()
 
   // print result
   console.log(out)
