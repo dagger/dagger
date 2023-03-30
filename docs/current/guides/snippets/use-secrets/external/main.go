@@ -46,7 +46,7 @@ func main() {
 }
 
 func gcpGetSecretPlaintext(ctx context.Context, projectID, secretID string) (string, error) {
-	secretUri := fmt.Sprintf("projects/%s/secrets/%s/versions/1", projectID, secretID)
+	secretUri := fmt.Sprintf("projects/%s/secrets/%s/versions/latest", projectID, secretID)
 
 	// initialize Google Cloud API client
 	gcpClient, err := secretmanager.NewClient(ctx)

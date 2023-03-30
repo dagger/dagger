@@ -29,7 +29,7 @@ async function gcpGetSecretPlaintext(projectID, secretID) {
   // initialize Google Cloud API client
   const client = new SecretManagerServiceClient();
 
-  const secretUri = `projects/${projectID}/secrets/${secretID}/versions/1`
+  const secretUri = `projects/${projectID}/secrets/${secretID}/versions/latest`
 
   // retrieve secret
   const [accessResponse] = await client.accessSecretVersion({
@@ -37,6 +37,6 @@ async function gcpGetSecretPlaintext(projectID, secretID) {
   });
 
   const secretPlaintext = accessResponse.payload.data.toString('utf8');
-  
+
   return secretPlaintext;
 }
