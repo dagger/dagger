@@ -74,6 +74,8 @@ func (m Model) Init() tea.Cmd {
 
 type CommandOutMsg []byte
 
+type CommandExitMsg error
+
 type endMsg struct{}
 
 func (m Model) adjustLocalTime(t *time.Time) *time.Time {
@@ -104,6 +106,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.processKeyMsg(msg)
 	case CommandOutMsg:
 		m.rootLogs.Write(msg)
+	case CommandExitMsg:
+		m.done = true
+		if msg != nil {
+			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Error()))
+		}
 	case followMsg:
 		if !m.follow {
 			return m, nil

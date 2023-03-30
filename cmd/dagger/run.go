@@ -15,7 +15,6 @@ import (
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 )
 
 var runCmd = &cobra.Command{
@@ -70,25 +69,21 @@ func Run(cmd *cobra.Command, args []string) error {
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
-	eg := new(errgroup.Group)
-	eg.Go(func() error {
-		return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
-			go http.Serve(sessionL, api) // nolint:gosec
-			return subCmd.Run()
-		})
-	})
-	eg.Go(func() error {
-		_, err := program.Run()
-		return err
-	})
-	if err := eg.Wait(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
+	return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
+		go http.Serve(sessionL, api) // nolint:gosec
+
+		err := subCmd.Start()
+		if err != nil {
+			return err
 		}
 
+		go func() {
+			program.Send(tui.CommandExitMsg(subCmd.Wait()))
+		}()
+
+		_, err = program.Run()
 		return err
-	}
-	return nil
+	})
 }
 
 type progOutWriter struct {

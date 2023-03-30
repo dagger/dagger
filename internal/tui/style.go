@@ -110,16 +110,15 @@ var (
 	titleStyle = lipgloss.NewStyle().
 			Border(borderLeft).
 			Padding(0, 1).
-			Background(colorBackground).
 			Foreground(colorForeground)
 
 	titleBarStyle = lipgloss.NewStyle().
-			Background(colorBackground).
 			Foreground(colorForeground)
 
 	infoStyle = lipgloss.NewStyle().
 			Border(borderRight).
 			Padding(0, 1).
-			Background(colorBackground).
 			Foreground(colorForeground)
+
+	errorStyle = lipgloss.NewStyle().Inline(true).Foreground(colorFailed)
 )
