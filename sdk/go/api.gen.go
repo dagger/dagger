@@ -1673,7 +1673,7 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 
 // Retrieves a secret referencing the contents of this file.
 //
-// Deprecated: insecure, leaves secret in cache
+// Deprecated: insecure, leaves secret in cache. Superseded by setSecret
 func (r *File) Secret() *Secret {
 	q := r.q.Select("secret")
 
@@ -1922,6 +1922,8 @@ type HostVariable struct {
 }
 
 // A secret referencing the value of this variable.
+//
+// Deprecated: been superseded by setSecret
 func (r *HostVariable) Secret() *Secret {
 	q := r.q.Select("secret")
 

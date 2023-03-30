@@ -2188,7 +2188,7 @@ export class File extends BaseClient {
 
   /**
    * Retrieves a secret referencing the contents of this file.
-   * @deprecated insecure, leaves secret in cache
+   * @deprecated insecure, leaves secret in cache. Superseded by setSecret
    */
   secret(): Secret {
     return new Secret({
@@ -2564,6 +2564,7 @@ export class Host extends BaseClient {
 export class HostVariable extends BaseClient {
   /**
    * A secret referencing the value of this variable.
+   * @deprecated been superseded by setSecret
    */
   secret(): Secret {
     return new Secret({
