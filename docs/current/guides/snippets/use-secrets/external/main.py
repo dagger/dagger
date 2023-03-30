@@ -7,7 +7,7 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # get secret from Google Cloud Secret Manager
-        secretPlaintext = await gcp_get_secret_plaintext("PROJECT-ID", "SECRET-ID")
+        secretPlaintext = gcp_get_secret_plaintext("PROJECT-ID", "SECRET-ID")
 
         # read secret from host variable
         secret = client.set_secret("ghApiToken", secretPlaintext)
@@ -25,7 +25,7 @@ async def main():
     # print result
     print(out)
 
-async def gcp_get_secret_plaintext(project_id, secret_id):
+def gcp_get_secret_plaintext(project_id, secret_id):
     secret_uri = f"projects/{project_id}/secrets/{secret_id}/versions/1"
 
     # initialize Google Cloud API client
