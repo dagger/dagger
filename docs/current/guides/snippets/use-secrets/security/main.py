@@ -10,7 +10,7 @@ async def main():
         secret_file = client.set_secret("my-secret-file", "secret file content here")
 
         # dump secrets to console
-        output = await (
+        out = await (
           client.container()
           .from_("alpine:3.17")
           .with_secret_variable("MY_SECRET_VAR", secret_env)
@@ -19,6 +19,6 @@ async def main():
           .stdout()
         )
 
-    print(output)
+    print(out)
 
 anyio.run(main)

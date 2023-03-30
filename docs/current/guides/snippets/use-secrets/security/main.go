@@ -22,7 +22,7 @@ func main() {
 	secretFile := client.SetSecret("my-secret-file", "secret file content here")
 
 	// dump secrets to console
-	output, err := client.Container().
+	out, err := client.Container().
 		From("alpine:3.17").
 		WithSecretVariable("MY_SECRET_VAR", secretEnv).
 		WithMountedSecret("/my_secret_file", secretFile).
@@ -32,5 +32,5 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println(output)
+	fmt.Println(out)
 }

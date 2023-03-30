@@ -9,7 +9,7 @@ connect(async (client) => {
   const secretFile = client.setSecret("my-secret-file", "secret file content here")
 
   // dump secrets to console
-  const output = await client.
+  const out = await client.
 		container().
 		from("alpine:3.17").
 		withSecretVariable("MY_SECRET_VAR", secretEnv).
@@ -17,5 +17,5 @@ connect(async (client) => {
 		withExec(["sh", "-c", `echo -e "secret env data: $MY_SECRET_VAR || secret file data: "; cat /my_secret_file`]).
 		stdout()
 
-  console.log(output)
+  console.log(out)
 }, {LogOutput: process.stderr})
