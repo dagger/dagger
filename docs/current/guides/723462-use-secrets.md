@@ -93,7 +93,8 @@ Here's a revision of the previous example, where the secret is read from a host 
 
 This code listing assumes the existence of a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
 
-- It creates a Dagger secret with the value of the host environment variable using the `Secret()` method.
+- It reads the value of the host environment variable using the `os.Getenv()` function.
+- It creates a Dagger secret with that value using the `SetSecret()` method.
 - It uses the `WithSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
 - It uses the secret in subsequent container operations, as explained previously.
 
@@ -105,7 +106,8 @@ This code listing assumes the existence of a host environment variable named `GH
 
 This code listing assumes the existence of a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
 
-- It creates a Dagger secret with the value of the host environment variable using the `Secret()` method.
+- It reads the value of the host environment variable using the `process.env` object.
+- It creates a Dagger secret with that value using the `setSecret()` method.
 - It uses the `withSecretVariable()` method to return a container with the secret value assigned to an environment variable in the container.
 - The environment variable can then be used in subsequent container operations, as explained previously.
 
@@ -117,7 +119,8 @@ This code listing assumes the existence of a host environment variable named `GH
 
 This code listing assumes the existence of a host environment variable named `GH_SECRET` containing the secret value. It performs the following operations:
 
-- It creates a Dagger secret with the value of the host environment variable using the `Secret()` method.
+- It reads the value of the host environment variable using the `os.environ()` object.
+- It creates a Dagger secret with that value using the `set_secret()` method.
 - It uses the `with_secret_variable()` method to return a container with the secret value assigned to an environment variable in the container.
 - The environment variable can then be used in subsequent container operations, as explained previously.
 
