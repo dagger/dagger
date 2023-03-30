@@ -16,7 +16,7 @@ import TabItem from "@theme/TabItem";
 
 There are a number of situations where you might want to build container images for local use - for example, for quick prototyping, development or testing on your own computer, or in air-gapped environments without network access.
 
-There are two possible approaches to building container images for local use with Dagger, although  the first one is recommended. This tutorial describes them both in detail.
+There are two possible approaches to building container images for local use with Dagger, although only the first one is recommended. This tutorial describes them both in detail.
 
 ## Requirements
 
