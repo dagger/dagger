@@ -340,17 +340,20 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<Embed id="" />
+```go file=./snippets/use-services/use-db-service/main.go
+```
 
 </TabItem>
 <TabItem value="Node.js">
 
-<Embed id="" />
+```javascript file=./snippets/use-services/use-db-service/index.ts
+```
 
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="" />
+```python file=./snippets/use-services/use-db-service/main.py
+```
 
 </TabItem>
 </Tabs>
