@@ -69,7 +69,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
-	return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
+	err = withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		err := subCmd.Start()
@@ -84,6 +84,15 @@ func Run(cmd *cobra.Command, args []string) error {
 		_, err = program.Run()
 		return err
 	})
+	if err != nil {
+		if ctx.Err() != nil {
+			// user interrupted
+			os.Exit(2)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 type progOutWriter struct {
