@@ -58,6 +58,12 @@ Install the TypeScript engine (if not already present):
 npm install ts-node
 ```
 
+Create a TypeScript configuration file (if not already present):
+
+```shell
+tsc --init --module esnext --moduleResolution nodenext
+```
+
 In your project directory, create a new file named `build.mts` and add the following code to it.
 
 ```typescript file=snippets/get-started/step2/build.mts
