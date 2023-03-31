@@ -528,13 +528,16 @@ class Container(Type):
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def import_(self, path: str) -> "Container":
+    def import_(
+        self,
+        path: str,
+        tag: Optional[str] = None,
+    ) -> "Container":
         """Reads the container from an OCI tarball on the host.
 
-        NOTE: currently this involves unpacking the tarball to an OCI store on
-        the
-        host at $XDG_CACHE_DIR/dagger/oci. This directory can be removed
-        whenever you
+        NOTE: this involves unpacking the tarball to an OCI store on the host
+        at
+        $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you
         like.
 
         Parameters
@@ -542,9 +545,14 @@ class Container(Type):
         path:
             Host's source path (e.g., "./tarball").
             Path can be relative to the engine's workdir or absolute.
+        tag:
+            Identifies the tag to import from the archive, if the archive
+            bundles
+            multiple tags.
         """
         _args = [
             Arg("path", path),
+            Arg("tag", tag, None),
         ]
         _ctx = self._select("import", _args)
         return Container(_ctx)

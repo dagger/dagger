@@ -555,6 +555,12 @@ type Container {
     Path can be relative to the engine's workdir or absolute.
     """
     path: String!
+
+    """
+    Identifies the tag to import from the archive, if the archive bundles
+    multiple tags.
+    """
+    tag: String
   ): Container!
 
   "Retrieves this container with a registry authentication for a given address."
