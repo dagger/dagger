@@ -901,6 +901,29 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Reads the container from an OCI tarball on the host.
+   *
+   * NOTE: currently this involves unpacking the tarball to an OCI store on the
+   * host at $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you
+   * like.
+   * @param path Host's source path (e.g., "./tarball").
+   * Path can be relative to the engine's workdir or absolute.
+   */
+  import(path: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "import",
+          args: { path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves the value of the specified label.
    */
   async label(name: string): Promise<string> {

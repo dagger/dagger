@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/project"
@@ -18,6 +19,7 @@ type InitializeArgs struct {
 	BKClient      *bkclient.Client
 	SolveOpts     bkclient.SolveOpt
 	SolveCh       chan *bkclient.SolveStatus
+	OCIStore      content.Store
 	Platform      specs.Platform
 	DisableHostRW bool
 	Auth          *auth.RegistryAuthProvider
@@ -47,7 +49,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&directorySchema{base, host},
 		&fileSchema{base, host},
 		&gitSchema{base},
-		&containerSchema{base, host},
+		&containerSchema{base, host, params.OCIStore},
 		&cacheSchema{base},
 		&secretSchema{base},
 		&hostSchema{base, host},

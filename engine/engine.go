@@ -11,6 +11,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/adrg/xdg"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/content/local"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
@@ -115,6 +118,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		allowedEntitlements = append(allowedEntitlements, entitlements.EntitlementSecurityInsecure)
 	}
 
+	ociStoreDir := filepath.Join(xdg.CacheHome, "dagger", "oci")
+	ociStore, err := local.NewStore(ociStoreDir)
+	if err != nil {
+		return err
+	}
+
 	solveOpts := bkclient.SolveOpt{
 		Session: []session.Attachable{
 			registryAuth,
@@ -131,6 +140,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			Type: "dagger",
 		}},
 		AllowedEntitlements: allowedEntitlements,
+		OCIStores: map[string]content.Store{
+			core.OCIStoreName: ociStore,
+		},
 	}
 
 	if !startOpts.DisableHostRW {
@@ -165,6 +177,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				Auth:           registryAuth,
 				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
 				Secrets:        secretStore,
+				OCIStore:       ociStore,
 			})
 			if err != nil {
 				return nil, err

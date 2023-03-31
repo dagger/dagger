@@ -503,6 +503,21 @@ func (r *Container) ImageRef(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// Reads the container from an OCI tarball on the host.
+//
+// NOTE: currently this involves unpacking the tarball to an OCI store on the
+// host at $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you
+// like.
+func (r *Container) Import(path string) *Container {
+	q := r.q.Select("import")
+	q = q.Arg("path", path)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves the value of the specified label.
 func (r *Container) Label(ctx context.Context, name string) (string, error) {
 	if r.label != nil {

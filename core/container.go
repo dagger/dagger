@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/docker/distribution/reference"
@@ -1355,6 +1357,123 @@ func (container *Container) Export(
 	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
+}
+
+const OCIStoreName = "dagger-oci"
+
+func (container *Container) Import(
+	ctx context.Context,
+	host *Host,
+	src string,
+	tag string,
+	store content.Store,
+) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	src, err = host.NormalizeDest(src)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := os.Open(src)
+	if err != nil {
+		return nil, err
+	}
+
+	defer file.Close()
+
+	stream := archive.NewImageImportStream(file, "")
+
+	desc, err := stream.Import(ctx, store)
+	if err != nil {
+		return nil, fmt.Errorf("image archive import: %w", err)
+	}
+
+	// NB: the repository portion of this ref doesn't actually matter, but it's
+	// pleasant to see something recognizable.
+	dummyRepo := "import"
+
+	indexBlob, err := content.ReadBlob(ctx, store, desc)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read blob: %w", err)
+	}
+
+	var idx specs.Index
+	err = json.Unmarshal(indexBlob, &idx)
+	if err != nil {
+		return nil, fmt.Errorf("image archive unmarshal index: %w", err)
+	}
+
+	// OCI manifest annotation that specifies an image's tag
+	const ociTagAnnotation = "org.opencontainers.image.ref.name"
+
+	platform := platforms.Only(payload.Platform)
+
+	for _, m := range idx.Manifests {
+		if m.Platform != nil {
+			if !platform.Match(*m.Platform) {
+				// incompatible
+				continue
+			}
+		}
+
+		if tag != "" {
+			if m.Annotations == nil {
+				continue
+			}
+
+			manifestTag, found := m.Annotations[ociTagAnnotation]
+			if !found || manifestTag != tag {
+				continue
+			}
+		}
+
+		st := llb.OCILayout(
+			fmt.Sprintf("%s@%s", dummyRepo, m.Digest),
+			llb.OCIStore("", OCIStoreName),
+			llb.Platform(payload.Platform),
+		)
+
+		manifestBlob, err := content.ReadBlob(ctx, store, m)
+		if err != nil {
+			return nil, fmt.Errorf("image archive read blob: %w", err)
+		}
+
+		var man specs.Manifest
+		err = json.Unmarshal(manifestBlob, &man)
+		if err != nil {
+			return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+		}
+
+		configBlob, err := content.ReadBlob(ctx, store, man.Config)
+		if err != nil {
+			return nil, fmt.Errorf("image archive read blob: %w", err)
+		}
+
+		st, err = st.WithImageConfig(configBlob)
+		if err != nil {
+			return nil, fmt.Errorf("image archive with image config: %w", err)
+		}
+
+		execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, fmt.Errorf("marshal root: %w", err)
+		}
+
+		payload.FS = execDef.ToPB()
+
+		id, err := payload.Encode()
+		if err != nil {
+			return nil, fmt.Errorf("encode: %w", err)
+		}
+
+		return &Container{ID: id}, nil
+	}
+
+	return nil, fmt.Errorf("image archive had no matching manifest for platform %s and tag %s", platforms.Format(payload.Platform), tag)
 }
 
 func (container *Container) Hostname() (string, error) {
