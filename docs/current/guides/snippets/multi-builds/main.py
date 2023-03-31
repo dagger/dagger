@@ -51,4 +51,4 @@ async def main():
         await outputs.export(".")
 
 
-anyio.run(build)
+anyio.run(main)

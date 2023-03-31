@@ -25,8 +25,8 @@ connect(async (client: Client) => {
         .withMountedDirectory("/src", src)
         .withWorkdir("/src")
 
-    await Promise.all(oses.map(async (os) => {
-        await Promise.all(arches.map(async (arch) => {
+    Promise.all(oses.map(async (os) => {
+        Promise.all(arches.map(async (arch) => {
             // create a directory for each OS and architecture
             const path = `build/${os}/${arch}/`
 
