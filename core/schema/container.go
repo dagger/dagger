@@ -581,7 +581,7 @@ type containerImportArgs struct {
 	Tag  string
 }
 
-func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) {
+func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
 	return parent.Import(ctx, s.host, args.Path, args.Tag, s.ociStore)
 }
 
