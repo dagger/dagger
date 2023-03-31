@@ -14,7 +14,7 @@ import TabItem from "@theme/TabItem";
 
 ## Introduction
 
-There are two possible approaches to loading container images built with Dagger into a local Docker engine. This tutorial describes them both in detail, although the second one is not recommended and is included only for completeness.
+There are two possible approaches to loading container images built with Dagger into a local Docker engine. This tutorial describes them both in detail, although only the first one is recommended.
 
 ## Requirements
 
