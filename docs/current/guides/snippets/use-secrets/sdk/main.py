@@ -18,7 +18,7 @@ async def main():
         # use secret for registry authentication
         addr = await (
           ctr
-          .with_registry_auth("docker.io", "DOCKER-HUB-USERNAMEr", secret)
+          .with_registry_auth("docker.io", "DOCKER-HUB-USERNAME", secret)
           .publish("DOCKER-HUB-USERNAME/my-nginx")
         )
 
