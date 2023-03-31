@@ -1,5 +1,5 @@
 ---
-slug: /252029/build-local-images
+slug: /252029/load-images-local-docker-engine
 displayed_sidebar: "current"
 category: "guides"
 authors: ["Vikram Vaswani"]
@@ -10,13 +10,11 @@ date: "2023-03-22"
 import Tabs from "@theme/Tabs";
 import TabItem from "@theme/TabItem";
 
-# Build Container Images for Local Development with Dagger
+# Load Container Images into a Local Docker Engine
 
 ## Introduction
 
-There are a number of situations where you might want to build container images for local use - for example, for quick prototyping, development or testing on your own computer, or in air-gapped environments without network access.
-
-There are two possible approaches to building container images for local use with Dagger, although only the first one is recommended. This tutorial describes them both in detail.
+There are two possible approaches to loading container images built with Dagger into a local Docker engine. This tutorial describes them both in detail, although the second one is not recommended and is included only for completeness.
 
 ## Requirements
 
@@ -33,7 +31,7 @@ This approach involves building the container image and exporting it to the host
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/build-local-images/export/main.go
+```go file=./snippets/load-images-local-docker-engine/export/main.go
 ```
 
 This code listing performs the following operations:
@@ -47,7 +45,7 @@ This code listing performs the following operations:
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./snippets/build-local-images/export/index.mjs
+```javascript file=./snippets/load-images-local-docker-engine/export/index.mjs
 ```
 
 This code listing performs the following operations:
@@ -61,7 +59,7 @@ This code listing performs the following operations:
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/build-local-images/export/main.py
+```python file=./snippets/load-images-local-docker-engine/export/main.py
 ```
 
 This code listing performs the following operations:
@@ -92,7 +90,7 @@ docker run --rm --net=host 2e340...
 ## Approach 2: Use a local registry server
 
 :::danger
-This approach is not recommended and is included only for documentation completeness.
+This approach is significantly more complex than the previous one and is therefore not recommended. It is included only for documentation completeness.
 :::
 
 :::danger
@@ -118,7 +116,7 @@ This approach involves building and publishing the container image to a local re
   <Tabs groupId="language">
   <TabItem value="Go">
 
-  ```go file=./snippets/build-local-images/push/main.go
+  ```go file=./snippets/load-images-local-docker-engine/push/main.go
   ```
 
   This code listing performs the following operations:
@@ -131,7 +129,7 @@ This approach involves building and publishing the container image to a local re
   </TabItem>
   <TabItem value="Node.js">
 
-  ```javascript file=./snippets/build-local-images/push/index.mjs
+  ```javascript file=./snippets/load-images-local-docker-engine/push/index.mjs
   ```
 
   This code listing performs the following operations:
@@ -144,7 +142,7 @@ This approach involves building and publishing the container image to a local re
   </TabItem>
   <TabItem value="Python">
 
-  ```python file=./snippets/build-local-images/push/main.py
+  ```python file=./snippets/load-images-local-docker-engine/push/main.py
   ```
 
   This code listing performs the following operations:
