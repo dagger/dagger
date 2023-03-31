@@ -50,7 +50,7 @@
 
 An API Playground embed allows users to run code snippets interactively in their browser.
 
-NOTE: An API Playground embed is generated from a source file, so you must still create and maintain a code snippet file for each embed. This also ensures that the code snippet is automatically tested by the CI. Currently supported file extensions are `.go`, `.ts`, `.js`, `.python`.
+NOTE: An API Playground embed is generated from a source file, so you must still create and maintain a code snippet file for each embed. This also ensures that the code snippet is automatically tested by the CI. Currently supported file extensions are `.go`, `.ts` (Quickstart only), `.js`, `.mjs` and `.py`.
 
 Follow the steps below to create an API Playground embed:
 
