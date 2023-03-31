@@ -1373,11 +1373,6 @@ func (container *Container) Import(
 		return nil, err
 	}
 
-	src, err = host.NormalizeDest(src)
-	if err != nil {
-		return nil, err
-	}
-
 	file, err := os.Open(src)
 	if err != nil {
 		return nil, err
@@ -1392,91 +1387,58 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("image archive import: %w", err)
 	}
 
+	manifestDesc, err := resolveIndex(ctx, store, desc, payload.Platform, tag)
+	if err != nil {
+		return nil, fmt.Errorf("image archive resolve index: %w", err)
+	}
+
+	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
+	}
+
+	var man specs.Manifest
+	err = json.Unmarshal(manifestBlob, &man)
+	if err != nil {
+		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+	}
+
+	configBlob, err := content.ReadBlob(ctx, store, man.Config)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
+	}
+
+	var imgSpec specs.Image
+	err = json.Unmarshal(configBlob, &imgSpec)
+	if err != nil {
+		return nil, fmt.Errorf("load image config: %w", err)
+	}
+
+	payload.Config = imgSpec.Config
+
 	// NB: the repository portion of this ref doesn't actually matter, but it's
 	// pleasant to see something recognizable.
 	dummyRepo := "dagger/import"
 
-	indexBlob, err := content.ReadBlob(ctx, store, desc)
+	st := llb.OCILayout(
+		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		llb.OCIStore("", OCIStoreName),
+		llb.Platform(payload.Platform),
+	)
+
+	execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 	if err != nil {
-		return nil, fmt.Errorf("image archive read blob: %w", err)
+		return nil, fmt.Errorf("marshal root: %w", err)
 	}
 
-	var idx specs.Index
-	err = json.Unmarshal(indexBlob, &idx)
+	payload.FS = execDef.ToPB()
+
+	id, err := payload.Encode()
 	if err != nil {
-		return nil, fmt.Errorf("image archive unmarshal index: %w", err)
+		return nil, fmt.Errorf("encode: %w", err)
 	}
 
-	// OCI manifest annotation that specifies an image's tag
-	const ociTagAnnotation = "org.opencontainers.image.ref.name"
-
-	platform := platforms.Only(payload.Platform)
-
-	for _, m := range idx.Manifests {
-		if m.Platform != nil {
-			if !platform.Match(*m.Platform) {
-				// incompatible
-				continue
-			}
-		}
-
-		if tag != "" {
-			if m.Annotations == nil {
-				continue
-			}
-
-			manifestTag, found := m.Annotations[ociTagAnnotation]
-			if !found || manifestTag != tag {
-				continue
-			}
-		}
-
-		st := llb.OCILayout(
-			fmt.Sprintf("%s@%s", dummyRepo, m.Digest),
-			llb.OCIStore("", OCIStoreName),
-			llb.Platform(payload.Platform),
-		)
-
-		manifestBlob, err := content.ReadBlob(ctx, store, m)
-		if err != nil {
-			return nil, fmt.Errorf("image archive read blob: %w", err)
-		}
-
-		var man specs.Manifest
-		err = json.Unmarshal(manifestBlob, &man)
-		if err != nil {
-			return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-		}
-
-		configBlob, err := content.ReadBlob(ctx, store, man.Config)
-		if err != nil {
-			return nil, fmt.Errorf("image archive read blob: %w", err)
-		}
-
-		var imgSpec specs.Image
-		err = json.Unmarshal(configBlob, &imgSpec)
-		if err != nil {
-			return nil, fmt.Errorf("load image config: %w", err)
-		}
-
-		payload.Config = imgSpec.Config
-
-		execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-		if err != nil {
-			return nil, fmt.Errorf("marshal root: %w", err)
-		}
-
-		payload.FS = execDef.ToPB()
-
-		id, err := payload.Encode()
-		if err != nil {
-			return nil, fmt.Errorf("encode: %w", err)
-		}
-
-		return &Container{ID: id}, nil
-	}
-
-	return nil, fmt.Errorf("image archive had no matching manifest for platform %s and tag %s", platforms.Format(payload.Platform), tag)
+	return &Container{ID: id}, nil
 }
 
 func (container *Container) Hostname() (string, error) {
@@ -1783,6 +1745,61 @@ func b32(n uint64) string {
 	return base32.HexEncoding.
 		WithPadding(base32.NoPadding).
 		EncodeToString(sum[:])
+}
+
+// OCI manifest annotation that specifies an image's tag
+const ociTagAnnotation = "org.opencontainers.image.ref.name"
+
+func resolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
+	if desc.MediaType != specs.MediaTypeImageIndex {
+		return nil, fmt.Errorf("expected index, got %s", desc.MediaType)
+	}
+
+	indexBlob, err := content.ReadBlob(ctx, store, desc)
+	if err != nil {
+		return nil, fmt.Errorf("read index blob: %w", err)
+	}
+
+	var idx specs.Index
+	err = json.Unmarshal(indexBlob, &idx)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal index: %w", err)
+	}
+
+	matcher := platforms.Only(platform)
+
+	for _, m := range idx.Manifests {
+		if m.Platform != nil {
+			if !matcher.Match(*m.Platform) {
+				// incompatible
+				continue
+			}
+		}
+
+		if tag != "" {
+			if m.Annotations == nil {
+				continue
+			}
+
+			manifestTag, found := m.Annotations[ociTagAnnotation]
+			if !found || manifestTag != tag {
+				continue
+			}
+		}
+
+		switch m.MediaType {
+		case specs.MediaTypeImageManifest:
+			return &m, nil
+
+		case specs.MediaTypeImageIndex:
+			return resolveIndex(ctx, store, m, platform, tag)
+
+		default:
+			return nil, fmt.Errorf("expected manifest or index, got %s", m.MediaType)
+		}
+	}
+
+	return nil, fmt.Errorf("no manifest for platform %s and tag %s", platforms.Format(platform), tag)
 }
 
 // Override the progress pipeline of every LLB vertex in the DAG.

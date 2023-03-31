@@ -2561,6 +2561,35 @@ func TestContainerExport(t *testing.T) {
 	})
 }
 
+func TestContainerImport(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	wd := t.TempDir()
+	dest := t.TempDir()
+
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	require.NoError(t, err)
+	defer c.Close()
+
+	ctr := c.Container().
+		From("alpine:3.16.2").
+		WithEnvVariable("FOO", "bar")
+
+	imagePath := filepath.Join(dest, "image.tar")
+
+	ok, err := ctr.Export(ctx, imagePath)
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	imported := c.Container().Import(imagePath)
+
+	out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar\n", out)
+}
+
 func TestContainerMultiPlatformExport(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -2592,6 +2621,40 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
+}
+
+func TestContainerMultiPlatformImport(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	variants := make([]*dagger.Container, 0, len(platformToUname))
+	for platform := range platformToUname {
+		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From("alpine:3.16.2")
+
+		variants = append(variants, ctr)
+	}
+
+	imagePath := filepath.Join(t.TempDir(), "image.tar")
+
+	ok, err := c.Container().Export(ctx, imagePath, dagger.ContainerExportOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	for platform, uname := range platformToUname {
+		imported := c.Container(dagger.ContainerOpts{Platform: platform}).
+			Import(imagePath)
+
+		out, err := imported.WithExec([]string{"uname", "-m"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, uname+"\n", out)
+	}
 }
 
 func TestContainerWithDirectoryToMount(t *testing.T) {
