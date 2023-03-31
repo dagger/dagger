@@ -22,8 +22,8 @@ func main() {
 
 	contextDir := client.Host().Directory(".")
 
-	ref, err := client.Container().
-		Build(contextDir).
+	ref, err := contextDir.
+		DockerBuild().
 		Publish(ctx, fmt.Sprintf("ttl.sh/hello-dagger-%.0f", math.Floor(rand.Float64()*10000000))) //#nosec
 	if err != nil {
 		panic(err)
