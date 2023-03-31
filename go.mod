@@ -25,8 +25,8 @@ require (
 	github.com/google/go-containerregistry v0.13.0
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.2.0
-	// https://github.com/moby/buildkit/commit/deba8768c675b8da650bf14281c2b7d03de7d63b
-	github.com/moby/buildkit v0.11.0-rc3.0.20230322213239-deba8768c675
+	// https://github.com/moby/buildkit/commit/3187d2d056de7e3f976ef62cd548499dc3472a7e
+	github.com/moby/buildkit v0.11.0-rc3.0.20230331212110-3187d2d056de
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/opencontainers/runtime-spec v1.1.0-rc.1
@@ -141,7 +141,7 @@ require (
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
 	github.com/onsi/gomega v1.24.2 // indirect
-	github.com/opencontainers/runc v1.1.4 // indirect
+	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
