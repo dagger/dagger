@@ -1394,7 +1394,7 @@ func (container *Container) Import(
 
 	// NB: the repository portion of this ref doesn't actually matter, but it's
 	// pleasant to see something recognizable.
-	dummyRepo := "import"
+	dummyRepo := "dagger/import"
 
 	indexBlob, err := content.ReadBlob(ctx, store, desc)
 	if err != nil {
@@ -1453,10 +1453,13 @@ func (container *Container) Import(
 			return nil, fmt.Errorf("image archive read blob: %w", err)
 		}
 
-		st, err = st.WithImageConfig(configBlob)
+		var imgSpec specs.Image
+		err = json.Unmarshal(configBlob, &imgSpec)
 		if err != nil {
-			return nil, fmt.Errorf("image archive with image config: %w", err)
+			return nil, fmt.Errorf("load image config: %w", err)
 		}
+
+		payload.Config = imgSpec.Config
 
 		execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 		if err != nil {
