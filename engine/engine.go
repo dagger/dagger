@@ -199,7 +199,17 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	})
 
-	return eg.Wait()
+	err = eg.Wait()
+	if err != nil {
+		// preserve context error if any, otherwise we get an error sent over gRPC
+		// that loses the original context error
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+
+	return nil
 }
 
 func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus) error {

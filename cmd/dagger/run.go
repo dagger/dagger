@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -28,14 +29,29 @@ dagger run -- sh -c 'curl \
 -u $DAGGER_SESSION_TOKEN: \
 -H "content-type:application/json" \
 -d "{\"query\":\"{container{id}}\"}" http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
-	RunE:         Run,
+	Run:          Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
 }
 
-func Run(cmd *cobra.Command, args []string) error {
+func Run(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
+	err := run(ctx, args)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			fmt.Fprintln(os.Stderr, "run canceled")
+			os.Exit(2)
+			return
+		}
+
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+		return
+	}
+}
+
+func run(ctx context.Context, args []string) error {
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return fmt.Errorf("generate uuid: %w", err)
@@ -69,7 +85,7 @@ func Run(cmd *cobra.Command, args []string) error {
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
-	err = withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
+	return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		err := subCmd.Start()
@@ -84,15 +100,6 @@ func Run(cmd *cobra.Command, args []string) error {
 		_, err = program.Run()
 		return err
 	})
-	if err != nil {
-		if ctx.Err() != nil {
-			// user interrupted
-			os.Exit(2)
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 type progOutWriter struct {
