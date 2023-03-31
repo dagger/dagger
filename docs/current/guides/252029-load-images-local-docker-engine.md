@@ -26,7 +26,7 @@ This tutorial assumes that:
 
 ## Approach 1: Use an exported tarball
 
-This approach involves building the container image and exporting it to the host filesystem as a TAR file with Dagger, and then loading it into Docker. Here's an example:
+This approach involves and exporting the container image to the host filesystem as a TAR file with Dagger, and then loading it into Docker. Here's an example:
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -97,7 +97,7 @@ This approach is significantly more complex than the previous one and is therefo
 The commands in this section deploy a local registry server without authentication or TLS. This is highly insecure and should only be used for local development, debugging and testing. Refer to the Docker documentation for details on [how to deploy a more secure and production-ready registry](https://docs.docker.com/registry/deploying/).
 :::
 
-This approach involves building and publishing the container image to a local registry, and then pulling from it as usual with Docker. Follow the steps below:
+This approach involves publishing the container image to a local registry, and then pulling from it as usual with Docker. Follow the steps below:
 
 1. Deploy a local container registry with Docker. This local registry must be configured to run in the same network as the Dagger Engine container, and must use a host volume for the registry data.
 
