@@ -2566,10 +2566,9 @@ func TestContainerImport(t *testing.T) {
 
 	ctx := context.Background()
 
-	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -2583,7 +2582,7 @@ func TestContainerImport(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	imported := c.Container().Import(imagePath)
+	imported := c.Container().Import(c.Host().Directory(dest).File(imagePath))
 
 	out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 	require.NoError(t, err)
@@ -2639,7 +2638,8 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 		variants = append(variants, ctr)
 	}
 
-	imagePath := filepath.Join(t.TempDir(), "image.tar")
+	tmp := t.TempDir()
+	imagePath := filepath.Join(tmp, "image.tar")
 
 	ok, err := c.Container().Export(ctx, imagePath, dagger.ContainerExportOpts{
 		PlatformVariants: variants,
@@ -2649,7 +2649,7 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 
 	for platform, uname := range platformToUname {
 		imported := c.Container(dagger.ContainerOpts{Platform: platform}).
-			Import(imagePath)
+			Import(c.Host().Directory(tmp).File("image.tar"))
 
 		out, err := imported.WithExec([]string{"uname", "-m"}).Stdout(ctx)
 		require.NoError(t, err)

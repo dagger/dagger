@@ -1354,7 +1354,7 @@ func (container *Container) Export(
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return out, nil
 		},
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
 }
@@ -1364,7 +1364,7 @@ const OCIStoreName = "dagger-oci"
 func (container *Container) Import(
 	ctx context.Context,
 	host *Host,
-	src string,
+	source io.Reader,
 	tag string,
 	store content.Store,
 ) (*Container, error) {
@@ -1373,14 +1373,7 @@ func (container *Container) Import(
 		return nil, err
 	}
 
-	file, err := os.Open(src)
-	if err != nil {
-		return nil, err
-	}
-
-	defer file.Close()
-
-	stream := archive.NewImageImportStream(file, "")
+	stream := archive.NewImageImportStream(source, "")
 
 	desc, err := stream.Import(ctx, store)
 	if err != nil {

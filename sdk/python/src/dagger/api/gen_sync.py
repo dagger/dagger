@@ -530,10 +530,10 @@ class Container(Type):
     @typecheck
     def import_(
         self,
-        path: str,
+        source: "File",
         tag: Optional[str] = None,
     ) -> "Container":
-        """Reads the container from an OCI tarball on the host.
+        """Reads the container from an OCI tarball.
 
         NOTE: this involves unpacking the tarball to an OCI store on the host
         at
@@ -542,16 +542,15 @@ class Container(Type):
 
         Parameters
         ----------
-        path:
-            Host's source path (e.g., "./tarball").
-            Path can be relative to the engine's workdir or absolute.
+        source:
+            File to read the container from.
         tag:
             Identifies the tag to import from the archive, if the archive
             bundles
             multiple tags.
         """
         _args = [
-            Arg("path", path),
+            Arg("source", source),
             Arg("tag", tag, None),
         ]
         _ctx = self._select("import", _args)

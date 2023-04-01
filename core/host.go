@@ -128,7 +128,6 @@ func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) 
 func (host *Host) Export(
 	ctx context.Context,
 	export bkclient.ExportEntry,
-	dest string,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,

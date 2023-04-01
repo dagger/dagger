@@ -577,12 +577,21 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 }
 
 type containerImportArgs struct {
-	Path string
-	Tag  string
+	Source core.FileID
+	Tag    string
 }
 
 func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	return parent.Import(ctx, s.host, args.Path, args.Tag, s.ociStore)
+	file := &core.File{ID: args.Source}
+
+	src, err := file.Open(ctx, s.host, s.bkClient, s.solveOpts, s.solveCh)
+	if err != nil {
+		return nil, err
+	}
+
+	defer src.Close()
+
+	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {

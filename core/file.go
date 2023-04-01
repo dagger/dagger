@@ -1,8 +1,10 @@
 package core
 
 import (
+	"archive/tar"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
@@ -136,6 +138,65 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform, payload.Services)
 }
 
+func (file *File) Open(
+	ctx context.Context,
+	host *Host,
+	bkClient *bkclient.Client,
+	solveOpts bkclient.SolveOpt,
+	solveCh chan<- *bkclient.SolveStatus,
+) (io.ReadCloser, error) {
+	srcPayload, err := file.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	r, w := io.Pipe()
+
+	go func() {
+		w.CloseWithError(host.Export(ctx, bkclient.ExportEntry{
+			Type: bkclient.ExporterTar,
+			Output: func(map[string]string) (io.WriteCloser, error) {
+				return w, nil
+			},
+		}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+			return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
+				src, err := srcPayload.State()
+				if err != nil {
+					return nil, err
+				}
+
+				def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+				if err != nil {
+					return nil, err
+				}
+
+				return gw.Solve(ctx, bkgw.SolveRequest{
+					Evaluate:   true,
+					Definition: def.ToPB(),
+				})
+			})
+		}))
+	}()
+
+	tr := tar.NewReader(r)
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil, fmt.Errorf("file %q not found in image", srcPayload.File)
+		}
+
+		if filepath.Base(hdr.Name) == filepath.Base(srcPayload.File) {
+			return readCloser{tr, r}, nil
+		}
+	}
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
 func (file *File) Export(
 	ctx context.Context,
 	host *Host,
@@ -166,7 +227,7 @@ func (file *File) Export(
 	return host.Export(ctx, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: destDir,
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
 			src, err := srcPayload.State()
 			if err != nil {

@@ -510,13 +510,13 @@ type ContainerImportOpts struct {
 	Tag string
 }
 
-// Reads the container from an OCI tarball on the host.
+// Reads the container from an OCI tarball.
 //
 // NOTE: this involves unpacking the tarball to an OCI store on the host at
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
-func (r *Container) Import(path string, opts ...ContainerImportOpts) *Container {
+func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
 	q := r.q.Select("import")
-	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 	// `tag` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Tag) {
