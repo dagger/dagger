@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 	"time"
@@ -387,36 +388,51 @@ func setupBundle() int {
 	}
 
 	// Run the actual runc binary as a child process with the (possibly updated) config
-	// #nosec G204
-	cmd := exec.Command(runcPath, os.Args[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Pdeathsig: syscall.SIGKILL,
-	}
-
-	sigCh := make(chan os.Signal, 32)
-	signal.Notify(sigCh)
-	if err := cmd.Start(); err != nil {
-		fmt.Printf("Error starting runc: %v", err)
-		return 1
-	}
+	// Run it in a separate goroutine locked to the OS thread to ensure that Pdeathsig
+	// is never sent incorrectly: https://github.com/golang/go/issues/27505
+	exitCodeCh := make(chan int)
 	go func() {
-		for sig := range sigCh {
-			cmd.Process.Signal(sig)
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		defer close(exitCodeCh)
+		// #nosec G204
+		cmd := exec.Command(runcPath, os.Args[1:]...)
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Pdeathsig: syscall.SIGKILL,
+		}
+
+		sigCh := make(chan os.Signal, 32)
+		signal.Notify(sigCh)
+		if err := cmd.Start(); err != nil {
+			fmt.Printf("Error starting runc: %v", err)
+			exitCodeCh <- 1
+			return
+		}
+		go func() {
+			for sig := range sigCh {
+				cmd.Process.Signal(sig)
+			}
+		}()
+		if err := cmd.Wait(); err != nil {
+			if exiterr, ok := err.(*exec.ExitError); ok {
+				if waitStatus, ok := exiterr.Sys().(syscall.WaitStatus); ok {
+					exitcode := waitStatus.ExitStatus()
+					if exitcode < 0 {
+						exitcode = 255 // 255 is "unknown exit code"
+					}
+					exitCodeCh <- exitcode
+					return
+				}
+			}
+			fmt.Printf("Error waiting for runc: %v", err)
+			exitCodeCh <- 1
+			return
 		}
 	}()
-	if err := cmd.Wait(); err != nil {
-		if exiterr, ok := err.(*exec.ExitError); ok {
-			if exitcode, ok := exiterr.Sys().(syscall.WaitStatus); ok {
-				return exitcode.ExitStatus()
-			}
-		}
-		fmt.Printf("Error waiting for runc: %v", err)
-		return 1
-	}
-	return 0
+	return <-exitCodeCh
 }
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
