@@ -25,21 +25,21 @@ connect(async (client: Client) => {
         .withMountedDirectory("/src", src)
         .withWorkdir("/src")
 
-    Promise.all(oses.map(async (os) => {
-        Promise.all(arches.map(async (arch) => {
-            // create a directory for each OS and architecture
-            const path = `build/${os}/${arch}/`
+        for (const os of oses) {
+            for (const arch of arches) {
+                // create a directory for each OS and architecture
+                const path = `build/${os}/${arch}/`
 
-            const build = golang
-                // set GOARCH and GOOS in the build environment
-                .withEnvVariable("GOOS", os)
-                .withEnvVariable("GOARCH", arch)
-                .withExec(["go", "build", "-o", path])
+                const build = golang
+                    // set GOARCH and GOOS in the build environment
+                    .withEnvVariable("GOOS", os)
+                    .withEnvVariable("GOARCH", arch)
+                    .withExec(["go", "build", "-o", path])
 
-            // add build to outputs
-            outputs = outputs.withDirectory(path, build.directory(path))
-        }))
-    }))
+                // add build to outputs
+                outputs = outputs.withDirectory(path, build.directory(path))
+            }
+        }
 
     // write build artifacts to host
     await outputs.export(".")
