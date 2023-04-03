@@ -72,9 +72,13 @@ func (m Model) Init() tea.Cmd {
 	)
 }
 
-type CommandOutMsg []byte
+type CommandOutMsg struct {
+	Output []byte
+}
 
-type CommandExitMsg error
+type CommandExitMsg struct {
+	Err error
+}
 
 type endMsg struct{}
 
@@ -99,6 +103,10 @@ func followTick() tea.Cmd {
 	})
 }
 
+func (m Model) IsDone() bool {
+	return m.done
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -109,11 +117,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.processKeyMsg(msg)
 	case CommandOutMsg:
-		m.rootLogs.Write(msg)
+		m.rootLogs.Write(msg.Output)
 	case CommandExitMsg:
 		m.done = true
-		if msg != nil {
-			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Error()))
+		if msg.Err != nil {
+			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
 		}
 	case followMsg:
 		if !m.follow {

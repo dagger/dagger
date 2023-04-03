@@ -137,14 +137,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
 		return handleSolveEvents(startOpts, solveCh)
 	})
 
 	eg.Go(func() error {
-		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err := c.Build(groupCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.
@@ -203,6 +203,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		// preserve context error if any, otherwise we get an error sent over gRPC
 		// that loses the original context error
+		//
+		// NB: only do this for the outer context; groupCtx.Err() will be != nil if
+		// any of the group members errored, which isn't interesting
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}

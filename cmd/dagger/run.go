@@ -101,7 +101,10 @@ func run(ctx context.Context, args []string) error {
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
-	return withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
+	exited := make(chan error, 1)
+
+	var finalModel tui.Model
+	err = withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		err := subCmd.Start()
@@ -110,12 +113,23 @@ func run(ctx context.Context, args []string) error {
 		}
 
 		go func() {
-			program.Send(tui.CommandExitMsg(subCmd.Wait()))
+			exitErr := subCmd.Wait()
+			exited <- exitErr
+			program.Send(tui.CommandExitMsg{Err: exitErr})
 		}()
 
-		_, err = program.Run()
+		m, err := program.Run()
+		finalModel = m.(tui.Model)
 		return err
 	})
+
+	if finalModel.IsDone() {
+		// propagate command result
+		return <-exited
+	}
+
+	// something else happened; bubble up error, if any
+	return err
 }
 
 type progOutWriter struct {
@@ -123,6 +137,6 @@ type progOutWriter struct {
 }
 
 func (w progOutWriter) Write(p []byte) (int, error) {
-	w.prog.Send(tui.CommandOutMsg(p))
+	w.prog.Send(tui.CommandOutMsg{Output: p})
 	return len(p), nil
 }
