@@ -22,13 +22,23 @@ var runCmd = &cobra.Command{
 	Use:                   "run [command]",
 	Aliases:               []string{"r"},
 	DisableFlagsInUseLine: true,
-	Long:                  "Runs the specified command in a Dagger session\n\nDAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected automatically.",
-	Short:                 "Runs a command in a Dagger session",
-	Example: `
-dagger run -- sh -c 'curl \
--u $DAGGER_SESSION_TOKEN: \
--H "content-type:application/json" \
--d "{\"query\":\"{container{id}}\"}" http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
+	Long: `Runs the specified command in a Dagger session and shows progress in a TUI
+
+DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected automatically.`,
+	Short: "Runs a command in a Dagger session",
+	Example: `  Run a Dagger pipeline written in Go:
+    dagger run go run main.go
+
+  Run a Dagger pipeline written in Python:
+    dagger run node pipeline.mjs
+
+  Run a Dagger API request directly:
+    jq -n '{query:"{container{id}}"}' | \
+      dagger run sh -c 'curl -s \
+        -u $DAGGER_SESSION_TOKEN: \
+        -H "content-type:application/json" \
+        -d @- \
+        http://127.0.0.1:$DAGGER_SESSION_PORT/query'`,
 	Run:          Run,
 	Args:         cobra.MinimumNArgs(1),
 	SilenceUsage: true,
@@ -86,6 +96,7 @@ func run(ctx context.Context, args []string) error {
 	cmdline := strings.Join(args, " ")
 	model := tui.New(quit, journalR, cmdline)
 	program := tea.NewProgram(model, tea.WithAltScreen())
+	subCmd.Stdin = os.Stdin
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
