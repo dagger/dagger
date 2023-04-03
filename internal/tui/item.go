@@ -257,11 +257,12 @@ func (g *Group) sort() {
 		}
 
 		// fall back on chronological
-		if ie.Started() != nil && je.Started() != nil {
+		switch {
+		case ie.Started() != nil && je.Started() != nil:
 			return false
-		} else if ie.Started() == nil && je.Started() == nil {
+		case ie.Started() == nil && je.Started() == nil:
 			return true
-		} else if ie.Started() != nil && je.Started() != nil {
+		case ie.Started() != nil && je.Started() != nil:
 			return !ie.Started().After(*je.Started())
 		}
 
