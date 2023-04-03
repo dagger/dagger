@@ -2775,6 +2775,24 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Sets a secret given a user defined name to its plaintext and returns the secret.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The user defined name for this secret
+    /// * `plaintext` - The plaintext of the secret
+    pub fn set_secret(&self, name: impl Into<String>, plaintext: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("setSecret");
+
+        query = query.arg("name", name.into());
+        query = query.arg("plaintext", plaintext.into());
+
+        return Secret {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Loads a socket by its ID.
     ///
     /// # Arguments
