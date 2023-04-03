@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-core"
-version = "0.2.8"
+version = "0.2.9"
 dependencies = [
  "async-trait",
  "base64",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "dagger-core",
  "derive_builder",

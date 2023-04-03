@@ -1,6 +1,6 @@
 [package]
 name = "dagger-sdk"
-version = "0.2.19"
+version = "0.2.20"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
