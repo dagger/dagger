@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagger/dagger/internal/engine/journal"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/opencontainers/go-digest"
 )
 
 func New(quit func(), r journal.Reader, rootName string) *Model {
@@ -29,7 +30,7 @@ func New(quit func(), r journal.Reader, rootName string) *Model {
 		},
 		root:      root,
 		rootLogs:  rootLogs,
-		itemsByID: make(map[string]*Item),
+		itemsByID: make(map[digest.Digest]*Item),
 		details:   Details{},
 		follow:    true,
 		journal:   r,
@@ -45,7 +46,7 @@ type Model struct {
 	quit func()
 
 	journal   journal.Reader
-	itemsByID map[string]*Item
+	itemsByID map[digest.Digest]*Item
 	root      *Group
 	rootLogs  *Vterm
 
@@ -216,7 +217,7 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		v.Started = m.adjustLocalTime(v.Started)
 		v.Completed = m.adjustLocalTime(v.Completed)
 
-		item := m.itemsByID[v.Digest.String()]
+		item := m.itemsByID[v.Digest]
 		if item == nil {
 			item = NewItem(v, m.width)
 			cmds = append(cmds, item.Init())
@@ -232,7 +233,7 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 	}
 
 	for _, s := range msg.Statuses {
-		item := m.itemsByID[s.Vertex.String()]
+		item := m.itemsByID[s.Vertex]
 		if item == nil {
 			continue
 		}
@@ -240,7 +241,7 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 	}
 
 	for _, l := range msg.Logs {
-		item := m.itemsByID[l.Vertex.String()]
+		item := m.itemsByID[l.Vertex]
 		if item == nil {
 			continue
 		}

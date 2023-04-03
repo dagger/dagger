@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagger/dagger/core/pipeline"
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/opencontainers/go-digest"
 	"github.com/tonistiigi/units"
 )
 
@@ -43,7 +44,8 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 	saneName := strings.Join(strings.Fields(name.Name), " ")
 
 	return &Item{
-		id:            v.Digest.String(),
+		id:            v.Digest,
+		inputs:        v.Inputs,
 		name:          saneName,
 		group:         group,
 		logs:          &bytes.Buffer{},
@@ -57,7 +59,8 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 var _ TreeEntry = &Item{}
 
 type Item struct {
-	id            string
+	id            digest.Digest
+	inputs        []digest.Digest
 	name          string
 	group         []string
 	started       *time.Time
@@ -73,14 +76,15 @@ type Item struct {
 	width         int
 }
 
-func (i *Item) ID() string            { return i.id }
-func (i *Item) Name() string          { return i.name }
-func (i *Item) Internal() bool        { return i.internal }
-func (i *Item) Entries() []TreeEntry  { return nil }
-func (i *Item) Started() *time.Time   { return i.started }
-func (i *Item) Completed() *time.Time { return i.completed }
-func (i *Item) Cached() bool          { return i.cached }
-func (i *Item) Error() string         { return i.error }
+func (i *Item) ID() digest.Digest       { return i.id }
+func (i *Item) Inputs() []digest.Digest { return i.inputs }
+func (i *Item) Name() string            { return i.name }
+func (i *Item) Internal() bool          { return i.internal }
+func (i *Item) Entries() []TreeEntry    { return nil }
+func (i *Item) Started() *time.Time     { return i.started }
+func (i *Item) Completed() *time.Time   { return i.completed }
+func (i *Item) Cached() bool            { return i.cached }
+func (i *Item) Error() string           { return i.error }
 
 func (i *Item) UpdateVertex(v *bkclient.Vertex) {
 	// Started clock might reset for each layer when pulling images.
@@ -213,8 +217,12 @@ type Group struct {
 
 var _ TreeEntry = &Group{}
 
-func (g *Group) ID() string {
-	return g.id
+func (g *Group) ID() digest.Digest {
+	return digest.Digest(g.id)
+}
+
+func (g *Group) Inputs() []digest.Digest {
+	return nil
 }
 
 func (g *Group) Name() string {
@@ -236,12 +244,62 @@ func NewGroup(id, name string, logs groupModel) *Group {
 	}
 }
 
+func (g *Group) sort() {
+	sort.SliceStable(g.entries, func(i, j int) bool {
+		ie := g.entries[i]
+		je := g.entries[j]
+
+		// sort ancestors first
+		if g.isAncestor(ie, je) {
+			return true
+		} else if g.isAncestor(je, ie) {
+			return false
+		}
+
+		// fall back on chronological
+		if ie.Started() != nil && je.Started() != nil {
+			return false
+		} else if ie.Started() == nil && je.Started() == nil {
+			return true
+		} else if ie.Started() != nil && je.Started() != nil {
+			return !ie.Started().After(*je.Started())
+		}
+
+		// fall back on name (not sure if this will ever occur)
+		return ie.Name() < je.Name()
+	})
+}
+
+func (g *Group) isAncestor(i, j TreeEntry) bool {
+	if i == j {
+		return false
+	}
+
+	id := i.ID()
+
+	for _, d := range j.Inputs() {
+		if d == id {
+			return true
+		}
+
+		e, ok := g.entriesByID[string(d)]
+		if ok && g.isAncestor(i, e) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (g *Group) Add(group []string, e TreeEntry) {
+	defer g.sort()
+
 	if len(group) == 0 {
 		g.entries = append(g.entries, e)
-		g.entriesByID[e.ID()] = e
+		g.entriesByID[string(e.ID())] = e
 		return
 	}
+
 	parent := group[0]
 	sub, ok := g.entriesByID[parent]
 	if !ok {

@@ -9,12 +9,15 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/opencontainers/go-digest"
 )
 
 type TreeEntry interface {
 	tea.Model
 
-	ID() string
+	ID() digest.Digest
+	Inputs() []digest.Digest
+
 	Name() string
 
 	Entries() []TreeEntry

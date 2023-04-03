@@ -45,6 +45,7 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 func init() {
+	// don't require -- to disambiguate subcommand flags
 	runCmd.Flags().SetInterspersed(false)
 }
 
