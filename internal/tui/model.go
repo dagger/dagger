@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -90,9 +89,13 @@ func (m Model) adjustLocalTime(t *time.Time) *time.Time {
 
 type followMsg struct{}
 
+func Follow() tea.Msg {
+	return followMsg{}
+}
+
 func followTick() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(_ time.Time) tea.Msg {
-		return followMsg{}
+		return Follow()
 	})
 }
 
@@ -147,9 +150,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// 	return m, tea.Quit
 		// }
 		return m, nil
-
 	default:
-		log.Printf("unhandled message: %T (%v)", msg, msg)
+		// ignore; we get an occasional <nil> message, not sure where it's from,
+		// but logging will disrupt the UI
 	}
 
 	return m, nil
@@ -164,9 +167,7 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, keys.Follow):
 		m.follow = !m.follow
-		return m, func() tea.Msg {
-			return followMsg{}
-		}
+		return m, Follow
 	case key.Matches(msg, keys.Up):
 		if m.detailsFocus {
 			newDetails, cmd := m.details.Update(msg)
