@@ -41,14 +41,17 @@ async def test_container_build():
         assert words[0] == "dagger"
 
 
-async def test_container_with_env_variable():
+@pytest.mark.parametrize("val", ["spam", ""])
+async def test_container_with_env_variable(val):
     async with dagger.Connection() as client:
-        container = (
-            client.container().from_("alpine:3.16.2").with_env_variable("FOO", "bar")
+        out = await (
+            client.container()
+            .from_("alpine:3.16.2")
+            .with_env_variable("FOO", val)
+            .with_exec(["sh", "-c", "echo -n $FOO"])
+            .stdout()
         )
-        out = await container.with_exec(["sh", "-c", "echo -n $FOO"]).stdout()
-
-        assert out == "bar"
+        assert out == val
 
 
 async def test_container_with_mounted_directory():
