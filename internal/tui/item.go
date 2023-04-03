@@ -256,16 +256,6 @@ func (g *Group) sort() {
 			return false
 		}
 
-		// fall back on chronological
-		switch {
-		case ie.Started() != nil && je.Started() != nil:
-			return false
-		case ie.Started() == nil && je.Started() == nil:
-			return true
-		case ie.Started() != nil && je.Started() != nil:
-			return !ie.Started().After(*je.Started())
-		}
-
 		// fall back on name (not sure if this will ever occur)
 		return ie.Name() < je.Name()
 	})
