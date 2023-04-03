@@ -1,9 +1,17 @@
 from collections.abc import Sequence
 
 import pytest
+from pytest_lazyfixture import lazy_fixture
 
 import dagger
-from dagger.api.base import Root, Scalar, Type, typecheck
+from dagger.api.base import (
+    Root,
+    Scalar,
+    Type,
+    is_id_type,
+    is_id_type_sequence,
+    typecheck,
+)
 
 pytestmark = pytest.mark.filterwarnings("ignore:coroutine")
 
@@ -61,6 +69,11 @@ class File(Type):
 @pytest.fixture()
 def client(mocker):
     return Client(mocker.MagicMock())
+
+
+@pytest.fixture()
+def file(client: Client):
+    return client.file(FileID(""))
 
 
 def test_str(client: Client):
@@ -126,3 +139,55 @@ def test_input_object():
     arg = dagger.BuildArg("NAME", "value")
 
     assert (arg.name, arg.value) == ("NAME", "value")
+
+
+def test_is_id_type(client: Client):
+    assert is_id_type(client.directory())
+
+
+class WithoutID:
+    ...
+
+
+class WithID:
+    async def id(self) -> Scalar:
+        return FileID("")
+
+
+@pytest.mark.parametrize(
+    "val",
+    [
+        "",
+        "spam",
+        True,
+        WithID(),
+        WithoutID(),
+        DirectoryID("dir"),
+        lazy_fixture("file"),
+    ],
+)
+def test_is_not_id_type(val):
+    assert not is_id_type(val)
+
+
+@pytest.mark.parametrize(
+    "seq",
+    [list, tuple],
+)
+def test_is_id_type_sequence(client: Client, seq):
+    val = seq(client.directory() for _ in range(3))
+    assert is_id_type_sequence(val)
+
+
+@pytest.mark.parametrize(
+    "val",
+    [
+        "",
+        "spam",
+        ["x", "y", "z"],
+        [WithID()],
+        [lazy_fixture("file")],
+    ],
+)
+def test_is_not_id_type_sequence(val):
+    assert not is_id_type_sequence(val)

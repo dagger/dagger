@@ -5,7 +5,7 @@ import logging
 import typing
 from collections import deque
 from collections.abc import Callable, Sequence
-from typing import Any, ParamSpec, TypeVar
+from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar
 
 import anyio
 import attrs
@@ -15,6 +15,7 @@ import httpx
 from beartype import beartype
 from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
+from beartype.vale import IsInstance
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
@@ -48,12 +49,6 @@ class Field:
         type_: DSLType = getattr(schema, self.type_name)
         field: DSLField = getattr(type_, self.name)(**self.args)
         return field
-
-
-@typing.runtime_checkable
-class IDType(typing.Protocol):
-    def id(self) -> str:  # noqa: A003
-        ...
 
 
 @attrs.define
@@ -128,13 +123,13 @@ class Context:
             for i, sel in enumerate(self.selections):
                 for k, v in sel.args.items():
                     # check if it's a sequence of Type objects
-                    if TypeSequence.is_bearable(v):
+                    if is_id_type_sequence(v):
                         # make sure it's a list, to mutate by index
                         sel.args[k] = list(v)
                         for seq_i, seq_v in enumerate(sel.args[k]):
-                            if isinstance(seq_v, IDType):
+                            if is_id_type(seq_v):
                                 tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
-                    elif isinstance(v, Type | IDType):
+                    elif is_id_type(v):
                         tg.start_soon(_resolve_id, i, k, v)
 
     def resolve_ids_sync(self) -> None:
@@ -142,13 +137,13 @@ class Context:
         for sel in self.selections:
             for k, v in sel.args.items():
                 # check if it's a sequence of Type objects
-                if TypeSequence.is_bearable(v):
+                if is_id_type_sequence(v):
                     # make sure it's a list, to mutate by index
                     sel.args[k] = list(v)
                     for seq_i, seq_v in enumerate(sel.args[k]):
-                        if isinstance(seq_v, IDType):
+                        if is_id_type(seq_v):
                             sel.args[k][seq_i] = seq_v.id()
-                elif isinstance(v, Type | IDType):
+                elif is_id_type(v):
                     sel.args[k] = v.id()
 
     @contextlib.contextmanager
@@ -259,7 +254,25 @@ class Root(Type):
         return "Query"
 
 
-TypeSequence = TypeHint(Sequence[Type])
+@typing.runtime_checkable
+class HasID(typing.Protocol):
+    async def id(self) -> Scalar:  # noqa: A003
+        ...
+
+
+IDType = Annotated[HasID, IsInstance[Type]]
+IDTypeSeq = Annotated[Sequence[IDType], ~IsInstance[str]]
+
+IDTypeHint = TypeHint(IDType)
+IDTypeSeqHint = TypeHint(IDTypeSeq)
+
+
+def is_id_type(v: object) -> TypeGuard[IDType]:
+    return IDTypeHint.is_bearable(v)
+
+
+def is_id_type_sequence(v: object) -> TypeGuard[IDTypeSeq]:
+    return IDTypeSeqHint.is_bearable(v)
 
 
 def typecheck(func: Callable[P, T]) -> Callable[P, T]:
