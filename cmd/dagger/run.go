@@ -34,6 +34,10 @@ dagger run -- sh -c 'curl \
 	SilenceUsage: true,
 }
 
+func init() {
+	runCmd.Flags().SetInterspersed(false)
+}
+
 func Run(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
 
