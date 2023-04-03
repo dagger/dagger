@@ -26,7 +26,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 
 	wd := c.Host().Directory(".")
 	container := c.Container().
-		From("ghcr.io/goreleaser/goreleaser-pro:v1.12.3-pro").
+		From("ghcr.io/goreleaser/goreleaser-pro:v1.16.2-pro").
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"}).
 		WithWorkdir("/app").
