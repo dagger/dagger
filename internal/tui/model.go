@@ -190,6 +190,50 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tree.Current() != nil {
 			return m, m.details.SetItem(m.tree.Current())
 		}
+	case key.Matches(msg, keys.Home):
+		if m.detailsFocus {
+			newDetails, cmd := m.details.Update(msg)
+			m.details = newDetails.(Details)
+			return m, cmd
+		}
+		m.follow = false
+		m.tree.MoveToTop()
+		if m.tree.Current() != nil {
+			return m, m.details.SetItem(m.tree.Current())
+		}
+	case key.Matches(msg, keys.End):
+		if m.detailsFocus {
+			newDetails, cmd := m.details.Update(msg)
+			m.details = newDetails.(Details)
+			return m, cmd
+		}
+		m.follow = false
+		m.tree.MoveToBottom()
+		if m.tree.Current() != nil {
+			return m, m.details.SetItem(m.tree.Current())
+		}
+	case key.Matches(msg, keys.PageUp):
+		if m.detailsFocus {
+			newDetails, cmd := m.details.Update(msg)
+			m.details = newDetails.(Details)
+			return m, cmd
+		}
+		m.follow = false
+		m.tree.PageUp()
+		if m.tree.Current() != nil {
+			return m, m.details.SetItem(m.tree.Current())
+		}
+	case key.Matches(msg, keys.PageDown):
+		if m.detailsFocus {
+			newDetails, cmd := m.details.Update(msg)
+			m.details = newDetails.(Details)
+			return m, cmd
+		}
+		m.follow = false
+		m.tree.PageDown()
+		if m.tree.Current() != nil {
+			return m, m.details.SetItem(m.tree.Current())
+		}
 	case key.Matches(msg, keys.Collapse):
 		m.tree.Collapse(m.tree.Current(), false)
 	case key.Matches(msg, keys.Expand):

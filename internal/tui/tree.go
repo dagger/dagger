@@ -270,10 +270,36 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 
 func (m *Tree) MoveUp() {
 	prev := m.findPrev(m.current)
-	if prev == nil {
-		prev = lastEntry(m.root)
+	if prev != nil {
+		m.current = prev
 	}
-	m.current = prev
+}
+
+func (m *Tree) MoveToTop() {
+	m.current = m.root
+}
+
+func (m *Tree) MoveDown() {
+	next := m.findNext(m.current)
+	if next != nil {
+		m.current = next
+	}
+}
+
+func (m *Tree) MoveToBottom() {
+	m.current = lastEntry(m.root)
+}
+
+func (m *Tree) PageUp() {
+	for i := 0; i < m.viewport.Height; i++ {
+		m.MoveUp()
+	}
+}
+
+func (m *Tree) PageDown() {
+	for i := 0; i < m.viewport.Height; i++ {
+		m.MoveDown()
+	}
 }
 
 func lastEntry(entry TreeEntry) TreeEntry {
@@ -282,14 +308,6 @@ func lastEntry(entry TreeEntry) TreeEntry {
 		return entry
 	}
 	return lastEntry(entries[len(entries)-1])
-}
-
-func (m *Tree) MoveDown() {
-	next := m.findNext(m.current)
-	if next == nil {
-		next = m.root
-	}
-	m.current = next
 }
 
 func (m *Tree) Collapse(entry TreeEntry, recursive bool) {
