@@ -13,9 +13,9 @@ import QuickstartDoc from '@site/src/components/molecules/quickstartDoc.js'
 import Embed from '@site/src/components/atoms/embed.js'
 
 export const ids = {
-    Go: "FkLP0dXMgIm",
-    Node: "IdHGiwvkn6E",
-    Python: "xCI5LKiZfGD"
+    Go: "nLOpYVtbMlV",
+    Node: "cXNoMjeG-2V",
+    Python: "k1Kvw2aFcIU"
 }
 
 <QuickstartDoc embeds={ids}>
@@ -33,10 +33,11 @@ The example application repository includes a simple Dockerfile. Use it with a D
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-<Embed id="FkLP0dXMgIm"/>
+<Embed id="nLOpYVtbMlV"/>
 
 This code listing does the following:
-Connect()`.
+
+- It creates a Dagger client with `Connect()`.
 - It uses the client's `Host().Directory()` method to obtain a reference to the source code directory on the host.
 - It uses the `Directory` object's `DockerBuild()` method to build a new container using a Dockerfile. This method defaults to using the Dockerfile located at `./Dockerfile` in the directory passed to it as argument and returns the built `Container` object.
 - It uses the `Container` object's `Publish()` method to publish the container to [ttl.sh](https://ttl.sh). As before, to prevent name collisions, the container image name is suffixed with a random number.
@@ -50,7 +51,7 @@ go run ci/main.go
 </TabItem>
 <TabItem value="Node">
 
-<Embed id="IdHGiwvkn6E"/>
+<Embed id="cXNoMjeG-2V"/>
 
 This code listing does the following:
 
@@ -68,7 +69,7 @@ node ci/index.mjs
 </TabItem>
 <TabItem value="Python">
 
-<Embed id="xCI5LKiZfGD"/>
+<Embed id="k1Kvw2aFcIU"/>
 
 This code listing does the following:
 
