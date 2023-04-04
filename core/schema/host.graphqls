@@ -68,5 +68,5 @@ type HostVariable {
   value: String!
 
   "A secret referencing the value of this variable."
-  secret: Secret! @deprecated(reason: "been superseded by setSecret")
+  secret: Secret! @deprecated(reason: "been superseded by `setSecret`")
 }
