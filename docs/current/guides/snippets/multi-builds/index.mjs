@@ -1,4 +1,4 @@
-import Client, { connect } from "@dagger.io/dagger"
+import { connect } from "@dagger.io/dagger"
 
 // Create a multi-build pipeline for a Go application.
 
@@ -7,11 +7,11 @@ const oses = ["linux", "darwin"]
 const arches = ["amd64", "arm64"]
 
 // initialize dagger client
-connect(async (client: Client) => {
+connect(async (client) => {
     console.log("Building with Dagger")
 
     // get reference to the local project
-    const src = await client
+    const src = client
         .host()
         .directory(".")
 
@@ -43,4 +43,5 @@ connect(async (client: Client) => {
 
     // write build artifacts to host
     await outputs.export(".")
+
 }, {LogOutput: process.stderr});
