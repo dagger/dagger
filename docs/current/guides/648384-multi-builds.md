@@ -53,7 +53,7 @@ This code listing does the following:
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./snippets/multi-builds/index.mts
+```javascript file=./snippets/multi-builds/index.mjs
 ```
 
 This code listing does the following:
