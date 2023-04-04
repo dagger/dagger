@@ -44,7 +44,7 @@ This code listing does the following:
 - It defines the build matrix, consisting of two OSs (`darwin` and `linux`) and two architectures (`amd64` and `arm64`).
 - It creates a Dagger client with `Connect()`.
 - It uses the client's `Host().Directory(".")` method to obtain a reference to the current directory on the host. This reference is stored in the `src` variable.
-- It uses the client's `Container().From()` method to initialize a new container from a base image. This base image contains all the tooling needed to build the application - in this case, the `golang:latest` image. This `from_()` method returns a new `Container` class with the results.
+- It uses the client's `Container().From()` method to initialize a new container from a base image. This base image contains all the tooling needed to build the application - in this case, the `golang:latest` image. This `From()` method returns a new `Container` class with the results.
 - It uses the `Container.WithMountedDirectory()` method to mount the host directory into the container at the `/src` mount point.
 - It uses the `Container.WithWorkdir()` method to set the working directory in the container.
 - It iterates over the build matrix, creating a directory in the container for each OS/architecture combination and building the Go application for each such combination. The Go build process is instructed via the `GOOS` and `GOARCH` build variables, which are reset for each case via the `Container.WithEnvVariable()` method.
