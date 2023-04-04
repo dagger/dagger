@@ -7,8 +7,8 @@ connect(async (client) => {
 
   // build using Dockerfile
   // publish the resulting container to a registry
-  const imageRef = await client.container()
-    .build(contextDir)
+  const imageRef = await contextDir
+    .dockerBuild()
     .publish('ttl.sh/hello-dagger-' + Math.floor(Math.random() * 10000000))
   console.log(`Published image to: ${imageRef}`)
 
