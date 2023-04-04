@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
+	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
@@ -48,18 +50,59 @@ func isCI() bool {
 		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
 }
 
+func getGitInfo() (string, string, error) {
+	repo, err := git.PlainOpen(".")
+	if err != nil {
+		return "", "", err
+	}
+
+	config, err := repo.Config()
+	if err != nil {
+		return "", "", err
+	}
+
+	committerEmail := config.User.Email
+	committerHash := fmt.Sprintf("%x", sha256.Sum256([]byte(committerEmail)))
+
+	remote, err := repo.Remote("origin")
+	var repoURL string
+	if err == nil {
+		remoteConfig := remote.Config()
+		if len(remoteConfig.URLs) > 0 {
+			repoURL = remoteConfig.URLs[0]
+		} else {
+			return "", "", fmt.Errorf("remote origin URL not found")
+		}
+	} else {
+		return "", "", err
+	}
+
+	repoHash := fmt.Sprintf("%x", sha256.Sum256([]byte(repoURL)))
+
+	return strings.TrimSpace(committerHash), strings.TrimSpace(repoHash), nil
+}
+
+func setupUserAgent() {
+	committerHash, repoHash, err := getGitInfo()
+	if err == nil {
+		userAgentCfg.Set("committer_hash:" + committerHash)
+		userAgentCfg.Set("repo_hash:" + repoHash)
+	}
+
+	isCIValue := "false"
+	if isCI() {
+		isCIValue = "true"
+	}
+	userAgentCfg.Set("ci:" + isCIValue)
+}
+
 func EngineSession(cmd *cobra.Command, args []string) error {
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 
-	// Add the 'ci' user agent
-	isCIValue := "false"
-	if isCI() {
-		isCIValue = "true"
-	}
-	userAgentCfg.Set("ci:" + isCIValue)
+	setupUserAgent()
 
 	startOpts := &engine.Config{
 		Workdir:      workdir,
