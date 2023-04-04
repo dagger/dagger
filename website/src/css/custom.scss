@@ -37,6 +37,7 @@ $desktop-xl-width: 1160px;
 
 /* You can override the default Infima variables here. */
 :root {
+  --docusaurus-highlighted-code-line-bg: rgba(10, 36, 133, 0.8);
   --ifm-background-color: var(--ifm-color-primary-light);
   --ifm-code-background: rgba(19, 18, 38, 0.1);
   --ifm-code-font-size: 100%;
@@ -86,6 +87,7 @@ $desktop-xl-width: 1160px;
 }
 
 html[data-theme="dark"] {
+  --docusaurus-highlighted-code-line-bg: rgba(32, 1, 111, 0.7);
   --ifm-background-color: var(--ifm-color-primary-dark);
   --ifm-code-color: var(--ifm-color-primary-light);
   --ifm-navbar-background-color: var(--ifm-color-primary-darker);
