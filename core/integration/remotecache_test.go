@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,19 +12,20 @@ import (
 	"dagger.io/dagger"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/sync/errgroup"
 )
 
 func TestRemoteCacheRegistry(t *testing.T) {
-	// TODO: until this setting is configurable at runtime, just spawning separate engines w/ the config set
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	registryContainerName := runRegistryInDocker(ctx, t)
 	getClient := func() *dagger.Client {
-		c, _ := runSeparateEngine(ctx, t, map[string]string{
+		c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
 			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=127.0.0.1:5000/test-cache,mode=max",
 		}, "container:"+registryContainerName)
+		t.Cleanup(func() {
+			stop()
+		})
 		return c
 	}
 
@@ -60,9 +60,12 @@ func TestRemoteCacheS3(t *testing.T) {
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 		s3ContainerName := runS3InDocker(ctx, t, bucket)
 		getClient := func() *dagger.Client {
-			c, _ := runSeparateEngine(ctx, t, map[string]string{
+			c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket,
 			}, "container:"+s3ContainerName)
+			t.Cleanup(func() {
+				stop()
+			})
 			return c
 		}
 
@@ -86,100 +89,6 @@ func TestRemoteCacheS3(t *testing.T) {
 		outputA := pipelineOutput(clientA)
 		require.NoError(t, clientA.Close())
 		outputB := pipelineOutput(clientB)
-		require.Equal(t, outputA, outputB)
-	})
-
-	t.Run("dagger s3 caching (with pooling)", func(t *testing.T) {
-		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
-		s3ContainerName := runS3InDocker(ctx, t, bucket)
-		getClient := func(engineName string) (*dagger.Client, func() error) {
-			return runSeparateEngine(ctx, t, map[string]string{
-				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,name=" + engineName,
-			}, "container:"+s3ContainerName)
-		}
-
-		pipelineOutput := func(c *dagger.Client, id string) string {
-			output, err := c.Container().
-				From("alpine:3.17").
-				WithEnvVariable("ID", id).
-				WithExec([]string{
-					"sh", "-c", "head -c 128 /dev/random | sha256sum",
-				}).Stdout(ctx)
-			require.NoError(t, err)
-			return output
-		}
-
-		generatedOutputs := map[string]string{} // map of unique id set in exec -> output
-		const numEngines = 2
-		var mu sync.Mutex
-		var eg errgroup.Group
-		for i := 0; i < numEngines; i++ {
-			eg.Go(func() error {
-				id := identity.NewID()
-				client, stopEngine := getClient(id)
-				mu.Lock()
-				defer mu.Unlock()
-				generatedOutputs[id] = pipelineOutput(client, id)
-				return errors.Join(client.Close(), stopEngine())
-			})
-		}
-		require.NoError(t, eg.Wait())
-		require.Len(t, generatedOutputs, numEngines)
-		eg = errgroup.Group{}
-		client, stopEngine := getClient(identity.NewID())
-		for id, cachedOutput := range generatedOutputs {
-			id, cachedOutput := id, cachedOutput
-			eg.Go(func() error {
-				require.Equal(t, cachedOutput, pipelineOutput(client, id))
-				return nil
-			})
-		}
-		require.NoError(t, eg.Wait())
-		require.NoError(t, client.Close())
-		require.NoError(t, stopEngine())
-	})
-
-	t.Run("dagger s3 mount caching", func(t *testing.T) {
-		bucket := "dagger-test-remote-cache-mount-s3-" + identity.NewID()
-		s3ContainerName := runS3InDocker(ctx, t, bucket)
-		getClient := func(engineName string) (*dagger.Client, func() error) {
-			return runSeparateEngine(ctx, t, map[string]string{
-				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=experimental_dagger_s3,mode=max,server_implementation=Minio,endpoint_url=http://127.0.0.1:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket + ",prefix=test-cache-pool/,synchronized_cache_mounts=test-cache-mount,name=" + engineName,
-				// TODO: temporarily disable networking to fix flakiness around containers in the
-				// same netns interfering with each other.
-				// Real fix is to either override CNI settings for each engine or to remove the need
-				// for them to be in the same netns.
-				"_EXPERIMENTAL_DAGGER_SERVICES_DNS": "0",
-			}, "container:"+s3ContainerName)
-		}
-
-		pipelineOutput := func(c *dagger.Client, id string) string {
-			output, err := c.Container().
-				From("alpine:3.17").
-				WithMountedCache("/cache", c.CacheVolume("test-cache-mount")).
-				WithExec([]string{
-					"sh", "-c", "if [ ! -f /cache/test.txt ]; then echo '" + id + "' > /cache/test.txt; fi; cat /cache/test.txt",
-				}).Stdout(ctx)
-			require.NoError(t, err)
-			return output
-		}
-
-		clientA, stopEngineA := getClient("a")
-		t.Cleanup(func() {
-			clientA.Close()
-			stopEngineA()
-		})
-		outputA := pipelineOutput(clientA, "a")
-		require.NoError(t, clientA.Close())
-		require.NoError(t, stopEngineA())
-		clientB, stopEngineB := getClient("b")
-		t.Cleanup(func() {
-			clientB.Close()
-			stopEngineB()
-		})
-		outputB := pipelineOutput(clientB, "b")
-		require.NoError(t, clientB.Close())
-		require.NoError(t, stopEngineB())
 		require.Equal(t, outputA, outputB)
 	})
 }
@@ -249,7 +158,7 @@ var (
 	netInstance int
 )
 
-func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string, network string) (_ *dagger.Client, gracefulStop func() error) {
+func runSeparateEngine(ctx context.Context, t *testing.T, engineEnv, clientEnv map[string]string, network string) (_ *dagger.Client, gracefulStop func() error) {
 	// Setting the RUNNER_HOST env var is global so while silly we need to lock here. This also seems to help with
 	// some race conditions setting up the engine network when they are all sharing one netns
 	connectLock.Lock()
@@ -273,7 +182,7 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 		"-v", "xtables-lock:/run/xtables-lock",
 		"-e", "XTABLES_LOCKFILE=/run/xtables-lock/xtables.lock",
 	}
-	for k, v := range env {
+	for k, v := range engineEnv {
 		dockerRunArgs = append(dockerRunArgs, "-e", k+"="+v)
 	}
 	if network != "" {
@@ -301,6 +210,15 @@ func runSeparateEngine(ctx context.Context, t *testing.T, env map[string]string,
 		defer os.Setenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST", currentRunnerHost)
 	} else {
 		defer os.Unsetenv("_EXPERIMENTAL_DAGGER_RUNNER_HOST")
+	}
+	currentCacheConfig, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
+	if clientEnv != nil {
+		os.Setenv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", clientEnv["_EXPERIMENTAL_DAGGER_CACHE_CONFIG"])
+		if ok {
+			defer os.Setenv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", currentCacheConfig)
+		} else {
+			defer os.Unsetenv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
+		}
 	}
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))

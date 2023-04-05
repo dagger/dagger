@@ -30,22 +30,29 @@ const (
 // of execs when they fail.
 type GatewayClient struct {
 	bkgw.Client
-	refs map[*ref]struct{}
-	mu   sync.Mutex
+	refs             map[*ref]struct{}
+	cacheConfigType  string
+	cacheConfigAttrs map[string]string
+	mu               sync.Mutex
 }
 
-func NewGatewayClient(baseClient bkgw.Client) *GatewayClient {
+func NewGatewayClient(baseClient bkgw.Client, cacheConfigType string, cacheConfigAttrs map[string]string) *GatewayClient {
 	return &GatewayClient{
-		Client: baseClient,
-		refs:   make(map[*ref]struct{}),
+		Client:           baseClient,
+		cacheConfigType:  cacheConfigType,
+		cacheConfigAttrs: cacheConfigAttrs,
+		refs:             make(map[*ref]struct{}),
 	}
 }
 
 func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bkgw.Result, rerr error) {
 	defer wrapSolveError(&rerr, g.Client)
-	req.CacheImports = []bkgw.CacheOptionsEntry{{
-		Type: "dagger",
-	}}
+	if g.cacheConfigType != "" {
+		req.CacheImports = []bkgw.CacheOptionsEntry{{
+			Type:  g.cacheConfigType,
+			Attrs: g.cacheConfigAttrs,
+		}}
+	}
 	res, err := g.Client.Solve(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to solve: %w", err)
@@ -79,7 +86,7 @@ func (g *GatewayClient) CombinedResult(ctx context.Context) (*bkgw.Result, error
 		}
 		mergeInputs = append(mergeInputs, state)
 	}
-	llbdef, err := llb.Merge(mergeInputs).Marshal(ctx)
+	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}

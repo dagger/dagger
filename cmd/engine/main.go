@@ -21,12 +21,18 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
-	daggerremotecache "github.com/dagger/dagger/engine/remotecache"
+	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/moby/buildkit/cache/remotecache"
+	"github.com/moby/buildkit/cache/remotecache/azblob"
+	"github.com/moby/buildkit/cache/remotecache/gha"
+	inlineremotecache "github.com/moby/buildkit/cache/remotecache/inline"
+	localremotecache "github.com/moby/buildkit/cache/remotecache/local"
+	registryremotecache "github.com/moby/buildkit/cache/remotecache/registry"
+	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/control"
@@ -300,7 +306,7 @@ func main() { //nolint:gocyclo
 		}()
 
 		bklog.G(ctx).Debug("creating engine controller")
-		controller, remoteCacheDoneCh, err := newController(ctx, c, &cfg)
+		controller, cacheManager, err := newController(ctx, c, &cfg)
 		if err != nil {
 			return err
 		}
@@ -341,7 +347,7 @@ func main() { //nolint:gocyclo
 		}
 		defer stopOperatorSession()
 		bklog.G(ctx).Debug("starting optional cache mount synchronization")
-		stopCacheMountSync, err := daggerremotecache.StartCacheMountSynchronization(ctx, daggerClient)
+		err = cacheManager.StartCacheMountSynchronization(ctx, daggerClient)
 		if err != nil {
 			cancel()
 			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
@@ -363,29 +369,22 @@ func main() { //nolint:gocyclo
 			err = ctx.Err()
 		}
 
-		bklog.G(ctx).Infof("stopping server")
 		// TODO:(sipsma) make timeouts configurable
-		stopCacheSyncCtx, cancelCacheSync := context.WithTimeout(context.Background(), 300*time.Second)
-		defer cancelCacheSync()
-		bklog.G(ctx).Debug("stopping cache mount synchronization")
-		stopCacheMountSyncErr := stopCacheMountSync(stopCacheSyncCtx)
-		if stopCacheMountSyncErr != nil {
-			bklog.G(ctx).WithError(stopCacheMountSyncErr).Error("failed to stop cache mount synchronization")
+		bklog.G(ctx).Debug("stopping cache manager")
+		stopCacheCtx, cancelCacheCtx := context.WithTimeout(context.Background(), 600*time.Second)
+		defer cancelCacheCtx()
+		stopCacheErr := cacheManager.Close(stopCacheCtx)
+		if stopCacheErr != nil {
+			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
 		}
-		err = goerrors.Join(err, stopCacheMountSyncErr)
-		bklog.G(ctx).Debug("stopping operator session")
-		stopOperatorSession()
+		err = goerrors.Join(err, stopCacheErr)
+		err = goerrors.Join(err, stopOperatorSession())
 
+		bklog.G(ctx).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
-		bklog.G(ctx).Debug("waiting for remote cache export to finish")
-		select {
-		case <-remoteCacheDoneCh:
-		case <-time.After(60 * time.Second):
-		}
-		bklog.G(ctx).Debug("waiting for all clients to gracefully disconnect")
 		server.GracefulStop()
 		return err
 	}
@@ -698,7 +697,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*control.Controller, <-chan struct{}, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*control.Controller, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
@@ -740,36 +739,54 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 		return nil, nil, err
 	}
 
-	resolverFn := resolverFunc(cfg)
-
 	w, err := wc.GetDefault()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	cacheExporterFunc, cacheImporterFunc, remoteCacheDoneCh, err := daggerremotecache.StartDaggerCache(ctx,
-		sessionManager,
-		w.ContentStore(),
-		w.LeaseManager(),
-		resolverFn,
-	)
+	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
+	cacheManager, err := cache.NewManager(ctx, cache.ManagerConfig{
+		KeyStore:    cacheStorage,
+		ResultStore: worker.NewCacheResultStorage(wc),
+		Worker:      w,
+		ServiceURL:  cacheServiceURL,
+	})
 	if err != nil {
 		return nil, nil, err
 	}
 
+	resolverFn := resolverFunc(cfg)
 	remoteCacheExporterFuncs := map[string]remotecache.ResolveCacheExporterFunc{
-		"dagger": cacheExporterFunc,
+		"registry": registryremotecache.ResolveCacheExporterFunc(sessionManager, resolverFn),
+		"local":    localremotecache.ResolveCacheExporterFunc(sessionManager),
+		"inline":   inlineremotecache.ResolveCacheExporterFunc(),
+		"gha":      gha.ResolveCacheExporterFunc(),
+		"s3":       s3remotecache.ResolveCacheExporterFunc(),
+		"azblob":   azblob.ResolveCacheExporterFunc(),
+		// for backwards compatibility:
+		"dagger": func(ctx context.Context, g session.Group, attrs map[string]string) (remotecache.Exporter, error) {
+			return nil, nil
+		},
 	}
 	remoteCacheImporterFuncs := map[string]remotecache.ResolveCacheImporterFunc{
-		"dagger": cacheImporterFunc,
+		"registry": registryremotecache.ResolveCacheImporterFunc(sessionManager, w.ContentStore(), resolverFn),
+		"local":    localremotecache.ResolveCacheImporterFunc(sessionManager),
+		"gha":      gha.ResolveCacheImporterFunc(),
+		"s3":       s3remotecache.ResolveCacheImporterFunc(),
+		"azblob":   azblob.ResolveCacheImporterFunc(),
+		// for backwards compatibility:
+		"dagger": func(ctx context.Context, g session.Group, attrs map[string]string) (remotecache.Importer, ocispecs.Descriptor, error) {
+			return &noopCacheImporter{}, ocispecs.Descriptor{}, nil
+		},
 	}
+
 	ctrler, err := control.NewController(control.Opt{
 		SessionManager:            sessionManager,
 		WorkerController:          wc,
 		Frontends:                 frontends,
 		ResolveCacheExporterFuncs: remoteCacheExporterFuncs,
 		ResolveCacheImporterFuncs: remoteCacheImporterFuncs,
-		CacheManager:              solver.NewCacheManager(context.TODO(), "local", cacheStorage, worker.NewCacheResultStorage(wc)),
+		CacheManager:              cacheManager,
 		Entitlements:              cfg.Entitlements,
 		TraceCollector:            tc,
 		HistoryDB:                 historyDB,
@@ -780,7 +797,8 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	if err != nil {
 		return nil, nil, err
 	}
-	return ctrler, remoteCacheDoneCh, nil
+
+	return ctrler, cacheManager, nil
 }
 
 func resolverFunc(cfg *config.Config) docker.RegistryHosts {
@@ -952,4 +970,13 @@ func setupNetwork(netName, netCIDR string) (string, error) {
 	}
 
 	return cniConfigPath, nil
+}
+
+type noopCacheImporter struct {
+}
+
+var _ remotecache.Importer = &noopCacheImporter{}
+
+func (i *noopCacheImporter) Resolve(ctx context.Context, desc ocispecs.Descriptor, id string, w worker.Worker) (solver.CacheManager, error) {
+	return nil, nil
 }
