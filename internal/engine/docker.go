@@ -32,7 +32,7 @@ const (
 // previous executions of the engine at different versions (which
 // are identified by looking for containers with the prefix
 // "dagger-engine-").
-func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent string) (string, error) {
+func dockerImageProvider(ctx context.Context, runnerHost *url.URL, labels string) (string, error) {
 	imageRef := runnerHost.Host + runnerHost.Path
 
 	// Get the SHA digest of the image to use as an ID for the container we'll create
@@ -49,7 +49,7 @@ func dockerImageProvider(ctx context.Context, runnerHost *url.URL, userAgent str
 		// We only have a tag in the image ref, so resolve it to a digest. The default
 		// auth keychain parses the same docker credentials as used by the buildkit
 		// session attachable.
-		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(userAgent)); err != nil {
+		if img, err := remote.Get(ref, remote.WithAuthFromKeychain(authn.DefaultKeychain), remote.WithUserAgent(labels)); err != nil {
 			fmt.Fprintf(os.Stderr, "failed to resolve image digest: %v\n", err)
 			if strings.Contains(err.Error(), "DENIED") {
 				fmt.Fprintf(os.Stderr, "check your docker ghcr creds, it might be incorrect or expired\n")

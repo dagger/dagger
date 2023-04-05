@@ -81,7 +81,7 @@ func TestGetGitInfo(t *testing.T) {
 	require.Error(t, err, "getGitInfo should return an error outside a Git repository")
 }
 
-func TestSetupUserAgent(t *testing.T) {
+func TestGitInfoSessionLabels(t *testing.T) {
 	tempDir, cleanup := createTempGitRepo(t)
 
 	// Change the working directory to the temporary Git repository
@@ -91,12 +91,16 @@ func TestSetupUserAgent(t *testing.T) {
 	err = os.Chdir(tempDir)
 	require.NoError(t, err, "Failed to change the working directory to the temporary Git repository")
 
-	// Test setupUserAgent inside a Git repository
-	userAgentCfg = userAgents{}
-	setupUserAgent()
-	require.NoError(t, err, "setupUserAgent should not return an error inside a Git repository")
-	require.Contains(t, userAgentCfg.String(), "committer_hash:", "setupUserAgent should set committer_hash")
-	require.Contains(t, userAgentCfg.String(), "repo_hash:", "setupUserAgent should set repo_hash")
+	// Test inside a Git repository
+	sessionLabels = labels{}
+
+	require.NotContains(t, sessionLabels.String(), "committer_hash:", "should not set committer_hash")
+	require.NotContains(t, sessionLabels.String(), "repo_hash:", "should not set repo_hash")
+
+	appendGitInfoToSessionLabels()
+
+	require.Contains(t, sessionLabels.String(), "committer_hash:", "should set committer_hash")
+	require.Contains(t, sessionLabels.String(), "repo_hash:", "should set repo_hash")
 
 	// Restore the working directory before testing outside a Git repository
 	err = os.Chdir(origDir)
@@ -105,10 +109,24 @@ func TestSetupUserAgent(t *testing.T) {
 	// Clean up the temporary Git repository
 	cleanup()
 
-	// Test setupUserAgent outside a Git repository
-	userAgentCfg = userAgents{}
-	setupUserAgent()
-	require.NoError(t, err, "setupUserAgent should not return an error outside a Git repository")
-	require.NotContains(t, userAgentCfg.String(), "committer_hash:", "setupUserAgent should not set committer_hash")
-	require.NotContains(t, userAgentCfg.String(), "repo_hash:", "setupUserAgent should not set repo_hash")
+	// Test outside a Git repository
+	sessionLabels = labels{}
+
+	require.NotContains(t, sessionLabels.String(), "committer_hash:", "should not set committer_hash")
+	require.NotContains(t, sessionLabels.String(), "repo_hash:", "should not set repo_hash")
+
+	appendGitInfoToSessionLabels()
+
+	require.NotContains(t, sessionLabels.String(), "committer_hash:", "should not set committer_hash")
+	require.NotContains(t, sessionLabels.String(), "repo_hash:", "should not set repo_hash")
+}
+
+func TestCIInfoSessionLabels(t *testing.T) {
+	sessionLabels = labels{}
+
+	require.NotContains(t, sessionLabels.String(), "ci:", "should not set ci")
+
+	appendCIInfoToSessionLabels()
+
+	require.Contains(t, sessionLabels.String(), "ci:", "should set ci")
 }

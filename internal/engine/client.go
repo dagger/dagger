@@ -17,11 +17,11 @@ import (
 )
 
 // Client returns a buildkit client, whether privileged execs are enabled, or an error
-func Client(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, bool, error) {
+func Client(ctx context.Context, remote *url.URL, labels string) (*bkclient.Client, bool, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
-		buildkitdHost, err = dockerImageProvider(ctx, remote, userAgent)
+		buildkitdHost, err = dockerImageProvider(ctx, remote, labels)
 		if err != nil {
 			return nil, false, err
 		}

@@ -23,19 +23,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var (
-	userAgentCfg userAgents
-)
+var sessionLabels labels
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "session",
-		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
+		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger Engine. It is not intended to be used by humans directly.",
 		Hidden:       true,
 		RunE:         EngineSession,
 		SilenceUsage: true,
 	}
-	cmd.Flags().Var(&userAgentCfg, "ua", "user-agent keys to pass to registry (e.g, --ua 'sdk:python' --ua 'sdk_version:0.5.2' --ua 'sdk_async:false')")
+	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'sdk:python' --label 'sdk_version:0.5.2' --label 'sdk_async:true')")
 	return cmd
 }
 
@@ -65,35 +63,35 @@ func getGitInfo() (string, string, error) {
 	committerHash := fmt.Sprintf("%x", sha256.Sum256([]byte(committerEmail)))
 
 	remote, err := repo.Remote("origin")
-	var repoURL string
-	if err == nil {
-		remoteConfig := remote.Config()
-		if len(remoteConfig.URLs) > 0 {
-			repoURL = remoteConfig.URLs[0]
-		} else {
-			return "", "", fmt.Errorf("remote origin URL not found")
-		}
-	} else {
+	if err != nil {
 		return "", "", err
 	}
 
+	remoteConfig := remote.Config()
+	if len(remoteConfig.URLs) < 1 {
+		return "", "", fmt.Errorf("remote origin URL not found")
+	}
+
+	repoURL := remoteConfig.URLs[0]
 	repoHash := fmt.Sprintf("%x", sha256.Sum256([]byte(repoURL)))
 
 	return strings.TrimSpace(committerHash), strings.TrimSpace(repoHash), nil
 }
 
-func setupUserAgent() {
+func appendGitInfoToSessionLabels() {
 	committerHash, repoHash, err := getGitInfo()
 	if err == nil {
-		userAgentCfg.Set("committer_hash:" + committerHash)
-		userAgentCfg.Set("repo_hash:" + repoHash)
+		sessionLabels.Add("committer_hash", committerHash)
+		sessionLabels.Add("repo_hash", repoHash)
 	}
+}
 
+func appendCIInfoToSessionLabels() {
 	isCIValue := "false"
 	if isCI() {
 		isCIValue = "true"
 	}
-	userAgentCfg.Set("ci:" + isCIValue)
+	sessionLabels.Add("ci", isCIValue)
 }
 
 func EngineSession(cmd *cobra.Command, args []string) error {
@@ -102,7 +100,8 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	setupUserAgent()
+	appendGitInfoToSessionLabels()
+	appendCIInfoToSessionLabels()
 
 	startOpts := &engine.Config{
 		Workdir:      workdir,
@@ -111,7 +110,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
 		JournalURI:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		UserAgent:    userAgentCfg.String(),
+		Labels:       sessionLabels.String(),
 	}
 
 	signalCh := make(chan os.Signal, 1)
@@ -165,37 +164,36 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	})
 }
 
-type userAgents []userAgent
+type labels []label
 
-type userAgent struct {
-	Key   string
+type label struct {
+	Name  string
 	Value string
 }
 
-func (kv *userAgents) Type() string {
-	return "useragents"
+func (ls *labels) Type() string {
+	return "labels"
 }
 
-func (kv *userAgents) Set(s string) error {
+func (ls *labels) Set(s string) error {
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return fmt.Errorf("bad format in --ua: '%s' (expected key:value)", s)
+		return fmt.Errorf("bad format: '%s' (expected name:value)", s)
 	}
 
-	ua := userAgent{
-		Key:   parts[0],
-		Value: parts[1],
-	}
-
-	*kv = append(*kv, ua)
+	ls.Add(parts[0], parts[1])
 
 	return nil
 }
 
-func (kv *userAgents) String() string {
-	var uas string
-	for _, ua := range *kv {
-		uas += fmt.Sprintf("%s:%s,", ua.Key, ua.Value)
+func (ls *labels) Add(name string, value string) {
+	*ls = append(*ls, label{Name: name, Value: value})
+}
+
+func (ls *labels) String() string {
+	var labels string
+	for _, label := range *ls {
+		labels += fmt.Sprintf("%s:%s,", label.Name, label.Value)
 	}
-	return uas
+	return labels
 }
