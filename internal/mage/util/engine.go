@@ -137,21 +137,24 @@ func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts
 	return devEngine, endpoint, nil
 }
 
+var DefaultDevEngineOpts = DevEngineOpts{
+	EntrypointArgs: map[string]string{
+		"network-name": "dagger-dev",
+		"network-cidr": "10.88.0.0/16",
+	},
+	ConfigEntries: map[string]string{
+		"grpc":                 `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
+		`registry."docker.io"`: `mirrors = ["mirror.gcr.io"]`,
+	},
+}
+
 func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Container {
-	defaultOpts := []DevEngineOpts{{
-		EntrypointArgs: map[string]string{
-			"network-name": "dagger-dev",
-			"network-cidr": "10.88.0.0/16",
-		},
-		ConfigEntries: map[string]string{
-			"grpc":                 `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
-			`registry."docker.io"`: `mirrors = ["mirror.gcr.io"]`,
-		},
-	}}
+	engineOpts := []DevEngineOpts{}
 
-	defaultOpts = append(defaultOpts, opts...)
+	engineOpts = append(engineOpts, DefaultDevEngineOpts)
+	engineOpts = append(engineOpts, opts...)
 
-	devEngine := devEngineContainer(c, runtime.GOARCH, defaultOpts...)
+	devEngine := devEngineContainer(c, runtime.GOARCH, engineOpts...)
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
 		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.

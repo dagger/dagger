@@ -85,14 +85,16 @@ func (t Python) Test(ctx context.Context) error {
 		return err
 	}
 
+	cliBinPath := "/.dagger-cli"
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, version := range versions {
 		version := version
 		eg.Go(func() error {
 			_, err := pythonBase(c.Pipeline(version), version).
-				// WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 				WithServiceBinding("dagger-engine", devEngine).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 				WithExec([]string{"poe", "test", "--exitfirst"}).
 				ExitCode(gctx)
 			return err
@@ -116,10 +118,13 @@ func (t Python) Generate(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cliBinPath := "/.dagger-cli"
 
 	generated := pythonBase(c, pythonDefaultVersion).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"poe", "generate"})
 
 	for _, f := range pythonGeneratedAPIPaths {
