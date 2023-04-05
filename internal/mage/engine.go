@@ -1,7 +1,6 @@
 package mage
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"text/template"
 	"time"
 
 	"dagger.io/dagger"
@@ -38,62 +36,72 @@ const (
 
 var engineEntrypoint string
 
-const engineEntrypointTmpl = `#!/bin/sh
-set -e
+// const engineEntrypointTmpl = `#!/bin/sh
+// set -e
 
-# cgroup v2: enable nesting
-# see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
-if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
-	# move the processes from the root group to the /init group,
-	# otherwise writing subtree_control fails with EBUSY.
-	# An error during moving non-existent process (i.e., "cat") is ignored.
-	mkdir -p /sys/fs/cgroup/init
-	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
-	# enable controllers
-	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
-		> /sys/fs/cgroup/cgroup.subtree_control
-fi
+// # cgroup v2: enable nesting
+// # see https://github.com/moby/moby/blob/38805f20f9bcc5e87869d6c79d432b166e1c88b4/hack/dind#L28
+// if [ -f /sys/fs/cgroup/cgroup.controllers ]; then
+// 	# move the processes from the root group to the /init group,
+// 	# otherwise writing subtree_control fails with EBUSY.
+// 	# An error during moving non-existent process (i.e., "cat") is ignored.
+// 	mkdir -p /sys/fs/cgroup/init
+// 	xargs -rn1 < /sys/fs/cgroup/cgroup.procs > /sys/fs/cgroup/init/cgroup.procs || :
+// 	# enable controllers
+// 	sed -e 's/ / +/g' -e 's/^/+/' < /sys/fs/cgroup/cgroup.controllers \
+// 		> /sys/fs/cgroup/cgroup.subtree_control
+// fi
 
-exec {{.EngineBin}} --config {{.EngineConfig}} --network-name dagger-dev --network-cidr "10.88.0.0/16" "$@"
-`
+// exec {{.EngineBin}} --config {{.EngineConfig}} {{ range $key := .EntrypointArgKeys -}}--{{ $key }}="{{ index $.EntrypointArgs $key }}" {{ end -}} "$@"
+// `
 
-const engineConfig = `
+// exec {{.EngineBin}} --config {{.EngineConfig}} --network-name dagger-dev --network-cidr "10.88.0.0/16" "$@"
+// const engineConfig = `
+// debug = true
+// insecure-entitlements = ["security.insecure"]
+
+// [grpc]
+// address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]
+
+// [registry."registry:5000"]
+// http = true
+
+// [registry."privateregistry:5000"]
+// http = true
+
+// [registry."docker.io"]
+// mirrors = ["mirror.gcr.io"]
+// `
+
+const engineConfigTmpl = `
 debug = true
 insecure-entitlements = ["security.insecure"]
-
-[grpc]
-address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]
-
-[registry."registry:5000"]
-  http = true
-
-[registry."privateregistry:5000"]
-  http = true
-
-[registry."docker.io"]
-  mirrors = ["mirror.gcr.io"]
+{{ range $key := .ConfigKeys }}
+[{{ $key }}]
+{{ index $.ConfigEntries $key }}
+{{ end -}}
 `
 
-func init() {
-	type entrypointTmplParams struct {
-		Bridge       string
-		EngineBin    string
-		EngineConfig string
-	}
-	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
-	buf := new(bytes.Buffer)
-	err := tmpl.Execute(buf, entrypointTmplParams{
-		EngineBin:    "/usr/local/bin/" + engineBinName,
-		EngineConfig: engineTomlPath,
-	})
-	if err != nil {
-		panic(err)
-	}
-	engineEntrypoint = buf.String()
-}
+// func init() {
+// 	type entrypointTmplParams struct {
+// 		Bridge       string
+// 		EngineBin    string
+// 		EngineConfig string
+// 	}
+// 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
+// 	buf := new(bytes.Buffer)
+// 	err := tmpl.Execute(buf, entrypointTmplParams{
+// 		EngineBin:    "/usr/local/bin/" + engineBinName,
+// 		EngineConfig: engineTomlPath,
+// 	})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	engineEntrypoint = buf.String()
+// }
 
-var engineToml = fmt.Sprintf(`root = %q
-`, engineDefaultStateDir)
+// var engineToml = fmt.Sprintf(`root = %q
+// `, engineDefaultStateDir)
 
 var publishedEngineArches = []string{"amd64", "arm64"}
 
@@ -164,7 +172,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	ref := fmt.Sprintf("%s:%s", engineImage, version)
 
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: devEngineContainer(c, publishedEngineArches),
+		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),
 	})
 	if err != nil {
 		return err
@@ -196,7 +204,7 @@ func (t Engine) TestPublish(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
 	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
-		PlatformVariants: devEngineContainer(c, publishedEngineArches),
+		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),
 	})
 	return err
 }
@@ -208,12 +216,12 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	defer c.Close()
 
-	registry := c.Container().From("registry:2").
+	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil)
 
 	const htpasswd = "john:$2y$05$/iP8ud0Fs8o3NLlElyfVVOp6LesJl3oRLYoc3neArZKWX10OhynSC" //nolint:gosec
-	privateRegistry := c.Container().From("registry:2").
+	privateRegistry := c.Pipeline("private registry").Container().From("registry:2").
 		WithNewFile("/auth/htpasswd", dagger.ContainerWithNewFileOpts{Contents: htpasswd}).
 		WithEnvVariable("REGISTRY_AUTH", "htpasswd").
 		WithEnvVariable("REGISTRY_AUTH_HTPASSWD_REALM", "Registry Realm").
@@ -221,7 +229,19 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil)
 
-	devEngine := devEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH})[0]
+	opts := util.DevEngineOpts{
+		EntrypointArgs: map[string]string{
+			"network-name": "dagger-dev",
+			"network-cidr": "10.88.0.0/16",
+		},
+		ConfigEntries: map[string]string{
+			"grpc":                            `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
+			`registry."registry:5000"`:        "http = true",
+			`registry."privateregistry:5000"`: "http = true",
+			`registry."docker.io"`:            `mirrors = ["mirror.gcr.io"]`,
+		},
+	}
+	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, opts)[0]
 	devEngine = devEngine.
 		WithServiceBinding("registry", registry).
 		WithServiceBinding("privateregistry", privateRegistry).
@@ -251,7 +271,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
-	output, err := util.CleanGoBase(c).
+	output, err := util.GoBase(c).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngine).
@@ -298,7 +318,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	arches := []string{runtime.GOARCH}
 
 	_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
-		PlatformVariants: devEngineContainer(c, arches),
+		PlatformVariants: util.DevEngineContainer(c, arches),
 	})
 	if err != nil {
 		return err
@@ -378,42 +398,122 @@ func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 		File("./bin/dnsname")
 }
 
-func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
-	platformVariants := make([]*dagger.Container, 0, len(arches))
-	for _, arch := range arches {
-		platformVariants = append(platformVariants, c.
-			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
-			From("alpine:"+alpineVersion).
-			WithExec([]string{
-				"apk", "add",
-				// for Buildkit
-				"git", "openssh", "pigz", "xz",
-				// for CNI
-				"iptables", "ip6tables", "dnsmasq",
-			}).
-			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
-				Permissions: 0700,
-			}).
-			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
-			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
-			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
-			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
-			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
-			WithDirectory(engineDefaultStateDir, c.Directory()).
-			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
-				Contents:    engineConfig,
-				Permissions: 0600,
-			}).
-			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
-				Contents:    engineEntrypoint,
-				Permissions: 755,
-			}).
-			WithEntrypoint([]string{"dagger-entrypoint.sh"}),
-		)
-	}
+// DevEngineOpts are options for the dev engine
+// type DevEngineOpts struct {
+// 	EntrypointArgs map[string]string
+// 	ConfigEntries  map[string]string
+// }
 
-	return platformVariants
-}
+// func getEntrypoint(opts ...DevEngineOpts) (string, error) {
+// 	mergedOpts := map[string]string{}
+// 	for _, opt := range opts {
+// 		maps.Copy(mergedOpts, opt.EntrypointArgs)
+// 	}
+// 	keys := maps.Keys(mergedOpts)
+// 	sort.Strings(keys)
+
+// 	var entrypoint string
+
+// 	type entrypointTmplParams struct {
+// 		Bridge            string
+// 		EngineBin         string
+// 		EngineConfig      string
+// 		EntrypointArgs    map[string]string
+// 		EntrypointArgKeys []string
+// 	}
+// 	tmpl := template.Must(template.New("entrypoint").Parse(engineEntrypointTmpl))
+// 	buf := new(bytes.Buffer)
+// 	err := tmpl.Execute(buf, entrypointTmplParams{
+// 		EngineBin:         "/usr/local/bin/" + engineBinName,
+// 		EngineConfig:      engineTomlPath,
+// 		EntrypointArgs:    mergedOpts,
+// 		EntrypointArgKeys: keys,
+// 	})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	entrypoint = buf.String()
+
+// 	return entrypoint, nil
+// }
+
+// func getConfig(opts ...DevEngineOpts) (string, error) {
+// 	mergedOpts := map[string]string{}
+// 	for _, opt := range opts {
+// 		maps.Copy(mergedOpts, opt.ConfigEntries)
+// 	}
+// 	keys := maps.Keys(mergedOpts)
+// 	sort.Strings(keys)
+
+// 	var config string
+
+// 	type configTmplParams struct {
+// 		ConfigEntries map[string]string
+// 		ConfigKeys    []string
+// 	}
+// 	tmpl := template.Must(template.New("config").Parse(engineConfigTmpl))
+// 	buf := new(bytes.Buffer)
+// 	err := tmpl.Execute(buf, configTmplParams{
+// 		ConfigEntries: mergedOpts,
+// 		ConfigKeys:    keys,
+// 	})
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	config = buf.String()
+
+// 	return config, nil
+// }
+
+// func DevEngineContainer(c *dagger.Client, arches []string, opts ...DevEngineOpts) []*dagger.Container {
+// 	return devEngineContainer(c, arches, opts...)
+// }
+
+// func devEngineContainer(c *dagger.Client, arches []string, opts ...DevEngineOpts) []*dagger.Container {
+// 	engineConfig, err := getConfig(opts...)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	engineEntrypoint, err := getEntrypoint(opts...)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+
+// 	platformVariants := make([]*dagger.Container, 0, len(arches))
+// 	for _, arch := range arches {
+// 		platformVariants = append(platformVariants, c.
+// 			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
+// 			From("alpine:"+alpineVersion).
+// 			WithExec([]string{
+// 				"apk", "add",
+// 				// for Buildkit
+// 				"git", "openssh", "pigz", "xz",
+// 				// for CNI
+// 				"iptables", "ip6tables", "dnsmasq",
+// 			}).
+// 			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
+// 				Permissions: 0700,
+// 			}).
+// 			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
+// 			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
+// 			WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
+// 			WithDirectory("/usr/local/bin", qemuBins(c, arch)).
+// 			WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
+// 			WithDirectory(engineDefaultStateDir, c.Directory()).
+// 			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
+// 				Contents:    engineConfig,
+// 				Permissions: 0600,
+// 			}).
+// 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
+// 				Contents:    engineEntrypoint,
+// 				Permissions: 755,
+// 			}).
+// 			WithEntrypoint([]string{"dagger-entrypoint.sh"}),
+// 		)
+// 	}
+
+// 	return platformVariants
+// }
 
 func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 	cniURL := fmt.Sprintf(

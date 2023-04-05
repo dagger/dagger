@@ -71,8 +71,14 @@ func (t Nodejs) Test(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("test")
 
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	if err != nil {
+		return err
+	}
+
 	_, err = nodeJsBase(c).
-		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithExec([]string{"yarn", "test"}).
 		ExitCode(ctx)
 	return err
@@ -88,8 +94,15 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("generate")
 
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	if err != nil {
+		return err
+	}
+
 	generated, err := nodeJsBase(c).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithExec([]string{"client-gen", "--lang", "nodejs", "-o", nodejsGeneratedAPIPath}).
 		WithExec([]string{
 			"yarn",
@@ -173,5 +186,5 @@ func nodeJsBase(c *dagger.Client) *dagger.Container {
 			WithDirectory("/workdir", workdir),
 	)
 
-	return util.AdvertiseDevEngine(c, src)
+	return src
 }

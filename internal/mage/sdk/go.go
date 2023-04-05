@@ -58,15 +58,25 @@ func (t Go) Test(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
 
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	if err != nil {
+		return err
+	}
+
 	output, err := util.GoBase(c).
 		WithWorkdir("sdk/go").
-		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithExec([]string{"go", "test", "-v", "./..."}).
 		Stdout(ctx)
 	if err != nil {
 		err = fmt.Errorf("test failed: %w\n%s", err, output)
 	}
 	return err
+}
+
+func goBaseAndDevEngine(c *dagger.Client) *dagger.Container {
+	return util.CIDevEngineContainer(c.Pipeline("dev-engine"))
 }
 
 // Generate re-generates the SDK API
@@ -79,10 +89,17 @@ func (t Go) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("generate")
 
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	if err != nil {
+		return err
+	}
+
 	generated, err := util.GoBase(c).
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 		WithWorkdir("sdk/go").
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithExec([]string{"go", "generate", "-v", "./..."}).
 		File(path.Base(goGeneratedAPIPath)).
 		Contents(ctx)

@@ -117,7 +117,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build"))
 }
 
-func CleanGoBase(c *dagger.Client) *dagger.Container {
+func GoBase(c *dagger.Client) *dagger.Container {
 	return goBase(c)
 }
 
@@ -126,9 +126,9 @@ func CleanGoBase(c *dagger.Client) *dagger.Container {
 //
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
-func GoBase(c *dagger.Client) *dagger.Container {
-	return AdvertiseDevEngine(c, goBase(c))
-}
+// func GoBase(c *dagger.Client) *dagger.Container {
+// 	return AdvertiseDevEngine(c, goBase(c))
+// }
 
 func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {
 	base := goBase(c)
