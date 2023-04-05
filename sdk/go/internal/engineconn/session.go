@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/tools/go/packages"
 )
 
 type cliSessionConn struct {
@@ -42,13 +44,46 @@ func (c *cliSessionConn) Close() error {
 	return nil
 }
 
+func getSDKVersion() (string, error) {
+	cfg := &packages.Config{Mode: packages.NeedModule}
+	pkgs, err := packages.Load(cfg, "dagger.io/dagger")
+	if err != nil {
+		return "", err
+	}
+	if len(pkgs) != 1 {
+		return "", fmt.Errorf("expected one package, found %d", len(pkgs))
+	}
+
+	version := pkgs[0].Module.Version
+	if len(version) > 0 && version[0] == 'v' {
+		version = version[1:]
+	}
+
+	return version, nil
+}
+
 func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
 	args := []string{"session"}
-	if cfg.Workdir != "" {
-		args = append(args, "--workdir", cfg.Workdir)
+
+	version, err := getSDKVersion()
+	if err != nil {
+		return nil, fmt.Errorf("error getting version: %v", err)
 	}
-	if cfg.ConfigPath != "" {
-		args = append(args, "--project", cfg.ConfigPath)
+
+	flagsAndValues := []struct {
+		flag  string
+		value string
+	}{
+		{"--workdir", cfg.Workdir},
+		{"--project", cfg.ConfigPath},
+		{"--ua", "sdk:go"},
+		{"--ua", fmt.Sprintf("version:%s", version)},
+	}
+
+	for _, pair := range flagsAndValues {
+		if pair.value != "" {
+			args = append(args, pair.flag, pair.value)
+		}
 	}
 
 	env := os.Environ()
