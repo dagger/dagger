@@ -2,6 +2,7 @@ package tui
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"path"
@@ -32,6 +33,7 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 	}
 
 	group := []string{}
+	var isService bool
 	for i, p := range name.Pipeline {
 		if i == 0 && p.Name == "" {
 			// skip root pipeline; we show the command logs instead
@@ -39,6 +41,12 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 		}
 
 		group = append(group, p.Name)
+
+		for _, l := range p.Labels {
+			if l.Name == pipeline.ServiceHostnameLabel {
+				isService = true
+			}
+		}
 	}
 
 	saneName := strings.Join(strings.Fields(name.Name), " ")
@@ -53,6 +61,7 @@ func NewItem(v *bkclient.Vertex, width int) *Item {
 		statusesModel: viewport.New(width, 1),
 		spinner:       newSpinner(),
 		width:         width,
+		isService:     isService,
 	}
 }
 
@@ -74,6 +83,7 @@ type Item struct {
 	internal      bool
 	spinner       spinner.Model
 	width         int
+	isService     bool
 }
 
 func (i *Item) ID() digest.Digest       { return i.id }
@@ -84,7 +94,17 @@ func (i *Item) Entries() []TreeEntry    { return nil }
 func (i *Item) Started() *time.Time     { return i.started }
 func (i *Item) Completed() *time.Time   { return i.completed }
 func (i *Item) Cached() bool            { return i.cached }
-func (i *Item) Error() string           { return i.error }
+func (i *Item) Service() bool           { return i.isService }
+
+func (i *Item) Error() string {
+	if i.Service() && strings.Contains(i.error, context.Canceled.Error()) {
+		// ignore services "errors" from simply being interrupted when no longer
+		// needed
+		return ""
+	}
+
+	return i.error
+}
 
 func (i *Item) UpdateVertex(v *bkclient.Vertex) {
 	// Started clock might reset for each layer when pulling images.
@@ -213,6 +233,7 @@ type Group struct {
 	name        string
 	entries     []TreeEntry
 	entriesByID map[string]TreeEntry
+	isService   bool
 }
 
 var _ TreeEntry = &Group{}
@@ -321,6 +342,10 @@ func (g *Group) Error() string {
 		}
 	}
 	return ""
+}
+
+func (g *Group) Service() bool {
+	return false
 }
 
 func (g *Group) Started() *time.Time {

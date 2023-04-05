@@ -26,6 +26,7 @@ type TreeEntry interface {
 	Completed() *time.Time
 	Cached() bool
 	Error() string
+	Service() bool
 
 	SetWidth(int)
 	SetHeight(int)
@@ -455,6 +456,11 @@ func findOldestIncompleteEntry(entry TreeEntry) TreeEntry {
 		completed := e.Completed()
 		cached := e.Cached()
 		entries := e.Entries()
+
+		if e.Service() {
+			// avoid following services, since they run forever
+			return
+		}
 
 		if len(entries) == 0 && started != nil && completed == nil && !cached {
 			if oldestIncompleteEntry == nil || started.Before(oldestStartedTime) {
