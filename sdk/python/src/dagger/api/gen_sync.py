@@ -1884,8 +1884,7 @@ class File(Type):
         """Retrieves a secret referencing the contents of this file.
 
         .. deprecated::
-            insecure, leaves secret in cache. Superseded by
-            :py:meth:`set_secret`
+            insecure, leaves secret in cache
         """
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
@@ -2159,11 +2158,7 @@ class HostVariable(Type):
 
     @typecheck
     def secret(self) -> "Secret":
-        """A secret referencing the value of this variable.
-
-        .. deprecated::
-            been superseded by :py:meth:`set_secret`
-        """
+        """A secret referencing the value of this variable."""
         _args: list[Arg] = []
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
