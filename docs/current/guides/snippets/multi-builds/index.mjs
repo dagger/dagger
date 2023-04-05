@@ -18,7 +18,7 @@ connect(async (client) => {
     // create empty directory to put build outputs
     var outputs = client.directory()
 
-    const golang = await client.container()
+    const golang = client.container()
         // get golang image
         .from("golang:latest")
         // mount source code into golang image
