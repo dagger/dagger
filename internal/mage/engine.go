@@ -161,6 +161,8 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("engine").Pipeline("test")
+
 	opts := util.DevEngineOpts{
 		ConfigEntries: map[string]string{
 			`registry."registry:5000"`:        "http = true",
@@ -185,8 +187,6 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	if err != nil {
 		return err
 	}
-
-	c = c.Pipeline("engine").Pipeline("test")
 
 	cgoEnabledEnv := "0"
 	args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
