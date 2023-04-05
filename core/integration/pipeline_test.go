@@ -80,4 +80,32 @@ func TestPipeline(t *testing.T) {
 
 		require.Contains(t, logs.String(), "directory pipeline")
 	})
+
+	t.Run("service pipeline", func(t *testing.T) {
+		t.Parallel()
+
+		var logs safeBuffer
+		c, err := dagger.Connect(ctx, dagger.WithLogOutput(&logs))
+		require.NoError(t, err)
+		defer c.Close()
+
+		srv, url := httpService(ctx, t, c, "Hello, world!")
+
+		hostname, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		client := c.Container().
+			From("alpine:3.16.2").
+			WithServiceBinding("www", srv).
+			WithExec([]string{"apk", "add", "curl"}).
+			WithExec([]string{"curl", "-v", url})
+
+		code, err := client.ExitCode(ctx)
+		require.NoError(t, err)
+		require.Equal(t, 0, code)
+
+		require.NoError(t, c.Close()) // close + flush logs
+
+		require.Contains(t, logs.String(), "service "+hostname)
+	})
 }
