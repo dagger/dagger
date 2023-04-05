@@ -117,18 +117,14 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithMountedCache("/root/.cache/go-build", c.CacheVolume("go-build"))
 }
 
-func GoBase(c *dagger.Client) *dagger.Container {
-	return goBase(c)
-}
-
 // GoBase is a standardized base image for running Go, cache optimized for the layout
 // of this repository
 //
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
-// func GoBase(c *dagger.Client) *dagger.Container {
-// 	return AdvertiseDevEngine(c, goBase(c))
-// }
+func GoBase(c *dagger.Client) *dagger.Container {
+	return goBase(c)
+}
 
 func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {
 	base := goBase(c)

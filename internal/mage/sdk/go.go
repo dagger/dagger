@@ -78,10 +78,6 @@ func (t Go) Test(ctx context.Context) error {
 	return err
 }
 
-func goBaseAndDevEngine(c *dagger.Client) *dagger.Container {
-	return util.CIDevEngineContainer(c.Pipeline("dev-engine"))
-}
-
 // Generate re-generates the SDK API
 func (t Go) Generate(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
