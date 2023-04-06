@@ -46,6 +46,7 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 var waitDelay time.Duration
+var useShinyNewTUI bool = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") == "1"
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -103,6 +104,17 @@ func run(ctx context.Context, args []string) error {
 	// make sure they all get signalled. (you don't normally notice this in a
 	// shell because Ctrl+C sends to the process group.)
 	ensureChildProcessesAreKilled(subCmd)
+
+	if !useShinyNewTUI {
+		subCmd.Stdin = os.Stdin
+		subCmd.Stdout = os.Stdout
+		subCmd.Stderr = os.Stderr
+
+		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, api *router.Router) error {
+			go http.Serve(sessionL, api) // nolint:gosec
+			return subCmd.Run()
+		})
+	}
 
 	cmdline := strings.Join(args, " ")
 	model := tui.New(quit, journalR, cmdline)
