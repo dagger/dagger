@@ -2582,7 +2582,7 @@ func TestContainerImport(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	imported := c.Container().Import(c.Host().Directory(dest).File(imagePath))
+	imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
 
 	out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 	require.NoError(t, err)

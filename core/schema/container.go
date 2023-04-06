@@ -584,7 +584,7 @@ type containerImportArgs struct {
 func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
 	file := &core.File{ID: args.Source}
 
-	src, err := file.Open(ctx, s.host, s.bkClient, s.solveOpts, s.solveCh)
+	src, err := file.Open(ctx, s.host, s.gw)
 	if err != nil {
 		return nil, err
 	}
