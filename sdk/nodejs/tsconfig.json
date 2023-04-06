@@ -9,7 +9,7 @@
     "rootDir": ".",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "module": "ES6",
+    "module": "ES2020",
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "moduleResolution": "Node",

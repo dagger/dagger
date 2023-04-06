@@ -9,6 +9,7 @@ import * as path from "path"
 import * as process from "process"
 import readline from "readline"
 import * as tar from "tar"
+import { fileURLToPath } from "url"
 
 import Client from "../api/client.gen.js"
 import {
@@ -125,28 +126,14 @@ export class Bin implements EngineConn {
 
   // Helper function to get the package version
   private async getSDKVersion() {
+    const currentFileUrl = import.meta.url
+    const currentFilePath = fileURLToPath(currentFileUrl)
+    const projectRoot = path.resolve(currentFilePath, "..", "..", "..")
+    const packageJsonPath = path.join(projectRoot, "package.json")
     try {
-      // Get the path of the Dagger package
-      // const daggerPackagePath = require.resolve("@dagger.io/dagger")
-
-      const daggerPackagePath = path.dirname(await import("@dagger.io/dagger"))
-      // Get the path of the package.json file inside the Dagger package
-      const packageJsonPath = path.join(daggerPackagePath, "..", "package.json")
-      // Read the content of the package.json file
-      const packageJsonContent = await fs.promises.readFile(
-        packageJsonPath,
-        "utf8"
-      )
-      // Parse the content of the package.json file
+      const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
       const packageJson = JSON.parse(packageJsonContent)
-
-      let version = packageJson.version
-      // Remove the "v" prefix from the version if present
-      if (version && version.startsWith("v")) {
-        version = version.slice(1)
-      }
-
-      return version
+      return packageJson.version
     } catch (error) {
       if (error instanceof GetSDKVersionError) {
         throw new GetSDKVersionError(
