@@ -76,7 +76,8 @@ const (
 )
 
 // Network returns the value appropriate for the "network" argument to Go
-// net.Dial.
+// net.Dial, and for appending to the port number to form the key for the
+// ExposedPorts object in the OCI image config.
 func (p NetworkProtocol) Network() string {
 	return strings.ToLower(string(p))
 }
