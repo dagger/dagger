@@ -99,6 +99,7 @@ func NewOperatorClient(ctx context.Context, c *bkclient.Client) (_ *dagger.Clien
 				DisableHostRW:  true,
 				EnableServices: true,
 				Auth:           registryAuth,
+				Secrets:        secretStore,
 			})
 			if err != nil {
 				return nil, err
