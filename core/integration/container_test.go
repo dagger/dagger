@@ -93,9 +93,7 @@ func TestContainerWith(t *testing.T) {
 		return c.WithEnvVariable("FOO", foo)
 	})
 
-	out, err := alpine.Exec(dagger.ContainerExecOpts{
-		Args: []string{"printenv", "FOO"},
-	}).Stdout(ctx)
+	out, err := alpine.WithExec([]string{"printenv", "FOO"}).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar\n", out)
 
@@ -112,7 +110,7 @@ func TestContainerWith(t *testing.T) {
 
 	withEnv := func(env, val string) dagger.WithContainerFunc {
 		return func(c *dagger.Container) *dagger.Container {
-			return c.WithEnvVariable("FOOD", val)
+			return c.WithEnvVariable(env, val)
 		}
 	}
 
