@@ -273,7 +273,6 @@ type Group struct {
 	name        string
 	entries     []TreeEntry
 	entriesByID map[string]TreeEntry
-	isService   bool
 }
 
 func NewGroup(id, name string, logs groupModel) *Group {
