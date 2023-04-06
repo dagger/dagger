@@ -51,7 +51,16 @@ func getSDKVersion() string {
 		return "n/a"
 	}
 
-	version := pkgs[0].Module.Version
+	// TODO: handle a different workdir
+	// This happens when we change the workdir, which is typical for mage, i.e.
+	// `-w ../..`. There may be no go.mod, or the go.mod at that level does not
+	// have a dager.io/dagger package. We want to come back and address this.
+	module := pkgs[0].Module
+	if module == nil {
+		return "n/a"
+	}
+
+	version := module.Version
 	if len(version) > 0 && version[0] == 'v' {
 		version = version[1:]
 	}
