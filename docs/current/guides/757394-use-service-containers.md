@@ -360,6 +360,10 @@ The application used in this example is [Drupal](https://www.drupal.org/), a pop
 
 This example begins by creating a MariaDB service container and initializing a new MariaDB database. It then creates a Drupal container and installs required dependencies into it. Next, it adds a binding for the MariaDB service (`db`) in the Drupal container and sets a container environment variable (`SIMPLETEST_DB`) with the database DSN. Finally, it runs Drupal's kernel tests (which [require a database connection](https://www.drupal.org/docs/automated-testing/phpunit-in-drupal/running-phpunit-tests#non-unit-tests)) using PHPUnit and prints the test summary to the console.
 
+:::tip
+Explicitly specifying the service container port with `WithExposedPort()` (Go), `withExposedPort()` (Node.js) or `with_exposed_port()` (Python) is particularly important here. Without it, Dagger will start the service container and immediately allow access to service clients. With it, Dagger will wait for the service to be listening first.
+:::
+
 ## Conclusion
 
 This tutorial walked you through the basics of using service containers with Dagger. It explained how container-to-container networking and the service lifecycle is implemented in Dagger. It also provided examples of exposing service ports, binding services and persisting service state using Dagger.
