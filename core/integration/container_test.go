@@ -17,6 +17,9 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/google/go-containerregistry/pkg/name"
+	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
@@ -2572,21 +2575,39 @@ func TestContainerImport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	ctr := c.Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("FOO", "bar")
-
 	imagePath := filepath.Join(dest, "image.tar")
 
-	ok, err := ctr.Export(ctx, imagePath)
-	require.NoError(t, err)
-	require.True(t, ok)
+	t.Run("OCI", func(t *testing.T) {
+		ctr := c.Container().
+			From("alpine:3.16.2").
+			WithEnvVariable("FOO", "bar")
 
-	imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+		ok, err := ctr.Export(ctx, imagePath)
+		require.NoError(t, err)
+		require.True(t, ok)
 
-	out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "bar\n", out)
+		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+
+		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar\n", out)
+	})
+
+	t.Run("Docker", func(t *testing.T) {
+		ref := name.MustParseReference("alpine:3.16.2")
+
+		img, err := remote.Image(ref)
+		require.NoError(t, err)
+
+		err = tarball.WriteToFile(imagePath, ref, img)
+		require.NoError(t, err)
+
+		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+
+		out, err := imported.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "3.16.2\n", out)
+	})
 }
 
 func TestContainerMultiPlatformExport(t *testing.T) {
