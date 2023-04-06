@@ -11,7 +11,7 @@ from dagger.exceptions import ProvisionError
 
 def test_getting_connect_params(fp: FakeProcess):
     fp.register(
-        ["dagger", "session"],
+        ["dagger", "session", "--label" ,"sdk:python","--label", "sdk_version:0.0.0", "--label", "sdk_async:true"],
         stdout=['{"port":50004,"session_token":"abc"}', ""],
     )
     with cli.CLISession(dagger.Config(), "dagger") as conn:
