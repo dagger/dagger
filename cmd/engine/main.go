@@ -219,11 +219,13 @@ func main() { //nolint:gocyclo
 		ctx, cancel := context.WithCancel(appcontext.Context())
 		defer cancel()
 
+		bklog.G(ctx).Debug("loading engine config file")
 		cfg, err := config.LoadFile(c.GlobalString("config"))
 		if err != nil {
 			return err
 		}
 
+		bklog.G(ctx).Debug("setting up engine networking")
 		cniConfigPath, err := setupNetwork(
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
@@ -232,6 +234,7 @@ func main() { //nolint:gocyclo
 			return err
 		}
 
+		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
 		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
 			return err
 		}
@@ -253,6 +256,7 @@ func main() { //nolint:gocyclo
 			}
 		}
 
+		bklog.G(ctx).Debug("setting up engine tracing")
 		tp, err := detect.TracerProvider()
 		if err != nil {
 			return err
@@ -265,6 +269,7 @@ func main() { //nolint:gocyclo
 		unary := grpc_middleware.ChainUnaryServer(unaryInterceptor(context.Background(), tp), grpcerrors.UnaryServerInterceptor)
 		stream := grpc_middleware.ChainStreamServer(streamTracer, grpcerrors.StreamServerInterceptor)
 
+		bklog.G(ctx).Debug("creating engine GRPC server")
 		opts := []grpc.ServerOption{grpc.UnaryInterceptor(unary), grpc.StreamInterceptor(stream)}
 		server := grpc.NewServer(opts...)
 
@@ -279,6 +284,7 @@ func main() { //nolint:gocyclo
 			return errors.Wrapf(err, "failed to create %s", root)
 		}
 
+		bklog.G(ctx).Debug("creating engine lockfile")
 		lockPath := filepath.Join(root, "buildkitd.lock")
 		lock := flock.New(lockPath)
 		locked, err := lock.TryLock()
@@ -293,6 +299,7 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
+		bklog.G(ctx).Debug("creating engine controller")
 		controller, remoteCacheDoneCh, err := newController(ctx, c, &cfg)
 		if err != nil {
 			return err
@@ -320,17 +327,20 @@ func main() { //nolint:gocyclo
 		// server setup before officially starting the server on the unix socket listeners
 		// used by actual clients. This enables, for example, clients to wait for cache
 		// mounts to be synchronized before actually connecting and starting to use them.
+		bklog.G(ctx).Debug("creating engine in mem listener")
 		memListener := newInMemListener(server)
 		memClient, err := memListener.NewClient(ctx)
 		if err != nil {
 			return err
 		}
 
+		bklog.G(ctx).Debug("creating engine operator client")
 		daggerClient, stopOperatorSession, err := NewOperatorClient(ctx, memClient)
 		if err != nil {
 			return err
 		}
 		defer stopOperatorSession()
+		bklog.G(ctx).Debug("starting optional cache mount synchronization")
 		stopCacheMountSync, err := daggerremotecache.StartCacheMountSynchronization(ctx, daggerClient)
 		if err != nil {
 			cancel()
@@ -339,6 +349,7 @@ func main() { //nolint:gocyclo
 		}
 
 		// start serving on the listeners for actual clients
+		bklog.G(ctx).Debug("starting main engine grpc listeners")
 		errCh := make(chan error, 1)
 		if err := serveGRPC(cfg.GRPC, server, errCh); err != nil {
 			return err
@@ -356,21 +367,25 @@ func main() { //nolint:gocyclo
 		// TODO:(sipsma) make timeouts configurable
 		stopCacheSyncCtx, cancelCacheSync := context.WithTimeout(context.Background(), 300*time.Second)
 		defer cancelCacheSync()
+		bklog.G(ctx).Debug("stopping cache mount synchronization")
 		stopCacheMountSyncErr := stopCacheMountSync(stopCacheSyncCtx)
 		if stopCacheMountSyncErr != nil {
 			bklog.G(ctx).WithError(stopCacheMountSyncErr).Error("failed to stop cache mount synchronization")
 		}
 		err = goerrors.Join(err, stopCacheMountSyncErr)
+		bklog.G(ctx).Debug("stopping operator session")
 		stopOperatorSession()
 
 		if os.Getenv("NOTIFY_SOCKET") != "" {
 			notified, notifyErr := sddaemon.SdNotify(false, sddaemon.SdNotifyStopping)
 			bklog.G(ctx).Debugf("SdNotifyStopping notified=%v, err=%v", notified, notifyErr)
 		}
+		bklog.G(ctx).Debug("waiting for remote cache export to finish")
 		select {
 		case <-remoteCacheDoneCh:
 		case <-time.After(60 * time.Second):
 		}
+		bklog.G(ctx).Debug("waiting for all clients to gracefully disconnect")
 		server.GracefulStop()
 		return err
 	}
