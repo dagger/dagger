@@ -165,7 +165,7 @@ export class Bin implements EngineConn {
       { flag: "--workdir", value: opts.Workdir },
       { flag: "--project", value: opts.Project },
       { flag: "--label", value: "sdk:node" },
-      { flag: "--label", value: `version:${sdkVersion}` },
+      { flag: "--label", value: `sdk_version:${sdkVersion}` },
     ]
 
     flagsAndValues.forEach((pair) => {

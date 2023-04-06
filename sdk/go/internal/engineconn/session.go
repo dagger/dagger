@@ -44,14 +44,11 @@ func (c *cliSessionConn) Close() error {
 	return nil
 }
 
-func getSDKVersion() (string, error) {
+func getSDKVersion() string {
 	cfg := &packages.Config{Mode: packages.NeedModule}
 	pkgs, err := packages.Load(cfg, "dagger.io/dagger")
 	if err != nil {
-		return "", err
-	}
-	if len(pkgs) != 1 {
-		return "", fmt.Errorf("expected one package, found %d", len(pkgs))
+		return "n/a"
 	}
 
 	version := pkgs[0].Module.Version
@@ -59,16 +56,13 @@ func getSDKVersion() (string, error) {
 		version = version[1:]
 	}
 
-	return version, nil
+	return version
 }
 
 func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ EngineConn, rerr error) {
 	args := []string{"session"}
 
-	version, err := getSDKVersion()
-	if err != nil {
-		return nil, fmt.Errorf("error getting version: %v", err)
-	}
+	version := getSDKVersion()
 
 	flagsAndValues := []struct {
 		flag  string
@@ -76,8 +70,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}{
 		{"--workdir", cfg.Workdir},
 		{"--project", cfg.ConfigPath},
-		{"--ua", "sdk:go"},
-		{"--ua", fmt.Sprintf("version:%s", version)},
+		{"--label", "sdk:go"},
+		{"--label", fmt.Sprintf("sdk_version:%s", version)},
 	}
 
 	for _, pair := range flagsAndValues {
