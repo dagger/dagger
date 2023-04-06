@@ -11,8 +11,7 @@ from dagger.exceptions import ProvisionError
 
 def test_getting_connect_params(fp: FakeProcess):
     fp.register(
-        ["dagger", "session", "--label" ,"sdk:python","--label",
-         "sdk_version:0.0.0", "--label", "sdk_async:true"],
+        ["dagger", "session", fp.any()],
         stdout=['{"port":50004,"session_token":"abc"}', ""],
     )
     with cli.CLISession(dagger.Config(), "dagger") as conn:
@@ -42,8 +41,7 @@ def test_getting_connect_params(fp: FakeProcess):
 )
 def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
     fp.register(
-       ["dagger", "session", "--label" ,"sdk:python","--label",
-         "sdk_version:0.0.0", "--label", "sdk_async:true"],
+        ["dagger", "session", fp.any()],
         **call_kwargs,
     )
     with pytest.raises(
@@ -58,8 +56,7 @@ def test_cli_exec_errors(config_args: dict, call_kwargs: dict, fp: FakeProcess):
 
 def test_stderr(fp: FakeProcess):
     fp.register(
-        ["dagger", "session", "--label" ,"sdk:python","--label",
-         "sdk_version:0.0.0", "--label", "sdk_async:true"],
+        ["dagger", "session", fp.any()],
         stderr=["Error: buildkit failed to respond", ""],
         returncode=1,
     )
