@@ -68,12 +68,16 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 func AdvertiseDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 	// the cli bin is statically linked, can just mount it in anywhere
 	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
+	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+		// Mount in the docker socket if it exists in the expected location
+		// Not all hosts will use the same location, and some hosts may connect to a remote engine
+		ctr = ctr.
+			WithUnixSocket("/var/run/docker.sock", c.Host().UnixSocket("/var/run/docker.sock"))
+	}
 
 	cliBinPath := "/.dagger-cli"
 	return ctr.
-		// Mount in the docker cli + socket, this will be used to connect to the dev engine
-		// container
-		WithUnixSocket("/var/run/docker.sock", c.Host().UnixSocket("/var/run/docker.sock")).
+		// Mount in the docker cli - will be used to connect to the dev engine container
 		WithMountedFile("/usr/bin/docker", dockerCli).
 		// Also mount in the engine session binary.
 		// FIXME: this shouldn't be necessary, but provisioning the engine session binary

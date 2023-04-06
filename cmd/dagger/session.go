@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
@@ -19,14 +20,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var sessionLabels pipeline.Labels
+
 func sessionCmd() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:          "session",
-		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger engine. It is not intended to be used by humans directly.",
+		Long:         "WARNING: this is an internal-only command used by Dagger SDKs to communicate with the Dagger Engine. It is not intended to be used by humans directly.",
 		Hidden:       true,
 		RunE:         EngineSession,
 		SilenceUsage: true,
 	}
+	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
+	return cmd
 }
 
 type connectParams struct {
@@ -40,6 +45,8 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	labels := &sessionLabels
+
 	startOpts := &engine.Config{
 		Workdir:      workdir,
 		ConfigPath:   configPath,
@@ -47,7 +54,9 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
 		JournalURI:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		UserAgent:    labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
 	}
+
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 
