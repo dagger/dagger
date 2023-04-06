@@ -17,7 +17,6 @@ import {
   EngineSessionConnectParamsParseError,
   EngineSessionError,
   InitEngineSessionBinaryError,
-  GetSDKVersionError,
 } from "../common/errors/index.js"
 import { ConnectParams } from "../connect.js"
 import { ConnectOpts, EngineConn } from "./engineconn.js"
@@ -124,23 +123,29 @@ export class Bin implements EngineConn {
     return binPath
   }
 
-  // Helper function to get the package version
-  private async getSDKVersion() {
+  /**
+   * Traverse up the directory tree to find the package.json file and return the
+   * SDK version.
+   * @returns the SDK version or "n/a" if the version cannot be found.
+   */
+  private getSDKVersion() {
     const currentFileUrl = import.meta.url
     const currentFilePath = fileURLToPath(currentFileUrl)
-    const projectRoot = path.resolve(currentFilePath, "..", "..", "..")
-    const packageJsonPath = path.join(projectRoot, "package.json")
-    try {
-      const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
-      const packageJson = JSON.parse(packageJsonContent)
-      return packageJson.version
-    } catch (error) {
-      if (error instanceof GetSDKVersionError) {
-        throw new GetSDKVersionError(
-          `Error getting SDK version: ${error.message}`
-        )
+    let currentPath = path.dirname(currentFilePath)
+
+    while (currentPath !== path.parse(currentPath).root) {
+      const packageJsonPath = path.join(currentPath, "package.json")
+      if (fs.existsSync(packageJsonPath)) {
+        try {
+          const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
+          const packageJson = JSON.parse(packageJsonContent)
+          return packageJson.version
+        } catch (error) {
+          return "n/a"
+        }
+      } else {
+        currentPath = path.join(currentPath, "..")
       }
-      throw new Error(`Unknow error while catching SDK version: ${error}`)
     }
   }
 
@@ -154,13 +159,13 @@ export class Bin implements EngineConn {
   ): Promise<Client> {
     const args = [binPath, "session"]
 
-    const sdkVersion = await this.getSDKVersion()
+    const sdkVersion = this.getSDKVersion()
 
     const flagsAndValues = [
       { flag: "--workdir", value: opts.Workdir },
       { flag: "--project", value: opts.Project },
-      { flag: "--ua", value: "sdk:node" },
-      { flag: "--ua", value: `version:${sdkVersion}` },
+      { flag: "--label", value: "sdk:node" },
+      { flag: "--label", value: `version:${sdkVersion}` },
     ]
 
     flagsAndValues.forEach((pair) => {
