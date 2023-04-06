@@ -16,6 +16,7 @@ import {
   EngineSessionConnectParamsParseError,
   EngineSessionError,
   InitEngineSessionBinaryError,
+  GetSDKVersionError,
 } from "../common/errors/index.js"
 import { ConnectParams } from "../connect.js"
 import { ConnectOpts, EngineConn } from "./engineconn.js"
@@ -122,6 +123,40 @@ export class Bin implements EngineConn {
     return binPath
   }
 
+  // Helper function to get the package version
+  private async getSDKVersion() {
+    try {
+      // Get the path of the Dagger package
+      // const daggerPackagePath = require.resolve("@dagger.io/dagger")
+
+      const daggerPackagePath = path.dirname(await import("@dagger.io/dagger"))
+      // Get the path of the package.json file inside the Dagger package
+      const packageJsonPath = path.join(daggerPackagePath, "..", "package.json")
+      // Read the content of the package.json file
+      const packageJsonContent = await fs.promises.readFile(
+        packageJsonPath,
+        "utf8"
+      )
+      // Parse the content of the package.json file
+      const packageJson = JSON.parse(packageJsonContent)
+
+      let version = packageJson.version
+      // Remove the "v" prefix from the version if present
+      if (version && version.startsWith("v")) {
+        version = version.slice(1)
+      }
+
+      return version
+    } catch (error) {
+      if (error instanceof GetSDKVersionError) {
+        throw new GetSDKVersionError(
+          `Error getting SDK version: ${error.message}`
+        )
+      }
+      throw new Error(`Unknow error while catching SDK version: ${error}`)
+    }
+  }
+
   /**
    * runEngineSession execute the engine binary and set up a GraphQL client that
    * target this engine.
@@ -132,12 +167,20 @@ export class Bin implements EngineConn {
   ): Promise<Client> {
     const args = [binPath, "session"]
 
-    if (opts.Workdir) {
-      args.push("--workdir", opts.Workdir)
-    }
-    if (opts.Project) {
-      args.push("--project", opts.Project)
-    }
+    const sdkVersion = await this.getSDKVersion()
+
+    const flagsAndValues = [
+      { flag: "--workdir", value: opts.Workdir },
+      { flag: "--project", value: opts.Project },
+      { flag: "--ua", value: "sdk:node" },
+      { flag: "--ua", value: `version:${sdkVersion}` },
+    ]
+
+    flagsAndValues.forEach((pair) => {
+      if (pair.value) {
+        args.push(pair.flag, pair.value)
+      }
+    })
 
     this.subProcess = execaCommand(args.join(" "), {
       stderr: opts.LogOutput || "pipe",
