@@ -46,7 +46,7 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 var waitDelay time.Duration
-var useShinyNewTUI bool = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
+var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
