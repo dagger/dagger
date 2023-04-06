@@ -26,6 +26,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
@@ -228,6 +229,44 @@ func TestContainerPortLifecycle(t *testing.T) {
 	require.Equal(t, 5432, res.Container.ExposedPorts[1].Port)
 	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[1].Protocol)
 	require.Nil(t, res.Container.ExposedPorts[1].Description)
+}
+
+func TestContainerPortOCIConfig(t *testing.T) {
+	t.Parallel()
+
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	withPorts := c.Container().
+		From("python").
+		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+			Description: "eight thousand tcp",
+		}).
+		WithExposedPort(8000, dagger.ContainerWithExposedPortOpts{
+			Protocol:    dagger.Udp,
+			Description: "eight thousand udp",
+		}).
+		WithExposedPort(5432)
+
+	dest := t.TempDir()
+
+	imageTar := filepath.Join(dest, "image.tar")
+
+	_, err := withPorts.Export(ctx, imageTar)
+	require.NoError(t, err)
+
+	image, err := tarball.ImageFromPath(imageTar, nil)
+	require.NoError(t, err)
+
+	config, err := image.ConfigFile()
+	require.NoError(t, err)
+	ports := []string{}
+	for k := range config.Config.ExposedPorts {
+		ports = append(ports, k)
+	}
+	require.ElementsMatch(t, []string{"8000/tcp", "8000/udp", "5432/tcp"}, ports)
 }
 
 func TestContainerExecServices(t *testing.T) {

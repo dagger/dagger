@@ -1478,6 +1478,13 @@ func (container *Container) WithExposedPort(port ContainerPort) (*Container, err
 
 	payload.Ports = append(payload.Ports, port)
 
+	if payload.Config.ExposedPorts == nil {
+		payload.Config.ExposedPorts = map[string]struct{}{}
+	}
+
+	ociPort := fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network())
+	payload.Config.ExposedPorts[ociPort] = struct{}{}
+
 	id, err := payload.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encode: %w", err)
