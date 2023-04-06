@@ -2,28 +2,25 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
-	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
-var sessionLabels labels
+var sessionLabels pipeline.Labels
 
 func sessionCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -33,7 +30,7 @@ func sessionCmd() *cobra.Command {
 		RunE:         EngineSession,
 		SilenceUsage: true,
 	}
-	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'sdk:python' --label 'sdk_version:0.5.2' --label 'sdk_async:true')")
+	cmd.Flags().Var(&sessionLabels, "label", "label that identifies the source of this session (e.g, --label 'dagger.io/sdk.name:python' --label 'dagger.io/sdk.version:0.5.2' --label 'dagger.io/sdk.async:true')")
 	return cmd
 }
 
@@ -42,66 +39,13 @@ type connectParams struct {
 	SessionToken string `json:"session_token"`
 }
 
-func isCI() bool {
-	return os.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
-		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
-		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
-}
-
-func getGitInfo() (string, string, error) {
-	repo, err := git.PlainOpen(".")
-	if err != nil {
-		return "", "", err
-	}
-
-	config, err := repo.Config()
-	if err != nil {
-		return "", "", err
-	}
-
-	committerEmail := config.User.Email
-	committerHash := fmt.Sprintf("%x", sha256.Sum256([]byte(committerEmail)))
-
-	remote, err := repo.Remote("origin")
-	if err != nil {
-		return "", "", err
-	}
-
-	remoteConfig := remote.Config()
-	if len(remoteConfig.URLs) < 1 {
-		return "", "", fmt.Errorf("remote origin URL not found")
-	}
-
-	repoURL := remoteConfig.URLs[0]
-	repoHash := fmt.Sprintf("%x", sha256.Sum256([]byte(repoURL)))
-
-	return strings.TrimSpace(committerHash), strings.TrimSpace(repoHash), nil
-}
-
-func appendGitInfoToSessionLabels() {
-	committerHash, repoHash, err := getGitInfo()
-	if err == nil {
-		sessionLabels.Add("committer_hash", committerHash)
-		sessionLabels.Add("repo_hash", repoHash)
-	}
-}
-
-func appendCIInfoToSessionLabels() {
-	isCIValue := "false"
-	if isCI() {
-		isCIValue = "true"
-	}
-	sessionLabels.Add("ci", isCIValue)
-}
-
 func EngineSession(cmd *cobra.Command, args []string) error {
 	sessionToken, err := uuid.NewRandom()
 	if err != nil {
 		return err
 	}
 
-	appendGitInfoToSessionLabels()
-	appendCIInfoToSessionLabels()
+	labels := &sessionLabels
 
 	startOpts := &engine.Config{
 		Workdir:      workdir,
@@ -110,7 +54,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
 		JournalURI:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		Labels:       sessionLabels.String(),
+		UserAgent:    labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
 	}
 
 	signalCh := make(chan os.Signal, 1)
@@ -162,38 +106,4 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		}
 		return nil
 	})
-}
-
-type labels []label
-
-type label struct {
-	Name  string
-	Value string
-}
-
-func (ls *labels) Type() string {
-	return "labels"
-}
-
-func (ls *labels) Set(s string) error {
-	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("bad format: '%s' (expected name:value)", s)
-	}
-
-	ls.Add(parts[0], parts[1])
-
-	return nil
-}
-
-func (ls *labels) Add(name string, value string) {
-	*ls = append(*ls, label{Name: name, Value: value})
-}
-
-func (ls *labels) String() string {
-	var labels string
-	for _, label := range *ls {
-		labels += fmt.Sprintf("%s:%s,", label.Name, label.Value)
-	}
-	return labels
 }

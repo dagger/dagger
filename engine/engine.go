@@ -53,7 +53,7 @@ type Config struct {
 	DisableHostRW bool
 	RunnerHost    string
 	SessionToken  string
-	Labels        string
+	UserAgent     string
 
 	// WARNING: this is currently exposed directly but will be removed or
 	// replaced with something incompatible in the future.
@@ -71,7 +71,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	c, privilegedExecEnabled, err := engine.Client(ctx, remote, startOpts.Labels)
+	c, privilegedExecEnabled, err := engine.Client(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return err
 	}

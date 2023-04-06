@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -22,6 +23,8 @@ type Label struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
 }
+
+type Labels []Label
 
 // RootLabels returns default labels for Pipelines.
 //
@@ -241,4 +244,62 @@ func getRepoIsh(event any) (repoIsh, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func (labels *Labels) Type() string {
+	return "labels"
+}
+
+func (labels *Labels) Set(s string) error {
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("bad format: '%s' (expected name:value)", s)
+	}
+
+	labels.Add(parts[0], parts[1])
+
+	return nil
+}
+
+func (labels *Labels) Add(name string, value string) {
+	*labels = append(*labels, Label{Name: name, Value: value})
+}
+
+func (labels *Labels) String() string {
+	var ls string
+	for _, l := range *labels {
+		ls += fmt.Sprintf("%s:%s,", l.Name, l.Value)
+	}
+	return ls
+}
+
+func (labels *Labels) AppendCILabel() *Labels {
+	isCIValue := "false"
+	if isCI() {
+		isCIValue = "true"
+	}
+	labels.Add("dagger.io/ci", isCIValue)
+
+	return labels
+}
+
+func isCI() bool {
+	return os.Getenv("CI") != "" || // GitHub Actions, Travis CI, CircleCI, Cirrus CI, GitLab CI, AppVeyor, CodeShip, dsari
+		os.Getenv("BUILD_NUMBER") != "" || // Jenkins, TeamCity
+		os.Getenv("RUN_ID") != "" // TaskCluster, dsari
+}
+
+func (labels *Labels) AppendAnonymousGitLabels(workdir string) *Labels {
+	gitLabels, err := loadGitLabels(workdir)
+	if err != nil {
+		return labels
+	}
+
+	for _, gitLabel := range gitLabels {
+		if gitLabel.Name == "dagger.io/git.author.email" || gitLabel.Name == "dagger.io/git.remote" {
+			labels.Add(gitLabel.Name, fmt.Sprintf("%x", sha256.Sum256([]byte(gitLabel.Value))))
+		}
+	}
+
+	return labels
 }
