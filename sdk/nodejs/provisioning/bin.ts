@@ -9,6 +9,7 @@ import * as path from "path"
 import * as process from "process"
 import readline from "readline"
 import * as tar from "tar"
+import { fileURLToPath } from "url"
 
 import Client from "../api/client.gen.js"
 import {
@@ -123,6 +124,32 @@ export class Bin implements EngineConn {
   }
 
   /**
+   * Traverse up the directory tree to find the package.json file and return the
+   * SDK version.
+   * @returns the SDK version or "n/a" if the version cannot be found.
+   */
+  private getSDKVersion() {
+    const currentFileUrl = import.meta.url
+    const currentFilePath = fileURLToPath(currentFileUrl)
+    let currentPath = path.dirname(currentFilePath)
+
+    while (currentPath !== path.parse(currentPath).root) {
+      const packageJsonPath = path.join(currentPath, "package.json")
+      if (fs.existsSync(packageJsonPath)) {
+        try {
+          const packageJsonContent = fs.readFileSync(packageJsonPath, "utf8")
+          const packageJson = JSON.parse(packageJsonContent)
+          return packageJson.version
+        } catch (error) {
+          return "n/a"
+        }
+      } else {
+        currentPath = path.join(currentPath, "..")
+      }
+    }
+  }
+
+  /**
    * runEngineSession execute the engine binary and set up a GraphQL client that
    * target this engine.
    */
@@ -132,12 +159,20 @@ export class Bin implements EngineConn {
   ): Promise<Client> {
     const args = [binPath, "session"]
 
-    if (opts.Workdir) {
-      args.push("--workdir", opts.Workdir)
-    }
-    if (opts.Project) {
-      args.push("--project", opts.Project)
-    }
+    const sdkVersion = this.getSDKVersion()
+
+    const flagsAndValues = [
+      { flag: "--workdir", value: opts.Workdir },
+      { flag: "--project", value: opts.Project },
+      { flag: "--label", value: "dagger.io/sdk.name:node" },
+      { flag: "--label", value: `dagger.io/sdk.version:${sdkVersion}` },
+    ]
+
+    flagsAndValues.forEach((pair) => {
+      if (pair.value) {
+        args.push(pair.flag, pair.value)
+      }
+    })
 
     this.subProcess = execaCommand(args.join(" "), {
       stderr: opts.LogOutput || "pipe",
