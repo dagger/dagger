@@ -103,12 +103,27 @@ func TestContainerWith(t *testing.T) {
 		return c.WithEnvVariable("FOOD", "bar")
 	}
 
-	alpine = c.Container().From("alpine:3.16.2").With(withFood)
-	out, err = alpine.Exec(dagger.ContainerExecOpts{
-		Args: []string{"printenv", "FOOD"},
-	}).Stdout(ctx)
+	out, err = c.Container().From("alpine:3.16.2").
+		With(withFood).
+		WithExec([]string{"printenv", "FOOD"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "bar\n", out)
+
+	withEnv := func(env, val string) dagger.WithContainerFunc {
+		return func(c *dagger.Container) *dagger.Container {
+			return c.WithEnvVariable("FOOD", val)
+		}
+	}
+
+	env := "HELLO"
+	val := "WORLD"
+	out, err = c.Container().From("alpine:3.16.2").
+		With(withEnv(env, val)).
+		WithExec([]string{"printenv", env}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, val+"\n", out)
 }
 
 func TestContainerBuild(t *testing.T) {
