@@ -248,7 +248,10 @@ func TestContainerPortOCIConfig(t *testing.T) {
 			Protocol:    dagger.Udp,
 			Description: "eight thousand udp",
 		}).
-		WithExposedPort(5432)
+		WithExposedPort(5432).
+		WithExposedPort(5432, dagger.ContainerWithExposedPortOpts{
+			Protocol: dagger.Udp,
+		})
 
 	dest := t.TempDir()
 
@@ -266,7 +269,29 @@ func TestContainerPortOCIConfig(t *testing.T) {
 	for k := range config.Config.ExposedPorts {
 		ports = append(ports, k)
 	}
-	require.ElementsMatch(t, []string{"8000/tcp", "8000/udp", "5432/tcp"}, ports)
+	require.ElementsMatch(t, []string{"8000/tcp", "8000/udp", "5432/tcp", "5432/udp"}, ports)
+
+	withoutPorts := withPorts.
+		WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
+			Protocol: dagger.Udp,
+		}).
+		WithoutExposedPort(5432)
+
+	imageTar = filepath.Join(dest, "image-without.tar")
+
+	_, err = withoutPorts.Export(ctx, imageTar)
+	require.NoError(t, err)
+
+	image, err = tarball.ImageFromPath(imageTar, nil)
+	require.NoError(t, err)
+
+	config, err = image.ConfigFile()
+	require.NoError(t, err)
+	ports = []string{}
+	for k := range config.Config.ExposedPorts {
+		ports = append(ports, k)
+	}
+	require.ElementsMatch(t, []string{"8000/tcp", "5432/udp"}, ports)
 }
 
 func TestContainerExecServices(t *testing.T) {

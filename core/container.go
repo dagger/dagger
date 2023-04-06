@@ -1500,12 +1500,17 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	}
 
 	filtered := []ContainerPort{}
+	filteredOCI := map[string]struct{}{}
 	for _, p := range payload.Ports {
 		if p.Port != port || p.Protocol != protocol {
 			filtered = append(filtered, p)
+			ociPort := fmt.Sprintf("%d/%s", p.Port, p.Protocol.Network())
+			filteredOCI[ociPort] = struct{}{}
 		}
 	}
+
 	payload.Ports = filtered
+	payload.Config.ExposedPorts = filteredOCI
 
 	id, err := payload.Encode()
 	if err != nil {
