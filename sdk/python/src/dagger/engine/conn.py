@@ -19,6 +19,7 @@ class Engine(SyncResourceManager):
     def __init__(self, cfg: Config) -> None:
         super().__init__()
         self.cfg = cfg
+        self.is_async = True
 
     def from_env(self) -> ConnectParams | None:
         if not (port := os.environ.get("DAGGER_SESSION_PORT")):
@@ -37,13 +38,17 @@ class Engine(SyncResourceManager):
         cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
         if not cli_bin:
             cli_bin = Downloader().get()
+        cli_session = CLISession(self.cfg, cli_bin)
+        cli_session.is_async = self.is_async
         with self.get_sync_stack() as stack:
-            return stack.enter_context(CLISession(self.cfg, cli_bin))
+            return stack.enter_context(cli_session)
 
     def __enter__(self) -> ConnectParams:
+        self.is_async = False
         return self.from_env() or self.from_cli()
 
     async def __aenter__(self) -> ConnectParams:
+        self.is_async = True
         # FIXME: Create proper async provisioning later.
         # This is just to support sync faster.
         return await anyio.to_thread.run_sync(self.__enter__)

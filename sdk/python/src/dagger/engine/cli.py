@@ -1,6 +1,7 @@
 import logging
 import subprocess
 import time
+from importlib import metadata
 from json.decoder import JSONDecodeError
 from pathlib import Path
 
@@ -18,6 +19,13 @@ logger = logging.getLogger(__name__)
 OS_ETXTBSY = 26
 
 
+def get_sdk_version():
+    try:
+        return metadata.version("dagger-io")
+    except metadata.PackageNotFoundError:
+        return "n/a"
+
+
 class CLISession(SyncResourceManager):
     """Start an engine session with a provided CLI path."""
 
@@ -26,6 +34,8 @@ class CLISession(SyncResourceManager):
         self.cfg = cfg
         self.path = path
         self.converter = JsonConverter()
+        # no constructor param intentional
+        self.is_async = True
 
     def __enter__(self) -> ConnectParams:
         with self.get_sync_stack() as stack:
@@ -38,7 +48,16 @@ class CLISession(SyncResourceManager):
         return conn
 
     def _start(self) -> subprocess.Popen:
-        args = [self.path, "session"]
+        args = [
+            self.path,
+            "session",
+            "--label",
+            "sdk:python",
+            "--label",
+            f"sdk_version:{get_sdk_version()}",
+            "--label",
+            f"sdk_async:{str(self.is_async).lower()}",
+        ]
         if self.cfg.workdir:
             args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
         if self.cfg.config_path:
