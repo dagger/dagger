@@ -236,6 +236,46 @@ describe("NodeJS SDK api", function () {
     )
   })
 
+  it("Support chainable utils via with() 2", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const alpine = client
+        .container()
+        .from("alpine:3.16.2")
+        .with((c: Container): Container => c.withEnvVariable("FOO", "bar"))
+
+      let out = await alpine.withExec(["printenv", "FOO"]).stdout()
+      assert.strictEqual(out, "bar\n")
+
+      const withFood = (c: Container): Container =>
+        c.withEnvVariable("FOOD", "bar")
+      out = await client
+        .container()
+        .from("alpine:3.16.2")
+        .with(withFood)
+        .withExec(["printenv", "FOOD"])
+        .stdout()
+
+      assert.strictEqual(out, "bar\n")
+
+      const withEnv = (
+        env: string,
+        value: string
+      ): ((c: Container) => Container) => {
+        return (c: Container): Container => c.withEnvVariable(env, value)
+      }
+
+      out = await client
+        .container()
+        .from("alpine:3.16.2")
+        .with(withEnv("HELLO", "WORLD"))
+        .withExec(["printenv", "HELLO"])
+        .stdout()
+      assert.strictEqual(out, "WORLD\n")
+    })
+  })
+
   it("Compute nested arguments", async function () {
     const tree = new Client()
       .container()
