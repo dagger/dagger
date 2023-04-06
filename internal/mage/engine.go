@@ -199,7 +199,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	c = c.Pipeline("engine").Pipeline("test")
 
 	cgoEnabledEnv := "0"
-	args := []string{"go", "test", "-p", "16", "-v", "-count=1"}
+	args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
