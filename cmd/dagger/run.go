@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/internal/engine/journal"
@@ -44,9 +45,18 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 	SilenceUsage: true,
 }
 
+var waitDelay time.Duration
+
 func init() {
 	// don't require -- to disambiguate subcommand flags
 	runCmd.Flags().SetInterspersed(false)
+
+	runCmd.Flags().DurationVar(
+		&waitDelay,
+		"cleanup-timeout",
+		10*time.Second,
+		"max duration to wait between SIGTERM and SIGKILL on interrupt",
+	)
 }
 
 func Run(cmd *cobra.Command, args []string) {
