@@ -522,7 +522,7 @@ func (dir *Directory) Export(
 	return host.Export(ctx, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
 			src, err := srcPayload.State()
 			if err != nil {

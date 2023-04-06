@@ -503,6 +503,34 @@ func (r *Container) ImageRef(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// ContainerImportOpts contains options for Container.Import
+type ContainerImportOpts struct {
+	// Identifies the tag to import from the archive, if the archive bundles
+	// multiple tags.
+	Tag string
+}
+
+// Reads the container from an OCI tarball.
+//
+// NOTE: this involves unpacking the tarball to an OCI store on the host at
+// $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
+func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
+	q := r.q.Select("import")
+	q = q.Arg("source", source)
+	// `tag` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+			break
+		}
+	}
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves the value of the specified label.
 func (r *Container) Label(ctx context.Context, name string) (string, error) {
 	if r.label != nil {

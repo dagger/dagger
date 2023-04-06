@@ -127,10 +127,14 @@ func TestProvision(t *testing.T) {
 
 	entries, err := os.ReadDir(cacheDir)
 	require.NoError(t, err)
-	require.Len(t, entries, 1)
-	entry := entries[0]
-	require.True(t, entry.Type().IsRegular())
-	require.True(t, strings.HasPrefix(entry.Name(), "dagger-"))
+
+	daggers := []string{}
+	for _, ent := range entries {
+		if strings.HasPrefix(ent.Name(), "dagger-") {
+			daggers = append(daggers, ent.Name())
+		}
+	}
+	require.Len(t, daggers, 1)
 }
 
 func createCLIArchive(t *testing.T, binPath string) *bytes.Buffer {

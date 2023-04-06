@@ -157,6 +157,14 @@ export type ContainerExportOpts = {
   platformVariants?: Container[]
 }
 
+export type ContainerImportOpts = {
+  /**
+   * Identifies the tag to import from the archive, if the archive bundles
+   * multiple tags.
+   */
+  tag?: string
+}
+
 export type ContainerPipelineOpts = {
   /**
    * Pipeline description.
@@ -898,6 +906,29 @@ export class Container extends BaseClient {
     )
 
     return response
+  }
+
+  /**
+   * Reads the container from an OCI tarball.
+   *
+   * NOTE: this involves unpacking the tarball to an OCI store on the host at
+   * $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
+   * @param source File to read the container from.
+   * @param opts.tag Identifies the tag to import from the archive, if the archive bundles
+   * multiple tags.
+   */
+  import(source: File, opts?: ContainerImportOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "import",
+          args: { source, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**

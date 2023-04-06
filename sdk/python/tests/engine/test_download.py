@@ -135,9 +135,7 @@ async def test_download_bin(cache_dir: Path):
 
     # assert that there's only one dagger binary in the cache
     files = cache_dir.iterdir()
-    bin_ = next(files)
-    assert bin_.name.startswith("dagger-")
-    with pytest.raises(StopIteration):
-        next(files)
+    bins = [file for file in files if file.name.startswith("dagger-")]
+    assert len(bins) == 1
     # assert the garbage was cleaned up
     assert not garbage_path.exists()

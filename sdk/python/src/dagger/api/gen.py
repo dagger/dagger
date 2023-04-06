@@ -528,6 +528,35 @@ class Container(Type):
         return await _ctx.execute(Optional[str])
 
     @typecheck
+    def import_(
+        self,
+        source: "File",
+        tag: Optional[str] = None,
+    ) -> "Container":
+        """Reads the container from an OCI tarball.
+
+        NOTE: this involves unpacking the tarball to an OCI store on the host
+        at
+        $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you
+        like.
+
+        Parameters
+        ----------
+        source:
+            File to read the container from.
+        tag:
+            Identifies the tag to import from the archive, if the archive
+            bundles
+            multiple tags.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("tag", tag, None),
+        ]
+        _ctx = self._select("import", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def label(self, name: str) -> Optional[str]:
         """Retrieves the value of the specified label.
 

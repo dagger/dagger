@@ -3,12 +3,14 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/reffs"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -136,6 +138,22 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform, payload.Services)
 }
 
+func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
+	srcPayload, err := file.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	return WithServices(ctx, gw, srcPayload.Services, func() (io.ReadCloser, error) {
+		fs, err := reffs.OpenDef(ctx, gw, srcPayload.LLB)
+		if err != nil {
+			return nil, err
+		}
+
+		return fs.Open(srcPayload.File)
+	})
+}
+
 func (file *File) Export(
 	ctx context.Context,
 	host *Host,
@@ -166,7 +184,7 @@ func (file *File) Export(
 	return host.Export(ctx, bkclient.ExportEntry{
 		Type:      bkclient.ExporterLocal,
 		OutputDir: destDir,
-	}, dest, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
 			src, err := srcPayload.State()
 			if err != nil {

@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
@@ -14,7 +15,8 @@ import (
 type containerSchema struct {
 	*baseSchema
 
-	host *core.Host
+	host     *core.Host
+	ociStore content.Store
 }
 
 var _ router.ExecutableSchema = &containerSchema{}
@@ -80,6 +82,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"publish":              router.ToResolver(s.publish),
 			"platform":             router.ToResolver(s.platform),
 			"export":               router.ToResolver(s.export),
+			"import":               router.ToResolver(s.import_),
 			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
 			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
 			"imageRef":             router.ToResolver(s.imageRef),
@@ -571,6 +574,24 @@ func (s *containerSchema) export(ctx *router.Context, parent *core.Container, ar
 	}
 
 	return true, nil
+}
+
+type containerImportArgs struct {
+	Source core.FileID
+	Tag    string
+}
+
+func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
+	file := &core.File{ID: args.Source}
+
+	src, err := file.Open(ctx, s.host, s.gw)
+	if err != nil {
+		return nil, err
+	}
+
+	defer src.Close()
+
+	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {
