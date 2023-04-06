@@ -639,7 +639,7 @@ func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.C
 		return nil, ErrServicesDisabled
 	}
 
-	return parent.WithServiceDependency(&core.Container{ID: args.Service}, args.Alias)
+	return parent.WithServiceBinding(&core.Container{ID: args.Service}, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {

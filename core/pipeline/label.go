@@ -58,6 +58,9 @@ func loadRootLabels(workdir string) []Label {
 	return labels
 }
 
+// ServiceHostnameLabel is annotated on all services started by Dagger.
+const ServiceHostnameLabel = "dagger.io/service.hostname"
+
 func loadGitLabels(workdir string) ([]Label, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,

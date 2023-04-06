@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	"github.com/dagger/dagger/telemetry"
@@ -44,7 +45,8 @@ type Config struct {
 	// If true, do not load project extensions
 	NoExtensions  bool
 	LogOutput     io.Writer
-	JournalFile   string
+	JournalURI    string
+	JournalWriter journal.Writer
 	DisableHostRW bool
 	RunnerHost    string
 	SessionToken  string
@@ -135,14 +137,14 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		solveOpts.Session = append(solveOpts.Session, filesync.NewFSSyncProvider(AnyDirSource{}))
 	}
 
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
 		return handleSolveEvents(startOpts, solveCh)
 	})
 
 	eg.Go(func() error {
-		_, err := c.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err := c.Build(groupCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.
@@ -197,10 +199,23 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	})
 
-	return eg.Wait()
+	err = eg.Wait()
+	if err != nil {
+		// preserve context error if any, otherwise we get an error sent over gRPC
+		// that loses the original context error
+		//
+		// NB: only do this for the outer context; groupCtx.Err() will be != nil if
+		// any of the group members errored, which isn't interesting
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+
+	return nil
 }
 
-func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
+func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus) error {
 	eg := &errgroup.Group{}
 	readers := []chan *bkclient.SolveStatus{}
 
@@ -254,38 +269,83 @@ func handleSolveEvents(startOpts *Config, ch chan *bkclient.SolveStatus) error {
 	}
 
 	// Write events to a journal file
-	if startOpts.JournalFile != "" {
+	if startOpts.JournalURI != "" {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
-		eg.Go(func() error {
-			f, err := os.OpenFile(
-				startOpts.JournalFile,
-				os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-				0644,
-			)
+		u, err := url.Parse(startOpts.JournalURI)
+		if err != nil {
+			return fmt.Errorf("journal URI: %w", err)
+		}
+
+		switch u.Scheme {
+		case "":
+			eg.Go(func() error {
+				f, err := os.OpenFile(
+					startOpts.JournalURI,
+					os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+					0644,
+				)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				enc := json.NewEncoder(f)
+				for ev := range ch {
+					entry := &journal.Entry{
+						Event: ev,
+						TS:    time.Now().UTC(),
+					}
+
+					if err := enc.Encode(entry); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		case "tcp":
+			w, err := journal.Dial("tcp", u.Host)
 			if err != nil {
-				return err
+				return fmt.Errorf("journal: %w", err)
 			}
-			defer f.Close()
-			enc := json.NewEncoder(f)
+			defer w.Close()
+			eg.Go(func() error {
+				for ev := range ch {
+					entry := &journal.Entry{
+						Event: ev,
+						TS:    time.Now().UTC(),
+					}
+
+					if err := w.WriteEntry(entry); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+		}
+	}
+
+	if startOpts.JournalWriter != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		readers = append(readers, ch)
+
+		journalW := startOpts.JournalWriter
+		eg.Go(func() error {
 			for ev := range ch {
-				entry := struct {
-					Event *bkclient.SolveStatus `json:"event"`
-					TS    time.Time             `json:"ts"`
-				}{
+				entry := &journal.Entry{
 					Event: ev,
 					TS:    time.Now().UTC(),
 				}
 
-				if err := enc.Encode(entry); err != nil {
+				if err := journalW.WriteEntry(entry); err != nil {
 					return err
 				}
 			}
-			return nil
+
+			return journalW.Close()
 		})
 	}
 
-	eventsMultiReader(ch, readers...)
+	eventsMultiReader(upstreamCh, readers...)
 	return eg.Wait()
 }
 

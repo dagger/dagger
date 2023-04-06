@@ -406,17 +406,9 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 			return nil, err
 		}
 
-		// Override the progress pipeline of every LLB vertex in the DAG.
-		// FIXME: this can't be done in a normal way because Buildkit doesn't currently
-		// allow overriding the metadata of DefinitionOp. See this PR and comment:
-		// https://github.com/moby/buildkit/pull/2819
-		pipeline := payload.Pipeline.Add(pipeline.Pipeline{
+		overrideProgress(def, payload.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
-		})
-		for dgst, metadata := range def.Metadata {
-			metadata.ProgressGroup = pipeline.ProgressGroup()
-			def.Metadata[dgst] = metadata
-		}
+		}))
 
 		payload.FS = def.ToPB()
 
@@ -1137,7 +1129,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error {
+func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return err
@@ -1153,14 +1145,18 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 			return nil, err
 		}
 
-		stDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+		def, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 		if err != nil {
 			return nil, err
 		}
 
+		if pipelineOverride != nil {
+			overrideProgress(def, *pipelineOverride)
+		}
+
 		return gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
-			Definition: stDef.ToPB(),
+			Definition: def.ToPB(),
 		})
 	})
 	return err
@@ -1196,7 +1192,19 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	exited := make(chan error, 1)
 	go func() {
-		exited <- container.Evaluate(svcCtx, gw)
+		// annotate the container as a service so they can be treated differently
+		// in the UI
+		pipeline := payload.Pipeline.Add(pipeline.Pipeline{
+			Name: fmt.Sprintf("service %s", payload.Hostname),
+			Labels: []pipeline.Label{
+				{
+					Name:  pipeline.ServiceHostnameLabel,
+					Value: payload.Hostname,
+				},
+			},
+		})
+
+		exited <- container.Evaluate(svcCtx, gw, &pipeline)
 	}()
 
 	select {
@@ -1431,7 +1439,7 @@ func (container *Container) ExposedPorts() ([]ContainerPort, error) {
 	return payload.Ports, nil
 }
 
-func (container *Container) WithServiceDependency(svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -1653,4 +1661,16 @@ func b32(n uint64) string {
 	return base32.HexEncoding.
 		WithPadding(base32.NoPadding).
 		EncodeToString(sum[:])
+}
+
+// Override the progress pipeline of every LLB vertex in the DAG.
+//
+// FIXME: this can't be done in a normal way because Buildkit doesn't currently
+// allow overriding the metadata of DefinitionOp. See this PR and comment:
+// https://github.com/moby/buildkit/pull/2819
+func overrideProgress(def *llb.Definition, pipeline pipeline.Path) {
+	for dgst, metadata := range def.Metadata {
+		metadata.ProgressGroup = pipeline.ProgressGroup()
+		def.Metadata[dgst] = metadata
+	}
 }
