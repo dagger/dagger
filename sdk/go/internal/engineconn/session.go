@@ -70,8 +70,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}{
 		{"--workdir", cfg.Workdir},
 		{"--project", cfg.ConfigPath},
-		{"--label", "sdk:go"},
-		{"--label", fmt.Sprintf("sdk_version:%s", version)},
+		{"--label", "dagger.io/sdk.name:go"},
+		{"--label", fmt.Sprintf("dagger.io/sdk.version:%s", version)},
 	}
 
 	for _, pair := range flagsAndValues {

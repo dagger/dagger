@@ -52,11 +52,11 @@ class CLISession(SyncResourceManager):
             self.path,
             "session",
             "--label",
-            "sdk:python",
+            "dagger.io/sdk.name:python",
             "--label",
-            f"sdk_version:{get_sdk_version()}",
+            f"dagger.io/sdk.version:{get_sdk_version()}",
             "--label",
-            f"sdk_async:{str(self.is_async).lower()}",
+            f"dagger.io/sdk.async:{str(self.is_async).lower()}",
         ]
         if self.cfg.workdir:
             args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])
