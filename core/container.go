@@ -17,6 +17,7 @@ import (
 	"strings"
 
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
@@ -1781,10 +1782,12 @@ func resolveIndex(ctx context.Context, store content.Store, desc specs.Descripto
 		}
 
 		switch m.MediaType {
-		case specs.MediaTypeImageManifest:
+		case specs.MediaTypeImageManifest, // OCI
+			images.MediaTypeDockerSchema2Manifest: // Docker
 			return &m, nil
 
-		case specs.MediaTypeImageIndex:
+		case specs.MediaTypeImageIndex, // OCI
+			images.MediaTypeDockerSchema2ManifestList: // Docker
 			return resolveIndex(ctx, store, m, platform, tag)
 
 		default:
