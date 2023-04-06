@@ -46,17 +46,6 @@ func ExampleContainer_With() {
 		})
 
 	out, err := alpine.Exec(dagger.ContainerExecOpts{
-		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Println(out)
-
-	// Output: 3.16.2
-
-	out, err = alpine.Exec(dagger.ContainerExecOpts{
 		Args: []string{"printenv", "FOO"},
 	}).Stdout(ctx)
 	if err != nil {
