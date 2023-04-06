@@ -3,6 +3,7 @@ package tui
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -132,6 +133,24 @@ func (term *Vterm) View() string {
 
 	// discard final trailing linebreak
 	return buf.String()[0 : buf.Len()-1]
+}
+
+// Print prints the full log output without any formatting.
+func (term *Vterm) Print(w io.Writer) error {
+	used := term.vt.UsedHeight()
+
+	for row, l := range term.vt.Content {
+		_, err := fmt.Fprintln(w, strings.TrimRight(string(l), " "))
+		if err != nil {
+			return err
+		}
+
+		if row > used {
+			break
+		}
+	}
+
+	return nil
 }
 
 func renderFormat(f vt100.Format) string {

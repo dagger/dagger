@@ -31,6 +31,9 @@ type TreeEntry interface {
 	SetWidth(int)
 	SetHeight(int)
 	ScrollPercent() float64
+
+	Save(dir string) (string, error)
+	Open() tea.Cmd
 }
 
 type Tree struct {
@@ -83,6 +86,10 @@ func (m Tree) Current() TreeEntry {
 
 func (m *Tree) Focus(focus bool) {
 	m.focus = focus
+}
+
+func (m *Tree) Open() tea.Cmd {
+	return m.current.Open()
 }
 
 func (m *Tree) View() string {

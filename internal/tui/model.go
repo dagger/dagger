@@ -18,7 +18,8 @@ import (
 
 func New(quit func(), r journal.Reader, rootName string) *Model {
 	rootLogs := NewVterm(80)
-	root := NewGroup("", rootName, rootLogs)
+	rootView := logsPrinter{Vterm: rootLogs, name: rootName}
+	root := NewGroup("", rootName, rootView)
 	m := &Model{
 		quit: quit,
 		tree: &Tree{
@@ -80,6 +81,10 @@ type CommandExitMsg struct {
 	Err error
 }
 
+type EditorExitMsg struct {
+	Err error
+}
+
 type endMsg struct{}
 
 func (m Model) adjustLocalTime(t *time.Time) *time.Time {
@@ -123,6 +128,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err != nil {
 			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
 		}
+	case EditorExitMsg:
+		if msg.Err != nil {
+			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
+		}
+		return m, nil
 	case followMsg:
 		if !m.follow {
 			return m, nil
@@ -254,6 +264,8 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.detailsFocus = !m.detailsFocus
 		m.tree.Focus(!m.detailsFocus)
 		m.details.Focus(m.detailsFocus)
+	case key.Matches(msg, keys.Open):
+		return m, m.details.Open()
 	}
 	return m, nil
 }

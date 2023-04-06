@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -104,6 +106,42 @@ func (i *Item) Error() string {
 	}
 
 	return i.error
+}
+
+func (i *Item) Save(dir string) (string, error) {
+	filePath := filepath.Join(dir, sanitizeFilename(i.Name()))
+	f, err := os.Create(filePath)
+	if err != nil {
+		return "", fmt.Errorf("save item to %s as %s: %w", dir, filePath, err)
+	}
+
+	if err := i.logsModel.Print(f); err != nil {
+		return "", err
+	}
+
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
+func (i *Item) Open() tea.Cmd {
+	dir, err := os.MkdirTemp("", "dagger-logs.*")
+	if err != nil {
+		return func() tea.Msg {
+			return EditorExitMsg{err}
+		}
+	}
+
+	filePath, err := i.Save(dir)
+	if err != nil {
+		return func() tea.Msg {
+			return EditorExitMsg{err}
+		}
+	}
+
+	return openEditor(filePath)
 }
 
 func (i *Item) UpdateVertex(v *bkclient.Vertex) {
@@ -224,6 +262,8 @@ type groupModel interface {
 
 	SetHeight(int)
 	SetWidth(int)
+
+	Save(dir string) (string, error)
 }
 
 type Group struct {
@@ -234,6 +274,17 @@ type Group struct {
 	entries     []TreeEntry
 	entriesByID map[string]TreeEntry
 	isService   bool
+}
+
+func NewGroup(id, name string, logs groupModel) *Group {
+	return &Group{
+		groupModel: logs,
+
+		id:          id,
+		name:        name,
+		entries:     []TreeEntry{},
+		entriesByID: make(map[string]TreeEntry),
+	}
 }
 
 var _ TreeEntry = &Group{}
@@ -254,53 +305,38 @@ func (g *Group) Entries() []TreeEntry {
 	return g.entries
 }
 
-func NewGroup(id, name string, logs groupModel) *Group {
-	return &Group{
-		groupModel: logs,
+func (g *Group) Save(dir string) (string, error) {
+	subDir := filepath.Join(dir, sanitizeFilename(g.Name()))
 
-		id:          id,
-		name:        name,
-		entries:     []TreeEntry{},
-		entriesByID: make(map[string]TreeEntry),
+	if err := os.MkdirAll(subDir, 0700); err != nil {
+		return "", err
 	}
+
+	if _, err := g.groupModel.Save(subDir); err != nil {
+		return "", err
+	}
+
+	for _, e := range g.entries {
+		if _, err := e.Save(subDir); err != nil {
+			return "", err
+		}
+	}
+
+	return subDir, nil
 }
 
-func (g *Group) sort() {
-	sort.SliceStable(g.entries, func(i, j int) bool {
-		ie := g.entries[i]
-		je := g.entries[j]
-
-		// sort ancestors first
-		if g.isAncestor(ie, je) {
-			return true
-		} else if g.isAncestor(je, ie) {
-			return false
-		}
-
-		// fall back on name (not sure if this will ever occur)
-		return ie.Name() < je.Name()
-	})
-}
-
-func (g *Group) isAncestor(i, j TreeEntry) bool {
-	if i == j {
-		return false
+func (g *Group) Open() tea.Cmd {
+	dir, err := os.MkdirTemp("", "dagger-logs.*")
+	if err != nil {
+		return func() tea.Msg { return EditorExitMsg{err} }
 	}
 
-	id := i.ID()
-
-	for _, d := range j.Inputs() {
-		if d == id {
-			return true
-		}
-
-		e, ok := g.entriesByID[string(d)]
-		if ok && g.isAncestor(i, e) {
-			return true
-		}
+	subDir, err := g.Save(dir)
+	if err != nil {
+		return func() tea.Msg { return EditorExitMsg{err} }
 	}
 
-	return false
+	return openEditor(subDir)
 }
 
 func (g *Group) Add(group []string, e TreeEntry) {
@@ -404,6 +440,44 @@ func (g *Group) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (g *Group) ScrollPercent() float64 { return 1 }
 
+func (g *Group) sort() {
+	sort.SliceStable(g.entries, func(i, j int) bool {
+		ie := g.entries[i]
+		je := g.entries[j]
+
+		// sort ancestors first
+		if g.isAncestor(ie, je) {
+			return true
+		} else if g.isAncestor(je, ie) {
+			return false
+		}
+
+		// fall back on name (not sure if this will ever occur)
+		return ie.Name() < je.Name()
+	})
+}
+
+func (g *Group) isAncestor(i, j TreeEntry) bool {
+	if i == j {
+		return false
+	}
+
+	id := i.ID()
+
+	for _, d := range j.Inputs() {
+		if d == id {
+			return true
+		}
+
+		e, ok := g.entriesByID[string(d)]
+		if ok && g.isAncestor(i, e) {
+			return true
+		}
+	}
+
+	return false
+}
+
 type emptyGroup struct {
 	height int
 }
@@ -424,4 +498,38 @@ func (g *emptyGroup) Update(tea.Msg) (tea.Model, tea.Cmd) {
 
 func (g emptyGroup) View() string {
 	return strings.Repeat("\n", g.height-1)
+}
+
+func (g emptyGroup) Save(dir string) (string, error) {
+	return "", nil
+}
+
+type logsPrinter struct {
+	*Vterm
+
+	name string
+}
+
+func (lp logsPrinter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	m, cmd := lp.Vterm.Update(msg)
+	lp.Vterm = m.(*Vterm)
+	return lp, cmd
+}
+
+func (lp logsPrinter) Save(dir string) (string, error) {
+	filePath := filepath.Join(dir, sanitizeFilename(lp.name))
+	f, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	if err := lp.Print(f); err != nil {
+		return "", err
+	}
+
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
 }

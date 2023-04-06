@@ -52,6 +52,10 @@ func (m *Details) Focus(focus bool) {
 	m.focus = focus
 }
 
+func (m *Details) Open() tea.Cmd {
+	return m.item.Open()
+}
+
 func (m Details) headerView() string {
 	title := trunc(m.item.Name(), m.width)
 	info := fmt.Sprintf("%3.f%%", m.item.ScrollPercent()*100)

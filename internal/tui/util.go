@@ -1,6 +1,10 @@
 package tui
 
-import "golang.org/x/exp/constraints"
+import (
+	"strings"
+
+	"golang.org/x/exp/constraints"
+)
 
 func max[T constraints.Ordered](i, j T) T {
 	if i > j {
@@ -22,4 +26,16 @@ func trunc(str string, size int) string {
 	}
 
 	return str[:size-1] + "…"
+}
+
+func sanitizeFilename(name string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		switch r {
+		case '<', '>', ':', '"', '/', '\\', '|', '?', '*':
+			return ' '
+		default:
+			return r
+		}
+	}, name)
+	return strings.Join(strings.Fields(sanitized), " ") + ".log"
 }

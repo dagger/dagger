@@ -18,6 +18,8 @@ type keyMap struct {
 
 	Follow key.Binding
 
+	Open key.Binding
+
 	Help key.Binding
 	Quit key.Binding
 }
@@ -26,7 +28,7 @@ func (k keyMap) ShortHelp() []key.Binding {
 	return []key.Binding{
 		k.Up, k.Down,
 		k.Collapse, k.Expand,
-		k.Switch, k.Follow,
+		k.Open, k.Switch, k.Follow,
 		k.Help, k.Quit,
 	}
 }
@@ -34,7 +36,8 @@ func (k keyMap) ShortHelp() []key.Binding {
 func (k keyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Home, k.End, k.PageUp, k.PageDown},
-		{k.Collapse, k.Expand, k.Switch, k.Follow, k.Help, k.Quit},
+		{k.Collapse, k.CollapseAll, k.Expand, k.ExpandAll},
+		{k.Open, k.Switch, k.Follow, k.Help, k.Quit},
 	}
 }
 
@@ -86,6 +89,10 @@ var keys = keyMap{
 	Follow: key.NewBinding(
 		key.WithKeys("f"),
 		key.WithHelp("f", "toggle follow"),
+	),
+	Open: key.NewBinding(
+		key.WithKeys("o"),
+		key.WithHelp("o", "open logs in $EDITOR"),
 	),
 	Help: key.NewBinding(
 		key.WithKeys("?"),
