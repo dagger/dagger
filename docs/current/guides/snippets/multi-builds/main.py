@@ -8,7 +8,7 @@ import anyio
 import dagger
 
 
-async def build():
+async def main():
     print("Building with Dagger")
 
     # define build matrix
@@ -51,4 +51,4 @@ async def build():
         await outputs.export(".")
 
 
-anyio.run(build)
+anyio.run(main)
