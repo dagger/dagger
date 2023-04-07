@@ -175,12 +175,17 @@ export class Bin implements EngineConn {
     })
 
     this.subProcess = execaCommand(args.join(" "), {
-      stderr: opts.LogOutput || "pipe",
+      stdio: "pipe",
       reject: true,
 
       // Kill the process if parent exit.
       cleanup: true,
     })
+
+    // Log the output if the user wants to.
+    if (opts.LogOutput) {
+      this.subProcess.stderr?.pipe(opts.LogOutput)
+    }
 
     const stdoutReader = readline.createInterface({
       input: this.subProcess?.stdout as NodeJS.ReadableStream,
