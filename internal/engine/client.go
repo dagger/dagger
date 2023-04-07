@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -16,30 +17,46 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
 )
 
+const (
+	PrivilegedExecLabel = "privilegedEnabled"
+	EngineNameLabel     = "engineName"
+)
+
+type Client struct {
+	BuildkitClient        *bkclient.Client
+	PrivilegedExecEnabled bool
+	EngineName            string
+}
+
 // Client returns a buildkit client, whether privileged execs are enabled, or an error
-func Client(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, bool, error) {
+func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
 		buildkitdHost, err = dockerImageProvider(ctx, remote, userAgent)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 	}
 
 	workerInfo, err := waitBuildkit(ctx, buildkitdHost)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	var privilegedExecEnabled bool
+	var engineName string
 	if len(workerInfo) > 0 {
 		for k, v := range workerInfo[0].Labels {
-			// TODO:(sipsma) we set this custom label in the default engine config
-			// toml. It's not the best solution but the only way to get this
+			// TODO:(sipsma) we set these custom labels in the engine's worker initializer
+			// It's not the best solution but the only way to get this
 			// information to the client right now.
-			if k == "privilegedEnabled" && v == "true" {
-				privilegedExecEnabled = true
-				break
+			switch k {
+			case PrivilegedExecLabel:
+				if v == "true" {
+					privilegedExecEnabled = true
+				}
+			case EngineNameLabel:
+				engineName = v
 			}
 		}
 	}
@@ -51,7 +68,7 @@ func Client(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.C
 
 	exp, err := detect.Exporter()
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	if td, ok := exp.(bkclient.TracerDelegate); ok {
@@ -60,10 +77,17 @@ func Client(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.C
 
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
-		return nil, false, fmt.Errorf("buildkit client: %w", err)
+		return nil, fmt.Errorf("buildkit client: %w", err)
+	}
+	if engineName != "" {
+		fmt.Fprintf(os.Stderr, "Connected to engine %s\n", engineName)
 	}
 
-	return c, privilegedExecEnabled, nil
+	return &Client{
+		BuildkitClient:        c,
+		PrivilegedExecEnabled: privilegedExecEnabled,
+		EngineName:            engineName,
+	}, nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.

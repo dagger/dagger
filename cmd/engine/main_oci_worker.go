@@ -31,9 +31,12 @@ import (
 	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
@@ -203,7 +206,7 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 		if e == string(entitlements.EntitlementSecurityInsecure) {
 			// this is a hacky way of allowing dagger clients to know whether their session
 			// should request the insecure entitlement.
-			cfg.Workers.OCI.Labels["privilegedEnabled"] = "true"
+			cfg.Workers.OCI.Labels[engine.PrivilegedExecLabel] = "true"
 		}
 	}
 
@@ -284,6 +287,20 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	}
 
 	cfg := common.config.Workers.OCI
+
+	// Add a name for this engine to the labels that clients can use to log who they are connected to
+	engineName, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_ENGINE_NAME")
+	if !ok {
+		// use the hostname
+		hostname, err := os.Hostname()
+		if err != nil {
+			bklog.G(context.Background()).WithError(err).Error("failed to get hostname")
+			engineName = identity.NewID() // random ID as a fallback
+		} else {
+			engineName = hostname
+		}
+	}
+	cfg.Labels[engine.EngineNameLabel] = engineName
 
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
 		return nil, nil
