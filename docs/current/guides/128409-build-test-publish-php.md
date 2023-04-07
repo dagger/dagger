@@ -234,9 +234,9 @@ class DaggerPipeline {
 The `buildBaseImage()` method executes four GraphQL queries:
 
 1. The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
-2. The second query constructs a runtime image, consisting of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
-3. The third query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
-4. The fourth and final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
+1. The second query constructs a runtime image, consisting of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
+1. The third query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
+1. The fourth and final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
 
 :::info
 GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger leverages this lazy evaluation model to optimize and parallelize pipelines for maximum speed and performance. This implies that the queries above are not actually executed until necessary to return output (such as the result of a command or an exit code) to the requesting client. [Learn more about lazy evaluation in Dagger](../api/975146-concepts.mdx#lazy-evaluation).
@@ -344,10 +344,10 @@ class DaggerPipeline {
 The `testImage()` method executes two GraphQL queries:
 
 1. The first query initializes a database service container, against which the application's unit tests will be run. It uses the `container.from()` method to initialize a new container from the `mariadb:10.11.2` image. It then chains multiple `container.withEnvVariable()` methods to configure the database service, and the `container.withExposedPort()` method to ensure that the service is available before allowing clients access.
-2. The second query uses the test image returned by the `buildTestImage()` method and adds a service binding for the database service to it using the `container.withServiceBinding()` API method. It then chains multiple `container.withEnvVariable()` methods to configure the database service credentials for the Laravel application. Finally, it uses the `container.withExec()` method to launch the PHPUnit test runner and return the output stream (the test summary).
+1. The second query uses the test image returned by the `buildTestImage()` method and adds a service binding for the database service to it using the `container.withServiceBinding()` API method. It then chains multiple `container.withEnvVariable()` methods to configure the database service credentials for the Laravel application. Finally, it uses the `container.withExec()` method to launch the PHPUnit test runner and return the output stream (the test summary).
 
 :::tip
-When creating the database service container, using `container.withExposedPort()` is important . Without it, Dagger will start the service container and immediately allow access to the test runner, without waiting for the service to start listening. This can result in test failures if the test runner is unable to connect to the service. With this method, Dagger will wait for the service to be listening first before allowing the test runner access to it. [Learn more about service containers in Dagger](./757394-use-service-containers.md).
+When creating the database service container, using `container.withExposedPort()` is important. Without this method, Dagger will start the service container and immediately allow access to the test runner, without waiting for the service to start listening. This can result in test failures if the test runner is unable to connect to the service. With this method, Dagger will wait for the service to be listening first before allowing the test runner access to it. [Learn more about service containers in Dagger](./757394-use-service-containers.md).
 :::
 
 ### Build a production image
@@ -433,7 +433,7 @@ class DaggerPipeline {
 The `publish()` method expects to source Docker Hub registry credentials from the host environment. It uses PHP's `getenv()` method to retrieve these credentials and then executes two GraphQL queries:
 
 1. The first query creates a Dagger secret to store the registry password, via the `setSecret()` API method.
-2. The second query authenticates and publishes the image to Docker Hub. It uses the `container.withRegistryAuth()` API method for authentication, and the `container.publish()` method for the publishing operation. The `container.publish()` method returns the address and hash for the published image.
+1. The second query authenticates and publishes the image to Docker Hub. It uses the `container.withRegistryAuth()` API method for authentication, and the `container.publish()` method for the publishing operation. The `container.publish()` method returns the address and hash for the published image.
 
 :::tip
 Using a Dagger secret for confidential information ensures that the information is never exposed in plaintext logs, in the filesystem of containers you're building, or in any cache. Dagger also automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash. [Learn more about secrets in Dagger](./723462-use-secrets.md).
