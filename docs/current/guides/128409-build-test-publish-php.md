@@ -521,9 +521,9 @@ docker run --rm --detach --net=host --name my-app -e DB_HOST="127.0.0.1" -e DB_U
 
 ## Conclusion
 
-Dagger SDKs are currently available for Go, Node.js and Python, but that doesn't mean you're restricted to only these languages when defining your Dagger CI/CD pipelines. You can use any standards-compatible GraphQL client to interact with the Dagger Engine from your favorite programmign language.
+Dagger SDKs are currently available for Go, Node.js and Python, but that doesn't mean you're restricted to only these languages when defining your Dagger CI/CD pipelines. You can use any standards-compatible GraphQL client to interact with the Dagger Engine from your favorite programming language.
 
-This tutorial demonstrated how, by creating a PHP-based Dagger pipeline to build, test and publish a Laravel Web application. A similar approach can be followed for any PHP application, or in any other programming language with a GraphQL client implementation.
+This tutorial demonstrated by creating a PHP-based Dagger pipeline to build, test and publish a Laravel Web application. A similar approach can be followed for any PHP application, or in any other programming language with a GraphQL client implementation.
 
 Use the [API Reference](https://docs.dagger.io/api/reference) and the [CLI Reference](../cli/979595-reference.md) to learn more about the Dagger GraphQL API and the Dagger CLI respectively.
 
