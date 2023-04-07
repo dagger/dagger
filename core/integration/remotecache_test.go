@@ -80,6 +80,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.exec.stdout").String())
 
 	devEngine, endpoint, err = getDevEngine(ctx, c, registry, "registry", "type=registry,ref=registry:5000/test-cache,mode=max", 1)
+	require.NoError(t, err)
 
 	outputB, err := c.Container().From("alpine:3.17").
 		WithServiceBinding("dev-engine", devEngine).
@@ -106,7 +107,6 @@ func TestRemoteCacheRegistry(t *testing.T) {
 }
 
 func TestRemoteCacheS3(t *testing.T) {
-
 	t.Run("buildkit s3 caching", func(t *testing.T) {
 		c, ctx := connect(t)
 		defer c.Close()
@@ -154,6 +154,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.exec.stdout").String())
 
 		devEngine, endpoint, err = getDevEngine(ctx, c, s3, "s3", s3Env, 1)
+		require.NoError(t, err)
 
 		outputB, err := c.Container().From("alpine:3.17").
 			WithServiceBinding("dev-engine", devEngine).

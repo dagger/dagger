@@ -25,9 +25,6 @@ const (
 	engineDefaultStateDir = "/var/lib/dagger"
 
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
-
-	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
@@ -57,8 +54,6 @@ insecure-entitlements = ["security.insecure"]
 {{ index $.ConfigEntries $key }}
 {{ end -}}
 `
-
-var publishedEngineArches = []string{"amd64", "arm64"}
 
 // DevEngineOpts are options for the dev engine
 type DevEngineOpts struct {
@@ -92,7 +87,7 @@ func getEntrypoint(opts ...DevEngineOpts) (string, error) {
 		EntrypointArgKeys: keys,
 	})
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	entrypoint = buf.String()
 
@@ -120,7 +115,7 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 		ConfigKeys:    keys,
 	})
 	if err != nil {
-		panic(err)
+		return "", err
 	}
 	config = buf.String()
 
@@ -322,7 +317,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 	return c.Container().
 		From("golang:1.20.0-alpine").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
-		Exec(dagger.ContainerExecOpts{Args: []string{"apk", "add", "build-base"}}).
+		WithExec([]string{"apk", "add", "build-base"}).
 		WithEnvVariable("CGO_ENABLED", "0").
 		// adding the git CLI to inject vcs info
 		// into the go binaries
