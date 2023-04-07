@@ -43,15 +43,18 @@ class Engine(SyncResourceManager):
         with self.get_sync_stack() as stack:
             return stack.enter_context(cli_session)
 
+    def start(self) -> ConnectParams:
+        return self.from_env() or self.from_cli()
+
     def __enter__(self) -> ConnectParams:
         self.is_async = False
-        return self.from_env() or self.from_cli()
+        return self.start()
 
     async def __aenter__(self) -> ConnectParams:
         self.is_async = True
         # FIXME: Create proper async provisioning later.
         # This is just to support sync faster.
-        return await anyio.to_thread.run_sync(self.__enter__)
+        return await anyio.to_thread.run_sync(self.start)
 
     async def __aexit__(self, *exc_details) -> None:
         # FIXME: Create proper async provisioning later.
