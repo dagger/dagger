@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/integration/internal"
@@ -124,6 +125,7 @@ func TestRemoteCacheS3(t *testing.T) {
 			Stdout(ctx)
 		require.NoError(t, err)
 		fmt.Println(minioStdout)
+		time.Sleep(1 * time.Second)
 
 		s3Env := "type=s3,mode=max,endpoint_url=http://s3:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
