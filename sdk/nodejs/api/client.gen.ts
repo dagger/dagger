@@ -206,6 +206,11 @@ export type ContainerWithDirectoryOpts = {
 
 export type ContainerWithExecOpts = {
   /**
+   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   */
+  skipEntrypoint?: boolean
+
+  /**
    * Content to write to the command's standard input before closing (e.g., "Hello world").
    */
   stdin?: string
@@ -1198,6 +1203,7 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container after executing the specified command inside it.
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
    * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").

@@ -419,6 +419,11 @@ type Container {
     args: [String!]!
 
     """
+    If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    """
+    skipEntrypoint: Boolean
+
+    """
     Content to write to the command's standard input before closing (e.g., "Hello world").
     """
     stdin: String
