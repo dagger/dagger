@@ -81,21 +81,21 @@ files = [
 
 [[package]]
 name = "beartype"
-version = "0.12.0"
+version = "0.13.0"
 description = "Unbearably fast runtime type checking in pure Python."
 category = "main"
 optional = false
 python-versions = ">=3.7.0"
 files = [
-    {file = "beartype-0.12.0-py3-none-any.whl", hash = "sha256:3d9d5bec198bcf965c000d7b5120bebdd19a444ef6e39e97d0e93eb8832e10c8"},
-    {file = "beartype-0.12.0.tar.gz", hash = "sha256:3b7545b3f333a6b07042b68b102141554c9add2e979dab7b0f8ed6378f7af7d7"},
+    {file = "beartype-0.13.0-py3-none-any.whl", hash = "sha256:98fdce5b2819aeab77fbb7c35c9d30733420e368fcc424d85744d00d606b03ca"},
+    {file = "beartype-0.13.0.tar.gz", hash = "sha256:fb9e876c99baf1b972992db172682462a74a95328963d9f13cbb5ee3d68db09c"},
 ]
 
 [package.extras]
 all = ["typing-extensions (>=3.10.0.0)"]
-dev = ["autoapi (>=0.9.0)", "coverage (>=5.5)", "mypy (>=0.800)", "numpy", "pytest (>=4.0.0)", "sphinx", "sphinx (>=4.1.0)", "tox (>=3.20.1)", "typing-extensions"]
-doc-rtd = ["furo (==2022.6.21)", "sphinx (==4.1.0)"]
-test-tox = ["mypy (>=0.800)", "numpy", "pytest (>=4.0.0)", "sphinx", "typing-extensions"]
+dev = ["autoapi (>=0.9.0)", "coverage (>=5.5)", "mypy (>=0.800)", "numpy", "pandera", "pydata-sphinx-theme (<=0.7.2)", "pytest (>=4.0.0)", "sphinx", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)", "tox (>=3.20.1)", "typing-extensions"]
+doc-rtd = ["autoapi (>=0.9.0)", "pydata-sphinx-theme (<=0.7.2)", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)"]
+test-tox = ["mypy (>=0.800)", "numpy", "pandera", "pytest (>=4.0.0)", "sphinx", "typing-extensions"]
 test-tox-coverage = ["coverage (>=5.5)"]
 
 [[package]]
