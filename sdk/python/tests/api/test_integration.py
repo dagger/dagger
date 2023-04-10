@@ -154,3 +154,37 @@ async def test_connection_closed_error():
         ...
     with pytest.raises(TransportError, match="Connection to engine has been closed"):
         await client.container().id()
+
+
+async def test_container_with():
+    def spam(c: dagger.Container) -> dagger.Container:
+        return c.with_env_variable("SPAM", "eggs")
+
+    def envs_factory(m: dict[str, str]):
+        def envs(c: dagger.Container) -> dagger.Container:
+            for name, value in m.items():
+                c = c.with_env_variable(name, value)
+            return c
+
+        return envs
+
+    async with dagger.Connection() as client:
+        out = await (
+            client.container()
+            .from_("alpine:3.16.2")
+            .with_(spam)
+            .with_(
+                envs_factory(
+                    {
+                        "FOO": "foo",
+                        "BAR": "bar",
+                    }
+                )
+            )
+            .with_exec(["printenv"])
+            .stdout()
+        )
+
+    assert "SPAM=eggs" in out
+    assert "FOO=foo" in out
+    assert "BAR=bar" in out
