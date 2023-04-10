@@ -6,7 +6,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core/integration/internal"
@@ -115,19 +114,22 @@ func TestRemoteCacheS3(t *testing.T) {
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 
 		s3 := c.Pipeline("s3").Container().From("minio/minio").
+			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 			WithExec([]string{"server", "/data"})
+
+		s3Endpoint, err := s3.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 9000, Scheme: "http"})
+		require.NoError(t, err)
 
 		minioStdout, err := c.Container().From("minio/mc").
 			WithServiceBinding("s3", s3).
 			WithEntrypoint([]string{"sh"}).
-			WithExec([]string{"-c", "mc config host add minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
+			WithExec([]string{"-c", "mc alias set minio http://s3:9000 minioadmin minioadmin && mc mb minio/" + bucket}).
 			Stdout(ctx)
 		require.NoError(t, err)
-		fmt.Println(minioStdout)
-		time.Sleep(5 * time.Second)
+		require.Contains(t, minioStdout, "Bucket created successfully")
 
-		s3Env := "type=s3,mode=max,endpoint_url=http://s3:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
+		s3Env := "type=s3,mode=max,endpoint_url=" + s3Endpoint + ",access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
 		devEngine, endpoint, err := getDevEngine(ctx, c, s3, "s3", s3Env, 0)
 		require.NoError(t, err)
