@@ -9,11 +9,12 @@ import (
 )
 
 func main() {
+	repo := ""
 	if len(os.Args) < 2 {
-		fmt.Println("Must pass in a Git repository to build")
-		os.Exit(1)
+		repo = "https://github.com/goreleaser/goreleaser"
+	} else {
+		repo = os.Args[1]
 	}
-	repo := os.Args[1]
 	if err := build(context.Background(), repo); err != nil {
 		fmt.Println(err)
 	}
@@ -45,7 +46,7 @@ func build(ctx context.Context, repoURL string) error {
 		imageTag := fmt.Sprintf("golang:%s", version)
 		golang := client.Container().
 			From(imageTag).
-			WithMountedDirectory("/src", src).
+			WithDirectory("/src", src).
 			WithWorkdir("/src")
 
 		for _, goos := range oses {

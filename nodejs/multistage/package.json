@@ -1,0 +1,16 @@
+{
+  "name": "multistage",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "ci": "node build.js"
+  },
+  "jest": {
+    "collectCoverage": true
+  },
+  "type": "module",
+  "devDependencies": {
+    "@dagger.io/dagger": "^0.4.1",
+    "uuid": "^9.0.0"
+  }
+}

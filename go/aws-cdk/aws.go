@@ -120,8 +120,8 @@ func (c *AWSClient) cdkDeployStack(ctx context.Context, client *dagger.Client, s
 	exitCode, err := client.Container().From("samalba/aws-cdk:2.65.0").
 		WithEnvVariable("AWS_REGION", c.region).
 		WithEnvVariable("AWS_DEFAULT_REGION", c.region).
-		WithMountedDirectory("/opt/app", cdkCode).
-		WithMountedDirectory("/root/.aws", awsConfig).
+		WithDirectory("/opt/app", cdkCode).
+		WithDirectory("/root/.aws", awsConfig).
 		WithExec(cdkCommand).
 		ExitCode(ctx)
 

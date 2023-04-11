@@ -34,7 +34,7 @@ func main() {
 		WithEnvVariable("DB_PASSWORD", "test"). // password set in db container
 		WithEnvVariable("DB_USER", "postgres"). // default user in postgres image
 		WithEnvVariable("DB_NAME", "postgres"). // default db name in postgres image
-		WithMountedDirectory("/src", src).
+		WithDirectory("/src", src).
 		WithWorkdir("/src").
 		WithExec([]string{"go", "test"}). // execute go test
 		Stdout(ctx)

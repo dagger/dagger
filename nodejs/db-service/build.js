@@ -16,7 +16,7 @@ connect(async (client) => {
   .withEnvVariable("DB_PASSWORD", "test") // password set in db container
   .withEnvVariable("DB_USER", "postgres") // default user in postgres image
   .withEnvVariable("DB_NAME", "postgres") // default db name in postgres image
-  .withMountedDirectory("/src", source)
+  .withDirectory("/src", source)
   .withWorkdir("/src")
   .withExec(["npm", "install"])
   .withExec(["npm", "run", "test"]) // execute npm run test

@@ -25,7 +25,7 @@ async def test():
             .with_env_variable("DB_PASSWORD", "test") # password set in db container
             .with_env_variable("DB_USER", "postgres") # default user in postgres image
             .with_env_variable("DB_NAME", "postgres") # default db name in postgres image
-            .with_mounted_directory("/src", src)
+            .with_directory("/src", src)
             .with_workdir("/src")
             .with_exec(["apt-get", "update"])
             .with_exec(["apt-get", "install", "-y", "libpq-dev", "gcc"])

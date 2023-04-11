@@ -26,7 +26,7 @@ func build(ctx context.Context, client *dagger.Client, registry *RegistryInfo) (
 
 	source := client.Container().
 		From("node:16").
-		WithMountedDirectory("/src", sourceDir).
+		WithDirectory("/src", sourceDir).
 		WithMountedCache("/src/node_modules", nodeCache)
 
 	runner := source.WithWorkdir("/src").

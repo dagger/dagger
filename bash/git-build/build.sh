@@ -17,11 +17,11 @@ EOF
 # mount source code repository in golang container
 # build Go binary
 # export binary from container to host filesystem
-build=$(dagger --debug query <<EOF | jq -r .container.from.withMountedDirectory.withWorkdir.withExec.file.export
+build=$(dagger --debug query <<EOF | jq -r .container.from.withDirectory.withWorkdir.withExec.file.export
 {
   container {
     from(address:"golang:latest") {
-      withMountedDirectory(path:"/src", source:"$source") {
+      withDirectory(path:"/src", source:"$source") {
         withWorkdir(path:"/src") {
           withExec(args:["go", "build", "-o", "dagger-builds-hello", "./hello/hello.go"]) {
             file(path:"./dagger-builds-hello") {

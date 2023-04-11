@@ -28,8 +28,8 @@ func doCi() error {
 	src := client.Host().Directory(".") // get the projects source directory
 
 	yarn := client.Container().From("yarnpkg/node-yarn"). // initialize new container from yarn image
-								WithMountedDirectory("/src", src).WithWorkdir("/src"). // mount source directory to /src
-								WithExec([]string{"yarn", "test"})                     // execute yarn test command
+								WithDirectory("/src", src).WithWorkdir("/src"). // mount source directory to /src
+								WithExec([]string{"yarn", "test"})              // execute yarn test command
 
 	// get test output
 	test, err := yarn.Stdout(ctx)

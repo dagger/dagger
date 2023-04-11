@@ -25,11 +25,11 @@ func doCi() error {
 	}
 	defer client.Close()
 
-	src := client.Host().Directory(".")	// get the projects source directory
+	src := client.Host().Directory(".") // get the projects source directory
 
 	gradle := client.Container().From("gradle:latest"). // Build an gradle image with gradle and bash installed
-		WithMountedDirectory("/src", src).WithWorkdir("/src").	// mount source directory to /src
-		WithExec([]string{"gradle", "build"})	// execute gradle build command
+								WithDirectory("/src", src).WithWorkdir("/src"). // mount source directory to /src
+								WithExec([]string{"gradle", "build"})           // execute gradle build command
 
 	// get gradle output
 	out, err := gradle.Stdout(ctx)
