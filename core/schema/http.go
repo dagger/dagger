@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"encoding/base64"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
@@ -40,12 +42,17 @@ type httpArgs struct {
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
 	pipeline := parent.PipelinePath()
 
-	st := llb.HTTP(args.URL, llb.Filename("contents"), pipeline.LLBOpt())
+	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
+	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
+	// of following more optimized cache codepaths.
+	// Do a base64 encode to prevent conflicts with use of `/` in the URL.
+	filename := base64.URLEncoding.EncodeToString([]byte(args.URL))
+	st := llb.HTTP(args.URL, llb.Filename(filename), pipeline.LLBOpt())
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
 		svcs[*args.ExperimentalServiceHost] = nil
 	}
 
-	return core.NewFile(ctx, st, "contents", pipeline, s.platform, svcs)
+	return core.NewFile(ctx, st, filename, pipeline, s.platform, svcs)
 }
