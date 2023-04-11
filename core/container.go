@@ -127,6 +127,7 @@ type ContainerSecret struct {
 	Secret    SecretID `json:"secret"`
 	EnvName   string   `json:"env,omitempty"`
 	MountPath string   `json:"path,omitempty"`
+	Owner     string   `json:"owner,omitempty"`
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
@@ -134,6 +135,7 @@ type ContainerSecret struct {
 type ContainerSocket struct {
 	Socket   SocketID `json:"socket"`
 	UnixPath string   `json:"unix_path,omitempty"`
+	Owner    string   `json:"owner,omitempty"`
 }
 
 // ContainerPort configures a port to expose from the container.
@@ -598,7 +600,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret) (*Container, error) {
+func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -609,6 +611,7 @@ func (container *Container) WithMountedSecret(ctx context.Context, target string
 	payload.Secrets = append(payload.Secrets, ContainerSecret{
 		Secret:    source.ID,
 		MountPath: target,
+		Owner:     owner,
 	})
 
 	// set image ref to empty string
@@ -659,7 +662,7 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -670,6 +673,7 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	newSocket := ContainerSocket{
 		Socket:   source.ID,
 		UnixPath: target,
+		Owner:    owner,
 	}
 
 	var replaced bool
@@ -1028,6 +1032,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
+	fsSt, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
+	}
+
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range payload.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
@@ -1041,6 +1050,13 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+			if secret.Owner != "" {
+				uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, secret.Owner)
+				if err != nil {
+					return nil, err
+				}
+				secretOpts = append(secretOpts, llb.SecretFileOpt(uid, gid, 0o400)) // 0400 is default
+			}
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
@@ -1065,16 +1081,22 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
-		runOpts = append(runOpts,
-			llb.AddSSHSocket(
-				llb.SSHID(socket.Socket.LLBID()),
-				llb.SSHSocketTarget(socket.UnixPath),
-			))
-	}
+		socketOpts := []llb.SSHOption{
+			llb.SSHID(socket.Socket.LLBID()),
+			llb.SSHSocketTarget(socket.UnixPath),
+		}
 
-	fsSt, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
+		if socket.Owner != "" {
+			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, socket.Owner)
+			if err != nil {
+				return nil, err
+			}
+
+			socketOpts = append(socketOpts,
+				llb.SSHSocketOpt(socket.UnixPath, uid, gid, 0o600)) // 0600 is default
+		}
+
+		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
 
 	for _, mnt := range mounts {

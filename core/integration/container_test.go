@@ -2766,9 +2766,8 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 var echoSocketSrc string
 
 func TestContainerWithUnixSocket(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
+	c, ctx := connect(t)
+	defer c.Close()
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -3575,4 +3574,110 @@ func TestContainerWithMountedCacheOwner(t *testing.T) {
 	require.Contains(t, output, "ids auser agroup")
 	require.Contains(t, output, "username-gid auser agroup")
 	require.Contains(t, output, "names auser agroup")
+}
+
+func TestContainerWithMountedSecretOwner(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	secret := c.SetSecret("test", "hunter2")
+
+	output, err := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithWorkdir("/data").
+		WithExec([]string{"cat", "/etc/passwd"}).
+		WithMountedSecret("default", secret).
+		WithMountedSecret("userid", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "1234",
+		}).
+		WithMountedSecret("userid-twice", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "1234:1234",
+		}).
+		WithMountedSecret("username", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "auser",
+		}).
+		WithMountedSecret("username-twice", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "auser:auser",
+		}).
+		WithMountedSecret("ids", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "1234:4321",
+		}).
+		WithMountedSecret("username-gid", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "auser:4321",
+		}).
+		WithMountedSecret("uid-groupname", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "1234:agroup",
+		}).
+		WithMountedSecret("names", secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: "auser:agroup",
+		}).
+		WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "default root root")
+	require.Contains(t, output, "userid auser auser")
+	require.Contains(t, output, "userid-twice auser auser")
+	require.Contains(t, output, "username auser auser")
+	require.Contains(t, output, "username-twice auser auser")
+	require.Contains(t, output, "ids auser agroup")
+	require.Contains(t, output, "username-gid auser agroup")
+	require.Contains(t, output, "names auser agroup")
+}
+
+func TestContainerWithUnixSocketOwner(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	socket := c.Host().UnixSocket(sock)
+
+	output, err := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithWorkdir("/data").
+		WithExec([]string{"cat", "/etc/passwd"}).
+		WithUnixSocket("default.sock", socket).
+		WithUnixSocket("userid.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "1234",
+		}).
+		WithUnixSocket("userid-twice.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "1234:1234",
+		}).
+		WithUnixSocket("username.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "auser",
+		}).
+		WithUnixSocket("username-twice.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "auser:auser",
+		}).
+		WithUnixSocket("ids.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "1234:4321",
+		}).
+		WithUnixSocket("username-gid.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "auser:4321",
+		}).
+		WithUnixSocket("uid-groupname.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "1234:agroup",
+		}).
+		WithUnixSocket("names.sock", socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: "auser:agroup",
+		}).
+		WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "default.sock root root")
+	require.Contains(t, output, "userid.sock auser auser")
+	require.Contains(t, output, "userid-twice.sock auser auser")
+	require.Contains(t, output, "username.sock auser auser")
+	require.Contains(t, output, "username-twice.sock auser auser")
+	require.Contains(t, output, "ids.sock auser agroup")
+	require.Contains(t, output, "username-gid.sock auser agroup")
+	require.Contains(t, output, "names.sock auser agroup")
 }
