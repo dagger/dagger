@@ -3527,3 +3527,52 @@ func TestContainerWithNewFileOwner(t *testing.T) {
 		tryAll(t, msgFile)
 	})
 }
+
+func TestContainerWithMountedCacheOwner(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	cache := c.CacheVolume("test")
+
+	output, err := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithWorkdir("/data").
+		WithExec([]string{"cat", "/etc/passwd"}).
+		WithMountedCache("default", cache).
+		WithMountedCache("userid", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "1234",
+		}).
+		WithMountedCache("userid-twice", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "1234:1234",
+		}).
+		WithMountedCache("username", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "auser",
+		}).
+		WithMountedCache("username-twice", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "auser:auser",
+		}).
+		WithMountedCache("ids", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "1234:4321",
+		}).
+		WithMountedCache("username-gid", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "auser:4321",
+		}).
+		WithMountedCache("uid-groupname", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "1234:agroup",
+		}).
+		WithMountedCache("names", cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: "auser:agroup",
+		}).
+		WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "default root root")
+	require.Contains(t, output, "userid auser auser")
+	require.Contains(t, output, "userid-twice auser auser")
+	require.Contains(t, output, "username auser auser")
+	require.Contains(t, output, "username-twice auser auser")
+	require.Contains(t, output, "ids auser agroup")
+	require.Contains(t, output, "username-gid auser agroup")
+	require.Contains(t, output, "names auser agroup")
+}

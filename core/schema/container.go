@@ -426,10 +426,11 @@ func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Cont
 }
 
 type containerWithMountedCacheArgs struct {
-	Path        string                `json:"path"`
-	Cache       core.CacheID          `json:"cache"`
-	Source      core.DirectoryID      `json:"source"`
-	Concurrency core.CacheSharingMode `json:"sharing"`
+	Path        string
+	Cache       core.CacheID
+	Source      core.DirectoryID
+	Concurrency core.CacheSharingMode
+	Owner       string
 }
 
 func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
@@ -438,7 +439,7 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Con
 		dir = &core.Directory{ID: args.Source}
 	}
 
-	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir, args.Concurrency)
+	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir, args.Concurrency, args.Owner)
 }
 
 type containerWithMountedTempArgs struct {

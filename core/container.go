@@ -531,7 +531,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(target, payload.LLB, payload.File, payload.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -558,6 +558,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		Target:           target,
 		CacheID:          cachePayload.Sum(),
 		CacheSharingMode: cacheSharingMode,
+		Owner:            owner,
 	}
 
 	if source != nil {
@@ -1106,7 +1107,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
-		if mnt.CacheSharingMode != "" {
+		if mnt.CacheID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
 			case "shared":
