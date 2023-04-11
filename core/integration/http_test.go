@@ -14,8 +14,14 @@ func TestHTTP(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	url := "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
+	// do two in a row to ensure each gets downloaded correctly
+	url := "https://raw.githubusercontent.com/dagger/dagger/main/TESTING.md"
 	contents, err := c.HTTP(url).Contents(ctx)
+	require.NoError(t, err)
+	require.Contains(t, contents, "tests")
+
+	url = "https://raw.githubusercontent.com/dagger/dagger/main/README.md"
+	contents, err = c.HTTP(url).Contents(ctx)
 	require.NoError(t, err)
 	require.Contains(t, contents, "Dagger")
 }
