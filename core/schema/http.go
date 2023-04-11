@@ -1,11 +1,10 @@
 package schema
 
 import (
-	"encoding/base64"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/opencontainers/go-digest"
 )
 
 var _ router.ExecutableSchema = &httpSchema{}
@@ -45,8 +44,8 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
 	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
 	// of following more optimized cache codepaths.
-	// Do a base64 encode to prevent conflicts with use of `/` in the URL.
-	filename := base64.URLEncoding.EncodeToString([]byte(args.URL))
+	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
+	filename := digest.FromString(args.URL).Encoded()
 	st := llb.HTTP(args.URL, llb.Filename(filename), pipeline.LLBOpt())
 
 	svcs := core.ServiceBindings{}
