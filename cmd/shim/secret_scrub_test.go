@@ -154,3 +154,17 @@ func TestScrubSecretWrite(t *testing.T) {
 	got := scrubSecretBytes(secrets, []byte(s))
 	require.Equal(t, "Not secret\n***\n***\n***\n***\n***\n***\n***\n***\n***\n\n***\n", string(got))
 }
+
+// func TestScrubSecretMultiWrite(t *testing) {
+// 	secrets := []string{
+// 		"This is secret",
+// 	}
+//
+// 	var buf bytes.Buffer
+// 	w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
+// 		Envs:  []string{"MY_SECRET_ID"},
+// 		Files: []string{"/mysecret", "/subdir/alsosecret"},
+// 	})
+// 	require.NoError(t, err)
+//
+// }

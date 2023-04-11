@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"unicode/utf8"
 )
 
@@ -33,4 +35,44 @@ func (w *UTF8DanglingWriter) writeDangling(b []byte) []byte {
 
 	w.dangling = nil
 	return data
+}
+
+type LineBreakWriter struct {
+	buffer []byte
+	w      io.Writer
+}
+
+func NewLineBreakWriter(w io.Writer) *LineBreakWriter {
+	return &LineBreakWriter{
+		w: w,
+	}
+}
+
+func (w *LineBreakWriter) Write(b []byte) (int, error) {
+	data := w.writeDangling(b)
+	_, err := w.w.Write(data)
+	return len(b), err
+}
+
+func (w *LineBreakWriter) writeDangling(b []byte) []byte {
+	data := append(w.buffer, b...)
+
+	idx := bytes.LastIndex(data, []byte("\n"))
+
+	log.Println("dangling:", idx, len(data), data)
+	if idx == -1 {
+		w.buffer = data
+		return nil
+	}
+
+	if idx == len(data)-1 {
+		log.Printf("dangling flush")
+		w.buffer = nil
+		return data
+	}
+
+	log.Printf("dangling2: %d, %s, %s", idx, data[:idx], data[idx:])
+	w.buffer = data[idx:]
+
+	return data[:idx]
 }
