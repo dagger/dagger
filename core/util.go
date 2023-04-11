@@ -1,14 +1,21 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"path"
+	"strconv"
+	"strings"
 	"sync"
 
+	"github.com/dagger/dagger/core/reffs"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runc/libcontainer/user"
 )
 
 // encodeID JSON marshals and base64-encodes an arbitrary payload.
@@ -89,4 +96,105 @@ func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
 	}()
 
 	return mirrorCh, wg
+}
+
+func unameToUID(
+	ctx context.Context,
+	fsSt llb.State,
+	gw bkgw.Client,
+	platform specs.Platform,
+	name string,
+) (int, error) {
+	fs, err := reffs.OpenState(ctx, gw, fsSt, llb.Platform(platform))
+	if err != nil {
+		return -1, fmt.Errorf("open fs state for name->id: %w", err)
+	}
+
+	f, err := fs.Open("/etc/passwd")
+	if err != nil {
+		return -1, fmt.Errorf("open /etc/passwd: %w", err)
+	}
+
+	users, err := user.ParsePasswdFilter(f, func(u user.User) bool {
+		return u.Name == name
+	})
+	if err != nil {
+		return -1, fmt.Errorf("parse passwd: %w", err)
+	}
+
+	if len(users) == 0 {
+		return -1, fmt.Errorf("no such user: %s", name)
+	}
+
+	return users[0].Uid, nil
+}
+
+func gnameToGID(
+	ctx context.Context,
+	fsSt llb.State,
+	gw bkgw.Client,
+	platform specs.Platform,
+	name string,
+) (int, error) {
+	fs, err := reffs.OpenState(ctx, gw, fsSt, llb.Platform(platform))
+	if err != nil {
+		return -1, fmt.Errorf("open fs state for name->id: %w", err)
+	}
+
+	f, err := fs.Open("/etc/group")
+	if err != nil {
+		return -1, fmt.Errorf("open /etc/group: %w", err)
+	}
+
+	groups, err := user.ParseGroupFilter(f, func(g user.Group) bool {
+		return g.Name == name
+	})
+	if err != nil {
+		return -1, fmt.Errorf("parse passwd: %w", err)
+	}
+
+	if len(groups) == 0 {
+		return -1, fmt.Errorf("no such group: %s", name)
+	}
+
+	return groups[0].Gid, nil
+}
+
+func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (int, int, error) {
+	user, group, hasGroup := strings.Cut(owner, ":")
+
+	uid, err := parseUID(user)
+	if err != nil {
+		uid, err = unameToUID(ctx, fsSt, gw, platform, user)
+		if err != nil {
+			return -1, -1, fmt.Errorf("resolve username %q to ID: %w", user, err)
+		}
+	}
+
+	var gid int
+	if hasGroup {
+		gid, err = parseUID(group)
+		if err != nil {
+			gid, err = gnameToGID(ctx, fsSt, gw, platform, group)
+			if err != nil {
+				return -1, -1, fmt.Errorf("resolve groupname %q to ID: %w", group, err)
+			}
+		}
+	} else {
+		gid = uid
+	}
+
+	return uid, gid, nil
+}
+
+// NB: from Buildkit
+func parseUID(str string) (int, error) {
+	if str == "root" {
+		return 0, nil
+	}
+	uid, err := strconv.ParseInt(str, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int(uid), nil
 }

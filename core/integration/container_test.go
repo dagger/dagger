@@ -3152,3 +3152,157 @@ func TestContainerNoExecError(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 }
+
+func TestContainerWithMountedFileOwner(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	tryAll := func(t *testing.T, file *dagger.File) {
+		output, err := c.Pipeline("test").
+			Container().
+			From("alpine").
+			WithExec([]string{"adduser", "-u", "1234", "-D", "vito"}).
+			WithExec([]string{"addgroup", "-g", "4321", "dagger"}).
+			WithWorkdir("/data").
+			WithMountedFile("default.txt", file).
+			WithMountedFile("userid.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "1234",
+			}).
+			WithMountedFile("userid-twice.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "1234:1234",
+			}).
+			WithMountedFile("username.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "vito",
+			}).
+			WithMountedFile("username-twice.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "vito:vito",
+			}).
+			WithMountedFile("ids.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "1234:4321",
+			}).
+			WithMountedFile("username-gid.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "vito:4321",
+			}).
+			WithMountedFile("uid-groupname.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "1234:dagger",
+			}).
+			WithMountedFile("names.txt", file, dagger.ContainerWithMountedFileOpts{
+				Owner: "vito:dagger",
+			}).
+			WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, output, "default.txt root root")
+		require.Contains(t, output, "userid.txt vito vito")
+		require.Contains(t, output, "userid-twice.txt vito vito")
+		require.Contains(t, output, "username.txt vito vito")
+		require.Contains(t, output, "username-twice.txt vito vito")
+		require.Contains(t, output, "ids.txt vito dagger")
+		require.Contains(t, output, "username-gid.txt vito dagger")
+		require.Contains(t, output, "names.txt vito dagger")
+	}
+
+	t.Run("simple file", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		require.NoError(t, err)
+
+		msgFile := c.Host().Directory(tmp).File("message.txt")
+
+		tryAll(t, msgFile)
+	})
+
+	t.Run("file from subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		require.NoError(t, err)
+
+		msgFile := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
+
+		tryAll(t, msgFile)
+	})
+}
+
+func TestContainerWithMountedDirectoryOwner(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	tryAll := func(t *testing.T, dir *dagger.Directory) {
+		output, err := c.Pipeline("test").
+			Container().
+			From("alpine").
+			WithExec([]string{"adduser", "-u", "1234", "-D", "vito"}).
+			WithExec([]string{"addgroup", "-g", "4321", "dagger"}).
+			WithWorkdir("/data").
+			WithMountedDirectory("default", dir).
+			WithMountedDirectory("userid", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "1234",
+			}).
+			WithMountedDirectory("userid-twice", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "1234:1234",
+			}).
+			WithMountedDirectory("username", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "vito",
+			}).
+			WithMountedDirectory("username-twice", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "vito:vito",
+			}).
+			WithMountedDirectory("ids", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "1234:4321",
+			}).
+			WithMountedDirectory("username-gid", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "vito:4321",
+			}).
+			WithMountedDirectory("uid-groupname", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "1234:dagger",
+			}).
+			WithMountedDirectory("names", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "vito:dagger",
+			}).
+			WithExec([]string{"sh", "-c", "stat -c '%n %U %G' * */message.txt"}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, output, "default root root")
+		require.Contains(t, output, "userid vito vito")
+		require.Contains(t, output, "userid-twice vito vito")
+		require.Contains(t, output, "username vito vito")
+		require.Contains(t, output, "username-twice vito vito")
+		require.Contains(t, output, "ids vito dagger")
+		require.Contains(t, output, "username-gid vito dagger")
+		require.Contains(t, output, "names vito dagger")
+		require.Contains(t, output, "default/message.txt root root")
+		require.Contains(t, output, "userid/message.txt vito vito")
+		require.Contains(t, output, "userid-twice/message.txt vito vito")
+		require.Contains(t, output, "username/message.txt vito vito")
+		require.Contains(t, output, "username-twice/message.txt vito vito")
+		require.Contains(t, output, "ids/message.txt vito dagger")
+		require.Contains(t, output, "username-gid/message.txt vito dagger")
+		require.Contains(t, output, "names/message.txt vito dagger")
+	}
+
+	t.Run("simple directory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		require.NoError(t, err)
+
+		tryAll(t, c.Host().Directory(tmp))
+	})
+
+	t.Run("file from subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		require.NoError(t, err)
+
+		tryAll(t, c.Host().Directory(tmp).Directory("subdir"))
+	})
+}

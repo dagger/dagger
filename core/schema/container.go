@@ -399,10 +399,11 @@ func (s *containerSchema) label(ctx *router.Context, parent *core.Container, arg
 type containerWithMountedDirectoryArgs struct {
 	Path   string
 	Source core.DirectoryID
+	Owner  string
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	return parent.WithMountedDirectory(ctx, args.Path, &core.Directory{ID: args.Source})
+	return parent.WithMountedDirectory(ctx, args.Path, &core.Directory{ID: args.Source}, args.Owner)
 }
 
 type containerPublishArgs struct {
@@ -417,10 +418,11 @@ func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, a
 type containerWithMountedFileArgs struct {
 	Path   string
 	Source core.FileID
+	Owner  string
 }
 
 func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	return parent.WithMountedFile(ctx, args.Path, &core.File{ID: args.Source})
+	return parent.WithMountedFile(ctx, args.Path, &core.File{ID: args.Source}, args.Owner)
 }
 
 type containerWithMountedCacheArgs struct {

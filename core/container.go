@@ -203,6 +203,11 @@ type ContainerMount struct {
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
+
+	// A user:group to set for the mount and its contents.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	Owner string `json:"owner,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -493,22 +498,22 @@ func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, des
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory, owner string) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services)
+	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services, owner)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, target string, source *File, owner string) (*Container, error) {
 	payload, err := source.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File, payload.Services)
+	return container.withMounted(target, payload.LLB, payload.File, payload.Services, owner)
 }
 
 func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode) (*Container, error) {
@@ -811,7 +816,13 @@ func locatePath[T *File | *Directory](
 	return found, nil, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs ServiceBindings) (*Container, error) {
+func (container *Container) withMounted(
+	target string,
+	srcDef *pb.Definition,
+	srcPath string,
+	svcs ServiceBindings,
+	owner string,
+) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -823,6 +834,7 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
+		Owner:      owner,
 	})
 
 	payload.Services.Merge(svcs)
@@ -869,7 +881,7 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil)
+	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil, "")
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1056,6 +1068,25 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		}
 
 		mountOpts := []llb.MountOption{}
+
+		if mnt.Owner != "" {
+			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, mnt.Owner)
+			if err != nil {
+				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
+			}
+
+			// NB(vito): need to create intermediate directory with correct ownership
+			// to handle the directory case, otherwise the mount will be owned by
+			// root
+			srcSt = llb.Scratch().File(
+				llb.Mkdir("/chown", 0700, llb.WithUIDGID(uid, gid)).
+					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
+				payload.Pipeline.LLBOpt(),
+			)
+
+			mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
+		}
+
 		if mnt.SourcePath != "" {
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
