@@ -6,8 +6,8 @@ This describes how to release Dagger:
 - 🐹 Go SDK
 - 🐍 Python SDK
 - ⬢ Node.js SDK
-- 🛝 Playground
 - 📒 Documentation
+- 🛝 Playground
 
 This is a high-level diagram of how all the pieces fit together:
 
@@ -15,8 +15,9 @@ This is a high-level diagram of how all the pieces fit together:
 flowchart TD
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
-    repo -.-> docs
-
+    playground["🛝 Playground"]
+    repo -.-> docs & playground
+    
     subgraph Dagger
         engine("🚙 Engine")
         cli("🚗 CLI &nbsp;")
@@ -67,8 +68,8 @@ flowchart TD
 git checkout main
 git pull
 
-# e.g. export ENGINE_GIT_SHA=fd61da9
-# e.g. export ENGINE_VERSION=v0.4.0
+# e.g. export ENGINE_GIT_SHA=ff7653d
+# e.g. export ENGINE_VERSION=v0.5.0
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
 git push origin "${ENGINE_VERSION:?must be set}"
@@ -127,8 +128,8 @@ steps:
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fgo&expanded=true
-# e.g. export GO_SDK_VERSION=v0.5.1
-# e.g. export SDK_GIT_SHA=79376b0
+# e.g. export GO_SDK_VERSION=v0.6.0
+# e.g. export SDK_GIT_SHA=fd34fdd
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin "sdk/go/${GO_SDK_VERSION:?must be set}"
 ```
@@ -144,16 +145,14 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
   [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
   this new version via `https://pkg.go.dev/dagger.io/dagger@<GO_SDK_VERSION>`.
   The new version can take up to 15mins to appear, it's OK to move on.
-
-- [ ] Bump the Go SDK version in our internal mage CI targets. This is
-  done by updating the `go.mod` file in [🐙
-  https://github.com/dagger/dagger/tree/main/internal/mage](https://github.com/dagger/dagger/blob/main/internal/mage/go.mod#L6).
+- [ ] Bump the Go SDK version in our internal mage CI targets: `go get -u
+  dagger.io/dagger`
 
 ### Changelog
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/go/v0.4.6](https://github.com/dagger/dagger/releases/tag/sdk%2Fgo%2Fv0.4.6).
+[sdk/go/v0.6.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fgo%2Fv0.6.0).
 Follow these steps:
 
 > **Note**
@@ -165,7 +164,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fgo&expanded=true
-# e.g. export PREVIOUS_GO_SDK_VERSION=v0.5.0
+# e.g. export PREVIOUS_GO_SDK_VERSION=v0.5.2
 
 gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/go/${PREVIOUS_GO_SDK_VERSION:?must be set}" --draft
 ```
@@ -177,7 +176,7 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" --generate-notes --not
 This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](https://github.com/dagger/dagger/releases/tag/$ENGINE_VERSION)
 ```
 
-- [ ] Add link to pkg.go.dev, e.g. `🐹 https://pkg.go.dev/dagger.io/dagger@v0.5.0`
+- [ ] Add link to pkg.go.dev, e.g. `🐹 https://pkg.go.dev/dagger.io/dagger@v0.6.0`
 - [ ] Click through each pull request and remove all the ones that don't change
   any Go SDK files. Some pull requests are labelled with `sdk/go`, which makes
   this process quicker.
@@ -212,8 +211,8 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](h
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fpython&expanded=true
-# e.g. export PYTHON_SDK_VERSION=v0.4.1
-# e.g. export SDK_GIT_SHA=79376b0
+# e.g. export PYTHON_SDK_VERSION=v0.5.0
+# e.g. export SDK_GIT_SHA=fd34fdd
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/python/${PYTHON_SDK_VERSION}
 ```
@@ -227,7 +226,7 @@ which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/python/v0.4.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.4.0).
+[sdk/python/v0.5.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.5.0).
 Follow these steps:
 
 > **Note**
@@ -239,7 +238,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fpython&expanded=true
-# e.g. export PREVIOUS_PYTHON_SDK_VERSION=v0.4.0
+# e.g. export PREVIOUS_PYTHON_SDK_VERSION=v0.4.2
 
 gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/python/${PREVIOUS_PYTHON_SDK_VERSION:?must be set}" --draft
 ```
@@ -250,8 +249,8 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" --generate-not
 This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](https://github.com/dagger/dagger/releases/tag/$ENGINE_VERSION)
 ```
 
-- [ ] Add link to PyPI, e.g. `🐍 https://pypi.org/project/dagger-io/0.4.1/`
-- [ ] Add link to ReadTheDocs, e.g. `📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.4.1/`
+- [ ] Add link to PyPI, e.g. `🐍 https://pypi.org/project/dagger-io/0.5.0/`
+- [ ] Add link to ReadTheDocs, e.g. `📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.5.0/`
 - [ ] Click through each pull request and remove all the ones that don't change
   any Go SDK files. Some pull requests are labelled with `sdk/python`, which makes
   this process quicker.
@@ -286,8 +285,8 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](h
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fnodejs&expanded=true
-# e.g. export NODEJS_SDK_VERSION=v0.4.1
-# e.g. export SDK_GIT_SHA=79376b0
+# e.g. export NODEJS_SDK_VERSION=v0.5.0
+# e.g. export SDK_GIT_SHA=fd34fdd
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/nodejs/${NODEJS_SDK_VERSION}
 ```
@@ -300,7 +299,7 @@ which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/nodejs/v0.4.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fnodejs%2Fv0.4.0).
+[sdk/nodejs/v0.5.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fnodejs%2Fv0.5.0).
 Follow these steps:
 
 > **Note**
@@ -312,7 +311,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fnodejs&expanded=true
-# e.g. export PREVIOUS_NODEJS_SDK_VERSION=v0.4.0
+# e.g. export PREVIOUS_NODEJS_SDK_VERSION=v0.4.2
 
 gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/nodejs/${PREVIOUS_NODEJS_SDK_VERSION:?must be set}" --draft
 ```
@@ -324,7 +323,7 @@ gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" --generate-not
 This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](https://github.com/dagger/dagger/releases/tag/$ENGINE_VERSION)
 ```
 
-- [ ] Add link to NPMJS, e.g. `⬢ https://www.npmjs.com/package/@dagger.io/dagger/v/0.4.0`
+- [ ] Add link to NPMJS, e.g. `⬢ https://www.npmjs.com/package/@dagger.io/dagger/v/0.5.0`
 - [ ] Add link to reference docs, e.g. `📒 https://docs.dagger.io/current/sdk/nodejs/reference/modules/api_client_gen`
 - [ ] Click through each pull request and remove all the ones that don't change
   any Go SDK files. Some pull requests are labelled with `sdk/nodejs`, which makes
@@ -337,22 +336,6 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](h
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
 - [ ] Click on **Publish release**
 
-
-## 🛝 Playground
-
-The [Dagger Playground](https://play.dagger.cloud) is set to automatically update once there's a new release of the Dagger Engine.
-In order to verify which version the playground is using, an `x-dagger-engine` HTTP header with the deployed Dagger Engine version is
-returned for each playground query.
-
-Follow these steps to retrieve and verify the playground version:
-
-1. Browse https://play.dagger.cloud and log-in using GitHub credentials.
-2. Open your developer tools and go to the "Network" tab.
-3. Press the "Execute" button in the UI to send a query.
-4. Click in the `/playgrounds` POST request row in the network tab and take onte of the engine commit version.
-5. Verify that the returned commit version matches with the Engine tag commit generated at the beginning of this guide.
-
-![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
 
 
 ## 📒 Documentation
@@ -406,3 +389,23 @@ production deployment via Netlify as follows:
 > for this has been Netlify's use of a stale cache. In case you encounter
 > this error, click "Options -> Clear cache and retry with latest branch commit"
 > to recreate the deployment with a clean cache.
+
+
+
+## 🛝 Playground
+
+The [Dagger Playground](https://play.dagger.cloud) is set to automatically
+update once there's a new release of the Dagger Engine. In order to verify
+which Dagger version the Playground is using, check the `x-dagger-engine` HTTP
+header with the deployed Dagger Engine version is returned for each playground
+query: 
+
+![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
+
+Follow these steps to retrieve and verify the Playground Dagger version:
+
+1. Login with your GitHub account at https://play.dagger.cloud
+2. Open your browser's Developer Tools, and then the **Network** tab
+3. Click the **Execute query** button
+4. Click in the `/playgrounds` POST request row in the **Network** tab
+5. Verify that the `x-dagger-engine` response header commit value matches the `ENGINE_GIT_SHA` value from the beginning of this guide
