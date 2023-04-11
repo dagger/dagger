@@ -16,14 +16,14 @@ flowchart TD
     repo(["🐙 github.com/dagger/dagger"])
     docs["📒 Documentation"]
     repo -.-> docs
-    
+
     subgraph Dagger
         engine("🚙 Engine")
         cli("🚗 CLI &nbsp;")
     end
-    
+
     repo ==> engine & cli
-    
+
     S3["🗄 dl.dagger.io/dagger"]
     brew-tap["🐙 github.com/dagger/homebrew-tap"]
     cli --> S3 --> brew-tap
@@ -144,6 +144,10 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
   [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
   this new version via `https://pkg.go.dev/dagger.io/dagger@<GO_SDK_VERSION>`.
   The new version can take up to 15mins to appear, it's OK to move on.
+
+- [ ] Bump the Go SDK version in our internal mage CI targets. This is
+  done by updating the `go.mod` file in [🐙
+  https://github.com/dagger/dagger/tree/main/internal/mage](https://github.com/dagger/dagger/blob/main/internal/mage/go.mod#L6).
 
 ### Changelog
 
@@ -336,9 +340,9 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`$ENGINE_VERSION`](h
 
 ## 🛝 Playground
 
-The [Dagger Playground](https://play.dagger.cloud) is set to automatically update once there's a new release of the Dagger Engine. 
+The [Dagger Playground](https://play.dagger.cloud) is set to automatically update once there's a new release of the Dagger Engine.
 In order to verify which version the playground is using, an `x-dagger-engine` HTTP header with the deployed Dagger Engine version is
-returned for each playground query. 
+returned for each playground query.
 
 Follow these steps to retrieve and verify the playground version:
 
