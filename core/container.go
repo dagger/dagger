@@ -479,22 +479,37 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
+func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
 	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithDirectory(ctx, ".", src, filter)
+		uid, gid, err := container.uidgid(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithDirectory(ctx, ".", src, filter, uid, gid)
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
 	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithFile(ctx, ".", src, permissions)
+		uid, gid, err := container.uidgid(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithFile(ctx, ".", src, permissions, uid, gid)
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, file, content, permissions) // TODO(vito): doesn't this need a name...?
+		uid, gid, err := container.uidgid(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithNewFile(ctx, file, content, permissions, uid, gid)
 	})
 }
 
@@ -1079,7 +1094,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			// to handle the directory case, otherwise the mount will be owned by
 			// root
 			srcSt = llb.Scratch().File(
-				llb.Mkdir("/chown", 0700, llb.WithUIDGID(uid, gid)).
+				llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
 					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
 				payload.Pipeline.LLBOpt(),
 			)
@@ -1749,6 +1764,25 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 	}
 
 	return &Container{ID: id}, nil
+}
+
+func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner string) (int, int, error) {
+	if owner == "" {
+		// default to root
+		return 0, 0, nil
+	}
+
+	containerPayload, err := container.ID.decode()
+	if err != nil {
+		return -1, -1, err
+	}
+
+	fsSt, err := containerPayload.FSState()
+	if err != nil {
+		return -1, -1, err
+	}
+
+	return resolveUIDGID(ctx, fsSt, gw, containerPayload.Platform, owner)
 }
 
 type ContainerExecOpts struct {

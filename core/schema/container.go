@@ -533,16 +533,31 @@ func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Co
 	return parent.WithMountedSecret(ctx, args.Path, core.NewSecret(args.Source))
 }
 
-func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args withDirectoryArgs) (*core.Container, error) {
-	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter)
+type containerWithDirectoryArgs struct {
+	withDirectoryArgs
+	Owner string
 }
 
-func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args withFileArgs) (*core.Container, error) {
-	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Permissions)
+func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Owner)
 }
 
-func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args withNewFileArgs) (*core.Container, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions)
+type containerWithFileArgs struct {
+	withFileArgs
+	Owner string
+}
+
+func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
+	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Permissions, args.Owner)
+}
+
+type containerWithNewFileArgs struct {
+	withNewFileArgs
+	Owner string
+}
+
+func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
+	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
 }
 
 type containerWithUnixSocketArgs struct {

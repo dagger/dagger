@@ -200,7 +200,7 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	})
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, uid, gid int) (*Directory, error) {
 	err := validateFileName(dest)
 	if err != nil {
 		return nil, err
@@ -233,6 +233,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 			dest,
 			permissions,
 			content,
+			llb.WithUIDGID(uid, gid),
 		),
 		payload.Pipeline.LLBOpt(),
 	)
@@ -275,7 +276,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}).ToFile()
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, uid, gid int) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -301,7 +302,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		CopyDirContentsOnly: true,
 		IncludePatterns:     filter.Include,
 		ExcludePatterns:     filter.Exclude,
-	}),
+	}, llb.WithUIDGID(uid, gid)),
 		destPayload.Pipeline.LLBOpt(),
 	)
 
@@ -372,7 +373,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode) (*Directory, error) {
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode, uid, gid int) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -402,7 +403,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
 		CreateDestPath: true,
 		Mode:           perm,
-	}), destPayload.Pipeline.LLBOpt())
+	}, llb.WithUIDGID(uid, gid)), destPayload.Pipeline.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
