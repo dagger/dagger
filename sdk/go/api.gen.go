@@ -797,6 +797,8 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
+	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+	SkipEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
 	Stdin string
 	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -819,6 +821,13 @@ type ContainerWithExecOpts struct {
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.q.Select("withExec")
 	q = q.Arg("args", args)
+	// `skipEntrypoint` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
+			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
+			break
+		}
+	}
 	// `stdin` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {

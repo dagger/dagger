@@ -917,7 +917,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		args = cfg.Cmd
 	}
 
-	if len(cfg.Entrypoint) > 0 {
+	if len(cfg.Entrypoint) > 0 && !opts.SkipEntrypoint {
 		args = append(cfg.Entrypoint, args...)
 	}
 
@@ -1713,6 +1713,10 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 type ContainerExecOpts struct {
 	// Command to run instead of the container's default command
 	Args []string
+
+	// If the container has an entrypoint, ignore it for this exec rather than
+	// calling it with args.
+	SkipEntrypoint bool
 
 	// Content to write to the command's standard input before closing
 	Stdin string

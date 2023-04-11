@@ -862,6 +862,7 @@ class Container(Type):
     def with_exec(
         self,
         args: Sequence[str],
+        skip_entrypoint: Optional[bool] = None,
         stdin: Optional[str] = None,
         redirect_stdout: Optional[str] = None,
         redirect_stderr: Optional[str] = None,
@@ -876,6 +877,9 @@ class Container(Type):
         args:
             Command to run instead of the container's default command (e.g.,
             ["run", "main.go"]).
+        skip_entrypoint:
+            If the container has an entrypoint, ignore it for args rather than
+            using it to wrap them.
         stdin:
             Content to write to the command's standard input before closing
             (e.g., "Hello world").
@@ -902,6 +906,7 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
+            Arg("skipEntrypoint", skip_entrypoint, None),
             Arg("stdin", stdin, None),
             Arg("redirectStdout", redirect_stdout, None),
             Arg("redirectStderr", redirect_stderr, None),

@@ -580,46 +580,36 @@ func TestContainerExecWithUser(t *testing.T) {
 func TestContainerExecWithEntrypoint(t *testing.T) {
 	t.Parallel()
 
-	res := struct {
-		Container struct {
-			From struct {
-				Entrypoint     []string
-				WithEntrypoint struct {
-					Entrypoint []string
-					WithExec   struct {
-						Stdout string
-					}
-					WithEntrypoint struct {
-						Entrypoint []string
-					}
-				}
-			}
-		}
-	}{}
+	c, ctx := connect(t)
+	defer c.Close()
 
-	err := testutil.Query(
-		`{
-			container {
-				from(address: "alpine:3.16.2") {
-					entrypoint
-					withEntrypoint(args: ["sh", "-c"]) {
-						entrypoint
-						withExec(args: ["echo $HOME"]) {
-							stdout
-						}
-
-						withEntrypoint(args: []) {
-							entrypoint
-						}
-					}
-				}
-			}
-		}`, &res, nil)
+	base := c.Container().From("alpine:3.16.2")
+	before, err := base.Entrypoint(ctx)
 	require.NoError(t, err)
-	require.Empty(t, res.Container.From.Entrypoint)
-	require.Equal(t, []string{"sh", "-c"}, res.Container.From.WithEntrypoint.Entrypoint)
-	require.Equal(t, "/root\n", res.Container.From.WithEntrypoint.WithExec.Stdout)
-	require.Empty(t, res.Container.From.WithEntrypoint.WithEntrypoint.Entrypoint)
+	require.Empty(t, before)
+
+	withEntry := base.WithEntrypoint([]string{"sh"})
+	after, err := withEntry.Entrypoint(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []string{"sh"}, after)
+
+	used, err := withEntry.WithExec([]string{"-c", "echo $HOME"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/root\n", used)
+
+	_, err = withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).ExitCode(ctx)
+	require.Error(t, err) // 'sh sh -c echo $HOME' is not valid
+
+	skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
+		SkipEntrypoint: true,
+	}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "/root\n", skipped)
+
+	withoutEntry := withEntry.WithEntrypoint(nil)
+	removed, err := withoutEntry.Entrypoint(ctx)
+	require.NoError(t, err)
+	require.Empty(t, removed)
 }
 
 func TestContainerWithDefaultArgs(t *testing.T) {
