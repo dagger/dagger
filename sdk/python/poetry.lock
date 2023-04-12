@@ -1427,4 +1427,4 @@ server = ["strawberry-graphql"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "8b2e23e5fd7928b2098608949a653c4ae0c6f23f888ec1e14059fd51c6823028"
+content-hash = "03c63a357585ec872fc6b76515b1ae494188460da37804118b75e5d13a62c562"
