@@ -25,6 +25,7 @@ from gql.transport.exceptions import (
     TransportQueryError,
     TransportServerError,
 )
+from typing_extensions import Self
 
 from dagger.exceptions import (
     ExecuteTimeoutError,
@@ -235,6 +236,32 @@ class Type(Object):
     def _select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
         _args = {arg.name: arg.value for arg in args if arg.value is not arg.default}
         return self._ctx.select(self.graphql_name, field_name, _args)
+
+    def with_(self, cb: Callable[[Self], Self]) -> Self:
+        """
+        Use a callable to add to the current object.
+
+        This allows reusing funcionality (e.g., adding mounts)
+        without breaking the pipeline chain.
+
+        Example
+        -------
+        For a :py:class:`Container` type:
+
+        >>> def foobar(c: dagger.Container) -> dagger.Container:
+        ...     return c.with_env_variable("FOO", "bar")
+
+        It can be used like this:
+
+        >>> out = await (
+        ...     client.container()
+        ...     .from_("alpine")
+        ...     .with_(foobar)
+        ...     .with_exec(["printenv", "FOO"])
+        ...     .stdout()
+        ... )
+        """
+        return cb(self)
 
 
 class Root(Type):
