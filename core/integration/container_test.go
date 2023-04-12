@@ -3202,7 +3202,7 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 	t.Run("simple file", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).File("message.txt")
@@ -3216,7 +3216,7 @@ func TestContainerWithMountedFileOwner(t *testing.T) {
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
@@ -3283,7 +3283,7 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 	t.Run("simple directory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		tryAll(t, c.Host().Directory(tmp))
@@ -3295,7 +3295,7 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		tryAll(t, c.Host().Directory(tmp).Directory("subdir"))
@@ -3353,7 +3353,7 @@ func TestContainerWithFileOwner(t *testing.T) {
 	t.Run("simple file", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).File("message.txt")
@@ -3367,7 +3367,7 @@ func TestContainerWithFileOwner(t *testing.T) {
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
@@ -3434,7 +3434,7 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 	t.Run("simple directory", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		tryAll(t, c.Host().Directory(tmp))
@@ -3446,7 +3446,7 @@ func TestContainerWithDirectoryOwner(t *testing.T) {
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		tryAll(t, c.Host().Directory(tmp).Directory("subdir"))
@@ -3504,7 +3504,7 @@ func TestContainerWithNewFileOwner(t *testing.T) {
 	t.Run("simple file", func(t *testing.T) {
 		tmp := t.TempDir()
 
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0644)
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).File("message.txt")
@@ -3518,7 +3518,7 @@ func TestContainerWithNewFileOwner(t *testing.T) {
 		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0644)
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
 		require.NoError(t, err)
 
 		msgFile := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
