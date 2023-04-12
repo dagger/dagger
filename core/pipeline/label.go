@@ -236,6 +236,11 @@ func LoadGitHubLabels() ([]Label, error) {
 			})
 
 			labels = append(labels, Label{
+				Name:  "github.com/pr.label",
+				Value: pr.GetHead().GetLabel(),
+			})
+
+			labels = append(labels, Label{
 				Name:  "github.com/pr.head",
 				Value: pr.GetHead().GetSHA(),
 			})
