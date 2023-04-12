@@ -165,7 +165,7 @@ The following code listing builds separate images for multiple OS and CPU archit
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-```go file=./snippets/multi-builds/main.go
+```go file=./guides/snippets/multi-builds/main.go
 ```
 
 </TabItem>
@@ -192,7 +192,7 @@ The following code listing builds a single image for different CPU architectures
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-```go file=./snippets/multiplatform-support/build-images-emulation/main.go
+```go file=./guides/snippets/multiplatform-support/build-images-emulation/main.go
 ```
 
 </TabItem>
@@ -207,7 +207,7 @@ The following code listing builds a single image for different CPU architectures
 <Tabs groupId="language" className="embeds">
 <TabItem value="Go">
 
-```go file=./snippets/multiplatform-support/build-images-cross-compilation/main.go
+```go file=./guides/snippets/multiplatform-support/build-images-cross-compilation/main.go
 ```
 
 </TabItem>
