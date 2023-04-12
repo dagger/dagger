@@ -69,12 +69,6 @@ to = "/648384/multi-builds"
 status = 302
 
 [[redirects]]
-# URL consistency fix
-from = "/sdk/go/759201/gitlab-google-cloud"
-to = "/759201/gitlab-google-cloud"
-status = 302
-
-[[redirects]]
 # redirect single-language guide to multi-language guide
 from = "/560223/private-repositories"
 to = "/710884/private-repositories"
@@ -84,6 +78,24 @@ status = 302
 # redirect single-language guide to multi-language guide
 from = "/683293/private-repositories"
 to = "/710884/private-repositories"
+status = 302
+
+[[redirects]]
+# redirect Go CI guide to unified multi-language CI guide
+from = "/768421/go-ci"
+to = "/145912/ci"
+status = 302
+
+[[redirects]]
+# redirect Node.js CI guide to unified multi-language CI guide
+from = "/114934/nodejs-ci"
+to = "/145912/ci"
+status = 302
+
+[[redirects]]
+# redirect Python CI guide to unified multi-language CI guide
+from = "/454108/python-ci"
+to = "/145912/ci"
 status = 302
 
 # redirect to the playground's embed to maintain same origin
