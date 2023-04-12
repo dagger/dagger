@@ -27,6 +27,11 @@ module.exports = {
       label: "Guides",
     },
     {
+      type: "doc",
+      id: "current/cookbook",
+      label: "Cookbook",
+    },
+    {
       type: "category",
       label: "Go SDK",
       collapsible: false,
