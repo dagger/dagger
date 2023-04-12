@@ -3457,74 +3457,47 @@ func TestContainerWithNewFileOwner(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	tryAll := func(t *testing.T, file *dagger.File) {
-		output, err := c.Container().From("alpine:3.16.2").
-			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
-			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
-			WithWorkdir("/data").
-			WithExec([]string{"cat", "/etc/passwd"}).
-			WithNewFile("default.txt").
-			WithNewFile("userid.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "1234",
-			}).
-			WithNewFile("userid-twice.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "1234:1234",
-			}).
-			WithNewFile("username.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "auser",
-			}).
-			WithNewFile("username-twice.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "auser:auser",
-			}).
-			WithNewFile("ids.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "1234:4321",
-			}).
-			WithNewFile("username-gid.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "auser:4321",
-			}).
-			WithNewFile("uid-groupname.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "1234:agroup",
-			}).
-			WithNewFile("names.txt", dagger.ContainerWithNewFileOpts{
-				Owner: "auser:agroup",
-			}).
-			WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Contains(t, output, "default.txt root root")
-		require.Contains(t, output, "userid.txt auser auser")
-		require.Contains(t, output, "userid-twice.txt auser auser")
-		require.Contains(t, output, "username.txt auser auser")
-		require.Contains(t, output, "username-twice.txt auser auser")
-		require.Contains(t, output, "ids.txt auser agroup")
-		require.Contains(t, output, "username-gid.txt auser agroup")
-		require.Contains(t, output, "names.txt auser agroup")
-	}
-
-	t.Run("simple file", func(t *testing.T) {
-		tmp := t.TempDir()
-
-		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
-		require.NoError(t, err)
-
-		msgFile := c.Host().Directory(tmp).File("message.txt")
-
-		tryAll(t, msgFile)
-	})
-
-	t.Run("file from subdirectory", func(t *testing.T) {
-		tmp := t.TempDir()
-
-		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
-		require.NoError(t, err)
-
-		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
-		require.NoError(t, err)
-
-		msgFile := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
-
-		tryAll(t, msgFile)
-	})
+	output, err := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithWorkdir("/data").
+		WithExec([]string{"cat", "/etc/passwd"}).
+		WithNewFile("default.txt").
+		WithNewFile("userid.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "1234",
+		}).
+		WithNewFile("userid-twice.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "1234:1234",
+		}).
+		WithNewFile("username.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "auser",
+		}).
+		WithNewFile("username-twice.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "auser:auser",
+		}).
+		WithNewFile("ids.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "1234:4321",
+		}).
+		WithNewFile("username-gid.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "auser:4321",
+		}).
+		WithNewFile("uid-groupname.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "1234:agroup",
+		}).
+		WithNewFile("names.txt", dagger.ContainerWithNewFileOpts{
+			Owner: "auser:agroup",
+		}).
+		WithExec([]string{"sh", "-c", "stat -c '%n %U %G' *"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, output, "default.txt root root")
+	require.Contains(t, output, "userid.txt auser auser")
+	require.Contains(t, output, "userid-twice.txt auser auser")
+	require.Contains(t, output, "username.txt auser auser")
+	require.Contains(t, output, "username-twice.txt auser auser")
+	require.Contains(t, output, "ids.txt auser agroup")
+	require.Contains(t, output, "username-gid.txt auser agroup")
+	require.Contains(t, output, "names.txt auser agroup")
 }
 
 func TestContainerWithMountedCacheOwner(t *testing.T) {
