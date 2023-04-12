@@ -10,26 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func run(t *testing.T, exe string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command(exe, args...)
-	cmd.Stderr = os.Stderr
-	out, err := cmd.Output()
-	require.NoError(t, err)
-	return strings.TrimSpace(string(out))
-}
-
-func setupRepo(t *testing.T) string {
-	repo := t.TempDir()
-	run(t, "git", "-C", repo, "init")
-	run(t, "git", "-C", repo, "config", "--local", "--add", "user.name", "Test User")
-	run(t, "git", "-C", repo, "config", "--local", "--add", "user.email", "test@example.com")
-	run(t, "git", "-C", repo, "remote", "add", "origin", "https://example.com")
-	run(t, "git", "-C", repo, "checkout", "-b", "main")
-	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "init")
-	return repo
-}
-
 func TestLoadGitLabels(t *testing.T) {
 	normalRepo := setupRepo(t)
 	repoHead := run(t, "git", "-C", normalRepo, "rev-parse", "HEAD")
@@ -286,4 +266,24 @@ func TestLoadGitHubLabels(t *testing.T) {
 			require.Equal(t, example.Labels, labels)
 		})
 	}
+}
+
+func run(t *testing.T, exe string, args ...string) string { // nolint: unparam
+	t.Helper()
+	cmd := exec.Command(exe, args...)
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	require.NoError(t, err)
+	return strings.TrimSpace(string(out))
+}
+
+func setupRepo(t *testing.T) string {
+	repo := t.TempDir()
+	run(t, "git", "-C", repo, "init")
+	run(t, "git", "-C", repo, "config", "--local", "--add", "user.name", "Test User")
+	run(t, "git", "-C", repo, "config", "--local", "--add", "user.email", "test@example.com")
+	run(t, "git", "-C", repo, "remote", "add", "origin", "https://example.com")
+	run(t, "git", "-C", repo, "checkout", "-b", "main")
+	run(t, "git", "-C", repo, "commit", "--allow-empty", "-m", "init")
+	return repo
 }
