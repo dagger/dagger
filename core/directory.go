@@ -228,15 +228,13 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 	}
 
-	st = st.File(
-		llb.Mkfile(
-			dest,
-			permissions,
-			content,
-			llb.WithUIDGID(uid, gid),
-		),
-		payload.Pipeline.LLBOpt(),
-	)
+	opts := []llb.MkfileOption{}
+
+	if uid != -1 && gid != -1 {
+		opts = append(opts, llb.WithUIDGID(uid, gid))
+	}
+
+	st = st.File(llb.Mkfile(dest, permissions, content, opts...), payload.Pipeline.LLBOpt())
 
 	err = payload.SetState(ctx, st)
 	if err != nil {
@@ -297,14 +295,25 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
-		CreateDestPath:      true,
-		CopyDirContentsOnly: true,
-		IncludePatterns:     filter.Include,
-		ExcludePatterns:     filter.Exclude,
-	}, llb.WithUIDGID(uid, gid)),
-		destPayload.Pipeline.LLBOpt(),
-	)
+	opts := []llb.CopyOption{
+		&llb.CopyInfo{
+			CreateDestPath:      true,
+			CopyDirContentsOnly: true,
+			IncludePatterns:     filter.Include,
+			ExcludePatterns:     filter.Exclude,
+		},
+	}
+
+	if uid != -1 && gid != -1 {
+		opts = append(opts, llb.WithUIDGID(uid, gid))
+	}
+
+	st = st.File(llb.Copy(
+		srcSt,
+		srcPayload.Dir,
+		path.Join(destPayload.Dir, subdir),
+		opts...,
+	), destPayload.Pipeline.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -400,10 +409,23 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 		perm = &permissions
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
-		CreateDestPath: true,
-		Mode:           perm,
-	}, llb.WithUIDGID(uid, gid)), destPayload.Pipeline.LLBOpt())
+	opts := []llb.CopyOption{
+		&llb.CopyInfo{
+			CreateDestPath: true,
+			Mode:           perm,
+		},
+	}
+
+	if uid != -1 && gid != -1 {
+		opts = append(opts, llb.WithUIDGID(uid, gid))
+	}
+
+	st = st.File(llb.Copy(
+		srcSt,
+		srcPayload.File,
+		path.Join(destPayload.Dir, subdir),
+		opts...,
+	), destPayload.Pipeline.LLBOpt())
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {

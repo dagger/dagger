@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"path"
 	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core/reffs"
@@ -99,21 +98,19 @@ func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
 	return mirrorCh, wg
 }
 
-func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (int, int, error) {
-	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
-
+func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner FilesystemOwner) (int, int, error) {
 	var uid, gid int
 	var uname, gname string
 
-	uid, err := parseUID(uidOrName)
+	uid, err := parseUID(owner.User)
 	if err != nil {
-		uname = uidOrName
+		uname = owner.User
 	}
 
-	if hasGroup {
-		gid, err = parseUID(gidOrName)
+	if owner.Group != "" {
+		gid, err = parseUID(owner.Group)
 		if err != nil {
-			gname = gidOrName
+			gname = owner.Group
 		}
 	}
 
@@ -139,7 +136,7 @@ func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform
 		}
 	}
 
-	if !hasGroup {
+	if owner.Group == "" {
 		gid = uid
 	}
 

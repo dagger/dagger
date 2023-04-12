@@ -267,7 +267,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -289,7 +289,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -327,7 +327,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -349,7 +349,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -388,7 +388,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -419,7 +419,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -451,7 +451,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -475,7 +475,7 @@ type Container {
 
     If the group is omitted, it defaults to the same as the user.
     """
-    owner: String
+    owner: FilesystemOwner
   ): Container!
 
   """
@@ -806,3 +806,23 @@ enum NetworkProtocol {
   "UDP (User Datagram Protocol)"
   UDP
 }
+
+"""
+A user and group, as typically used to configure ownership of files and directories.
+
+The format is user[:group], where both user and group can either be IDs or
+names to be resolved to IDs using the container filesystem.
+
+If the group is omitted, it defaults to the same as the user.
+
+So, for a user 'foo' and group 'bar' with user ID and group ID 1111 and 2222
+respectively, the following are all valid:
+
+   foo      => 1111:1111
+   foo:bar  => 1111:2222
+   1111:bar => 1111:2222
+   foo:2222 => 1111:1111
+
+If the owner is unspecified, ownership will be left as-is.
+"""
+scalar FilesystemOwner

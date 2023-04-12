@@ -21,6 +21,24 @@ type DirectoryID string
 // A file identifier.
 type FileID string
 
+// A user and group, as typically used to configure ownership of files and directories.
+//
+// The format is user[:group], where both user and group can either be IDs or
+// names to be resolved to IDs using the container filesystem.
+//
+// If the group is omitted, it defaults to the same as the user.
+//
+// So, for a user 'foo' and group 'bar' with user ID and group ID 1111 and 2222
+// respectively, the following are all valid:
+//
+//	foo      => 1111:1111
+//	foo:bar  => 1111:2222
+//	1111:bar => 1111:2222
+//	foo:2222 => 1111:1111
+//
+// If the owner is unspecified, ownership will be left as-is.
+type FilesystemOwner string
+
 // The platform config OS and architecture in a Container.
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
@@ -765,7 +783,7 @@ type ContainerWithDirectoryOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a directory written at the given path.
@@ -962,7 +980,7 @@ type ContainerWithFileOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus the contents of the given file copied to the given path.
@@ -1014,7 +1032,7 @@ type ContainerWithMountedCacheOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
@@ -1057,7 +1075,7 @@ type ContainerWithMountedDirectoryOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a directory mounted at the given path.
@@ -1086,7 +1104,7 @@ type ContainerWithMountedFileOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a file mounted at the given path.
@@ -1115,7 +1133,7 @@ type ContainerWithMountedSecretOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a secret mounted into a file at the given path.
@@ -1161,7 +1179,7 @@ type ContainerWithNewFileOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a new file written at the given path.
@@ -1257,7 +1275,7 @@ type ContainerWithUnixSocketOpts struct {
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
 	//
 	// If the group is omitted, it defaults to the same as the user.
-	Owner string
+	Owner FilesystemOwner
 }
 
 // Retrieves this container plus a socket forwarded to the given Unix socket path.

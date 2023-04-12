@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
+	"github.com/dagger/graphql/language/ast"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -92,6 +93,40 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"hostname":             router.ToResolver(s.hostname),
 			"endpoint":             router.ToResolver(s.endpoint),
 			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
+		},
+		"FilesystemOwner": router.ScalarResolver{
+			Serialize: func(value any) any {
+				switch v := value.(type) {
+				case core.FilesystemOwner:
+					return v
+				default:
+					panic(fmt.Sprintf("unexpected filesystem owner scalar serialize type %T", v))
+				}
+			},
+			ParseValue: func(value any) any {
+				switch v := value.(type) {
+				case string:
+					var owner core.FilesystemOwner
+					owner.User, owner.Group, _ = strings.Cut(v, ":")
+					return owner
+				default:
+					panic(fmt.Sprintf("unexpected filesystem owner parse value type %T: %+v", v, v))
+				}
+			},
+			ParseLiteral: func(valueAST ast.Value) any {
+				switch valueAST := valueAST.(type) {
+				case *ast.StringValue:
+					var owner core.FilesystemOwner
+					owner.User, owner.Group, _ = strings.Cut(valueAST.Value, ":")
+					return owner
+				case *ast.IntValue:
+					var owner core.FilesystemOwner
+					owner.User = valueAST.Value
+					return owner
+				default:
+					panic(fmt.Sprintf("unexpected filesystem owner parse literal type: %T: %+v", valueAST, valueAST))
+				}
+			},
 		},
 	}
 }
@@ -399,7 +434,7 @@ func (s *containerSchema) label(ctx *router.Context, parent *core.Container, arg
 type containerWithMountedDirectoryArgs struct {
 	Path   string
 	Source core.DirectoryID
-	Owner  string
+	Owner  *core.FilesystemOwner
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
@@ -418,7 +453,7 @@ func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, a
 type containerWithMountedFileArgs struct {
 	Path   string
 	Source core.FileID
-	Owner  string
+	Owner  *core.FilesystemOwner
 }
 
 func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
@@ -430,7 +465,7 @@ type containerWithMountedCacheArgs struct {
 	Cache       core.CacheID
 	Source      core.DirectoryID
 	Concurrency core.CacheSharingMode
-	Owner       string
+	Owner       *core.FilesystemOwner
 }
 
 func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
@@ -528,7 +563,7 @@ func (s *containerSchema) withSecretVariable(ctx *router.Context, parent *core.C
 type containerWithMountedSecretArgs struct {
 	Path   string
 	Source core.SecretID
-	Owner  string
+	Owner  *core.FilesystemOwner
 }
 
 func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
@@ -537,7 +572,7 @@ func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Co
 
 type containerWithDirectoryArgs struct {
 	withDirectoryArgs
-	Owner string
+	Owner *core.FilesystemOwner
 }
 
 func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
@@ -546,7 +581,7 @@ func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Contai
 
 type containerWithFileArgs struct {
 	withFileArgs
-	Owner string
+	Owner *core.FilesystemOwner
 }
 
 func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
@@ -555,7 +590,7 @@ func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, 
 
 type containerWithNewFileArgs struct {
 	withNewFileArgs
-	Owner string
+	Owner *core.FilesystemOwner
 }
 
 func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
@@ -565,7 +600,7 @@ func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Containe
 type containerWithUnixSocketArgs struct {
 	Path   string
 	Source core.SocketID
-	Owner  string
+	Owner  *core.FilesystemOwner
 }
 
 func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
