@@ -68,6 +68,7 @@ from = "/sdk/python/648384/multi-builds"
 to = "/648384/multi-builds"
 status = 302
 
+[[redirects]]
 # redirect single-language guide to multi-language guide
 from = "/560223/private-repositories"
 to = "/710884/private-repositories"
