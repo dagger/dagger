@@ -104,7 +104,7 @@ func FormatStackOutputs(outputs []types.Output) map[string]string {
 }
 
 // cdkDeployStack deploys a CloudFormation stack via the CDK cli
-func (c *AWSClient) cdkDeployStack(ctx context.Context, client *dagger.Client, stackName string, stackParameters map[string]string) (map[string]string, error) {
+func (c *AWSClient) cdkDeployStack(ctx context.Context, client dagger.Client, stackName string, stackParameters map[string]string) (map[string]string, error) {
 	cdkCode := client.Host().Directory("./infra", dagger.HostDirectoryOpts{
 		Exclude: []string{"cdk.out/", "infra"},
 	})

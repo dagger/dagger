@@ -32,7 +32,7 @@ import (
 
 // NewOperatorClient is a dagger client used for querying+configuring engine-wide settings such
 // as cache mount import/export.
-func NewOperatorClient(ctx context.Context, c *bkclient.Client) (_ *dagger.Client, _ func() error, rerr error) {
+func NewOperatorClient(ctx context.Context, c *bkclient.Client) (_ dagger.Client, _ func() error, rerr error) {
 	platform, err := detectPlatform(ctx, c)
 	if err != nil {
 		return nil, nil, err

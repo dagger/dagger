@@ -151,7 +151,7 @@ func (t Nodejs) Bump(ctx context.Context, version string) error {
 	return os.WriteFile("sdk/nodejs/provisioning/default.ts", []byte(engineReference), 0o600)
 }
 
-func nodeJsBase(c *dagger.Client) *dagger.Container {
+func nodeJsBase(c dagger.Client) dagger.Container {
 	workdir := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
 
 	base := c.Container().

@@ -514,7 +514,7 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) *ast.Type {
 		return ast.NonNullNamedType("Boolean", nil)
 	case reflect.Slice:
 		return ast.ListType(goReflectTypeToGraphqlType(t.Elem(), isInput), nil)
-	case reflect.Struct:
+	case reflect.Struct, reflect.Interface:
 		// Handle types that implement the GraphQL serializer
 		// TODO: move this at the top so it works on scalars as well
 		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()

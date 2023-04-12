@@ -116,6 +116,8 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("{%s}", strings.Join(elems, ",")), nil
+	case reflect.Interface:
+		return marshalValue(ctx, v.Elem())
 	default:
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}
@@ -137,6 +139,10 @@ func marshalCustom(ctx context.Context, v reflect.Value) (string, error) {
 }
 
 func IsZeroValue(value any) bool {
+	if value == nil {
+		return true
+	}
+
 	v := reflect.ValueOf(value)
 	kind := v.Type().Kind()
 	switch kind {

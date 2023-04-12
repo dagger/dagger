@@ -267,7 +267,7 @@ func (m *manager) Import(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) StartCacheMountSynchronization(ctx context.Context, daggerClient *dagger.Client) error {
+func (m *manager) StartCacheMountSynchronization(ctx context.Context, daggerClient dagger.Client) error {
 	stopSync, err := startS3CacheMountSync(ctx, m.s3Config, daggerClient)
 	if err != nil {
 		return err
@@ -344,7 +344,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 
 type Manager interface {
 	solver.CacheManager
-	StartCacheMountSynchronization(context.Context, *dagger.Client) error
+	StartCacheMountSynchronization(context.Context, dagger.Client) error
 	Close(context.Context) error
 }
 
@@ -352,7 +352,7 @@ type defaultCacheManager struct {
 	solver.CacheManager
 }
 
-func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context, client *dagger.Client) error {
+func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context, client dagger.Client) error {
 	return nil
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 // build() reads the source code, run the tests and build the app and publish it to a container registry
-func build(ctx context.Context, client *dagger.Client, registry *RegistryInfo) (string, error) {
+func build(ctx context.Context, client dagger.Client, registry *RegistryInfo) (string, error) {
 	nodeCache := client.CacheVolume("node")
 
 	// Read the source code from local directory
@@ -51,7 +51,7 @@ func build(ctx context.Context, client *dagger.Client, registry *RegistryInfo) (
 }
 
 // deployToECS deploys a container image to the ECS cluster
-func deployToECS(ctx context.Context, client *dagger.Client, awsClient *AWSClient, containerImage string) string {
+func deployToECS(ctx context.Context, client dagger.Client, awsClient *AWSClient, containerImage string) string {
 	stackParameters := map[string]string{
 		"ContainerImage": containerImage,
 	}

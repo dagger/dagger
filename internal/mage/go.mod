@@ -23,4 +23,6 @@ require (
 // needed to resolve "ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules"
 replace cloud.google.com/go => cloud.google.com/go v0.100.2
 
+replace dagger.io/dagger => ../../sdk/go
+
 replace github.com/dagger/dagger => ../../

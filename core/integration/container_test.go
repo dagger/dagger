@@ -89,7 +89,7 @@ func TestContainerWith(t *testing.T) {
 
 	foo := "bar"
 
-	alpine := c.Container().From("alpine:3.16.2").With(func(c *dagger.Container) *dagger.Container {
+	alpine := c.Container().From("alpine:3.16.2").With(func(c dagger.Container) dagger.Container {
 		return c.WithEnvVariable("FOO", foo)
 	})
 
@@ -97,7 +97,7 @@ func TestContainerWith(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "bar\n", out)
 
-	withFood := func(c *dagger.Container) *dagger.Container {
+	withFood := func(c dagger.Container) dagger.Container {
 		return c.WithEnvVariable("FOOD", "bar")
 	}
 
@@ -109,7 +109,7 @@ func TestContainerWith(t *testing.T) {
 	require.Equal(t, "bar\n", out)
 
 	withEnv := func(env, val string) dagger.WithContainerFunc {
-		return func(c *dagger.Container) *dagger.Container {
+		return func(c dagger.Container) dagger.Container {
 			return c.WithEnvVariable(env, val)
 		}
 	}
@@ -2652,7 +2652,7 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
@@ -2685,7 +2685,7 @@ func TestContainerMultiPlatformImport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2")

@@ -11,8 +11,15 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 )
 
+type Client interface {
+	Query
+
+	Do(ctx context.Context, req *Request, resp *Response) error
+	Close() error
+}
+
 // Client is the Dagger Engine Client
-type Client struct {
+type clientImpl struct {
 	conn engineconn.EngineConn
 	c    graphql.Client
 
@@ -59,7 +66,7 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 }
 
 // Connect to a Dagger Engine
-func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
+func Connect(ctx context.Context, opts ...ClientOpt) (_ Client, rerr error) {
 	defer func() {
 		if rerr != nil {
 			rerr = withErrorHelp(rerr)
@@ -78,7 +85,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	}
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
-	return &Client{
+	return &clientImpl{
 		c:    gql,
 		conn: conn,
 		q:    querybuilder.Query(),
@@ -86,7 +93,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 }
 
 // Close the engine connection
-func (c *Client) Close() error {
+func (c *clientImpl) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
 	}
@@ -94,7 +101,7 @@ func (c *Client) Close() error {
 }
 
 // Do sends a GraphQL request to the engine
-func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
+func (c *clientImpl) Do(ctx context.Context, req *Request, resp *Response) error {
 	r := graphql.Response{}
 	if resp != nil {
 		r.Data = resp.Data

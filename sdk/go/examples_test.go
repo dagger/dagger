@@ -41,7 +41,7 @@ func ExampleContainer_With() {
 	defer client.Close()
 
 	alpine := client.Container().From("alpine:3.16.2").
-		With(func(c *dagger.Container) *dagger.Container {
+		With(func(c dagger.Container) dagger.Container {
 			return c.WithEnvVariable("FOO", "bar")
 		})
 

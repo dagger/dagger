@@ -51,14 +51,17 @@ type PipelineLabel struct {
 }
 
 // A directory whose contents persist across runs.
-type CacheVolume struct {
+type CacheVolume interface {
+	ID(ctx context.Context) (CacheID, error)
+}
+type cacheVolumeImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
 	id *CacheID
 }
 
-func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
+func (r *cacheVolumeImpl) ID(ctx context.Context) (CacheID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -71,12 +74,12 @@ func (r *CacheVolume) ID(ctx context.Context) (CacheID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *CacheVolume) XXX_GraphQLType() string {
+func (r *cacheVolumeImpl) XXX_GraphQLType() string {
 	return "CacheVolume"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *cacheVolumeImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -85,7 +88,67 @@ func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 // An OCI-compatible container, also known as a docker container.
-type Container struct {
+type Container interface {
+	Build(context Directory, opts ...ContainerBuildOpts) Container
+	DefaultArgs(ctx context.Context) ([]string, error)
+	Directory(path string) Directory
+	Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error)
+	Entrypoint(ctx context.Context) ([]string, error)
+	EnvVariable(ctx context.Context, name string) (string, error)
+	EnvVariables(ctx context.Context) ([]EnvVariable, error)
+	Exec(opts ...ContainerExecOpts) Container
+	ExitCode(ctx context.Context) (int, error)
+	Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error)
+	ExposedPorts(ctx context.Context) ([]Port, error)
+	File(path string) File
+	From(address string) Container
+	FS() Directory
+	Hostname(ctx context.Context) (string, error)
+	ID(ctx context.Context) (ContainerID, error)
+	ImageRef(ctx context.Context) (string, error)
+	Import(source File, opts ...ContainerImportOpts) Container
+	Label(ctx context.Context, name string) (string, error)
+	Labels(ctx context.Context) ([]Label, error)
+	Mounts(ctx context.Context) ([]string, error)
+	Pipeline(name string, opts ...ContainerPipelineOpts) Container
+	Platform(ctx context.Context) (Platform, error)
+	Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error)
+	Rootfs() Directory
+	Stderr(ctx context.Context) (string, error)
+	Stdout(ctx context.Context) (string, error)
+	User(ctx context.Context) (string, error)
+	WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) Container
+	WithDirectory(path string, directory Directory, opts ...ContainerWithDirectoryOpts) Container
+	WithEntrypoint(args []string) Container
+	WithEnvVariable(name string, value string) Container
+	WithExec(args []string, opts ...ContainerWithExecOpts) Container
+	WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) Container
+	WithFS(id Directory) Container
+	WithFile(path string, source File, opts ...ContainerWithFileOpts) Container
+	WithLabel(name string, value string) Container
+	WithMountedCache(path string, cache CacheVolume, opts ...ContainerWithMountedCacheOpts) Container
+	WithMountedDirectory(path string, source Directory) Container
+	WithMountedFile(path string, source File) Container
+	WithMountedSecret(path string, source Secret) Container
+	WithMountedTemp(path string) Container
+	WithNewFile(path string, opts ...ContainerWithNewFileOpts) Container
+	WithRegistryAuth(address string, username string, secret Secret) Container
+	WithRootfs(id Directory) Container
+	WithSecretVariable(name string, secret Secret) Container
+	WithServiceBinding(alias string, service Container) Container
+	WithUnixSocket(path string, source Socket) Container
+	WithUser(name string) Container
+	WithWorkdir(path string) Container
+	WithoutEnvVariable(name string) Container
+	WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) Container
+	WithoutLabel(name string) Container
+	WithoutMount(path string) Container
+	WithoutRegistryAuth(address string) Container
+	WithoutUnixSocket(path string) Container
+	Workdir(ctx context.Context) (string, error)
+	With(f WithContainerFunc) Container
+}
+type containerImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -104,9 +167,9 @@ type Container struct {
 	user        *string
 	workdir     *string
 }
-type WithContainerFunc func(r *Container) *Container
+type WithContainerFunc func(r Container) Container
 
-func (r *Container) With(f WithContainerFunc) *Container {
+func (r *containerImpl) With(f WithContainerFunc) Container {
 	return f(r)
 }
 
@@ -123,7 +186,7 @@ type ContainerBuildOpts struct {
 }
 
 // Initializes this container from a Dockerfile build.
-func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
+func (r *containerImpl) Build(context Directory, opts ...ContainerBuildOpts) Container {
 	q := r.q.Select("build")
 	q = q.Arg("context", context)
 	// `dockerfile` optional argument
@@ -148,14 +211,14 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves default arguments for future commands.
-func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
+func (r *containerImpl) DefaultArgs(ctx context.Context) ([]string, error) {
 	q := r.q.Select("defaultArgs")
 
 	var response []string
@@ -167,11 +230,11 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 // Retrieves a directory at the given path.
 //
 // Mounts are included.
-func (r *Container) Directory(path string) *Directory {
+func (r *containerImpl) Directory(path string) Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -192,7 +255,7 @@ type ContainerEndpointOpts struct {
 // If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
+func (r *containerImpl) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
 	if r.endpoint != nil {
 		return *r.endpoint, nil
 	}
@@ -219,7 +282,7 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 }
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
-func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
+func (r *containerImpl) Entrypoint(ctx context.Context) ([]string, error) {
 	q := r.q.Select("entrypoint")
 
 	var response []string
@@ -229,7 +292,7 @@ func (r *Container) Entrypoint(ctx context.Context) ([]string, error) {
 }
 
 // Retrieves the value of the specified environment variable.
-func (r *Container) EnvVariable(ctx context.Context, name string) (string, error) {
+func (r *containerImpl) EnvVariable(ctx context.Context, name string) (string, error) {
 	if r.envVariable != nil {
 		return *r.envVariable, nil
 	}
@@ -243,7 +306,7 @@ func (r *Container) EnvVariable(ctx context.Context, name string) (string, error
 }
 
 // Retrieves the list of environment variables passed to commands.
-func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
+func (r *containerImpl) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	q := r.q.Select("envVariables")
 
 	q = q.Select("name value")
@@ -257,7 +320,7 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 		out := []EnvVariable{}
 
 		for _, field := range fields {
-			out = append(out, EnvVariable{name: &field.Name, value: &field.Value})
+			out = append(out, &envVariableImpl{name: &field.Name, value: &field.Value})
 		}
 
 		return out
@@ -293,7 +356,7 @@ type ContainerExecOpts struct {
 // Retrieves this container after executing the specified command inside it.
 //
 // Deprecated: Replaced by WithExec.
-func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
+func (r *containerImpl) Exec(opts ...ContainerExecOpts) Container {
 	q := r.q.Select("exec")
 	// `args` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -331,7 +394,7 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -339,7 +402,7 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 
 // Exit code of the last executed command. Zero means success.
 // Errors if no command has been executed.
-func (r *Container) ExitCode(ctx context.Context) (int, error) {
+func (r *containerImpl) ExitCode(ctx context.Context) (int, error) {
 	if r.exitCode != nil {
 		return *r.exitCode, nil
 	}
@@ -355,14 +418,14 @@ func (r *Container) ExitCode(ctx context.Context) (int, error) {
 type ContainerExportOpts struct {
 	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
-	PlatformVariants []*Container
+	PlatformVariants []Container
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
 //
 // Return true on success.
 // It can also publishes platform variants.
-func (r *Container) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
+func (r *containerImpl) Export(ctx context.Context, path string, opts ...ContainerExportOpts) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -385,7 +448,7 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 // Retrieves the list of exposed ports.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
+func (r *containerImpl) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")
 
 	q = q.Select("description port protocol")
@@ -400,7 +463,7 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 		out := []Port{}
 
 		for _, field := range fields {
-			out = append(out, Port{description: &field.Description, port: &field.Port, protocol: &field.Protocol})
+			out = append(out, &portImpl{description: &field.Description, port: &field.Port, protocol: &field.Protocol})
 		}
 
 		return out
@@ -420,22 +483,22 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 // Retrieves a file at the given path.
 //
 // Mounts are included.
-func (r *Container) File(path string) *File {
+func (r *containerImpl) File(path string) File {
 	q := r.q.Select("file")
 	q = q.Arg("path", path)
 
-	return &File{
+	return &fileImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Initializes this container from a pulled base image.
-func (r *Container) From(address string) *Container {
+func (r *containerImpl) From(address string) Container {
 	q := r.q.Select("from")
 	q = q.Arg("address", address)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -444,10 +507,10 @@ func (r *Container) From(address string) *Container {
 // Retrieves this container's root filesystem. Mounts are not included.
 //
 // Deprecated: Replaced by Rootfs.
-func (r *Container) FS() *Directory {
+func (r *containerImpl) FS() Directory {
 	q := r.q.Select("fs")
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -456,7 +519,7 @@ func (r *Container) FS() *Directory {
 // Retrieves a hostname which can be used by clients to reach this container.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Hostname(ctx context.Context) (string, error) {
+func (r *containerImpl) Hostname(ctx context.Context) (string, error) {
 	if r.hostname != nil {
 		return *r.hostname, nil
 	}
@@ -469,7 +532,7 @@ func (r *Container) Hostname(ctx context.Context) (string, error) {
 }
 
 // A unique identifier for this container.
-func (r *Container) ID(ctx context.Context) (ContainerID, error) {
+func (r *containerImpl) ID(ctx context.Context) (ContainerID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -482,12 +545,12 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Container) XXX_GraphQLType() string {
+func (r *containerImpl) XXX_GraphQLType() string {
 	return "Container"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *containerImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -496,7 +559,7 @@ func (r *Container) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 // The unique image reference which can only be retrieved immediately after the 'Container.From' call.
-func (r *Container) ImageRef(ctx context.Context) (string, error) {
+func (r *containerImpl) ImageRef(ctx context.Context) (string, error) {
 	if r.imageRef != nil {
 		return *r.imageRef, nil
 	}
@@ -519,7 +582,7 @@ type ContainerImportOpts struct {
 //
 // NOTE: this involves unpacking the tarball to an OCI store on the host at
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
-func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
+func (r *containerImpl) Import(source File, opts ...ContainerImportOpts) Container {
 	q := r.q.Select("import")
 	q = q.Arg("source", source)
 	// `tag` optional argument
@@ -530,14 +593,14 @@ func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves the value of the specified label.
-func (r *Container) Label(ctx context.Context, name string) (string, error) {
+func (r *containerImpl) Label(ctx context.Context, name string) (string, error) {
 	if r.label != nil {
 		return *r.label, nil
 	}
@@ -551,7 +614,7 @@ func (r *Container) Label(ctx context.Context, name string) (string, error) {
 }
 
 // Retrieves the list of labels passed to container.
-func (r *Container) Labels(ctx context.Context) ([]Label, error) {
+func (r *containerImpl) Labels(ctx context.Context) ([]Label, error) {
 	q := r.q.Select("labels")
 
 	q = q.Select("name value")
@@ -565,7 +628,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 		out := []Label{}
 
 		for _, field := range fields {
-			out = append(out, Label{name: &field.Name, value: &field.Value})
+			out = append(out, &labelImpl{name: &field.Name, value: &field.Value})
 		}
 
 		return out
@@ -583,7 +646,7 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 }
 
 // Retrieves the list of paths where a directory is mounted.
-func (r *Container) Mounts(ctx context.Context) ([]string, error) {
+func (r *containerImpl) Mounts(ctx context.Context) ([]string, error) {
 	q := r.q.Select("mounts")
 
 	var response []string
@@ -601,7 +664,7 @@ type ContainerPipelineOpts struct {
 }
 
 // Creates a named sub-pipeline
-func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
+func (r *containerImpl) Pipeline(name string, opts ...ContainerPipelineOpts) Container {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
 	// `description` optional argument
@@ -619,14 +682,14 @@ func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Contai
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // The platform this container executes and publishes as.
-func (r *Container) Platform(ctx context.Context) (Platform, error) {
+func (r *containerImpl) Platform(ctx context.Context) (Platform, error) {
 	if r.platform != nil {
 		return *r.platform, nil
 	}
@@ -642,14 +705,14 @@ func (r *Container) Platform(ctx context.Context) (Platform, error) {
 type ContainerPublishOpts struct {
 	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
-	PlatformVariants []*Container
+	PlatformVariants []Container
 }
 
 // Publishes this container as a new image to the specified address.
 //
 // Publish returns a fully qualified ref.
 // It can also publish platform variants.
-func (r *Container) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
+func (r *containerImpl) Publish(ctx context.Context, address string, opts ...ContainerPublishOpts) (string, error) {
 	if r.publish != nil {
 		return *r.publish, nil
 	}
@@ -670,10 +733,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 }
 
 // Retrieves this container's root filesystem. Mounts are not included.
-func (r *Container) Rootfs() *Directory {
+func (r *containerImpl) Rootfs() Directory {
 	q := r.q.Select("rootfs")
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -681,7 +744,7 @@ func (r *Container) Rootfs() *Directory {
 
 // The error stream of the last executed command.
 // Errors if no command has been executed.
-func (r *Container) Stderr(ctx context.Context) (string, error) {
+func (r *containerImpl) Stderr(ctx context.Context) (string, error) {
 	if r.stderr != nil {
 		return *r.stderr, nil
 	}
@@ -695,7 +758,7 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 
 // The output stream of the last executed command.
 // Errors if no command has been executed.
-func (r *Container) Stdout(ctx context.Context) (string, error) {
+func (r *containerImpl) Stdout(ctx context.Context) (string, error) {
 	if r.stdout != nil {
 		return *r.stdout, nil
 	}
@@ -708,7 +771,7 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 }
 
 // Retrieves the user to be set for all commands.
-func (r *Container) User(ctx context.Context) (string, error) {
+func (r *containerImpl) User(ctx context.Context) (string, error) {
 	if r.user != nil {
 		return *r.user, nil
 	}
@@ -727,7 +790,7 @@ type ContainerWithDefaultArgsOpts struct {
 }
 
 // Configures default arguments for future commands.
-func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
+func (r *containerImpl) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) Container {
 	q := r.q.Select("withDefaultArgs")
 	// `args` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -737,7 +800,7 @@ func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Conta
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -752,7 +815,7 @@ type ContainerWithDirectoryOpts struct {
 }
 
 // Retrieves this container plus a directory written at the given path.
-func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
+func (r *containerImpl) WithDirectory(path string, directory Directory, opts ...ContainerWithDirectoryOpts) Container {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
@@ -771,30 +834,30 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container but with a different command entrypoint.
-func (r *Container) WithEntrypoint(args []string) *Container {
+func (r *containerImpl) WithEntrypoint(args []string) Container {
 	q := r.q.Select("withEntrypoint")
 	q = q.Arg("args", args)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus the given environment variable.
-func (r *Container) WithEnvVariable(name string, value string) *Container {
+func (r *containerImpl) WithEnvVariable(name string, value string) Container {
 	q := r.q.Select("withEnvVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -823,7 +886,7 @@ type ContainerWithExecOpts struct {
 }
 
 // Retrieves this container after executing the specified command inside it.
-func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
+func (r *containerImpl) WithExec(args []string, opts ...ContainerWithExecOpts) Container {
 	q := r.q.Select("withExec")
 	q = q.Arg("args", args)
 	// `skipEntrypoint` optional argument
@@ -869,7 +932,7 @@ func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Cont
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -890,7 +953,7 @@ type ContainerWithExposedPortOpts struct {
 //   - For setting the EXPOSE OCI field when publishing the container
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
+func (r *containerImpl) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) Container {
 	q := r.q.Select("withExposedPort")
 	q = q.Arg("port", port)
 	// `protocol` optional argument
@@ -908,7 +971,7 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -917,11 +980,11 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 // Initializes this container from this DirectoryID.
 //
 // Deprecated: Replaced by WithRootfs.
-func (r *Container) WithFS(id *Directory) *Container {
+func (r *containerImpl) WithFS(id Directory) Container {
 	q := r.q.Select("withFS")
 	q = q.Arg("id", id)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -936,7 +999,7 @@ type ContainerWithFileOpts struct {
 }
 
 // Retrieves this container plus the contents of the given file copied to the given path.
-func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
+func (r *containerImpl) WithFile(path string, source File, opts ...ContainerWithFileOpts) Container {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -948,19 +1011,19 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus the given label.
-func (r *Container) WithLabel(name string, value string) *Container {
+func (r *containerImpl) WithLabel(name string, value string) Container {
 	q := r.q.Select("withLabel")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -969,13 +1032,13 @@ func (r *Container) WithLabel(name string, value string) *Container {
 // ContainerWithMountedCacheOpts contains options for Container.WithMountedCache
 type ContainerWithMountedCacheOpts struct {
 	// Identifier of the directory to use as the cache volume's root.
-	Source *Directory
+	Source Directory
 	// Sharing mode of the cache volume.
 	Sharing CacheSharingMode
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
-func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
+func (r *containerImpl) WithMountedCache(path string, cache CacheVolume, opts ...ContainerWithMountedCacheOpts) Container {
 	q := r.q.Select("withMountedCache")
 	q = q.Arg("path", path)
 	q = q.Arg("cache", cache)
@@ -994,54 +1057,54 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus a directory mounted at the given path.
-func (r *Container) WithMountedDirectory(path string, source *Directory) *Container {
+func (r *containerImpl) WithMountedDirectory(path string, source Directory) Container {
 	q := r.q.Select("withMountedDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus a file mounted at the given path.
-func (r *Container) WithMountedFile(path string, source *File) *Container {
+func (r *containerImpl) WithMountedFile(path string, source File) Container {
 	q := r.q.Select("withMountedFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus a secret mounted into a file at the given path.
-func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
+func (r *containerImpl) WithMountedSecret(path string, source Secret) Container {
 	q := r.q.Select("withMountedSecret")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus a temporary directory mounted at the given path.
-func (r *Container) WithMountedTemp(path string) *Container {
+func (r *containerImpl) WithMountedTemp(path string) Container {
 	q := r.q.Select("withMountedTemp")
 	q = q.Arg("path", path)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1058,7 +1121,7 @@ type ContainerWithNewFileOpts struct {
 }
 
 // Retrieves this container plus a new file written at the given path.
-func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
+func (r *containerImpl) WithNewFile(path string, opts ...ContainerWithNewFileOpts) Container {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
 	// `contents` optional argument
@@ -1076,43 +1139,43 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container with a registry authentication for a given address.
-func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
+func (r *containerImpl) WithRegistryAuth(address string, username string, secret Secret) Container {
 	q := r.q.Select("withRegistryAuth")
 	q = q.Arg("address", address)
 	q = q.Arg("username", username)
 	q = q.Arg("secret", secret)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Initializes this container from this DirectoryID.
-func (r *Container) WithRootfs(id *Directory) *Container {
+func (r *containerImpl) WithRootfs(id Directory) Container {
 	q := r.q.Select("withRootfs")
 	q = q.Arg("id", id)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus an env variable containing the given secret.
-func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
+func (r *containerImpl) WithSecretVariable(name string, secret Secret) Container {
 	q := r.q.Select("withSecretVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("secret", secret)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1125,57 +1188,57 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service dependency will also convey to any files or directories produced by the container.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+func (r *containerImpl) WithServiceBinding(alias string, service Container) Container {
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
-func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
+func (r *containerImpl) WithUnixSocket(path string, source Socket) Container {
 	q := r.q.Select("withUnixSocket")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container with a different command user.
-func (r *Container) WithUser(name string) *Container {
+func (r *containerImpl) WithUser(name string) Container {
 	q := r.q.Select("withUser")
 	q = q.Arg("name", name)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container with a different working directory.
-func (r *Container) WithWorkdir(path string) *Container {
+func (r *containerImpl) WithWorkdir(path string) Container {
 	q := r.q.Select("withWorkdir")
 	q = q.Arg("path", path)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container minus the given environment variable.
-func (r *Container) WithoutEnvVariable(name string) *Container {
+func (r *containerImpl) WithoutEnvVariable(name string) Container {
 	q := r.q.Select("withoutEnvVariable")
 	q = q.Arg("name", name)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1190,7 +1253,7 @@ type ContainerWithoutExposedPortOpts struct {
 // Unexpose a previously exposed port.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
+func (r *containerImpl) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) Container {
 	q := r.q.Select("withoutExposedPort")
 	q = q.Arg("port", port)
 	// `protocol` optional argument
@@ -1201,58 +1264,58 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container minus the given environment label.
-func (r *Container) WithoutLabel(name string) *Container {
+func (r *containerImpl) WithoutLabel(name string) Container {
 	q := r.q.Select("withoutLabel")
 	q = q.Arg("name", name)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container after unmounting everything at the given path.
-func (r *Container) WithoutMount(path string) *Container {
+func (r *containerImpl) WithoutMount(path string) Container {
 	q := r.q.Select("withoutMount")
 	q = q.Arg("path", path)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container without the registry authentication of a given address.
-func (r *Container) WithoutRegistryAuth(address string) *Container {
+func (r *containerImpl) WithoutRegistryAuth(address string) Container {
 	q := r.q.Select("withoutRegistryAuth")
 	q = q.Arg("address", address)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this container with a previously added Unix socket removed.
-func (r *Container) WithoutUnixSocket(path string) *Container {
+func (r *containerImpl) WithoutUnixSocket(path string) Container {
 	q := r.q.Select("withoutUnixSocket")
 	q = q.Arg("path", path)
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves the working directory for all commands.
-func (r *Container) Workdir(ctx context.Context) (string, error) {
+func (r *containerImpl) Workdir(ctx context.Context) (string, error) {
 	if r.workdir != nil {
 		return *r.workdir, nil
 	}
@@ -1265,36 +1328,55 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 }
 
 // A directory.
-type Directory struct {
+type Directory interface {
+	Diff(other Directory) Directory
+	Directory(path string) Directory
+	DockerBuild(opts ...DirectoryDockerBuildOpts) Container
+	Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error)
+	Export(ctx context.Context, path string) (bool, error)
+	File(path string) File
+	ID(ctx context.Context) (DirectoryID, error)
+	LoadProject(configPath string) Project
+	Pipeline(name string, opts ...DirectoryPipelineOpts) Directory
+	WithDirectory(path string, directory Directory, opts ...DirectoryWithDirectoryOpts) Directory
+	WithFile(path string, source File, opts ...DirectoryWithFileOpts) Directory
+	WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) Directory
+	WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) Directory
+	WithTimestamps(timestamp int) Directory
+	WithoutDirectory(path string) Directory
+	WithoutFile(path string) Directory
+	With(f WithDirectoryFunc) Directory
+}
+type directoryImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
 	export *bool
 	id     *DirectoryID
 }
-type WithDirectoryFunc func(r *Directory) *Directory
+type WithDirectoryFunc func(r Directory) Directory
 
-func (r *Directory) With(f WithDirectoryFunc) *Directory {
+func (r *directoryImpl) With(f WithDirectoryFunc) Directory {
 	return f(r)
 }
 
 // Gets the difference between this directory and an another directory.
-func (r *Directory) Diff(other *Directory) *Directory {
+func (r *directoryImpl) Diff(other Directory) Directory {
 	q := r.q.Select("diff")
 	q = q.Arg("other", other)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves a directory at the given path.
-func (r *Directory) Directory(path string) *Directory {
+func (r *directoryImpl) Directory(path string) Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1315,7 +1397,7 @@ type DirectoryDockerBuildOpts struct {
 }
 
 // Builds a new Docker container from this directory.
-func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
+func (r *directoryImpl) DockerBuild(opts ...DirectoryDockerBuildOpts) Container {
 	q := r.q.Select("dockerBuild")
 	// `dockerfile` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1346,7 +1428,7 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1359,7 +1441,7 @@ type DirectoryEntriesOpts struct {
 }
 
 // Returns a list of files and directories at the given path.
-func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
+func (r *directoryImpl) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
 	q := r.q.Select("entries")
 	// `path` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1376,7 +1458,7 @@ func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) (
 }
 
 // Writes the contents of the directory to a path on the host.
-func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
+func (r *directoryImpl) Export(ctx context.Context, path string) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -1390,18 +1472,18 @@ func (r *Directory) Export(ctx context.Context, path string) (bool, error) {
 }
 
 // Retrieves a file at the given path.
-func (r *Directory) File(path string) *File {
+func (r *directoryImpl) File(path string) File {
 	q := r.q.Select("file")
 	q = q.Arg("path", path)
 
-	return &File{
+	return &fileImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // The content-addressed identifier of the directory.
-func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
+func (r *directoryImpl) ID(ctx context.Context) (DirectoryID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -1414,12 +1496,12 @@ func (r *Directory) ID(ctx context.Context) (DirectoryID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Directory) XXX_GraphQLType() string {
+func (r *directoryImpl) XXX_GraphQLType() string {
 	return "Directory"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *directoryImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -1428,11 +1510,11 @@ func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 // load a project's metadata
-func (r *Directory) LoadProject(configPath string) *Project {
+func (r *directoryImpl) LoadProject(configPath string) Project {
 	q := r.q.Select("loadProject")
 	q = q.Arg("configPath", configPath)
 
-	return &Project{
+	return &projectImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1447,7 +1529,7 @@ type DirectoryPipelineOpts struct {
 }
 
 // Creates a named sub-pipeline
-func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
+func (r *directoryImpl) Pipeline(name string, opts ...DirectoryPipelineOpts) Directory {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
 	// `description` optional argument
@@ -1465,7 +1547,7 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1480,7 +1562,7 @@ type DirectoryWithDirectoryOpts struct {
 }
 
 // Retrieves this directory plus a directory written at the given path.
-func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
+func (r *directoryImpl) WithDirectory(path string, directory Directory, opts ...DirectoryWithDirectoryOpts) Directory {
 	q := r.q.Select("withDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("directory", directory)
@@ -1499,7 +1581,7 @@ func (r *Directory) WithDirectory(path string, directory *Directory, opts ...Dir
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1514,7 +1596,7 @@ type DirectoryWithFileOpts struct {
 }
 
 // Retrieves this directory plus the contents of the given file copied to the given path.
-func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
+func (r *directoryImpl) WithFile(path string, source File, opts ...DirectoryWithFileOpts) Directory {
 	q := r.q.Select("withFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
@@ -1526,7 +1608,7 @@ func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFil
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1541,7 +1623,7 @@ type DirectoryWithNewDirectoryOpts struct {
 }
 
 // Retrieves this directory plus a new directory created at the given path.
-func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
+func (r *directoryImpl) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) Directory {
 	q := r.q.Select("withNewDirectory")
 	q = q.Arg("path", path)
 	// `permissions` optional argument
@@ -1552,7 +1634,7 @@ func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirect
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1567,7 +1649,7 @@ type DirectoryWithNewFileOpts struct {
 }
 
 // Retrieves this directory plus a new file written at the given path.
-func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
+func (r *directoryImpl) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) Directory {
 	q := r.q.Select("withNewFile")
 	q = q.Arg("path", path)
 	q = q.Arg("contents", contents)
@@ -1579,47 +1661,51 @@ func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryW
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this directory with all file/dir timestamps set to the given time.
-func (r *Directory) WithTimestamps(timestamp int) *Directory {
+func (r *directoryImpl) WithTimestamps(timestamp int) Directory {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this directory with the directory at the given path removed.
-func (r *Directory) WithoutDirectory(path string) *Directory {
+func (r *directoryImpl) WithoutDirectory(path string) Directory {
 	q := r.q.Select("withoutDirectory")
 	q = q.Arg("path", path)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Retrieves this directory with the file at the given path removed.
-func (r *Directory) WithoutFile(path string) *Directory {
+func (r *directoryImpl) WithoutFile(path string) Directory {
 	q := r.q.Select("withoutFile")
 	q = q.Arg("path", path)
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // A simple key value object that represents an environment variable.
-type EnvVariable struct {
+type EnvVariable interface {
+	Name(ctx context.Context) (string, error)
+	Value(ctx context.Context) (string, error)
+}
+type envVariableImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -1628,7 +1714,7 @@ type EnvVariable struct {
 }
 
 // The environment variable name.
-func (r *EnvVariable) Name(ctx context.Context) (string, error) {
+func (r *envVariableImpl) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -1641,7 +1727,7 @@ func (r *EnvVariable) Name(ctx context.Context) (string, error) {
 }
 
 // The environment variable value.
-func (r *EnvVariable) Value(ctx context.Context) (string, error) {
+func (r *envVariableImpl) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
@@ -1654,7 +1740,15 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 }
 
 // A file.
-type File struct {
+type File interface {
+	Contents(ctx context.Context) (string, error)
+	Export(ctx context.Context, path string) (bool, error)
+	ID(ctx context.Context) (FileID, error)
+	Secret() Secret
+	Size(ctx context.Context) (int, error)
+	WithTimestamps(timestamp int) File
+}
+type fileImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -1665,7 +1759,7 @@ type File struct {
 }
 
 // Retrieves the contents of the file.
-func (r *File) Contents(ctx context.Context) (string, error) {
+func (r *fileImpl) Contents(ctx context.Context) (string, error) {
 	if r.contents != nil {
 		return *r.contents, nil
 	}
@@ -1678,7 +1772,7 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 }
 
 // Writes the file to a file path on the host.
-func (r *File) Export(ctx context.Context, path string) (bool, error) {
+func (r *fileImpl) Export(ctx context.Context, path string) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
@@ -1692,7 +1786,7 @@ func (r *File) Export(ctx context.Context, path string) (bool, error) {
 }
 
 // Retrieves the content-addressed identifier of the file.
-func (r *File) ID(ctx context.Context) (FileID, error) {
+func (r *fileImpl) ID(ctx context.Context) (FileID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -1705,12 +1799,12 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *File) XXX_GraphQLType() string {
+func (r *fileImpl) XXX_GraphQLType() string {
 	return "File"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *fileImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -1721,17 +1815,17 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 // Retrieves a secret referencing the contents of this file.
 //
 // Deprecated: insecure, leaves secret in cache. Superseded by SetSecret
-func (r *File) Secret() *Secret {
+func (r *fileImpl) Secret() Secret {
 	q := r.q.Select("secret")
 
-	return &Secret{
+	return &secretImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Gets the size of the file, in bytes.
-func (r *File) Size(ctx context.Context) (int, error) {
+func (r *fileImpl) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
 		return *r.size, nil
 	}
@@ -1744,18 +1838,22 @@ func (r *File) Size(ctx context.Context) (int, error) {
 }
 
 // Retrieves this file with its created/modified timestamps set to the given time.
-func (r *File) WithTimestamps(timestamp int) *File {
+func (r *fileImpl) WithTimestamps(timestamp int) File {
 	q := r.q.Select("withTimestamps")
 	q = q.Arg("timestamp", timestamp)
 
-	return &File{
+	return &fileImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // A git ref (tag, branch or commit).
-type GitRef struct {
+type GitRef interface {
+	Digest(ctx context.Context) (string, error)
+	Tree(opts ...GitRefTreeOpts) Directory
+}
+type gitRefImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -1763,7 +1861,7 @@ type GitRef struct {
 }
 
 // The digest of the current value of this ref.
-func (r *GitRef) Digest(ctx context.Context) (string, error) {
+func (r *gitRefImpl) Digest(ctx context.Context) (string, error) {
 	if r.digest != nil {
 		return *r.digest, nil
 	}
@@ -1779,11 +1877,11 @@ func (r *GitRef) Digest(ctx context.Context) (string, error) {
 type GitRefTreeOpts struct {
 	SSHKnownHosts string
 
-	SSHAuthSocket *Socket
+	SSHAuthSocket Socket
 }
 
 // The filesystem tree at this ref.
-func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
+func (r *gitRefImpl) Tree(opts ...GitRefTreeOpts) Directory {
 	q := r.q.Select("tree")
 	// `sshKnownHosts` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1800,31 +1898,38 @@ func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // A git repository.
-type GitRepository struct {
+type GitRepository interface {
+	Branch(name string) GitRef
+	Branches(ctx context.Context) ([]string, error)
+	Commit(id string) GitRef
+	Tag(name string) GitRef
+	Tags(ctx context.Context) ([]string, error)
+}
+type gitRepositoryImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
 
 // Returns details on one branch.
-func (r *GitRepository) Branch(name string) *GitRef {
+func (r *gitRepositoryImpl) Branch(name string) GitRef {
 	q := r.q.Select("branch")
 	q = q.Arg("name", name)
 
-	return &GitRef{
+	return &gitRefImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Lists of branches on the repository.
-func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
+func (r *gitRepositoryImpl) Branches(ctx context.Context) ([]string, error) {
 	q := r.q.Select("branches")
 
 	var response []string
@@ -1834,29 +1939,29 @@ func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
 }
 
 // Returns details on one commit.
-func (r *GitRepository) Commit(id string) *GitRef {
+func (r *gitRepositoryImpl) Commit(id string) GitRef {
 	q := r.q.Select("commit")
 	q = q.Arg("id", id)
 
-	return &GitRef{
+	return &gitRefImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Returns details on one tag.
-func (r *GitRepository) Tag(name string) *GitRef {
+func (r *gitRepositoryImpl) Tag(name string) GitRef {
 	q := r.q.Select("tag")
 	q = q.Arg("name", name)
 
-	return &GitRef{
+	return &gitRefImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Lists of tags on the repository.
-func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
+func (r *gitRepositoryImpl) Tags(ctx context.Context) ([]string, error) {
 	q := r.q.Select("tags")
 
 	var response []string
@@ -1866,7 +1971,13 @@ func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
 }
 
 // Information about the host execution environment.
-type Host struct {
+type Host interface {
+	Directory(path string, opts ...HostDirectoryOpts) Directory
+	EnvVariable(name string) HostVariable
+	UnixSocket(path string) Socket
+	Workdir(opts ...HostWorkdirOpts) Directory
+}
+type hostImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 }
@@ -1880,7 +1991,7 @@ type HostDirectoryOpts struct {
 }
 
 // Accesses a directory on the host.
-func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
+func (r *hostImpl) Directory(path string, opts ...HostDirectoryOpts) Directory {
 	q := r.q.Select("directory")
 	q = q.Arg("path", path)
 	// `exclude` optional argument
@@ -1898,29 +2009,29 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Accesses an environment variable on the host.
-func (r *Host) EnvVariable(name string) *HostVariable {
+func (r *hostImpl) EnvVariable(name string) HostVariable {
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)
 
-	return &HostVariable{
+	return &hostVariableImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Accesses a Unix socket on the host.
-func (r *Host) UnixSocket(path string) *Socket {
+func (r *hostImpl) UnixSocket(path string) Socket {
 	q := r.q.Select("unixSocket")
 	q = q.Arg("path", path)
 
-	return &Socket{
+	return &socketImpl{
 		q: q,
 		c: r.c,
 	}
@@ -1937,7 +2048,7 @@ type HostWorkdirOpts struct {
 // Retrieves the current working directory on the host.
 //
 // Deprecated: Use Directory with path set to '.' instead.
-func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
+func (r *hostImpl) Workdir(opts ...HostWorkdirOpts) Directory {
 	q := r.q.Select("workdir")
 	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -1954,14 +2065,18 @@ func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // An environment variable on the host environment.
-type HostVariable struct {
+type HostVariable interface {
+	Secret() Secret
+	Value(ctx context.Context) (string, error)
+}
+type hostVariableImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -1971,17 +2086,17 @@ type HostVariable struct {
 // A secret referencing the value of this variable.
 //
 // Deprecated: been superseded by SetSecret
-func (r *HostVariable) Secret() *Secret {
+func (r *hostVariableImpl) Secret() Secret {
 	q := r.q.Select("secret")
 
-	return &Secret{
+	return &secretImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // The value of this variable.
-func (r *HostVariable) Value(ctx context.Context) (string, error) {
+func (r *hostVariableImpl) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
@@ -1994,7 +2109,11 @@ func (r *HostVariable) Value(ctx context.Context) (string, error) {
 }
 
 // A simple key value object that represents a label.
-type Label struct {
+type Label interface {
+	Name(ctx context.Context) (string, error)
+	Value(ctx context.Context) (string, error)
+}
+type labelImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2003,7 +2122,7 @@ type Label struct {
 }
 
 // The label name.
-func (r *Label) Name(ctx context.Context) (string, error) {
+func (r *labelImpl) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2016,7 +2135,7 @@ func (r *Label) Name(ctx context.Context) (string, error) {
 }
 
 // The label value.
-func (r *Label) Value(ctx context.Context) (string, error) {
+func (r *labelImpl) Value(ctx context.Context) (string, error) {
 	if r.value != nil {
 		return *r.value, nil
 	}
@@ -2029,7 +2148,12 @@ func (r *Label) Value(ctx context.Context) (string, error) {
 }
 
 // A port exposed by a container.
-type Port struct {
+type Port interface {
+	Description(ctx context.Context) (string, error)
+	Port(ctx context.Context) (int, error)
+	Protocol(ctx context.Context) (NetworkProtocol, error)
+}
+type portImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2039,7 +2163,7 @@ type Port struct {
 }
 
 // The port description.
-func (r *Port) Description(ctx context.Context) (string, error) {
+func (r *portImpl) Description(ctx context.Context) (string, error) {
 	if r.description != nil {
 		return *r.description, nil
 	}
@@ -2052,7 +2176,7 @@ func (r *Port) Description(ctx context.Context) (string, error) {
 }
 
 // The port number.
-func (r *Port) Port(ctx context.Context) (int, error) {
+func (r *portImpl) Port(ctx context.Context) (int, error) {
 	if r.port != nil {
 		return *r.port, nil
 	}
@@ -2065,7 +2189,7 @@ func (r *Port) Port(ctx context.Context) (int, error) {
 }
 
 // The transport layer network protocol.
-func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
+func (r *portImpl) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	if r.protocol != nil {
 		return *r.protocol, nil
 	}
@@ -2078,7 +2202,15 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 }
 
 // A set of scripts and/or extensions
-type Project struct {
+type Project interface {
+	Extensions(ctx context.Context) ([]Project, error)
+	GeneratedCode() Directory
+	Install(ctx context.Context) (bool, error)
+	Name(ctx context.Context) (string, error)
+	Schema(ctx context.Context) (string, error)
+	SDK(ctx context.Context) (string, error)
+}
+type projectImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2089,7 +2221,7 @@ type Project struct {
 }
 
 // extensions in this project
-func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
+func (r *projectImpl) Extensions(ctx context.Context) ([]Project, error) {
 	q := r.q.Select("extensions")
 
 	q = q.Select("install name schema sdk")
@@ -2105,7 +2237,7 @@ func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 		out := []Project{}
 
 		for _, field := range fields {
-			out = append(out, Project{install: &field.Install, name: &field.Name, schema: &field.Schema, sdk: &field.Sdk})
+			out = append(out, &projectImpl{install: &field.Install, name: &field.Name, schema: &field.Schema, sdk: &field.Sdk})
 		}
 
 		return out
@@ -2123,17 +2255,17 @@ func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 }
 
 // Code files generated by the SDKs in the project
-func (r *Project) GeneratedCode() *Directory {
+func (r *projectImpl) GeneratedCode() Directory {
 	q := r.q.Select("generatedCode")
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // install the project's schema
-func (r *Project) Install(ctx context.Context) (bool, error) {
+func (r *projectImpl) Install(ctx context.Context) (bool, error) {
 	if r.install != nil {
 		return *r.install, nil
 	}
@@ -2146,7 +2278,7 @@ func (r *Project) Install(ctx context.Context) (bool, error) {
 }
 
 // name of the project
-func (r *Project) Name(ctx context.Context) (string, error) {
+func (r *projectImpl) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -2159,7 +2291,7 @@ func (r *Project) Name(ctx context.Context) (string, error) {
 }
 
 // schema provided by the project
-func (r *Project) Schema(ctx context.Context) (string, error) {
+func (r *projectImpl) Schema(ctx context.Context) (string, error) {
 	if r.schema != nil {
 		return *r.schema, nil
 	}
@@ -2172,7 +2304,7 @@ func (r *Project) Schema(ctx context.Context) (string, error) {
 }
 
 // sdk used to generate code for and/or execute this project
-func (r *Project) SDK(ctx context.Context) (string, error) {
+func (r *projectImpl) SDK(ctx context.Context) (string, error) {
 	if r.sdk != nil {
 		return *r.sdk, nil
 	}
@@ -2184,12 +2316,28 @@ func (r *Project) SDK(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+type Query interface {
+	CacheVolume(key string) CacheVolume
+	Container(opts ...ContainerOpts) Container
+	DefaultPlatform(ctx context.Context) (Platform, error)
+	Directory(opts ...DirectoryOpts) Directory
+	File(id FileID) File
+	Git(url string, opts ...GitOpts) GitRepository
+	Host() Host
+	HTTP(url string, opts ...HTTPOpts) File
+	Pipeline(name string, opts ...PipelineOpts) Client
+	Project(name string) Project
+	Secret(id SecretID) Secret
+	SetSecret(name string, plaintext string) Secret
+	Socket(opts ...SocketOpts) Socket
+}
+
 // Constructs a cache volume for a given cache key.
-func (r *Client) CacheVolume(key string) *CacheVolume {
+func (r *clientImpl) CacheVolume(key string) CacheVolume {
 	q := r.q.Select("cacheVolume")
 	q = q.Arg("key", key)
 
-	return &CacheVolume{
+	return &cacheVolumeImpl{
 		q: q,
 		c: r.c,
 	}
@@ -2207,7 +2355,7 @@ type ContainerOpts struct {
 // Null ID returns an empty container (scratch).
 // Optional platform argument initializes new containers to execute and publish as that platform.
 // Platform defaults to that of the builder's host.
-func (r *Client) Container(opts ...ContainerOpts) *Container {
+func (r *clientImpl) Container(opts ...ContainerOpts) Container {
 	q := r.q.Select("container")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2224,14 +2372,14 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 		}
 	}
 
-	return &Container{
+	return &containerImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // The default platform of the builder.
-func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
+func (r *clientImpl) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
 
 	var response Platform
@@ -2246,7 +2394,7 @@ type DirectoryOpts struct {
 }
 
 // Load a directory by ID. No argument produces an empty directory.
-func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
+func (r *clientImpl) Directory(opts ...DirectoryOpts) Directory {
 	q := r.q.Select("directory")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2256,18 +2404,18 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 		}
 	}
 
-	return &Directory{
+	return &directoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Loads a file by ID.
-func (r *Client) File(id FileID) *File {
+func (r *clientImpl) File(id FileID) File {
 	q := r.q.Select("file")
 	q = q.Arg("id", id)
 
-	return &File{
+	return &fileImpl{
 		q: q,
 		c: r.c,
 	}
@@ -2278,11 +2426,11 @@ type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost Container
 }
 
 // Queries a git repository.
-func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
+func (r *clientImpl) Git(url string, opts ...GitOpts) GitRepository {
 	q := r.q.Select("git")
 	q = q.Arg("url", url)
 	// `keepGitDir` optional argument
@@ -2300,17 +2448,17 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		}
 	}
 
-	return &GitRepository{
+	return &gitRepositoryImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Queries the host environment.
-func (r *Client) Host() *Host {
+func (r *clientImpl) Host() Host {
 	q := r.q.Select("host")
 
-	return &Host{
+	return &hostImpl{
 		q: q,
 		c: r.c,
 	}
@@ -2319,11 +2467,11 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Query.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost Container
 }
 
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *clientImpl) HTTP(url string, opts ...HTTPOpts) File {
 	q := r.q.Select("http")
 	q = q.Arg("url", url)
 	// `experimentalServiceHost` optional argument
@@ -2334,7 +2482,7 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 		}
 	}
 
-	return &File{
+	return &fileImpl{
 		q: q,
 		c: r.c,
 	}
@@ -2349,7 +2497,7 @@ type PipelineOpts struct {
 }
 
 // Creates a named sub-pipeline.
-func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
+func (r *clientImpl) Pipeline(name string, opts ...PipelineOpts) Client {
 	q := r.q.Select("pipeline")
 	q = q.Arg("name", name)
 	// `description` optional argument
@@ -2367,41 +2515,41 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 		}
 	}
 
-	return &Client{
+	return &clientImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Look up a project by name
-func (r *Client) Project(name string) *Project {
+func (r *clientImpl) Project(name string) Project {
 	q := r.q.Select("project")
 	q = q.Arg("name", name)
 
-	return &Project{
+	return &projectImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Loads a secret from its ID.
-func (r *Client) Secret(id SecretID) *Secret {
+func (r *clientImpl) Secret(id SecretID) Secret {
 	q := r.q.Select("secret")
 	q = q.Arg("id", id)
 
-	return &Secret{
+	return &secretImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
-func (r *Client) SetSecret(name string, plaintext string) *Secret {
+func (r *clientImpl) SetSecret(name string, plaintext string) Secret {
 	q := r.q.Select("setSecret")
 	q = q.Arg("name", name)
 	q = q.Arg("plaintext", plaintext)
 
-	return &Secret{
+	return &secretImpl{
 		q: q,
 		c: r.c,
 	}
@@ -2413,7 +2561,7 @@ type SocketOpts struct {
 }
 
 // Loads a socket by its ID.
-func (r *Client) Socket(opts ...SocketOpts) *Socket {
+func (r *clientImpl) Socket(opts ...SocketOpts) Socket {
 	q := r.q.Select("socket")
 	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
@@ -2423,14 +2571,18 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 		}
 	}
 
-	return &Socket{
+	return &socketImpl{
 		q: q,
 		c: r.c,
 	}
 }
 
 // A reference to a secret value, which can be handled more safely than the value itself.
-type Secret struct {
+type Secret interface {
+	ID(ctx context.Context) (SecretID, error)
+	Plaintext(ctx context.Context) (string, error)
+}
+type secretImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2439,7 +2591,7 @@ type Secret struct {
 }
 
 // The identifier for this secret.
-func (r *Secret) ID(ctx context.Context) (SecretID, error) {
+func (r *secretImpl) ID(ctx context.Context) (SecretID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2452,12 +2604,12 @@ func (r *Secret) ID(ctx context.Context) (SecretID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Secret) XXX_GraphQLType() string {
+func (r *secretImpl) XXX_GraphQLType() string {
 	return "Secret"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *secretImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err
@@ -2466,7 +2618,7 @@ func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 }
 
 // The value of this secret.
-func (r *Secret) Plaintext(ctx context.Context) (string, error) {
+func (r *secretImpl) Plaintext(ctx context.Context) (string, error) {
 	if r.plaintext != nil {
 		return *r.plaintext, nil
 	}
@@ -2478,7 +2630,10 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-type Socket struct {
+type Socket interface {
+	ID(ctx context.Context) (SocketID, error)
+}
+type socketImpl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2486,7 +2641,7 @@ type Socket struct {
 }
 
 // The content-addressed identifier of the socket.
-func (r *Socket) ID(ctx context.Context) (SocketID, error) {
+func (r *socketImpl) ID(ctx context.Context) (SocketID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
@@ -2499,12 +2654,12 @@ func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 }
 
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Socket) XXX_GraphQLType() string {
+func (r *socketImpl) XXX_GraphQLType() string {
 	return "Socket"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Socket) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *socketImpl) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
 	if err != nil {
 		return "", err

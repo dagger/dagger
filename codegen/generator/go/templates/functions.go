@@ -25,11 +25,13 @@ var (
 		"SortEnumFields":          sortEnumFields,
 		"FieldOptionsStructName":  fieldOptionsStructName,
 		"FieldFunction":           fieldFunction,
+		"FieldFunctionSignature":  fieldFunctionSignature,
 		"IsEnum":                  isEnum,
 		"GetArrayField":           getArrayField,
 		"IsListOfObject":          isListOfObject,
 		"ToLowerCase":             toLowerCase,
 		"ToUpperCase":             toUpperCase,
+		"ToUnexportedName":        toUnexportedName,
 		"FormatArrayField":        formatArrayField,
 		"FormatArrayToSingleType": formatArrayToSingleType,
 	}
@@ -141,6 +143,16 @@ func toUpperCase(s string) string {
 	return fmt.Sprintf("%c%s", unicode.ToUpper(rune(s[0])), s[1:])
 }
 
+func toUnexportedName(s string) string {
+	if len(s) == 0 {
+		return s
+	}
+
+	first := unicode.ToLower(rune(s[0]))
+	rest := s[1:]
+	return fmt.Sprintf("%c%s", first, rest)
+}
+
 // fieldOptionsStructName returns the options struct name for a given field
 func fieldOptionsStructName(f introspection.Field) string {
 	// Exception: `Query` option structs are not prefixed by `Query`.
@@ -156,13 +168,8 @@ func fieldOptionsStructName(f introspection.Field) string {
 
 // fieldFunction converts a field into a function signature
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
-func fieldFunction(f introspection.Field) string {
-	structName := formatName(f.ParentObject.Name)
-	if structName == generator.QueryStructName {
-		structName = "Client"
-	}
-	signature := fmt.Sprintf(`func (r *%s) %s`,
-		structName, formatName(f.Name))
+func fieldFunctionSignature(f introspection.Field) string {
+	signature := formatName(f.Name)
 
 	// Generate arguments
 	args := []string{}
@@ -195,9 +202,19 @@ func fieldFunction(f introspection.Field) string {
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		retType = fmt.Sprintf("(%s, error)", commonFunc.FormatOutputType(f.TypeRef))
 	} else {
-		retType = "*" + commonFunc.FormatOutputType(f.TypeRef)
+		retType = /*"*" +*/ commonFunc.FormatOutputType(f.TypeRef)
 	}
 	signature += " " + retType
 
 	return signature
+}
+
+// fieldFunction converts a field into a function signature
+// Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
+func fieldFunction(f introspection.Field) string {
+	structName := formatName(f.ParentObject.Name)
+	if structName == generator.QueryStructName {
+		structName = "Client"
+	}
+	return fmt.Sprintf(`func (r *%sImpl) %s`, toUnexportedName(structName), fieldFunctionSignature(f))
 }

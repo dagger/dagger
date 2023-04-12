@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func connect(t *testing.T) (*dagger.Client, context.Context) {
+func connect(t *testing.T) (dagger.Client, context.Context) {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)

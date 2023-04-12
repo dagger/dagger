@@ -62,7 +62,7 @@ func main() {
 	fmt.Printf("Published to %s", addr)
 }
 
-func setDependencies(container *dagger.Container) *dagger.Container {
+func setDependencies(container dagger.Container) dagger.Container {
 	return container.
 		WithExec([]string{
 			"apk",
@@ -86,7 +86,7 @@ func setDependencies(container *dagger.Container) *dagger.Container {
 		})
 }
 
-func downloadMemcached(container *dagger.Container) *dagger.Container {
+func downloadMemcached(container dagger.Container) dagger.Container {
 	return container.
 		WithExec([]string{"sh", "-c", "wget -O memcached.tar.gz https://memcached.org/files/memcached-$MEMCACHED_VERSION.tar.gz"}).
 		WithExec([]string{"sh", "-c", "echo \"$MEMCACHED_SHA1  memcached.tar.gz\" | sha1sum -c -"}).
@@ -95,7 +95,7 @@ func downloadMemcached(container *dagger.Container) *dagger.Container {
 		WithExec([]string{"rm", "memcached.tar.gz"})
 }
 
-func buildMemcached(container *dagger.Container) *dagger.Container {
+func buildMemcached(container dagger.Container) dagger.Container {
 	return container.
 		WithWorkdir("/usr/src/memcached").
 		WithExec([]string{

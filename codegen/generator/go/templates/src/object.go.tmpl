@@ -1,6 +1,15 @@
-{{- if ne (.Name | FormatName) "Query" }}
 {{ .Description | Comment }}
-type {{ .Name | FormatName }} struct {
+type {{ .Name | FormatName }} interface {
+{{- range $field := .Fields }}
+    {{ $field | FieldFunctionSignature }}
+{{- end}}
+{{- if or (eq (.Name | FormatName) "Directory") (eq (.Name | FormatName) "Container") }}
+    With(f With{{ .Name | FormatName }}Func) {{ $.Name | FormatName }}
+{{- end}}
+}
+
+{{- if ne (.Name | FormatName) "Query" }}
+type {{ .Name | FormatName | ToUnexportedName }}Impl struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -14,9 +23,9 @@ type {{ .Name | FormatName }} struct {
 
 
 {{- if or (eq (.Name | FormatName) "Directory") (eq (.Name | FormatName) "Container") }}
-type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
+type With{{ .Name | FormatName }}Func func(r {{ .Name | FormatName }}) {{ .Name | FormatName }}
 
-func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{ $.Name | FormatName }} {
+func (r *{{ $.Name | FormatName | ToUnexportedName }}Impl) With(f With{{ .Name | FormatName }}Func) {{ $.Name | FormatName }} {
 	return f(r)
 }
 
@@ -68,7 +77,7 @@ type {{ $field | FieldOptionsStructName }} struct {
 	{{- end }}
 	{{ if $field.TypeRef.IsObject }}
 	{{ $typeName := $field.TypeRef | FormatOutputType }}
-	return &{{ $field.TypeRef | FormatOutputType }} {
+	return &{{ $field.TypeRef | FormatOutputType | ToUnexportedName }}Impl {
 		q: q,
 		c: r.c,
 	}
@@ -87,7 +96,7 @@ type {{ $field | FieldOptionsStructName }} struct {
         out := {{ $field.TypeRef | FormatOutputType }}{}
 
         for _, field := range fields {
-            out = append(out, {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
+            out = append(out, &{{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType | ToUnexportedName }}Impl{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
         }
 
         return out
@@ -124,12 +133,12 @@ type {{ $field | FieldOptionsStructName }} struct {
 
 {{ if eq $field.Name "id" }}
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *{{ $.Name | FormatName }}) XXX_GraphQLType() string {
+func (r *{{ $.Name | FormatName | ToUnexportedName }}Impl) XXX_GraphQLType() string {
 	return "{{ $.Name }}"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *{{ $.Name | FormatName }}) XXX_GraphQLID(ctx context.Context) (string, error) {
+func (r *{{ $.Name | FormatName | ToUnexportedName }}Impl) XXX_GraphQLID(ctx context.Context) (string, error) {
     id, err := r.ID(ctx)
     if err != nil {
         return "", err

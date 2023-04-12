@@ -10,7 +10,7 @@ import (
 )
 
 // create a copy of an embed directory
-func copyEmbedDir(e fs.FS, dir *dagger.Directory) (*dagger.Directory, error) {
+func copyEmbedDir(e fs.FS, dir dagger.Directory) (dagger.Directory, error) {
 	err := fs.WalkDir(e, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

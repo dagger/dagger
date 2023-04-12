@@ -33,7 +33,7 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]dagger.Container, 0, len(platformToUname))
 	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
@@ -81,7 +81,7 @@ func TestPlatformCrossCompile(t *testing.T) {
 	// cross compile the dagger binary for each platform
 	defaultPlatform, err := c.DefaultPlatform(ctx)
 	require.NoError(t, err)
-	variants := make([]*dagger.Container, len(platformToFileArch))
+	variants := make([]dagger.Container, len(platformToFileArch))
 	i := 0
 	var eg errgroup.Group
 	for platform := range platformToUname {

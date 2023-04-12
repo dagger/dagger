@@ -33,7 +33,7 @@ func (f *FormatTypeFunc) FormatKindScalarBoolean(representation string) string {
 
 func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName string, input bool) string {
 	if alias, ok := generator.CustomScalar[refName]; ok && input {
-		representation += "*" + alias
+		representation += alias
 	} else {
 		representation += refName
 	}

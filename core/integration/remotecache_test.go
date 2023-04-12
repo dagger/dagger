@@ -19,7 +19,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	defer cancel()
 
 	registryContainerName := runRegistryInDocker(ctx, t)
-	getClient := func() *dagger.Client {
+	getClient := func() dagger.Client {
 		c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
 			"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=registry,ref=127.0.0.1:5000/test-cache,mode=max",
 		}, "container:"+registryContainerName)
@@ -29,7 +29,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		return c
 	}
 
-	pipelineOutput := func(c *dagger.Client) string {
+	pipelineOutput := func(c dagger.Client) string {
 		output, err := c.Container().From("alpine:3.17").WithExec([]string{
 			"sh", "-c", "head -c 128 /dev/random | sha256sum",
 		}).Stdout(ctx)
@@ -59,7 +59,7 @@ func TestRemoteCacheS3(t *testing.T) {
 	t.Run("buildkit s3 caching", func(t *testing.T) {
 		bucket := "dagger-test-remote-cache-s3-" + identity.NewID()
 		s3ContainerName := runS3InDocker(ctx, t, bucket)
-		getClient := func() *dagger.Client {
+		getClient := func() dagger.Client {
 			c, stop := runSeparateEngine(ctx, t, nil, map[string]string{
 				"_EXPERIMENTAL_DAGGER_CACHE_CONFIG": "type=s3,mode=max,endpoint_url=http://localhost:9000,access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket,
 			}, "container:"+s3ContainerName)
@@ -69,7 +69,7 @@ func TestRemoteCacheS3(t *testing.T) {
 			return c
 		}
 
-		pipelineOutput := func(c *dagger.Client) string {
+		pipelineOutput := func(c dagger.Client) string {
 			output, err := c.Container().From("alpine:3.17").WithExec([]string{
 				"sh", "-c", "head -c 128 /dev/random | sha256sum",
 			}).Stdout(ctx)
@@ -158,7 +158,7 @@ var (
 	netInstance int
 )
 
-func runSeparateEngine(ctx context.Context, t *testing.T, engineEnv, clientEnv map[string]string, network string) (_ *dagger.Client, gracefulStop func() error) {
+func runSeparateEngine(ctx context.Context, t *testing.T, engineEnv, clientEnv map[string]string, network string) (_ dagger.Client, gracefulStop func() error) {
 	// Setting the RUNNER_HOST env var is global so while silly we need to lock here. This also seems to help with
 	// some race conditions setting up the engine network when they are all sharing one netns
 	connectLock.Lock()

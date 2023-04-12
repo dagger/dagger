@@ -647,7 +647,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	variants := make([]*dagger.Container, 0, len(platformToUname))
+	variants := make([]dagger.Container, 0, len(platformToUname))
 	for platform := range platformToUname {
 		srv, url := httpService(ctx, t, c, string(platform))
 
@@ -1084,7 +1084,7 @@ func TestFileServiceSecret(t *testing.T) {
 	})
 }
 
-func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Container, string) {
+func httpService(ctx context.Context, t *testing.T, c dagger.Client, content string) (dagger.Container, string) {
 	t.Helper()
 
 	srv := c.Container().
@@ -1105,7 +1105,7 @@ func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content st
 	return srv, httpURL
 }
 
-func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *dagger.Directory) (*dagger.Container, string) {
+func gitService(ctx context.Context, t *testing.T, c dagger.Client, content dagger.Directory) (dagger.Container, string) {
 	t.Helper()
 
 	const gitPort = 9418

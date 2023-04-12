@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-func startS3CacheMountSync(ctx context.Context, s3Config *S3LayerStoreConfig, daggerClient *dagger.Client) (func(ctx context.Context) error, error) {
+func startS3CacheMountSync(ctx context.Context, s3Config *S3LayerStoreConfig, daggerClient dagger.Client) (func(ctx context.Context) error, error) {
 	stop := func(ctx context.Context) error { return nil } // default to no-op
 
 	cacheMountPrefixes := s3Config.CacheMountPrefixes
@@ -136,7 +136,7 @@ func rcloneUploadArgs(cacheMountPrefix string, s3Config *S3LayerStoreConfig) []s
 	return append(uploadArgs, rcloneCommonArgs(s3Config)...)
 }
 
-func execRclone(ctx context.Context, c *dagger.Client, args []string, cacheMountName string) error {
+func execRclone(ctx context.Context, c dagger.Client, args []string, cacheMountName string) error {
 	ctr := c.Container().
 		From("rclone/rclone:1.61").
 		WithEnvVariable("CACHEBUST", strconv.Itoa(int(time.Now().UnixNano()))).
