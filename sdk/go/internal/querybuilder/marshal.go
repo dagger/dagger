@@ -26,7 +26,7 @@ var (
 	gqlMarshaller reflect.Type
 
 	// Taken from codegen/generator/functions.go
-	// Includes also Platform and Owner
+	// Includes also Platform
 	customScalar = map[string]struct{}{
 		"ContainerID": {},
 		"FileID":      {},
@@ -35,7 +35,6 @@ var (
 		"SocketID":    {},
 		"CacheID":     {},
 		"Platform":    {},
-		"Owner":       {},
 	}
 )
 

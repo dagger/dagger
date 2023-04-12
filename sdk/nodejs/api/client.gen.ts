@@ -217,7 +217,7 @@ export type ContainerWithDirectoryOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithExecOpts = {
@@ -285,7 +285,7 @@ export type ContainerWithFileOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithMountedCacheOpts = {
@@ -306,7 +306,7 @@ export type ContainerWithMountedCacheOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithMountedDirectoryOpts = {
@@ -317,7 +317,7 @@ export type ContainerWithMountedDirectoryOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithMountedFileOpts = {
@@ -328,7 +328,7 @@ export type ContainerWithMountedFileOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithMountedSecretOpts = {
@@ -339,7 +339,7 @@ export type ContainerWithMountedSecretOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithNewFileOpts = {
@@ -362,7 +362,7 @@ export type ContainerWithNewFileOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithUnixSocketOpts = {
@@ -373,7 +373,7 @@ export type ContainerWithUnixSocketOpts = {
    *
    * If the group is omitted, it defaults to the same as the user.
    */
-  owner?: FilesystemOwner
+  owner?: string
 }
 
 export type ContainerWithoutExposedPortOpts = {
@@ -491,26 +491,6 @@ export type DirectoryID = string & { __DirectoryID: never }
  * A file identifier.
  */
 export type FileID = string & { __FileID: never }
-
-/**
- * A user and group, as typically used to configure ownership of files and directories.
- *
- * The format is user[:group], where both user and group can either be IDs or
- * names to be resolved to IDs using the container filesystem.
- *
- * If the group is omitted, it defaults to the same as the user.
- *
- * So, for a user 'foo' and group 'bar' with user ID and group ID 1111 and 2222
- * respectively, the following are all valid:
- *
- *    foo      => 1111:1111
- *    foo:bar  => 1111:2222
- *    1111:bar => 1111:2222
- *    foo:2222 => 1111:1111
- *
- * If the owner is unspecified, ownership will be left as-is.
- */
-export type FilesystemOwner = string & { __FilesystemOwner: never }
 
 export type GitRefTreeOpts = {
   sshKnownHosts?: string

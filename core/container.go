@@ -124,18 +124,18 @@ type HostAlias struct {
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    SecretID         `json:"secret"`
-	EnvName   string           `json:"env,omitempty"`
-	MountPath string           `json:"path,omitempty"`
-	Owner     *FilesystemOwner `json:"owner,omitempty"`
+	Secret    SecretID `json:"secret"`
+	EnvName   string   `json:"env,omitempty"`
+	MountPath string   `json:"path,omitempty"`
+	Owner     string   `json:"owner,omitempty"`
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Socket   SocketID         `json:"socket"`
-	UnixPath string           `json:"unix_path,omitempty"`
-	Owner    *FilesystemOwner `json:"owner,omitempty"`
+	Socket   SocketID `json:"socket"`
+	UnixPath string   `json:"unix_path,omitempty"`
+	Owner    string   `json:"owner,omitempty"`
 }
 
 // ContainerPort configures a port to expose from the container.
@@ -209,7 +209,7 @@ type ContainerMount struct {
 	// A user:group to set for the mount and its contents.
 	//
 	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-	Owner *FilesystemOwner `json:"owner,omitempty"`
+	Owner string `json:"owner,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -481,7 +481,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
 	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
@@ -492,7 +492,7 @@ func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, s
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
 	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
@@ -503,7 +503,7 @@ func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	dir, file := filepath.Split(dest)
 	return container.updateRootFS(ctx, dir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
@@ -515,7 +515,7 @@ func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, des
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory, owner string) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -524,7 +524,7 @@ func (container *Container) WithMountedDirectory(ctx context.Context, target str
 	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services, owner)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, target string, source *File, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, target string, source *File, owner string) (*Container, error) {
 	payload, err := source.ID.decode()
 	if err != nil {
 		return nil, err
@@ -533,7 +533,7 @@ func (container *Container) WithMountedFile(ctx context.Context, target string, 
 	return container.withMounted(target, payload.LLB, payload.File, payload.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -600,7 +600,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -662,7 +662,7 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner *FilesystemOwner) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -841,7 +841,7 @@ func (container *Container) withMounted(
 	srcDef *pb.Definition,
 	srcPath string,
 	svcs ServiceBindings,
-	owner *FilesystemOwner,
+	owner string,
 ) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
@@ -901,7 +901,7 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil, nil)
+	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil, "")
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1050,8 +1050,8 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
-			if secret.Owner != nil {
-				uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, *secret.Owner)
+			if secret.Owner != "" {
+				uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, secret.Owner)
 				if err != nil {
 					return nil, err
 				}
@@ -1086,8 +1086,8 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			llb.SSHSocketTarget(socket.UnixPath),
 		}
 
-		if socket.Owner != nil {
-			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, *socket.Owner)
+		if socket.Owner != "" {
+			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, socket.Owner)
 			if err != nil {
 				return nil, err
 			}
@@ -1107,8 +1107,8 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 		mountOpts := []llb.MountOption{}
 
-		if mnt.Owner != nil {
-			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, *mnt.Owner)
+		if mnt.Owner != "" {
+			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, mnt.Owner)
 			if err != nil {
 				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
 			}
@@ -1789,10 +1789,10 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 	return &Container{ID: id}, nil
 }
 
-func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner *FilesystemOwner) (int, int, error) {
-	if owner == nil {
-		// default to an invalid ID, which means don't set anything
-		return -1, -1, nil
+func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner string) (int, int, error) {
+	if owner == "" {
+		// default to root
+		return 0, 0, nil
 	}
 
 	containerPayload, err := container.ID.decode()
@@ -1805,7 +1805,7 @@ func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner *F
 		return -1, -1, err
 	}
 
-	return resolveUIDGID(ctx, fsSt, gw, containerPayload.Platform, *owner)
+	return resolveUIDGID(ctx, fsSt, gw, containerPayload.Platform, owner)
 }
 
 type ContainerExecOpts struct {
@@ -1922,16 +1922,4 @@ func overrideProgress(def *llb.Definition, pipeline pipeline.Path) {
 		metadata.ProgressGroup = pipeline.ProgressGroup()
 		def.Metadata[dgst] = metadata
 	}
-}
-
-type FilesystemOwner struct {
-	User  string `json:"user"`
-	Group string `json:"group"`
-}
-
-func (owner FilesystemOwner) String() string {
-	if owner.Group == "" {
-		return owner.User
-	}
-	return fmt.Sprintf("%s:%s", owner.User, owner.Group)
 }
