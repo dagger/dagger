@@ -23,7 +23,6 @@ func architectureOf(platform dagger.Platform) string {
 	return platformFormat.MustParse(string(platform)).Architecture
 }
 
-
 func main() {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
@@ -38,7 +37,7 @@ func main() {
 
 	platformVariants := make([]*dagger.Container, 0, len(platforms))
 	for _, platform := range platforms {
-				// pull the golang image for the *host platform*. This is
+		// pull the golang image for the *host platform*. This is
 		// accomplished by just not specifying a platform; the default
 		// is that of the host.
 		ctr := client.Container()
@@ -54,7 +53,7 @@ func main() {
 		// in the final image
 		ctr = ctr.WithEnvVariable("CGO_ENABLED", "0")
 
-				// configure the go compiler to use cross-compilation targeting the
+		// configure the go compiler to use cross-compilation targeting the
 		// desired platform
 		ctr = ctr.WithEnvVariable("GOOS", "linux")
 		ctr = ctr.WithEnvVariable("GOARCH", architectureOf(platform))

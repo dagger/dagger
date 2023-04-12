@@ -22,7 +22,6 @@ func main() {
 	}
 	defer client.Close()
 
-
 	_, err = client.Container().From("alpine:latest").
 		WithWorkdir("/tmp").
 		WithExec([]string{"wget", "https://dagger.io"}).
