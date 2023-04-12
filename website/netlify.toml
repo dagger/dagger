@@ -86,6 +86,18 @@ from = "/683293/private-repositories"
 to = "/710884/private-repositories"
 status = 302
 
+from = "/768421/go-ci"
+to = "/145912/ci"
+status = 302
+
+from = "/114934/nodejs-ci"
+to = "/145912/ci"
+status = 302
+
+from = "/454108/python-ci"
+to = "/145912/ci"
+status = 302
+
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
 [[redirects]]
