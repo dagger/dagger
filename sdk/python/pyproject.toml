@@ -49,6 +49,7 @@ gql = ">=3.4.0"
 httpx = ">=0.23.1"
 beartype = ">=0.11.0"
 platformdirs = ">=2.6.2"
+typing_extensions = ">=4.4.0"
 rich = ">=12.6.0"
 typer = {version = ">=0.6.1", extras = ["all"]}
 strawberry-graphql = {version = ">=0.133.5", optional = true}
@@ -66,7 +67,6 @@ pytest-httpx = ">=0.21.3"
 [tool.poetry.group.lint.dependencies]
 black = ">=22.3.0"
 mypy = ">=0.942"
-typing_extensions = ">=4.4.0"
 ruff = ">=0.0.218"
 
 [tool.poetry.group.dev.dependencies]
