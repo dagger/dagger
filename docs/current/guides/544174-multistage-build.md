@@ -36,7 +36,7 @@ The following code snippet demonstrates a multi-stage build with the Go SDK.
 
 This code listing starts by creating a Dagger client and loading the project to be built. It obtains a reference to the project and then builds the application by using the `golang:latest` image to mount the source directory, sets `CGO_ENABLED=` since the binary will be published on `alpine`, and executes `go build`.
 
-Next, in the highlighted section, the multi-stage build is achieved by transferring the build artifact from the builder image to a runtime image based on `alpine`. The steps are:
+Next, the multi-stage build is achieved by transferring the build artifact from the builder image to a runtime image based on `alpine`. The steps are:
 
 - Create a new container image which will be used as the runtime image, using `From("alpine")`.
 - Transfer the build artifact from the builder image to the new container image using `WithFile`.
