@@ -80,6 +80,50 @@ func TestContainerFrom(t *testing.T) {
 	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
 }
 
+func TestContainerWith(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	foo := "bar"
+
+	alpine := c.Container().From("alpine:3.16.2").With(func(c *dagger.Container) *dagger.Container {
+		return c.WithEnvVariable("FOO", foo)
+	})
+
+	out, err := alpine.WithExec([]string{"printenv", "FOO"}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar\n", out)
+
+	withFood := func(c *dagger.Container) *dagger.Container {
+		return c.WithEnvVariable("FOOD", "bar")
+	}
+
+	out, err = c.Container().From("alpine:3.16.2").
+		With(withFood).
+		WithExec([]string{"printenv", "FOOD"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "bar\n", out)
+
+	withEnv := func(env, val string) dagger.WithContainerFunc {
+		return func(c *dagger.Container) *dagger.Container {
+			return c.WithEnvVariable(env, val)
+		}
+	}
+
+	env := "HELLO"
+	val := "WORLD"
+	out, err = c.Container().From("alpine:3.16.2").
+		With(withEnv(env, val)).
+		WithExec([]string{"printenv", env}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, val+"\n", out)
+}
+
 func TestContainerBuild(t *testing.T) {
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)

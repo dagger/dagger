@@ -32,6 +32,30 @@ func ExampleContainer() {
 	// Output: 3.16.2
 }
 
+func ExampleContainer_With() {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx)
+	if err != nil {
+		panic(err)
+	}
+	defer client.Close()
+
+	alpine := client.Container().From("alpine:3.16.2").
+		With(func(c *dagger.Container) *dagger.Container {
+			return c.WithEnvVariable("FOO", "bar")
+		})
+
+	out, err := alpine.Exec(dagger.ContainerExecOpts{
+		Args: []string{"printenv", "FOO"},
+	}).Stdout(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	fmt.Println(out)
+	// Output: bar
+}
+
 func ExampleGitRepository() {
 	ctx := context.Background()
 	client, err := dagger.Connect(ctx)

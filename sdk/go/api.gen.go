@@ -104,6 +104,11 @@ type Container struct {
 	user        *string
 	workdir     *string
 }
+type WithContainerFunc func(r *Container) *Container
+
+func (r *Container) With(f WithContainerFunc) *Container {
+	return f(r)
+}
 
 // ContainerBuildOpts contains options for Container.Build
 type ContainerBuildOpts struct {
@@ -1266,6 +1271,11 @@ type Directory struct {
 
 	export *bool
 	id     *DirectoryID
+}
+type WithDirectoryFunc func(r *Directory) *Directory
+
+func (r *Directory) With(f WithDirectoryFunc) *Directory {
+	return f(r)
 }
 
 // Gets the difference between this directory and an another directory.
