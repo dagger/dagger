@@ -22,7 +22,7 @@ func main() {
 	}
 	defer client.Close()
 
-	// highlight-start
+
 	_, err = client.Container().From("alpine:latest").
 		WithWorkdir("/tmp").
 		WithExec([]string{"wget", "https://dagger.io"}).
@@ -32,7 +32,6 @@ func main() {
 		log.Println(err)
 		return
 	}
-	// highlight-end
 	contents, err := os.ReadFile(filepath.Join(hostdir, "index.html"))
 	if err != nil {
 		log.Println(err)

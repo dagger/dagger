@@ -18,13 +18,11 @@ func main() {
 	}
 	defer client.Close()
 
-	// highlight-start
 	contents, err := client.Container().
 		From("alpine:latest").
 		WithDirectory("/host", client.Host().Directory(".")).
 		WithExec([]string{"ls", "/host"}).
 		Stdout(ctx)
-	// highlight-end
 	if err != nil {
 		log.Println(err)
 		return

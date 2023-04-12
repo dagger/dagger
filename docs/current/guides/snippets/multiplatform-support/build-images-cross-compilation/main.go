@@ -18,13 +18,11 @@ var platforms = []dagger.Platform{
 // the container registry for the multi-platform image
 const imageRepo = "localhost/testrepo:latest"
 
-// highlight-start
 // util that returns the architecture of the provided platform
 func architectureOf(platform dagger.Platform) string {
 	return platformFormat.MustParse(string(platform)).Architecture
 }
 
-// highlight-end
 
 func main() {
 	ctx := context.Background()
@@ -40,13 +38,11 @@ func main() {
 
 	platformVariants := make([]*dagger.Container, 0, len(platforms))
 	for _, platform := range platforms {
-		// highlight-start
-		// pull the golang image for the *host platform*. This is
+				// pull the golang image for the *host platform*. This is
 		// accomplished by just not specifying a platform; the default
 		// is that of the host.
 		ctr := client.Container()
 		ctr = ctr.From("golang:1.19-alpine")
-		// highlight-end
 
 		// mount in our source code
 		ctr = ctr.WithDirectory("/src", gitRepo)
@@ -58,12 +54,10 @@ func main() {
 		// in the final image
 		ctr = ctr.WithEnvVariable("CGO_ENABLED", "0")
 
-		// highlight-start
-		// configure the go compiler to use cross-compilation targeting the
+				// configure the go compiler to use cross-compilation targeting the
 		// desired platform
 		ctr = ctr.WithEnvVariable("GOOS", "linux")
 		ctr = ctr.WithEnvVariable("GOARCH", architectureOf(platform))
-		// highlight-end
 
 		// build the binary and put the result at the mounted output
 		// directory
