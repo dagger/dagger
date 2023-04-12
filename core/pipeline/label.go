@@ -46,7 +46,7 @@ func LoadRootLabels(workdir string) {
 func loadRootLabels(workdir string) []Label {
 	labels := []Label{}
 
-	if gitLabels, err := loadGitLabels(workdir); err == nil {
+	if gitLabels, err := LoadGitLabels(workdir); err == nil {
 		labels = append(labels, gitLabels...)
 	} else {
 		logrus.Warnf("failed to collect git labels: %s", err)
@@ -64,7 +64,7 @@ func loadRootLabels(workdir string) []Label {
 // ServiceHostnameLabel is annotated on all services started by Dagger.
 const ServiceHostnameLabel = "dagger.io/service.hostname"
 
-func loadGitLabels(workdir string) ([]Label, error) {
+func LoadGitLabels(workdir string) ([]Label, error) {
 	repo, err := git.PlainOpenWithOptions(workdir, &git.PlainOpenOptions{
 		DetectDotGit: true,
 	})
@@ -103,14 +103,10 @@ func loadGitLabels(workdir string) ([]Label, error) {
 
 	title, _, _ := strings.Cut(commit.Message, "\n")
 
-	return []Label{
+	labels := []Label{
 		{
 			Name:  "dagger.io/git.remote",
 			Value: endpoint,
-		},
-		{
-			Name:  "dagger.io/git.branch",
-			Value: head.Name().Short(),
 		},
 		{
 			Name:  "dagger.io/git.ref",
@@ -136,7 +132,23 @@ func loadGitLabels(workdir string) ([]Label, error) {
 			Name:  "dagger.io/git.title",
 			Value: title, // first line from commit message
 		},
-	}, nil
+	}
+
+	if head.Name().IsTag() {
+		labels = append(labels, Label{
+			Name:  "dagger.io/git.tag",
+			Value: head.Name().Short(),
+		})
+	}
+
+	if head.Name().IsBranch() {
+		labels = append(labels, Label{
+			Name:  "dagger.io/git.branch",
+			Value: head.Name().Short(),
+		})
+	}
+
+	return labels, nil
 }
 
 func LoadGitHubLabels() ([]Label, error) {
@@ -219,6 +231,16 @@ func LoadGitHubLabels() ([]Label, error) {
 			})
 
 			labels = append(labels, Label{
+				Name:  "github.com/pr.branch",
+				Value: pr.GetHead().GetRef(),
+			})
+
+			labels = append(labels, Label{
+				Name:  "github.com/pr.label",
+				Value: pr.GetHead().GetLabel(),
+			})
+
+			labels = append(labels, Label{
 				Name:  "github.com/pr.head",
 				Value: pr.GetHead().GetSHA(),
 			})
@@ -290,7 +312,7 @@ func isCI() bool {
 }
 
 func (labels *Labels) AppendAnonymousGitLabels(workdir string) *Labels {
-	gitLabels, err := loadGitLabels(workdir)
+	gitLabels, err := LoadGitLabels(workdir)
 	if err != nil {
 		return labels
 	}
