@@ -209,5 +209,6 @@ func TestBigWhitespaceSecretScrubbed(t *testing.T) {
 	require.Equal(t, scrubbedText, stdout)
 }
 
+//nolint:typecheck
 //go:embed testdata/lorem.txt.gz
 var gzippedLoremBytes []byte
