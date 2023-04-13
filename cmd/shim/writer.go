@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"io"
-	"log"
 	"unicode/utf8"
 )
 
@@ -59,19 +58,16 @@ func (w *LineBreakWriter) writeDangling(b []byte) []byte {
 
 	idx := bytes.LastIndex(data, []byte("\n"))
 
-	log.Println("dangling:", idx, len(data), data)
 	if idx == -1 {
 		w.buffer = data
 		return nil
 	}
 
 	if idx == len(data)-1 {
-		log.Printf("dangling flush")
 		w.buffer = nil
 		return data
 	}
 
-	log.Printf("dangling2: %d, %s, %s", idx, data[:idx], data[idx:])
 	w.buffer = data[idx:]
 
 	return data[:idx]

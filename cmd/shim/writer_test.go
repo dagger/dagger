@@ -65,13 +65,11 @@ func TestLineBreakWriter(t *testing.T) {
 				next = len(c.s)
 			}
 
-			t.Logf("next: %d, buf: %q", next, w.buffer)
 			s := c.s[prev:next]
 
 			n, err := w.Write([]byte(s))
 			require.NoError(t, err)
 			require.Equal(t, len(s), n)
-			t.Log("s:", s)
 
 			if next == len(c.s) {
 				break
