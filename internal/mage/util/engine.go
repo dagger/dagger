@@ -2,7 +2,9 @@ package util
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"runtime"
 	"sort"
 	"text/template"
 
@@ -125,6 +127,16 @@ func getConfig(opts ...DevEngineOpts) (string, error) {
 	return config, nil
 }
 
+func CIDevEngineContainerAndEndpoint(ctx context.Context, c *dagger.Client, opts ...DevEngineOpts) (*dagger.Container, string, error) {
+	devEngine := CIDevEngineContainer(c, opts...)
+
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	if err != nil {
+		return nil, "", err
+	}
+	return devEngine, endpoint, nil
+}
+
 var DefaultDevEngineOpts = DevEngineOpts{
 	EntrypointArgs: map[string]string{
 		"network-name": "dagger-dev",
@@ -134,6 +146,26 @@ var DefaultDevEngineOpts = DevEngineOpts{
 		"grpc":                 `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
 		`registry."docker.io"`: `mirrors = ["mirror.gcr.io"]`,
 	},
+}
+
+func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Container {
+	engineOpts := []DevEngineOpts{}
+
+	engineOpts = append(engineOpts, DefaultDevEngineOpts)
+	engineOpts = append(engineOpts, opts...)
+
+	devEngine := devEngineContainer(c, runtime.GOARCH, engineOpts...)
+	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
+		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.
+		// It's important it's a cache mount though because otherwise overlay won't be available
+		// WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state")).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities:      true,
+			ExperimentalPrivilegedNesting: true,
+		})
+
+	return devEngine
 }
 
 // DevEngineContainer returns a container that runs a dev engine
