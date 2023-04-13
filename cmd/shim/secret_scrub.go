@@ -5,6 +5,7 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -42,19 +43,13 @@ func scrubSecretBytes(secretValues []string, b []byte) []byte {
 	out := make([]string, 0, len(ss))
 
 	for _, line := range ss {
-		for _, secretValue := range secretValues {
-			var secretLines []string
-
-			lines := strings.Split(secretValue, "\n")
-			secretLines = append(secretLines, lines...)
-			for _, secretLine := range secretLines {
-				secretLine := strings.TrimSpace(secretLine)
-				if secretLine == "" {
-					continue
-				}
-				// FIXME: I think we can do better
-				line = strings.ReplaceAll(line, secretLine, "***")
+		for _, secretLine := range secretValues {
+			secretLine := strings.TrimSpace(secretLine)
+			if secretLine == "" {
+				continue
 			}
+			// FIXME: I think we can do better
+			line = strings.ReplaceAll(line, secretLine, "***")
 		}
 		out = append(out, line)
 	}
@@ -76,9 +71,37 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	}
 	secrets = append(secrets, fileSecrets...)
 
+	var secretLines []string
+	savedSecrets := map[string]struct{}{}
+	for _, secretValue := range secrets {
+		lines := strings.Split(secretValue, "\n")
+		for _, line := range lines {
+			if line == "" {
+				continue
+			}
+
+			// avoid duplicates lines
+			_, ok := savedSecrets[line]
+			if ok {
+				continue
+			}
+			savedSecrets[line] = struct{}{}
+
+			secretLines = append(secretLines, line)
+		}
+	}
+
+	// Make the secret lines ordered big first
+	// it avoids scrubbing substring of a bigger secret and then
+	// not scrubbing the rest of the bigger secret as it does not
+	// match anymore.
+	sort.SliceStable(secretLines, func(i, j int) bool {
+		return len(secretLines[i]) > len(secretLines[j])
+	})
+
 	return &SecretScrubWriter{
 		w:            w,
-		secretValues: secrets,
+		secretValues: secretLines,
 	}, nil
 }
 

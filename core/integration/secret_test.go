@@ -1,10 +1,16 @@
 package core
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	_ "embed"
+	"io"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -163,15 +169,45 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	secretValue := "very\nsecret\ntext"
+	secretValue := "very\nsecret\ntext\n"
 
 	s := c.SetSecret("aws_key", secretValue)
 
 	stdout, err := c.Container().From("alpine:3.16.2").
 		WithSecretVariable("AWS_KEY", s).
-		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\""}).
+		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
 		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "***\n***\n***", stdout)
+	require.Equal(t, "***\n***\n***\n", stdout)
 }
+
+func TestBigWhitespaceSecretScrubbed(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Log("cert size:", len(gzippedLoremBytes))
+
+	loremReader, err := gzip.NewReader(bytes.NewReader(gzippedLoremBytes))
+	require.NoError(t, err)
+
+	secretValue, err := io.ReadAll(loremReader)
+	require.NoError(t, err)
+
+	s := c.SetSecret("aws_key", string(secretValue))
+
+	sec := c.Container().From("alpine:3.16.2").
+		WithSecretVariable("AWS_KEY", s).
+		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""})
+
+	stdout, err := sec.Stdout(ctx)
+	require.NoError(t, err)
+	paragraphCount := strings.Count(string(secretValue), "\n\n")
+	t.Log("pcount:", paragraphCount)
+	scrubbedText := strings.Repeat("*** \n\n", paragraphCount)
+	scrubbedText += "*** \n"
+	require.Equal(t, scrubbedText, stdout)
+}
+
+//go:embed testdata/lorem.txt.gz
+var gzippedLoremBytes []byte

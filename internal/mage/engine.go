@@ -89,6 +89,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),
 	})
+	panic("yop")
 	if err != nil {
 		return err
 	}
