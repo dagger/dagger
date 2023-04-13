@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
@@ -131,19 +133,29 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
 		},
-		CacheExports: []bkclient.CacheOptionsEntry{{
-			Type: "dagger",
-			Attrs: map[string]string{
-				"mode": "max",
-			},
-		}},
-		CacheImports: []bkclient.CacheOptionsEntry{{
-			Type: "dagger",
-		}},
 		AllowedEntitlements: allowedEntitlements,
 		OCIStores: map[string]content.Store{
 			core.OCIStoreName: ociStore,
 		},
+	}
+
+	// Check if any of the upstream cache importers/exporters are enabled.
+	// Note that this is not the cache service support in engine/cache/, that
+	// is a different feature which is configured in the engine daemon.
+	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
+	if err != nil {
+		return err
+	}
+	cacheConfigEnabled := cacheConfigType != ""
+	if cacheConfigEnabled {
+		solveOpts.CacheExports = []bkclient.CacheOptionsEntry{{
+			Type:  cacheConfigType,
+			Attrs: cacheConfigAttrs,
+		}}
+		solveOpts.CacheImports = []bkclient.CacheOptionsEntry{{
+			Type:  cacheConfigType,
+			Attrs: cacheConfigAttrs,
+		}}
 	}
 
 	if !startOpts.DisableHostRW {
@@ -165,7 +177,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 			// Thankfully we can just yeet the gateway into the store.
 			secretStore.SetGateway(gw)
 
-			gwClient := core.NewGatewayClient(gw)
+			gwClient := core.NewGatewayClient(gw, cacheConfigType, cacheConfigAttrs)
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:         router,
 				Workdir:        startOpts.Workdir,
@@ -206,9 +218,11 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				return nil, err
 			}
 
-			// Return a result that contains every reference that was solved in this session.
-			// If cache export is enabled server-side, all these references will be exported.
-			return gwClient.CombinedResult(ctx)
+			if cacheConfigEnabled {
+				// Return a result that contains every reference that was solved in this session.
+				return gwClient.CombinedResult(ctx)
+			}
+			return nil, nil
 		}, solveCh)
 		return err
 	})
@@ -529,4 +543,31 @@ func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 			return fsutil.MapResultKeep
 		},
 	}, true
+}
+
+func cacheConfigFromEnv() (string, map[string]string, error) {
+	envVal, ok := os.LookupEnv(engine.CacheConfigEnvName)
+	if !ok {
+		return "", nil, nil
+	}
+
+	// env is in form k1=v1,k2=v2,...
+	kvs := strings.Split(envVal, ",")
+	if len(kvs) == 0 {
+		return "", nil, nil
+	}
+	attrs := make(map[string]string)
+	for _, kv := range kvs {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			return "", nil, errors.Errorf("invalid form for cache config %q", kv)
+		}
+		attrs[parts[0]] = parts[1]
+	}
+	typeVal, ok := attrs["type"]
+	if !ok {
+		return "", nil, errors.Errorf("missing type in cache config: %q", envVal)
+	}
+	delete(attrs, "type")
+	return typeVal, attrs, nil
 }

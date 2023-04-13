@@ -1244,7 +1244,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 					id
 				}
 			}
-		}`, &dirRes, nil)
+		}`, &dirRes, nil, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
 
 	id := dirRes.Directory.WithNewFile.ID
@@ -1304,7 +1304,7 @@ func TestContainerWithMountedDirectoryPropagation(t *testing.T) {
 			}
 		}`, &execRes, &testutil.QueryOptions{Variables: map[string]any{
 			"id": id,
-		}})
+		}}, dagger.WithLogOutput(os.Stdout))
 	require.NoError(t, err)
 
 	require.Equal(t,
