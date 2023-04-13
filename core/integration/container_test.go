@@ -327,6 +327,31 @@ func TestContainerWithRootFS(t *testing.T) {
 	require.Equal(t, "3.16.2\n", releaseStr)
 }
 
+//go:embed testdata/hello.go
+var helloSrc string
+
+func TestContainerWithRootFSSubdir(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
+
+	ctr := c.Container().
+		From("golang:1.20.0-alpine").
+		WithMountedFile("/src/main.go", hello).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"go", "build", "-o", "/out/hello", "/src/main.go"})
+
+	out, err := c.Container().
+		WithRootfs(ctr.Directory("/out")).
+		WithExec([]string{"/hello"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!\n", out)
+}
+
 func TestContainerExecExitCode(t *testing.T) {
 	t.Parallel()
 

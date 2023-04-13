@@ -66,6 +66,23 @@ func (payload *directoryIDPayload) State() (llb.State, error) {
 	return defToState(payload.LLB)
 }
 
+func (payload *directoryIDPayload) StateWithSourcePath() (llb.State, error) {
+	dirSt, err := payload.State()
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	if payload.Dir == "" {
+		return dirSt, nil
+	}
+
+	return llb.Scratch().File(
+		llb.Copy(dirSt, payload.Dir, ".", &llb.CopyInfo{
+			CopyDirContentsOnly: true,
+		}),
+	), nil
+}
+
 func (payload *directoryIDPayload) SetState(ctx context.Context, st llb.State) error {
 	def, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 	if err != nil {

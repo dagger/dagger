@@ -507,7 +507,17 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 		return nil, err
 	}
 
-	payload.FS = dirPayload.LLB
+	dirSt, err := dirPayload.StateWithSourcePath()
+	if err != nil {
+		return nil, err
+	}
+
+	def, err := dirSt.Marshal(ctx, llb.Platform(dirPayload.Platform))
+	if err != nil {
+		return nil, err
+	}
+
+	payload.FS = def.ToPB()
 
 	payload.Services.Merge(dirPayload.Services)
 
