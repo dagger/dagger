@@ -1171,7 +1171,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			srcSt = llb.Scratch().File(
 				llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
 					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
-				payload.Pipeline.LLBOpt(),
+				pipeline.CustomName{
+					Name:     fmt.Sprintf("chown to %d:%d", uid, gid),
+					Pipeline: payload.Pipeline,
+					Internal: true,
+				}.LLBOpt(),
 			)
 
 			// "re-write" the source path to point to the chowned location
