@@ -71,6 +71,15 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	}
 	secrets = append(secrets, fileSecrets...)
 
+	secretLines := splitSecretsByLine(secrets)
+
+	return &SecretScrubWriter{
+		w:            w,
+		secretValues: secretLines,
+	}, nil
+}
+
+func splitSecretsByLine(secrets []string) []string {
 	var secretLines []string
 	savedSecrets := map[string]struct{}{}
 	for _, secretValue := range secrets {
@@ -99,10 +108,7 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 		return len(secretLines[i]) > len(secretLines[j])
 	})
 
-	return &SecretScrubWriter{
-		w:            w,
-		secretValues: secretLines,
-	}, nil
+	return secretLines
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.
