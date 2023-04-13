@@ -2631,6 +2631,7 @@ func (r *Client) Secret(id SecretID) *Secret {
 }
 
 // Sets a secret given a user defined name to its plaintext and returns the secret.
+// The plaintext value is limited to a size of 128000 bytes.
 func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	q := r.q.Select("setSecret")
 	q = q.Arg("name", name)

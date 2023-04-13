@@ -2902,6 +2902,7 @@ class Client(Root):
     def set_secret(self, name: str, plaintext: str) -> "Secret":
         """Sets a secret given a user defined name to its plaintext and returns
         the secret.
+        The plaintext value is limited to a size of 128000 bytes.
 
         Parameters
         ----------
