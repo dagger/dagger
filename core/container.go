@@ -84,6 +84,13 @@ type containerIDPayload struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
+	// UID/GID of the current user specified in Config.User.
+	//
+	// These are fetched on config change and cached here so that they can be
+	// applied easily to newly applied mounts.
+	UID int `json:"uid,omitempty"`
+	GID int `json:"gid,omitempty"`
+
 	// Pipeline
 	Pipeline pipeline.Path `json:"pipeline"`
 
@@ -184,6 +191,37 @@ func (payload *containerIDPayload) MetaState() (*llb.State, error) {
 	}
 
 	return &metaSt, nil
+}
+
+// InheritOwner defaults an owner to the container's current user so that
+// chained sequences of mounts and withUser will have the mounts retain the
+// previous user instead of assuming the new one.
+func (payload *containerIDPayload) InheritOwner(given string) string {
+	if given == "" {
+		return payload.Config.User
+	}
+	return given
+}
+
+// SyncUIDGID refreshes the UID/GID cache value from the image config's user.
+func (payload *containerIDPayload) SyncUIDGID(ctx context.Context, gw bkgw.Client) error {
+	fsSt, err := payload.FSState()
+	if err != nil {
+		return err
+	}
+
+	payload.UID, payload.GID, err = resolveUIDGID(
+		ctx,
+		fsSt,
+		gw,
+		payload.Platform,
+		payload.Config.User,
+	)
+	if err != nil {
+		return fmt.Errorf("resolve uid/gid: %w", err)
+	}
+
+	return nil
 }
 
 // ContainerMount is a mount point configured in a container.
@@ -318,22 +356,16 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
-		// merge config.Env with imgSpec.Config.Env
-		newEnv := config.Env
-		if imgSpec.Config.Env != nil {
-			newEnv = append(newEnv, imgSpec.Config.Env...)
-		}
-		imgSpec.Config.Env = newEnv
-		return imgSpec.Config
-	})
-
+	payload, err = ctr.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	payload, err = ctr.ID.decode()
-	if err != nil {
+	// merge config.Env with imgSpec.Config.Env
+	imgSpec.Config.Env = append(payload.Config.Env, imgSpec.Config.Env...)
+	payload.Config = imgSpec.Config
+
+	if err := payload.SyncUIDGID(ctx, gw); err != nil {
 		return nil, err
 	}
 
@@ -440,6 +472,10 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 			}
 
 			payload.Config = imgSpec.Config
+		}
+
+		if err := payload.SyncUIDGID(ctx, gw); err != nil {
+			return nil, err
 		}
 
 		return container.containerFromPayload(payload)
@@ -560,7 +596,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		Target:           target,
 		CacheID:          cachePayload.Sum(),
 		CacheSharingMode: cacheSharingMode,
-		Owner:            owner,
+		Owner:            payload.InheritOwner(owner),
 	}
 
 	if source != nil {
@@ -611,7 +647,7 @@ func (container *Container) WithMountedSecret(ctx context.Context, target string
 	payload.Secrets = append(payload.Secrets, ContainerSecret{
 		Secret:    source.ID,
 		MountPath: target,
-		Owner:     owner,
+		Owner:     payload.InheritOwner(owner),
 	})
 
 	// set image ref to empty string
@@ -673,7 +709,7 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	newSocket := ContainerSocket{
 		Socket:   source.ID,
 		UnixPath: target,
-		Owner:    owner,
+		Owner:    payload.InheritOwner(owner),
 	}
 
 	var replaced bool
@@ -854,7 +890,7 @@ func (container *Container) withMounted(
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
-		Owner:      owner,
+		Owner:      payload.InheritOwner(owner),
 	})
 
 	payload.Services.Merge(svcs)
@@ -920,6 +956,21 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	}
 
 	payload.Config = updateFn(payload.Config)
+
+	return container.containerFromPayload(payload)
+}
+
+func (container *Container) WithUser(ctx context.Context, gw bkgw.Client, user string) (*Container, error) {
+	payload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Config.User = user
+
+	if err := payload.SyncUIDGID(ctx, gw); err != nil {
+		return nil, err
+	}
 
 	return container.containerFromPayload(payload)
 }
@@ -1032,11 +1083,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddEnv(name, val))
 	}
 
-	fsSt, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
-	}
-
 	secretsToScrub := SecretToScrubInfo{}
 	for i, secret := range payload.Secrets {
 		secretOpts := []llb.SecretOption{llb.SecretID(secret.Secret.String())}
@@ -1050,13 +1096,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
-			if secret.Owner != "" {
-				uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, secret.Owner)
-				if err != nil {
-					return nil, err
-				}
-				secretOpts = append(secretOpts, llb.SecretFileOpt(uid, gid, 0o400)) // 0400 is default
+			uid, gid, err := container.uidgid(ctx, gw, secret.Owner)
+			if err != nil {
+				return nil, err
 			}
+			secretOpts = append(secretOpts, llb.SecretFileOpt(uid, gid, 0o400)) // 0400 is default
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
@@ -1086,20 +1130,18 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			llb.SSHSocketTarget(socket.UnixPath),
 		}
 
-		if socket.Owner != "" {
-			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, socket.Owner)
-			if err != nil {
-				return nil, err
-			}
-
-			socketOpts = append(socketOpts,
-				llb.SSHSocketOpt(socket.UnixPath, uid, gid, 0o600)) // 0600 is default
+		uid, gid, err := container.uidgid(ctx, gw, socket.Owner)
+		if err != nil {
+			return nil, err
 		}
+
+		socketOpts = append(socketOpts,
+			llb.SSHSocketOpt(socket.UnixPath, uid, gid, 0o600)) // 0600 is default
 
 		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
 
-	for _, mnt := range mounts {
+	for i, mnt := range mounts {
 		srcSt, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
@@ -1107,23 +1149,23 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 		mountOpts := []llb.MountOption{}
 
-		if mnt.Owner != "" {
-			uid, gid, err := resolveUIDGID(ctx, fsSt, gw, platform, mnt.Owner)
-			if err != nil {
-				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
-			}
-
-			// NB(vito): need to create intermediate directory with correct ownership
-			// to handle the directory case, otherwise the mount will be owned by
-			// root
-			srcSt = llb.Scratch().File(
-				llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
-					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
-				payload.Pipeline.LLBOpt(),
-			)
-
-			mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
+		uid, gid, err := container.uidgid(ctx, gw, mnt.Owner)
+		if err != nil {
+			return nil, err
 		}
+
+		// NB(vito): need to create intermediate directory with correct ownership
+		// to handle the directory case, otherwise the mount will be owned by
+		// root
+		srcSt = llb.Scratch().File(
+			llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
+				Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
+			payload.Pipeline.LLBOpt(),
+		)
+
+		// "re-write" the source path to point to the chowned location
+		mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
+		mounts[i] = mnt
 
 		if mnt.SourcePath != "" {
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
@@ -1154,6 +1196,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	if opts.InsecureRootCapabilities {
 		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
+	}
+
+	fsSt, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
 	// first, build without a hostname
@@ -1443,6 +1490,7 @@ const OCIStoreName = "dagger-oci"
 
 func (container *Container) Import(
 	ctx context.Context,
+	gw bkgw.Client,
 	host *Host,
 	source io.Reader,
 	tag string,
@@ -1464,6 +1512,23 @@ func (container *Container) Import(
 	if err != nil {
 		return nil, fmt.Errorf("image archive resolve index: %w", err)
 	}
+
+	// NB: the repository portion of this ref doesn't actually matter, but it's
+	// pleasant to see something recognizable.
+	dummyRepo := "dagger/import"
+
+	st := llb.OCILayout(
+		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		llb.OCIStore("", OCIStoreName),
+		llb.Platform(payload.Platform),
+	)
+
+	execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return nil, fmt.Errorf("marshal root: %w", err)
+	}
+
+	payload.FS = execDef.ToPB()
 
 	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
 	if err != nil {
@@ -1489,22 +1554,10 @@ func (container *Container) Import(
 
 	payload.Config = imgSpec.Config
 
-	// NB: the repository portion of this ref doesn't actually matter, but it's
-	// pleasant to see something recognizable.
-	dummyRepo := "dagger/import"
-
-	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-		llb.OCIStore("", OCIStoreName),
-		llb.Platform(payload.Platform),
-	)
-
-	execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	err = payload.SyncUIDGID(ctx, gw)
 	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
+		return nil, fmt.Errorf("update uid/gid: %w", err)
 	}
-
-	payload.FS = execDef.ToPB()
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -1790,14 +1843,14 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 }
 
 func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner string) (int, int, error) {
-	if owner == "" {
-		// default to root
-		return 0, 0, nil
-	}
-
 	containerPayload, err := container.ID.decode()
 	if err != nil {
 		return -1, -1, err
+	}
+
+	if owner == "" {
+		// inherit container's current user
+		return containerPayload.UID, containerPayload.GID, nil
 	}
 
 	fsSt, err := containerPayload.FSState()

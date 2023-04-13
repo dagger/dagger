@@ -229,10 +229,7 @@ type containerWithUserArgs struct {
 }
 
 func (s *containerSchema) withUser(ctx *router.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
-	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.User = args.Name
-		return cfg
-	})
+	return parent.WithUser(ctx, s.gw, args.Name)
 }
 
 func (s *containerSchema) user(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
@@ -612,7 +609,7 @@ func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, a
 
 	defer src.Close()
 
-	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
+	return parent.Import(ctx, s.gw, s.host, src, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {
