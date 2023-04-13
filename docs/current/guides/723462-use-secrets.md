@@ -298,6 +298,10 @@ secret env data: *** || secret file data:
 ***
 ```
 
+::danger
+Host environment variables containing secrets should always be declared using `WithSecretVariable()` and never using `WithEnvVariable()`. The former guarantees that the secret will not be visible in the container image history or layers.
+:::
+
 ## Conclusion
 
 This tutorial walked you through the basics of using secrets in Dagger. It explained the various API methods available to work with secrets and provided examples of using secrets as environment variables, file mounts and native objects.
