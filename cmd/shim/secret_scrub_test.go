@@ -150,6 +150,8 @@ func TestScrubSecretWrite(t *testing.T) {
 		sshSecretKey,
 		sshPublicKey,
 	}
+	secrets = splitSecretsByLine(secrets)
+
 	s := "Not secret\nsecret1\nsecret with space\n" + sshSecretKey + "\n" + sshPublicKey
 	got := scrubSecretBytes(secrets, []byte(s))
 	require.Equal(t, "Not secret\n***\n***\n***\n***\n***\n***\n***\n***\n***\n\n***\n", string(got))
