@@ -238,7 +238,14 @@ func shim() int {
 	if err != nil {
 		panic(err)
 	}
-	cmd.Stdout = scrubOutWriter
+
+	utfLineScrubOutWriter := NewUTF8DanglingWriter(
+		NewLineBreakWriter(
+			scrubOutWriter,
+		),
+	)
+
+	cmd.Stdout = utfLineScrubOutWriter
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
@@ -251,7 +258,13 @@ func shim() int {
 	if err != nil {
 		panic(err)
 	}
-	cmd.Stderr = scrubErrWriter
+
+	utfLineScrubErrWriter := NewUTF8DanglingWriter(
+		NewLineBreakWriter(
+			scrubErrWriter,
+		),
+	)
+	cmd.Stderr = utfLineScrubErrWriter
 
 	exitCode := 0
 	if err := cmd.Run(); err != nil {
