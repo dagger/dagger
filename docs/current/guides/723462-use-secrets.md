@@ -299,7 +299,7 @@ secret env data: *** || secret file data:
 ```
 
 ::danger
-Host environment variables containing secrets should always be declared using `WithSecretVariable()` and never using `WithEnvVariable()`. The former guarantees that the secret will not be visible in the container image history or layers.
+Any secret that is to be read from the container environment should always be loaded using `withSecretVariable()`. If `withEnvVariable()` is used instead, the value of the environment variable may leak via the build history of the container. Using `withSecretVariable()` guarantees that the secret will not leak in the container build history or image layers.
 :::
 
 ## Conclusion
