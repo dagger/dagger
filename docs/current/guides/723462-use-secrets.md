@@ -298,6 +298,10 @@ secret env data: *** || secret file data:
 ***
 ```
 
+::danger
+Any secret that is to be read from the container environment should always be loaded using `withSecretVariable()`. If `withEnvVariable()` is used instead, the value of the environment variable may leak via the build history of the container. Using `withSecretVariable()` guarantees that the secret will not leak in the container build history or image layers.
+:::
+
 ## Conclusion
 
 This tutorial walked you through the basics of using secrets in Dagger. It explained the various API methods available to work with secrets and provided examples of using secrets as environment variables, file mounts and native objects.
