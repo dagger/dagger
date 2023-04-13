@@ -181,6 +181,10 @@ Here's an example of an HTTP service automatically starting in tandem with a cli
 </TabItem>
 </Tabs>
 
+:::tip
+Services in service containers should be configured to listen on the IP address 0.0.0.0 instead of 127.0.0.1. This is because 127.0.0.1 is only reachable within the container itself, so other services (including the Dagger health check) won't be able to connect to it. Using 0.0.0.0 allows connections to and from any IP address, including the container's private IP address in the Dagger network.
+:::
+
 When a service is bound to a container, it also conveys to any outputs of that container, such as files or directories. The service will be started whenever the output is used, so you can also do things like this:
 
 <Tabs groupId="language" className="embeds">
