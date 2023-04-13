@@ -1154,18 +1154,20 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			return nil, err
 		}
 
-		// NB(vito): need to create intermediate directory with correct ownership
-		// to handle the directory case, otherwise the mount will be owned by
-		// root
-		srcSt = llb.Scratch().File(
-			llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
-				Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
-			payload.Pipeline.LLBOpt(),
-		)
+		if !mnt.Tmpfs {
+			// NB(vito): need to create intermediate directory with correct ownership
+			// to handle the directory case, otherwise the mount will be owned by
+			// root
+			srcSt = llb.Scratch().File(
+				llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
+					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
+				payload.Pipeline.LLBOpt(),
+			)
 
-		// "re-write" the source path to point to the chowned location
-		mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
-		mounts[i] = mnt
+			// "re-write" the source path to point to the chowned location
+			mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
+			mounts[i] = mnt
+		}
 
 		if mnt.SourcePath != "" {
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
