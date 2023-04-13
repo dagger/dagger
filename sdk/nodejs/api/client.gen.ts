@@ -3162,6 +3162,7 @@ export default class Client extends BaseClient {
 
   /**
    * Sets a secret given a user defined name to its plaintext and returns the secret.
+   * The plaintext value is limited to a size of 128000 bytes.
    * @param name The user defined name for this secret
    * @param plaintext The plaintext of the secret
    */
