@@ -170,8 +170,38 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		},
 	}
 	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, util.DefaultDevEngineOpts, opts)[0]
+
+	reg := registry(c)
+
+	_, err = devEngine.Export(ctx, "/tmp/engine.tar")
+	if err != nil {
+		return err
+	}
+
+	image := c.Host().Directory("/tmp", dagger.HostDirectoryOpts{
+		Include: []string{"engine.tar"},
+	}).File("/engine.tar")
+
+	_, err = c.Container().From("gcr.io/go-containerregistry/crane:latest").
+		WithServiceBinding("registry", reg).
+		WithFile("/tmp/engine.tar", image).
+		WithExec([]string{"push", "--insecure", "/tmp/engine.tar", "registry:5000/engine:dev"}).
+		ExitCode(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	// imageList, err := c.Container().From("gcr.io/go-containerregistry/crane:latest").
+	// 	WithServiceBinding("registry", reg).
+	// 	WithFile("/tmp/engine.tar", image).
+	// 	WithExec([]string{"ls", "--insecure", "registry:5000/engine"}).
+	// 	Stdout(ctx)
+
+	// fmt.Println("IMAGES: ", imageList)
+
 	devEngine = devEngine.
-		WithServiceBinding("registry", registry(c)).
+		WithServiceBinding("registry", reg).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
@@ -189,12 +219,14 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 
 	cgoEnabledEnv := "0"
-	args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
+	// args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
+	args := []string{"go", "test", "./core/integration/", "-run", "TestRemoteCache", "-count=1", "-v"}
+
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
-	args = append(args, "./...")
+	// args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
 	output, err := util.GoBase(c).

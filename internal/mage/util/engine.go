@@ -209,7 +209,6 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 			Permissions: 755,
 		}).
 		WithEntrypoint([]string{"dagger-entrypoint.sh"})
-	return nil
 }
 
 func devEngineContainers(c *dagger.Client, arches []string, opts ...DevEngineOpts) []*dagger.Container {
