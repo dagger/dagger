@@ -219,14 +219,13 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 
 	cgoEnabledEnv := "0"
-	// args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
-	args := []string{"go", "test", "./core/integration/", "-run", "TestRemoteCache", "-count=1", "-v"}
+	args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
 
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
-	// args = append(args, "./...")
+	args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
 	tests := util.GoBase(c).
