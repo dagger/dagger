@@ -56,14 +56,15 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 }
 
 func defaultHTTPClient(p *ConnectParams) *http.Client {
+	dialTransport := &http.Transport{
+		DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+			return net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port))
+		},
+	}
 	return &http.Client{
 		Transport: RoundTripperFunc(func(r *http.Request) (*http.Response, error) {
 			r.SetBasicAuth(p.SessionToken, "")
-			return (&http.Transport{
-				DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
-					return net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", p.Port))
-				},
-			}).RoundTrip(r)
+			return dialTransport.RoundTrip(r)
 		}),
 	}
 }
