@@ -229,12 +229,19 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	// args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
-	output, err := util.GoBase(c).
+	tests := util.GoBase(c).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", os.Getenv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")).
+		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv)
+
+	// TODO use Container.With() to set this. It'll be much nicer.
+	cacheEnv, set := os.LookupEnv("_EXPERIMENTAL_DAGGER_CACHE_CONFIG")
+	if set {
+		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv)
+	}
+
+	output, err := tests.
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).

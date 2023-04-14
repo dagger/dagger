@@ -16,23 +16,20 @@ import (
 func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	// opts := internal.DevEngineOpts{
-	// 	EntrypointArgs: map[string]string{
-	// 		"network-name": "dagger-dev",
-	// 		"network-cidr": networkCIDR,
-	// 	},
-	// 	ConfigEntries: map[string]string{
-	// 		"grpc":                     `address=["unix:///var/run/buildkit/buildkitd.sock", "tcp://0.0.0.0:1234"]`,
-	// 		`registry."docker.io"`:     `mirrors = ["mirror.gcr.io"]`,
-	// 		`registry."registry:5000"`: "http = true",
-	// 	},
-	// }
 
 	devEngine = c.Container().From("registry:5000/engine:dev")
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
+	if err != nil {
+		return nil, "", err
+	}
 	entrypoint = strings.ReplaceAll(entrypoint, "10.88.0.0/16", networkCIDR)
-	entrypoint = strings.ReplaceAll(entrypoint, "dagger-dev", fmt.Sprintf("dagger-dev-remote-cache-%d", index))
-	// devEngine = internal.DevEngineContainer(c.Pipeline("dagger-engine-"+id), []string{runtime.GOARCH}, opts)[0]
+	entrypoint = strings.ReplaceAll(entrypoint, "dagger-dev", fmt.Sprintf("remote-cache-%d", index))
+
+	devEngine = devEngine.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
+		Contents: entrypoint,
+	})
+
+	fmt.Println("CACHE ENV:", cacheEnv)
 	devEngine = devEngine.
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
@@ -47,35 +44,6 @@ func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container
 	endpoint, err = devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
 
 	return devEngine, endpoint, err
-}
-
-func TestRemoteCacheJoel(t *testing.T) {
-	c, ctx := connect(t)
-	defer c.Close()
-
-	devEngine := c.Container().From("registry:5000/engine:dev")
-
-	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
-	require.NoError(t, err)
-	fmt.Println("ENTRYPOINT:", entrypoint)
-	entrypoint = strings.ReplaceAll(entrypoint, "10.88.0.0/16", "10.100.0.0/16")
-	entrypoint = strings.ReplaceAll(entrypoint, "dagger-dev", "dagger-dev-remote-cache")
-	devEngine = devEngine.WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
-		Contents: entrypoint,
-	})
-	stdout, err := c.Container().From("alpine:3.17").
-		WithDirectory("/dev-engine", devEngine.FS()).
-		WithExec([]string{"cat", "/dev-engine/etc/dagger/engine.toml"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	fmt.Println(stdout)
-
-	stdout, err = c.Container().From("alpine:3.17").
-		WithDirectory("/dev-engine", devEngine.FS()).
-		WithExec([]string{"cat", "/dev-engine/usr/local/bin/dagger-entrypoint.sh"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	fmt.Println(stdout)
 }
 
 func TestRemoteCacheRegistry(t *testing.T) {
