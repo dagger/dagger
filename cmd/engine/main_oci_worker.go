@@ -300,6 +300,7 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 			engineName = hostname
 		}
 	}
+	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	cfg.Labels[engine.EngineNameLabel] = engineName
 
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
