@@ -1,5 +1,5 @@
 .docker:
-  image: golang:1.19-alpine
+  image: golang:1.20-alpine
   services:
     - docker:${DOCKER_VERSION}-dind
   variables:

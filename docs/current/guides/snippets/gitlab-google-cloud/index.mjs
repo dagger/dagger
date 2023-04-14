@@ -15,7 +15,7 @@ connect(async (daggerClient) => {
   // build application
   const builder = daggerClient
     .container({ platform: "linux/amd64" })
-    .from("golang:1.19")
+    .from("golang:1.20")
     .withDirectory("/src", source)
     .withWorkdir("/src")
     .withEnvVariable("CGO_ENABLED", "0")

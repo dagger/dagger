@@ -35,7 +35,7 @@ func main() {
 	for _, platform := range platforms {
 		// pull the golang image for this platform
 		ctr := client.Container(dagger.ContainerOpts{Platform: platform})
-		ctr = ctr.From("golang:1.19-alpine")
+		ctr = ctr.From("golang:1.20-alpine")
 
 		// mount in source code
 		ctr = ctr.WithDirectory("/src", gitRepo)

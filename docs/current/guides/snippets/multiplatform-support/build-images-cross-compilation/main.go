@@ -41,7 +41,7 @@ func main() {
 		// accomplished by just not specifying a platform; the default
 		// is that of the host.
 		ctr := client.Container()
-		ctr = ctr.From("golang:1.19-alpine")
+		ctr = ctr.From("golang:1.20-alpine")
 
 		// mount in our source code
 		ctr = ctr.WithDirectory("/src", gitRepo)
