@@ -184,7 +184,7 @@ The following code listing demonstrates how to access a private Git repository u
 ```
 
 </TabItem>
-<TabItem value="Node.js (TypeScript)">
+<TabItem value="Node.js">
 
 ```typescript file=./guides/snippets/private-repositories/clone.ts
 ```
