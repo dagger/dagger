@@ -72,7 +72,7 @@ func (payload *directoryIDPayload) StateWithSourcePath() (llb.State, error) {
 		return llb.State{}, err
 	}
 
-	if payload.Dir == "" {
+	if payload.Dir == "/" {
 		return dirSt, nil
 	}
 
@@ -104,9 +104,9 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	payload := directoryIDPayload{
-		Dir:      cwd,
+		Dir:      dir,
 		Platform: platform,
 		Pipeline: pipeline.Copy(),
 		Services: services,
@@ -571,6 +571,18 @@ func (dir *Directory) Export(
 			})
 		})
 	})
+}
+
+// Root removes any relative path from the directory.
+func (dir *Directory) Root() (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Dir = "/"
+
+	return payload.ToDirectory()
 }
 
 func validateFileName(file string) error {

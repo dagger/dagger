@@ -528,7 +528,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 }
 
 func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
-	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -539,7 +539,7 @@ func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, s
 }
 
 func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
-	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -551,7 +551,7 @@ func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir
 
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	dir, file := filepath.Split(dest)
-	return container.updateRootFS(ctx, dir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -911,7 +911,7 @@ func (container *Container) withMounted(
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) updateRootFS(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
+func (container *Container) writeToPath(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
 	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -925,6 +925,7 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 	if err != nil {
 		return nil, err
 	}
+
 	dirPayload.Pipeline = containerPayload.Pipeline
 
 	dir, err = dirPayload.ToDirectory()
@@ -939,7 +940,12 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 
 	// If not in a mount, replace rootfs
 	if mount == nil {
-		return container.WithRootFS(ctx, dir)
+		root, err := dir.Root()
+		if err != nil {
+			return nil, err
+		}
+
+		return container.WithRootFS(ctx, root)
 	}
 
 	dirPayload, err = dir.ID.Decode()
