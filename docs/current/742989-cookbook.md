@@ -7,7 +7,7 @@ import TabItem from "@theme/TabItem";
 
 # Cookbook
 
-## Filesystem operations
+## Filesystem
 
 ### Set host working directory
 
@@ -99,7 +99,7 @@ The following code listing obtains a reference to the host working directory con
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
-## Build operations
+## Builds
 
 ### Perform multi-stage build
 
