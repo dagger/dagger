@@ -143,7 +143,7 @@ The following code listing builds separate images for multiple OS and CPU archit
 
 [Learn more](./guides/648384-multi-builds.md)
 
-### Build multi-architecture image (emulation)
+### Build multi-arch image
 
 The following code listing builds a single image for different CPU architectures using native emulation.
 
@@ -158,7 +158,7 @@ The following code listing builds a single image for different CPU architectures
 
 [Learn more](./guides/406009-multiplatform-support.md)
 
-### Build multi-architecture image (cross-compilation)
+### Build multi-arch image with cross-compilation
 
 The following code listing builds a single image for different CPU architectures using cross-compilation.
 
@@ -198,7 +198,7 @@ The following code listing demonstrates how to access a private Git repository u
 </TabItem>
 </Tabs>
 
-### Bind transient service
+### Use transient database for application tests
 
 The following code listing creates a temporary MariaDB database service and binds it to an application container for unit/integration testing.
 
@@ -227,7 +227,7 @@ The following code listing creates a temporary MariaDB database service and bind
 
 ## Outputs
 
-### Publish container
+### Publish container to Docker Hub
 
 The following code listing publishes a container to a remote registry (Docker Hub). Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub username and password respectively.
 
@@ -254,9 +254,9 @@ The following code listing publishes a container to a remote registry (Docker Hu
 
 [Learn more](./guides/723462-use-secrets.md)
 
-### Export container to host
+### Export container image to host
 
-The following code listing exports a container from a Dagger pipeline to the host.
+The following code listing exports a container image from a Dagger pipeline to the host.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -281,9 +281,9 @@ The following code listing exports a container from a Dagger pipeline to the hos
 
 [Learn more](./guides/252029-load-images-local-docker-engine.md)
 
-### Export directory from container to host
+### Export container directory to host
 
-The following code listing exports the contents of a directory to the host's temporary directory.
+The following code listing exports the contents of a container directory to the host's temporary directory.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -298,7 +298,7 @@ The following code listing exports the contents of a directory to the host's tem
 
 ## Secrets
 
-### Inject secret as environment variable
+### Expose secret via environment variable
 
 The following code listing demonstrates how to inject an environment variable in a container as a secret.
 
@@ -325,7 +325,7 @@ The following code listing demonstrates how to inject an environment variable in
 
 [Learn more](./guides/723462-use-secrets.md)
 
-### Inject secret as file
+### Expose secret via file
 
 The following code listing demonstrates how to inject a file in a container as a secret.
 
@@ -381,7 +381,7 @@ The following code listing uses a cache volume for application dependencies. Thi
 
 [Learn more](./quickstart/635927-quickstart-caching.mdx)
 
-### Cache service state
+### Persist service state between runs
 
 The following code listing uses a cache volume to persist a service's data across pipeline runs.
 
