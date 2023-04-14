@@ -36,15 +36,18 @@ func RootLabels() []Label {
 }
 
 // LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string) {
+func LoadRootLabels(workdir string, engineName string) {
 	loadOnce.Do(func() {
 		defer close(loadDoneCh)
-		defaultLabels = loadRootLabels(workdir)
+		defaultLabels = loadRootLabels(workdir, engineName)
 	})
 }
 
-func loadRootLabels(workdir string) []Label {
-	labels := []Label{}
+func loadRootLabels(workdir, engineName string) []Label {
+	labels := []Label{{
+		Name:  "dagger.io/engine",
+		Value: engineName,
+	}}
 
 	if gitLabels, err := LoadGitLabels(workdir); err == nil {
 		labels = append(labels, gitLabels...)

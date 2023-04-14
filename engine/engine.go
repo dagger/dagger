@@ -73,12 +73,12 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	c, privilegedExecEnabled, err := engine.Client(ctx, remote, startOpts.UserAgent)
+	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return err
 	}
 
-	platform, err := detectPlatform(ctx, c)
+	platform, err := detectPlatform(ctx, c.BuildkitClient)
 	if err != nil {
 		return err
 	}
@@ -89,7 +89,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	}
 
 	// Load default labels asynchronously in the background.
-	go pipeline.LoadRootLabels(startOpts.Workdir)
+	go pipeline.LoadRootLabels(startOpts.Workdir, c.EngineName)
 
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
@@ -114,7 +114,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	registryAuth := auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr))
 
 	var allowedEntitlements []entitlements.Entitlement
-	if privilegedExecEnabled {
+	if c.PrivilegedExecEnabled {
 		// NOTE: this just allows clients to set this if they want. It also needs
 		// to be set in the ExecOp LLB and enabled server-side in order for privileged
 		// execs to actually run.
@@ -169,7 +169,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	})
 
 	eg.Go(func() error {
-		_, err := c.Build(groupCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+		_, err := c.BuildkitClient.Build(groupCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve
 			// SecretIDs using the gateway, we don't have a gateway until we call
 			// Build, which needs SolveOpts, which needs to contain the secret store.
@@ -182,7 +182,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 				Router:         router,
 				Workdir:        startOpts.Workdir,
 				Gateway:        gwClient,
-				BKClient:       c,
+				BKClient:       c.BuildkitClient,
 				SolveOpts:      solveOpts,
 				SolveCh:        solveCh,
 				Platform:       *platform,
