@@ -64,6 +64,7 @@ var publishedEngineArches = []string{"amd64", "arm64"}
 type DevEngineOpts struct {
 	EntrypointArgs map[string]string
 	ConfigEntries  map[string]string
+	Name           string
 }
 
 func getEntrypoint(opts ...DevEngineOpts) (string, error) {
@@ -154,12 +155,27 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 	engineOpts = append(engineOpts, DefaultDevEngineOpts)
 	engineOpts = append(engineOpts, opts...)
 
+	var cacheVolumeName string
+	if len(opts) > 0 {
+		for _, opt := range opts {
+			if opt.Name != "" {
+				cacheVolumeName = opt.Name
+			}
+		}
+	}
+	if cacheVolumeName != "" {
+		cacheVolumeName = "dagger-dev-engine-state-" + cacheVolumeName
+	} else {
+		cacheVolumeName = "dagger-dev-engine-state"
+	}
+
 	devEngine := devEngineContainer(c, runtime.GOARCH, engineOpts...)
+
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
 		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.
 		// It's important it's a cache mount though because otherwise overlay won't be available
-		// WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state")).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume(cacheVolumeName)).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
 			ExperimentalPrivilegedNesting: true,
