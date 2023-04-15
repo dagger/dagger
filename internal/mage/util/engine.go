@@ -58,8 +58,6 @@ insecure-entitlements = ["security.insecure"]
 {{ end -}}
 `
 
-var publishedEngineArches = []string{"amd64", "arm64"}
-
 // DevEngineOpts are options for the dev engine
 type DevEngineOpts struct {
 	EntrypointArgs map[string]string
