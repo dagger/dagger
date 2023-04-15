@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/integration/internal"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
@@ -16,8 +15,11 @@ import (
 func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
+	// This loads the engine.tar file from the host into the container, that was set up by
+	// internal/mage/engine.go:test. This is used to spin up additional dev engines.
+	devEngineTar := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"engine.tar"}}).File("engine.tar")
 
-	devEngine = c.Container().From("registry:5000/engine:dev")
+	devEngine = c.Container().Import(devEngineTar)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 	if err != nil {
 		return nil, "", err
@@ -29,7 +31,6 @@ func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container
 		Contents: entrypoint,
 	})
 
-	fmt.Println("CACHE ENV:", cacheEnv)
 	devEngine = devEngine.
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
@@ -57,11 +58,15 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	devEngine, endpoint, err := getDevEngine(ctx, c, registry, "registry", "type=registry,ref=registry:5000/test-cache,mode=max", 0)
 	require.NoError(t, err)
 
+	// This loads the dagger-cli binary from the host into the container, that was set up by
+	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
+	daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
+
 	cliBinPath := "/.dagger-cli"
 
 	outputA, err := c.Container().From("alpine:3.17").
 		WithServiceBinding("dev-engine", devEngine).
-		WithMountedFile(cliBinPath, internal.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
@@ -85,7 +90,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	outputB, err := c.Container().From("alpine:3.17").
 		WithServiceBinding("dev-engine", devEngine).
-		WithMountedFile(cliBinPath, internal.DaggerBinary(c)).
+		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
@@ -136,10 +141,13 @@ func TestRemoteCacheS3(t *testing.T) {
 		require.NoError(t, err)
 
 		cliBinPath := "/.dagger-cli"
+		// This loads the dagger-cli binary from the host into the container, that was set up by
+		// internal/mage/engine.go:test. This is used to communicate with the dev engine.
+		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
 
 		outputA, err := c.Container().From("alpine:3.17").
 			WithServiceBinding("dev-engine", devEngine).
-			WithMountedFile(cliBinPath, internal.DaggerBinary(c)).
+			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
@@ -163,7 +171,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		outputB, err := c.Container().From("alpine:3.17").
 			WithServiceBinding("dev-engine", devEngine).
-			WithMountedFile(cliBinPath, internal.DaggerBinary(c)).
+			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{

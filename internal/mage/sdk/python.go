@@ -80,7 +80,7 @@ func (t Python) Test(ctx context.Context) error {
 
 	versions := []string{"3.10", "3.11"}
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-python-test"})
 	if err != nil {
 		return err
 	}
@@ -114,7 +114,7 @@ func (t Python) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("python").Pipeline("generate")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-python-generate"})
 	if err != nil {
 		return err
 	}

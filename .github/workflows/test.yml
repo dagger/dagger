@@ -28,7 +28,7 @@ jobs:
         with:
           go-version: "1.20"
       - uses: actions/checkout@v3
-      - run: ./hack/run engine:test
+      - run: ./hack/make engine:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
@@ -86,9 +86,9 @@ jobs:
         with:
           go-version: "1.20"
       - uses: actions/checkout@v3
-      - run: ./hack/run engine:build
+      - run: ./hack/make engine:build
       - run: echo $PWD/bin >> $GITHUB_PATH
-      - run: ./hack/run engine:testrace
+      - run: ./hack/make engine:testrace
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
@@ -111,7 +111,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: "1.20"
-      - run: ./hack/run sdk:go:test
+      - run: ./hack/make sdk:go:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: "1.20"
-      - run: ./hack/run sdk:python:test
+      - run: ./hack/make sdk:python:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
@@ -151,7 +151,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: "1.20"
-      - run: ./hack/run sdk:nodejs:test
+      - run: ./hack/make sdk:nodejs:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"

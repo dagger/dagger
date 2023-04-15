@@ -146,10 +146,6 @@ func newFile(t *testing.T, path, contents string) core.FileID {
 }
 
 const (
-	// registryContainer        = "dagger-registry.dev"
-	// privateRegistryContainer = "dagger-private-registry.dev"
-	// engineContainer = "dagger-engine.dev"
-
 	registryHost        = "registry:5000"
 	privateRegistryHost = "privateregistry:5000"
 )

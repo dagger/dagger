@@ -16,18 +16,18 @@ const (
 	engineBinName = "dagger-engine"
 	shimBinName   = "dagger-shim"
 	alpineVersion = "3.17"
-	runcVersion   = "v1.1.4"
+	runcVersion   = "v1.1.5"
 	cniVersion    = "v1.2.0"
 	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
 
 	engineTomlPath = "/etc/dagger/engine.toml"
 	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
-	engineDefaultStateDir = "/var/lib/dagger"
+	EngineDefaultStateDir = "/var/lib/dagger"
 
 	engineEntrypointPath = "/usr/local/bin/dagger-entrypoint.sh"
 
-	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
+	CacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+	ServicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 const engineEntrypointTmpl = `#!/bin/sh
@@ -172,9 +172,6 @@ func CIDevEngineContainer(c *dagger.Client, opts ...DevEngineOpts) *dagger.Conta
 	devEngine := devEngineContainer(c, runtime.GOARCH, engineOpts...)
 
 	devEngine = devEngine.WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
-		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.
-		// It's important it's a cache mount though because otherwise overlay won't be available
 		WithMountedCache("/var/lib/dagger", c.CacheVolume(cacheVolumeName)).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
@@ -215,7 +212,7 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 		WithFile("/usr/local/bin/"+engineBinName, engineBin(c, arch)).
 		WithDirectory("/usr/local/bin", qemuBins(c, arch)).
 		WithDirectory("/opt/cni/bin", cniPlugins(c, arch)).
-		WithDirectory(engineDefaultStateDir, c.Directory()).
+		WithDirectory(EngineDefaultStateDir, c.Directory()).
 		WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineConfig,
 			Permissions: 0600,

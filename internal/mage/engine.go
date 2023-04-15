@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,20 +16,6 @@ import (
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg" // mg contains helpful utility functions, like Deps
 	"golang.org/x/mod/semver"
-)
-
-const (
-	engineBinName = "dagger-engine"
-	shimBinName   = "dagger-shim"
-	alpineVersion = "3.17"
-	runcVersion   = "v1.1.5"
-	qemuBinImage  = "tonistiigi/binfmt:buildkit-v7.1.0-30@sha256:45dd57b4ba2f24e2354f71f1e4e51f073cb7a28fd848ce6f5f2a7701142a6bf0"
-
-	// NOTE: this needs to be consistent with DefaultStateDir in internal/engine/docker.go
-	engineDefaultStateDir = "/var/lib/dagger"
-
-	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
-	servicesDNSEnvName = "_EXPERIMENTAL_DAGGER_SERVICES_DNS"
 )
 
 var publishedEngineArches = []string{"amd64", "arm64"}
@@ -171,43 +158,35 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, util.DefaultDevEngineOpts, opts)[0]
 
-	reg := registry(c)
+	// This creates an engine.tar container file that can be used by the integration tests.
+	// In particular, it is used by core/integration/remotecache_test.go to create a
+	// dev engine that can be used to test remote caching.
+	// I also load the dagger binary, so that the remote cache tests can use it to
+	// run dagger queries.
 
-	_, err = devEngine.Export(ctx, "/tmp/engine.tar")
+	tmpDir, err := os.MkdirTemp("", "dagger-dev-engine-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	_, err = devEngine.Export(ctx, path.Join(tmpDir, "engine.tar"))
 	if err != nil {
 		return err
 	}
 
-	image := c.Host().Directory("/tmp", dagger.HostDirectoryOpts{
+	// These are used by core/integration/remotecache_test.go
+	testEngineUtils := c.Host().Directory(tmpDir, dagger.HostDirectoryOpts{
 		Include: []string{"engine.tar"},
-	}).File("/engine.tar")
-
-	_, err = c.Container().From("gcr.io/go-containerregistry/crane:latest").
-		WithServiceBinding("registry", reg).
-		WithFile("/tmp/engine.tar", image).
-		WithExec([]string{"push", "--insecure", "/tmp/engine.tar", "registry:5000/engine:dev"}).
-		ExitCode(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	// imageList, err := c.Container().From("gcr.io/go-containerregistry/crane:latest").
-	// 	WithServiceBinding("registry", reg).
-	// 	WithFile("/tmp/engine.tar", image).
-	// 	WithExec([]string{"ls", "--insecure", "registry:5000/engine"}).
-	// 	Stdout(ctx)
-
-	// fmt.Println("IMAGES: ", imageList)
+	}).WithFile("/dagger", util.DaggerBinary(c), dagger.DirectoryWithFileOpts{
+		Permissions: 0755,
+	})
 
 	devEngine = devEngine.
-		WithServiceBinding("registry", reg).
+		WithServiceBinding("registry", registry(c)).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		// TODO: in some ways it's nice to have cache here, in others it may actually result in our tests being less reproducible.
-		// Can consider rm -rfing this dir every engine start if we decide we want a clean slate every time.
-		// It's important it's a cache mount though because otherwise overlay won't be available
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state")).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
 			ExperimentalPrivilegedNesting: true,
@@ -230,6 +209,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 
 	tests := util.GoBase(c).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
+		WithMountedDirectory("/dagger-dev", testEngineUtils).
 		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv)
@@ -323,9 +303,9 @@ func (t Engine) Dev(ctx context.Context) error {
 		"run",
 		"-d",
 		// "--rm",
-		"-e", cacheConfigEnvName,
-		"-e", servicesDNSEnvName,
-		"-v", volumeName + ":" + engineDefaultStateDir,
+		"-e", util.CacheConfigEnvName,
+		"-e", util.ServicesDNSEnvName,
+		"-v", volumeName + ":" + util.EngineDefaultStateDir,
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}

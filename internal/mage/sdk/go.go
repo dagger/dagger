@@ -58,7 +58,7 @@ func (t Go) Test(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-go-test"})
 	if err != nil {
 		return err
 	}

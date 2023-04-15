@@ -71,7 +71,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("test")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-nodejs-test"})
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (t Nodejs) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("generate")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-nodejs-generate"})
 	if err != nil {
 		return err
 	}
