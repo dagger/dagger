@@ -52,12 +52,13 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	defer c.Close()
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
+		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil)
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngine, endpoint, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 0)
+	devEngineA, endpointA, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 0)
 	require.NoError(t, err)
 
 	// This loads the dagger-cli binary from the host into the container, that was set up by
@@ -67,10 +68,10 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	cliBinPath := "/.dagger-cli"
 
 	outputA, err := c.Container().From("alpine:3.17").
-		WithServiceBinding("dev-engine", devEngine).
+		WithServiceBinding("dev-engine", devEngineA).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 			Contents: `{ 
@@ -89,14 +90,14 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngine, endpoint, err = getDevEngine(ctx, c, registry, "registry", "type=registry,ref=registry:5000/test-cache,mode=max", 1)
+	devEngineB, endpointB, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 1)
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From("alpine:3.17").
-		WithServiceBinding("dev-engine", devEngine).
+		WithServiceBinding("dev-engine", devEngineB).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 			Contents: `{ 
@@ -143,7 +144,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		s3Env := "type=s3,mode=max,endpoint_url=" + s3Endpoint + ",access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
-		devEngine, endpoint, err := getDevEngine(ctx, c, s3, "s3", s3Env, 0)
+		devEngineA, endpointA, err := getDevEngine(ctx, c, s3, "s3", s3Env, 0)
 		require.NoError(t, err)
 
 		cliBinPath := "/.dagger-cli"
@@ -152,10 +153,10 @@ func TestRemoteCacheS3(t *testing.T) {
 		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
 
 		outputA, err := c.Container().From("alpine:3.17").
-			WithServiceBinding("dev-engine", devEngine).
+			WithServiceBinding("dev-engine", devEngineA).
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 				Contents: `{ 
@@ -174,14 +175,14 @@ func TestRemoteCacheS3(t *testing.T) {
 		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 		require.NotEmpty(t, shaA, "shaA is empty")
 
-		devEngine, endpoint, err = getDevEngine(ctx, c, s3, "s3", s3Env, 1)
+		devEngineB, endpointB, err := getDevEngine(ctx, c, s3, "s3", s3Env, 1)
 		require.NoError(t, err)
 
 		outputB, err := c.Container().From("alpine:3.17").
-			WithServiceBinding("dev-engine", devEngine).
+			WithServiceBinding("dev-engine", devEngineB).
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 				Contents: `{ 
