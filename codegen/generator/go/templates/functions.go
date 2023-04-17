@@ -202,7 +202,7 @@ func fieldFunctionSignature(f introspection.Field) string {
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
 		retType = fmt.Sprintf("(%s, error)", commonFunc.FormatOutputType(f.TypeRef))
 	} else {
-		retType = /*"*" +*/ commonFunc.FormatOutputType(f.TypeRef)
+		retType = commonFunc.FormatOutputType(f.TypeRef)
 	}
 	signature += " " + retType
 
