@@ -22,7 +22,7 @@ func main() {
 	// Build our app
 	builder := client.Container().
 		From("golang:latest").
-		WithMountedDirectory("/src", project).
+		WithDirectory("/src", project).
 		WithWorkdir("/src").
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "myapp"})

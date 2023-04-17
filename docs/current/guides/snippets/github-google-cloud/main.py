@@ -29,7 +29,7 @@ async def main():
         # set entrypoint
         c = (
             node
-            .with_mounted_directory("/src", source)
+            .with_directory("/src", source)
             .with_workdir("/src")
             .with_exec(["cp", "-R", ".", "/home/node"])
             .with_workdir("/home/node")

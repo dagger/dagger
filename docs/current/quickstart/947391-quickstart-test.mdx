@@ -40,8 +40,8 @@ This code listing does the following:
 
 - It creates a Dagger client with `Connect()` as before.
 - It uses the client's `Container().From()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `From()` method returns a new `Container` object with the result.
-- It uses the `Container.WithMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
-  - Notice that the `Container.WithMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.WithDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.WithWorkdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.WithDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.WithExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
 - It uses the `Container.Stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
   - Failure, indicated by error output, will cause the pipeline to terminate.
@@ -61,8 +61,8 @@ This code listing does the following:
 
 - It creates a Dagger client with `connect()` as before.
 - It uses the client's `container().from()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `from()` method returns a new `Container` object with the result.
-- It uses the `Container.withMountedDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.withWorkdir()` method to set the working directory to that mount point.
-  - Notice that the `Container.withMountedDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.withDirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.withWorkdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.withDirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.withExec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
 - It uses the `Container.stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
   - Failure, indicated by error output, will cause the pipeline to terminate.
@@ -82,8 +82,8 @@ This code listing does the following:
 
 - It creates a Dagger client with `with dagger.Connection()` as before.
 - It uses the client's `container().from_()` method to initialize a new container from a base image - again, the `node:16-slim` image. This base image is the Node.js version to use for testing. The `from_()` method returns a new `Container` object with the result.
-- It uses the `Container.with_mounted_directory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.with_workdir()` method to set the working directory to that mount point.
-  - Notice that the `Container.with_mounted_directory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
+- It uses the `Container.withdirectory()` method to mount the source code directory on the host at the `/src` mount point in the container, and the `Container.with_workdir()` method to set the working directory to that mount point.
+  - Notice that the `Container.withdirectory()` accepts additional options to exclude (or include) specific files from the mount. In this case, it excludes the `node_modules` (locally-installed dependencies) and `ci` (pipeline code) directories.
 - It uses the `Container.with_exec()` method to define the commands to install dependencies and run tests in the container - in this case, the commands `npm install` and `npm test -- --watchAll=false`.
 - It uses the `Container.stderr()` method to return the error stream of the last executed command. No error output implies successful execution (all tests pass).
   - Failure, indicated by error output, will cause the pipeline to terminate.
@@ -98,7 +98,7 @@ python ci/main.py
 </Tabs>
 
 :::tip
-The `from()`, `withMountedDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
+The `from()`, `withDirectory()`, `withWorkdir()` and `withExec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is intuitive to understand.
 :::
 
 </QuickstartDoc>
