@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["php", "laravel"]
 authors: ["Vikram Vaswani"]
-date: "2023-04-10"
+date: "2023-04-17"
 ---
 
 # Build, Test and Publish a Laravel Web Application with Dagger
