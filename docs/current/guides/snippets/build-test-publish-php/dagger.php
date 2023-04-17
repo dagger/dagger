@@ -1,6 +1,5 @@
 <?php
 // include auto-loader
-//include 'vendor/autoload.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 
 use GraphQL\Client;
@@ -227,6 +226,10 @@ class DaggerPipeline {
     $registryAddress = getenv("REGISTRY_ADDRESS") or throw new Exception("REGISTRY_ADDRESS environment variable must be set");
     $registryUsername = getenv("REGISTRY_USERNAME") or throw new Exception("REGISTRY_USERNAME environment variable must be set");
     $registryPassword = getenv("REGISTRY_PASSWORD") or throw new Exception("REGISTRY_PASSWORD environment variable must be set");
+    $containerAddress = getenv("CONTAINER_ADDRESS");
+    if (empty($containerAddress)) {
+      $containerAddress = "$registryUsername/laravel-dagger";
+    }
 
     // set registry password as Dagger secret
     $registryPasswordSecretQuery = <<<QUERY
@@ -244,7 +247,7 @@ class DaggerPipeline {
     query {
       container (id: "$image") {
         withRegistryAuth(address: "$registryAddress", username: "$registryUsername", secret: "$registryPasswordSecret") {
-          publish(address: "$registryUsername/laravel-dagger")
+          publish(address: "$containerAddress")
         }
       }
     }
