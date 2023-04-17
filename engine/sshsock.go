@@ -50,13 +50,12 @@ func (m SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 
 	var h sshforward.SSHServer
 	if key, socketID, ok := strings.Cut(id, ":"); key == "socket" && ok {
-		socket := core.NewSocket(core.SocketID(socketID))
-
-		isHost, err := socket.IsHost()
+		socket, err := core.SocketID(socketID).ToSocket()
 		if err != nil {
 			return err
 		}
-		if isHost && !m.EnableHostNetworkAccess {
+
+		if socket.IsHost() && !m.EnableHostNetworkAccess {
 			return status.Errorf(codes.PermissionDenied, "host network access is disabled")
 		}
 

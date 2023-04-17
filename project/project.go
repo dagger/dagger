@@ -120,26 +120,14 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 			rerr = err
 			return
 		}
-		// TODO(sipsma): handle relative path + platform?
-		fsPayload, err := runtimeFS.ID.Decode()
+
+		fsState, err := runtimeFS.State()
 		if err != nil {
 			rerr = err
 			return
 		}
 
-		wdPayload, err := p.workdir.ID.Decode()
-		if err != nil {
-			rerr = err
-			return
-		}
-
-		fsState, err := fsPayload.State()
-		if err != nil {
-			rerr = err
-			return
-		}
-
-		wdState, err := wdPayload.State()
+		wdState, err := p.workdir.State()
 		if err != nil {
 			rerr = err
 			return
@@ -289,24 +277,12 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 		}
 		input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
 
-		// TODO(vito): handle relative path + platform?
-		fsPayload, err := runtimeFS.ID.Decode()
+		fsState, err := runtimeFS.State()
 		if err != nil {
 			return nil, err
 		}
 
-		fsState, err := fsPayload.State()
-		if err != nil {
-			return nil, err
-		}
-
-		// TODO(vito): handle relative path + platform?
-		wdPayload, err := p.workdir.ID.Decode()
-		if err != nil {
-			return nil, err
-		}
-
-		wdState, err := wdPayload.State()
+		wdState, err := p.workdir.State()
 		if err != nil {
 			return nil, err
 		}
@@ -326,24 +302,26 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 
 		// TODO: /mnt should maybe be configurable?
 		for path, dirID := range collectDirPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
-			dirPayload, err := dirID.Decode()
+			dir, err := dirID.ToDirectory()
 			if err != nil {
 				return nil, err
 			}
 
-			dirSt, err := dirPayload.State()
+			dirSt, err := dir.State()
 			if err != nil {
 				return nil, err
 			}
 			// TODO: it should be possible for this to be outputtable by the action; the only question
 			// is how to expose that ability in a non-confusing way, just needs more thought
-			st.AddMount(path, dirSt, llb.SourcePath(dirPayload.Dir), llb.ForceNoOutput)
+			st.AddMount(path, dirSt, llb.SourcePath(dir.Dir), llb.ForceNoOutput)
 		}
 
 		// Mount in the parent type if it is a Filesystem
 		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
 		// to just use go type matching because the parent result may be a Filesystem struct or
 		// an untyped map[string]interface{}.
+		// FIXME(vito): this might be broken with the transition away from
+		// directoryIDPayload
 		if ctx.ResolveParams.Info.ParentType.Name() == "Directory" {
 			var parentFS core.Directory
 			bytes, err := json.Marshal(parent)
@@ -354,13 +332,7 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 				return nil, err
 			}
 
-			// TODO(vito): handle relative path + platform?
-			fsPayload, err := parentFS.ID.Decode()
-			if err != nil {
-				return nil, err
-			}
-
-			fsState, err := fsPayload.State()
+			fsState, err := parentFS.State()
 			if err != nil {
 				return nil, err
 			}

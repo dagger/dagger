@@ -92,9 +92,12 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindin
 	started := make(chan *Service, len(svcs))
 
 	for svcID, aliases := range svcs {
-		svc := &Container{ID: svcID}
+		svc, err := svcID.ToContainer()
+		if err != nil {
+			return zero, err
+		}
 
-		host, err := svc.Hostname()
+		host, err := svc.HostnameOrErr()
 		if err != nil {
 			return zero, err
 		}

@@ -9,50 +9,50 @@ import (
 
 // CacheVolume is a persistent volume with a globally scoped identifier.
 type CacheVolume struct {
-	ID CacheID `json:"id"`
+	Keys []string `json:"keys"`
 }
 
 var ErrInvalidCacheID = errors.New("invalid cache ID; create one using cacheVolume")
+
+func NewCache(keys ...string) *CacheVolume {
+	return &CacheVolume{Keys: keys}
+}
+
+func (cache *CacheVolume) Clone() *CacheVolume {
+	cp := *cache
+	cp.Keys = clone(cp.Keys)
+	return &cp
+}
 
 // CacheID is an arbitrary string typically derived from a set of token
 // strings acting as the cache's "key" or "scope".
 type CacheID string
 
-func (id CacheID) decode() (*cacheIDPayload, error) {
-	var payload cacheIDPayload
-	if err := decodeID(&payload, id); err != nil {
+func (id CacheID) ToCacheVolume() (*CacheVolume, error) {
+	var cache CacheVolume
+	if err := decodeID(&cache, id); err != nil {
 		return nil, ErrInvalidCacheID
 	}
 
-	if len(payload.Keys) == 0 {
+	if len(cache.Keys) == 0 {
 		return nil, ErrInvalidCacheID
 	}
 
-	return &payload, nil
-}
-
-// cacheIDPayload is the inner content of a CacheID.
-type cacheIDPayload struct {
-	Keys []string `json:"keys"`
+	return &cache, nil
 }
 
 // Sum returns a checksum of the cache tokens suitable for use as a cache key.
-func (payload cacheIDPayload) Sum() string {
+func (cache *CacheVolume) Sum() string {
 	hash := sha256.New()
-	for _, tok := range payload.Keys {
+	for _, tok := range cache.Keys {
 		_, _ = hash.Write([]byte(tok + "\x00"))
 	}
 
 	return base64.StdEncoding.EncodeToString(hash.Sum(nil))
 }
 
-func (payload cacheIDPayload) Encode() (CacheID, error) {
-	id, err := encodeID(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return CacheID(id), nil
+func (cache *CacheVolume) ID() (CacheID, error) {
+	return encodeID[CacheID](cache)
 }
 
 // CacheSharingMode is a string deriving from CacheSharingMode enum
@@ -65,36 +65,8 @@ const (
 	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
 )
 
-func NewCache(keys ...string) (*CacheVolume, error) {
-	id, err := cacheIDPayload{Keys: keys}.Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return &CacheVolume{ID: id}, nil
-}
-
-func NewCacheFromID(id CacheID) (*CacheVolume, error) {
-	_, err := id.decode() // sanity check
-	if err != nil {
-		return nil, err
-	}
-
-	return &CacheVolume{ID: id}, nil
-}
-
-func (cache *CacheVolume) WithKey(key string) (*CacheVolume, error) {
-	payload, err := cache.ID.decode()
-	if err != nil {
-		return nil, err
-	}
-
-	payload.Keys = append(payload.Keys, key)
-
-	id, err := payload.Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return &CacheVolume{ID: id}, nil
+func (cache *CacheVolume) WithKey(key string) *CacheVolume {
+	cache = cache.Clone()
+	cache.Keys = append(cache.Keys, key)
+	return cache
 }

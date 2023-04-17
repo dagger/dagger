@@ -15,7 +15,7 @@ var ErrNotFound = errors.New("secret not found")
 
 func NewStore() *Store {
 	return &Store{
-		idToPlaintext: map[core.SecretID]string{},
+		secrets: map[string]string{},
 	}
 }
 
@@ -24,8 +24,8 @@ var _ secrets.SecretStore = &Store{}
 type Store struct {
 	gw bkgw.Client
 
-	mu            sync.Mutex
-	idToPlaintext map[core.SecretID]string
+	mu      sync.Mutex
+	secrets map[string]string
 }
 
 func (store *Store) SetGateway(gw bkgw.Client) {
@@ -38,37 +38,40 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	id, err := core.NewSecretID(name, plaintext)
-	if err != nil {
-		return id, err
-	}
+	secret := core.NewDynamicSecret(name)
 
 	// add the plaintext to the map
-	store.idToPlaintext[id] = plaintext
+	store.secrets[secret.Name] = plaintext
 
-	return id, nil
+	return secret.ID()
 }
 
-// GetSecret returns the plaintext from the id.
-func (store *Store) GetSecret(ctx context.Context, id string) ([]byte, error) {
+// GetSecret returns the plaintext secret value.
+//
+// Its argument may either be the user defined name originally specified within
+// a SecretID, or a full SecretID value.
+//
+// A user defined name will be received when secrets are used in a Dockerfile
+// build.
+//
+// In all other cases, a SecretID is expected.
+func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
-	secretID := core.SecretID(id)
+	var name string
+	if secret, err := core.SecretID(idOrName).ToSecret(); err == nil {
+		if secret.IsOldFormat() {
+			// use the legacy SecretID format
+			return secret.LegacyPlaintext(ctx, store.gw)
+		}
 
-	// we check if it's the old SecretID format
-	isOldSecretIDFormat, err := secretID.IsOldFormat()
-	if err != nil {
-		return nil, err
+		name = secret.Name
+	} else {
+		name = idOrName
 	}
 
-	if isOldSecretIDFormat {
-		// we use the legacy SecretID format
-		return core.NewSecret(core.SecretID(id)).Plaintext(ctx, store.gw)
-	}
-
-	// we use the new SecretID format
-	plaintext, ok := store.idToPlaintext[secretID]
+	plaintext, ok := store.secrets[name]
 	if !ok {
 		return nil, ErrNotFound
 	}

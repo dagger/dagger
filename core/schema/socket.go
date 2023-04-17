@@ -29,12 +29,18 @@ func (s *socketSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"socket": router.ToResolver(s.socket),
 		},
-		"Socket": router.ObjectResolver{},
+		"Socket": router.ObjectResolver{
+			"id": router.ToResolver(s.id),
+		},
 	}
 }
 
 func (s *socketSchema) Dependencies() []router.ExecutableSchema {
 	return nil
+}
+
+func (s *socketSchema) id(ctx *router.Context, parent *core.Socket, args any) (core.SocketID, error) {
+	return parent.ID()
 }
 
 type socketArgs struct {
@@ -43,5 +49,5 @@ type socketArgs struct {
 
 // nolint: unparam
 func (s *socketSchema) socket(_ *router.Context, _ any, args socketArgs) (*core.Socket, error) {
-	return core.NewSocket(args.ID), nil
+	return args.ID.ToSocket()
 }

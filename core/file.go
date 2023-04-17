@@ -21,14 +21,6 @@ import (
 
 // File is a content-addressed file.
 type File struct {
-	ID FileID `json:"id"`
-}
-
-// FileID is an opaque value representing a content-addressed file.
-type FileID string
-
-// fileIDPayload is the inner content of a FileID.
-type fileIDPayload struct {
 	LLB      *pb.Definition `json:"llb"`
 	File     string         `json:"file"`
 	Pipeline pipeline.Path  `json:"pipeline"`
@@ -38,92 +30,90 @@ type fileIDPayload struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func (id FileID) decode() (*fileIDPayload, error) {
-	var payload fileIDPayload
-	if err := decodeID(&payload, id); err != nil {
-		return nil, err
-	}
-
-	return &payload, nil
-}
-
-func (payload *fileIDPayload) State() (llb.State, error) {
-	return defToState(payload.LLB)
-}
-
-func (payload *fileIDPayload) ToFile() (*File, error) {
-	id, err := encodeID(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return &File{
-		ID: FileID(id),
-	}, nil
-}
-
 func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	return (&fileIDPayload{
+	return &File{
 		LLB:      def.ToPB(),
 		File:     file,
 		Pipeline: pipeline,
 		Platform: platform,
 		Services: services,
-	}).ToFile()
+	}, nil
 }
 
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	payload, err := file.ID.decode()
-	if err != nil {
+// Clone returns a deep copy of the container suitable for modifying in a
+// WithXXX method.
+func (file *File) Clone() *File {
+	cp := *file
+	cp.Pipeline = clone(cp.Pipeline)
+	cp.Services = cloneMap(cp.Services)
+	return &cp
+}
+
+// FileID is an opaque value representing a content-addressed file.
+type FileID string
+
+// ID marshals the file into a content-addressed ID.
+func (file *File) ID() (FileID, error) {
+	return encodeID[FileID](file)
+}
+
+func (id FileID) ToFile() (*File, error) {
+	var file File
+	if err := decodeID(&file, id); err != nil {
 		return nil, err
 	}
 
-	return WithServices(ctx, gw, payload.Services, func() ([]byte, error) {
-		ref, err := gwRef(ctx, gw, payload.LLB)
+	return &file, nil
+}
+
+func (file *File) State() (llb.State, error) {
+	return defToState(file.LLB)
+}
+
+func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+	return WithServices(ctx, gw, file.Services, func() ([]byte, error) {
+		ref, err := gwRef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
 		}
 
 		return ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: payload.File,
+			Filename: file.File,
 		})
 	})
 }
 
 func (file *File) Secret(ctx context.Context) (*Secret, error) {
-	return NewSecretFromFile(file.ID)
-}
-
-func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
-	payload, err := file.ID.decode()
+	id, err := file.ID()
 	if err != nil {
 		return nil, err
 	}
 
-	return WithServices(ctx, gw, payload.Services, func() (*fstypes.Stat, error) {
-		ref, err := gwRef(ctx, gw, payload.LLB)
+	return NewSecretFromFile(id), nil
+}
+
+func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
+	return WithServices(ctx, gw, file.Services, func() (*fstypes.Stat, error) {
+		ref, err := gwRef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
 		}
 
 		return ref.StatFile(ctx, bkgw.StatRequest{
-			Path: payload.File,
+			Path: file.File,
 		})
 	})
 }
 
 func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
-	payload, err := file.ID.decode()
-	if err != nil {
-		return nil, err
-	}
+	file = file.Clone()
 
-	st, err := payload.State()
+	st, err := file.State()
 	if err != nil {
 		return nil, err
 	}
@@ -131,26 +121,28 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	t := time.Unix(int64(unix), 0)
 
 	stamped := llb.Scratch().File(
-		llb.Copy(st, payload.File, ".", llb.WithCreatedTime(t)),
-		payload.Pipeline.LLBOpt(),
+		llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)),
+		file.Pipeline.LLBOpt(),
 	)
 
-	return NewFile(ctx, stamped, path.Base(payload.File), payload.Pipeline, payload.Platform, payload.Services)
-}
-
-func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
-	srcPayload, err := file.ID.decode()
+	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
 	if err != nil {
 		return nil, err
 	}
+	file.LLB = def.ToPB()
+	file.File = path.Base(file.File)
 
-	return WithServices(ctx, gw, srcPayload.Services, func() (io.ReadCloser, error) {
-		fs, err := reffs.OpenDef(ctx, gw, srcPayload.LLB)
+	return file, nil
+}
+
+func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
+	return WithServices(ctx, gw, file.Services, func() (io.ReadCloser, error) {
+		fs, err := reffs.OpenDef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
 		}
 
-		return fs.Open(srcPayload.File)
+		return fs.Open(file.File)
 	})
 }
 
@@ -173,11 +165,6 @@ func (file *File) Export(
 		}
 	}
 
-	srcPayload, err := file.ID.decode()
-	if err != nil {
-		return err
-	}
-
 	destFilename := filepath.Base(dest)
 	destDir := filepath.Dir(dest)
 
@@ -185,15 +172,15 @@ func (file *File) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: destDir,
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, gw, srcPayload.Services, func() (*bkgw.Result, error) {
-			src, err := srcPayload.State()
+		return WithServices(ctx, gw, file.Services, func() (*bkgw.Result, error) {
+			src, err := file.State()
 			if err != nil {
 				return nil, err
 			}
 
-			src = llb.Scratch().File(llb.Copy(src, srcPayload.File, destFilename), srcPayload.Pipeline.LLBOpt())
+			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt())
 
-			def, err := src.Marshal(ctx, llb.Platform(srcPayload.Platform))
+			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
 			if err != nil {
 				return nil, err
 			}

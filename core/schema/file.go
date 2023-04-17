@@ -30,6 +30,7 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 			"file": router.ToResolver(s.file),
 		},
 		"File": router.ObjectResolver{
+			"id":             router.ToResolver(s.id),
 			"contents":       router.ToResolver(s.contents),
 			"secret":         router.ToResolver(s.secret),
 			"size":           router.ToResolver(s.size),
@@ -48,9 +49,11 @@ type fileArgs struct {
 }
 
 func (s *fileSchema) file(ctx *router.Context, parent any, args fileArgs) (*core.File, error) {
-	return &core.File{
-		ID: args.ID,
-	}, nil
+	return args.ID.ToFile()
+}
+
+func (s *fileSchema) id(ctx *router.Context, parent *core.File, args any) (core.FileID, error) {
+	return parent.ID()
 }
 
 func (s *fileSchema) contents(ctx *router.Context, file *core.File, args any) (string, error) {

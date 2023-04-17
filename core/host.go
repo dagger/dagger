@@ -122,7 +122,7 @@ func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) 
 		return nil, fmt.Errorf("eval symlinks: %w", err)
 	}
 
-	return NewHostSocket(absPath)
+	return NewHostSocket(absPath), nil
 }
 
 func (host *Host) Export(

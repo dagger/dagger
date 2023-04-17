@@ -36,6 +36,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"container": router.ToResolver(s.container),
 		},
 		"Container": router.ObjectResolver{
+			"id":                   router.ToResolver(s.id),
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
@@ -121,6 +122,10 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 	return ctr, err
 }
 
+func (s *containerSchema) id(ctx *router.Context, parent *core.Container, args any) (core.ContainerID, error) {
+	return parent.ID()
+}
+
 type containerFromArgs struct {
 	Address string
 }
@@ -138,11 +143,23 @@ type containerBuildArgs struct {
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	dir, err := args.Context.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return parent.Build(ctx, s.gw, dir, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }
 
-func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
-	return parent.WithRootFS(ctx, &arg)
+type containerWithRootFSArgs struct {
+	ID core.DirectoryID
+}
+
+func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
+	dir, err := args.ID.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithRootFS(ctx, dir)
 }
 
 type containerPipelineArgs struct {
@@ -152,7 +169,7 @@ type containerPipelineArgs struct {
 }
 
 func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
-	return parent.Pipeline(ctx, args.Name, args.Description, args.Labels)
+	return parent.WithPipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
 func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
@@ -403,7 +420,11 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	return parent.WithMountedDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Source}, args.Owner)
+	dir, err := args.Source.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithMountedDirectory(ctx, s.gw, args.Path, dir, args.Owner)
 }
 
 type containerPublishArgs struct {
@@ -422,7 +443,11 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	return parent.WithMountedFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Owner)
+	file, err := args.Source.ToFile()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithMountedFile(ctx, s.gw, args.Path, file, args.Owner)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -436,10 +461,19 @@ type containerWithMountedCacheArgs struct {
 func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
 	var dir *core.Directory
 	if args.Source != "" {
-		dir = &core.Directory{ID: args.Source}
+		var err error
+		dir, err = args.Source.ToDirectory()
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return parent.WithMountedCache(ctx, s.gw, args.Path, args.Cache, dir, args.Concurrency, args.Owner)
+	cache, err := args.Cache.ToCacheVolume()
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithMountedCache(ctx, s.gw, args.Path, cache, dir, args.Concurrency, args.Owner)
 }
 
 type containerWithMountedTempArgs struct {
@@ -459,7 +493,7 @@ func (s *containerSchema) withoutMount(ctx *router.Context, parent *core.Contain
 }
 
 func (s *containerSchema) mounts(ctx *router.Context, parent *core.Container, _ any) ([]string, error) {
-	return parent.Mounts(ctx)
+	return parent.MountTargets(ctx)
 }
 
 type containerWithLabelArgs struct {
@@ -522,7 +556,11 @@ type containerWithSecretVariableArgs struct {
 }
 
 func (s *containerSchema) withSecretVariable(ctx *router.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
-	return parent.WithSecretVariable(ctx, args.Name, &core.Secret{ID: args.Secret})
+	secret, err := args.Secret.ToSecret()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithSecretVariable(ctx, args.Name, secret)
 }
 
 type containerWithMountedSecretArgs struct {
@@ -532,7 +570,11 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	return parent.WithMountedSecret(ctx, s.gw, args.Path, core.NewSecret(args.Source), args.Owner)
+	secret, err := args.Source.ToSecret()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithMountedSecret(ctx, s.gw, args.Path, secret, args.Owner)
 }
 
 type containerWithDirectoryArgs struct {
@@ -541,7 +583,11 @@ type containerWithDirectoryArgs struct {
 }
 
 func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
-	return parent.WithDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, args.Owner)
+	dir, err := args.Directory.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithDirectory(ctx, s.gw, args.Path, dir, args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -550,7 +596,11 @@ type containerWithFileArgs struct {
 }
 
 func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
-	return parent.WithFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Permissions, args.Owner)
+	file, err := args.Source.ToFile()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithFile(ctx, s.gw, args.Path, file, args.Permissions, args.Owner)
 }
 
 type containerWithNewFileArgs struct {
@@ -569,7 +619,11 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	return parent.WithUnixSocket(ctx, s.gw, args.Path, core.NewSocket(args.Source), args.Owner)
+	socket, err := args.Source.ToSocket()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithUnixSocket(ctx, s.gw, args.Path, socket, args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
@@ -581,7 +635,7 @@ func (s *containerSchema) withoutUnixSocket(ctx *router.Context, parent *core.Co
 }
 
 func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {
-	return parent.Platform()
+	return parent.Platform, nil
 }
 
 type containerExportArgs struct {
@@ -603,7 +657,10 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	file := &core.File{ID: args.Source}
+	file, err := args.Source.ToFile()
+	if err != nil {
+		return nil, err
+	}
 
 	src, err := file.Open(ctx, s.host, s.gw)
 	if err != nil {
@@ -647,7 +704,7 @@ func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.C
 }
 
 func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
-	return parent.ImageRef(ctx, s.gw)
+	return parent.ImageRefOrErr(ctx, s.gw)
 }
 
 func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
@@ -655,7 +712,7 @@ func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, 
 		return "", ErrServicesDisabled
 	}
 
-	return parent.Hostname()
+	return parent.HostnameOrErr()
 }
 
 type containerEndpointArgs struct {
@@ -681,7 +738,12 @@ func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.C
 		return nil, ErrServicesDisabled
 	}
 
-	return parent.WithServiceBinding(&core.Container{ID: args.Service}, args.Alias)
+	svc, err := args.Service.ToContainer()
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithServiceBinding(svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {
@@ -728,13 +790,8 @@ func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Contain
 		return nil, ErrServicesDisabled
 	}
 
-	ports, err := parent.ExposedPorts()
-	if err != nil {
-		return nil, err
-	}
-
 	exposedPorts := []ExposedPort{}
-	for _, p := range ports {
+	for _, p := range parent.Ports {
 		exposedPorts = append(exposedPorts, ExposedPort{
 			Port:        p.Port,
 			Protocol:    string(p.Protocol),

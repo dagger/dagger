@@ -13,12 +13,7 @@ import (
 )
 
 func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
-	// TODO(vito): handle platform?
-	payload, err := p.workdir.ID.Decode()
-	if err != nil {
-		return nil, err
-	}
-	contextState, err := payload.State()
+	contextState, err := p.workdir.State()
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +39,7 @@ exec dagger-py "$@"
 			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),
 			llb.Scratch().
-				File(llb.Copy(contextState, payload.Dir, "/src")),
+				File(llb.Copy(contextState, p.workdir.Dir, "/src")),
 		}).
 			// FIXME(samalba): Install python dependencies not as root
 			// FIXME(samalba): errors while installing requirements.txt will be ignored because of the `|| true`. Need to find a better way.
@@ -54,7 +49,7 @@ exec dagger-py "$@"
 					requirementsfile, requirementsfile,
 				)),
 				llb.Dir(workdir),
-				llb.AddMount("/src", contextState, llb.SourcePath(payload.Dir)),
+				llb.AddMount("/src", contextState, llb.SourcePath(p.workdir.Dir)),
 				llb.AddMount(
 					"/root/.cache/pipcache",
 					llb.Scratch(),

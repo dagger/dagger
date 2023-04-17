@@ -275,7 +275,9 @@ RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret
 CMD cat /secret
 `)
 
-		stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{Secrets: []*dagger.Secret{sec}}).WithExec([]string{}).Stdout(ctx)
+		stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
+			Secrets: []*dagger.Secret{sec},
+		}).WithExec([]string{}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
 	})
@@ -3483,4 +3485,30 @@ func testOwnership(
 			}
 		})
 	}
+}
+
+func TestContainerParallelMutation(t *testing.T) {
+	t.Parallel()
+
+	res := struct {
+		Container struct {
+			A struct {
+				EnvVariable string
+			}
+			B string
+		}
+	}{}
+
+	err := testutil.Query(
+		`{
+			container {
+				a: withEnvVariable(name: "FOO", value: "BAR") {
+					envVariable(name: "FOO")
+				}
+				b: envVariable(name: "FOO")
+			}
+		}`, &res, nil)
+	require.NoError(t, err)
+	require.Equal(t, res.Container.A.EnvVariable, "BAR")
+	require.Empty(t, res.Container.B, "BAR")
 }

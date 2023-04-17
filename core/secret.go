@@ -10,56 +10,9 @@ import (
 
 // Secret is a content-addressed secret.
 type Secret struct {
-	ID SecretID `json:"id"`
-}
+	// Name specifies the arbitrary name/id of the secret.
+	Name string `json:"name,omitempty"`
 
-func NewSecret(id SecretID) *Secret {
-	return &Secret{ID: id}
-}
-
-func NewSecretFromFile(fileID FileID) (*Secret, error) {
-	id, err := (&secretIDPayload{FromFile: fileID}).Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewSecret(id), nil
-}
-
-func NewSecretFromHostEnv(name string) (*Secret, error) {
-	id, err := (&secretIDPayload{FromHostEnv: name}).Encode()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewSecret(id), nil
-}
-
-// SecretID is an opaque value representing a content-addressed secret.
-type SecretID string
-
-func NewSecretID(name, plaintext string) (SecretID, error) {
-	id, err := (&secretIDPayload{Name: name}).Encode()
-	if err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-func (id SecretID) String() string { return string(id) }
-
-func (id SecretID) IsOldFormat() (bool, error) {
-	payload := id.decode()
-
-	if payload.FromFile == "" && payload.FromHostEnv == "" {
-		return false, nil
-	}
-
-	return true, nil
-}
-
-// secretIDPayload is the inner content of a SecretID.
-type secretIDPayload struct {
 	// FromFile specifies the FileID it is based off.
 	//
 	// Deprecated: this shouldn't be used as it can leak secrets in the cache.
@@ -70,48 +23,60 @@ type secretIDPayload struct {
 	//
 	// Deprecated: use the setSecret API instead.
 	FromHostEnv string `json:"host_env,omitempty"`
-
-	// Name specifies the arbitrary name/id of the secret.
-	Name string `json:"name,omitempty"`
 }
 
-// Encode returns the opaque string ID representation of the secret.
-func (payload *secretIDPayload) Encode() (SecretID, error) {
-	// simple user defined secret ID
-	if payload.Name != "" {
-		return SecretID(payload.Name), nil
-	}
-
-	id, err := encodeID(payload)
-	if err != nil {
-		return "", err
-	}
-
-	return SecretID(id), nil
+func NewSecretFromFile(fileID FileID) *Secret {
+	return &Secret{FromFile: fileID}
 }
 
-func (id SecretID) decode() *secretIDPayload {
-	var payload secretIDPayload
-	if err := decodeID(&payload, id); err != nil {
-		// it must be a simple user defined secret ID
-		return &secretIDPayload{
-			Name: id.String(),
+func NewSecretFromHostEnv(name string) *Secret {
+	return &Secret{FromHostEnv: name}
+}
+
+// SecretID is an opaque value representing a content-addressed secret.
+type SecretID string
+
+func NewDynamicSecret(name string) *Secret {
+	return &Secret{
+		Name: name,
+	}
+}
+
+func (id SecretID) ToSecret() (*Secret, error) {
+	var secret Secret
+	if err := decodeID(&secret, id); err != nil {
+		return nil, err
+	}
+
+	return &secret, nil
+}
+
+func (id SecretID) String() string { return string(id) }
+
+func (secret *Secret) Clone() *Secret {
+	cp := *secret
+	return &cp
+}
+
+func (secret *Secret) ID() (SecretID, error) {
+	return encodeID[SecretID](secret)
+}
+
+func (secret *Secret) IsOldFormat() bool {
+	return secret.FromFile != "" || secret.FromHostEnv != ""
+}
+
+func (secret *Secret) LegacyPlaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+	if secret.FromFile != "" {
+		file, err := secret.FromFile.ToFile()
+		if err != nil {
+			return nil, err
 		}
-	}
-
-	return &payload
-}
-
-func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	payload := secret.ID.decode()
-
-	if payload.FromFile != "" {
-		file := &File{ID: payload.FromFile}
 		return file.Contents(ctx, gw)
 	}
 
-	if payload.FromHostEnv != "" {
-		return []byte(os.Getenv(payload.FromHostEnv)), nil
+	if secret.FromHostEnv != "" {
+		return []byte(os.Getenv(secret.FromHostEnv)), nil
 	}
 
 	return nil, fmt.Errorf("plaintext: empty secret?")

@@ -29,6 +29,7 @@ func (s *secretSchema) Resolvers() router.Resolvers {
 			"setSecret": router.ToResolver(s.setSecret),
 		},
 		"Secret": router.ObjectResolver{
+			"id":        router.ToResolver(s.id),
 			"plaintext": router.ToResolver(s.plaintext),
 		},
 	}
@@ -38,14 +39,16 @@ func (s *secretSchema) Dependencies() []router.ExecutableSchema {
 	return nil
 }
 
+func (s *secretSchema) id(ctx *router.Context, parent *core.Secret, args any) (core.SecretID, error) {
+	return parent.ID()
+}
+
 type secretArgs struct {
 	ID core.SecretID
 }
 
 func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) (*core.Secret, error) {
-	return &core.Secret{
-		ID: args.ID,
-	}, nil
+	return args.ID.ToSecret()
 }
 
 type setSecretArgs struct {
@@ -59,26 +62,24 @@ func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecret
 		return nil, err
 	}
 
-	return &core.Secret{
-		ID: secretID,
-	}, nil
+	return secretID.ToSecret()
 }
 
-func (s *secretSchema) plaintext(ctx *router.Context, parent core.Secret, args any) (string, error) {
-	isOldSecretIDFormat, err := parent.ID.IsOldFormat()
-	if err != nil {
-		return "", err
-	}
-
-	if isOldSecretIDFormat {
-		bytes, err := parent.Plaintext(ctx, s.gw)
+func (s *secretSchema) plaintext(ctx *router.Context, parent *core.Secret, args any) (string, error) {
+	if parent.IsOldFormat() {
+		bytes, err := parent.LegacyPlaintext(ctx, s.gw)
 		return string(bytes), err
 	}
 
-	idStr := parent.ID.String()
-	bytes, err := s.secrets.GetSecret(ctx, idStr)
+	id, err := parent.ID()
 	if err != nil {
 		return "", err
 	}
+
+	bytes, err := s.secrets.GetSecret(ctx, id.String())
+	if err != nil {
+		return "", err
+	}
+
 	return string(bytes), nil
 }
