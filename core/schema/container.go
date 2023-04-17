@@ -532,7 +532,7 @@ type containerWithMountedSecretArgs struct {
 }
 
 func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
-	return parent.WithMountedSecret(ctx, args.Path, core.NewSecret(args.Source), args.Owner)
+	return parent.WithMountedSecret(ctx, s.gw, args.Path, core.NewSecret(args.Source), args.Owner)
 }
 
 type containerWithDirectoryArgs struct {
@@ -569,7 +569,7 @@ type containerWithUnixSocketArgs struct {
 }
 
 func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
-	return parent.WithUnixSocket(ctx, args.Path, core.NewSocket(args.Source), args.Owner)
+	return parent.WithUnixSocket(ctx, s.gw, args.Path, core.NewSocket(args.Source), args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {

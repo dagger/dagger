@@ -217,7 +217,7 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	})
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, uid, gid int) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	err := validateFileName(dest)
 	if err != nil {
 		return nil, err
@@ -246,8 +246,8 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	}
 
 	opts := []llb.MkfileOption{}
-	if uid != -1 && gid != -1 {
-		opts = append(opts, llb.WithUIDGID(uid, gid))
+	if ownership != nil {
+		opts = append(opts, ownership.Opt())
 	}
 
 	st = st.File(
@@ -293,7 +293,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}).ToFile()
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, uid, gid int) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -324,8 +324,8 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 			AllowEmptyWildcard:  true,
 		},
 	}
-	if uid != -1 && gid != -1 {
-		opts = append(opts, llb.WithUIDGID(uid, gid))
+	if owner != nil {
+		opts = append(opts, owner.Opt())
 	}
 
 	st = st.File(
@@ -400,7 +400,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode, uid, gid int) (*Directory, error) {
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -433,8 +433,8 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 		},
 	}
 
-	if uid != -1 && gid != -1 {
-		opts = append(opts, llb.WithUIDGID(uid, gid))
+	if ownership != nil {
+		opts = append(opts, ownership.Opt())
 	}
 
 	st = st.File(

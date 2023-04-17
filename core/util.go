@@ -99,10 +99,10 @@ func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
 	return mirrorCh, wg
 }
 
-func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (int, int, error) {
+func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (*Ownership, error) {
 	if owner == "" || platform.OS != "linux" {
 		// default to root
-		return 0, 0, nil
+		return &Ownership{0, 0}, nil
 	}
 
 	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
@@ -126,21 +126,21 @@ func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform
 	if uname != "" || gname != "" {
 		fs, err = reffs.OpenState(ctx, gw, fsSt, llb.Platform(platform))
 		if err != nil {
-			return -1, -1, fmt.Errorf("open fs state for name->id: %w", err)
+			return nil, fmt.Errorf("open fs state for name->id: %w", err)
 		}
 	}
 
 	if uname != "" {
 		uid, err = findUID(fs, uname)
 		if err != nil {
-			return -1, -1, fmt.Errorf("find uid: %w", err)
+			return nil, fmt.Errorf("find uid: %w", err)
 		}
 	}
 
 	if gname != "" {
 		gid, err = findGID(fs, gname)
 		if err != nil {
-			return -1, -1, fmt.Errorf("find gid: %w", err)
+			return nil, fmt.Errorf("find gid: %w", err)
 		}
 	}
 
@@ -148,7 +148,7 @@ func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform
 		gid = uid
 	}
 
-	return uid, gid, nil
+	return &Ownership{uid, gid}, nil
 }
 
 func findUID(fs fs.FS, uname string) (int, error) {

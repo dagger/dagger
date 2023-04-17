@@ -107,7 +107,7 @@ type withDirectoryArgs struct {
 }
 
 func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
-	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, 0, 0)
+	return parent.WithDirectory(ctx, args.Path, &core.Directory{ID: args.Directory}, args.CopyFilter, nil)
 }
 
 type dirWithTimestampsArgs struct {
@@ -141,7 +141,7 @@ type withNewFileArgs struct {
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions, 0, 0)
+	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions, nil)
 }
 
 type withFileArgs struct {
@@ -151,7 +151,7 @@ type withFileArgs struct {
 }
 
 func (s *directorySchema) withFile(ctx *router.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
-	return parent.WithFile(ctx, args.Path, &core.File{ID: args.Source}, args.Permissions, 0, 0)
+	return parent.WithFile(ctx, args.Path, &core.File{ID: args.Source}, args.Permissions, nil)
 }
 
 type withoutDirectoryArgs struct {
