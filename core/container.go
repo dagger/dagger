@@ -84,13 +84,6 @@ type containerIDPayload struct {
 	// Image configuration (env, workdir, etc)
 	Config specs.ImageConfig `json:"cfg"`
 
-	// UID/GID of the current user specified in Config.User.
-	//
-	// These are fetched on config change and cached here so that they can be
-	// applied easily to newly applied mounts.
-	UID int `json:"uid,omitempty"`
-	GID int `json:"gid,omitempty"`
-
 	// Pipeline
 	Pipeline pipeline.Path `json:"pipeline"`
 
@@ -191,37 +184,6 @@ func (payload *containerIDPayload) MetaState() (*llb.State, error) {
 	}
 
 	return &metaSt, nil
-}
-
-// InheritOwner defaults an owner to the container's current user so that
-// chained sequences of mounts and withUser will have the mounts retain the
-// previous user instead of assuming the new one.
-func (payload *containerIDPayload) InheritOwner(given string) string {
-	if given == "" {
-		return payload.Config.User
-	}
-	return given
-}
-
-// SyncUIDGID refreshes the UID/GID cache value from the image config's user.
-func (payload *containerIDPayload) SyncUIDGID(ctx context.Context, gw bkgw.Client) error {
-	fsSt, err := payload.FSState()
-	if err != nil {
-		return err
-	}
-
-	payload.UID, payload.GID, err = resolveUIDGID(
-		ctx,
-		fsSt,
-		gw,
-		payload.Platform,
-		payload.Config.User,
-	)
-	if err != nil {
-		return fmt.Errorf("resolve uid/gid: %w", err)
-	}
-
-	return nil
 }
 
 // ContainerMount is a mount point configured in a container.
@@ -365,10 +327,6 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	imgSpec.Config.Env = append(payload.Config.Env, imgSpec.Config.Env...)
 	payload.Config = imgSpec.Config
 
-	if err := payload.SyncUIDGID(ctx, gw); err != nil {
-		return nil, err
-	}
-
 	payload.ImageRef = digested.String()
 
 	return container.containerFromPayload(payload)
@@ -472,10 +430,6 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 			}
 
 			payload.Config = imgSpec.Config
-		}
-
-		if err := payload.SyncUIDGID(ctx, gw); err != nil {
-			return nil, err
 		}
 
 		return container.containerFromPayload(payload)
@@ -606,7 +560,7 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		Target:           target,
 		CacheID:          cachePayload.Sum(),
 		CacheSharingMode: cacheSharingMode,
-		Owner:            payload.InheritOwner(owner),
+		Owner:            owner,
 	}
 
 	if source != nil {
@@ -657,7 +611,7 @@ func (container *Container) WithMountedSecret(ctx context.Context, target string
 	payload.Secrets = append(payload.Secrets, ContainerSecret{
 		Secret:    source.ID,
 		MountPath: target,
-		Owner:     payload.InheritOwner(owner),
+		Owner:     owner,
 	})
 
 	// set image ref to empty string
@@ -719,7 +673,7 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 	newSocket := ContainerSocket{
 		Socket:   source.ID,
 		UnixPath: target,
-		Owner:    payload.InheritOwner(owner),
+		Owner:    owner,
 	}
 
 	var replaced bool
@@ -900,7 +854,7 @@ func (container *Container) withMounted(
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
-		Owner:      payload.InheritOwner(owner),
+		Owner:      owner,
 	})
 
 	payload.Services.Merge(svcs)
@@ -983,10 +937,6 @@ func (container *Container) WithUser(ctx context.Context, gw bkgw.Client, user s
 	}
 
 	payload.Config.User = user
-
-	if err := payload.SyncUIDGID(ctx, gw); err != nil {
-		return nil, err
-	}
 
 	return container.containerFromPayload(payload)
 }
@@ -1116,7 +1066,9 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			if err != nil {
 				return nil, err
 			}
-			secretOpts = append(secretOpts, llb.SecretFileOpt(uid, gid, 0o400)) // 0400 is default
+			if uid != -1 && gid != -1 {
+				secretOpts = append(secretOpts, llb.SecretFileOpt(uid, gid, 0o400)) // 0400 is default
+			}
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
@@ -1151,8 +1103,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			return nil, err
 		}
 
-		socketOpts = append(socketOpts,
-			llb.SSHSocketOpt(socket.UnixPath, uid, gid, 0o600)) // 0600 is default
+		if uid != -1 && gid != -1 {
+			socketOpts = append(socketOpts,
+				llb.SSHSocketOpt(socket.UnixPath, uid, gid, 0o600)) // 0600 is default
+		}
 
 		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
@@ -1170,7 +1124,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			return nil, err
 		}
 
-		if !mnt.Tmpfs {
+		if uid != -1 && gid != -1 {
 			// NB(vito): need to create intermediate directory with correct ownership
 			// to handle the directory case, otherwise the mount will be owned by
 			// root
@@ -1576,11 +1530,6 @@ func (container *Container) Import(
 
 	payload.Config = imgSpec.Config
 
-	err = payload.SyncUIDGID(ctx, gw)
-	if err != nil {
-		return nil, fmt.Errorf("update uid/gid: %w", err)
-	}
-
 	id, err := payload.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encode: %w", err)
@@ -1865,14 +1814,14 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 }
 
 func (container *Container) uidgid(ctx context.Context, gw bkgw.Client, owner string) (int, int, error) {
+	if owner == "" {
+		// do not change ownership
+		return -1, -1, nil
+	}
+
 	containerPayload, err := container.ID.decode()
 	if err != nil {
 		return -1, -1, err
-	}
-
-	if owner == "" {
-		// inherit container's current user
-		return containerPayload.UID, containerPayload.GID, nil
 	}
 
 	fsSt, err := containerPayload.FSState()

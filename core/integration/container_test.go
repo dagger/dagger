@@ -3409,7 +3409,6 @@ func testOwnership(
 	}
 
 	for _, example := range []example{
-		{name: "inherit", owner: "", output: "inherituser inherituser"},
 		{name: "userid", owner: "1234", output: "auser auser"},
 		{name: "userid-twice", owner: "1234:1234", output: "auser auser"},
 		{name: "username", owner: "auser", output: "auser auser"},
@@ -3418,6 +3417,23 @@ func testOwnership(
 		{name: "username-gid", owner: "auser:4321", output: "auser agroup"},
 		{name: "uid-groupname", owner: "1234:agroup", output: "auser agroup"},
 		{name: "names", owner: "auser:agroup", output: "auser agroup"},
+
+		// NB: inheriting the user/group from the container was implemented, but we
+		// decided to back out for two reasons:
+		//
+		// 1. performance: right now chowning has to be a separate Copy operation,
+		//    which currently literally copies the relevant files even for a chown,
+		//    which seems prohibitively expensive as a default. maybe with metacopy
+		//    support in Buildkit this would become more feasible.
+		// 2. bumping timestamps: chown operations are also technically writes, so
+		//    we would be bumping timestamps all over the place and making builds
+		//    non-reproducible. this has an especially unfortunate interaction with
+		//    WithTimestamps where if you were to pass the timestamped values to
+		//    another container you would immediately lose those timestamps.
+		// 3. no opt-out: what if the user actually _wants_ to keep the permissions
+		//    as they are? we would need to add another API for this. given all of
+		//    the above, making it opt-in seems obvious.
+		{name: "no-inherit", owner: "", output: "root root"},
 	} {
 		example := example
 		t.Run(example.name, func(t *testing.T) {
