@@ -114,7 +114,6 @@ The `DaggerPipeline` class constructor initializes a new GraphQL client for the 
 
 ```php
 class DaggerPipeline {
-
   // ...
 
   private $client;
