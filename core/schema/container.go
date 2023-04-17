@@ -612,7 +612,7 @@ func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, a
 
 	defer src.Close()
 
-	return parent.Import(ctx, s.gw, s.host, src, args.Tag, s.ociStore)
+	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {

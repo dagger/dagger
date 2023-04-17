@@ -320,8 +320,6 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 			CopyDirContentsOnly: true,
 			IncludePatterns:     filter.Include,
 			ExcludePatterns:     filter.Exclude,
-			AllowWildcard:       true,
-			AllowEmptyWildcard:  true,
 		},
 	}
 	if owner != nil {

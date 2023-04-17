@@ -100,11 +100,6 @@ func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
 }
 
 func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (*Ownership, error) {
-	if owner == "" || platform.OS != "linux" {
-		// default to root
-		return &Ownership{0, 0}, nil
-	}
-
 	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
 
 	var uid, gid int
