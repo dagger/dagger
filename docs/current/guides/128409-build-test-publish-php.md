@@ -86,7 +86,7 @@ try {
 
   // test
   echo "Running tests in test image..." . PHP_EOL;
-  $result = $p->testImage($testImage);
+  $result = $p->runUnitTests($testImage);
   echo "Tests completed." . PHP_EOL;
 
   // build production image
@@ -114,14 +114,17 @@ The `DaggerPipeline` class constructor initializes a new GraphQL client for the 
 
 ```php
 class DaggerPipeline {
+
+  // ...
+
   private $client;
 
   // constructor
   public function __construct() {
     // initialize client with
     // endpoint from environment
-    $sessionPort = getenv('DAGGER_SESSION_PORT') or throw new Exception("DAGGER_SESSION_PORT doesn't exist");
-    $sessionToken = getenv('DAGGER_SESSION_TOKEN') or throw new Exception("DAGGER_SESSION_TOKEN doesn't exist");
+    $sessionPort = getenv('DAGGER_SESSION_PORT') or throw new Exception("DAGGER_SESSION_PORT environment variable must be set");
+    $sessionToken = getenv('DAGGER_SESSION_TOKEN') or throw new Exception("DAGGER_SESSION_TOKEN environment variable must be set");
     $this->client = new Client(
       'http://127.0.0.1:' . $sessionPort . '/query',
       ['Authorization' => 'Basic ' . base64_encode($sessionToken . ':')]
@@ -136,41 +139,31 @@ The API endpoint and the HTTP authentication token for the GraphQL client are no
 
 ### Build a test image
 
-The `buildTestImage()` method builds an image of the application for testing. Internally, this method first calls the `buildBaseImage()` method. Here's what this method look like:
+The `buildTestImage()` method builds an image of the application for testing. Internally, this method calls the `buildApplicationImage()` method, which in turn calls the `buildRuntimeImage()` method. Here's what these methods look like:
 
 ```php
 class DaggerPipeline {
   // ...
 
-  // build base image
-  public function buildBaseImage() {
-    // get host working directory
-    $sourceQuery = <<<QUERY
-    query {
-      host {
-        directory (path: ".", exclude: ["vendor", "ci"]) {
-          id
-        }
-      }
-    }
-    QUERY;
-    $sourceDir = $this->executeQuery($sourceQuery);
-
+  // build runtime image
+  public function buildRuntimeImage() {
     // build runtime image
     // install tools and PHP extensions
     // configure Apache webserver root and rewriting
     $runtimeQuery = <<<QUERY
     query {
-      container {
-        from(address: "php:8.2-apache-buster") {
+      container (platform: "linux/amd64") {
+        from(address: "$this->phpImage") {
           withExec(args: ["apt-get", "update"]) {
             withExec(args: ["apt-get", "install", "--yes", "git-core"]) {
               withExec(args: ["apt-get", "install", "--yes", "zip"]) {
-                withExec(args: ["docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"]) {
-                  withExec(args: ["sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"]) {
-                    withExec(args: ["sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"]) {
-                      withExec(args: ["a2enmod", "rewrite"]) {
-                        id
+                withExec(args: ["apt-get", "install", "--yes", "curl"]) {
+                  withExec(args: ["docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"]) {
+                    withExec(args: ["sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"]) {
+                      withExec(args: ["sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"]) {
+                        withExec(args: ["a2enmod", "rewrite"]) {
+                          id
+                        }
                       }
                     }
                   }
@@ -183,6 +176,25 @@ class DaggerPipeline {
     }
     QUERY;
     $runtime = $this->executeQuery($runtimeQuery);
+    return $runtime;
+  }
+
+  // build application image
+  public function buildApplicationImage() {
+    // get runtime image
+    $runtime = $this->buildRuntimeImage();
+
+    // get host working directory
+    $sourceQuery = <<<QUERY
+    query {
+      host {
+        directory (path: ".", exclude: ["vendor", "ci"]) {
+          id
+        }
+      }
+    }
+    QUERY;
+    $sourceDir = $this->executeQuery($sourceQuery);
 
     // add application source code
     // set file permissions
@@ -231,18 +243,18 @@ class DaggerPipeline {
 }
 ```
 
-The `buildBaseImage()` method executes four GraphQL queries:
+1. The `buildRuntimeImage()` method executes a GraphQL query to construct a runtime image. This runtime image consists of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
+1. The `buildApplicationImage()` method uses the image produced by `buildRuntimeImage()` and executes three additional GraphQL queries:
 
-1. The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
-1. The second query constructs a runtime image, consisting of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
-1. The third query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
-1. The fourth and final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
+  - The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
+  - The next query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
+  - The final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
 
 :::info
 GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger leverages this lazy evaluation model to optimize and parallelize pipelines for maximum speed and performance. This implies that the queries above are not actually executed until necessary to return output (such as the result of a command or an exit code) to the requesting client. [Learn more about lazy evaluation in Dagger](../api/975146-concepts.mdx#lazy-evaluation).
 :::
 
-Once the base image is constructed, control returns to the `buildTestImage()` method:
+Once the application image is constructed, control returns to the `buildTestImage()` method:
 
 ```php
 class DaggerPipeline {
@@ -251,7 +263,7 @@ class DaggerPipeline {
   // build image for testing
   public function buildTestImage() {
     // build base image
-    $image = $this->buildBaseImage();
+    $image = $this->buildApplicationImage();
 
     // set test-specific variables
     $appTestQuery = <<<QUERY
@@ -277,19 +289,19 @@ The `buildTestImage()` method executes one additional GraphQL query to add test-
 
 ### Run unit tests
 
-The `testImage()` method accepts an image reference and runs unit tests in the image. Here's what it looks like:
+The `runUnitTests()` method accepts an image reference and runs unit tests in the image. Here's what it looks like:
 
 ```php
 class DaggerPipeline {
   // ...
 
   // run unit tests
-  public function testImage($image) {
+  public function runUnitTests($image) {
     // create database service container
     $dbQuery = <<<QUERY
     query {
       container {
-        from(address: "mariadb:10.11.2") {
+        from(address: "$this->mariadbImage") {
           withEnvVariable(name: "MARIADB_DATABASE", value: "t_db") {
             withEnvVariable(name: "MARIADB_USER", value: "t_user") {
               withEnvVariable(name: "MARIADB_PASSWORD", value: "t_password") {
@@ -341,7 +353,7 @@ class DaggerPipeline {
 }
 ```
 
-The `testImage()` method executes two GraphQL queries:
+The `runUnitTests()` method executes two GraphQL queries:
 
 1. The first query initializes a database service container, against which the application's unit tests will be run. It uses the `container.from()` method to initialize a new container from the `mariadb:10.11.2` image. It then chains multiple `container.withEnvVariable()` methods to configure the database service, and the `container.withExposedPort()` method to ensure that the service is available before allowing clients access.
 1. The second query uses the test image returned by the `buildTestImage()` method and adds a service binding for the database service to it using the `container.withServiceBinding()` API method. It then chains multiple `container.withEnvVariable()` methods to configure the database service credentials for the Laravel application. Finally, it uses the `container.withExec()` method to launch the PHPUnit test runner and return the output stream (the test summary).
@@ -352,7 +364,7 @@ When creating the database service container, using `container.withExposedPort()
 
 ### Build a production image
 
-The `buildProductionImage()` method builds an image of the application for production. Internally, this method also calls the `buildBaseImage()` method. Here's what it looks like:
+The `buildProductionImage()` method builds an image of the application for production. Internally, this method also calls the `buildApplicationImage()` method. Here's what it looks like:
 
 ```php
 class DaggerPipeline {
@@ -361,14 +373,14 @@ class DaggerPipeline {
   // build image for production
   public function buildProductionImage() {
     // build base image
-    $image = $this->buildBaseImage();
+    $image = $this->buildApplicationImage();
 
     // set production-specific variables
     $appProductionQuery = <<<QUERY
     query {
       container (id: "$image") {
         withEnvVariable(name: "APP_DEBUG", value: "false") {
-          withEnvVariable(name: "APP_NAME", value: "Laravel with Dagger") {
+          withLabel(name: "org.opencontainers.image.title", value: "Laravel with Dagger") {
             withEntrypoint(args: "/var/www/docker-entrypoint.sh") {
               id
             }
@@ -385,11 +397,11 @@ class DaggerPipeline {
 }
 ```
 
-The `buildProductionImage()` method references the base image and executes one additional GraphQL query to add production-specific configuration to the image. More specifically, it turns off detailed application error messages for greater security using the `container.withEnvVariable()` API method. It also sets a custom container startup script using the `container.withEntrypoint()` API method.
+The `buildProductionImage()` method references the base image and executes one additional GraphQL query to add production-specific configuration to the image. More specifically, it turns off detailed application error messages for greater security using the `container.withEnvVariable()` API method. It also sets an [OpenContainer annotation](https://github.com/opencontainers/image-spec/blob/main/annotations.md#pre-defined-annotation-keys) for the container using the `container.withLabel()` API method.
 
 ### Publish the image
 
-The `publish()` method accepts an image reference and publishes the corresponding image to Docker Hub. Here's what it looks like:
+The `publishImage()` method accepts an image reference and publishes the corresponding image to Docker Hub. Here's what it looks like:
 
 ```php
 class DaggerPipeline {
@@ -397,9 +409,10 @@ class DaggerPipeline {
 
   // publish image to registry
   public function publishImage($image) {
-    // retrieve registry credentials from host environment
-    $registryUsername = getenv("REGISTRY_USERNAME");
-    $registryPassword = getenv("REGISTRY_PASSWORD");
+    // retrieve registry address and credentials from host environment
+    $registryAddress = getenv("REGISTRY_ADDRESS") or throw new Exception("REGISTRY_ADDRESS environment variable must be set");
+    $registryUsername = getenv("REGISTRY_USERNAME") or throw new Exception("REGISTRY_USERNAME environment variable must be set");
+    $registryPassword = getenv("REGISTRY_PASSWORD") or throw new Exception("REGISTRY_PASSWORD environment variable must be set");
 
     // set registry password as Dagger secret
     $registryPasswordSecretQuery = <<<QUERY
@@ -416,7 +429,7 @@ class DaggerPipeline {
     $publishQuery = <<<QUERY
     query {
       container (id: "$image") {
-        withRegistryAuth(address: "docker.io", username: "$registryUsername", secret: "$registryPasswordSecret") {
+        withRegistryAuth(address: "$registryAddress", username: "$registryUsername", secret: "$registryPasswordSecret") {
           publish(address: "$registryUsername/laravel-dagger")
         }
       }
@@ -430,10 +443,10 @@ class DaggerPipeline {
 }
 ```
 
-The `publish()` method expects to source Docker Hub registry credentials from the host environment. It uses PHP's `getenv()` method to retrieve these credentials and then executes two GraphQL queries:
+The `publishImage()` method expects to source the registry address credentials from the host environment. It uses PHP's `getenv()` method to retrieve these details and then executes two GraphQL queries:
 
 1. The first query creates a Dagger secret to store the registry password, via the `setSecret()` API method.
-1. The second query authenticates and publishes the image to Docker Hub. It uses the `container.withRegistryAuth()` API method for authentication, and the `container.publish()` method for the publishing operation. The `container.publish()` method returns the address and hash for the published image.
+1. The second query authenticates and publishes the image to the specified registry. It uses the `container.withRegistryAuth()` API method for authentication, and the `container.publish()` method for the publishing operation. The `container.publish()` method returns the address and hash for the published image.
 
 :::tip
 Using a Dagger secret for confidential information ensures that the information is never exposed in plaintext logs, in the filesystem of containers you're building, or in any cache. Dagger also automatically scrubs secrets from its various logs and output streams. This ensures that sensitive data does not leak - for example, in the event of a crash. [Learn more about secrets in Dagger](./723462-use-secrets.md).
@@ -441,11 +454,12 @@ Using a Dagger secret for confidential information ensures that the information 
 
 ## Step 3: Run the Dagger pipeline
 
-Configure credentials for the Docker Hub registry on the local host. Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub credentials.
+Configure the registry address and credentials using environment variable on the local host. Although you can use any registry, this guide assumes usage of Docker Hub. Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub credentials.
 
 ```shell
-export REGISTRY_USERNAME=DOCKER-HUB-USERNAME
-export REGISTRY_PASSWORD=DOCKER-HUB-PASSWORD
+export REGISTRY_ADDRESS=docker.io
+export REGISTRY_USERNAME=USERNAME
+export REGISTRY_PASSWORD=PASSWORD
 ```
 
 {@include: ../partials/_run_api_client.md}
