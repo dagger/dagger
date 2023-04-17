@@ -173,7 +173,7 @@ func (t Python) Bump(ctx context.Context, version string) error {
 	return os.WriteFile("sdk/python/src/dagger/engine/_version.py", []byte(engineReference), 0o600)
 }
 
-func pythonBase(c dagger.Client, version string) dagger.Container {
+func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	var (
 		path   = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		venv   = "/opt/venv"

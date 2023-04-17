@@ -15,7 +15,7 @@ const (
 )
 
 // Repository with common set of exclude filters to speed up upload
-func Repository(c dagger.Client) dagger.Directory {
+func Repository(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(".", dagger.HostDirectoryOpts{
 		Exclude: []string{
 			".git",
@@ -37,7 +37,7 @@ func Repository(c dagger.Client) dagger.Directory {
 //
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
-func RepositoryGoCodeOnly(c dagger.Client) dagger.Directory {
+func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 	return c.Directory().WithDirectory("/", Repository(c), dagger.DirectoryWithDirectoryOpts{
 		Include: []string{
 			// go source
@@ -65,7 +65,7 @@ func RepositoryGoCodeOnly(c dagger.Client) dagger.Directory {
 	})
 }
 
-func AdvertiseDevEngine(c dagger.Client, ctr dagger.Container) dagger.Container {
+func AdvertiseDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
 	// the cli bin is statically linked, can just mount it in anywhere
 	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
 	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
@@ -90,7 +90,7 @@ func AdvertiseDevEngine(c dagger.Client, ctr dagger.Container) dagger.Container 
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+EngineContainerName)
 }
 
-func goBase(c dagger.Client) dagger.Container {
+func goBase(c *dagger.Client) *dagger.Container {
 	repo := RepositoryGoCodeOnly(c)
 
 	// Create a directory containing only `go.{mod,sum}` files.
@@ -122,11 +122,11 @@ func goBase(c dagger.Client) dagger.Container {
 //
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
-func GoBase(c dagger.Client) dagger.Container {
+func GoBase(c *dagger.Client) *dagger.Container {
 	return AdvertiseDevEngine(c, goBase(c))
 }
 
-func PlatformDaggerBinary(c dagger.Client, goos, goarch, goarm string) dagger.File {
+func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {
 	base := goBase(c)
 	if goos != "" {
 		base = base.WithEnvVariable("GOOS", goos)
@@ -143,12 +143,12 @@ func PlatformDaggerBinary(c dagger.Client, goos, goarch, goarm string) dagger.Fi
 }
 
 // DaggerBinary returns a compiled dagger binary
-func DaggerBinary(c dagger.Client) dagger.File {
+func DaggerBinary(c *dagger.Client) *dagger.File {
 	return PlatformDaggerBinary(c, "", "", "")
 }
 
 // HostDaggerBinary returns a dagger binary compiled to target the host's OS+arch
-func HostDaggerBinary(c dagger.Client) dagger.File {
+func HostDaggerBinary(c *dagger.Client) *dagger.File {
 	var goarm string
 	if runtime.GOARCH == "arm" {
 		goarm = "7" // not always correct but not sure of better way right now
@@ -157,14 +157,14 @@ func HostDaggerBinary(c dagger.Client) dagger.File {
 }
 
 // ClientGenBinary returns a compiled dagger binary
-func ClientGenBinary(c dagger.Client) dagger.File {
+func ClientGenBinary(c *dagger.Client) *dagger.File {
 	return goBase(c).
 		WithExec([]string{"go", "build", "-o", "./bin/client-gen", "-ldflags", "-s -w", "./cmd/client-gen"}).
 		File("./bin/client-gen")
 }
 
 // HostDockerCredentials returns the host's ~/.docker dir if it exists, otherwise just an empty dir
-func HostDockerDir(c dagger.Client) dagger.Directory {
+func HostDockerDir(c *dagger.Client) *dagger.Directory {
 	if runtime.GOOS != "linux" {
 		// doesn't work on darwin, untested on windows
 		return c.Directory()
@@ -180,7 +180,7 @@ func HostDockerDir(c dagger.Client) dagger.Directory {
 	return c.Host().Directory(path)
 }
 
-func WithSetHostVar(ctx context.Context, h dagger.Host, varName string) dagger.HostVariable {
+func WithSetHostVar(ctx context.Context, h *dagger.Host, varName string) *dagger.HostVariable {
 	hv := h.EnvVariable(varName)
 	if val, _ := hv.Secret().Plaintext(ctx); val == "" {
 		fmt.Fprintf(os.Stderr, "env var %s must be set", varName)

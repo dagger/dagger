@@ -315,7 +315,7 @@ func (t Engine) Dev(ctx context.Context) error {
 
 const cniVersion = "v1.2.0"
 
-func dnsnameBinary(c dagger.Client, arch string) dagger.File {
+func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -328,8 +328,8 @@ func dnsnameBinary(c dagger.Client, arch string) dagger.File {
 		File("./bin/dnsname")
 }
 
-func devEngineContainer(c dagger.Client, arches []string) []dagger.Container {
-	platformVariants := make([]dagger.Container, 0, len(arches))
+func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
+	platformVariants := make([]*dagger.Container, 0, len(arches))
 	for _, arch := range arches {
 		platformVariants = append(platformVariants, c.
 			Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
@@ -365,7 +365,7 @@ func devEngineContainer(c dagger.Client, arches []string) []dagger.Container {
 	return platformVariants
 }
 
-func cniPlugins(c dagger.Client, arch string) dagger.Directory {
+func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 	cniURL := fmt.Sprintf(
 		"https://github.com/containernetworking/plugins/releases/download/%s/cni-plugins-%s-%s-%s.tgz",
 		cniVersion, "linux", arch, cniVersion,
@@ -386,7 +386,7 @@ func cniPlugins(c dagger.Client, arch string) dagger.Directory {
 		Directory("/opt/cni/bin")
 }
 
-func engineBin(c dagger.Client, arch string) dagger.File {
+func engineBin(c *dagger.Client, arch string) *dagger.File {
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -399,7 +399,7 @@ func engineBin(c dagger.Client, arch string) dagger.File {
 		File("./bin/" + engineBinName)
 }
 
-func shimBin(c dagger.Client, arch string) dagger.File {
+func shimBin(c *dagger.Client, arch string) *dagger.File {
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -412,7 +412,7 @@ func shimBin(c dagger.Client, arch string) dagger.File {
 		File("./bin/" + shimBinName)
 }
 
-func buildctlBin(c dagger.Client, arch string) dagger.File {
+func buildctlBin(c *dagger.Client, arch string) *dagger.File {
 	return util.GoBase(c).
 		WithEnvVariable("GOOS", "linux").
 		WithEnvVariable("GOARCH", arch).
@@ -425,7 +425,7 @@ func buildctlBin(c dagger.Client, arch string) dagger.File {
 		File("./bin/buildctl")
 }
 
-func runcBin(c dagger.Client, arch string) dagger.File {
+func runcBin(c *dagger.Client, arch string) *dagger.File {
 	return c.HTTP(fmt.Sprintf(
 		"https://github.com/opencontainers/runc/releases/download/%s/runc.%s",
 		runcVersion,
@@ -433,7 +433,7 @@ func runcBin(c dagger.Client, arch string) dagger.File {
 	))
 }
 
-func qemuBins(c dagger.Client, arch string) dagger.Directory {
+func qemuBins(c *dagger.Client, arch string) *dagger.Directory {
 	return c.
 		Container(dagger.ContainerOpts{Platform: dagger.Platform("linux/" + arch)}).
 		From(qemuBinImage).
