@@ -36,7 +36,7 @@ func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithEnvVariable("ENGINE_ID", id).
-		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+id)).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities:      true,
 			ExperimentalPrivilegedNesting: true,
@@ -55,7 +55,9 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithExec(nil)
 
-	devEngine, endpoint, err := getDevEngine(ctx, c, registry, "registry", "type=registry,ref=registry:5000/test-cache,mode=max", 0)
+	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
+
+	devEngine, endpoint, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 0)
 	require.NoError(t, err)
 
 	// This loads the dagger-cli binary from the host into the container, that was set up by
@@ -69,6 +71,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 			Contents: `{ 
 				container { 
@@ -83,7 +86,8 @@ func TestRemoteCacheRegistry(t *testing.T) {
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
 	require.NoError(t, err)
-	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.exec.stdout").String())
+	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaA, "shaA is empty")
 
 	devEngine, endpoint, err = getDevEngine(ctx, c, registry, "registry", "type=registry,ref=registry:5000/test-cache,mode=max", 1)
 	require.NoError(t, err)
@@ -93,6 +97,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 			Contents: `{ 
 				container { 
@@ -107,7 +112,8 @@ func TestRemoteCacheRegistry(t *testing.T) {
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
 	require.NoError(t, err)
-	shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.exec.stdout").String())
+	shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.withExec.stdout").String())
+	require.NotEmpty(t, shaB, "shaB is empty")
 
 	require.Equal(t, shaA, shaB)
 }
@@ -150,6 +156,7 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 				Contents: `{ 
 						container { 
@@ -164,7 +171,8 @@ func TestRemoteCacheS3(t *testing.T) {
 				"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 			}).Stdout(ctx)
 		require.NoError(t, err)
-		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.exec.stdout").String())
+		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
+		require.NotEmpty(t, shaA, "shaA is empty")
 
 		devEngine, endpoint, err = getDevEngine(ctx, c, s3, "s3", s3Env, 1)
 		require.NoError(t, err)
@@ -174,6 +182,7 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
 				Contents: `{ 
 						container { 
@@ -188,7 +197,8 @@ func TestRemoteCacheS3(t *testing.T) {
 				"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 			}).Stdout(ctx)
 		require.NoError(t, err)
-		shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.exec.stdout").String())
+		shaB := strings.TrimSpace(gjson.Get(outputB, "container.from.withExec.stdout").String())
+		require.NotEmpty(t, shaB, "shaB is empty")
 
 		require.Equal(t, shaA, shaB)
 	})
