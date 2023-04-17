@@ -205,11 +205,6 @@ type ContainerMount struct {
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
-
-	// A user:group to set for the mount and its contents.
-	//
-	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
-	Owner string `json:"owner,omitempty"`
 }
 
 // SourceState returns the state of the source of the mount.
@@ -482,7 +477,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 }
 
 func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
-	return container.writeToPath(ctx, subdir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -493,7 +488,7 @@ func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, s
 }
 
 func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
-	return container.writeToPath(ctx, subdir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -505,7 +500,7 @@ func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir
 
 func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	dir, file := filepath.Split(dest)
-	return container.writeToPath(ctx, dir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
 		uid, gid, err := container.uidgid(ctx, gw, owner)
 		if err != nil {
 			return nil, err
@@ -515,25 +510,25 @@ func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, des
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory, owner string) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, gw bkgw.Client, target string, source *Directory, owner string) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services, owner)
+	return container.withMounted(ctx, gw, target, payload.LLB, payload.Dir, payload.Services, owner)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, target string, source *File, owner string) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, gw bkgw.Client, target string, source *File, owner string) (*Container, error) {
 	payload, err := source.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File, payload.Services, owner)
+	return container.withMounted(ctx, gw, target, payload.LLB, payload.File, payload.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, gw bkgw.Client, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -560,7 +555,6 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		Target:           target,
 		CacheID:          cachePayload.Sum(),
 		CacheSharingMode: cacheSharingMode,
-		Owner:            owner,
 	}
 
 	if source != nil {
@@ -571,6 +565,20 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 
 		mount.Source = srcPayload.LLB
 		mount.SourcePath = srcPayload.Dir
+	}
+
+	if owner != "" {
+		mount.Source, mount.SourcePath, err = container.chown(
+			ctx,
+			gw,
+			mount.Source,
+			mount.SourcePath,
+			owner,
+			llb.Platform(payload.Platform),
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	payload.Mounts = payload.Mounts.With(mount)
@@ -837,6 +845,8 @@ func locatePath[T *File | *Directory](
 }
 
 func (container *Container) withMounted(
+	ctx context.Context,
+	gw bkgw.Client,
 	target string,
 	srcDef *pb.Definition,
 	srcPath string,
@@ -850,11 +860,17 @@ func (container *Container) withMounted(
 
 	target = absPath(payload.Config.WorkingDir, target)
 
+	if owner != "" {
+		srcDef, srcPath, err = container.chown(ctx, gw, srcDef, srcPath, owner, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	payload.Mounts = payload.Mounts.With(ContainerMount{
 		Source:     srcDef,
 		SourcePath: srcPath,
 		Target:     target,
-		Owner:      owner,
 	})
 
 	payload.Services.Merge(svcs)
@@ -865,7 +881,52 @@ func (container *Container) withMounted(
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) writeToPath(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
+func (container *Container) chown(
+	ctx context.Context,
+	gw bkgw.Client,
+	srcDef *pb.Definition,
+	srcPath string,
+	owner string,
+	opts ...llb.ConstraintsOpt,
+) (*pb.Definition, string, error) {
+	uid, gid, err := container.uidgid(ctx, gw, owner)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if uid == -1 || gid == -1 {
+		return srcDef, srcPath, nil
+	}
+
+	var srcSt llb.State
+	if srcDef == nil {
+		// e.g. empty cache mount
+		srcSt = llb.Scratch()
+	} else {
+		srcSt, err = defToState(srcDef)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	// NB(vito): need to create intermediate directory with correct ownership
+	// to handle the directory case, otherwise the mount will be owned by
+	// root
+	srcSt = llb.Scratch().File(
+		llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
+			Copy(srcSt, srcPath, "/chown", llb.WithUIDGID(uid, gid)),
+	)
+
+	def, err := srcSt.Marshal(ctx, opts...)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// "re-write" the mount to point to the chowned location
+	return def.ToPB(), filepath.Join("/chown", filepath.Base(srcPath)), nil
+}
+
+func (container *Container) writeToPath(ctx context.Context, gw bkgw.Client, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
 	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -907,7 +968,7 @@ func (container *Container) writeToPath(ctx context.Context, subdir string, fn f
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil, "")
+	return container.withMounted(ctx, gw, mount.Target, dirPayload.LLB, mount.SourcePath, nil, "")
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -926,17 +987,6 @@ func (container *Container) UpdateImageConfig(ctx context.Context, updateFn func
 	}
 
 	payload.Config = updateFn(payload.Config)
-
-	return container.containerFromPayload(payload)
-}
-
-func (container *Container) WithUser(ctx context.Context, gw bkgw.Client, user string) (*Container, error) {
-	payload, err := container.ID.decode()
-	if err != nil {
-		return nil, err
-	}
-
-	payload.Config.User = user
 
 	return container.containerFromPayload(payload)
 }
@@ -1111,37 +1161,13 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
 
-	for i, mnt := range mounts {
+	for _, mnt := range mounts {
 		srcSt, err := mnt.SourceState()
 		if err != nil {
 			return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
 		}
 
 		mountOpts := []llb.MountOption{}
-
-		uid, gid, err := container.uidgid(ctx, gw, mnt.Owner)
-		if err != nil {
-			return nil, err
-		}
-
-		if uid != -1 && gid != -1 {
-			// NB(vito): need to create intermediate directory with correct ownership
-			// to handle the directory case, otherwise the mount will be owned by
-			// root
-			srcSt = llb.Scratch().File(
-				llb.Mkdir("/chown", 0o700, llb.WithUIDGID(uid, gid)).
-					Copy(srcSt, mnt.SourcePath, "/chown", llb.WithUIDGID(uid, gid)),
-				pipeline.CustomName{
-					Name:     fmt.Sprintf("chown %s to %d:%d", mnt.Target, uid, gid),
-					Pipeline: payload.Pipeline,
-					Internal: true,
-				}.LLBOpt(),
-			)
-
-			// "re-write" the source path to point to the chowned location
-			mnt.SourcePath = filepath.Join("/chown", filepath.Base(mnt.SourcePath))
-			mounts[i] = mnt
-		}
 
 		if mnt.SourcePath != "" {
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))

@@ -229,7 +229,10 @@ type containerWithUserArgs struct {
 }
 
 func (s *containerSchema) withUser(ctx *router.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
-	return parent.WithUser(ctx, s.gw, args.Name)
+	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.User = args.Name
+		return cfg
+	})
 }
 
 func (s *containerSchema) user(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
@@ -400,7 +403,7 @@ type containerWithMountedDirectoryArgs struct {
 }
 
 func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
-	return parent.WithMountedDirectory(ctx, args.Path, &core.Directory{ID: args.Source}, args.Owner)
+	return parent.WithMountedDirectory(ctx, s.gw, args.Path, &core.Directory{ID: args.Source}, args.Owner)
 }
 
 type containerPublishArgs struct {
@@ -419,7 +422,7 @@ type containerWithMountedFileArgs struct {
 }
 
 func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
-	return parent.WithMountedFile(ctx, args.Path, &core.File{ID: args.Source}, args.Owner)
+	return parent.WithMountedFile(ctx, s.gw, args.Path, &core.File{ID: args.Source}, args.Owner)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -436,7 +439,7 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Con
 		dir = &core.Directory{ID: args.Source}
 	}
 
-	return parent.WithMountedCache(ctx, args.Path, args.Cache, dir, args.Concurrency, args.Owner)
+	return parent.WithMountedCache(ctx, s.gw, args.Path, args.Cache, dir, args.Concurrency, args.Owner)
 }
 
 type containerWithMountedTempArgs struct {
