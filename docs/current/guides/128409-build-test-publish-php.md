@@ -244,9 +244,9 @@ class DaggerPipeline {
 
 1. The `buildRuntimeImage()` method executes a GraphQL query to construct a runtime image. This runtime image consists of the PHP interpreter, Apache webserver, and required tools and extensions. It uses the `container.from()` method to initialize a new container from the `php:8.2-apache-buster` image. It then chains multiple `container.withExec()` methods to add tools, PHP extensions and Apache configuration to the image.
 1. The `buildApplicationImage()` method uses the image produced by `buildRuntimeImage()` and executes three additional GraphQL queries:
-  - The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
-  - The next query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
-  - The final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
+    - The first query obtains a reference to the source code directory of the application on the host using the `host.directory()` API method.
+    - The next query continues building the image. It uses the `container.withMountedDirectory()` method to mount the source code directory into the container. It then chains multiple `container.withExec()` methods to copy the application source code to the Apache webserver's filesystem, and set various file permissions and environment variables.
+    - The final query installs Composer in the image and runs `composer install` to download all the required application dependencies.
 
 :::info
 GraphQL query resolution is triggered only when a leaf value (scalar) is requested. Dagger leverages this lazy evaluation model to optimize and parallelize pipelines for maximum speed and performance. This implies that the queries above are not actually executed until necessary to return output (such as the result of a command or an exit code) to the requesting client. [Learn more about lazy evaluation in Dagger](../api/975146-concepts.mdx#lazy-evaluation).
