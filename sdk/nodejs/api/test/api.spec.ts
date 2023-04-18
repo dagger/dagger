@@ -287,6 +287,20 @@ describe("NodeJS SDK api", function () {
     )
   })
 
+  it("Compute empty string value", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const alpine = client
+        .container()
+        .from("alpine:3.16.2")
+        .withEnvVariable("FOO", "")
+
+      const out = await alpine.withExec(["printenv", "FOO"]).stdout()
+      assert.strictEqual(out, "\n")
+    })
+  })
+
   it("Compute nested array of arguments", async function () {
     this.timeout(60000)
 

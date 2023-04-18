@@ -19,9 +19,13 @@ function buildArgs(args: any): string {
       str.replace(/"/g, "")
     )
 
+  if (args === undefined || args === null) {
+    return ""
+  }
+
   const formattedArgs = Object.entries(args).reduce(
     (acc: any, [key, value]) => {
-      if (value) {
+      if (value !== undefined && value !== null) {
         acc.push(`${key}: ${formatValue(value as string)}`)
       }
 
