@@ -558,7 +558,7 @@ The Laravel CLI requires `npm` for some of its operations, so the following step
 
 1. Add the Composer vendor directory to your system path:
 
-  ```
+  ```shell
   export PATH=$PATH:$HOME/.composer/vendor/bin
   ```
 
