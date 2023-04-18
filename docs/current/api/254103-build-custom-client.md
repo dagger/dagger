@@ -95,19 +95,7 @@ The API endpoint and the HTTP authentication token for the GraphQL client are no
 
 ## Step 3: Run the API client
 
-To run the pipeline, the API client in the previous step needs to communicate with the Dagger Engine, which is responsible for accepting the query, executing it and returning the result. The `dagger run` command takes care of initializing a new local instance (or reusing a running instance) of the Dagger Engine on the host system and executing a specified command against it.
-
-:::info
-The Dagger Engine creates a unique local API endpoint for GraphQL queries for every Dagger session. This API endpoint is served over localhost at the port specified by the `DAGGER_SESSION_PORT` environment variable, and can be directly read from the environment in your client code.
-
-For example, if `DAGGER_SESSION_PORT` is set to `12345`, the API endpoint can be reached at `http://127.0.0.1:$DAGGER_SESSION_PORT/query`
-
-It additionally protects the exposed API with an HTTP Basic authentication token which can be retrieved from the `DAGGER_SESSION_TOKEN` variable.
-:::
-
-:::warning
-Treat the `DAGGER_SESSION_TOKEN` value as you would any other sensitive credential. Store it securely and avoid passing it to, or over, insecure applications and networks.
-:::
+{@include: ../partials/_run_api_client.md}
 
 Run the API client using the Dagger CLI as follows:
 
