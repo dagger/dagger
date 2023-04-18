@@ -68,12 +68,6 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 func goBase(c *dagger.Client) *dagger.Container {
 	repo := RepositoryGoCodeOnly(c)
 
-	// Create a directory containing only `go.{mod,sum}` files.
-	goMods := c.Directory()
-	for _, f := range []string{"go.mod", "go.sum", "sdk/go/go.mod", "sdk/go/go.sum"} {
-		goMods = goMods.WithFile(f, repo.File(f))
-	}
-
 	return c.Container().
 		From("golang:1.20.0-alpine").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
@@ -84,7 +78,9 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithExec([]string{"apk", "add", "git"}).
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
-		WithMountedDirectory("/app", goMods).
+		WithDirectory("/app", repo, dagger.ContainerWithDirectoryOpts{
+			Include: []string{"**/go.mod", "**/go.sum"},
+		}).
 		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
