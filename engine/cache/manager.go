@@ -84,6 +84,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		return nil, err
 	}
 	// loop for periodic async imports
+	importParentCtx, cancelImport := context.WithCancel(context.Background())
+	go func() {
+		<-m.startCloseCh
+		cancelImport()
+	}()
 	go func() {
 		for {
 			select {
@@ -91,14 +96,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 			case <-m.startCloseCh:
 				return
 			}
-			importContext, cancel := context.WithTimeout(context.Background(), time.Minute)
-			go func() {
-				<-m.startCloseCh
-				cancel()
-			}()
+			importContext, cancel := context.WithTimeout(importParentCtx, time.Minute)
 			if err := m.Import(importContext); err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to import cache")
 			}
+			cancel()
 		}
 	}()
 
