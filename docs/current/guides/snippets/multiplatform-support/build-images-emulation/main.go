@@ -35,13 +35,13 @@ func main() {
 	for _, platform := range platforms {
 		// pull the golang image for this platform
 		ctr := client.Container(dagger.ContainerOpts{Platform: platform})
-		ctr = ctr.From("golang:1.19-alpine")
+		ctr = ctr.From("golang:1.20-alpine")
 
 		// mount in source code
-		ctr = ctr.WithMountedDirectory("/src", gitRepo)
+		ctr = ctr.WithDirectory("/src", gitRepo)
 
 		// mount in an empty dir where the built binary will live
-		ctr = ctr.WithMountedDirectory("/output", client.Directory())
+		ctr = ctr.WithDirectory("/output", client.Directory())
 
 		// ensure the binary will be statically linked and thus executable
 		// in the final image

@@ -28,7 +28,7 @@ async def main():
             client.container()
             .from_("golang:latest")
             # mount source code into `golang` image
-            .with_mounted_directory("/src", src)
+            .with_directory("/src", src)
             .with_workdir("/src")
         )
 

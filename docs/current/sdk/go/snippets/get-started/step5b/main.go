@@ -44,7 +44,7 @@ func build(ctx context.Context) error {
 		golang := client.Container().From(imageTag)
 		// highlight-end
 		// mount cloned repository into `golang` image
-		golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+		golang = golang.WithDirectory("/src", src).WithWorkdir("/src")
 
 		for _, goos := range oses {
 			for _, goarch := range arches {

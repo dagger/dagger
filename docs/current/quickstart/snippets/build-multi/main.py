@@ -14,9 +14,10 @@ async def main():
         source = (
             client.container()
             .from_("node:16-slim")
-            .with_mounted_directory(
+            .with_directory(
                 "/src",
-                client.host().directory(".", exclude=["node_modules/", "ci/"]),
+                client.host().directory("."),
+                exclude=["node_modules/", "ci/"]
             )
         )
 

@@ -32,7 +32,7 @@ func main() {
 		From("node:16")
 
 	c := node.
-		WithMountedDirectory("/src", source).
+		WithDirectory("/src", source).
 		WithWorkdir("/src").
 		WithExec([]string{"cp", "-R", ".", "/home/node"}).
 		WithWorkdir("/home/node").

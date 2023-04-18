@@ -42,7 +42,7 @@ func build(ctx context.Context) error {
 	golang := client.Container().From("golang:latest")
 
 	// mount cloned repository into `golang` image
-	golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+	golang = golang.WithDirectory("/src", src).WithWorkdir("/src")
 
 	// highlight-start
 	for _, goos := range oses {

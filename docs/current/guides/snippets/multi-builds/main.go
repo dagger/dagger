@@ -33,7 +33,7 @@ func main() {
 		// get golang image
 		From("golang:latest").
 		// mount source code into golang image
-		WithMountedDirectory("/src", src).
+		WithDirectory("/src", src).
 		WithWorkdir("/src")
 
 	for _, goos := range geese {

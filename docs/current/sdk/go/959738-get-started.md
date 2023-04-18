@@ -78,7 +78,7 @@ The revised `build()` function is the main workhorse here, so let's step through
 - It begins by creating a Dagger client with [`dagger.Connect()`](https://pkg.go.dev/dagger.io/dagger#Connect), as before.
 - It uses the client's [`Host().Directory()`](https://pkg.go.dev/dagger.io/dagger#Host.Directory) method to obtain a reference to the current directory on the host. This reference is stored in the `src` variable.
 - It initializes a new container from a base image with the [`Container().From()`](https://pkg.go.dev/dagger.io/dagger#Container.From) method and returns a new `Container` struct. In this case, the base image is the `golang:latest` image.
-- It mounts the filesystem of the repository branch in the container using the [`WithMountedDirectory()`](https://pkg.go.dev/dagger.io/dagger#Container.WithMountedDirectory) method of the `Container`.
+- It mounts the filesystem of the repository branch in the container using the [`WithDirectory()`](https://pkg.go.dev/dagger.io/dagger#Container.WithDirectory) method of the `Container`.
   - The first argument is the target path in the container (here, `/src`).
   - The second argument is the directory to be mounted (here, the reference previously created in the `src` variable).
   It also changes the current working directory to the `/src` path of the container using the [`WithWorkdir()`](https://pkg.go.dev/dagger.io/dagger#Container.WithWorkdir) method and returns a revised `Container` with the results of these operations.

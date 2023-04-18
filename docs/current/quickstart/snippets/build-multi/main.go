@@ -21,16 +21,14 @@ func main() {
 	}
 	defer client.Close()
 
-	hostSourceDir := client.Host().Directory(".", dagger.HostDirectoryOpts{
-		Exclude: []string{"node_modules/", "ci/"},
-	})
-
 	// use a node:16-slim container
 	// mount the source code directory on the host
 	// at /src in the container
 	source := client.Container().
 		From("node:16-slim").
-		WithMountedDirectory("/src", hostSourceDir)
+		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/"},
+		})
 
 		// set the working directory in the container
 		// install application dependencies

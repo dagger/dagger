@@ -10,9 +10,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// highlight-start
 	client, err := dagger.Connect(ctx, dagger.WithWorkdir("."))
-	// highlight-end
 	if err != nil {
 		log.Println(err)
 		return

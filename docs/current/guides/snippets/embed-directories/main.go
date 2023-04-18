@@ -55,7 +55,7 @@ func main() {
 	}
 
 	// Mount above directory ID and
-	container := client.Container().From("alpine:3.16.2").WithMountedDirectory("/embed", dir)
+	container := client.Container().From("alpine:3.16.2").WithDirectory("/embed", dir)
 
 	// List files
 	out, err := container.WithExec([]string{"ls", "-lR", "/embed/"}).Stdout(ctx)

@@ -32,7 +32,7 @@ func build(ctx context.Context) error {
 	golang := client.Container().From("golang:latest")
 
 	// mount cloned repository into `golang` image
-	golang = golang.WithMountedDirectory("/src", src).WithWorkdir("/src")
+	golang = golang.WithDirectory("/src", src).WithWorkdir("/src")
 
 	// define the application build command
 	path := "build/"

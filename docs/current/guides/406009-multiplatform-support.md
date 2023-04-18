@@ -98,7 +98,7 @@ However, emulation has the downside of being quite slow relative to executing na
 
 While cross-compilation is sometimes much easier said than done, it's a great option for speeding up multi-platform builds when feasible.
 
-Fortunately, Go has great built-in support for cross-compilation, so modifying the previous example to use this feature instead is straightforward (changes are highlighted):
+Fortunately, Go has great built-in support for cross-compilation, so modifying the previous example to use this feature instead is straightforward:
 
 ```go file=./snippets/multiplatform-support/build-images-cross-compilation/main.go
 

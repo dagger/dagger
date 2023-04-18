@@ -18,9 +18,7 @@ func main() {
 	}
 	defer client.Close()
 
-	// highlight-start
 	entries, err := client.Host().Directory(".").Entries(ctx)
-	// highlight-end
 	if err != nil {
 		log.Println(err)
 		return
