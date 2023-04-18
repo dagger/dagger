@@ -85,7 +85,7 @@ class DaggerPipeline {
     $appQuery = <<<QUERY
     query {
       container (id: "$runtime") {
-        withMountedDirectory(path: "/mnt", source: "$sourceDir") {
+        withDirectory(path: "/mnt", source: "$sourceDir") {
           withWorkdir(path: "/mnt") {
             withExec(args: ["cp", "-R", ".", "/var/www"]) {
               withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
