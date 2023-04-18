@@ -85,6 +85,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 		WithWorkdir("/app").
 		// run `go mod download` with only go.mod files (re-run only if mod files have changed)
 		WithMountedDirectory("/app", goMods).
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
 		WithExec([]string{"go", "mod", "download"}).
 		// run `go build` with all source
 		WithMountedDirectory("/app", repo).
