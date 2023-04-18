@@ -17,7 +17,7 @@ async def main():
         # build application
         builder = (
             client.container(platform=dagger.Platform("linux/amd64"))
-            .from_("golang:1.19")
+            .from_("golang:1.20")
             .with_directory("/src", source)
             .with_workdir("/src")
             .with_env_variable("CGO_ENABLED", "0")

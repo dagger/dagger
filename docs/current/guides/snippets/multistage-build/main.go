@@ -27,13 +27,11 @@ func main() {
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "myapp"})
 
-	// highlight-start
 	// Publish binary on Alpine base
 	prodImage := client.Container().
 		From("alpine").
 		WithFile("/bin/myapp", builder.File("/src/myapp")).
 		WithEntrypoint([]string{"/bin/myapp"})
-	// highlight-end
 
 	addr, err := prodImage.Publish(ctx, "localhost:5000/multistage")
 	if err != nil {
