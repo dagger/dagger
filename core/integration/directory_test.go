@@ -716,11 +716,11 @@ ENV FOO=$FOOARG
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).WithExec([]string{}).Stdout(ctx)
+		env, err := src.DockerBuild().WithExec([]string{}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).WithExec([]string{}).Stdout(ctx)
+		env, err = src.DockerBuild(dagger.DirectoryDockerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).WithExec([]string{}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
