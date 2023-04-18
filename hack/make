@@ -7,4 +7,4 @@ MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
 
 cd "$MAGEDIR"
 
-exec go run main.go -w "$DAGGER_SRC_ROOT" engine:dev "$@"
+exec go run main.go -w "$DAGGER_SRC_ROOT" "$@"

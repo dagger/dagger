@@ -65,31 +65,6 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 	})
 }
 
-func AdvertiseDevEngine(c *dagger.Client, ctr *dagger.Container) *dagger.Container {
-	// the cli bin is statically linked, can just mount it in anywhere
-	dockerCli := c.Container().From("docker:cli").File("/usr/local/bin/docker")
-	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
-		// Mount in the docker socket if it exists in the expected location
-		// Not all hosts will use the same location, and some hosts may connect to a remote engine
-		ctr = ctr.
-			WithUnixSocket("/var/run/docker.sock", c.Host().UnixSocket("/var/run/docker.sock"))
-	}
-
-	cliBinPath := "/.dagger-cli"
-	return ctr.
-		// Mount in the docker cli - will be used to connect to the dev engine container
-		WithMountedFile("/usr/bin/docker", dockerCli).
-		// Also mount in the engine session binary.
-		// FIXME: this shouldn't be necessary, but provisioning the engine session binary
-		// with a mounted in docker socket doesn't work (always results in an empty file
-		// even though the docker run command succeeds). This will be fixed by switching
-		// to provisioning via downloading the CLI.
-		WithMountedFile(cliBinPath, DaggerBinary(c)).
-		// Point the SDKs to use the dev engine via these env vars
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "docker-container://"+EngineContainerName)
-}
-
 func goBase(c *dagger.Client) *dagger.Container {
 	repo := RepositoryGoCodeOnly(c)
 
@@ -123,7 +98,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 // NOTE: this function is a shared util ONLY because it's used both by the Engine
 // and the Go SDK. Other languages shouldn't have a common helper.
 func GoBase(c *dagger.Client) *dagger.Container {
-	return AdvertiseDevEngine(c, goBase(c))
+	return goBase(c)
 }
 
 func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.File {

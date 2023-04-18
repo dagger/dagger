@@ -21,6 +21,8 @@ func (Docs) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
+	c = c.Pipeline("docs").Pipeline("lint")
+
 	workdir := util.Repository(c)
 
 	eg, gctx := errgroup.WithContext(ctx)

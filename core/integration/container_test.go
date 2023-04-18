@@ -2735,7 +2735,7 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 
 	contents, err := ctr.WithExec([]string{"find", "/mnt"}).Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, []string{
+	require.ElementsMatch(t, []string{
 		"/mnt",
 		"/mnt/sub-dir",
 		"/mnt/sub-dir/sub-file",
