@@ -22,7 +22,7 @@ require (
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
-	github.com/dagger/graphql-go-tools v0.0.0-20221102001222-e68b44170936
+	github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881
 	github.com/docker/distribution v2.8.1+incompatible
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
