@@ -49,7 +49,7 @@ The first step is to install a GraphQL client for PHP.  This tutorial uses the [
 Add the client to your application manifest and install it as follows:
 
 ```shell
-composer require gmostafa/php-graphql-client
+composer require gmostafa/php-graphql-client --with-all-dependencies
 ```
 
 ## Step 2: Create the Dagger pipeline
@@ -201,7 +201,7 @@ class DaggerPipeline {
     $appQuery = <<<QUERY
     query {
       container (id: "$runtime") {
-        withDirectory(path: "/mnt", source: "$sourceDir") {
+        withDirectory(path: "/mnt", directory: "$sourceDir") {
           withWorkdir(path: "/mnt") {
             withExec(args: ["cp", "-R", ".", "/var/www"]) {
               withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
@@ -408,7 +408,7 @@ class DaggerPipeline {
   // publish image to registry
   public function publishImage($image) {
     // retrieve registry address and credentials from host environment
-    $registryAddress = getenv("REGISTRY_ADDRESS") or throw new Exception("REGISTRY_ADDRESS environment variable must be set");
+    $registryAddress = getenv("REGISTRY_ADDRESS", true) ?: "docker.io";
     $registryUsername = getenv("REGISTRY_USERNAME") or throw new Exception("REGISTRY_USERNAME environment variable must be set");
     $registryPassword = getenv("REGISTRY_PASSWORD") or throw new Exception("REGISTRY_PASSWORD environment variable must be set");
     $containerAddress = getenv("CONTAINER_ADDRESS");
@@ -445,7 +445,7 @@ class DaggerPipeline {
 }
 ```
 
-The `publishImage()` method expects to source the registry address credentials from the host environment. It uses PHP's `getenv()` method to retrieve these details and then executes two GraphQL queries:
+The `publishImage()` method expects to source the registry credentials from the host environment. It defaults to `docker.io` for the registry address, although this can be overridden from the host environment. It uses PHP's `getenv()` method to retrieve these details and then executes two GraphQL queries:
 
 1. The first query creates a Dagger secret to store the registry password, via the `setSecret()` API method.
 1. The second query authenticates and publishes the image to the specified registry. It uses the `container.withRegistryAuth()` API method for authentication, and the `container.publish()` method for the publishing operation. The `container.publish()` method returns the address and hash for the published image.
@@ -456,10 +456,9 @@ Using a Dagger secret for confidential information ensures that the information 
 
 ## Step 3: Run the Dagger pipeline
 
-Configure the registry address and credentials using environment variable on the local host. Although you can use any registry, this guide assumes usage of Docker Hub. Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub credentials.
+Configure the registry credentials using environment variable on the local host. Although you can use any registry, this guide assumes usage of Docker Hub. Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub credentials.
 
 ```shell
-export REGISTRY_ADDRESS=docker.io
 export REGISTRY_USERNAME=USERNAME
 export REGISTRY_PASSWORD=PASSWORD
 ```
@@ -527,12 +526,12 @@ Tests: 24, Assertions: 52, Failures: 2.
 Stderr:
 ```
 
-Test the published image by executing the commands below (replace the `DOCKER-HUB-USERNAME` placeholder with your Docker Hub usernme) and then browse to `http://localhost` to see the Laravel application running:
+Test the published image by executing the commands below (replace the `USERNAME` placeholder with your registry username) and then browse to `http://localhost` to see the Laravel application running (by default, on port 80 of the Docker host):
 
 ```shell
 docker run --rm --detach -p 3306:3306 --name my-mariadb --env MARIADB_USER=user --env MARIADB_PASSWORD=password --env MARIADB_DATABASE=laravel --env MARIADB_ROOT_PASSWORD=secret  mariadb:10.11.2
 
-docker run --rm --detach --net=host --name my-app -e DB_HOST="127.0.0.1" -e DB_USERNAME="user" -e DB_PASSWORD="password" -e DB_DATABASE="laravel" DOCKER-HUB-USERNAME/laravel-dagger:latest
+docker run --rm --detach --net=host --name my-app -e DB_HOST="127.0.0.1" -e DB_USERNAME="user" -e DB_PASSWORD="password" -e DB_DATABASE="laravel" USERNAME/laravel-dagger:latest
 ```
 
 ## Conclusion
@@ -557,6 +556,12 @@ The Laravel CLI requires `npm` for some of its operations, so the following step
   composer global require laravel/installer
   ```
 
+1. Add the Composer vendor directory to your system path:
+
+  ```
+  export PATH=$PATH:$HOME/.composer/vendor/bin
+  ```
+
 1. Create a skeleton application with the [Laravel Breeze scaffolding](https://laravel.com/docs/10.x/starter-kits#laravel-breeze):
 
   ```shell
@@ -566,14 +571,9 @@ The Laravel CLI requires `npm` for some of its operations, so the following step
 1. Create a Docker entrypoint script named `docker-entrypoint.sh` in the application directory to handle startup operations, such as running database migrations:
 
   ```shell
-  cd myapp
-  touch docker-entrypoint.sh
-  ```
-
-  Add the following code to the script:
-
-  ```bash
+  cat > docker-entrypoint.sh <<EOF
   #!/bin/bash
   php artisan migrate
   apache2-foreground
+  EOF
   ```

@@ -85,7 +85,7 @@ class DaggerPipeline {
     $appQuery = <<<QUERY
     query {
       container (id: "$runtime") {
-        withDirectory(path: "/mnt", source: "$sourceDir") {
+        withDirectory(path: "/mnt", directory: "$sourceDir") {
           withWorkdir(path: "/mnt") {
             withExec(args: ["cp", "-R", ".", "/var/www"]) {
               withExec(args: ["chown", "-R", "www-data:www-data", "/var/www"]) {
@@ -223,7 +223,7 @@ class DaggerPipeline {
   // publish image to registry
   public function publishImage($image) {
     // retrieve registry address and credentials from host environment
-    $registryAddress = getenv("REGISTRY_ADDRESS") or throw new Exception("REGISTRY_ADDRESS environment variable must be set");
+    $registryAddress = getenv("REGISTRY_ADDRESS", true) ?: "docker.io";
     $registryUsername = getenv("REGISTRY_USERNAME") or throw new Exception("REGISTRY_USERNAME environment variable must be set");
     $registryPassword = getenv("REGISTRY_PASSWORD") or throw new Exception("REGISTRY_PASSWORD environment variable must be set");
     $containerAddress = getenv("CONTAINER_ADDRESS");
