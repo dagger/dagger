@@ -22,7 +22,7 @@ connect(async (client) => {
         // get golang image
         .from("golang:latest")
         // mount source code into golang image
-        .withMountedDirectory("/src", src)
+        .withDirectory("/src", src)
         .withWorkdir("/src")
 
         for (const os of oses) {

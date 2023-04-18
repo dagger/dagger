@@ -83,13 +83,13 @@ The revised `test()` function now does the following:
 - It creates a Dagger client with `dagger.Connection()` as before.
 - It uses the client's `host().directory(".")` method to obtain a reference to the current directory on the host. This reference is stored in the `src` variable.
 - It uses the client's `container().from_()` method to initialize a new container from a base image. This base image is the Python version to be tested against - the `python:3.10-slim-buster` image. This method returns a new `Container` class with the results.
-- It uses the `Container.with_mounted_directory()` method to mount the host directory into the container at the `/src` mount point.
+- It uses the `Container.with_directory()` method to mount the host directory into the container at the `/src` mount point.
 - It uses the `Container.with_workdir()` method to set the working directory in the container.
 - It chains `Container.with_exec()` methods to install test dependencies and run tests in the container.
 - It uses the `Container.exit_code()` method to obtain the exit code of the last executed command. An exit code of `0` implies successful execution.
 
 :::tip
-The `from_()`, `with_mounted_directory()`, `with_workdir()` and `with_exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is easy and intuitive to understand.
+The `from_()`, `with_directory()`, `with_workdir()` and `with_exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is easy and intuitive to understand.
 :::
 
 Run the Python CI tool by executing the command below:

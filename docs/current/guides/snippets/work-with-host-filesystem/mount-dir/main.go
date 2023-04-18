@@ -21,7 +21,7 @@ func main() {
 	// highlight-start
 	contents, err := client.Container().
 		From("alpine:latest").
-		WithMountedDirectory("/host", client.Host().Directory(".")).
+		WithDirectory("/host", client.Host().Directory(".")).
 		WithExec([]string{"ls", "/host"}).
 		Stdout(ctx)
 	// highlight-end

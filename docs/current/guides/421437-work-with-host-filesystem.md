@@ -65,7 +65,7 @@ The `Exclude` pattern overrides the `Include` pattern, but not vice-versa. The f
 
 ## Mount a host directory in a container
 
-A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. This can be done using the `Container.WithMountedDirectory()` method, which accepts the mount point in the container and the `Directory` to be mounted as arguments.
+A common operation when working with containers is to mount a host directory to a path in the container and then perform operations on it. This can be done using the `Container.WithDirectory()` method, which accepts the mount point in the container and the `Directory` to be mounted as arguments.
 
 The following example shows how to mount a host directory in a container at the `/host` container path and then execute a command in the container referencing the mounted directory:
 

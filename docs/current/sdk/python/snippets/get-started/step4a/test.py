@@ -25,7 +25,7 @@ async def test():
                 .from_(f"python:{version}-slim-buster")
                 # highlight-end
                 # mount cloned repository into image
-                .with_mounted_directory("/src", src)
+                .with_directory("/src", src)
                 # set current working directory for next commands
                 .with_workdir("/src")
                 # install test dependencies

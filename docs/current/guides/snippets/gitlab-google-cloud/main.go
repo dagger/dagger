@@ -31,7 +31,7 @@ func main() {
     // build application
     builder := daggerClient.Container(dagger.ContainerOpts{Platform: "linux/amd64"}).
         From("golang:1.19").
-        WithMountedDirectory("/src", source).
+        WithDirectory("/src", source).
         WithWorkdir("/src").
         WithEnvVariable("CGO_ENABLED", "0").
         WithExec([]string{"go", "build", "-o", "myapp"})

@@ -49,10 +49,10 @@ func main() {
 		// highlight-end
 
 		// mount in our source code
-		ctr = ctr.WithMountedDirectory("/src", gitRepo)
+		ctr = ctr.WithDirectory("/src", gitRepo)
 
 		// mount in an empty dir to put the built binary
-		ctr = ctr.WithMountedDirectory("/output", client.Directory())
+		ctr = ctr.WithDirectory("/output", client.Directory())
 
 		// ensure the binary will be statically linked and thus executable
 		// in the final image

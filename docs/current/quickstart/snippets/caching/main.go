@@ -24,17 +24,15 @@ func main() {
 	// create a cache volume
 	nodeCache := client.CacheVolume("node")
 
-	hostSourceDir := client.Host().Directory(".", dagger.HostDirectoryOpts{
-		Exclude: []string{"node_modules/", "ci/"},
-	})
-
 	// use a node:16-slim container
 	// mount the source code directory on the host
 	// at /src in the container
 	// mount the cache volume to persist dependencies
 	source := client.Container().
 		From("node:16-slim").
-		WithMountedDirectory("/src", hostSourceDir).
+		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/"},
+		}).
 		WithMountedCache("/src/node_modules", nodeCache)
 
 		// set the working directory in the container

@@ -16,7 +16,7 @@ connect(async (daggerClient) => {
   // mount cloned repository into Node image
   // install dependencies
   const c = node
-    .withMountedDirectory("/src", source)
+    .withDirectory("/src", source)
     .withWorkdir("/src")
     .withExec(["cp", "-R", ".", "/home/node"])
     .withWorkdir("/home/node")

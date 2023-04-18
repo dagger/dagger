@@ -21,13 +21,11 @@ func main() {
 	}
 	defer client.Close()
 
-	hostSourceDir := client.Host().Directory(".", dagger.HostDirectoryOpts{
-		Exclude: []string{"node_modules/", "ci/"},
-	})
-
 	source := client.Container().
 		From("node:16").
-		WithMountedDirectory("/src", hostSourceDir)
+		WithDirectory("/src", client.Host().Directory("."), dagger.ContainerWithDirectoryOpts{
+			Exclude: []string{"node_modules/", "ci/"},
+		})
 
 	runner := source.WithWorkdir("/src").
 		WithExec([]string{"npm", "install"})

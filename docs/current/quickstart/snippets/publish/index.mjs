@@ -8,7 +8,7 @@ connect(async (client) => {
   // at /src in the container
   const source = client.container()
     .from("node:16-slim")
-    .withMountedDirectory('/src', client.host().directory('.', { exclude: ["node_modules/", "ci/"] }))
+    .withDirectory('/src', client.host().directory('.', { exclude: ["node_modules/", "ci/"] }))
 
   // set the working directory in the container
   // install application dependencies
