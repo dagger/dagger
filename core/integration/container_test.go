@@ -261,6 +261,24 @@ CMD echo "stage2"
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
 	})
+
+	t.Run("with build secrets", func(t *testing.T) {
+		sec := c.SetSecret("my-secret", "barbar")
+		require.NoError(t, err)
+
+		src := contextDir.
+			WithNewFile("Dockerfile",
+				`FROM golang:1.18.2-alpine
+WORKDIR /src
+RUN --mount=type=secret,id=my-secret test "$(cat /run/secrets/my-secret)" = "barbar"
+RUN --mount=type=secret,id=my-secret cp /run/secrets/my-secret  /secret
+CMD cat /secret
+`)
+
+		stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{Secrets: []*dagger.Secret{sec}}).WithExec([]string{}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Contains(t, stdout, "***")
+	})
 }
 
 func TestContainerWithRootFS(t *testing.T) {
@@ -3089,7 +3107,8 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 		}).
 		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
 		WithExposedPort(2375).
-		WithExec([]string{"dockerd",
+		WithExec([]string{
+			"dockerd",
 			"--host=tcp://0.0.0.0:2375",
 			"--tls=false",
 		}, dagger.ContainerWithExecOpts{

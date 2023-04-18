@@ -190,6 +190,9 @@ type Directory {
 
     "Target build stage to build."
     target: String
+
+    "Secrets to pass to the build."
+    secrets: [SecretID!]
   ): Container!
 
   """

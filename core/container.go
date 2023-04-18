@@ -337,7 +337,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg, target string) (*Container, error) {
+func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg, target string, secrets []SecretID) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -346,6 +346,16 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	ctxPayload, err := context.ID.Decode()
 	if err != nil {
 		return nil, err
+	}
+
+	for _, secretID := range secrets {
+		secPayload := secretID.decode()
+
+		payload.Secrets = append(payload.Secrets, ContainerSecret{
+			// Mounted at /run/secrets/<secret-id>
+			Secret:    secretID,
+			MountPath: fmt.Sprintf("/run/secrets/%s", secPayload.Name),
+		})
 	}
 
 	payload.Services.Merge(ctxPayload.Services)

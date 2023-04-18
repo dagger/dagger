@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	"os"
 
@@ -40,9 +39,7 @@ func NewSecretFromHostEnv(name string) (*Secret, error) {
 type SecretID string
 
 func NewSecretID(name, plaintext string) (SecretID, error) {
-	digestBytes := sha256.Sum256([]byte(plaintext))
-
-	id, err := (&secretIDPayload{Name: name, Digest: string(digestBytes[:])}).Encode()
+	id, err := (&secretIDPayload{Name: name}).Encode()
 	if err != nil {
 		return "", err
 	}
@@ -52,10 +49,7 @@ func NewSecretID(name, plaintext string) (SecretID, error) {
 func (id SecretID) String() string { return string(id) }
 
 func (id SecretID) IsOldFormat() (bool, error) {
-	payload, err := id.decode()
-	if err != nil {
-		return false, err
-	}
+	payload := id.decode()
 
 	if payload.FromFile == "" && payload.FromHostEnv == "" {
 		return false, nil
@@ -79,13 +73,15 @@ type secretIDPayload struct {
 
 	// Name specifies the arbitrary name/id of the secret.
 	Name string `json:"name,omitempty"`
-
-	// Digest represents a digest of the plaintext of the secret.
-	Digest string `json:"digest,omitempty"`
 }
 
 // Encode returns the opaque string ID representation of the secret.
 func (payload *secretIDPayload) Encode() (SecretID, error) {
+	// simple user defined secret ID
+	if payload.Name != "" {
+		return SecretID(payload.Name), nil
+	}
+
 	id, err := encodeID(payload)
 	if err != nil {
 		return "", err
@@ -94,20 +90,20 @@ func (payload *secretIDPayload) Encode() (SecretID, error) {
 	return SecretID(id), nil
 }
 
-func (id SecretID) decode() (*secretIDPayload, error) {
+func (id SecretID) decode() *secretIDPayload {
 	var payload secretIDPayload
 	if err := decodeID(&payload, id); err != nil {
-		return nil, err
+		// it must be a simple user defined secret ID
+		return &secretIDPayload{
+			Name: id.String(),
+		}
 	}
 
-	return &payload, nil
+	return &payload
 }
 
 func (secret *Secret) Plaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	payload, err := secret.ID.decode()
-	if err != nil {
-		return nil, err
-	}
+	payload := secret.ID.decode()
 
 	if payload.FromFile != "" {
 		file := &File{ID: payload.FromFile}

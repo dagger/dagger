@@ -134,10 +134,11 @@ type containerBuildArgs struct {
 	Dockerfile string
 	BuildArgs  []core.BuildArg
 	Target     string
+	Secrets    []core.SecretID
 }
 
 func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
-	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs, args.Target)
+	return parent.Build(ctx, s.gw, &core.Directory{ID: args.Context}, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, arg core.Directory) (*core.Container, error) {
