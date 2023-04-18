@@ -9,6 +9,8 @@ date: "2022-11-04"
 
 # Copy Embedded Directories into a Container
 
+Embedded directories in Go allow bundling static files with the compiled binary. This guide demonstrates copying embedded directories using Dagger, a [Go-specific](https://pkg.go.dev/embed) feature not available in Python or Node.js.
+
 Dagger does not expose the option to copy entire directories as a single step (yet), whether it is between containers or from an embedded directory to a container. It is, however, doable by traversing the directory tree.
 
 Assume that you have a Dagger CI tool containing the following code structure, which contains an example directory:
