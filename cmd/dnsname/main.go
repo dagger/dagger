@@ -54,7 +54,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		return err
 	}
 
-	lock := flock.New(netConf.Hosts)
+	lock := flock.New(netConf.Lockfile)
 	if err := lock.Lock(); err != nil {
 		return err
 	}
@@ -96,7 +96,7 @@ func cmdDel(args *skel.CmdArgs) error {
 		return nil
 	}
 
-	lock := flock.New(netConf.Hosts)
+	lock := flock.New(netConf.Lockfile)
 	if err := lock.Lock(); err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func cmdCheck(args *skel.CmdArgs) error {
 		return errors.Errorf("Required prevResult missing")
 	}
 
-	lock := flock.New(netConf.Hosts)
+	lock := flock.New(netConf.Lockfile)
 	if err := lock.Lock(); err != nil {
 		return err
 	}
