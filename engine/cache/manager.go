@@ -281,6 +281,9 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context, daggerClie
 // Close will block until the final export has finished or ctx is canceled.
 func (m *manager) Close(ctx context.Context) error {
 	close(m.startCloseCh)
+	if m.stopCacheMountSync != nil {
+		m.stopCacheMountSync(ctx)
+	}
 	select {
 	case <-m.doneCh:
 	case <-ctx.Done():
