@@ -217,7 +217,7 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 		}).
 		WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 			Contents:    engineEntrypoint,
-			Permissions: 755,
+			Permissions: 0755,
 		}).
 		WithEntrypoint([]string{"dagger-entrypoint.sh"})
 }
