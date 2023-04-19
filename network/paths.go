@@ -48,3 +48,11 @@ func containerResolvPath(name string) string {
 func cniConfPath(name string) string {
 	return fmt.Sprintf("/var/run/containers/cni/dnsname/%s/cni.conflist", name)
 }
+
+// Location of the file used to synchronize dnsmasq config changes.
+//
+// NOTE: this is only placed beside the other paths for convenience; dnsmasq
+// doesn't try to read it.
+func lockfilePath(name string) string {
+	return fmt.Sprintf("/var/run/containers/cni/dnsname/%s/lock", name)
+}
