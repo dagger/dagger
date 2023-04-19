@@ -1,5 +1,7 @@
 defmodule Dagger.QueryBuilder.Selection do
-  defstruct [:name, :alias, :args, :bind, :prev]
+  @moduledoc false
+
+  defstruct [:name, :args, :prev, alias: ""]
 
   def query(), do: %__MODULE__{}
 
@@ -22,7 +24,7 @@ defmodule Dagger.QueryBuilder.Selection do
     %{selection | args: Map.put(args, name, value)}
   end
 
-  def build(selection) do
+  def build(%__MODULE__{} = selection) do
     fields = build_fields(selection, [])
     Enum.join(fields, "{") <> String.duplicate("}", Enum.count(fields) - 1)
   end
