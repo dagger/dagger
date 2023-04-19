@@ -119,7 +119,6 @@ func run(ctx context.Context, args []string) error {
 	cmdline := strings.Join(args, " ")
 	model := tui.New(quit, journalR, cmdline)
 	program := tea.NewProgram(model, tea.WithAltScreen())
-	subCmd.Stdin = os.Stdin
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
