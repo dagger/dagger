@@ -342,7 +342,7 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 				"iptables", "ip6tables", "dnsmasq",
 			}).
 			WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
-				Permissions: 0700,
+				Permissions: 0o700,
 			}).
 			WithFile("/usr/local/bin/buildctl", buildctlBin(c, arch)).
 			WithFile("/usr/local/bin/"+shimBinName, shimBin(c, arch)).
@@ -352,11 +352,11 @@ func devEngineContainer(c *dagger.Client, arches []string) []*dagger.Container {
 			WithDirectory(engineDefaultStateDir, c.Directory()).
 			WithNewFile(engineTomlPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineConfig,
-				Permissions: 0600,
+				Permissions: 0o600,
 			}).
 			WithNewFile(engineEntrypointPath, dagger.ContainerWithNewFileOpts{
 				Contents:    engineEntrypoint,
-				Permissions: 755,
+				Permissions: 0o755,
 			}).
 			WithEntrypoint([]string{"dagger-entrypoint.sh"}),
 		)
