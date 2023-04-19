@@ -1,0 +1,76 @@
+defmodule Dagger.QueryBuilder.Selection do
+  defstruct [:name, :alias, :args, :bind, :prev]
+
+  def query(), do: %__MODULE__{}
+
+  def select(%__MODULE__{} = selection, name) when is_binary(name) do
+    select_with_alias(selection, "", name)
+  end
+
+  def select_with_alias(%__MODULE__{} = selection, alias, name)
+      when is_binary(alias) and is_binary(name) do
+    %__MODULE__{
+      name: name,
+      alias: alias,
+      prev: selection
+    }
+  end
+
+  def arg(%__MODULE__{args: args} = selection, name, value) when is_binary(name) do
+    args = args || %{}
+
+    %{selection | args: Map.put(args, name, value)}
+  end
+
+  def build(selection) do
+    fields = build_fields(selection, [])
+    Enum.join(fields, "{") <> String.duplicate("}", Enum.count(fields) - 1)
+  end
+
+  def build_fields(%__MODULE__{prev: nil}, acc) do
+    ["query" | acc]
+  end
+
+  def build_fields(%__MODULE__{prev: selection, name: name, args: args, alias: alias}, acc) do
+    q = [build_alias(alias) | [name | build_args(args)]]
+    build_fields(selection, [IO.iodata_to_binary(q) | acc])
+  end
+
+  defp build_alias(""), do: []
+  defp build_alias(alias), do: [alias, ':']
+
+  defp build_args(nil), do: []
+
+  defp build_args(args) do
+    fun = fn {name, value} -> [name, ':', Jason.encode!(value)] end
+    ['(', Enum.map(args, fun), ')']
+  end
+
+  def path(selection) do
+    path(selection, [])
+  end
+
+  def path(%__MODULE__{prev: nil, name: nil}, acc), do: acc
+  def path(%__MODULE__{prev: selection, name: name}, acc), do: path(selection, [name | acc])
+end
+
+defmodule Dagger.QueryBuilder do
+  @moduledoc false
+
+  alias Dagger.QueryBuilder.Selection
+  alias Dagger.Client
+
+  def execute(selection, client) do
+    q = Selection.build(selection)
+    with {:ok, %{status: 200, body: resp}} <- Client.query(client, q) do
+      get_in(resp, ["data" | Selection.path(selection)])
+    end
+  end
+
+  defmacro __using__(_opts) do
+    quote do
+      import Dagger.QueryBuilder.Selection
+      import Dagger.QueryBuilder, only: [execute: 2]
+    end
+  end
+end
