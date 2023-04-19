@@ -3,14 +3,16 @@ package cache
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sync"
 	"time"
 
-	"dagger.io/dagger"
+	"github.com/containerd/containerd/content"
 	"github.com/moby/buildkit/cache"
 	cacheconfig "github.com/moby/buildkit/cache/config"
 	remotecache "github.com/moby/buildkit/cache/remotecache/v1"
 	"github.com/moby/buildkit/solver"
+	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/compression"
 	"github.com/moby/buildkit/worker"
@@ -20,10 +22,11 @@ import (
 
 type manager struct {
 	ManagerConfig
-	client     Service
-	layerstore LayerStore
-	localCache solver.CacheManager
-	s3Config   *S3LayerStoreConfig
+	cacheClient   Service
+	httpClient    *http.Client
+	layerProvider content.Provider
+	runtimeConfig Config
+	localCache    solver.CacheManager
 
 	mu                 sync.RWMutex
 	inner              solver.CacheManager
@@ -33,10 +36,12 @@ type manager struct {
 }
 
 type ManagerConfig struct {
-	KeyStore    solver.CacheKeyStorage
-	ResultStore solver.CacheResultStorage
-	Worker      worker.Worker
-	ServiceURL  string
+	KeyStore     solver.CacheKeyStorage
+	ResultStore  solver.CacheResultStorage
+	Worker       worker.Worker
+	MountManager *mounts.MountManager
+	ServiceURL   string
+	EngineID     string
 }
 
 func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, error) {
@@ -46,6 +51,7 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		localCache:    localCache,
 		startCloseCh:  make(chan struct{}),
 		doneCh:        make(chan struct{}),
+		httpClient:    &http.Client{},
 	}
 
 	if managerConfig.ServiceURL == "" {
@@ -57,26 +63,22 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	if err != nil {
 		return nil, err
 	}
-	m.client = serviceClient
+	m.cacheClient = serviceClient
+	m.layerProvider = &layerProvider{
+		httpClient:  m.httpClient,
+		cacheClient: m.cacheClient,
+	}
 
-	config, err := m.client.GetConfig(ctx, GetConfigRequest{})
+	config, err := m.cacheClient.GetConfig(ctx, GetConfigRequest{
+		EngineID: m.EngineID,
+	})
 	if err != nil {
 		return nil, err
 	}
 	if config.ImportPeriod == 0 || config.ExportPeriod == 0 || config.ExportTimeout == 0 {
 		return nil, fmt.Errorf("invalid cache config: import/export periods must be non-zero")
 	}
-
-	switch {
-	case config.S3 != nil:
-		m.layerstore, err = NewS3LayerStore(ctx, *config.S3)
-		if err != nil {
-			return nil, err
-		}
-		m.s3Config = config.S3
-	default:
-		return nil, fmt.Errorf("invalid cache config: no supported remote store configured")
-	}
+	m.runtimeConfig = *config
 
 	// do an initial synchronous import at start
 	// TODO: make this non-fatal (but ensure no inconsistent state in failure case)
@@ -180,7 +182,7 @@ func (m *manager) Export(ctx context.Context) error {
 		return err
 	}
 
-	updateCacheRecordsResp, err := m.client.UpdateCacheRecords(ctx, UpdateCacheRecordsRequest{
+	updateCacheRecordsResp, err := m.cacheClient.UpdateCacheRecords(ctx, UpdateCacheRecordsRequest{
 		CacheKeys: cacheKeys,
 		Links:     links,
 	})
@@ -219,7 +221,7 @@ func (m *manager) Export(ctx context.Context) error {
 			}
 			remote := remotes[0]
 			for _, layer := range remote.Descriptors {
-				if err := m.layerstore.PushLayer(ctx, layer, remote.Provider); err != nil {
+				if err := m.pushLayer(ctx, layer, remote.Provider); err != nil {
 					return err
 				}
 			}
@@ -233,7 +235,7 @@ func (m *manager) Export(ctx context.Context) error {
 		}
 	}
 
-	if err := m.client.UpdateCacheLayers(ctx, UpdateCacheLayersRequest{
+	if err := m.cacheClient.UpdateCacheLayers(ctx, UpdateCacheLayersRequest{
 		UpdatedRecords: updatedRecords,
 	}); err != nil {
 		return err
@@ -242,8 +244,39 @@ func (m *manager) Export(ctx context.Context) error {
 	return nil
 }
 
+func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, provider content.Provider) error {
+	getURLResp, err := m.cacheClient.GetLayerUploadURL(ctx, GetLayerUploadURLRequest{Digest: layerDesc.Digest})
+	if err != nil {
+		return err
+	}
+
+	readerAt, err := provider.ReaderAt(ctx, layerDesc)
+	if err != nil {
+		return err
+	}
+	defer readerAt.Close()
+	reader := content.NewReader(readerAt)
+
+	req, err := http.NewRequest("PUT", getURLResp.URL, reader)
+	if err != nil {
+		return err
+	}
+	defer req.Body.Close()
+	req.ContentLength = readerAt.Size()
+
+	resp, err := m.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (m *manager) Import(ctx context.Context) error {
-	cacheConfig, err := m.client.ImportCache(ctx)
+	cacheConfig, err := m.cacheClient.ImportCache(ctx)
 	if err != nil {
 		return err
 	}
@@ -275,26 +308,17 @@ func (m *manager) Import(ctx context.Context) error {
 	return nil
 }
 
-func (m *manager) StartCacheMountSynchronization(ctx context.Context, daggerClient *dagger.Client) error {
-	stopSync, err := startS3CacheMountSync(ctx, m.s3Config, daggerClient)
-	if err != nil {
-		return err
-	}
-	m.stopCacheMountSync = stopSync
-	return nil
-}
-
 // Close will block until the final export has finished or ctx is canceled.
-func (m *manager) Close(ctx context.Context) error {
+func (m *manager) Close(ctx context.Context) (rerr error) {
 	close(m.startCloseCh)
 	if m.stopCacheMountSync != nil {
-		m.stopCacheMountSync(ctx)
+		rerr = m.stopCacheMountSync(ctx)
 	}
 	select {
 	case <-m.doneCh:
 	case <-ctx.Done():
 	}
-	return nil
+	return rerr
 }
 
 func (m *manager) ID() string {
@@ -342,20 +366,21 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 		}
 		annotations["buildkit/createdat"] = string(createdAt)
 	}
+	desc := ocispecs.Descriptor{
+		MediaType:   layerMetadata.Annotations.MediaType,
+		Digest:      layerMetadata.Blob,
+		Size:        layerMetadata.Annotations.Size,
+		Annotations: annotations,
+	}
 	return &remotecache.DescriptorProviderPair{
-		Provider: m.layerstore,
-		Descriptor: ocispecs.Descriptor{
-			MediaType:   layerMetadata.Annotations.MediaType,
-			Digest:      layerMetadata.Blob,
-			Size:        layerMetadata.Annotations.Size,
-			Annotations: annotations,
-		},
+		Provider:   m.layerProvider,
+		Descriptor: desc,
 	}, nil
 }
 
 type Manager interface {
 	solver.CacheManager
-	StartCacheMountSynchronization(context.Context, *dagger.Client) error
+	StartCacheMountSynchronization(context.Context) error
 	Close(context.Context) error
 }
 
@@ -363,7 +388,9 @@ type defaultCacheManager struct {
 	solver.CacheManager
 }
 
-func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context, client *dagger.Client) error {
+var _ Manager = defaultCacheManager{}
+
+func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context) error {
 	return nil
 }
 

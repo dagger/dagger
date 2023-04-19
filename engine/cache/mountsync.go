@@ -1,178 +1,236 @@
 package cache
 
 import (
+	"bufio"
 	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
-	"path"
-	"strconv"
 	"time"
 
-	"dagger.io/dagger"
+	"github.com/containerd/containerd/archive"
+	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/diff/apply"
+	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/mount"
+	"github.com/dagger/dagger/core"
+	"github.com/klauspost/compress/zstd"
+	"github.com/moby/buildkit/solver/llbsolver/mounts"
+	solverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/leaseutil"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
 
-func startS3CacheMountSync(ctx context.Context, s3Config *S3LayerStoreConfig, daggerClient *dagger.Client) (func(ctx context.Context) error, error) {
-	stop := func(ctx context.Context) error { return nil } // default to no-op
-
-	cacheMountPrefixes := s3Config.CacheMountPrefixes
-	if len(cacheMountPrefixes) == 0 {
-		return stop, nil
+func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
+	getCacheMountConfigResp, err := m.cacheClient.GetCacheMountConfig(ctx, GetCacheMountConfigRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to get cache mount config: %w", err)
 	}
-	bklog.G(ctx).Debugf("syncing cache mounts %+v", cacheMountPrefixes)
+	syncedCacheMounts := getCacheMountConfigResp.SyncedCacheMounts
+
+	if len(syncedCacheMounts) == 0 {
+		return nil
+	}
 
 	var eg errgroup.Group
-	for _, cacheMountPrefix := range cacheMountPrefixes {
-		cacheMountName := path.Base(cacheMountPrefix)
-		cacheMountPrefix := cacheMountPrefix
+	for _, syncedCacheMount := range syncedCacheMounts {
+		syncedCacheMount := syncedCacheMount
+		if syncedCacheMount.URL == "" {
+			// nothing to download, have to start fresh, skip it until we sync back to cloud at shutdown
+			continue
+		}
 		eg.Go(func() error {
-			bklog.G(ctx).Debugf("importing cache mount %q", cacheMountPrefix)
-			err := execRclone(ctx, daggerClient, rcloneDownloadArgs(cacheMountPrefix, s3Config), cacheMountName)
-			if err != nil {
-				bklog.G(ctx).Debugf("failed to sync cache mount locally %s: %v", cacheMountName, err)
-				return err
-			}
-			bklog.G(ctx).Debugf("synced cache mount locally %s", cacheMountName)
-			return nil
+			bklog.G(ctx).Debugf("syncing cache mount locally %s", syncedCacheMount.Name)
+			cacheKey := cacheKeyFromMountName(syncedCacheMount.Name)
+			return withCacheMount(ctx, m.MountManager, cacheKey, func(ctx context.Context, mnt mount.Mount) error {
+				cacheMountDir := mnt.Source // relies on our check that this is a bind mount in withCacheMount
+
+				// if there's any existing data in the cache mount, we'll just leave it alone
+				// NOTE: there's cases in which this heuristic isn't ideal, such as when a
+				// remote cache mount has "better" contents than this one, but this will suffice
+				// for now
+				dirents, err := os.ReadDir(cacheMountDir)
+				if err != nil {
+					return fmt.Errorf("failed to read cache mount dir: %w", err)
+				}
+				if len(dirents) > 0 {
+					bklog.G(ctx).Debugf("cache mount %q already has data, skipping", syncedCacheMount.Name)
+					return nil
+				}
+
+				fsApplier := apply.NewFileSystemApplier(&cacheMountProvider{
+					httpClient: m.httpClient,
+					url:        syncedCacheMount.URL,
+				})
+				_, err = fsApplier.Apply(ctx, ocispecs.Descriptor{
+					Digest:    syncedCacheMount.Digest,
+					Size:      syncedCacheMount.Size,
+					MediaType: syncedCacheMount.MediaType,
+				}, []mount.Mount{mnt})
+				if err != nil {
+					return fmt.Errorf("failed to apply cache mount: %w", err)
+				}
+
+				bklog.G(ctx).Debugf("synced cache mount locally %s", syncedCacheMount.Name)
+				return nil
+			})
 		})
 	}
-	err := eg.Wait()
+	err = eg.Wait()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	stop = func(ctx context.Context) error {
+	m.stopCacheMountSync = func(ctx context.Context) error {
 		var eg errgroup.Group
-		for _, cacheMountPrefix := range cacheMountPrefixes {
-			cacheMountName := path.Base(cacheMountPrefix)
-			cacheMountPrefix := cacheMountPrefix
+		for _, syncedCacheMount := range syncedCacheMounts {
+			syncedCacheMount := syncedCacheMount
 			eg.Go(func() error {
-				bklog.G(ctx).Debugf("syncing cache mount remotely %s", cacheMountName)
-				err := execRclone(ctx, daggerClient, rcloneUploadArgs(cacheMountPrefix, s3Config), cacheMountName)
-				if err != nil {
-					bklog.G(ctx).Errorf("failed to sync cache mount remotely %s: %v", cacheMountName, err)
-					return err
-				}
-				bklog.G(ctx).Debugf("synced cache mount remotely %s", cacheMountName)
-				return nil
+				bklog.G(ctx).Debugf("syncing cache mount remotely %s", syncedCacheMount.Name)
+				cacheKey := cacheKeyFromMountName(syncedCacheMount.Name)
+
+				return withCacheMount(ctx, m.MountManager, cacheKey, func(ctx context.Context, mnt mount.Mount) error {
+					// First compress the mount into the content store. We can't stream direct to S3 because we want
+					// to tell S3 the checksum of the whole thing when we open the request there. Apparently there
+					// is a way to include the checksum as a trailer, but it is poorly documented and seems to require
+					// a different streaming request type, which is giving me a headache right now. Can optimize in future.
+
+					// add a temporary lease so our content doesn't get pruned immediately from the store
+					ctx, done, err := leaseutil.WithLease(ctx, m.Worker.LeaseManager(), leaseutil.MakeTemporary)
+					if err != nil {
+						return fmt.Errorf("failed to create lease: %w", err)
+					}
+					defer done(ctx)
+
+					// compress the mount to a tar.zstd and write to the content store
+					contentRef := "dagger-cachemount-" + syncedCacheMount.Name
+					contentWriter, err := m.Worker.ContentStore().Writer(ctx, content.WithRef(contentRef))
+					if err != nil {
+						return fmt.Errorf("failed to create content writer: %w", err)
+					}
+					defer contentWriter.Close()
+					writeBuffer := bufio.NewWriterSize(contentWriter, 1024*1024)
+					compressor, err := zstd.NewWriter(writeBuffer, zstd.WithEncoderLevel(zstd.SpeedDefault))
+					if err != nil {
+						return fmt.Errorf("failed to create compressor: %w", err)
+					}
+					defer compressor.Close()
+					// mnt.Source relies on our check that this is a bind mount in withCacheMount
+					err = archive.WriteDiff(ctx, compressor, "", mnt.Source)
+					if err != nil {
+						return fmt.Errorf("failed to write diff: %w", err)
+					}
+					if err := compressor.Close(); err != nil {
+						return fmt.Errorf("failed to close compressor: %w", err)
+					}
+					writeBuffer.Flush()
+					if err := contentWriter.Commit(ctx, 0, ""); err != nil {
+						if errors.Is(err, errdefs.ErrAlreadyExists) {
+							// we should be releasing these, but if it was already there, that's weird but fine
+							bklog.G(ctx).Debugf("cache mount %q already committed", syncedCacheMount.Name)
+						} else {
+							return fmt.Errorf("failed to commit content: %w", err)
+						}
+					}
+					contentDigest := contentWriter.Digest()
+
+					// now that we have the digest we can upload from the content store to the url
+					contentReaderAt, err := m.Worker.ContentStore().ReaderAt(ctx, ocispecs.Descriptor{
+						Digest: contentDigest,
+					})
+					if err != nil {
+						return fmt.Errorf("failed to create content reader: %w", err)
+					}
+					defer contentReaderAt.Close()
+					contentLength := contentReaderAt.Size()
+					getURLResp, err := m.cacheClient.GetCacheMountUploadURL(ctx, GetCacheMountUploadURLRequest{
+						CacheName: syncedCacheMount.Name,
+						Digest:    contentDigest,
+						Size:      contentLength,
+					})
+					if err != nil {
+						return fmt.Errorf("failed to get cache mount upload url: %w", err)
+					}
+					contentReader := io.NewSectionReader(contentReaderAt, 0, contentLength)
+					httpReq, err := http.NewRequestWithContext(ctx, http.MethodPut, getURLResp.URL, contentReader)
+					if err != nil {
+						return fmt.Errorf("failed to create http request: %w", err)
+					}
+					httpReq.ContentLength = contentLength // set it here, go stdlib will ignore if set on Header (??!!)
+					resp, err := m.httpClient.Do(httpReq)
+					if err != nil {
+						return fmt.Errorf("failed to upload cache mount: %w", err)
+					}
+					defer resp.Body.Close()
+					if resp.StatusCode != http.StatusOK {
+						// get the error message from the body
+						body, err := io.ReadAll(resp.Body)
+						if err == nil {
+							return fmt.Errorf("failed to upload cache mount: %s, %s", resp.Status, body)
+						}
+						return fmt.Errorf("failed to upload cache mount: %s", resp.Status)
+					}
+
+					bklog.G(ctx).Debugf("synced cache mount remotely %s", syncedCacheMount.Name)
+					return nil
+				})
 			})
 		}
 		return eg.Wait()
 	}
 
-	return stop, nil
+	return nil
 }
 
-func rcloneCommonArgs(cfg *S3LayerStoreConfig) []string {
-	// https://rclone.org/docs/
-	// https://rclone.org/s3/
-	commonArgs := []string{
-		"--s3-region", cfg.Region,
-		"--s3-acl=private",
-		"--s3-no-check-bucket=true", // don't try to auto-create bucket
-		"--s3-env-auth=true",        // use AWS_* env vars for auth
-		"--metadata",                // preserve file metadata (note: this hurts performance a bit)
-		"-v",
-
-		// performance knobs
-		// "--s3-memory-pool-use-mmap=true",
-		// "--s3-upload-concurrency", strconv.Itoa(runtime.NumCPU()),
-		// --s3-list-chunk
-		// --s3-chunk-size
-		// --s3-copy-cutoff
-		// --s3-disable-checksum
-		// --s3-use-accelerate-endpoint
-		// --s3-no-head
-		// --s3-no-head-object
-		// --s3-encoding
-		// --s3-memory-pool-flush-time
-		// --size-only
-		// --checksum
-		// --update --use-server-modtime
-		// --buffer-size=SIZE
-		// --checkers=N
-		// --max-backlog=N
-		// --max-depth=N
-		// --multi-thread-cutoff
-		// --multi-thread-streams
-		// --track-renames
-		// --fast-list
-		// --transfers
-		// --use-mmap
-
-		// misc options
-		// --s3-leave-parts-on-error
-		// --retries
-		// --retries-sleep
-	}
-
-	if cfg.EndpointURL != "" {
-		commonArgs = append(commonArgs, "--s3-endpoint", cfg.EndpointURL)
-	}
-	if cfg.UsePathStyle {
-		commonArgs = append(commonArgs, "--s3-force-path-style=true")
-	} else {
-		commonArgs = append(commonArgs, "--s3-force-path-style=false")
-	}
-
-	return commonArgs
+func cacheKeyFromMountName(name string) string {
+	// Turn the human-readable name into the key we use internally
+	// NOTE: this will be problematic if backwards incompatible changes are made
+	// to the key format and client<->server are out of sync. That's a general
+	// problem though too, so just accepting it for now.
+	return core.NewCache(name).Sum()
 }
 
-func rcloneDownloadArgs(cacheMountPrefix string, s3Config *S3LayerStoreConfig) []string {
-	downloadArgs := []string{
-		"copy",
-		":s3:" + s3Config.Bucket + "/" + cacheMountPrefix,
-		"/mnt",
-	}
-	return append(downloadArgs, rcloneCommonArgs(s3Config)...)
-}
-
-func rcloneUploadArgs(cacheMountPrefix string, s3Config *S3LayerStoreConfig) []string {
-	uploadArgs := []string{
-		"sync", // unlike copy, sync results in deletions taking place in remote
-		"/mnt",
-		":s3:" + s3Config.Bucket + "/" + cacheMountPrefix,
-	}
-	return append(uploadArgs, rcloneCommonArgs(s3Config)...)
-}
-
-func execRclone(ctx context.Context, c *dagger.Client, args []string, cacheMountName string) error {
-	ctr := c.Container().
-		From("rclone/rclone:1.61").
-		WithEnvVariable("CACHEBUST", strconv.Itoa(int(time.Now().UnixNano()))).
-		WithMountedCache("/mnt", c.CacheVolume(cacheMountName))
-
-	if v, ok := os.LookupEnv("AWS_STS_REGIONAL_ENDPOINTS"); ok {
-		ctr = ctr.WithEnvVariable("AWS_STS_REGIONAL_ENDPOINTS", v)
-	}
-	if v, ok := os.LookupEnv("AWS_DEFAULT_REGION"); ok {
-		ctr = ctr.WithEnvVariable("AWS_DEFAULT_REGION", v)
-	}
-	if v, ok := os.LookupEnv("AWS_REGION"); ok {
-		ctr = ctr.WithEnvVariable("AWS_REGION", v)
-	}
-	if v, ok := os.LookupEnv("AWS_ROLE_ARN"); ok {
-		ctr = ctr.WithEnvVariable("AWS_ROLE_ARN", v)
-	}
-	if v, ok := os.LookupEnv("AWS_WEB_IDENTITY_TOKEN_FILE"); ok {
-		ctr = ctr.WithEnvVariable("AWS_WEB_IDENTITY_TOKEN_FILE", v)
-		contents, err := os.ReadFile(v)
-		if err != nil {
-			return err
+func withCacheMount(ctx context.Context, mountManager *mounts.MountManager, cacheKey string, cb func(ctx context.Context, mnt mount.Mount) error) error {
+	// this should never block in theory since we have exclusive access at
+	// engine startup, but put a timeout on this out of an abundance of caution
+	getRefCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	ref, err := mountManager.MountableCache(getRefCtx, &solverpb.Mount{
+		CacheOpt: &solverpb.CacheOpt{
+			ID:      cacheKey,
+			Sharing: solverpb.CacheSharingOpt_SHARED,
+		},
+	}, nil, nil)
+	defer func() {
+		if ref != nil {
+			ref.Release(context.Background())
 		}
-		secret := c.SetSecret("AWS_WEB_IDENTITY_TOKEN_FILE", string(contents))
-		ctr = ctr.WithMountedSecret(v, secret)
-	}
-	if v, ok := os.LookupEnv("AWS_ACCESS_KEY_ID"); ok {
-		ctr = ctr.WithSecretVariable("AWS_ACCESS_KEY_ID", c.SetSecret("AWS_ACCESS_KEY_ID", v))
-	}
-	if v, ok := os.LookupEnv("AWS_SECRET_ACCESS_KEY"); ok {
-		ctr = ctr.WithSecretVariable("AWS_SECRET_ACCESS_KEY", c.SetSecret("AWS_SECRET_ACCESS_KEY", v))
-	}
-	if v, ok := os.LookupEnv("AWS_SESSION_TOKEN"); ok {
-		ctr = ctr.WithSecretVariable("AWS_SESSION_TOKEN", c.SetSecret("AWS_SESSION_TOKEN", v))
+	}()
+	if err != nil {
+		return fmt.Errorf("failed to get cache mount ref: %w", err)
 	}
 
-	_, err := ctr.WithExec(args).ExitCode(ctx)
-	return err
+	mountable, err := ref.Mount(ctx, false, nil)
+	if err != nil {
+		return fmt.Errorf("failed to get cache mount: %w", err)
+	}
+	mounts, releaseMounts, err := mountable.Mount()
+	if err != nil {
+		return fmt.Errorf("failed to get cache mount mounts: %w", err)
+	}
+	defer releaseMounts()
+	if len(mounts) != 1 {
+		return fmt.Errorf("expected 1 mount, got %d", len(mounts))
+	}
+	mnt := mounts[0]
+	if mnt.Type != "bind" && mnt.Type != "rbind" {
+		// TODO: we could support overlay (when there's a parent ref to the cache mount)
+		// by just mounting to a tempdir
+		return fmt.Errorf("expected bind mount, got %s", mnt.Type)
+	}
+	return cb(ctx, mnt)
 }
