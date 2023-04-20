@@ -29,7 +29,7 @@ func decodeID[T ~string](payload any, id T) error {
 	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(id)))
 	n, err := base64.StdEncoding.Decode(jsonBytes, []byte(id))
 	if err != nil {
-		return fmt.Errorf("failed to decode %T bytes: %v", payload, err)
+		return fmt.Errorf("failed to decode %T bytes: %v: %v", payload, err, payload)
 	}
 
 	jsonBytes = jsonBytes[:n]

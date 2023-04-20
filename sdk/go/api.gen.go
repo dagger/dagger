@@ -120,6 +120,10 @@ type ContainerBuildOpts struct {
 	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
+	// Secrets to pass to the build.
+	//
+	// They will be mounted at /run/secrets/<secret-id>.
+	Secrets []*Secret
 }
 
 // Initializes this container from a Dockerfile build.
@@ -144,6 +148,13 @@ func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Conta
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
+			break
+		}
+	}
+	// `secrets` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Secrets) {
+			q = q.Arg("secrets", opts[i].Secrets)
 			break
 		}
 	}
@@ -1312,6 +1323,10 @@ type DirectoryDockerBuildOpts struct {
 	BuildArgs []BuildArg
 	// Target build stage to build.
 	Target string
+	// Secrets to pass to the build.
+	//
+	// They will be mounted at /run/secrets/<secret-id>.
+	Secrets []*Secret
 }
 
 // Builds a new Docker container from this directory.
@@ -1342,6 +1357,13 @@ func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
+			break
+		}
+	}
+	// `secrets` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Secrets) {
+			q = q.Arg("secrets", opts[i].Secrets)
 			break
 		}
 	}

@@ -196,6 +196,7 @@ type dirDockerBuildArgs struct {
 	Dockerfile string
 	BuildArgs  []core.BuildArg
 	Target     string
+	Secrets    []core.SecretID
 }
 
 func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
@@ -211,5 +212,5 @@ func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Director
 	if err != nil {
 		return ctr, err
 	}
-	return ctr.Build(ctx, s.gw, parent, args.Dockerfile, args.BuildArgs, args.Target)
+	return ctr.Build(ctx, s.gw, parent, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }

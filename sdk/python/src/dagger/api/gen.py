@@ -122,6 +122,7 @@ class Container(Type):
         dockerfile: Optional[str] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
         target: Optional[str] = None,
+        secrets: Optional[Sequence["Secret"]] = None,
     ) -> "Container":
         """Initializes this container from a Dockerfile build.
 
@@ -136,12 +137,16 @@ class Container(Type):
             Additional build arguments.
         target:
             Target build stage to build.
+        secrets:
+            Secrets to pass to the build.
+            They will be mounted at /run/secrets/<secret-id>.
         """
         _args = [
             Arg("context", context),
             Arg("dockerfile", dockerfile, None),
             Arg("buildArgs", build_args, None),
             Arg("target", target, None),
+            Arg("secrets", secrets, None),
         ]
         _ctx = self._select("build", _args)
         return Container(_ctx)
@@ -1441,6 +1446,7 @@ class Directory(Type):
         platform: Optional[Platform] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
         target: Optional[str] = None,
+        secrets: Optional[Sequence["Secret"]] = None,
     ) -> Container:
         """Builds a new Docker container from this directory.
 
@@ -1455,12 +1461,16 @@ class Directory(Type):
             Build arguments to use in the build.
         target:
             Target build stage to build.
+        secrets:
+            Secrets to pass to the build.
+            They will be mounted at /run/secrets/<secret-id>.
         """
         _args = [
             Arg("dockerfile", dockerfile, None),
             Arg("platform", platform, None),
             Arg("buildArgs", build_args, None),
             Arg("target", target, None),
+            Arg("secrets", secrets, None),
         ]
         _ctx = self._select("dockerBuild", _args)
         return Container(_ctx)
