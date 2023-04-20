@@ -191,7 +191,11 @@ type Directory {
     "Target build stage to build."
     target: String
 
-    "Secrets to pass to the build."
+    """
+    Secrets to pass to the build.
+
+    They will be mounted at /run/secrets/<secret-id>.
+    """
     secrets: [SecretID!]
   ): Container!
 

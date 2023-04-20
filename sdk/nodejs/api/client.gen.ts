@@ -109,6 +109,8 @@ export type ContainerBuildOpts = {
 
   /**
    * Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/<secret-id>.
    */
   secrets?: Secret[]
 }
@@ -336,6 +338,8 @@ export type DirectoryDockerBuildOpts = {
 
   /**
    * Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/<secret-id>.
    */
   secrets?: Secret[]
 }
@@ -596,6 +600,8 @@ export class Container extends BaseClient {
    * @param opts.buildArgs Additional build arguments.
    * @param opts.target Target build stage to build.
    * @param opts.secrets Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/<secret-id>.
    */
   build(context: Directory, opts?: ContainerBuildOpts): Container {
     return new Container({
@@ -1804,6 +1810,8 @@ export class Directory extends BaseClient {
    * @param opts.buildArgs Build arguments to use in the build.
    * @param opts.target Target build stage to build.
    * @param opts.secrets Secrets to pass to the build.
+   *
+   * They will be mounted at /run/secrets/<secret-id>.
    */
   dockerBuild(opts?: DirectoryDockerBuildOpts): Container {
     return new Container({
