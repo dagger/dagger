@@ -22,7 +22,7 @@
     "@svgr/webpack": "^6.5.1",
     "chalk": "4.1.2",
     "clsx": "^1.2.1",
-    "docusaurus-plugin-image-zoom": "^0.1.1",
+    "docusaurus-plugin-image-zoom": "^0.1.4",
     "docusaurus-plugin-includes": "^1.1.4",
     "docusaurus-plugin-sass": "^0.2.3",
     "docusaurus-plugin-typedoc": "^0.18.0",

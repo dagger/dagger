@@ -4763,10 +4763,10 @@ dns-packet@^5.2.2:
   dependencies:
     "@leichtgewicht/ip-codec" "^2.0.1"
 
-docusaurus-plugin-image-zoom@^0.1.1:
-  version "0.1.1"
-  resolved "https://registry.npmjs.org/docusaurus-plugin-image-zoom/-/docusaurus-plugin-image-zoom-0.1.1.tgz"
-  integrity sha512-cJXo5TKh9OR1gE4B5iS5ovLWYYDFwatqRm00iXFPOaShZG99l5tgkDKgbQPAwSL9wg4I+wz3aMwkOtDhMIpKDQ==
+docusaurus-plugin-image-zoom@^0.1.4:
+  version "0.1.4"
+  resolved "https://registry.yarnpkg.com/docusaurus-plugin-image-zoom/-/docusaurus-plugin-image-zoom-0.1.4.tgz#9b5fd06e3a79d84979265b7e74881a65bb3e1872"
+  integrity sha512-Fc16FUUVKgvF0OuMapsau0GFopSAH99t+FCRtTpF8n2Wt8toi5Et3xHKPNvuCb85PTtDuNfFUp5m9eCij0dXlw==
   dependencies:
     medium-zoom "^1.0.6"
 
