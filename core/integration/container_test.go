@@ -3251,6 +3251,34 @@ func TestContainerWithMountedDirectoryOwner(t *testing.T) {
 			})
 		})
 	})
+
+	t.Run("permissions", func(t *testing.T) {
+		dir := c.Directory().
+			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
+				Permissions: 0745,
+			}).
+			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
+				Permissions: 0645,
+			}).
+			Directory("perms")
+
+		ctr := c.Container().From("alpine:3.16.2").
+			WithExec([]string{"adduser", "-D", "inherituser"}).
+			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+			WithUser("inherituser").
+			WithMountedDirectory("/data", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "auser:agroup",
+			})
+
+		out, err := ctr.WithExec([]string{"stat", "-c", "%a:%U:%G", "/data"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "745:auser:agroup\n", out)
+
+		out, err = ctr.WithExec([]string{"stat", "-c", "%a:%U:%G", "/data/foo"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "645:auser:agroup\n", out)
+	})
 }
 
 func TestContainerWithFileOwner(t *testing.T) {

@@ -923,28 +923,63 @@ func (container *Container) chown(
 	var srcSt llb.State
 	if srcDef == nil {
 		// e.g. empty cache mount
-		srcSt = llb.Scratch()
+		srcSt = llb.Scratch().File(
+			llb.Mkdir("/chown", 0o700, ownership.Opt()),
+		)
+
+		srcPath = "/chown"
 	} else {
 		srcSt, err = defToState(srcDef)
 		if err != nil {
 			return nil, "", err
 		}
-	}
 
-	// NB(vito): need to create intermediate directory with correct ownership
-	// to handle the directory case, otherwise the mount will be owned by
-	// root
-	srcSt = llb.Scratch().File(
-		llb.Mkdir("/chown", 0o700, ownership.Opt()).
-			Copy(srcSt, srcPath, "/chown", ownership.Opt()),
-	)
+		def, err := srcSt.Marshal(ctx, opts...)
+		if err != nil {
+			return nil, "", err
+		}
+
+		ref, err := gwRef(ctx, gw, def.ToPB())
+		if err != nil {
+			return nil, "", err
+		}
+
+		stat, err := ref.StatFile(ctx, bkgw.StatRequest{
+			Path: srcPath,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+
+		if stat.IsDir() {
+			chowned := "/chown"
+
+			// NB(vito): need to create intermediate directory with correct ownership
+			// to handle the directory case, otherwise the mount will be owned by
+			// root
+			srcSt = llb.Scratch().File(
+				llb.Mkdir(chowned, os.FileMode(stat.Mode), ownership.Opt()).
+					Copy(srcSt, srcPath, chowned, &llb.CopyInfo{
+						CopyDirContentsOnly: true,
+					}, ownership.Opt()),
+			)
+
+			srcPath = chowned
+		} else {
+			srcSt = llb.Scratch().File(
+				llb.Copy(srcSt, srcPath, ".", ownership.Opt()),
+			)
+
+			srcPath = filepath.Base(srcPath)
+		}
+	}
 
 	def, err := srcSt.Marshal(ctx, opts...)
 	if err != nil {
 		return nil, "", err
 	}
 
-	return def.ToPB(), filepath.Join("/chown", filepath.Base(srcPath)), nil
+	return def.ToPB(), srcPath, nil
 }
 
 func (container *Container) writeToPath(ctx context.Context, gw bkgw.Client, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
