@@ -2,12 +2,10 @@ package telemetry
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +23,6 @@ type Telemetry struct {
 	enable bool
 
 	runID string
-	orgID string
 
 	url   string
 	token string
@@ -51,28 +48,6 @@ func New(printURLMessage bool) *Telemetry {
 		t.enable = true
 		if printURLMessage {
 			fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
-		}
-
-		pts := strings.Split(token, ".")
-
-		if len(pts) < 3 {
-			fmt.Fprintf(os.Stderr, "Supplied Dagger Cloud token doesn't have a JWT shape")
-			t.enable = false
-		} else {
-			jwtPayload, err := base64.RawStdEncoding.DecodeString(pts[1])
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not decode JWT payload: %v", err)
-				t.enable = false
-			}
-			jwtClaims := map[string]interface{}{}
-			err = json.Unmarshal(jwtPayload, &jwtClaims)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not unmarshal JWT payload: %v", err)
-				t.enable = false
-			}
-			if v, ok := jwtClaims["id"].(string); ok {
-				t.orgID = v
-			}
 		}
 	}
 	go t.start()
@@ -109,7 +84,6 @@ func (t *Telemetry) Push(p Payload, ts time.Time) {
 	ev := &Event{
 		Version:   eventVersion,
 		Timestamp: ts,
-		OrgID:     t.orgID,
 		Type:      p.Type(),
 		Payload:   p,
 	}
@@ -164,7 +138,7 @@ func (t *Telemetry) send() {
 		return
 	}
 	if t.token != "" {
-		req.Header.Set("Authorization", "Bearer "+t.token)
+		req.SetBasicAuth(t.token, "")
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
