@@ -194,7 +194,7 @@ type Directory {
     """
     Secrets to pass to the build.
 
-    They will be mounted at /run/secrets/<secret-id>.
+    They will be mounted at /run/secrets/[secret-name].
     """
     secrets: [SecretID!]
   ): Container!
