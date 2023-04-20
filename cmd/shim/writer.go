@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"io"
-	"log"
 	"unicode/utf8"
 )
 
@@ -56,6 +55,19 @@ func (w *LineBreakWriter) Write(b []byte) (int, error) {
 	return len(b), err
 }
 
+// Close will flush the buffered data in a last Write on the
+// underlying writer.
+func (w *LineBreakWriter) Close() error {
+	if len(w.buffer) == 0 {
+		return nil
+	}
+
+	_, err := w.w.Write(w.buffer)
+	w.buffer = nil
+	return err
+
+}
+
 func (w *LineBreakWriter) writeDangling(b []byte) []byte {
 	data := append(w.buffer, b...)
 
@@ -74,6 +86,8 @@ func (w *LineBreakWriter) writeDangling(b []byte) []byte {
 	// if not, don't buffer, just write on the underlying writer
 	contains, newIdx := containsPartialSecret(data[idx:], w.secretLines)
 	if contains {
+		// TODO use a random index between 0 and newIdx, to avoid guessing secret
+		// size by multiple runs of pipeline
 		w.buffer = data[newIdx:]
 		return data[:newIdx]
 	}
@@ -86,7 +100,6 @@ func containsPartialSecret(b []byte, secrets []string) (contains bool, index int
 	for _, secret := range secrets {
 		for i := len(secret); i > 0; i-- {
 			secretContained := bytes.Contains(b, []byte(secret)[:i])
-			log.Println("contained:", secret, secretContained, secret[:i])
 			if !secretContained {
 				// we go check a smaller set in this secret
 				continue
@@ -96,10 +109,16 @@ func containsPartialSecret(b []byte, secrets []string) (contains bool, index int
 			// if the last occurence of the partial secret goes till the end of b
 			// it means that there is potentially a partial secret at the end of b
 			// so we need to buffer it
-			if idx+len(secret[:i]) == len(b) && i == len(secret) { // if i == len(secret), it means we could do a full match scrubbing
+			if i == len(secret) {
+				// if i == len(secret), it means we could do a full match scrubbing
+				// no need to buffer
 				break
 			}
-			return true, idx
+
+			if idx+len(secret[:i]) == len(b) {
+				return true, idx
+			}
+			break
 		}
 	}
 	return false, -1
