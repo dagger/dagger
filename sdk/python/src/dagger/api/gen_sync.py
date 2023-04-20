@@ -1052,6 +1052,11 @@ class Container(Type):
             Sharing mode of the cache volume.
         owner:
             A user:group to set for the mounted cache directory.
+            Note that this changes the ownership of the specified mount along
+            with the
+            initial filesystem provided by source (if any). It does not have
+            any effect
+            if/when the cache has already been created.
             The user and group can either be an ID (1000:1000) or a name
             (foo:bar).
             If the group is omitted, it defaults to the same as the user.
