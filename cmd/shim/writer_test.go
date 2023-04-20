@@ -118,3 +118,18 @@ func TestContainsPartialSecret(t *testing.T) {
 		require.Equal(t, -1, idx)
 	})
 }
+
+func TestLineBreakWriter_writeDangling(t *testing.T) {
+	var b bytes.Buffer
+	lb := LineBreakWriter{
+		w: &b,
+		secretLines: []string{
+			"tasty",
+			"yummy",
+		},
+	}
+
+	got := lb.writeDangling([]byte("sorry, it was yum"))
+	require.Equal(t, "sorry, it was ", string(got))
+	require.Equal(t, "yum", string(lb.buffer))
+}
