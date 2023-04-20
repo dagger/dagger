@@ -82,3 +82,39 @@ func TestLineBreakWriter(t *testing.T) {
 		buf.Reset()
 	}
 }
+
+func TestContainsPartialSecret(t *testing.T) {
+	t.Run("contains a partial of a secret", func(t *testing.T) {
+		s := "mochi mochi, yu"
+		secrets := []string{
+			"tasty",
+			"yummy", // yu could be the start of this secret
+		}
+
+		ok, idx := containsPartialSecret([]byte(s), secrets)
+		require.True(t, ok)
+		require.Equal(t, 13, idx)
+	})
+	t.Run("contains a full secret", func(t *testing.T) {
+		s := "mochi mochi, yummy"
+		secrets := []string{
+			"tasty",
+			"yummy",
+		}
+
+		ok, idx := containsPartialSecret([]byte(s), secrets)
+		require.False(t, ok)
+		require.Equal(t, -1, idx)
+	})
+	t.Run("contains no secret", func(t *testing.T) {
+		s := "mochi mochi, yummy"
+		secrets := []string{
+			"tasty",
+			"nothing",
+		}
+
+		ok, idx := containsPartialSecret([]byte(s), secrets)
+		require.False(t, ok)
+		require.Equal(t, -1, idx)
+	})
+}

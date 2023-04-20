@@ -18,7 +18,7 @@ type SecretScrubWriter struct {
 	mu sync.Mutex
 	w  io.Writer
 
-	secretValues []string
+	secretLines []string
 }
 
 // Write scrubs secret values from b and replace them with `***`.
@@ -26,7 +26,7 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	scrubbedBytes := scrubSecretBytes(w.secretValues, b)
+	scrubbedBytes := scrubSecretBytes(w.secretLines, b)
 
 	_, err := w.w.Write(scrubbedBytes)
 	if err != nil {
@@ -74,8 +74,8 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	secretLines := splitSecretsByLine(secrets)
 
 	return &SecretScrubWriter{
-		w:            w,
-		secretValues: secretLines,
+		w:           w,
+		secretLines: secretLines,
 	}, nil
 }
 
