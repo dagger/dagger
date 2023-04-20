@@ -4,24 +4,30 @@ defmodule Dagger.GitRef do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def digest(%__MODULE__{} = git_ref) do
-    selection = select(git_ref.selection, "digest")
-    execute(selection, git_ref.client)
-  end
+  (
+    @doc "The digest of the current value of this ref."
+    def digest(%__MODULE__{} = git_ref) do
+      selection = select(git_ref.selection, "digest")
+      execute(selection, git_ref.client)
+    end
+  )
 
-  def tree(%__MODULE__{} = git_ref, opts) do
-    selection = select(git_ref.selection, "tree")
+  (
+    @doc "The filesystem tree at this ref."
+    def tree(%__MODULE__{} = git_ref, opts) do
+      selection = select(git_ref.selection, "tree")
 
-    {_opts, selection} =
-      [:ssh_known_hosts, :ssh_auth_socket]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:ssh_known_hosts, :ssh_auth_socket]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: git_ref.client}
-  end
+      %Dagger.Directory{selection: selection, client: git_ref.client}
+    end
+  )
 end

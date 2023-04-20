@@ -4,31 +4,46 @@ defmodule Dagger.GitRepository do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def branch(%__MODULE__{} = git_repository, opts) do
-    selection = select(git_repository.selection, "branch")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    %Dagger.GitRef{selection: selection, client: git_repository.client}
-  end
+  (
+    @doc "Returns details on one branch."
+    def branch(%__MODULE__{} = git_repository, opts) do
+      selection = select(git_repository.selection, "branch")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      %Dagger.GitRef{selection: selection, client: git_repository.client}
+    end
+  )
 
-  def branches(%__MODULE__{} = git_repository) do
-    selection = select(git_repository.selection, "branches")
-    execute(selection, git_repository.client)
-  end
+  (
+    @doc "Lists of branches on the repository."
+    def branches(%__MODULE__{} = git_repository) do
+      selection = select(git_repository.selection, "branches")
+      execute(selection, git_repository.client)
+    end
+  )
 
-  def commit(%__MODULE__{} = git_repository, opts) do
-    selection = select(git_repository.selection, "commit")
-    selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
-    %Dagger.GitRef{selection: selection, client: git_repository.client}
-  end
+  (
+    @doc "Returns details on one commit."
+    def commit(%__MODULE__{} = git_repository, opts) do
+      selection = select(git_repository.selection, "commit")
+      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      %Dagger.GitRef{selection: selection, client: git_repository.client}
+    end
+  )
 
-  def tag(%__MODULE__{} = git_repository, opts) do
-    selection = select(git_repository.selection, "tag")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    %Dagger.GitRef{selection: selection, client: git_repository.client}
-  end
+  (
+    @doc "Returns details on one tag."
+    def tag(%__MODULE__{} = git_repository, opts) do
+      selection = select(git_repository.selection, "tag")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      %Dagger.GitRef{selection: selection, client: git_repository.client}
+    end
+  )
 
-  def tags(%__MODULE__{} = git_repository) do
-    selection = select(git_repository.selection, "tags")
-    execute(selection, git_repository.client)
-  end
+  (
+    @doc "Lists of tags on the repository."
+    def tags(%__MODULE__{} = git_repository) do
+      selection = select(git_repository.selection, "tags")
+      execute(selection, git_repository.client)
+    end
+  )
 end

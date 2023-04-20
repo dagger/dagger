@@ -28,21 +28,27 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
   def render_function(
         mod_var_name,
-        %{"name" => name, "args" => args, "type" => %{"ofType" => type_ref}} = _field
+        %{
+          "name" => name,
+          "args" => args,
+          "type" => %{"ofType" => type_ref},
+          "description" => desc
+        } = _field
       ) do
     mod_var_name = Macro.var(mod_var_name, __MODULE__)
     fun_name = Function.format_name(name)
 
-    format_function(fun_name, mod_var_name, args, type_ref)
+    format_function(fun_name, mod_var_name, args, type_ref, desc)
   end
 
-  def format_function(fun_name, mod_var_name, args, %{"kind" => "OBJECT", "name" => name}) do
+  def format_function(fun_name, mod_var_name, args, %{"kind" => "OBJECT", "name" => name}, desc) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
     field_name = Function.format_field_name(fun_name)
     fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
     args = render_args(args)
 
     quote do
+      @doc unquote(desc)
       def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
@@ -56,12 +62,13 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     end
   end
 
-  def format_function(fun_name, mod_var_name, args, _) do
+  def format_function(fun_name, mod_var_name, args, _, desc) do
     fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
     args = render_args(args)
     field_name = Function.format_field_name(fun_name)
 
     quote do
+      @doc unquote(desc)
       def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 

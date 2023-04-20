@@ -4,176 +4,224 @@ defmodule Dagger.Directory do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def diff(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "diff")
-    selection = arg(selection, to_string(:other), Keyword.fetch!(opts, :other))
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Gets the difference between this directory and an another directory."
+    def diff(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "diff")
+      selection = arg(selection, to_string(:other), Keyword.fetch!(opts, :other))
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def directory(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "directory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Retrieves a directory at the given path."
+    def directory(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "directory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def docker_build(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "dockerBuild")
+  (
+    @doc "Builds a new Docker container from this directory."
+    def docker_build(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "dockerBuild")
 
-    {_opts, selection} =
-      [:dockerfile, :platform, :build_args, :target]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:dockerfile, :platform, :build_args, :target]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Container{selection: selection, client: directory.client}
-  end
+      %Dagger.Container{selection: selection, client: directory.client}
+    end
+  )
 
-  def entries(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "entries")
+  (
+    @doc "Returns a list of files and directories at the given path."
+    def entries(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "entries")
 
-    {_opts, selection} =
-      [:path]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:path]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    execute(selection, directory.client)
-  end
+      execute(selection, directory.client)
+    end
+  )
 
-  def export(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "export")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    execute(selection, directory.client)
-  end
+  (
+    @doc "Writes the contents of the directory to a path on the host."
+    def export(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "export")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      execute(selection, directory.client)
+    end
+  )
 
-  def file(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "file")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.File{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Retrieves a file at the given path."
+    def file(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "file")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.File{selection: selection, client: directory.client}
+    end
+  )
 
-  def id(%__MODULE__{} = directory) do
-    selection = select(directory.selection, "id")
-    execute(selection, directory.client)
-  end
+  (
+    @doc "The content-addressed identifier of the directory."
+    def id(%__MODULE__{} = directory) do
+      selection = select(directory.selection, "id")
+      execute(selection, directory.client)
+    end
+  )
 
-  def load_project(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "loadProject")
-    selection = arg(selection, to_string(:config_path), Keyword.fetch!(opts, :config_path))
-    %Dagger.Project{selection: selection, client: directory.client}
-  end
+  (
+    @doc "load a project's metadata"
+    def load_project(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "loadProject")
+      selection = arg(selection, to_string(:config_path), Keyword.fetch!(opts, :config_path))
+      %Dagger.Project{selection: selection, client: directory.client}
+    end
+  )
 
-  def pipeline(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "pipeline")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+  (
+    @doc "Creates a named sub-pipeline"
+    def pipeline(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "pipeline")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
 
-    {_opts, selection} =
-      [:description, :labels]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:description, :labels]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def with_directory(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withDirectory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
+  (
+    @doc "Retrieves this directory plus a directory written at the given path."
+    def with_directory(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withDirectory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
 
-    {_opts, selection} =
-      [:exclude, :include]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:exclude, :include]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def with_file(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+  (
+    @doc "Retrieves this directory plus the contents of the given file copied to the given path."
+    def with_file(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
 
-    {_opts, selection} =
-      [:permissions]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:permissions]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def with_new_directory(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withNewDirectory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+  (
+    @doc "Retrieves this directory plus a new directory created at the given path."
+    def with_new_directory(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withNewDirectory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
 
-    {_opts, selection} =
-      [:permissions]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:permissions]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def with_new_file(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withNewFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:contents), Keyword.fetch!(opts, :contents))
+  (
+    @doc "Retrieves this directory plus a new file written at the given path."
+    def with_new_file(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withNewFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:contents), Keyword.fetch!(opts, :contents))
 
-    {_opts, selection} =
-      [:permissions]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
+      {_opts, selection} =
+        [:permissions]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
 
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def with_timestamps(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withTimestamps")
-    selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Retrieves this directory with all file/dir timestamps set to the given time."
+    def with_timestamps(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withTimestamps")
+      selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def without_directory(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withoutDirectory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Retrieves this directory with the directory at the given path removed."
+    def without_directory(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withoutDirectory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 
-  def without_file(%__MODULE__{} = directory, opts) do
-    selection = select(directory.selection, "withoutFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Directory{selection: selection, client: directory.client}
-  end
+  (
+    @doc "Retrieves this directory with the file at the given path removed."
+    def without_file(%__MODULE__{} = directory, opts) do
+      selection = select(directory.selection, "withoutFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
 end

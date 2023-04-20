@@ -4,8 +4,11 @@ defmodule Dagger.Socket do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def id(%__MODULE__{} = socket) do
-    selection = select(socket.selection, "id")
-    execute(selection, socket.client)
-  end
+  (
+    @doc "The content-addressed identifier of the socket."
+    def id(%__MODULE__{} = socket) do
+      selection = select(socket.selection, "id")
+      execute(selection, socket.client)
+    end
+  )
 end

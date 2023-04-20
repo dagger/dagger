@@ -4,18 +4,27 @@ defmodule Dagger.Port do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def description(%__MODULE__{} = port) do
-    selection = select(port.selection, "description")
-    execute(selection, port.client)
-  end
+  (
+    @doc "The port description."
+    def description(%__MODULE__{} = port) do
+      selection = select(port.selection, "description")
+      execute(selection, port.client)
+    end
+  )
 
-  def port(%__MODULE__{} = port) do
-    selection = select(port.selection, "port")
-    execute(selection, port.client)
-  end
+  (
+    @doc "The port number."
+    def port(%__MODULE__{} = port) do
+      selection = select(port.selection, "port")
+      execute(selection, port.client)
+    end
+  )
 
-  def protocol(%__MODULE__{} = port) do
-    selection = select(port.selection, "protocol")
-    execute(selection, port.client)
-  end
+  (
+    @doc "The transport layer network protocol."
+    def protocol(%__MODULE__{} = port) do
+      selection = select(port.selection, "protocol")
+      execute(selection, port.client)
+    end
+  )
 end

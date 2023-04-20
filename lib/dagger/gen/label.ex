@@ -4,13 +4,19 @@ defmodule Dagger.Label do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def name(%__MODULE__{} = label) do
-    selection = select(label.selection, "name")
-    execute(selection, label.client)
-  end
+  (
+    @doc "The label name."
+    def name(%__MODULE__{} = label) do
+      selection = select(label.selection, "name")
+      execute(selection, label.client)
+    end
+  )
 
-  def value(%__MODULE__{} = label) do
-    selection = select(label.selection, "value")
-    execute(selection, label.client)
-  end
+  (
+    @doc "The label value."
+    def value(%__MODULE__{} = label) do
+      selection = select(label.selection, "value")
+      execute(selection, label.client)
+    end
+  )
 end

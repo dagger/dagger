@@ -4,492 +4,660 @@ defmodule Dagger.Container do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def build(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "build")
-    selection = arg(selection, to_string(:context), Keyword.fetch!(opts, :context))
-
-    {_opts, selection} =
-      [:dockerfile, :build_args, :target]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def default_args(%__MODULE__{} = container) do
-    selection = select(container.selection, "defaultArgs")
-    execute(selection, container.client)
-  end
-
-  def directory(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "directory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Directory{selection: selection, client: container.client}
-  end
-
-  def endpoint(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "endpoint")
-
-    {_opts, selection} =
-      [:port, :scheme]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    execute(selection, container.client)
-  end
-
-  def entrypoint(%__MODULE__{} = container) do
-    selection = select(container.selection, "entrypoint")
-    execute(selection, container.client)
-  end
-
-  def env_variable(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "envVariable")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    execute(selection, container.client)
-  end
-
-  def env_variables(%__MODULE__{} = container) do
-    selection = select(container.selection, "envVariables")
-    execute(selection, container.client)
-  end
-
-  def exec(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "exec")
-
-    {_opts, selection} =
-      [:args, :stdin, :redirect_stdout, :redirect_stderr, :experimental_privileged_nesting]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def exit_code(%__MODULE__{} = container) do
-    selection = select(container.selection, "exitCode")
-    execute(selection, container.client)
-  end
-
-  def export(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "export")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-
-    {_opts, selection} =
-      [:platform_variants]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    execute(selection, container.client)
-  end
-
-  def exposed_ports(%__MODULE__{} = container) do
-    selection = select(container.selection, "exposedPorts")
-    execute(selection, container.client)
-  end
-
-  def file(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "file")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.File{selection: selection, client: container.client}
-  end
-
-  def from(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "from")
-    selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def fs(%__MODULE__{} = container) do
-    selection = select(container.selection, "fs")
-    %Dagger.Directory{selection: selection, client: container.client}
-  end
-
-  def hostname(%__MODULE__{} = container) do
-    selection = select(container.selection, "hostname")
-    execute(selection, container.client)
-  end
-
-  def id(%__MODULE__{} = container) do
-    selection = select(container.selection, "id")
-    execute(selection, container.client)
-  end
-
-  def image_ref(%__MODULE__{} = container) do
-    selection = select(container.selection, "imageRef")
-    execute(selection, container.client)
-  end
-
-  def label(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "label")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    execute(selection, container.client)
-  end
-
-  def labels(%__MODULE__{} = container) do
-    selection = select(container.selection, "labels")
-    execute(selection, container.client)
-  end
-
-  def mounts(%__MODULE__{} = container) do
-    selection = select(container.selection, "mounts")
-    execute(selection, container.client)
-  end
-
-  def pipeline(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "pipeline")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-
-    {_opts, selection} =
-      [:description, :labels]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def platform(%__MODULE__{} = container) do
-    selection = select(container.selection, "platform")
-    execute(selection, container.client)
-  end
-
-  def publish(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "publish")
-    selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
-
-    {_opts, selection} =
-      [:platform_variants]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    execute(selection, container.client)
-  end
-
-  def rootfs(%__MODULE__{} = container) do
-    selection = select(container.selection, "rootfs")
-    %Dagger.Directory{selection: selection, client: container.client}
-  end
-
-  def stderr(%__MODULE__{} = container) do
-    selection = select(container.selection, "stderr")
-    execute(selection, container.client)
-  end
-
-  def stdout(%__MODULE__{} = container) do
-    selection = select(container.selection, "stdout")
-    execute(selection, container.client)
-  end
-
-  def user(%__MODULE__{} = container) do
-    selection = select(container.selection, "user")
-    execute(selection, container.client)
-  end
-
-  def with_default_args(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withDefaultArgs")
-
-    {_opts, selection} =
-      [:args]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_directory(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withDirectory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
-
-    {_opts, selection} =
-      [:exclude, :include]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_entrypoint(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withEntrypoint")
-    selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_env_variable(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withEnvVariable")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_exec(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withExec")
-    selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
-
-    {_opts, selection} =
-      [
-        :stdin,
-        :redirect_stdout,
-        :redirect_stderr,
-        :experimental_privileged_nesting,
-        :insecure_root_capabilities
-      ]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_exposed_port(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withExposedPort")
-    selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
-
-    {_opts, selection} =
-      [:protocol, :description]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_fs(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withFs")
-    selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_file(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
-
-    {_opts, selection} =
-      [:permissions]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_label(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withLabel")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_mounted_cache(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withMountedCache")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:cache), Keyword.fetch!(opts, :cache))
-
-    {_opts, selection} =
-      [:source, :sharing]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_mounted_directory(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withMountedDirectory")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_mounted_file(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withMountedFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_mounted_secret(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withMountedSecret")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_mounted_temp(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withMountedTemp")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_new_file(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withNewFile")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-
-    {_opts, selection} =
-      [:contents, :permissions]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_registry_auth(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withRegistryAuth")
-    selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
-    selection = arg(selection, to_string(:username), Keyword.fetch!(opts, :username))
-    selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_rootfs(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withRootfs")
-    selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_secret_variable(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withSecretVariable")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_service_binding(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withServiceBinding")
-    selection = arg(selection, to_string(:alias), Keyword.fetch!(opts, :alias))
-    selection = arg(selection, to_string(:service), Keyword.fetch!(opts, :service))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_unix_socket(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withUnixSocket")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_user(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withUser")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def with_workdir(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withWorkdir")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_env_variable(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutEnvVariable")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_exposed_port(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutExposedPort")
-    selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
-
-    {_opts, selection} =
-      [:protocol]
-      |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-        if not is_nil(opts[arg]) do
-          {opts, arg(selection, to_string(arg), opts[arg])}
-        else
-          {opts, selection}
-        end
-      end)
-
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_label(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutLabel")
-    selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_mount(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutMount")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_registry_auth(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutRegistryAuth")
-    selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def without_unix_socket(%__MODULE__{} = container, opts) do
-    selection = select(container.selection, "withoutUnixSocket")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    %Dagger.Container{selection: selection, client: container.client}
-  end
-
-  def workdir(%__MODULE__{} = container) do
-    selection = select(container.selection, "workdir")
-    execute(selection, container.client)
-  end
+  (
+    @doc "Initializes this container from a Dockerfile build."
+    def build(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "build")
+      selection = arg(selection, to_string(:context), Keyword.fetch!(opts, :context))
+
+      {_opts, selection} =
+        [:dockerfile, :build_args, :target]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves default arguments for future commands."
+    def default_args(%__MODULE__{} = container) do
+      selection = select(container.selection, "defaultArgs")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves a directory at the given path.\n\nMounts are included."
+    def directory(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "directory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Directory{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def endpoint(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "endpoint")
+
+      {_opts, selection} =
+        [:port, :scheme]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
+    def entrypoint(%__MODULE__{} = container) do
+      selection = select(container.selection, "entrypoint")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the value of the specified environment variable."
+    def env_variable(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "envVariable")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the list of environment variables passed to commands."
+    def env_variables(%__MODULE__{} = container) do
+      selection = select(container.selection, "envVariables")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves this container after executing the specified command inside it."
+    def exec(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "exec")
+
+      {_opts, selection} =
+        [:args, :stdin, :redirect_stdout, :redirect_stderr, :experimental_privileged_nesting]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Exit code of the last executed command. Zero means success.\nErrors if no command has been executed."
+    def exit_code(%__MODULE__{} = container) do
+      selection = select(container.selection, "exitCode")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants."
+    def export(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "export")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+
+      {_opts, selection} =
+        [:platform_variants]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the list of exposed ports.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def exposed_ports(%__MODULE__{} = container) do
+      selection = select(container.selection, "exposedPorts")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves a file at the given path.\n\nMounts are included."
+    def file(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "file")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.File{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Initializes this container from a pulled base image."
+    def from(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "from")
+      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container's root filesystem. Mounts are not included."
+    def fs(%__MODULE__{} = container) do
+      selection = select(container.selection, "fs")
+      %Dagger.Directory{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def hostname(%__MODULE__{} = container) do
+      selection = select(container.selection, "hostname")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "A unique identifier for this container."
+    def id(%__MODULE__{} = container) do
+      selection = select(container.selection, "id")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
+    def image_ref(%__MODULE__{} = container) do
+      selection = select(container.selection, "imageRef")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the value of the specified label."
+    def label(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "label")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the list of labels passed to container."
+    def labels(%__MODULE__{} = container) do
+      selection = select(container.selection, "labels")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the list of paths where a directory is mounted."
+    def mounts(%__MODULE__{} = container) do
+      selection = select(container.selection, "mounts")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Creates a named sub-pipeline"
+    def pipeline(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "pipeline")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+
+      {_opts, selection} =
+        [:description, :labels]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "The platform this container executes and publishes as."
+    def platform(%__MODULE__{} = container) do
+      selection = select(container.selection, "platform")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants."
+    def publish(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "publish")
+      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+
+      {_opts, selection} =
+        [:platform_variants]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves this container's root filesystem. Mounts are not included."
+    def rootfs(%__MODULE__{} = container) do
+      selection = select(container.selection, "rootfs")
+      %Dagger.Directory{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "The error stream of the last executed command.\nErrors if no command has been executed."
+    def stderr(%__MODULE__{} = container) do
+      selection = select(container.selection, "stderr")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "The output stream of the last executed command.\nErrors if no command has been executed."
+    def stdout(%__MODULE__{} = container) do
+      selection = select(container.selection, "stdout")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Retrieves the user to be set for all commands."
+    def user(%__MODULE__{} = container) do
+      selection = select(container.selection, "user")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Configures default arguments for future commands."
+    def with_default_args(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withDefaultArgs")
+
+      {_opts, selection} =
+        [:args]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a directory written at the given path."
+    def with_directory(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withDirectory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
+
+      {_opts, selection} =
+        [:exclude, :include]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container but with a different command entrypoint."
+    def with_entrypoint(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withEntrypoint")
+      selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus the given environment variable."
+    def with_env_variable(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withEnvVariable")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container after executing the specified command inside it."
+    def with_exec(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withExec")
+      selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
+
+      {_opts, selection} =
+        [
+          :stdin,
+          :redirect_stdout,
+          :redirect_stderr,
+          :experimental_privileged_nesting,
+          :insecure_root_capabilities
+        ]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def with_exposed_port(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withExposedPort")
+      selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
+
+      {_opts, selection} =
+        [:protocol, :description]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Initializes this container from this DirectoryID."
+    def with_fs(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withFs")
+      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus the contents of the given file copied to the given path."
+    def with_file(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+
+      {_opts, selection} =
+        [:permissions]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus the given label."
+    def with_label(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withLabel")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a cache volume mounted at the given path."
+    def with_mounted_cache(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withMountedCache")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:cache), Keyword.fetch!(opts, :cache))
+
+      {_opts, selection} =
+        [:source, :sharing]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a directory mounted at the given path."
+    def with_mounted_directory(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withMountedDirectory")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a file mounted at the given path."
+    def with_mounted_file(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withMountedFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a secret mounted into a file at the given path."
+    def with_mounted_secret(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withMountedSecret")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a temporary directory mounted at the given path."
+    def with_mounted_temp(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withMountedTemp")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a new file written at the given path."
+    def with_new_file(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withNewFile")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+
+      {_opts, selection} =
+        [:contents, :permissions]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with a registry authentication for a given address."
+    def with_registry_auth(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withRegistryAuth")
+      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      selection = arg(selection, to_string(:username), Keyword.fetch!(opts, :username))
+      selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Initializes this container from this DirectoryID."
+    def with_rootfs(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withRootfs")
+      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus an env variable containing the given secret."
+    def with_secret_variable(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withSecretVariable")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def with_service_binding(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withServiceBinding")
+      selection = arg(selection, to_string(:alias), Keyword.fetch!(opts, :alias))
+      selection = arg(selection, to_string(:service), Keyword.fetch!(opts, :service))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container plus a socket forwarded to the given Unix socket path."
+    def with_unix_socket(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withUnixSocket")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with a different command user."
+    def with_user(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withUser")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with a different working directory."
+    def with_workdir(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withWorkdir")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container minus the given environment variable."
+    def without_env_variable(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutEnvVariable")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Unexpose a previously exposed port.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    def without_exposed_port(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutExposedPort")
+      selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
+
+      {_opts, selection} =
+        [:protocol]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container minus the given environment label."
+    def without_label(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutLabel")
+      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container after unmounting everything at the given path."
+    def without_mount(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutMount")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container without the registry authentication of a given address."
+    def without_registry_auth(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutRegistryAuth")
+      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves this container with a previously added Unix socket removed."
+    def without_unix_socket(%__MODULE__{} = container, opts) do
+      selection = select(container.selection, "withoutUnixSocket")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Retrieves the working directory for all commands."
+    def workdir(%__MODULE__{} = container) do
+      selection = select(container.selection, "workdir")
+      execute(selection, container.client)
+    end
+  )
 end

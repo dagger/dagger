@@ -4,13 +4,19 @@ defmodule Dagger.EnvVariable do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def name(%__MODULE__{} = env_variable) do
-    selection = select(env_variable.selection, "name")
-    execute(selection, env_variable.client)
-  end
+  (
+    @doc "The environment variable name."
+    def name(%__MODULE__{} = env_variable) do
+      selection = select(env_variable.selection, "name")
+      execute(selection, env_variable.client)
+    end
+  )
 
-  def value(%__MODULE__{} = env_variable) do
-    selection = select(env_variable.selection, "value")
-    execute(selection, env_variable.client)
-  end
+  (
+    @doc "The environment variable value."
+    def value(%__MODULE__{} = env_variable) do
+      selection = select(env_variable.selection, "value")
+      execute(selection, env_variable.client)
+    end
+  )
 end

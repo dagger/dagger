@@ -4,35 +4,53 @@ defmodule Dagger.File do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def contents(%__MODULE__{} = file) do
-    selection = select(file.selection, "contents")
-    execute(selection, file.client)
-  end
+  (
+    @doc "Retrieves the contents of the file."
+    def contents(%__MODULE__{} = file) do
+      selection = select(file.selection, "contents")
+      execute(selection, file.client)
+    end
+  )
 
-  def export(%__MODULE__{} = file, opts) do
-    selection = select(file.selection, "export")
-    selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-    execute(selection, file.client)
-  end
+  (
+    @doc "Writes the file to a file path on the host."
+    def export(%__MODULE__{} = file, opts) do
+      selection = select(file.selection, "export")
+      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      execute(selection, file.client)
+    end
+  )
 
-  def id(%__MODULE__{} = file) do
-    selection = select(file.selection, "id")
-    execute(selection, file.client)
-  end
+  (
+    @doc "Retrieves the content-addressed identifier of the file."
+    def id(%__MODULE__{} = file) do
+      selection = select(file.selection, "id")
+      execute(selection, file.client)
+    end
+  )
 
-  def secret(%__MODULE__{} = file) do
-    selection = select(file.selection, "secret")
-    %Dagger.Secret{selection: selection, client: file.client}
-  end
+  (
+    @doc "Retrieves a secret referencing the contents of this file."
+    def secret(%__MODULE__{} = file) do
+      selection = select(file.selection, "secret")
+      %Dagger.Secret{selection: selection, client: file.client}
+    end
+  )
 
-  def size(%__MODULE__{} = file) do
-    selection = select(file.selection, "size")
-    execute(selection, file.client)
-  end
+  (
+    @doc "Gets the size of the file, in bytes."
+    def size(%__MODULE__{} = file) do
+      selection = select(file.selection, "size")
+      execute(selection, file.client)
+    end
+  )
 
-  def with_timestamps(%__MODULE__{} = file, opts) do
-    selection = select(file.selection, "withTimestamps")
-    selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
-    %Dagger.File{selection: selection, client: file.client}
-  end
+  (
+    @doc "Retrieves this file with its created/modified timestamps set to the given time."
+    def with_timestamps(%__MODULE__{} = file, opts) do
+      selection = select(file.selection, "withTimestamps")
+      selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
+      %Dagger.File{selection: selection, client: file.client}
+    end
+  )
 end

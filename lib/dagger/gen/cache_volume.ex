@@ -4,8 +4,11 @@ defmodule Dagger.CacheVolume do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def id(%__MODULE__{} = cache_volume) do
-    selection = select(cache_volume.selection, "id")
-    execute(selection, cache_volume.client)
-  end
+  (
+    @doc ""
+    def id(%__MODULE__{} = cache_volume) do
+      selection = select(cache_volume.selection, "id")
+      execute(selection, cache_volume.client)
+    end
+  )
 end
