@@ -139,7 +139,7 @@ class Container(Type):
             Target build stage to build.
         secrets:
             Secrets to pass to the build.
-            They will be mounted at /run/secrets/<secret-id>.
+            They will be mounted at /run/secrets/[secret-name].
         """
         _args = [
             Arg("context", context),
@@ -1463,7 +1463,7 @@ class Directory(Type):
             Target build stage to build.
         secrets:
             Secrets to pass to the build.
-            They will be mounted at /run/secrets/<secret-id>.
+            They will be mounted at /run/secrets/[secret-name].
         """
         _args = [
             Arg("dockerfile", dockerfile, None),

@@ -122,7 +122,7 @@ type ContainerBuildOpts struct {
 	Target string
 	// Secrets to pass to the build.
 	//
-	// They will be mounted at /run/secrets/<secret-id>.
+	// They will be mounted at /run/secrets/[secret-name].
 	Secrets []*Secret
 }
 
@@ -1325,7 +1325,7 @@ type DirectoryDockerBuildOpts struct {
 	Target string
 	// Secrets to pass to the build.
 	//
-	// They will be mounted at /run/secrets/<secret-id>.
+	// They will be mounted at /run/secrets/[secret-name].
 	Secrets []*Secret
 }
 

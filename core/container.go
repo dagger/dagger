@@ -352,7 +352,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		secPayload := secretID.decode()
 
 		payload.Secrets = append(payload.Secrets, ContainerSecret{
-			// Mounted at /run/secrets/<secret-id>
+			// Mounted at /run/secrets/<secret-name>
 			Secret:    secretID,
 			MountPath: fmt.Sprintf("/run/secrets/%s", secPayload.Name),
 		})
