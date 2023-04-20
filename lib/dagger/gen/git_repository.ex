@@ -4,30 +4,30 @@ defmodule Dagger.GitRepository do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def branch(git_repository, opts) do
+  def branch(%__MODULE__{} = git_repository, opts) do
     selection = select(git_repository.selection, "branch")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
     %Dagger.GitRef{selection: selection, client: git_repository.client}
   end
 
-  def branches(git_repository) do
+  def branches(%__MODULE__{} = git_repository) do
     selection = select(git_repository.selection, "branches")
     execute(selection, git_repository.client)
   end
 
-  def commit(git_repository, opts) do
+  def commit(%__MODULE__{} = git_repository, opts) do
     selection = select(git_repository.selection, "commit")
     selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
     %Dagger.GitRef{selection: selection, client: git_repository.client}
   end
 
-  def tag(git_repository, opts) do
+  def tag(%__MODULE__{} = git_repository, opts) do
     selection = select(git_repository.selection, "tag")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
     %Dagger.GitRef{selection: selection, client: git_repository.client}
   end
 
-  def tags(git_repository) do
+  def tags(%__MODULE__{} = git_repository) do
     selection = select(git_repository.selection, "tags")
     execute(selection, git_repository.client)
   end

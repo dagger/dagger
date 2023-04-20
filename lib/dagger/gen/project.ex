@@ -4,32 +4,32 @@ defmodule Dagger.Project do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def extensions(project) do
+  def extensions(%__MODULE__{} = project) do
     selection = select(project.selection, "extensions")
     execute(selection, project.client)
   end
 
-  def generated_code(project) do
+  def generated_code(%__MODULE__{} = project) do
     selection = select(project.selection, "generatedCode")
     %Dagger.Directory{selection: selection, client: project.client}
   end
 
-  def install(project) do
+  def install(%__MODULE__{} = project) do
     selection = select(project.selection, "install")
     execute(selection, project.client)
   end
 
-  def name(project) do
+  def name(%__MODULE__{} = project) do
     selection = select(project.selection, "name")
     execute(selection, project.client)
   end
 
-  def schema(project) do
+  def schema(%__MODULE__{} = project) do
     selection = select(project.selection, "schema")
     execute(selection, project.client)
   end
 
-  def sdk(project) do
+  def sdk(%__MODULE__{} = project) do
     selection = select(project.selection, "sdk")
     execute(selection, project.client)
   end

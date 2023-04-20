@@ -4,12 +4,12 @@ defmodule Dagger.Secret do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def id(secret) do
+  def id(%__MODULE__{} = secret) do
     selection = select(secret.selection, "id")
     execute(selection, secret.client)
   end
 
-  def plaintext(secret) do
+  def plaintext(%__MODULE__{} = secret) do
     selection = select(secret.selection, "plaintext")
     execute(selection, secret.client)
   end

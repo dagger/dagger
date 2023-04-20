@@ -4,13 +4,13 @@ defmodule Dagger.Query do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def cache_volume(query, opts) do
+  def cache_volume(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "cacheVolume")
     selection = arg(selection, to_string(:key), Keyword.fetch!(opts, :key))
     %Dagger.CacheVolume{selection: selection, client: query.client}
   end
 
-  def container(query, opts) do
+  def container(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "container")
 
     {_opts, selection} =
@@ -26,12 +26,12 @@ defmodule Dagger.Query do
     %Dagger.Container{selection: selection, client: query.client}
   end
 
-  def default_platform(query) do
+  def default_platform(%__MODULE__{} = query) do
     selection = select(query.selection, "defaultPlatform")
     execute(selection, query.client)
   end
 
-  def directory(query, opts) do
+  def directory(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "directory")
 
     {_opts, selection} =
@@ -47,13 +47,13 @@ defmodule Dagger.Query do
     %Dagger.Directory{selection: selection, client: query.client}
   end
 
-  def file(query, opts) do
+  def file(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "file")
     selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
     execute(selection, query.client)
   end
 
-  def git(query, opts) do
+  def git(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "git")
     selection = arg(selection, to_string(:url), Keyword.fetch!(opts, :url))
 
@@ -70,12 +70,12 @@ defmodule Dagger.Query do
     %Dagger.GitRepository{selection: selection, client: query.client}
   end
 
-  def host(query) do
+  def host(%__MODULE__{} = query) do
     selection = select(query.selection, "host")
     %Dagger.Host{selection: selection, client: query.client}
   end
 
-  def http(query, opts) do
+  def http(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "http")
     selection = arg(selection, to_string(:url), Keyword.fetch!(opts, :url))
 
@@ -92,7 +92,7 @@ defmodule Dagger.Query do
     %Dagger.File{selection: selection, client: query.client}
   end
 
-  def pipeline(query, opts) do
+  def pipeline(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "pipeline")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
 
@@ -109,26 +109,26 @@ defmodule Dagger.Query do
     %Dagger.Query{selection: selection, client: query.client}
   end
 
-  def project(query, opts) do
+  def project(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "project")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
     %Dagger.Project{selection: selection, client: query.client}
   end
 
-  def secret(query, opts) do
+  def secret(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "secret")
     selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
     %Dagger.Secret{selection: selection, client: query.client}
   end
 
-  def set_secret(query, opts) do
+  def set_secret(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "setSecret")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
     selection = arg(selection, to_string(:plaintext), Keyword.fetch!(opts, :plaintext))
     %Dagger.Secret{selection: selection, client: query.client}
   end
 
-  def socket(query, opts) do
+  def socket(%__MODULE__{} = query, opts) do
     selection = select(query.selection, "socket")
 
     {_opts, selection} =

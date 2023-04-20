@@ -4,12 +4,12 @@ defmodule Dagger.GitRef do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def digest(git_ref) do
+  def digest(%__MODULE__{} = git_ref) do
     selection = select(git_ref.selection, "digest")
     execute(selection, git_ref.client)
   end
 
-  def tree(git_ref, opts) do
+  def tree(%__MODULE__{} = git_ref, opts) do
     selection = select(git_ref.selection, "tree")
 
     {_opts, selection} =

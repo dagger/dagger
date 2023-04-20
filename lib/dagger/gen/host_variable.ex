@@ -4,12 +4,12 @@ defmodule Dagger.HostVariable do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def secret(host_variable) do
+  def secret(%__MODULE__{} = host_variable) do
     selection = select(host_variable.selection, "secret")
     %Dagger.Secret{selection: selection, client: host_variable.client}
   end
 
-  def value(host_variable) do
+  def value(%__MODULE__{} = host_variable) do
     selection = select(host_variable.selection, "value")
     execute(selection, host_variable.client)
   end

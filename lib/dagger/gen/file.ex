@@ -4,33 +4,33 @@ defmodule Dagger.File do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def contents(file) do
+  def contents(%__MODULE__{} = file) do
     selection = select(file.selection, "contents")
     execute(selection, file.client)
   end
 
-  def export(file, opts) do
+  def export(%__MODULE__{} = file, opts) do
     selection = select(file.selection, "export")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     execute(selection, file.client)
   end
 
-  def id(file) do
+  def id(%__MODULE__{} = file) do
     selection = select(file.selection, "id")
     execute(selection, file.client)
   end
 
-  def secret(file) do
+  def secret(%__MODULE__{} = file) do
     selection = select(file.selection, "secret")
     %Dagger.Secret{selection: selection, client: file.client}
   end
 
-  def size(file) do
+  def size(%__MODULE__{} = file) do
     selection = select(file.selection, "size")
     execute(selection, file.client)
   end
 
-  def with_timestamps(file, opts) do
+  def with_timestamps(%__MODULE__{} = file, opts) do
     selection = select(file.selection, "withTimestamps")
     selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
     %Dagger.File{selection: selection, client: file.client}

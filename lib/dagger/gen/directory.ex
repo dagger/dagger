@@ -4,19 +4,19 @@ defmodule Dagger.Directory do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def diff(directory, opts) do
+  def diff(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "diff")
     selection = arg(selection, to_string(:other), Keyword.fetch!(opts, :other))
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def directory(directory, opts) do
+  def directory(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "directory")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def docker_build(directory, opts) do
+  def docker_build(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "dockerBuild")
 
     {_opts, selection} =
@@ -32,7 +32,7 @@ defmodule Dagger.Directory do
     %Dagger.Container{selection: selection, client: directory.client}
   end
 
-  def entries(directory, opts) do
+  def entries(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "entries")
 
     {_opts, selection} =
@@ -48,30 +48,30 @@ defmodule Dagger.Directory do
     execute(selection, directory.client)
   end
 
-  def export(directory, opts) do
+  def export(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "export")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     execute(selection, directory.client)
   end
 
-  def file(directory, opts) do
+  def file(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "file")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     %Dagger.File{selection: selection, client: directory.client}
   end
 
-  def id(directory) do
+  def id(%__MODULE__{} = directory) do
     selection = select(directory.selection, "id")
     execute(selection, directory.client)
   end
 
-  def load_project(directory, opts) do
+  def load_project(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "loadProject")
     selection = arg(selection, to_string(:config_path), Keyword.fetch!(opts, :config_path))
     %Dagger.Project{selection: selection, client: directory.client}
   end
 
-  def pipeline(directory, opts) do
+  def pipeline(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "pipeline")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
 
@@ -88,7 +88,7 @@ defmodule Dagger.Directory do
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def with_directory(directory, opts) do
+  def with_directory(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withDirectory")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
@@ -106,7 +106,7 @@ defmodule Dagger.Directory do
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def with_file(directory, opts) do
+  def with_file(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withFile")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
@@ -124,7 +124,7 @@ defmodule Dagger.Directory do
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def with_new_directory(directory, opts) do
+  def with_new_directory(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withNewDirectory")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
 
@@ -141,7 +141,7 @@ defmodule Dagger.Directory do
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def with_new_file(directory, opts) do
+  def with_new_file(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withNewFile")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     selection = arg(selection, to_string(:contents), Keyword.fetch!(opts, :contents))
@@ -159,19 +159,19 @@ defmodule Dagger.Directory do
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def with_timestamps(directory, opts) do
+  def with_timestamps(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withTimestamps")
     selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def without_directory(directory, opts) do
+  def without_directory(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withoutDirectory")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     %Dagger.Directory{selection: selection, client: directory.client}
   end
 
-  def without_file(directory, opts) do
+  def without_file(%__MODULE__{} = directory, opts) do
     selection = select(directory.selection, "withoutFile")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     %Dagger.Directory{selection: selection, client: directory.client}

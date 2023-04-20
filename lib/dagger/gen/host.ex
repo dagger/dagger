@@ -4,7 +4,7 @@ defmodule Dagger.Host do
   use Dagger.QueryBuilder
   defstruct [:selection, :client]
 
-  def directory(host, opts) do
+  def directory(%__MODULE__{} = host, opts) do
     selection = select(host.selection, "directory")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
 
@@ -21,19 +21,19 @@ defmodule Dagger.Host do
     %Dagger.Directory{selection: selection, client: host.client}
   end
 
-  def env_variable(host, opts) do
+  def env_variable(%__MODULE__{} = host, opts) do
     selection = select(host.selection, "envVariable")
     selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
     execute(selection, host.client)
   end
 
-  def unix_socket(host, opts) do
+  def unix_socket(%__MODULE__{} = host, opts) do
     selection = select(host.selection, "unixSocket")
     selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
     %Dagger.Socket{selection: selection, client: host.client}
   end
 
-  def workdir(host, opts) do
+  def workdir(%__MODULE__{} = host, opts) do
     selection = select(host.selection, "workdir")
 
     {_opts, selection} =

@@ -39,11 +39,11 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   def format_function(fun_name, mod_var_name, args, %{"kind" => "OBJECT", "name" => name}) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
     field_name = Function.format_field_name(fun_name)
-    fun_args = [mod_var_name | if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])]
+    fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
     args = render_args(args)
 
     quote do
-      def unquote(fun_name)(unquote_splicing(fun_args)) do
+      def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
         unquote_splicing(args)
@@ -57,12 +57,12 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   def format_function(fun_name, mod_var_name, args, _) do
-    fun_args = [mod_var_name | if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])]
+    fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
     args = render_args(args)
     field_name = Function.format_field_name(fun_name)
 
     quote do
-      def unquote(fun_name)(unquote_splicing(fun_args)) do
+      def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
         unquote_splicing(args)
