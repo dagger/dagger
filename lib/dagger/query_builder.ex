@@ -64,6 +64,7 @@ defmodule Dagger.QueryBuilder do
 
   def execute(selection, client) do
     q = Selection.build(selection)
+
     with {:ok, %{status: 200, body: resp}} <- Client.query(client, q) do
       get_in(resp, ["data" | Selection.path(selection)])
     end
