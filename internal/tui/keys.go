@@ -71,12 +71,12 @@ var keys = keyMap{
 		key.WithHelp("tab", "switch focus"),
 	),
 	Collapse: key.NewBinding(
-		key.WithKeys("left"),
-		key.WithHelp("←", "collapse"),
+		key.WithKeys("left", "h"),
+		key.WithHelp("←/h", "collapse"),
 	),
 	Expand: key.NewBinding(
-		key.WithKeys("right"),
-		key.WithHelp("→", "expand"),
+		key.WithKeys("right", "l"),
+		key.WithHelp("→/l", "expand"),
 	),
 	CollapseAll: key.NewBinding(
 		key.WithKeys("["),
