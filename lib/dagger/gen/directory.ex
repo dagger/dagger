@@ -23,7 +23,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Builds a new Docker container from this directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `buildArgs` - Build arguments to use in the build.\n* `target` - Target build stage to build."
+    @doc "Builds a new Docker container from this directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build."
     def docker_build(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "dockerBuild")
 
@@ -87,7 +87,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "load a project's metadata\n\n## Required Arguments\n\n* `configPath` - \n\n## Optional Arguments"
+    @doc "load a project's metadata\n\n## Required Arguments\n\n* `config_path` - \n\n## Optional Arguments"
     def load_project(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "loadProject")
       selection = arg(selection, "config_path", Keyword.fetch!(opts, :config_path))

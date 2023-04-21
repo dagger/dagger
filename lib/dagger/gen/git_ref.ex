@@ -13,7 +13,7 @@ defmodule Dagger.GitRef do
   )
 
   (
-    @doc "The filesystem tree at this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `sshKnownHosts` - \n* `sshAuthSocket` -"
+    @doc "The filesystem tree at this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
     def tree(%__MODULE__{} = git_ref, opts) do
       selection = select(git_ref.selection, "tree")
 

@@ -5,7 +5,7 @@ defmodule Dagger.Container do
   defstruct [:selection, :client]
 
   (
-    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n\nDefault: './Dockerfile'.\n* `buildArgs` - Additional build arguments.\n* `target` - Target build stage to build."
+    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n\nDefault: './Dockerfile'.\n* `build_args` - Additional build arguments.\n* `target` - Target build stage to build."
     def build(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "build")
       selection = arg(selection, "context", Keyword.fetch!(opts, :context))
@@ -87,7 +87,7 @@ defmodule Dagger.Container do
 
   (
     @deprecated "Replaced by `withExec`."
-    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirectStdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirectStderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimentalPrivilegedNesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
+    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
     def exec(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "exec")
 
@@ -114,7 +114,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platformVariants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
+    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
     def export(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "export")
       selection = arg(selection, "path", Keyword.fetch!(opts, :path))
@@ -266,7 +266,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platformVariants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
+    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
     def publish(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "publish")
       selection = arg(selection, "address", Keyword.fetch!(opts, :address))
@@ -377,7 +377,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\n## Optional Arguments\n\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirectStdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirectStderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimentalPrivilegedNesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecureRootCapabilities` - Execute the command with all root capabilities. This is similar to running a command\nwith \"sudo\" or executing `docker run` with the `--privileged` flag. Containerization\ndoes not provide any security guarantees when using this option. It should only be used\nwhen absolutely necessary and only with trusted commands."
+    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\n## Optional Arguments\n\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command\nwith \"sudo\" or executing `docker run` with the `--privileged` flag. Containerization\ndoes not provide any security guarantees when using this option. It should only be used\nwhen absolutely necessary and only with trusted commands."
     def with_exec(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withExec")
       selection = arg(selection, "args", Keyword.fetch!(opts, :args))

@@ -139,6 +139,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   defp format_arg_doc(%{"name" => name, "description" => description}) do
+    name = Function.format_name(name)
     "* `#{name}` - #{description}"
   end
 

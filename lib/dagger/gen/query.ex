@@ -69,7 +69,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keepGitDir` - Set to true to keep .git directory.\n* `experimentalServiceHost` - A service which must be started before the repo is fetched."
+    @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `experimental_service_host` - A service which must be started before the repo is fetched."
     def git(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "git")
       selection = arg(selection, "url", Keyword.fetch!(opts, :url))
@@ -97,7 +97,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Returns a file containing an http remote url content.\n\n## Required Arguments\n\n* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\").\n\n## Optional Arguments\n\n* `experimentalServiceHost` - A service which must be started before the URL is fetched."
+    @doc "Returns a file containing an http remote url content.\n\n## Required Arguments\n\n* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\").\n\n## Optional Arguments\n\n* `experimental_service_host` - A service which must be started before the URL is fetched."
     def http(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "http")
       selection = arg(selection, "url", Keyword.fetch!(opts, :url))
