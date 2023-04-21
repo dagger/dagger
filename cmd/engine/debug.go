@@ -19,6 +19,8 @@ func setupDebugHandlers(addr string) error {
 	m.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
 	m.Handle("/debug/pprof/symbol", http.HandlerFunc(pprof.Symbol))
 	m.Handle("/debug/pprof/trace", http.HandlerFunc(pprof.Trace))
+	m.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	m.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
 	m.Handle("/debug/requests", http.HandlerFunc(trace.Traces))
 	m.Handle("/debug/events", http.HandlerFunc(trace.Events))
 
