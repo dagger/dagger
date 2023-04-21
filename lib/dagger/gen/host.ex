@@ -8,7 +8,7 @@ defmodule Dagger.Host do
     @doc "Accesses a directory on the host."
     def directory(%__MODULE__{} = host, opts) do
       selection = select(host.selection, "directory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
 
       {_opts, selection} =
         [:exclude, :include]
@@ -28,7 +28,7 @@ defmodule Dagger.Host do
     @doc "Accesses an environment variable on the host."
     def env_variable(%__MODULE__{} = host, opts) do
       selection = select(host.selection, "envVariable")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       execute(selection, host.client)
     end
   )
@@ -37,7 +37,7 @@ defmodule Dagger.Host do
     @doc "Accesses a Unix socket on the host."
     def unix_socket(%__MODULE__{} = host, opts) do
       selection = select(host.selection, "unixSocket")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Socket{selection: selection, client: host.client}
     end
   )

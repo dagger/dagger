@@ -16,7 +16,7 @@ defmodule Dagger.File do
     @doc "Writes the file to a file path on the host."
     def export(%__MODULE__{} = file, opts) do
       selection = select(file.selection, "export")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       execute(selection, file.client)
     end
   )
@@ -50,7 +50,7 @@ defmodule Dagger.File do
     @doc "Retrieves this file with its created/modified timestamps set to the given time."
     def with_timestamps(%__MODULE__{} = file, opts) do
       selection = select(file.selection, "withTimestamps")
-      selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
+      selection = arg(selection, "timestamp", Keyword.fetch!(opts, :timestamp))
       %Dagger.File{selection: selection, client: file.client}
     end
   )

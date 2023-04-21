@@ -8,7 +8,7 @@ defmodule Dagger.Directory do
     @doc "Gets the difference between this directory and an another directory."
     def diff(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "diff")
-      selection = arg(selection, to_string(:other), Keyword.fetch!(opts, :other))
+      selection = arg(selection, "other", Keyword.fetch!(opts, :other))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -17,7 +17,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves a directory at the given path."
     def directory(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "directory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -64,7 +64,7 @@ defmodule Dagger.Directory do
     @doc "Writes the contents of the directory to a path on the host."
     def export(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "export")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       execute(selection, directory.client)
     end
   )
@@ -73,7 +73,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves a file at the given path."
     def file(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "file")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.File{selection: selection, client: directory.client}
     end
   )
@@ -90,7 +90,7 @@ defmodule Dagger.Directory do
     @doc "load a project's metadata"
     def load_project(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "loadProject")
-      selection = arg(selection, to_string(:config_path), Keyword.fetch!(opts, :config_path))
+      selection = arg(selection, "config_path", Keyword.fetch!(opts, :config_path))
       %Dagger.Project{selection: selection, client: directory.client}
     end
   )
@@ -99,7 +99,7 @@ defmodule Dagger.Directory do
     @doc "Creates a named sub-pipeline"
     def pipeline(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "pipeline")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
 
       {_opts, selection} =
         [:description, :labels]
@@ -119,8 +119,8 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory plus a directory written at the given path."
     def with_directory(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withDirectory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "directory", Keyword.fetch!(opts, :directory))
 
       {_opts, selection} =
         [:exclude, :include]
@@ -140,8 +140,8 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory plus the contents of the given file copied to the given path."
     def with_file(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
 
       {_opts, selection} =
         [:permissions]
@@ -161,7 +161,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory plus a new directory created at the given path."
     def with_new_directory(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withNewDirectory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
 
       {_opts, selection} =
         [:permissions]
@@ -181,8 +181,8 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory plus a new file written at the given path."
     def with_new_file(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withNewFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:contents), Keyword.fetch!(opts, :contents))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "contents", Keyword.fetch!(opts, :contents))
 
       {_opts, selection} =
         [:permissions]
@@ -202,7 +202,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory with all file/dir timestamps set to the given time."
     def with_timestamps(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withTimestamps")
-      selection = arg(selection, to_string(:timestamp), Keyword.fetch!(opts, :timestamp))
+      selection = arg(selection, "timestamp", Keyword.fetch!(opts, :timestamp))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -211,7 +211,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory with the directory at the given path removed."
     def without_directory(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withoutDirectory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -220,7 +220,7 @@ defmodule Dagger.Directory do
     @doc "Retrieves this directory with the file at the given path removed."
     def without_file(%__MODULE__{} = directory, opts) do
       selection = select(directory.selection, "withoutFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )

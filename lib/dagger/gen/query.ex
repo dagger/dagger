@@ -8,7 +8,7 @@ defmodule Dagger.Query do
     @doc "Constructs a cache volume for a given cache key."
     def cache_volume(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "cacheVolume")
-      selection = arg(selection, to_string(:key), Keyword.fetch!(opts, :key))
+      selection = arg(selection, "key", Keyword.fetch!(opts, :key))
       %Dagger.CacheVolume{selection: selection, client: query.client}
     end
   )
@@ -63,7 +63,7 @@ defmodule Dagger.Query do
     @doc "Loads a file by ID."
     def file(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "file")
-      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
       execute(selection, query.client)
     end
   )
@@ -72,7 +72,7 @@ defmodule Dagger.Query do
     @doc "Queries a git repository."
     def git(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "git")
-      selection = arg(selection, to_string(:url), Keyword.fetch!(opts, :url))
+      selection = arg(selection, "url", Keyword.fetch!(opts, :url))
 
       {_opts, selection} =
         [:keep_git_dir, :experimental_service_host]
@@ -100,7 +100,7 @@ defmodule Dagger.Query do
     @doc "Returns a file containing an http remote url content."
     def http(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "http")
-      selection = arg(selection, to_string(:url), Keyword.fetch!(opts, :url))
+      selection = arg(selection, "url", Keyword.fetch!(opts, :url))
 
       {_opts, selection} =
         [:experimental_service_host]
@@ -120,7 +120,7 @@ defmodule Dagger.Query do
     @doc "Creates a named sub-pipeline."
     def pipeline(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "pipeline")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
 
       {_opts, selection} =
         [:description, :labels]
@@ -140,7 +140,7 @@ defmodule Dagger.Query do
     @doc "Look up a project by name"
     def project(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "project")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.Project{selection: selection, client: query.client}
     end
   )
@@ -149,7 +149,7 @@ defmodule Dagger.Query do
     @doc "Loads a secret from its ID."
     def secret(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "secret")
-      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )
@@ -158,8 +158,8 @@ defmodule Dagger.Query do
     @doc "Sets a secret given a user defined name to its plaintext and returns the secret."
     def set_secret(%__MODULE__{} = query, opts) do
       selection = select(query.selection, "setSecret")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-      selection = arg(selection, to_string(:plaintext), Keyword.fetch!(opts, :plaintext))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "plaintext", Keyword.fetch!(opts, :plaintext))
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )

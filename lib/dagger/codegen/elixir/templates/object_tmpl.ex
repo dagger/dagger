@@ -122,9 +122,10 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     for arg <- args,
         arg["type"]["kind"] == "NON_NULL" do
       name = Function.format_name(arg["name"])
+      arg_name = to_string(name)
 
       quote do
-        selection = arg(selection, to_string(unquote(name)), Keyword.fetch!(opts, unquote(name)))
+        selection = arg(selection, unquote(arg_name), Keyword.fetch!(opts, unquote(name)))
       end
     end
   end

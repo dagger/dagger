@@ -8,7 +8,7 @@ defmodule Dagger.GitRepository do
     @doc "Returns details on one branch."
     def branch(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "branch")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )
@@ -25,7 +25,7 @@ defmodule Dagger.GitRepository do
     @doc "Returns details on one commit."
     def commit(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "commit")
-      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )
@@ -34,7 +34,7 @@ defmodule Dagger.GitRepository do
     @doc "Returns details on one tag."
     def tag(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "tag")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )

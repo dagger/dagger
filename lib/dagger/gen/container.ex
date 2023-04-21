@@ -8,7 +8,7 @@ defmodule Dagger.Container do
     @doc "Initializes this container from a Dockerfile build."
     def build(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "build")
-      selection = arg(selection, to_string(:context), Keyword.fetch!(opts, :context))
+      selection = arg(selection, "context", Keyword.fetch!(opts, :context))
 
       {_opts, selection} =
         [:dockerfile, :build_args, :target]
@@ -36,7 +36,7 @@ defmodule Dagger.Container do
     @doc "Retrieves a directory at the given path.\n\nMounts are included."
     def directory(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "directory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Directory{selection: selection, client: container.client}
     end
   )
@@ -72,7 +72,7 @@ defmodule Dagger.Container do
     @doc "Retrieves the value of the specified environment variable."
     def env_variable(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "envVariable")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       execute(selection, container.client)
     end
   )
@@ -117,7 +117,7 @@ defmodule Dagger.Container do
     @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants."
     def export(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "export")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
 
       {_opts, selection} =
         [:platform_variants]
@@ -145,7 +145,7 @@ defmodule Dagger.Container do
     @doc "Retrieves a file at the given path.\n\nMounts are included."
     def file(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "file")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.File{selection: selection, client: container.client}
     end
   )
@@ -154,7 +154,7 @@ defmodule Dagger.Container do
     @doc "Initializes this container from a pulled base image."
     def from(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "from")
-      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      selection = arg(selection, "address", Keyword.fetch!(opts, :address))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -196,7 +196,7 @@ defmodule Dagger.Container do
     @doc "Reads the container from an OCI tarball.\n\nNOTE: this involves unpacking the tarball to an OCI store on the host at\n$XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like."
     def import %__MODULE__{} = container, opts do
       selection = select(container.selection, "import")
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
 
       {_opts, selection} =
         [:tag]
@@ -216,7 +216,7 @@ defmodule Dagger.Container do
     @doc "Retrieves the value of the specified label."
     def label(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "label")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       execute(selection, container.client)
     end
   )
@@ -241,7 +241,7 @@ defmodule Dagger.Container do
     @doc "Creates a named sub-pipeline"
     def pipeline(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "pipeline")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
 
       {_opts, selection} =
         [:description, :labels]
@@ -269,7 +269,7 @@ defmodule Dagger.Container do
     @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants."
     def publish(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "publish")
-      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      selection = arg(selection, "address", Keyword.fetch!(opts, :address))
 
       {_opts, selection} =
         [:platform_variants]
@@ -340,8 +340,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a directory written at the given path."
     def with_directory(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withDirectory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:directory), Keyword.fetch!(opts, :directory))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "directory", Keyword.fetch!(opts, :directory))
 
       {_opts, selection} =
         [:exclude, :include]
@@ -361,7 +361,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container but with a different command entrypoint."
     def with_entrypoint(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withEntrypoint")
-      selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
+      selection = arg(selection, "args", Keyword.fetch!(opts, :args))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -370,8 +370,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus the given environment variable."
     def with_env_variable(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withEnvVariable")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-      selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "value", Keyword.fetch!(opts, :value))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -380,7 +380,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container after executing the specified command inside it."
     def with_exec(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withExec")
-      selection = arg(selection, to_string(:args), Keyword.fetch!(opts, :args))
+      selection = arg(selection, "args", Keyword.fetch!(opts, :args))
 
       {_opts, selection} =
         [
@@ -406,7 +406,7 @@ defmodule Dagger.Container do
     @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     def with_exposed_port(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withExposedPort")
-      selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
+      selection = arg(selection, "port", Keyword.fetch!(opts, :port))
 
       {_opts, selection} =
         [:protocol, :description]
@@ -427,7 +427,7 @@ defmodule Dagger.Container do
     @doc "Initializes this container from this DirectoryID."
     def with_fs(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withFS")
-      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -436,8 +436,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus the contents of the given file copied to the given path."
     def with_file(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
 
       {_opts, selection} =
         [:permissions]
@@ -457,8 +457,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus the given label."
     def with_label(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withLabel")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-      selection = arg(selection, to_string(:value), Keyword.fetch!(opts, :value))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "value", Keyword.fetch!(opts, :value))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -467,8 +467,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a cache volume mounted at the given path."
     def with_mounted_cache(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withMountedCache")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:cache), Keyword.fetch!(opts, :cache))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "cache", Keyword.fetch!(opts, :cache))
 
       {_opts, selection} =
         [:source, :sharing]
@@ -488,8 +488,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a directory mounted at the given path."
     def with_mounted_directory(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withMountedDirectory")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -498,8 +498,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a file mounted at the given path."
     def with_mounted_file(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withMountedFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -508,8 +508,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a secret mounted into a file at the given path."
     def with_mounted_secret(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withMountedSecret")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -518,7 +518,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a temporary directory mounted at the given path."
     def with_mounted_temp(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withMountedTemp")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -527,7 +527,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a new file written at the given path."
     def with_new_file(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withNewFile")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
 
       {_opts, selection} =
         [:contents, :permissions]
@@ -547,9 +547,9 @@ defmodule Dagger.Container do
     @doc "Retrieves this container with a registry authentication for a given address."
     def with_registry_auth(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withRegistryAuth")
-      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
-      selection = arg(selection, to_string(:username), Keyword.fetch!(opts, :username))
-      selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
+      selection = arg(selection, "address", Keyword.fetch!(opts, :address))
+      selection = arg(selection, "username", Keyword.fetch!(opts, :username))
+      selection = arg(selection, "secret", Keyword.fetch!(opts, :secret))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -558,7 +558,7 @@ defmodule Dagger.Container do
     @doc "Initializes this container from this DirectoryID."
     def with_rootfs(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withRootfs")
-      selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -567,8 +567,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus an env variable containing the given secret."
     def with_secret_variable(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withSecretVariable")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
-      selection = arg(selection, to_string(:secret), Keyword.fetch!(opts, :secret))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "secret", Keyword.fetch!(opts, :secret))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -577,8 +577,8 @@ defmodule Dagger.Container do
     @doc "Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     def with_service_binding(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withServiceBinding")
-      selection = arg(selection, to_string(:alias), Keyword.fetch!(opts, :alias))
-      selection = arg(selection, to_string(:service), Keyword.fetch!(opts, :service))
+      selection = arg(selection, "alias", Keyword.fetch!(opts, :alias))
+      selection = arg(selection, "service", Keyword.fetch!(opts, :service))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -587,8 +587,8 @@ defmodule Dagger.Container do
     @doc "Retrieves this container plus a socket forwarded to the given Unix socket path."
     def with_unix_socket(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withUnixSocket")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
-      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "source", Keyword.fetch!(opts, :source))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -597,7 +597,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container with a different command user."
     def with_user(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withUser")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -606,7 +606,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container with a different working directory."
     def with_workdir(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withWorkdir")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -615,7 +615,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container minus the given environment variable."
     def without_env_variable(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutEnvVariable")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -624,7 +624,7 @@ defmodule Dagger.Container do
     @doc "Unexpose a previously exposed port.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     def without_exposed_port(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutExposedPort")
-      selection = arg(selection, to_string(:port), Keyword.fetch!(opts, :port))
+      selection = arg(selection, "port", Keyword.fetch!(opts, :port))
 
       {_opts, selection} =
         [:protocol]
@@ -644,7 +644,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container minus the given environment label."
     def without_label(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutLabel")
-      selection = arg(selection, to_string(:name), Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -653,7 +653,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container after unmounting everything at the given path."
     def without_mount(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutMount")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -662,7 +662,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container without the registry authentication of a given address."
     def without_registry_auth(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutRegistryAuth")
-      selection = arg(selection, to_string(:address), Keyword.fetch!(opts, :address))
+      selection = arg(selection, "address", Keyword.fetch!(opts, :address))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -671,7 +671,7 @@ defmodule Dagger.Container do
     @doc "Retrieves this container with a previously added Unix socket removed."
     def without_unix_socket(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withoutUnixSocket")
-      selection = arg(selection, to_string(:path), Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
