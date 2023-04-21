@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 )
 
 // File is a content-addressed file.
@@ -75,8 +76,8 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	return WithServices(ctx, gw, file.Services, func() ([]byte, error) {
+func (file *File) Contents(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) ([]byte, error) {
+	return WithServices(ctx, rec, gw, file.Services, func() ([]byte, error) {
 		ref, err := gwRef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
@@ -97,8 +98,8 @@ func (file *File) Secret(ctx context.Context) (*Secret, error) {
 	return NewSecretFromFile(id), nil
 }
 
-func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
-	return WithServices(ctx, gw, file.Services, func() (*fstypes.Stat, error) {
+func (file *File) Stat(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) (*fstypes.Stat, error) {
+	return WithServices(ctx, rec, gw, file.Services, func() (*fstypes.Stat, error) {
 		ref, err := gwRef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
@@ -122,7 +123,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)),
-		file.Pipeline.LLBOpt(),
+		file.Pipeline.LLBOpt(ctx),
 	)
 
 	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
@@ -135,8 +136,8 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	return file, nil
 }
 
-func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
-	return WithServices(ctx, gw, file.Services, func() (io.ReadCloser, error) {
+func (file *File) Open(ctx context.Context, rec *progrock.Recorder, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
+	return WithServices(ctx, rec, gw, file.Services, func() (io.ReadCloser, error) {
 		fs, err := reffs.OpenDef(ctx, gw, file.LLB)
 		if err != nil {
 			return nil, err
@@ -148,6 +149,7 @@ func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.Read
 
 func (file *File) Export(
 	ctx context.Context,
+	rec *progrock.Recorder,
 	host *Host,
 	dest string,
 	bkClient *bkclient.Client,
@@ -172,13 +174,13 @@ func (file *File) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: destDir,
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, gw, file.Services, func() (*bkgw.Result, error) {
+		return WithServices(ctx, rec, gw, file.Services, func() (*bkgw.Result, error) {
 			src, err := file.State()
 			if err != nil {
 				return nil, err
 			}
 
-			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt())
+			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt(ctx))
 
 			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
 			if err != nil {

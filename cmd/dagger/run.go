@@ -12,11 +12,14 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dagger/dagger/engine"
+	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
 )
 
 var runCmd = &cobra.Command{
@@ -92,8 +95,6 @@ func run(ctx context.Context, args []string) error {
 	}
 	defer sessionL.Close()
 
-	journalR, journalW := journal.Pipe()
-
 	sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
 	os.Setenv("DAGGER_SESSION_PORT", sessionPort)
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
@@ -102,6 +103,9 @@ func run(ctx context.Context, args []string) error {
 	defer quit()
 
 	subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
+
+	// allow piping to the command
+	subCmd.Stdin = os.Stdin
 
 	// NB: go run lets its child process roam free when you interrupt it, so
 	// make sure they all get signalled. (you don't normally notice this in a
@@ -113,23 +117,34 @@ func run(ctx context.Context, args []string) error {
 		subCmd.Stdout = os.Stdout
 		subCmd.Stderr = os.Stderr
 
-		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, api *router.Router) error {
+		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
 			go http.Serve(sessionL, api) // nolint:gosec
 			return subCmd.Run()
 		})
 	}
 
-	cmdline := strings.Join(args, " ")
-	model := tui.New(quit, journalR, cmdline)
-	program := tea.NewProgram(model, tea.WithAltScreen())
-	subCmd.Stdin = os.Stdin
+	return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
+}
+
+func interactiveUI(
+	ctx context.Context,
+	sessionToken uuid.UUID,
+	sessionL net.Listener,
+	subCmd *exec.Cmd,
+	quit func(),
+) error {
+	journalR, journalW := journal.Pipe()
+
+	cmdline := strings.Join(subCmd.Args, " ")
+	program := tea.NewProgram(tui.New(quit, journalR, cmdline), tea.WithAltScreen())
+
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
 	exited := make(chan error, 1)
 
 	var finalModel tui.Model
-	err = withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
+	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		err := subCmd.Start()
@@ -155,6 +170,44 @@ func run(ctx context.Context, args []string) error {
 
 	// something else happened; bubble up error, if any
 	return err
+}
+
+func inlineTUI(
+	ctx context.Context,
+	sessionToken uuid.UUID,
+	sessionL net.Listener,
+	subCmd *exec.Cmd,
+	quit func(),
+) error {
+	casette := progrock.NewCasette()
+	if debugLogs {
+		casette.ShowInternal(true)
+	}
+
+	stop := progrock.DefaultUI().RenderLoop(quit, casette, os.Stderr, true)
+	defer stop()
+
+	cmdline := strings.Join(subCmd.Args, " ")
+
+	engineConf := engine.Config{
+		Workdir:        workdir,
+		ConfigPath:     configPath,
+		SessionToken:   sessionToken.String(),
+		RunnerHost:     internalengine.RunnerHost(),
+		DisableHostRW:  disableHostRW,
+		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		ProgrockWriter: casette,
+	}
+	return engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
+		go http.Serve(sessionL, api) // nolint:gosec
+
+		cmdVtx := rec.Vertex("cmd", cmdline)
+		subCmd.Stdout = cmdVtx.Stdout()
+		subCmd.Stderr = cmdVtx.Stderr()
+		cmdVtx.Done(subCmd.Run())
+
+		return nil
+	})
 }
 
 type progOutWriter struct {

@@ -16,9 +16,9 @@ type Query struct {
 // been created, it will return a path with only the root pipeline.
 func (query *Query) PipelinePath() pipeline.Path {
 	pipeline := pipeline.Path{
-		{
-			Labels: pipeline.RootLabels(),
-		},
+		// {
+		// 	Labels: pipeline.RootLabels(),
+		// },
 	}
 
 	if query != nil {

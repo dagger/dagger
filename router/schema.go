@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/graphql"
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 )
 
 type LoadedSchema interface {
@@ -73,15 +77,56 @@ func (s *staticSchema) Dependencies() []ExecutableSchema {
 type Context struct {
 	context.Context
 	ResolveParams graphql.ResolveParams
+	Vertex        *progrock.VertexRecorder
+}
+
+func queryDigest(params graphql.ResolveParams) (digest.Digest, error) {
+	type subset struct {
+		Source any
+		Field  string
+		Args   map[string]any
+	}
+
+	payload, err := json.Marshal(subset{
+		Source: params.Source,
+		Field:  params.Info.FieldName,
+		Args:   params.Args,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return digest.SHA256.FromBytes(payload), nil
+}
+
+type Pipelineable interface {
+	PipelinePath() pipeline.Path
+}
+
+type Digestible interface { // sorry
+	Digest() (digest.Digest, error)
 }
 
 // ToResolver transforms any function f with a *Context, a parent P and some args A that returns a Response R and an error
 // into a graphql resolver graphql.FieldResolveFn.
 func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
-		ctx := Context{
-			Context:       p.Context,
-			ResolveParams: p,
+		recorder := progrock.RecorderFromContext(p.Context)
+
+		name := p.Info.FieldName
+		if len(p.Args) > 0 {
+			name += "("
+			args := []string{}
+			for name, val := range p.Args {
+				jv, err := json.Marshal(val)
+				if err != nil {
+					return nil, fmt.Errorf("failed to marshal arg %s: %w", name, err)
+				}
+
+				args = append(args, fmt.Sprintf("%s: %s", name, jv))
+			}
+			name += strings.Join(args, ", ")
+			name += ")"
 		}
 
 		var args A
@@ -104,10 +149,49 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 			}
 		}
 
+		var inputs []digest.Digest
+		if edible, ok := p.Source.(Digestible); ok {
+			id, err := edible.Digest()
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute digest: %w", err)
+			}
+
+			inputs = append(inputs, id)
+		}
+
+		if pipelineable, ok := p.Source.(Pipelineable); ok {
+			recorder = pipelineable.PipelinePath().RecorderGroup(recorder)
+		}
+
+		dig, err := queryDigest(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute query digest: %w", err)
+		}
+
+		vtx := recorder.Vertex(dig, name, progrock.WithInputs(inputs...), progrock.Internal())
+
+		ctx := Context{
+			Context:       p.Context,
+			ResolveParams: p,
+			Vertex:        vtx,
+		}
+
 		res, err := f(&ctx, parent, args)
 		if err != nil {
+			vtx.Done(err)
 			return nil, err
 		}
+
+		if edible, ok := any(res).(Digestible); ok {
+			id, err := edible.Digest()
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute digest: %w", err)
+			}
+
+			vtx.Output(id)
+		}
+
+		vtx.Done(nil)
 
 		return res, nil
 	}

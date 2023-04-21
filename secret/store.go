@@ -8,12 +8,13 @@ import (
 	"github.com/dagger/dagger/core"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session/secrets"
+	"github.com/vito/progrock"
 )
 
 // ErrNotFound indicates a secret can not be found.
 var ErrNotFound = errors.New("secret not found")
 
-func NewStore() *Store {
+func NewStore(rec *progrock.Recorder) *Store {
 	return &Store{
 		secrets: map[string]string{},
 	}
@@ -22,7 +23,8 @@ func NewStore() *Store {
 var _ secrets.SecretStore = &Store{}
 
 type Store struct {
-	gw bkgw.Client
+	rec *progrock.Recorder
+	gw  bkgw.Client
 
 	mu      sync.Mutex
 	secrets map[string]string
@@ -63,7 +65,7 @@ func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, err
 	if secret, err := core.SecretID(idOrName).ToSecret(); err == nil {
 		if secret.IsOldFormat() {
 			// use the legacy SecretID format
-			return secret.LegacyPlaintext(ctx, store.gw)
+			return secret.LegacyPlaintext(ctx, store.rec, store.gw)
 		}
 
 		name = secret.Name

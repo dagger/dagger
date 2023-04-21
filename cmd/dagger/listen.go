@@ -9,6 +9,7 @@ import (
 	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
 )
 
 var (
@@ -26,7 +27,7 @@ var listenCmd = &cobra.Command{
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngine(ctx, "", journal.Discard{}, os.Stderr, func(ctx context.Context, r *router.Router) error {
+	if err := withEngine(ctx, "", journal.Discard{}, os.Stderr, func(ctx context.Context, rec *progrock.Recorder, r *router.Router) error {
 		fmt.Fprintf(os.Stderr, "==> server listening on http://%s/query\n", listenAddress)
 		return http.ListenAndServe(listenAddress, r) //nolint:gosec
 	}); err != nil {

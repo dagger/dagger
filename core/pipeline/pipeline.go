@@ -1,11 +1,13 @@
 package pipeline
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/vito/progrock"
 )
 
 type Pipeline struct {
@@ -53,15 +55,30 @@ func (g Path) String() string {
 	return strings.Join(parts, " / ")
 }
 
-func (g Path) ProgressGroup() *pb.ProgressGroup {
+func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
+	for _, p := range g {
+		var labels []*progrock.Label
+		for _, l := range p.Labels {
+			labels = append(labels, &progrock.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		}
+		rec = rec.WithGroup(p.Name, labels...)
+	}
+	return rec
+}
+
+func (g Path) ProgressGroup(ctx context.Context) *pb.ProgressGroup {
+	rec := g.RecorderGroup(progrock.RecorderFromContext(ctx))
 	return &pb.ProgressGroup{
-		Id:   g.ID(),
-		Name: g.Name(),
+		Id:   rec.Group.Id,
+		Name: rec.Group.Name, // TODO(vito): this is not the full path
 	}
 }
 
-func (g Path) LLBOpt() llb.ConstraintsOpt {
-	pg := g.ProgressGroup()
+func (g Path) LLBOpt(ctx context.Context) llb.ConstraintsOpt {
+	pg := g.ProgressGroup(ctx)
 	return llb.ProgressGroup(pg.Id, pg.Name, pg.Weak)
 }
 

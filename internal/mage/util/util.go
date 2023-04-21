@@ -29,6 +29,10 @@ func Repository(c *dagger.Client) *dagger.Directory {
 			"**/.venv",
 			"**/.mypy_cache",
 			"**/.pytest_cache",
+
+			// go
+			"go.work",
+			"go.work.sum",
 		},
 	})
 }
@@ -49,8 +53,8 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// modules
 			"**/go.mod",
 			"**/go.sum",
-			"**/go.work",
-			"**/go.work.sum",
+			// "**/go.work",
+			// "**/go.work.sum",
 
 			// embedded files
 			"**/*.go.tmpl",

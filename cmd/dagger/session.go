@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
 )
 
 var sessionLabels pipeline.Labels
@@ -47,7 +48,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	labels := &sessionLabels
 
-	startOpts := &engine.Config{
+	startOpts := engine.Config{
 		Workdir:      workdir,
 		ConfigPath:   configPath,
 		LogOutput:    os.Stderr,
@@ -79,7 +80,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
-	return engine.Start(context.Background(), startOpts, func(ctx context.Context, r *router.Router) error {
+	return engine.Start(context.Background(), startOpts, func(ctx context.Context, rec *progrock.Recorder, r *router.Router) error {
 		srv := http.Server{
 			Handler:           r,
 			ReadHeaderTimeout: 30 * time.Second,

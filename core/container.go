@@ -31,6 +31,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/vito/progrock"
 	"github.com/zeebo/xxh3"
 )
 
@@ -125,6 +126,19 @@ func (id ContainerID) ToContainer() (*Container, error) {
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
 	return encodeID[ContainerID](container)
+}
+
+func (container *Container) PipelinePath() pipeline.Path {
+	return container.Pipeline
+}
+
+// ID marshals the container into a content-addressed ID.
+func (container *Container) Digest() (digest.Digest, error) {
+	id, err := container.ID()
+	if err != nil {
+		return "", err
+	}
+	return digest.FromString(id.String()), nil
 }
 
 type HostAlias struct {
@@ -311,7 +325,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	fsSt := llb.Image(
 		digested.String(),
 		llb.WithCustomNamef("pull %s", ref),
-		p.LLBOpt(),
+		p.LLBOpt(ctx),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
@@ -332,7 +346,16 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
-func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *Directory, dockerfile string, buildArgs []BuildArg, target string, secrets []SecretID) (*Container, error) {
+func (container *Container) Build(
+	ctx context.Context,
+	rec *progrock.Recorder,
+	gw bkgw.Client,
+	context *Directory,
+	dockerfile string,
+	buildArgs []BuildArg,
+	target string,
+	secrets []SecretID,
+) (*Container, error) {
 	container = container.Clone()
 
 	container.Services.Merge(context.Services)
@@ -352,7 +375,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	return WithServices(ctx, gw, container.Services, func() (*Container, error) {
+	return WithServices(ctx, rec, gw, container.Services, func() (*Container, error) {
 		platform := container.Platform
 
 		opts := map[string]string{
@@ -408,7 +431,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 			return nil, err
 		}
 
-		overrideProgress(def, container.Pipeline.Add(pipeline.Pipeline{
+		overrideProgress(ctx, def, container.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
 		}))
 
@@ -717,7 +740,7 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, dirPath string) (*Directory, error) {
 	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -725,7 +748,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, gw, ".")
+	info, err := dir.Stat(ctx, rec, gw, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -737,7 +760,7 @@ func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPa
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, filePath string) (*File, error) {
 	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
@@ -745,7 +768,7 @@ func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath s
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, gw)
+	info, err := file.Stat(ctx, rec, gw)
 	if err != nil {
 		return nil, err
 	}
@@ -1002,7 +1025,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		container.Pipeline.LLBOpt(),
+		container.Pipeline.LLBOpt(ctx),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
@@ -1025,7 +1048,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt()),
+			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt(ctx)),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1230,12 +1253,12 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
+func (container *Container) Evaluate(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
 	if container.FS == nil {
 		return nil
 	}
 
-	_, err := WithServices(ctx, gw, container.Services, func() (*bkgw.Result, error) {
+	_, err := WithServices(ctx, rec, gw, container.Services, func() (*bkgw.Result, error) {
 		st, err := container.FSState()
 		if err != nil {
 			return nil, err
@@ -1247,7 +1270,7 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 		}
 
 		if pipelineOverride != nil {
-			overrideProgress(def, *pipelineOverride)
+			overrideProgress(ctx, def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
@@ -1258,8 +1281,8 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
-	content, err := container.MetaFileContents(ctx, gw, "exitCode")
+func (container *Container) ExitCode(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) (int, error) {
+	content, err := container.MetaFileContents(ctx, rec, gw, "exitCode")
 	if err != nil {
 		return 0, err
 	}
@@ -1267,7 +1290,7 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, 
 	return strconv.Atoi(content)
 }
 
-func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
+func (container *Container) Start(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) (*Service, error) {
 	if container.Hostname == "" {
 		return nil, ErrContainerNoExec
 	}
@@ -1295,7 +1318,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 			},
 		})
 
-		exited <- container.Evaluate(svcCtx, gw, &pipeline)
+		exited <- container.Evaluate(svcCtx, rec, gw, &pipeline)
 	}()
 
 	select {
@@ -1322,7 +1345,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, filePath string) (string, error) {
 	metaSt, err := container.MetaState()
 	if err != nil {
 		return "", err
@@ -1333,7 +1356,7 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, gw, filePath)
+		return ctr.MetaFileContents(ctx, rec, gw, filePath)
 	}
 
 	file, err := NewFile(
@@ -1348,7 +1371,7 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		return "", err
 	}
 
-	content, err := file.Contents(ctx, gw)
+	content, err := file.Contents(ctx, rec, gw)
 	if err != nil {
 		return "", err
 	}
@@ -1358,6 +1381,8 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 
 func (container *Container) Publish(
 	ctx context.Context,
+	rec *progrock.Recorder,
+	gw bkgw.Client,
 	ref string,
 	platformVariants []ContainerID,
 	bkClient *bkclient.Client,
@@ -1379,7 +1404,7 @@ func (container *Container) Publish(
 	defer wg.Wait()
 
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return container.export(ctx, gw, platformVariants)
+		return container.export(ctx, rec, gw, platformVariants)
 	}, ch)
 	if err != nil {
 		return "", err
@@ -1410,6 +1435,7 @@ func (container *Container) Publish(
 
 func (container *Container) Export(
 	ctx context.Context,
+	rec *progrock.Recorder,
 	host *Host,
 	dest string,
 	platformVariants []ContainerID,
@@ -1435,7 +1461,7 @@ func (container *Container) Export(
 			return out, nil
 		},
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return container.export(ctx, gw, platformVariants)
+		return container.export(ctx, rec, gw, platformVariants)
 	})
 }
 
@@ -1443,6 +1469,7 @@ const OCIStoreName = "dagger-oci"
 
 func (container *Container) Import(
 	ctx context.Context,
+	rec *progrock.Recorder,
 	host *Host,
 	source io.Reader,
 	tag string,
@@ -1599,6 +1626,7 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 
 func (container *Container) export(
 	ctx context.Context,
+	rec *progrock.Recorder,
 	gw bkgw.Client,
 	platformVariants []ContainerID,
 ) (*bkgw.Result, error) {
@@ -1624,7 +1652,7 @@ func (container *Container) export(
 		return nil, errors.New("no containers to export")
 	}
 
-	return WithServices(ctx, gw, services, func() (*bkgw.Result, error) {
+	return WithServices(ctx, rec, gw, services, func() (*bkgw.Result, error) {
 		if len(containers) == 1 {
 			exportContainer := containers[0]
 
@@ -1844,16 +1872,4 @@ func resolveIndex(ctx context.Context, store content.Store, desc specs.Descripto
 	}
 
 	return nil, fmt.Errorf("no manifest for platform %s and tag %s", platforms.Format(platform), tag)
-}
-
-// Override the progress pipeline of every LLB vertex in the DAG.
-//
-// FIXME: this can't be done in a normal way because Buildkit doesn't currently
-// allow overriding the metadata of DefinitionOp. See this PR and comment:
-// https://github.com/moby/buildkit/pull/2819
-func overrideProgress(def *llb.Definition, pipeline pipeline.Path) {
-	for dgst, metadata := range def.Metadata {
-		metadata.ProgressGroup = pipeline.ProgressGroup()
-		def.Metadata[dgst] = metadata
-	}
 }

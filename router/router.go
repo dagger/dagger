@@ -16,21 +16,25 @@ import (
 	"github.com/dagger/dagger/router/internal/handler"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
+	"github.com/vito/progrock"
 )
 
 type Router struct {
 	schemas      map[string]ExecutableSchema
 	sessionToken string
 
+	recorder *progrock.Recorder
+
 	s *graphql.Schema
 	h *handler.Handler
 	l sync.RWMutex
 }
 
-func New(sessionToken string) *Router {
+func New(sessionToken string, recorder *progrock.Recorder) *Router {
 	r := &Router{
 		schemas:      make(map[string]ExecutableSchema),
 		sessionToken: sessionToken,
+		recorder:     recorder,
 	}
 
 	return r
@@ -168,6 +172,8 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			http.Error(w, string(bytes), code)
 		}
 	}()
+
+	req = req.WithContext(progrock.RecorderToContext(req.Context(), r.recorder))
 
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)

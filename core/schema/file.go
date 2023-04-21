@@ -57,7 +57,7 @@ func (s *fileSchema) id(ctx *router.Context, parent *core.File, args any) (core.
 }
 
 func (s *fileSchema) contents(ctx *router.Context, file *core.File, args any) (string, error) {
-	content, err := file.Contents(ctx, s.gw)
+	content, err := file.Contents(ctx, s.rec, s.gw)
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +70,7 @@ func (s *fileSchema) secret(ctx *router.Context, file *core.File, args any) (*co
 }
 
 func (s *fileSchema) size(ctx *router.Context, file *core.File, args any) (int64, error) {
-	info, err := file.Stat(ctx, s.gw)
+	info, err := file.Stat(ctx, s.rec, s.gw)
 	if err != nil {
 		return 0, err
 	}
@@ -83,7 +83,7 @@ type fileExportArgs struct {
 }
 
 func (s *fileSchema) export(ctx *router.Context, parent *core.File, args fileExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	err := parent.Export(ctx, s.rec, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
 	if err != nil {
 		return false, err
 	}

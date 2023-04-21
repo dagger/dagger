@@ -89,7 +89,7 @@ type loadProjectArgs struct {
 }
 
 func (s *projectSchema) loadProject(ctx *router.Context, parent *core.Directory, args loadProjectArgs) (*Project, error) {
-	projectState, err := project.Load(ctx, parent, args.ConfigPath, s.projectStates, &s.mu, s.gw)
+	projectState, err := project.Load(ctx, s.rec, parent, args.ConfigPath, s.projectStates, &s.mu, s.gw)
 	if err != nil {
 		return nil, err
 	}

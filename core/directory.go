@@ -18,6 +18,7 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 )
 
 // Directory is a content-addressed directory.
@@ -123,10 +124,10 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, gw, dir.Services, func() (*fstypes.Stat, error) {
+	return WithServices(ctx, rec, gw, dir.Services, func() (*fstypes.Stat, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
@@ -157,10 +158,10 @@ func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fs
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, gw, dir.Services, func() ([]string, error) {
+	return WithServices(ctx, rec, gw, dir.Services, func() ([]string, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
@@ -218,7 +219,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), dir.Pipeline.LLBOpt())
+		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), dir.Pipeline.LLBOpt(ctx))
 	}
 
 	opts := []llb.MkfileOption{}
@@ -228,7 +229,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 
 	st = st.File(
 		llb.Mkfile(dest, permissions, content, opts...),
-		dir.Pipeline.LLBOpt(),
+		dir.Pipeline.LLBOpt(ctx),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -285,7 +286,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 
 	st = st.File(
 		llb.Copy(srcSt, src.Dir, path.Join(dir.Dir, subdir), opts...),
-		dir.Pipeline.LLBOpt(),
+		dir.Pipeline.LLBOpt(ctx),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -312,7 +313,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 			CopyDirContentsOnly: true,
 			CreatedTime:         &t,
 		}),
-		dir.Pipeline.LLBOpt(),
+		dir.Pipeline.LLBOpt(ctx),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -345,7 +346,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), dir.Pipeline.LLBOpt())
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), dir.Pipeline.LLBOpt(ctx))
 
 	err = dir.SetState(ctx, st)
 	if err != nil {
@@ -386,7 +387,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 	st = st.File(
 		llb.Copy(srcSt, src.File, path.Join(dir.Dir, subdir), opts...),
-		dir.Pipeline.LLBOpt(),
+		dir.Pipeline.LLBOpt(ctx),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -420,7 +421,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
+	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt(ctx)), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -446,7 +447,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt, dir.Pipeline.LLBOpt()))
+	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt, dir.Pipeline.LLBOpt(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +463,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), dir.Pipeline.LLBOpt()))
+	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), dir.Pipeline.LLBOpt(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -472,6 +473,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 
 func (dir *Directory) Export(
 	ctx context.Context,
+	rec *progrock.Recorder,
 	host *Host,
 	dest string,
 	bkClient *bkclient.Client,
@@ -487,7 +489,7 @@ func (dir *Directory) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
+		return WithServices(ctx, rec, gw, dir.Services, func() (*bkgw.Result, error) {
 			src, err := dir.State()
 			if err != nil {
 				return nil, err
@@ -498,7 +500,7 @@ func (dir *Directory) Export(
 				src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
 					CopyDirContentsOnly: true,
 				}),
-					dir.Pipeline.LLBOpt(),
+					dir.Pipeline.LLBOpt(ctx),
 				)
 
 				def, err := src.Marshal(ctx, llb.Platform(dir.Platform))
