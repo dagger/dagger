@@ -1,0 +1,30 @@
+# Getting Started with `dagger_ex`
+
+```elixir
+Mix.install([
+  {:dagger_ex, path: "."}
+])
+```
+
+## Connecting to Dagger
+
+Use `Dagger.connect/0` to connect to Dagger server:
+
+```elixir
+{:ok, client} = Dagger.connect()
+```
+
+Please note that the library will connect through session environment variables mode. That means it must be run with `dagger run` command.
+
+## Fetching the container and running it
+
+In this section, we will pull Elixir image from [hex.pm](https://hub.docker.com/r/hexpm/elixir) organization, getting the version from `elixir` binary and print it to standard output.
+
+```elixir
+client
+|> Dagger.Query.container([])
+|> Dagger.Container.from(address: "hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
+|> Dagger.Container.with_exec(args: ["elixir", "--version"])
+|> Dagger.Container.stdout()
+|> IO.puts()
+```
