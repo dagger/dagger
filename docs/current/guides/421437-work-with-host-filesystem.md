@@ -2,7 +2,7 @@
 slug: /421437/work-with-host-filesystem
 displayed_sidebar: 'current'
 category: "guides"
-tags: ["go"]
+tags: ["go", "python", "nodejs"]
 authors: ["Alex Suraci", "Vikram Vaswani"]
 date: "2022-11-01"
 ---
