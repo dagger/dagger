@@ -8,6 +8,10 @@ Mix.install([
 
 ## Connecting to Dagger
 
+```elixir
+System.put_env("_EXPERIMENT_DAGGER_CLI_BIN", "dagger")
+```
+
 Use `Dagger.connect/0` to connect to Dagger server:
 
 ```elixir
