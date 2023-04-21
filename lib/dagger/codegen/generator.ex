@@ -12,6 +12,10 @@ defmodule Dagger.Codegen.Generator do
 end
 
 defmodule Dagger.Codegen.Compiler do
+  @moduledoc false
+
+  # Compile GraphQL introspection into Elixir code.
+
   alias Dagger.Codegen.Elixir.Templates.ObjectTmpl
 
   def compile(introspection) do
