@@ -49,7 +49,7 @@ The following code listing obtains a reference to the host working directory.
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=../guides/snippets/work-with-host-filesystem/list-dir/index.mts
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir/index.mts
 ```
 
 </TabItem>
