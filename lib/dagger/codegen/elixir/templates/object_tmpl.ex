@@ -33,17 +33,30 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
           "args" => args,
           "type" => %{"ofType" => type_ref},
           "description" => desc
-        } = _field
+        } = field
       ) do
     mod_var_name = Macro.var(mod_var_name, __MODULE__)
     fun_name = Function.format_name(name)
+    deprecated = format_deprecated(field)
+    doc = quote(do: @doc(unquote(desc)))
+    fun = format_function(name, fun_name, {mod_var_name, args}, type_ref)
 
-    format_function(name, desc, fun_name, {mod_var_name, args}, type_ref)
+    body = [doc, fun]
+
+    body =
+      if not is_nil(deprecated) do
+        [deprecated | body]
+      else
+        body
+      end
+
+    quote do
+      (unquote_splicing(body))
+    end
   end
 
   def format_function(
         field_name,
-        desc,
         fun_name,
         {mod_var_name, args},
         %{"kind" => "OBJECT", "name" => name}
@@ -53,7 +66,6 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     args = render_args(args)
 
     quote do
-      @doc unquote(desc)
       def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
@@ -67,12 +79,11 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     end
   end
 
-  def format_function(field_name, desc, fun_name, {mod_var_name, args}, _) do
+  def format_function(field_name, fun_name, {mod_var_name, args}, _) do
     fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
     args = render_args(args)
 
     quote do
-      @doc unquote(desc)
       def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
@@ -82,6 +93,14 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
       end
     end
   end
+
+  defp format_deprecated(%{"isDeprecated" => true, "deprecationReason" => reason}) do
+    quote do
+      @deprecated unquote(reason)
+    end
+  end
+
+  defp format_deprecated(_), do: nil
 
   defp render_args(args) do
     required_args = render_required_args(args)

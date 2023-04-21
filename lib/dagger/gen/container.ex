@@ -86,6 +86,7 @@ defmodule Dagger.Container do
   )
 
   (
+    @deprecated "Replaced by `withExec`."
     @doc "Retrieves this container after executing the specified command inside it."
     def exec(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "exec")
@@ -159,6 +160,7 @@ defmodule Dagger.Container do
   )
 
   (
+    @deprecated "Replaced by `rootfs`."
     @doc "Retrieves this container's root filesystem. Mounts are not included."
     def fs(%__MODULE__{} = container) do
       selection = select(container.selection, "fs")
@@ -421,6 +423,7 @@ defmodule Dagger.Container do
   )
 
   (
+    @deprecated "Replaced by `withRootfs`."
     @doc "Initializes this container from this DirectoryID."
     def with_fs(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "withFS")

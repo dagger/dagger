@@ -30,6 +30,7 @@ defmodule Dagger.File do
   )
 
   (
+    @deprecated "insecure, leaves secret in cache. Superseded by `setSecret`"
     @doc "Retrieves a secret referencing the contents of this file."
     def secret(%__MODULE__{} = file) do
       selection = select(file.selection, "secret")

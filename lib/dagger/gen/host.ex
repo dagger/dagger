@@ -43,6 +43,7 @@ defmodule Dagger.Host do
   )
 
   (
+    @deprecated "Use `directory` with path set to '.' instead."
     @doc "Retrieves the current working directory on the host."
     def workdir(%__MODULE__{} = host, opts) do
       selection = select(host.selection, "workdir")
