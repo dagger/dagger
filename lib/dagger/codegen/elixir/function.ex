@@ -12,10 +12,4 @@ defmodule Dagger.Codegen.Elixir.Function do
     |> Macro.underscore()
     |> String.to_atom()
   end
-
-  def format_field_name(name) when is_atom(name) do
-    name
-    |> to_string()
-    |> Recase.to_camel()
-  end
 end

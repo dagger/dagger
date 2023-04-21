@@ -191,6 +191,26 @@ defmodule Dagger.Container do
   )
 
   (
+    @doc "Reads the container from an OCI tarball.\n\nNOTE: this involves unpacking the tarball to an OCI store on the host at\n$XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like."
+    def import %__MODULE__{} = container, opts do
+      selection = select(container.selection, "import")
+      selection = arg(selection, to_string(:source), Keyword.fetch!(opts, :source))
+
+      {_opts, selection} =
+        [:tag]
+        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
+          if not is_nil(opts[arg]) do
+            {opts, arg(selection, to_string(arg), opts[arg])}
+          else
+            {opts, selection}
+          end
+        end)
+
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
     @doc "Retrieves the value of the specified label."
     def label(%__MODULE__{} = container, opts) do
       selection = select(container.selection, "label")
@@ -403,7 +423,7 @@ defmodule Dagger.Container do
   (
     @doc "Initializes this container from this DirectoryID."
     def with_fs(%__MODULE__{} = container, opts) do
-      selection = select(container.selection, "withFs")
+      selection = select(container.selection, "withFS")
       selection = arg(selection, to_string(:id), Keyword.fetch!(opts, :id))
       %Dagger.Container{selection: selection, client: container.client}
     end
