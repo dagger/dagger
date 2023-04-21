@@ -27,12 +27,18 @@ func (s *cacheSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"cacheVolume": router.ToResolver(s.cacheVolume),
 		},
-		"CacheVolume": router.ObjectResolver{},
+		"CacheVolume": router.ObjectResolver{
+			"id": router.ToResolver(s.id),
+		},
 	}
 }
 
 func (s *cacheSchema) Dependencies() []router.ExecutableSchema {
 	return nil
+}
+
+func (s *cacheSchema) id(ctx *router.Context, parent *core.CacheVolume, args any) (core.CacheID, error) {
+	return parent.ID()
 }
 
 type cacheArgs struct {
@@ -44,5 +50,5 @@ func (s *cacheSchema) cacheVolume(ctx *router.Context, parent any, args cacheArg
 	// here instead of a static value
 	//
 	// we have to inject something so we can tell it's a valid ID
-	return core.NewCache(args.Key)
+	return core.NewCache(args.Key), nil
 }

@@ -13,13 +13,7 @@ import (
 )
 
 func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*core.Directory, error) {
-	// TODO(vito): handle platform?
-	payload, err := p.workdir.ID.Decode()
-	if err != nil {
-		return nil, err
-	}
-
-	contextState, err := payload.State()
+	contextState, err := p.workdir.State()
 	if err != nil {
 		return nil, err
 	}
@@ -32,7 +26,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 				filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.configPath), subpath)),
 			)),
 			llb.AddEnv("CGO_ENABLED", "0"),
-			llb.AddMount(workdir, contextState, llb.SourcePath(payload.Dir)),
+			llb.AddMount(workdir, contextState, llb.SourcePath(p.workdir.Dir)),
 			llb.Dir(workdir),
 			withGoCaching(),
 		).Root(),

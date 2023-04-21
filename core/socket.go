@@ -10,7 +10,7 @@ import (
 )
 
 type Socket struct {
-	ID SocketID `json:"id"`
+	HostPath string `json:"host_path,omitempty"`
 }
 
 type SocketID string
@@ -18,58 +18,33 @@ type SocketID string
 func (id SocketID) String() string { return string(id) }
 func (id SocketID) LLBID() string  { return fmt.Sprintf("socket:%s", id) }
 
-type socketIDPayload struct {
-	HostPath string `json:"host_path,omitempty"`
-}
-
-func (id SocketID) decode() (*socketIDPayload, error) {
-	var payload socketIDPayload
-	if err := decodeID(&payload, id); err != nil {
+func (id SocketID) ToSocket() (*Socket, error) {
+	var socket Socket
+	if err := decodeID(&socket, id); err != nil {
 		return nil, err
 	}
 
-	return &payload, nil
+	return &socket, nil
 }
 
-func (payload *socketIDPayload) ToSocket() (*Socket, error) {
-	id, err := encodeID(payload)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewSocket(SocketID(id)), nil
-}
-
-func NewSocket(id SocketID) *Socket {
-	return &Socket{id}
-}
-
-func NewHostSocket(absPath string) (*Socket, error) {
-	payload := socketIDPayload{
+func NewHostSocket(absPath string) *Socket {
+	return &Socket{
 		HostPath: absPath,
 	}
-
-	return payload.ToSocket()
 }
 
-func (socket *Socket) IsHost() (bool, error) {
-	payload, err := socket.ID.decode()
-	if err != nil {
-		return false, err
-	}
+func (socket *Socket) ID() (SocketID, error) {
+	return encodeID[SocketID](socket)
+}
 
-	return payload.HostPath != "", nil
+func (socket *Socket) IsHost() bool {
+	return socket.HostPath != ""
 }
 
 func (socket *Socket) Server() (sshforward.SSHServer, error) {
-	payload, err := socket.ID.decode()
-	if err != nil {
-		return nil, err
-	}
-
 	return &socketProxy{
 		dial: func() (io.ReadWriteCloser, error) {
-			return net.Dial("unix", payload.HostPath)
+			return net.Dial("unix", socket.HostPath)
 		},
 	}, nil
 }

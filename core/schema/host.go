@@ -68,7 +68,7 @@ func (s *hostSchema) envVariableValue(ctx *router.Context, parent *core.HostVari
 }
 
 func (s *hostSchema) envVariableSecret(ctx *router.Context, parent *core.HostVariable, args any) (*core.Secret, error) {
-	return core.NewSecretFromHostEnv(parent.Name)
+	return core.NewSecretFromHostEnv(parent.Name), nil
 }
 
 type hostDirectoryArgs struct {

@@ -93,13 +93,15 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 			return nil, fmt.Errorf("failed to unmarshal args: %w", err)
 		}
 
-		var parent P
-		parentBytes, err := json.Marshal(p.Source)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal parent: %w", err)
-		}
-		if err := json.Unmarshal(parentBytes, &parent); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
+		parent, ok := p.Source.(P)
+		if !ok {
+			parentBytes, err := json.Marshal(p.Source)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal parent: %w", err)
+			}
+			if err := json.Unmarshal(parentBytes, &parent); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
+			}
 		}
 
 		res, err := f(&ctx, parent, args)

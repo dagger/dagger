@@ -20,7 +20,7 @@ import (
 )
 
 // encodeID JSON marshals and base64-encodes an arbitrary payload.
-func encodeID(payload any) (string, error) {
+func encodeID[T ~string](payload any) (T, error) {
 	jsonBytes, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
@@ -29,7 +29,7 @@ func encodeID(payload any) (string, error) {
 	b64Bytes := make([]byte, base64.StdEncoding.EncodedLen(len(jsonBytes)))
 	base64.StdEncoding.Encode(b64Bytes, jsonBytes)
 
-	return string(b64Bytes), nil
+	return T(b64Bytes), nil
 }
 
 // decodeID base64-decodes and JSON unmarshals an ID into an arbitrary payload.
@@ -37,7 +37,7 @@ func decodeID[T ~string](payload any, id T) error {
 	jsonBytes := make([]byte, base64.StdEncoding.DecodedLen(len(id)))
 	n, err := base64.StdEncoding.Decode(jsonBytes, []byte(id))
 	if err != nil {
-		return fmt.Errorf("failed to decode %T bytes: %v: %v", payload, err, payload)
+		return fmt.Errorf("failed to decode %T bytes: %v: %w", payload, id, err)
 	}
 
 	jsonBytes = jsonBytes[:n]
@@ -196,4 +196,18 @@ func parseUID(str string) (int, error) {
 		return 0, err
 	}
 	return int(uid), nil
+}
+
+func clone[T any](src []T) []T {
+	dst := make([]T, len(src))
+	copy(dst, src)
+	return dst
+}
+
+func cloneMap[K comparable, T any](src map[K]T) map[K]T {
+	dst := make(map[K]T, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
 }
