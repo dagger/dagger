@@ -262,6 +262,7 @@ type groupModel interface {
 
 	SetHeight(int)
 	SetWidth(int)
+	ScrollPercent() float64
 
 	Save(dir string) (string, error)
 }
@@ -437,7 +438,9 @@ func (g *Group) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return g, cmd
 }
 
-func (g *Group) ScrollPercent() float64 { return 1 }
+func (g *Group) ScrollPercent() float64 {
+	return g.groupModel.ScrollPercent()
+}
 
 func (g *Group) sort() {
 	sort.SliceStable(g.entries, func(i, j int) bool {
@@ -486,6 +489,8 @@ func (g *emptyGroup) SetHeight(height int) {
 }
 
 func (g *emptyGroup) SetWidth(int) {}
+
+func (g *emptyGroup) ScrollPercent() float64 { return 1 }
 
 func (*emptyGroup) Init() tea.Cmd {
 	return nil
