@@ -6,7 +6,7 @@ defmodule Dagger.HostVariable do
 
   (
     @deprecated "been superseded by `setSecret`"
-    @doc "A secret referencing the value of this variable."
+    @doc "A secret referencing the value of this variable.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def secret(%__MODULE__{} = host_variable) do
       selection = select(host_variable.selection, "secret")
       %Dagger.Secret{selection: selection, client: host_variable.client}
@@ -14,7 +14,7 @@ defmodule Dagger.HostVariable do
   )
 
   (
-    @doc "The value of this variable."
+    @doc "The value of this variable.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def value(%__MODULE__{} = host_variable) do
       selection = select(host_variable.selection, "value")
       execute(selection, host_variable.client)

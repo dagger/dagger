@@ -5,7 +5,7 @@ defmodule Dagger.EnvVariable do
   defstruct [:selection, :client]
 
   (
-    @doc "The environment variable name."
+    @doc "The environment variable name.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def name(%__MODULE__{} = env_variable) do
       selection = select(env_variable.selection, "name")
       execute(selection, env_variable.client)
@@ -13,7 +13,7 @@ defmodule Dagger.EnvVariable do
   )
 
   (
-    @doc "The environment variable value."
+    @doc "The environment variable value.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def value(%__MODULE__{} = env_variable) do
       selection = select(env_variable.selection, "value")
       execute(selection, env_variable.client)

@@ -5,7 +5,7 @@ defmodule Dagger.GitRepository do
   defstruct [:selection, :client]
 
   (
-    @doc "Returns details on one branch."
+    @doc "Returns details on one branch.\n\n## Required Arguments\n\n* `name` - Branch's name (e.g., \"main\").\n\n## Optional Arguments"
     def branch(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "branch")
       selection = arg(selection, "name", Keyword.fetch!(opts, :name))
@@ -14,7 +14,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Lists of branches on the repository."
+    @doc "Lists of branches on the repository.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def branches(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "branches")
       execute(selection, git_repository.client)
@@ -22,7 +22,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Returns details on one commit."
+    @doc "Returns details on one commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\").\n\n## Optional Arguments"
     def commit(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "commit")
       selection = arg(selection, "id", Keyword.fetch!(opts, :id))
@@ -31,7 +31,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Returns details on one tag."
+    @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\").\n\n## Optional Arguments"
     def tag(%__MODULE__{} = git_repository, opts) do
       selection = select(git_repository.selection, "tag")
       selection = arg(selection, "name", Keyword.fetch!(opts, :name))
@@ -40,7 +40,7 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Lists of tags on the repository."
+    @doc "Lists of tags on the repository.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def tags(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "tags")
       execute(selection, git_repository.client)

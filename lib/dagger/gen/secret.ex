@@ -5,7 +5,7 @@ defmodule Dagger.Secret do
   defstruct [:selection, :client]
 
   (
-    @doc "The identifier for this secret."
+    @doc "The identifier for this secret.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def id(%__MODULE__{} = secret) do
       selection = select(secret.selection, "id")
       execute(selection, secret.client)
@@ -13,7 +13,7 @@ defmodule Dagger.Secret do
   )
 
   (
-    @doc "The value of this secret."
+    @doc "The value of this secret.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def plaintext(%__MODULE__{} = secret) do
       selection = select(secret.selection, "plaintext")
       execute(selection, secret.client)

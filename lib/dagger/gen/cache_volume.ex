@@ -5,7 +5,7 @@ defmodule Dagger.CacheVolume do
   defstruct [:selection, :client]
 
   (
-    @doc ""
+    @doc "## Required Arguments\n\n\n\n## Optional Arguments"
     def id(%__MODULE__{} = cache_volume) do
       selection = select(cache_volume.selection, "id")
       execute(selection, cache_volume.client)

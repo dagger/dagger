@@ -5,7 +5,7 @@ defmodule Dagger.Port do
   defstruct [:selection, :client]
 
   (
-    @doc "The port description."
+    @doc "The port description.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def description(%__MODULE__{} = port) do
       selection = select(port.selection, "description")
       execute(selection, port.client)
@@ -13,7 +13,7 @@ defmodule Dagger.Port do
   )
 
   (
-    @doc "The port number."
+    @doc "The port number.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def port(%__MODULE__{} = port) do
       selection = select(port.selection, "port")
       execute(selection, port.client)
@@ -21,7 +21,7 @@ defmodule Dagger.Port do
   )
 
   (
-    @doc "The transport layer network protocol."
+    @doc "The transport layer network protocol.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def protocol(%__MODULE__{} = port) do
       selection = select(port.selection, "protocol")
       execute(selection, port.client)

@@ -99,13 +99,48 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     end
   end
 
-  defp format_doc(%{"description" => desc}) do
+  defp format_deprecated(_), do: nil
+
+  defp format_doc(%{"description" => desc, "args" => args}) do
+    required_args_doc = format_required_args_doc(args) |> IO.iodata_to_binary()
+    optional_args_doc = format_optional_args_doc(args) |> IO.iodata_to_binary()
+
+    doc =
+      """
+      #{desc}
+
+      ## Required Arguments
+
+      #{required_args_doc}
+
+      ## Optional Arguments
+
+      #{optional_args_doc}
+      """
+      |> String.trim()
+
     quote do
-      @doc unquote(desc)
+      @doc unquote(doc)
     end
   end
 
-  defp format_deprecated(_), do: nil
+  defp format_required_args_doc(args) do
+    args
+    |> Enum.filter(&(&1["type"]["kind"] == "NON_NULL"))
+    |> Enum.map(&format_arg_doc/1)
+    |> Enum.intersperse('\n')
+  end
+
+  defp format_optional_args_doc(args) do
+    args
+    |> Enum.filter(&(&1["type"]["kind"] != "NON_NULL"))
+    |> Enum.map(&format_arg_doc/1)
+    |> Enum.intersperse('\n')
+  end
+
+  defp format_arg_doc(%{"name" => name, "description" => description}) do
+    "* `#{name}` - #{description}"
+  end
 
   defp render_args(args) do
     required_args = render_required_args(args)

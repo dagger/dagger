@@ -5,7 +5,7 @@ defmodule Dagger.Label do
   defstruct [:selection, :client]
 
   (
-    @doc "The label name."
+    @doc "The label name.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def name(%__MODULE__{} = label) do
       selection = select(label.selection, "name")
       execute(selection, label.client)
@@ -13,7 +13,7 @@ defmodule Dagger.Label do
   )
 
   (
-    @doc "The label value."
+    @doc "The label value.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def value(%__MODULE__{} = label) do
       selection = select(label.selection, "value")
       execute(selection, label.client)

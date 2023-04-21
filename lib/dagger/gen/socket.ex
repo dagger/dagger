@@ -5,7 +5,7 @@ defmodule Dagger.Socket do
   defstruct [:selection, :client]
 
   (
-    @doc "The content-addressed identifier of the socket."
+    @doc "The content-addressed identifier of the socket.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
     def id(%__MODULE__{} = socket) do
       selection = select(socket.selection, "id")
       execute(selection, socket.client)
