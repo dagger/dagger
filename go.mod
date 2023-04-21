@@ -10,7 +10,7 @@ replace cloud.google.com/go => cloud.google.com/go v0.100.2
 require (
 	dagger.io/dagger v0.4.1
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
-	github.com/aws/aws-sdk-go v1.34.0
+	github.com/aws/aws-sdk-go v1.44.248
 	github.com/aws/aws-sdk-go-v2/config v1.18.21
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3
@@ -67,6 +67,7 @@ require (
 	github.com/jackpal/gateway v1.0.7
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
+	github.com/opencontainers/runc v1.1.5
 	github.com/vito/vt100 v0.0.0-20230324203615-1b9f0c41442c
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 )
@@ -161,7 +162,6 @@ require (
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
 	github.com/onsi/gomega v1.24.2 // indirect
-	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
