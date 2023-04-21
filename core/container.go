@@ -868,7 +868,7 @@ func (container *Container) chown(
 	if srcDef == nil {
 		// e.g. empty cache mount
 		srcSt = llb.Scratch().File(
-			llb.Mkdir("/chown", 0o700, ownership.Opt()),
+			llb.Mkdir("/chown", 0o755, ownership.Opt()),
 		)
 
 		srcPath = "/chown"
