@@ -61,7 +61,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         %{"kind" => "OBJECT", "name" => name}
       ) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
-    fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
+    fun_args = if(args == [], do: [], else: [Macro.var(:args, __MODULE__)])
     args = render_args(args)
 
     quote do
@@ -79,7 +79,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   def format_function(field_name, fun_name, {mod_var_name, args}, _) do
-    fun_args = if(args == [], do: [], else: [Macro.var(:opts, __MODULE__)])
+    fun_args = if(args == [], do: [], else: [Macro.var(:args, __MODULE__)])
     args = render_args(args)
 
     quote do
@@ -161,7 +161,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
       arg_name = to_string(name)
 
       quote do
-        selection = arg(selection, unquote(arg_name), Keyword.fetch!(opts, unquote(name)))
+        selection = arg(selection, unquote(arg_name), Keyword.fetch!(args, unquote(name)))
       end
     end
   end
@@ -181,11 +181,11 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         quote do
           {_opts, selection} =
             unquote(args)
-            |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-              if not is_nil(opts[arg]) do
-                {opts, arg(selection, to_string(arg), opts[arg])}
+            |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+              if not is_nil(args[arg]) do
+                {args, arg(selection, to_string(arg), args[arg])}
               else
-                {opts, selection}
+                {args, selection}
               end
             end)
         end

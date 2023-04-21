@@ -14,16 +14,16 @@ defmodule Dagger.GitRef do
 
   (
     @doc "The filesystem tree at this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
-    def tree(%__MODULE__{} = git_ref, opts) do
+    def tree(%__MODULE__{} = git_ref, args) do
       selection = select(git_ref.selection, "tree")
 
       {_opts, selection} =
         [:ssh_known_hosts, :ssh_auth_socket]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 

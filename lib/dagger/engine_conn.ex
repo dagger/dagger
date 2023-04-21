@@ -57,6 +57,7 @@ defmodule Dagger.EngineConn do
     receive do
       {^port, {:data, data}} -> send(caller, {:stdout, data})
     end
+
     session_loop(port, caller)
   end
 

@@ -6,17 +6,17 @@ defmodule Dagger.Host do
 
   (
     @doc "Accesses a directory on the host.\n\n## Required Arguments\n\n* `path` - Location of the directory to access (e.g., \".\").\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
-    def directory(%__MODULE__{} = host, opts) do
+    def directory(%__MODULE__{} = host, args) do
       selection = select(host.selection, "directory")
-      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
       {_opts, selection} =
         [:exclude, :include]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -26,18 +26,18 @@ defmodule Dagger.Host do
 
   (
     @doc "Accesses an environment variable on the host.\n\n## Required Arguments\n\n* `name` - Name of the environment variable (e.g., \"PATH\").\n\n## Optional Arguments"
-    def env_variable(%__MODULE__{} = host, opts) do
+    def env_variable(%__MODULE__{} = host, args) do
       selection = select(host.selection, "envVariable")
-      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(args, :name))
       execute(selection, host.client)
     end
   )
 
   (
     @doc "Accesses a Unix socket on the host.\n\n## Required Arguments\n\n* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\").\n\n## Optional Arguments"
-    def unix_socket(%__MODULE__{} = host, opts) do
+    def unix_socket(%__MODULE__{} = host, args) do
       selection = select(host.selection, "unixSocket")
-      selection = arg(selection, "path", Keyword.fetch!(opts, :path))
+      selection = arg(selection, "path", Keyword.fetch!(args, :path))
       %Dagger.Socket{selection: selection, client: host.client}
     end
   )
@@ -45,16 +45,16 @@ defmodule Dagger.Host do
   (
     @deprecated "Use `directory` with path set to '.' instead."
     @doc "Retrieves the current working directory on the host.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
-    def workdir(%__MODULE__{} = host, opts) do
+    def workdir(%__MODULE__{} = host, args) do
       selection = select(host.selection, "workdir")
 
       {_opts, selection} =
         [:exclude, :include]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 

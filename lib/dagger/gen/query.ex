@@ -6,25 +6,25 @@ defmodule Dagger.Query do
 
   (
     @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\").\n\n## Optional Arguments"
-    def cache_volume(%__MODULE__{} = query, opts) do
+    def cache_volume(%__MODULE__{} = query, args) do
       selection = select(query.selection, "cacheVolume")
-      selection = arg(selection, "key", Keyword.fetch!(opts, :key))
+      selection = arg(selection, "key", Keyword.fetch!(args, :key))
       %Dagger.CacheVolume{selection: selection, client: query.client}
     end
   )
 
   (
     @doc "Loads a container from ID.\n\nNull ID returns an empty container (scratch).\nOptional platform argument initializes new containers to execute and publish as that platform.\nPlatform defaults to that of the builder's host.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` -"
-    def container(%__MODULE__{} = query, opts) do
+    def container(%__MODULE__{} = query, args) do
       selection = select(query.selection, "container")
 
       {_opts, selection} =
         [:id, :platform]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -42,16 +42,16 @@ defmodule Dagger.Query do
 
   (
     @doc "Load a directory by ID. No argument produces an empty directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` -"
-    def directory(%__MODULE__{} = query, opts) do
+    def directory(%__MODULE__{} = query, args) do
       selection = select(query.selection, "directory")
 
       {_opts, selection} =
         [:id]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -61,26 +61,26 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
-    def file(%__MODULE__{} = query, opts) do
+    def file(%__MODULE__{} = query, args) do
       selection = select(query.selection, "file")
-      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(args, :id))
       execute(selection, query.client)
     end
   )
 
   (
     @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `experimental_service_host` - A service which must be started before the repo is fetched."
-    def git(%__MODULE__{} = query, opts) do
+    def git(%__MODULE__{} = query, args) do
       selection = select(query.selection, "git")
-      selection = arg(selection, "url", Keyword.fetch!(opts, :url))
+      selection = arg(selection, "url", Keyword.fetch!(args, :url))
 
       {_opts, selection} =
         [:keep_git_dir, :experimental_service_host]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -98,17 +98,17 @@ defmodule Dagger.Query do
 
   (
     @doc "Returns a file containing an http remote url content.\n\n## Required Arguments\n\n* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\").\n\n## Optional Arguments\n\n* `experimental_service_host` - A service which must be started before the URL is fetched."
-    def http(%__MODULE__{} = query, opts) do
+    def http(%__MODULE__{} = query, args) do
       selection = select(query.selection, "http")
-      selection = arg(selection, "url", Keyword.fetch!(opts, :url))
+      selection = arg(selection, "url", Keyword.fetch!(args, :url))
 
       {_opts, selection} =
         [:experimental_service_host]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -118,17 +118,17 @@ defmodule Dagger.Query do
 
   (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
-    def pipeline(%__MODULE__{} = query, opts) do
+    def pipeline(%__MODULE__{} = query, args) do
       selection = select(query.selection, "pipeline")
-      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(args, :name))
 
       {_opts, selection} =
         [:description, :labels]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
@@ -138,44 +138,44 @@ defmodule Dagger.Query do
 
   (
     @doc "Look up a project by name\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments"
-    def project(%__MODULE__{} = query, opts) do
+    def project(%__MODULE__{} = query, args) do
       selection = select(query.selection, "project")
-      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
+      selection = arg(selection, "name", Keyword.fetch!(args, :name))
       %Dagger.Project{selection: selection, client: query.client}
     end
   )
 
   (
     @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
-    def secret(%__MODULE__{} = query, opts) do
+    def secret(%__MODULE__{} = query, args) do
       selection = select(query.selection, "secret")
-      selection = arg(selection, "id", Keyword.fetch!(opts, :id))
+      selection = arg(selection, "id", Keyword.fetch!(args, :id))
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )
 
   (
     @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret\n\n## Optional Arguments"
-    def set_secret(%__MODULE__{} = query, opts) do
+    def set_secret(%__MODULE__{} = query, args) do
       selection = select(query.selection, "setSecret")
-      selection = arg(selection, "name", Keyword.fetch!(opts, :name))
-      selection = arg(selection, "plaintext", Keyword.fetch!(opts, :plaintext))
+      selection = arg(selection, "name", Keyword.fetch!(args, :name))
+      selection = arg(selection, "plaintext", Keyword.fetch!(args, :plaintext))
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )
 
   (
     @doc "Loads a socket by its ID.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` -"
-    def socket(%__MODULE__{} = query, opts) do
+    def socket(%__MODULE__{} = query, args) do
       selection = select(query.selection, "socket")
 
       {_opts, selection} =
         [:id]
-        |> Enum.reduce({opts, selection}, fn arg, {opts, selection} ->
-          if not is_nil(opts[arg]) do
-            {opts, arg(selection, to_string(arg), opts[arg])}
+        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
+          if not is_nil(args[arg]) do
+            {args, arg(selection, to_string(arg), args[arg])}
           else
-            {opts, selection}
+            {args, selection}
           end
         end)
 
