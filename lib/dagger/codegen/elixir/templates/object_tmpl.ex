@@ -31,14 +31,13 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         %{
           "name" => name,
           "args" => args,
-          "type" => %{"ofType" => type_ref},
-          "description" => desc
+          "type" => %{"ofType" => type_ref}
         } = field
       ) do
     mod_var_name = Macro.var(mod_var_name, __MODULE__)
     fun_name = Function.format_name(name)
     deprecated = format_deprecated(field)
-    doc = quote(do: @doc(unquote(desc)))
+    doc = format_doc(field)
     fun = format_function(name, fun_name, {mod_var_name, args}, type_ref)
 
     body = [doc, fun]
@@ -97,6 +96,12 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   defp format_deprecated(%{"isDeprecated" => true, "deprecationReason" => reason}) do
     quote do
       @deprecated unquote(reason)
+    end
+  end
+
+  defp format_doc(%{"description" => desc}) do
+    quote do
+      @doc unquote(desc)
     end
   end
 
