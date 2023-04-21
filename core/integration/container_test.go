@@ -3447,7 +3447,7 @@ func testOwnership(
 		{name: "names", owner: "auser:agroup", output: "auser agroup"},
 
 		// NB: inheriting the user/group from the container was implemented, but we
-		// decided to back out for two reasons:
+		// decided to back out for a few reasons:
 		//
 		// 1. performance: right now chowning has to be a separate Copy operation,
 		//    which currently literally copies the relevant files even for a chown,
