@@ -147,6 +147,13 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		var mounts []bkgw.Mount
 		for i, mnt := range execOp.Exec.Mounts {
 			mnt := mnt
+			// don't include cache or tmpfs mounts, they shouldn't contain
+			// stdout/stderr and we especially don't want to include locked
+			// cache mounts as they contend for the cache mount with execs
+			// that actually need it.
+			if mnt.CacheOpt != nil || mnt.TmpfsOpt != nil {
+				continue
+			}
 			mounts = append(mounts, bkgw.Mount{
 				Selector:  mnt.Selector,
 				Dest:      mnt.Dest,
@@ -168,7 +175,14 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err != nil {
 			return
 		}
-		defer ctr.Release(ctx)
+		defer func() {
+			// Use the background context to release so that it still
+			// runs even if there was a timeout or other cancellation.
+			// Run in separate go routine on the offchance this unexpectedly
+			// blocks a long time (e.g. due to grpc issues).
+			go ctr.Release(context.Background())
+		}()
+
 		// Use a circular buffer to only save the last N bytes of output, which lets
 		// us prevent enormous error messages while retaining the output most likely
 		// to be of interest.
