@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/adrg/xdg"
@@ -378,21 +377,11 @@ func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus)
 }
 
 func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.SolveStatus) {
-	wg := sync.WaitGroup{}
-
 	for ev := range ch {
 		for _, r := range readers {
-			r := r
-			ev := ev
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				r <- ev
-			}()
+			r <- ev
 		}
 	}
-
-	wg.Wait()
 
 	for _, w := range readers {
 		close(w)
