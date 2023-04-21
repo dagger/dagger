@@ -23,7 +23,9 @@ defmodule Dagger.Client do
     Req.post(client.req,
       url: "/query",
       graphql: query,
-      auth: {token(client), ""}
+      auth: {token(client), ""},
+      # TODO: allow to configure via connection options.
+      receive_timeout: 300_000
     )
   end
 

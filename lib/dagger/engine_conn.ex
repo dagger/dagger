@@ -6,11 +6,12 @@ defmodule Dagger.EngineConn do
   @doc """
   Get Dagger engine connection.
   """
-  # TODO: handle error.
-  # TODO: plan b: construct conn by using local cli.
   # TODO: plan c: construct conn by downloading cli.
   def get() do
-    from_session_env()
+    case from_session_env() do
+      {:ok, conn} -> {:ok, conn}
+      _otherwise -> from_local_cli()
+    end
   end
 
   @doc """
@@ -25,6 +26,57 @@ defmodule Dagger.EngineConn do
          token: token
        }}
     end
+  end
+
+  def from_local_cli() do
+    with {:ok, bin} <- System.fetch_env("_EXPERIMENTAL_DAGGER_CLI_BIN"),
+         bin when is_binary(bin) <- System.find_executable(bin) do
+      logger_pid = start_logger(self())
+      _pid = start_cli_session(bin, logger_pid)
+
+      receive do
+        {:conn_params, port, token} ->
+          {:ok, %__MODULE__{port: port, token: token}}
+      after
+        300_000 -> {:error, :no_conn_params_receive}
+      end
+    else
+      nil -> {:error, :no_executable}
+      otherwise -> otherwise
+    end
+  end
+
+  defp start_cli_session(bin, caller) do
+    spawn_link(fn ->
+      port = Port.open({:spawn_executable, bin}, [:binary, :stderr_to_stdout, args: ["session"]])
+      session_loop(port, caller)
+    end)
+  end
+
+  defp session_loop(port, caller) do
+    receive do
+      {^port, {:data, data}} -> send(caller, {:stdout, data})
+    end
+    session_loop(port, caller)
+  end
+
+  defp start_logger(engine_conn_pid) do
+    spawn_link(fn -> logger_loop(engine_conn_pid) end)
+  end
+
+  defp logger_loop(engine_conn_pid) do
+    receive do
+      {:stdout, data} ->
+        case Jason.decode(data) do
+          {:ok, %{"port" => port, "session_token" => token}} ->
+            send(engine_conn_pid, {:conn_params, port, token})
+
+          _otherwise ->
+            IO.write(data)
+        end
+    end
+
+    logger_loop(engine_conn_pid)
   end
 
   @doc """
