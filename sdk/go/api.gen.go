@@ -760,6 +760,12 @@ type ContainerWithDirectoryOpts struct {
 	Exclude []string
 	// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
 	Include []string
+	// A user:group to set for the directory and its contents.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus a directory written at the given path.
@@ -778,6 +784,13 @@ func (r *Container) WithDirectory(path string, directory *Directory, opts ...Con
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
+			break
+		}
+	}
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
 			break
 		}
 	}
@@ -944,6 +957,12 @@ type ContainerWithFileOpts struct {
 	//
 	// Default: 0644.
 	Permissions int
+	// A user:group to set for the file.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus the contents of the given file copied to the given path.
@@ -955,6 +974,13 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
 			break
 		}
 	}
@@ -983,6 +1009,16 @@ type ContainerWithMountedCacheOpts struct {
 	Source *Directory
 	// Sharing mode of the cache volume.
 	Sharing CacheSharingMode
+	// A user:group to set for the mounted cache directory.
+	//
+	// Note that this changes the ownership of the specified mount along with the
+	// initial filesystem provided by source (if any). It does not have any effect
+	// if/when the cache has already been created.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus a cache volume mounted at the given path.
@@ -1004,30 +1040,71 @@ func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...Co
 			break
 		}
 	}
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
 		c: r.c,
 	}
+}
+
+// ContainerWithMountedDirectoryOpts contains options for Container.WithMountedDirectory
+type ContainerWithMountedDirectoryOpts struct {
+	// A user:group to set for the mounted directory and its contents.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus a directory mounted at the given path.
-func (r *Container) WithMountedDirectory(path string, source *Directory) *Container {
+func (r *Container) WithMountedDirectory(path string, source *Directory, opts ...ContainerWithMountedDirectoryOpts) *Container {
 	q := r.q.Select("withMountedDirectory")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
 		c: r.c,
 	}
+}
+
+// ContainerWithMountedFileOpts contains options for Container.WithMountedFile
+type ContainerWithMountedFileOpts struct {
+	// A user or user:group to set for the mounted file.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus a file mounted at the given path.
-func (r *Container) WithMountedFile(path string, source *File) *Container {
+func (r *Container) WithMountedFile(path string, source *File, opts ...ContainerWithMountedFileOpts) *Container {
 	q := r.q.Select("withMountedFile")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -1035,11 +1112,28 @@ func (r *Container) WithMountedFile(path string, source *File) *Container {
 	}
 }
 
+// ContainerWithMountedSecretOpts contains options for Container.WithMountedSecret
+type ContainerWithMountedSecretOpts struct {
+	// A user:group to set for the mounted secret.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
 // Retrieves this container plus a secret mounted into a file at the given path.
-func (r *Container) WithMountedSecret(path string, source *Secret) *Container {
+func (r *Container) WithMountedSecret(path string, source *Secret, opts ...ContainerWithMountedSecretOpts) *Container {
 	q := r.q.Select("withMountedSecret")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,
@@ -1066,6 +1160,12 @@ type ContainerWithNewFileOpts struct {
 	//
 	// Default: 0644.
 	Permissions int
+	// A user:group to set for the file.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
 }
 
 // Retrieves this container plus a new file written at the given path.
@@ -1083,6 +1183,13 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
+			break
+		}
+	}
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
 			break
 		}
 	}
@@ -1147,11 +1254,28 @@ func (r *Container) WithServiceBinding(alias string, service *Container) *Contai
 	}
 }
 
+// ContainerWithUnixSocketOpts contains options for Container.WithUnixSocket
+type ContainerWithUnixSocketOpts struct {
+	// A user:group to set for the mounted socket.
+	//
+	// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+	//
+	// If the group is omitted, it defaults to the same as the user.
+	Owner string
+}
+
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
-func (r *Container) WithUnixSocket(path string, source *Socket) *Container {
+func (r *Container) WithUnixSocket(path string, source *Socket, opts ...ContainerWithUnixSocketOpts) *Container {
 	q := r.q.Select("withUnixSocket")
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+	// `owner` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Owner) {
+			q = q.Arg("owner", opts[i].Owner)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,

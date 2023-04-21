@@ -259,6 +259,15 @@ type Container {
 
     "Identifier of the mounted directory."
     source: DirectoryID!
+
+    """
+    A user:group to set for the mounted directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -272,6 +281,15 @@ type Container {
 
     "Identifier of the mounted file."
     source: FileID!
+
+    """
+    A user or user:group to set for the mounted file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -301,6 +319,19 @@ type Container {
 
     "Sharing mode of the cache volume."
     sharing: CacheSharingMode
+
+    """
+    A user:group to set for the mounted cache directory.
+
+    Note that this changes the ownership of the specified mount along with the
+    initial filesystem provided by source (if any). It does not have any effect
+    if/when the cache has already been created.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -314,6 +345,15 @@ type Container {
 
     "Identifier of the secret to mount."
     source: SecretID!
+
+    """
+    A user:group to set for the mounted secret.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -344,6 +384,15 @@ type Container {
     Default: 0644.
     """
     permissions: Int
+
+    """
+    A user:group to set for the file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -366,6 +415,15 @@ type Container {
     Default: 0644.
     """
     permissions: Int
+
+    """
+    A user:group to set for the file.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -389,6 +447,15 @@ type Container {
     Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
     """
     include: [String!]
+
+    """
+    A user:group to set for the directory and its contents.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """
@@ -404,6 +471,15 @@ type Container {
     Identifier of the socket to forward.
     """
     source: SocketID!
+
+    """
+    A user:group to set for the mounted socket.
+
+    The user and group can either be an ID (1000:1000) or a name (foo:bar).
+
+    If the group is omitted, it defaults to the same as the user.
+    """
+    owner: String
   ): Container!
 
   """

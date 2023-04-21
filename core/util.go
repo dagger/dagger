@@ -1,14 +1,22 @@
 package core
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"path"
+	"strconv"
+	"strings"
 	"sync"
 
+	"github.com/dagger/dagger/core/reffs"
 	"github.com/moby/buildkit/client/llb"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runc/libcontainer/user"
 )
 
 // encodeID JSON marshals and base64-encodes an arbitrary payload.
@@ -89,4 +97,103 @@ func mirrorCh[T any](dest chan<- T) (chan T, *sync.WaitGroup) {
 	}()
 
 	return mirrorCh, wg
+}
+
+func resolveUIDGID(ctx context.Context, fsSt llb.State, gw bkgw.Client, platform specs.Platform, owner string) (*Ownership, error) {
+	uidOrName, gidOrName, hasGroup := strings.Cut(owner, ":")
+
+	var uid, gid int
+	var uname, gname string
+
+	uid, err := parseUID(uidOrName)
+	if err != nil {
+		uname = uidOrName
+	}
+
+	if hasGroup {
+		gid, err = parseUID(gidOrName)
+		if err != nil {
+			gname = gidOrName
+		}
+	}
+
+	var fs fs.FS
+	if uname != "" || gname != "" {
+		fs, err = reffs.OpenState(ctx, gw, fsSt, llb.Platform(platform))
+		if err != nil {
+			return nil, fmt.Errorf("open fs state for name->id: %w", err)
+		}
+	}
+
+	if uname != "" {
+		uid, err = findUID(fs, uname)
+		if err != nil {
+			return nil, fmt.Errorf("find uid: %w", err)
+		}
+	}
+
+	if gname != "" {
+		gid, err = findGID(fs, gname)
+		if err != nil {
+			return nil, fmt.Errorf("find gid: %w", err)
+		}
+	}
+
+	if !hasGroup {
+		gid = uid
+	}
+
+	return &Ownership{uid, gid}, nil
+}
+
+func findUID(fs fs.FS, uname string) (int, error) {
+	f, err := fs.Open("/etc/passwd")
+	if err != nil {
+		return -1, fmt.Errorf("open /etc/passwd: %w", err)
+	}
+
+	users, err := user.ParsePasswdFilter(f, func(u user.User) bool {
+		return u.Name == uname
+	})
+	if err != nil {
+		return -1, fmt.Errorf("parse /etc/passwd: %w", err)
+	}
+
+	if len(users) == 0 {
+		return -1, fmt.Errorf("no such user: %s", uname)
+	}
+
+	return users[0].Uid, nil
+}
+
+func findGID(fs fs.FS, gname string) (int, error) {
+	f, err := fs.Open("/etc/group")
+	if err != nil {
+		return -1, fmt.Errorf("open /etc/passwd: %w", err)
+	}
+
+	groups, err := user.ParseGroupFilter(f, func(g user.Group) bool {
+		return g.Name == gname
+	})
+	if err != nil {
+		return -1, fmt.Errorf("parse /etc/group: %w", err)
+	}
+
+	if len(groups) == 0 {
+		return -1, fmt.Errorf("no such group: %s", gname)
+	}
+
+	return groups[0].Gid, nil
+}
+
+// NB: from Buildkit
+func parseUID(str string) (int, error) {
+	if str == "root" {
+		return 0, nil
+	}
+	uid, err := strconv.ParseInt(str, 10, 32)
+	if err != nil {
+		return 0, err
+	}
+	return int(uid), nil
 }

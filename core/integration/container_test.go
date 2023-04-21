@@ -327,6 +327,31 @@ func TestContainerWithRootFS(t *testing.T) {
 	require.Equal(t, "3.16.2\n", releaseStr)
 }
 
+//go:embed testdata/hello.go
+var helloSrc string
+
+func TestContainerWithRootFSSubdir(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	hello := c.Directory().WithNewFile("main.go", helloSrc).File("main.go")
+
+	ctr := c.Container().
+		From("golang:1.20.0-alpine").
+		WithMountedFile("/src/main.go", hello).
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithExec([]string{"go", "build", "-o", "/out/hello", "/src/main.go"})
+
+	out, err := c.Container().
+		WithRootfs(ctr.Directory("/out")).
+		WithExec([]string{"/hello"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!\n", out)
+}
+
 func TestContainerExecExitCode(t *testing.T) {
 	t.Parallel()
 
@@ -2766,9 +2791,8 @@ func TestContainerWithDirectoryToMount(t *testing.T) {
 var echoSocketSrc string
 
 func TestContainerWithUnixSocket(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
-	require.NoError(t, err)
+	c, ctx := connect(t)
+	defer c.Close()
 
 	tmp := t.TempDir()
 	sock := filepath.Join(tmp, "test.sock")
@@ -3151,4 +3175,312 @@ func TestContainerNoExecError(t *testing.T) {
 	_, err = c.Container().From("alpine:3.16.2").Stderr(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+}
+
+func TestContainerWithMountedFileOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	t.Run("simple file", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		file := c.Host().Directory(tmp).File("message.txt")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+				Owner: owner,
+			})
+		})
+	})
+
+	t.Run("file from subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithMountedFile(name, file, dagger.ContainerWithMountedFileOpts{
+				Owner: owner,
+			})
+		})
+	})
+}
+
+func TestContainerWithMountedDirectoryOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	t.Run("simple directory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		dir := c.Host().Directory(tmp)
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: owner,
+			})
+		})
+	})
+
+	t.Run("subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		dir := c.Host().Directory(tmp).Directory("subdir")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithMountedDirectory(name, dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: owner,
+			})
+		})
+	})
+
+	t.Run("permissions", func(t *testing.T) {
+		dir := c.Directory().
+			WithNewDirectory("perms", dagger.DirectoryWithNewDirectoryOpts{
+				Permissions: 0745,
+			}).
+			WithNewFile("perms/foo", "whee", dagger.DirectoryWithNewFileOpts{
+				Permissions: 0645,
+			}).
+			Directory("perms")
+
+		ctr := c.Container().From("alpine:3.16.2").
+			WithExec([]string{"adduser", "-D", "inherituser"}).
+			WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+			WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+			WithUser("inherituser").
+			WithMountedDirectory("/data", dir, dagger.ContainerWithMountedDirectoryOpts{
+				Owner: "auser:agroup",
+			})
+
+		out, err := ctr.WithExec([]string{"stat", "-c", "%a:%U:%G", "/data"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "745:auser:agroup\n", out)
+
+		out, err = ctr.WithExec([]string{"stat", "-c", "%a:%U:%G", "/data/foo"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "645:auser:agroup\n", out)
+	})
+}
+
+func TestContainerWithFileOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	t.Run("simple file", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		file := c.Host().Directory(tmp).File("message.txt")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+				Owner: owner,
+			})
+		})
+	})
+
+	t.Run("file from subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		file := c.Host().Directory(tmp).Directory("subdir").File("message.txt")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithFile(name, file, dagger.ContainerWithFileOpts{
+				Owner: owner,
+			})
+		})
+	})
+}
+
+func TestContainerWithDirectoryOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	t.Run("simple directory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.WriteFile(filepath.Join(tmp, "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		dir := c.Host().Directory(tmp)
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+				Owner: owner,
+			})
+		})
+	})
+
+	t.Run("subdirectory", func(t *testing.T) {
+		tmp := t.TempDir()
+
+		err := os.Mkdir(filepath.Join(tmp, "subdir"), 0755)
+		require.NoError(t, err)
+
+		err = os.WriteFile(filepath.Join(tmp, "subdir", "message.txt"), []byte("hello world"), 0o600)
+		require.NoError(t, err)
+
+		dir := c.Host().Directory(tmp).Directory("subdir")
+
+		testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+			return ctr.WithDirectory(name, dir, dagger.ContainerWithDirectoryOpts{
+				Owner: owner,
+			})
+		})
+	})
+}
+
+func TestContainerWithNewFileOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		return ctr.WithNewFile(name, dagger.ContainerWithNewFileOpts{
+			Owner: owner,
+		})
+	})
+}
+
+func TestContainerWithMountedCacheOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	cache := c.CacheVolume("test")
+
+	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		return ctr.WithMountedCache(name, cache, dagger.ContainerWithMountedCacheOpts{
+			Owner: owner,
+		})
+	})
+}
+
+func TestContainerWithMountedSecretOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	secret := c.SetSecret("test", "hunter2")
+
+	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		return ctr.WithMountedSecret(name, secret, dagger.ContainerWithMountedSecretOpts{
+			Owner: owner,
+		})
+	})
+}
+
+func TestContainerWithUnixSocketOwner(t *testing.T) {
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	tmp := t.TempDir()
+	sock := filepath.Join(tmp, "test.sock")
+
+	l, err := net.Listen("unix", sock)
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	socket := c.Host().UnixSocket(sock)
+
+	testOwnership(ctx, t, c, func(ctr *dagger.Container, name string, owner string) *dagger.Container {
+		return ctr.WithUnixSocket(name, socket, dagger.ContainerWithUnixSocketOpts{
+			Owner: owner,
+		})
+	})
+}
+
+func testOwnership(
+	ctx context.Context,
+	t *testing.T,
+	c *dagger.Client,
+	addContent func(ctr *dagger.Container, name, owner string) *dagger.Container,
+) {
+	t.Parallel()
+
+	ctr := c.Container().From("alpine:3.16.2").
+		WithExec([]string{"adduser", "-D", "inherituser"}).
+		WithExec([]string{"adduser", "-u", "1234", "-D", "auser"}).
+		WithExec([]string{"addgroup", "-g", "4321", "agroup"}).
+		WithUser("inherituser").
+		WithWorkdir("/data")
+
+	type example struct {
+		name   string
+		owner  string
+		output string
+	}
+
+	for _, example := range []example{
+		{name: "userid", owner: "1234", output: "auser auser"},
+		{name: "userid-twice", owner: "1234:1234", output: "auser auser"},
+		{name: "username", owner: "auser", output: "auser auser"},
+		{name: "username-twice", owner: "auser:auser", output: "auser auser"},
+		{name: "ids", owner: "1234:4321", output: "auser agroup"},
+		{name: "username-gid", owner: "auser:4321", output: "auser agroup"},
+		{name: "uid-groupname", owner: "1234:agroup", output: "auser agroup"},
+		{name: "names", owner: "auser:agroup", output: "auser agroup"},
+
+		// NB: inheriting the user/group from the container was implemented, but we
+		// decided to back out for a few reasons:
+		//
+		// 1. performance: right now chowning has to be a separate Copy operation,
+		//    which currently literally copies the relevant files even for a chown,
+		//    which seems prohibitively expensive as a default. maybe with metacopy
+		//    support in Buildkit this would become more feasible.
+		// 2. bumping timestamps: chown operations are also technically writes, so
+		//    we would be bumping timestamps all over the place and making builds
+		//    non-reproducible. this has an especially unfortunate interaction with
+		//    WithTimestamps where if you were to pass the timestamped values to
+		//    another container you would immediately lose those timestamps.
+		// 3. no opt-out: what if the user actually _wants_ to keep the permissions
+		//    as they are? we would need to add another API for this. given all of
+		//    the above, making it opt-in seems obvious.
+		{name: "no-inherit", owner: "", output: "root root"},
+	} {
+		example := example
+		t.Run(example.name, func(t *testing.T) {
+			withOwner := addContent(ctr, example.name, example.owner)
+			output, err := withOwner.
+				WithUser("root"). // go back to root so we can see 0400 files
+				WithExec([]string{
+					"sh", "-exc",
+					"find * | xargs stat -c '%U %G'", // stat recursively
+				}).
+				Stdout(ctx)
+			require.NoError(t, err)
+			for _, line := range strings.Split(output, "\n") {
+				if line == "" {
+					continue
+				}
+
+				require.Equal(t, example.output, line)
+			}
+		})
+	}
 }

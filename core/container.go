@@ -121,19 +121,33 @@ type HostAlias struct {
 	Target string `json:"target"`
 }
 
+// Ownership contains a UID/GID pair resolved from a user/group name or ID pair
+// provided via the API. It primarily exists to distinguish an unspecified
+// ownership from UID/GID 0 (root) ownership.
+type Ownership struct {
+	UID int `json:"uid"`
+	GID int `json:"gid"`
+}
+
+func (owner Ownership) Opt() llb.ChownOption {
+	return llb.WithUIDGID(owner.UID, owner.GID)
+}
+
 // ContainerSecret configures a secret to expose, either as an environment
 // variable or mounted to a file path.
 type ContainerSecret struct {
-	Secret    SecretID `json:"secret"`
-	EnvName   string   `json:"env,omitempty"`
-	MountPath string   `json:"path,omitempty"`
+	Secret    SecretID   `json:"secret"`
+	EnvName   string     `json:"env,omitempty"`
+	MountPath string     `json:"path,omitempty"`
+	Owner     *Ownership `json:"owner,omitempty"`
 }
 
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Socket   SocketID `json:"socket"`
-	UnixPath string   `json:"unix_path,omitempty"`
+	Socket   SocketID   `json:"socket"`
+	UnixPath string     `json:"unix_path,omitempty"`
+	Owner    *Ownership `json:"owner,omitempty"`
 }
 
 // ContainerPort configures a port to expose from the container.
@@ -311,24 +325,14 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 		return nil, err
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(config specs.ImageConfig) specs.ImageConfig {
-		// merge config.Env with imgSpec.Config.Env
-		newEnv := config.Env
-		if imgSpec.Config.Env != nil {
-			newEnv = append(newEnv, imgSpec.Config.Env...)
-		}
-		imgSpec.Config.Env = newEnv
-		return imgSpec.Config
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
 	payload, err = ctr.ID.decode()
 	if err != nil {
 		return nil, err
 	}
+
+	// merge config.Env with imgSpec.Config.Env
+	imgSpec.Config.Env = append(payload.Config.Env, imgSpec.Config.Env...)
+	payload.Config = imgSpec.Config
 
 	payload.ImageRef = digested.String()
 
@@ -464,7 +468,17 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 		return nil, err
 	}
 
-	payload.FS = dirPayload.LLB
+	dirSt, err := dirPayload.StateWithSourcePath()
+	if err != nil {
+		return nil, err
+	}
+
+	def, err := dirSt.Marshal(ctx, llb.Platform(dirPayload.Platform))
+	if err != nil {
+		return nil, err
+	}
+
+	payload.FS = def.ToPB()
 
 	payload.Services.Merge(dirPayload.Services)
 
@@ -474,44 +488,59 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter) (*Container, error) {
-	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithDirectory(ctx, ".", src, filter)
+func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
+	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
+		ownership, err := container.ownership(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithDirectory(ctx, ".", src, filter, ownership)
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode) (*Container, error) {
-	return container.updateRootFS(ctx, subdir, func(dir *Directory) (*Directory, error) {
-		return dir.WithFile(ctx, ".", src, permissions)
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
+	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
+		ownership, err := container.ownership(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithFile(ctx, ".", src, permissions, ownership)
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	dir, file := filepath.Split(dest)
-	return container.updateRootFS(ctx, dir, func(dir *Directory) (*Directory, error) {
-		return dir.WithNewFile(ctx, file, content, permissions) // TODO(vito): doesn't this need a name...?
+	return container.writeToPath(ctx, gw, dir, func(dir *Directory) (*Directory, error) {
+		ownership, err := container.ownership(ctx, gw, owner)
+		if err != nil {
+			return nil, err
+		}
+
+		return dir.WithNewFile(ctx, file, content, permissions, ownership)
 	})
 }
 
-func (container *Container) WithMountedDirectory(ctx context.Context, target string, source *Directory) (*Container, error) {
+func (container *Container) WithMountedDirectory(ctx context.Context, gw bkgw.Client, target string, source *Directory, owner string) (*Container, error) {
 	payload, err := source.ID.Decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.Dir, payload.Services)
+	return container.withMounted(ctx, gw, target, payload.LLB, payload.Dir, payload.Services, owner)
 }
 
-func (container *Container) WithMountedFile(ctx context.Context, target string, source *File) (*Container, error) {
+func (container *Container) WithMountedFile(ctx context.Context, gw bkgw.Client, target string, source *File, owner string) (*Container, error) {
 	payload, err := source.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
-	return container.withMounted(target, payload.LLB, payload.File, payload.Services)
+	return container.withMounted(ctx, gw, target, payload.LLB, payload.File, payload.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, target string, cache CacheID, source *Directory, concurrency CacheSharingMode) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, gw bkgw.Client, target string, cache CacheID, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -550,6 +579,20 @@ func (container *Container) WithMountedCache(ctx context.Context, target string,
 		mount.SourcePath = srcPayload.Dir
 	}
 
+	if owner != "" {
+		mount.Source, mount.SourcePath, err = container.chown(
+			ctx,
+			gw,
+			mount.Source,
+			mount.SourcePath,
+			owner,
+			llb.Platform(payload.Platform),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	payload.Mounts = payload.Mounts.With(mount)
 
 	// set image ref to empty string
@@ -577,7 +620,7 @@ func (container *Container) WithMountedTemp(ctx context.Context, target string) 
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) WithMountedSecret(ctx context.Context, target string, source *Secret) (*Container, error) {
+func (container *Container) WithMountedSecret(ctx context.Context, gw bkgw.Client, target string, source *Secret, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -585,9 +628,15 @@ func (container *Container) WithMountedSecret(ctx context.Context, target string
 
 	target = absPath(payload.Config.WorkingDir, target)
 
+	ownership, err := container.ownership(ctx, gw, owner)
+	if err != nil {
+		return nil, err
+	}
+
 	payload.Secrets = append(payload.Secrets, ContainerSecret{
 		Secret:    source.ID,
 		MountPath: target,
+		Owner:     ownership,
 	})
 
 	// set image ref to empty string
@@ -638,7 +687,7 @@ func (container *Container) Mounts(ctx context.Context) ([]string, error) {
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, target string, source *Socket) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, gw bkgw.Client, target string, source *Socket, owner string) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
@@ -646,9 +695,15 @@ func (container *Container) WithUnixSocket(ctx context.Context, target string, s
 
 	target = absPath(payload.Config.WorkingDir, target)
 
+	ownership, err := container.ownership(ctx, gw, owner)
+	if err != nil {
+		return nil, err
+	}
+
 	newSocket := ContainerSocket{
 		Socket:   source.ID,
 		UnixPath: target,
+		Owner:    ownership,
 	}
 
 	var replaced bool
@@ -811,13 +866,28 @@ func locatePath[T *File | *Directory](
 	return found, nil, nil
 }
 
-func (container *Container) withMounted(target string, srcDef *pb.Definition, srcPath string, svcs ServiceBindings) (*Container, error) {
+func (container *Container) withMounted(
+	ctx context.Context,
+	gw bkgw.Client,
+	target string,
+	srcDef *pb.Definition,
+	srcPath string,
+	svcs ServiceBindings,
+	owner string,
+) (*Container, error) {
 	payload, err := container.ID.decode()
 	if err != nil {
 		return nil, err
 	}
 
 	target = absPath(payload.Config.WorkingDir, target)
+
+	if owner != "" {
+		srcDef, srcPath, err = container.chown(ctx, gw, srcDef, srcPath, owner, llb.Platform(payload.Platform))
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	payload.Mounts = payload.Mounts.With(ContainerMount{
 		Source:     srcDef,
@@ -833,7 +903,86 @@ func (container *Container) withMounted(target string, srcDef *pb.Definition, sr
 	return container.containerFromPayload(payload)
 }
 
-func (container *Container) updateRootFS(ctx context.Context, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
+func (container *Container) chown(
+	ctx context.Context,
+	gw bkgw.Client,
+	srcDef *pb.Definition,
+	srcPath string,
+	owner string,
+	opts ...llb.ConstraintsOpt,
+) (*pb.Definition, string, error) {
+	ownership, err := container.ownership(ctx, gw, owner)
+	if err != nil {
+		return nil, "", err
+	}
+
+	if ownership == nil {
+		return srcDef, srcPath, nil
+	}
+
+	var srcSt llb.State
+	if srcDef == nil {
+		// e.g. empty cache mount
+		srcSt = llb.Scratch().File(
+			llb.Mkdir("/chown", 0o700, ownership.Opt()),
+		)
+
+		srcPath = "/chown"
+	} else {
+		srcSt, err = defToState(srcDef)
+		if err != nil {
+			return nil, "", err
+		}
+
+		def, err := srcSt.Marshal(ctx, opts...)
+		if err != nil {
+			return nil, "", err
+		}
+
+		ref, err := gwRef(ctx, gw, def.ToPB())
+		if err != nil {
+			return nil, "", err
+		}
+
+		stat, err := ref.StatFile(ctx, bkgw.StatRequest{
+			Path: srcPath,
+		})
+		if err != nil {
+			return nil, "", err
+		}
+
+		if stat.IsDir() {
+			chowned := "/chown"
+
+			// NB(vito): need to create intermediate directory with correct ownership
+			// to handle the directory case, otherwise the mount will be owned by
+			// root
+			srcSt = llb.Scratch().File(
+				llb.Mkdir(chowned, os.FileMode(stat.Mode), ownership.Opt()).
+					Copy(srcSt, srcPath, chowned, &llb.CopyInfo{
+						CopyDirContentsOnly: true,
+					}, ownership.Opt()),
+			)
+
+			srcPath = chowned
+		} else {
+			srcSt = llb.Scratch().File(
+				llb.Copy(srcSt, srcPath, ".", ownership.Opt()),
+			)
+
+			srcPath = filepath.Base(srcPath)
+		}
+	}
+
+	def, err := srcSt.Marshal(ctx, opts...)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return def.ToPB(), srcPath, nil
+}
+
+func (container *Container) writeToPath(ctx context.Context, gw bkgw.Client, subdir string, fn func(dir *Directory) (*Directory, error)) (*Container, error) {
 	dir, mount, err := locatePath(ctx, container, subdir, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -847,6 +996,7 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 	if err != nil {
 		return nil, err
 	}
+
 	dirPayload.Pipeline = containerPayload.Pipeline
 
 	dir, err = dirPayload.ToDirectory()
@@ -861,7 +1011,12 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 
 	// If not in a mount, replace rootfs
 	if mount == nil {
-		return container.WithRootFS(ctx, dir)
+		root, err := dir.Root()
+		if err != nil {
+			return nil, err
+		}
+
+		return container.WithRootFS(ctx, root)
 	}
 
 	dirPayload, err = dir.ID.Decode()
@@ -869,7 +1024,7 @@ func (container *Container) updateRootFS(ctx context.Context, subdir string, fn 
 		return nil, err
 	}
 
-	return container.withMounted(mount.Target, dirPayload.LLB, mount.SourcePath, nil)
+	return container.withMounted(ctx, gw, mount.Target, dirPayload.LLB, mount.SourcePath, nil, "")
 }
 
 func (container *Container) ImageConfig(ctx context.Context) (specs.ImageConfig, error) {
@@ -1013,6 +1168,13 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		case secret.MountPath != "":
 			secretDest = secret.MountPath
 			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+			if secret.Owner != nil {
+				secretOpts = append(secretOpts, llb.SecretFileOpt(
+					secret.Owner.UID,
+					secret.Owner.GID,
+					0o400, // preserve default
+				))
+			}
 		default:
 			return nil, fmt.Errorf("malformed secret config at index %d", i)
 		}
@@ -1037,16 +1199,22 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
-		runOpts = append(runOpts,
-			llb.AddSSHSocket(
-				llb.SSHID(socket.Socket.LLBID()),
-				llb.SSHSocketTarget(socket.UnixPath),
-			))
-	}
+		socketOpts := []llb.SSHOption{
+			llb.SSHID(socket.Socket.LLBID()),
+			llb.SSHSocketTarget(socket.UnixPath),
+		}
 
-	fsSt, err := payload.FSState()
-	if err != nil {
-		return nil, fmt.Errorf("fs state: %w", err)
+		if socket.Owner != nil {
+			socketOpts = append(socketOpts,
+				llb.SSHSocketOpt(
+					socket.UnixPath,
+					socket.Owner.UID,
+					socket.Owner.GID,
+					0o600, // preserve default
+				))
+		}
+
+		runOpts = append(runOpts, llb.AddSSHSocket(socketOpts...))
 	}
 
 	for _, mnt := range mounts {
@@ -1056,11 +1224,12 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		}
 
 		mountOpts := []llb.MountOption{}
+
 		if mnt.SourcePath != "" {
 			mountOpts = append(mountOpts, llb.SourcePath(mnt.SourcePath))
 		}
 
-		if mnt.CacheSharingMode != "" {
+		if mnt.CacheID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
 			case "shared":
@@ -1085,6 +1254,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	if opts.InsecureRootCapabilities {
 		runOpts = append(runOpts, llb.Security(llb.SecurityModeInsecure))
+	}
+
+	fsSt, err := payload.FSState()
+	if err != nil {
+		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
 	// first, build without a hostname
@@ -1396,6 +1570,23 @@ func (container *Container) Import(
 		return nil, fmt.Errorf("image archive resolve index: %w", err)
 	}
 
+	// NB: the repository portion of this ref doesn't actually matter, but it's
+	// pleasant to see something recognizable.
+	dummyRepo := "dagger/import"
+
+	st := llb.OCILayout(
+		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		llb.OCIStore("", OCIStoreName),
+		llb.Platform(payload.Platform),
+	)
+
+	execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
+	if err != nil {
+		return nil, fmt.Errorf("marshal root: %w", err)
+	}
+
+	payload.FS = execDef.ToPB()
+
 	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
 	if err != nil {
 		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
@@ -1419,23 +1610,6 @@ func (container *Container) Import(
 	}
 
 	payload.Config = imgSpec.Config
-
-	// NB: the repository portion of this ref doesn't actually matter, but it's
-	// pleasant to see something recognizable.
-	dummyRepo := "dagger/import"
-
-	st := llb.OCILayout(
-		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-		llb.OCIStore("", OCIStoreName),
-		llb.Platform(payload.Platform),
-	)
-
-	execDef, err := st.Marshal(ctx, llb.Platform(payload.Platform))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-
-	payload.FS = execDef.ToPB()
 
 	id, err := payload.Encode()
 	if err != nil {
@@ -1718,6 +1892,25 @@ func (container *Container) containerFromPayload(payload *containerIDPayload) (*
 	}
 
 	return &Container{ID: id}, nil
+}
+
+func (container *Container) ownership(ctx context.Context, gw bkgw.Client, owner string) (*Ownership, error) {
+	if owner == "" {
+		// do not change ownership
+		return nil, nil
+	}
+
+	containerPayload, err := container.ID.decode()
+	if err != nil {
+		return nil, err
+	}
+
+	fsSt, err := containerPayload.FSState()
+	if err != nil {
+		return nil, err
+	}
+
+	return resolveUIDGID(ctx, fsSt, gw, containerPayload.Platform, owner)
 }
 
 type ContainerExecOpts struct {

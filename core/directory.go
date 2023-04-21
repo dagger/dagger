@@ -66,6 +66,23 @@ func (payload *directoryIDPayload) State() (llb.State, error) {
 	return defToState(payload.LLB)
 }
 
+func (payload *directoryIDPayload) StateWithSourcePath() (llb.State, error) {
+	dirSt, err := payload.State()
+	if err != nil {
+		return llb.State{}, err
+	}
+
+	if payload.Dir == "/" {
+		return dirSt, nil
+	}
+
+	return llb.Scratch().File(
+		llb.Copy(dirSt, payload.Dir, ".", &llb.CopyInfo{
+			CopyDirContentsOnly: true,
+		}),
+	), nil
+}
+
 func (payload *directoryIDPayload) SetState(ctx context.Context, st llb.State) error {
 	def, err := st.Marshal(ctx, llb.Platform(payload.Platform))
 	if err != nil {
@@ -87,9 +104,9 @@ func (payload *directoryIDPayload) ToDirectory() (*Directory, error) {
 	}, nil
 }
 
-func NewDirectory(ctx context.Context, st llb.State, cwd string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
+func NewDirectory(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	payload := directoryIDPayload{
-		Dir:      cwd,
+		Dir:      dir,
 		Platform: platform,
 		Pipeline: pipeline.Copy(),
 		Services: services,
@@ -200,7 +217,7 @@ func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) (
 	})
 }
 
-func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode) (*Directory, error) {
+func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []byte, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	err := validateFileName(dest)
 	if err != nil {
 		return nil, err
@@ -228,12 +245,13 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), payload.Pipeline.LLBOpt())
 	}
 
+	opts := []llb.MkfileOption{}
+	if ownership != nil {
+		opts = append(opts, ownership.Opt())
+	}
+
 	st = st.File(
-		llb.Mkfile(
-			dest,
-			permissions,
-			content,
-		),
+		llb.Mkfile(dest, permissions, content, opts...),
 		payload.Pipeline.LLBOpt(),
 	)
 
@@ -275,7 +293,7 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}).ToFile()
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -296,12 +314,20 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
-		CreateDestPath:      true,
-		CopyDirContentsOnly: true,
-		IncludePatterns:     filter.Include,
-		ExcludePatterns:     filter.Exclude,
-	}),
+	opts := []llb.CopyOption{
+		&llb.CopyInfo{
+			CreateDestPath:      true,
+			CopyDirContentsOnly: true,
+			IncludePatterns:     filter.Include,
+			ExcludePatterns:     filter.Exclude,
+		},
+	}
+	if owner != nil {
+		opts = append(opts, owner.Opt())
+	}
+
+	st = st.File(
+		llb.Copy(srcSt, srcPayload.Dir, path.Join(destPayload.Dir, subdir), opts...),
 		destPayload.Pipeline.LLBOpt(),
 	)
 
@@ -372,7 +398,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	return payload.ToDirectory()
 }
 
-func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode) (*Directory, error) {
+func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
 	destPayload, err := dir.ID.Decode()
 	if err != nil {
 		return nil, err
@@ -394,15 +420,25 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 	}
 
 	var perm *fs.FileMode
-
 	if permissions != 0 {
 		perm = &permissions
 	}
 
-	st = st.File(llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), &llb.CopyInfo{
-		CreateDestPath: true,
-		Mode:           perm,
-	}), destPayload.Pipeline.LLBOpt())
+	opts := []llb.CopyOption{
+		&llb.CopyInfo{
+			CreateDestPath: true,
+			Mode:           perm,
+		},
+	}
+
+	if ownership != nil {
+		opts = append(opts, ownership.Opt())
+	}
+
+	st = st.File(
+		llb.Copy(srcSt, srcPayload.File, path.Join(destPayload.Dir, subdir), opts...),
+		destPayload.Pipeline.LLBOpt(),
+	)
 
 	err = destPayload.SetState(ctx, st)
 	if err != nil {
@@ -553,6 +589,18 @@ func (dir *Directory) Export(
 			})
 		})
 	})
+}
+
+// Root removes any relative path from the directory.
+func (dir *Directory) Root() (*Directory, error) {
+	payload, err := dir.ID.Decode()
+	if err != nil {
+		return nil, err
+	}
+
+	payload.Dir = "/"
+
+	return payload.ToDirectory()
 }
 
 func validateFileName(file string) error {

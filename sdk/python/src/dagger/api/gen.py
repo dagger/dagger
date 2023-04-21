@@ -805,6 +805,7 @@ class Container(Type):
         directory: "Directory",
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
+        owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a directory written at the given path.
 
@@ -820,12 +821,18 @@ class Container(Type):
         include:
             Patterns to include in the written directory (e.g., ["*.go",
             "go.mod", "go.sum"]).
+        owner:
+            A user:group to set for the directory and its contents.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("directory", directory),
             Arg("exclude", exclude, None),
             Arg("include", include, None),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withDirectory", _args)
         return Container(_ctx)
@@ -973,6 +980,7 @@ class Container(Type):
         path: str,
         source: "File",
         permissions: Optional[int] = None,
+        owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus the contents of the given file copied to
         the given path.
@@ -986,11 +994,17 @@ class Container(Type):
         permissions:
             Permission given to the copied file (e.g., 0600).
             Default: 0644.
+        owner:
+            A user:group to set for the file.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
             Arg("permissions", permissions, None),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withFile", _args)
         return Container(_ctx)
@@ -1021,6 +1035,7 @@ class Container(Type):
         cache: CacheVolume,
         source: Optional["Directory"] = None,
         sharing: Optional[CacheSharingMode] = None,
+        owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a cache volume mounted at the given
         path.
@@ -1035,18 +1050,34 @@ class Container(Type):
             Identifier of the directory to use as the cache volume's root.
         sharing:
             Sharing mode of the cache volume.
+        owner:
+            A user:group to set for the mounted cache directory.
+            Note that this changes the ownership of the specified mount along
+            with the
+            initial filesystem provided by source (if any). It does not have
+            any effect
+            if/when the cache has already been created.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("cache", cache),
             Arg("source", source, None),
             Arg("sharing", sharing, None),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withMountedCache", _args)
         return Container(_ctx)
 
     @typecheck
-    def with_mounted_directory(self, path: str, source: "Directory") -> "Container":
+    def with_mounted_directory(
+        self,
+        path: str,
+        source: "Directory",
+        owner: Optional[str] = None,
+    ) -> "Container":
         """Retrieves this container plus a directory mounted at the given path.
 
         Parameters
@@ -1055,16 +1086,27 @@ class Container(Type):
             Location of the mounted directory (e.g., "/mnt/directory").
         source:
             Identifier of the mounted directory.
+        owner:
+            A user:group to set for the mounted directory and its contents.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withMountedDirectory", _args)
         return Container(_ctx)
 
     @typecheck
-    def with_mounted_file(self, path: str, source: "File") -> "Container":
+    def with_mounted_file(
+        self,
+        path: str,
+        source: "File",
+        owner: Optional[str] = None,
+    ) -> "Container":
         """Retrieves this container plus a file mounted at the given path.
 
         Parameters
@@ -1073,16 +1115,27 @@ class Container(Type):
             Location of the mounted file (e.g., "/tmp/file.txt").
         source:
             Identifier of the mounted file.
+        owner:
+            A user or user:group to set for the mounted file.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withMountedFile", _args)
         return Container(_ctx)
 
     @typecheck
-    def with_mounted_secret(self, path: str, source: "Secret") -> "Container":
+    def with_mounted_secret(
+        self,
+        path: str,
+        source: "Secret",
+        owner: Optional[str] = None,
+    ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
         given path.
 
@@ -1092,10 +1145,16 @@ class Container(Type):
             Location of the secret file (e.g., "/tmp/secret.txt").
         source:
             Identifier of the secret to mount.
+        owner:
+            A user:group to set for the mounted secret.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withMountedSecret", _args)
         return Container(_ctx)
@@ -1122,6 +1181,7 @@ class Container(Type):
         path: str,
         contents: Optional[str] = None,
         permissions: Optional[int] = None,
+        owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a new file written at the given path.
 
@@ -1134,11 +1194,17 @@ class Container(Type):
         permissions:
             Permission given to the written file (e.g., 0600).
             Default: 0644.
+        owner:
+            A user:group to set for the file.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("contents", contents, None),
             Arg("permissions", permissions, None),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withNewFile", _args)
         return Container(_ctx)
@@ -1230,7 +1296,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_unix_socket(self, path: str, source: "Socket") -> "Container":
+    def with_unix_socket(
+        self,
+        path: str,
+        source: "Socket",
+        owner: Optional[str] = None,
+    ) -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
         socket path.
 
@@ -1240,10 +1311,16 @@ class Container(Type):
             Location of the forwarded Unix socket (e.g., "/tmp/socket").
         source:
             Identifier of the socket to forward.
+        owner:
+            A user:group to set for the mounted socket.
+            The user and group can either be an ID (1000:1000) or a name
+            (foo:bar).
+            If the group is omitted, it defaults to the same as the user.
         """
         _args = [
             Arg("path", path),
             Arg("source", source),
+            Arg("owner", owner, None),
         ]
         _ctx = self._select("withUnixSocket", _args)
         return Container(_ctx)
