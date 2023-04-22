@@ -19,6 +19,10 @@ defmodule Dagger.Client do
     end
   end
 
+  def disconnect(%__MODULE__{conn: conn}) do
+    EngineConn.disconnect(conn)
+  end
+
   def query(%__MODULE__{} = client, query) when is_binary(query) do
     Req.post(client.req,
       url: "/query",

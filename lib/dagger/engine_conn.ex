@@ -1,11 +1,9 @@
 defmodule Dagger.EngineConn do
   @moduledoc false
 
-  defstruct [:port, :token]
+  defstruct [:port, :token, :session_pid]
 
-  @doc """
-  Get Dagger engine connection.
-  """
+  @doc false
   # TODO: plan c: construct conn by downloading cli.
   def get() do
     case from_session_env() do
@@ -14,9 +12,7 @@ defmodule Dagger.EngineConn do
     end
   end
 
-  @doc """
-  Getting Dagger connection from environment variables.
-  """
+  @doc false
   def from_session_env() do
     with {:ok, port} <- System.fetch_env("DAGGER_SESSION_PORT"),
          {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN") do
@@ -28,17 +24,17 @@ defmodule Dagger.EngineConn do
     end
   end
 
+  @doc false
   def from_local_cli() do
     with {:ok, bin} <- System.fetch_env("_EXPERIMENTAL_DAGGER_CLI_BIN"),
          bin when is_binary(bin) <- System.find_executable(bin) do
-      logger_pid = start_logger(self())
-      _pid = start_cli_session(bin, logger_pid)
+      session_pid = spawn_link(Dagger.Session, :start, [bin, self(), &Dagger.StdoutLogger.log/1])
 
       receive do
-        {:conn_params, port, token} ->
-          {:ok, %__MODULE__{port: port, token: token}}
+        {^session_pid, %{"port" => port, "session_token" => token}} ->
+          {:ok, %__MODULE__{port: port, token: token, session_pid: session_pid}}
       after
-        300_000 -> {:error, :no_conn_params_receive}
+        300_000 -> {:error, :session_timeout}
       end
     else
       nil -> {:error, :no_executable}
@@ -46,47 +42,17 @@ defmodule Dagger.EngineConn do
     end
   end
 
-  defp start_cli_session(bin, caller) do
-    spawn_link(fn ->
-      port = Port.open({:spawn_executable, bin}, [:binary, :stderr_to_stdout, args: ["session"]])
-      session_loop(port, caller)
-    end)
-  end
-
-  defp session_loop(port, caller) do
-    receive do
-      {^port, {:data, data}} -> send(caller, {:stdout, data})
-    end
-
-    session_loop(port, caller)
-  end
-
-  defp start_logger(engine_conn_pid) do
-    spawn_link(fn -> logger_loop(engine_conn_pid) end)
-  end
-
-  defp logger_loop(engine_conn_pid) do
-    receive do
-      {:stdout, data} ->
-        case Jason.decode(data) do
-          {:ok, %{"port" => port, "session_token" => token}} ->
-            send(engine_conn_pid, {:conn_params, port, token})
-
-          _otherwise ->
-            IO.write(data)
-        end
-    end
-
-    logger_loop(engine_conn_pid)
-  end
-
-  @doc """
-  Constructing host connection.
-  """
+  # Constructing host connection.
+  @doc false
   def host(%__MODULE__{port: port}), do: "127.0.0.1:#{port}"
 
-  @doc """
-  Get the token.
-  """
+  # Get the token.
+  @doc false
   def token(%__MODULE__{token: token}), do: token
+
+  # Disconnecting from Dagger session.
+  @doc false
+  def disconnect(%__MODULE__{session_pid: pid}) do
+    Dagger.Session.stop(pid)
+  end
 end

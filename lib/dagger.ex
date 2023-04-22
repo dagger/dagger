@@ -23,4 +23,8 @@ defmodule Dagger do
       error -> raise "Cannot connect to Dagger engine, cause: #{inspect(error)}"
     end
   end
+
+  def disconnect(%Dagger.Query{client: client}) do
+    Dagger.Client.disconnect(client)
+  end
 end
