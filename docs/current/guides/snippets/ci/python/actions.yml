@@ -13,7 +13,6 @@ jobs:
           python-version: '3.11'
       - uses: actions/checkout@v3
       - name: Install deps
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
       - name: Run Dagger pipeline
         run: python main.py
