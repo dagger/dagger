@@ -6,6 +6,7 @@ Dagger is a programmable CI/CD engine that runs your pipelines in containers.
 
 Develop your CI/CD pipelines as code, in the same programming language as your application.
 
+<<<<<<< HEAD
 ### Runs your pipelines in containers
 
 Dagger executes your pipelines entirely as [standard OCI containers](https://opencontainers.org/). This has several benefits:
