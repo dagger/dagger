@@ -1480,16 +1480,38 @@ func (container *Container) Export(
 
 const OCIStoreName = "dagger-oci"
 
+var importCache = newCacheMap[FileID, *Container]()
+
 func (container *Container) Import(
 	ctx context.Context,
+	gw bkgw.Client,
 	host *Host,
-	source io.Reader,
+	source FileID,
 	tag string,
 	store content.Store,
 ) (*Container, error) {
+	cached, initializer, found := importCache.GetOrInitialize(source)
+	if found {
+		return cached, nil
+	}
+
+	defer initializer.Release()
+
+	file, err := source.ToFile()
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := file.Open(ctx, host, gw)
+	if err != nil {
+		return nil, err
+	}
+
+	defer src.Close()
+
 	container = container.Clone()
 
-	stream := archive.NewImageImportStream(source, "")
+	stream := archive.NewImageImportStream(src, "")
 
 	desc, err := stream.Import(ctx, store)
 	if err != nil {
@@ -1541,6 +1563,8 @@ func (container *Container) Import(
 	}
 
 	container.Config = imgSpec.Config
+
+	initializer.Put(container)
 
 	return container, nil
 }
