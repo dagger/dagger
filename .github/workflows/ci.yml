@@ -16,7 +16,7 @@ jobs:
         run: |
           LOCAL_BIN="$HOME/.local/bin"
           mkdir -p "$LOCAL_BIN"
-          wget -O https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
+          curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
           tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
           mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
@@ -46,7 +46,7 @@ jobs:
         run: |
           LOCAL_BIN="$HOME/.local/bin"
           mkdir -p "$LOCAL_BIN"
-          wget -O https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
+          curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
           tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
           mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
