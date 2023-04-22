@@ -18,7 +18,7 @@ jobs:
           mkdir -p "$LOCAL_BIN"
           curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
           tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
-          mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
+          mv dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - name: Set up Elixir
@@ -48,7 +48,7 @@ jobs:
           mkdir -p "$LOCAL_BIN"
           curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
           tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
-          mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
+          mv dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - uses: dagger/dagger-for-github@v4
