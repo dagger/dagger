@@ -52,6 +52,10 @@ defmodule Dagger.EngineConn do
 
   # Disconnecting from Dagger session.
   @doc false
+  def disconnect(%__MODULE__{session_pid: nil}) do
+    :ok
+  end
+
   def disconnect(%__MODULE__{session_pid: pid}) do
     Dagger.Session.stop(pid)
   end
