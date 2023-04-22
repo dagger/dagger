@@ -12,9 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: dagger/dagger-for-github@v4
-        with:
-          install-only: true
+      - name: Install Dagger
+        run: |
+          LOCAL_BIN="$HOME/.local/bin"
+          mkdir -p "$LOCAL_BIN"
+          wget -O https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
+          tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
+          mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
+          rm -rf dagger_v0.5.0_linux_amd64*
+          echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
@@ -30,12 +36,21 @@ jobs:
         run: mix deps.get
       - name: Test
         run: |
-          dagger-cue run mix ci.test
+          dagger run mix ci.test
   test-local-cli:
     name: Test local cli
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - name: Install Dagger
+        run: |
+          LOCAL_BIN="$HOME/.local/bin"
+          mkdir -p "$LOCAL_BIN"
+          wget -O https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
+          tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
+          mv dagger_v0.5.0_linux_amd64/dagger "$LOCAL_BIN"
+          rm -rf dagger_v0.5.0_linux_amd64*
+          echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - uses: dagger/dagger-for-github@v4
         with:
           install-only: true
@@ -54,6 +69,6 @@ jobs:
         run: mix deps.get
       - name: Test
         env:
-          _EXPERIMENT_DAGGER_CLI: dagger-cue
+          _EXPERIMENT_DAGGER_CLI: dagger
         run: |
           mix ci.test
