@@ -34,7 +34,7 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
     dagger run node index.mjs
 
   Run a Dagger pipeline written in Python:
-    dagger run python pipeline.py
+    dagger run python main.py
 
   Run a Dagger API request directly:
     jq -n '{query:"{container{id}}"}' | \
