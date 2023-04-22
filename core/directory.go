@@ -20,6 +20,10 @@ import (
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
+// containers stores an internal mapping from a content-derived hash to a real
+// container.
+var directories = newIDStore[DirectoryID, *Directory]()
+
 // Directory is a content-addressed directory.
 type Directory struct {
 	LLB      *pb.Definition `json:"llb"`
@@ -60,22 +64,16 @@ type DirectoryID string
 
 // ToDirectory converts the ID into a real Directory.
 func (id DirectoryID) ToDirectory() (*Directory, error) {
-	var dir Directory
-
 	if id == "" {
-		return &dir, nil
+		return &Directory{}, nil
 	}
 
-	if err := decodeID(&dir, id); err != nil {
-		return nil, err
-	}
-
-	return &dir, nil
+	return directories.Get(id)
 }
 
 // ID marshals the directory into a content-addressed ID.
 func (dir *Directory) ID() (DirectoryID, error) {
-	return encodeID[DirectoryID](dir)
+	return directories.Put(dir)
 }
 
 func (dir *Directory) State() (llb.State, error) {

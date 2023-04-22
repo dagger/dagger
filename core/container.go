@@ -34,6 +34,10 @@ import (
 	"github.com/zeebo/xxh3"
 )
 
+// containers stores an internal mapping from a content-derived hash to a real
+// container.
+var containers = newIDStore[ContainerID, *Container]()
+
 // Container is a content-addressed container.
 type Container struct {
 	// The container's root filesystem.
@@ -108,23 +112,17 @@ func (id ContainerID) String() string {
 }
 
 func (id ContainerID) ToContainer() (*Container, error) {
-	var container Container
-
 	if id == "" {
 		// scratch
-		return &container, nil
+		return &Container{}, nil
 	}
 
-	if err := decodeID(&container, id); err != nil {
-		return nil, err
-	}
-
-	return &container, nil
+	return containers.Get(id)
 }
 
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
-	return encodeID[ContainerID](container)
+	return containers.Put(container)
 }
 
 type HostAlias struct {

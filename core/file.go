@@ -19,6 +19,8 @@ import (
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
+var files = newIDStore[FileID, *File]()
+
 // File is a content-addressed file.
 type File struct {
 	LLB      *pb.Definition `json:"llb"`
@@ -59,16 +61,11 @@ type FileID string
 
 // ID marshals the file into a content-addressed ID.
 func (file *File) ID() (FileID, error) {
-	return encodeID[FileID](file)
+	return files.Put(file)
 }
 
 func (id FileID) ToFile() (*File, error) {
-	var file File
-	if err := decodeID(&file, id); err != nil {
-		return nil, err
-	}
-
-	return &file, nil
+	return files.Get(id)
 }
 
 func (file *File) State() (llb.State, error) {
