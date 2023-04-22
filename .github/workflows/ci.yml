@@ -72,6 +72,6 @@ jobs:
         run: mix deps.get
       - name: Test
         env:
-          _EXPERIMENT_DAGGER_CLI: dagger
+          _EXPERIMENT_DAGGER_CLI_BIN: dagger
         run: |
           mix ci.test
