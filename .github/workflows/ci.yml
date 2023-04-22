@@ -21,6 +21,9 @@ jobs:
           mv dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
+      - name: Show Dagger version
+        run: |
+          dagger version
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
@@ -51,9 +54,9 @@ jobs:
           mv dagger "$LOCAL_BIN"
           rm -rf dagger_v0.5.0_linux_amd64*
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
-      - uses: dagger/dagger-for-github@v4
-        with:
-          install-only: true
+      - name: Show Dagger version
+        run: |
+          dagger version
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
