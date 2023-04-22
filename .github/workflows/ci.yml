@@ -30,7 +30,7 @@ jobs:
         run: mix deps.get
       - name: Test
         run: |
-          dagger run mix ci.test
+          dagger-cue run mix ci.test
   test-local-cli:
     name: Test local cli
     runs-on: ubuntu-latest
@@ -54,6 +54,6 @@ jobs:
         run: mix deps.get
       - name: Test
         env:
-          _EXPERIMENT_DAGGER_CLI: dagger
+          _EXPERIMENT_DAGGER_CLI: dagger-cue
         run: |
           mix ci.test
