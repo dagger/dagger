@@ -367,6 +367,19 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
+var buildCache = newCacheMap[uint64, *Container]()
+
+func cacheKey(keys ...any) uint64 {
+	hash := xxh3.New()
+
+	enc := json.NewEncoder(hash)
+	for _, key := range keys {
+		enc.Encode(key)
+	}
+
+	return hash.Sum64()
+}
+
 func (container *Container) Build(
 	ctx context.Context,
 	gw bkgw.Client,
@@ -376,6 +389,13 @@ func (container *Container) Build(
 	target string,
 	secrets []SecretID,
 ) (*Container, error) {
+	cached, initializer, found := buildCache.GetOrInitialize(cacheKey(context, dockerfile, buildArgs, target, secrets))
+	if found {
+		return cached, nil
+	}
+
+	defer initializer.Release()
+
 	container = container.Clone()
 
 	container.Services.Merge(context.Services)
@@ -473,6 +493,8 @@ func (container *Container) Build(
 
 			container.Config = imgSpec.Config
 		}
+
+		initializer.Put(container)
 
 		return container, nil
 	})
