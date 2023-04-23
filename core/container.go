@@ -413,6 +413,7 @@ func (container *Container) Build(ctx context.Context, gw bkgw.Client, context *
 		}))
 
 		container.FS = def.ToPB()
+		container.FS.Source = nil
 
 		cfgBytes, found := res.Metadata[exptypes.ExporterImageConfigKey]
 		if found {
