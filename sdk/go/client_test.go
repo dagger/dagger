@@ -161,16 +161,25 @@ func TestList(t *testing.T) {
 		Container().
 		From("alpine:3.16.2").
 		WithEnvVariable("FOO", "BAR").
+		WithEnvVariable("BAR", "BAZ").
 		EnvVariables(ctx)
 
 	require.NoError(t, err)
 
-	envName, err := envs[0].Name(ctx)
+	envName, err := envs[1].Name(ctx)
 	require.NoError(t, err)
 
-	envValue, err := envs[0].Value(ctx)
+	envValue, err := envs[1].Value(ctx)
 	require.NoError(t, err)
 
 	require.Equal(t, "FOO", envName)
 	require.Equal(t, "BAR", envValue)
+
+	envName, err = envs[2].Name(ctx)
+	require.NoError(t, err)
+
+	envValue, err = envs[2].Value(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envName)
+	require.Equal(t, "BAZ", envValue)
 }

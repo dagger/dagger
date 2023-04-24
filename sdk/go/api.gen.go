@@ -267,8 +267,8 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	convert := func(fields []envVariables) []EnvVariable {
 		out := []EnvVariable{}
 
-		for _, field := range fields {
-			out = append(out, EnvVariable{name: &field.Name, value: &field.Value})
+		for i := range fields {
+			out = append(out, EnvVariable{name: &fields[i].Name, value: &fields[i].Value})
 		}
 
 		return out
@@ -410,8 +410,8 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	convert := func(fields []exposedPorts) []Port {
 		out := []Port{}
 
-		for _, field := range fields {
-			out = append(out, Port{description: &field.Description, port: &field.Port, protocol: &field.Protocol})
+		for i := range fields {
+			out = append(out, Port{description: &fields[i].Description, port: &fields[i].Port, protocol: &fields[i].Protocol})
 		}
 
 		return out
@@ -575,8 +575,8 @@ func (r *Container) Labels(ctx context.Context) ([]Label, error) {
 	convert := func(fields []labels) []Label {
 		out := []Label{}
 
-		for _, field := range fields {
-			out = append(out, Label{name: &field.Name, value: &field.Value})
+		for i := range fields {
+			out = append(out, Label{name: &fields[i].Name, value: &fields[i].Value})
 		}
 
 		return out
@@ -2250,8 +2250,8 @@ func (r *Project) Extensions(ctx context.Context) ([]Project, error) {
 	convert := func(fields []extensions) []Project {
 		out := []Project{}
 
-		for _, field := range fields {
-			out = append(out, Project{install: &field.Install, name: &field.Name, schema: &field.Schema, sdk: &field.Sdk})
+		for i := range fields {
+			out = append(out, Project{install: &fields[i].Install, name: &fields[i].Name, schema: &fields[i].Schema, sdk: &fields[i].Sdk})
 		}
 
 		return out

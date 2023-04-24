@@ -86,7 +86,7 @@ type {{ $field | FieldOptionsStructName }} struct {
     convert := func(fields []{{ $field.Name | ToLowerCase }}) {{ $field.TypeRef | FormatOutputType }} {
         out := {{ $field.TypeRef | FormatOutputType }}{}
 
-        for _, field := range fields {
+        for i := range fields {
             out = append(out, {{ $field.TypeRef | FormatOutputType | FormatArrayToSingleType }}{{"{"}}{{ $field | GetArrayField | FormatArrayField }}{{"}"}})
         }
 
