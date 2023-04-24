@@ -28,11 +28,22 @@ func InstallDnsmasq(name string) error {
 		return fmt.Errorf("write dnsmasq.conf: %w", err)
 	}
 
-	dnsmasq := exec.Command(dnsmasqPath, "-u", "root", "--conf-file="+dnsmasqConfigFile)
+	dnsmasq := exec.Command(dnsmasqPath, "--no-daemon", "--log-debug", "-u", "root", "--conf-file="+dnsmasqConfigFile)
 
-	if b, err := dnsmasq.CombinedOutput(); err != nil {
-		return fmt.Errorf("start dnsmasq: %w; output:\n%s", err, string(b))
+	// forward dnsmasq logs to engine logs for debugging
+	dnsmasq.Stdout = os.Stdout
+	dnsmasq.Stderr = os.Stderr
+
+	if err := dnsmasq.Start(); err != nil {
+		return fmt.Errorf("start dnsmasq: %w", err)
 	}
+
+	go func() {
+		err := dnsmasq.Wait()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dnsmasq exited: %v\n", err)
+		}
+	}()
 
 	return nil
 }
