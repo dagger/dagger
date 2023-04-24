@@ -36,7 +36,7 @@ import (
 
 // containers stores an internal mapping from a content-derived hash to a real
 // container.
-var containers = newIDStore[ContainerID, *Container]()
+var containers = newIDStore[*Container]()
 
 // Container is a content-addressed container.
 type Container struct {
@@ -105,10 +105,14 @@ func (container *Container) Clone() *Container {
 }
 
 // ContainerID is an opaque value representing a content-addressed container.
-type ContainerID string
+type ContainerID digest.Digest
 
 func (id ContainerID) String() string {
 	return string(id)
+}
+
+func (dir ContainerID) Digest() digest.Digest {
+	return digest.Digest(dir)
 }
 
 func (id ContainerID) ToContainer() (*Container, error) {
@@ -117,11 +121,20 @@ func (id ContainerID) ToContainer() (*Container, error) {
 		return &Container{}, nil
 	}
 
-	return containers.Get(id)
+	return containers.Get(id.Digest())
 }
 
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
+	digest, err := containers.Put(container)
+	if err != nil {
+		return "", err
+	}
+	return ContainerID(digest), nil
+}
+
+// ID marshals the container into a content-addressed ID.
+func (container *Container) Digest() (digest.Digest, error) {
 	return containers.Put(container)
 }
 

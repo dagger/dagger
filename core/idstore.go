@@ -5,21 +5,21 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/zeebo/xxh3"
+	"github.com/opencontainers/go-digest"
 )
 
-type idStore[K ~string, T any] struct {
-	cache map[K]T
+type idStore[T any] struct {
+	cache map[digest.Digest]T
 	l     sync.Mutex
 }
 
-func newIDStore[K ~string, T any]() *idStore[K, T] {
-	return &idStore[K, T]{
-		cache: make(map[K]T),
+func newIDStore[T any]() *idStore[T] {
+	return &idStore[T]{
+		cache: make(map[digest.Digest]T),
 	}
 }
 
-func (cache *idStore[K, T]) Get(key K) (T, error) {
+func (cache *idStore[T]) Get(key digest.Digest) (T, error) {
 	cache.l.Lock()
 	defer cache.l.Unlock()
 
@@ -31,18 +31,18 @@ func (cache *idStore[K, T]) Get(key K) (T, error) {
 	return val, nil
 }
 
-func (cache *idStore[K, T]) Put(val T) (K, error) {
+func (cache *idStore[T]) Put(val T) (digest.Digest, error) {
 	cache.l.Lock()
 	defer cache.l.Unlock()
 
-	hasher := xxh3.New()
+	hasher := digest.SHA256.Hash()
 
 	err := json.NewEncoder(hasher).Encode(val)
 	if err != nil {
 		return "", err
 	}
 
-	hash := K(b32(hasher.Sum64()))
+	hash := digest.NewDigest(digest.SHA256, hasher)
 
 	cache.cache[hash] = val
 

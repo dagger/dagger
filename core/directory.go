@@ -15,6 +15,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -22,7 +23,7 @@ import (
 
 // containers stores an internal mapping from a content-derived hash to a real
 // container.
-var directories = newIDStore[DirectoryID, *Directory]()
+var directories = newIDStore[*Directory]()
 
 // Directory is a content-addressed directory.
 type Directory struct {
@@ -60,7 +61,11 @@ func (dir *Directory) Clone() *Directory {
 }
 
 // DirectoryID is an opaque value representing a content-addressed directory.
-type DirectoryID string
+type DirectoryID digest.Digest
+
+func (dir DirectoryID) Digest() digest.Digest {
+	return digest.Digest(dir)
+}
 
 // ToDirectory converts the ID into a real Directory.
 func (id DirectoryID) ToDirectory() (*Directory, error) {
@@ -68,11 +73,20 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 		return &Directory{}, nil
 	}
 
-	return directories.Get(id)
+	return directories.Get(id.Digest())
 }
 
 // ID marshals the directory into a content-addressed ID.
 func (dir *Directory) ID() (DirectoryID, error) {
+	digest, err := directories.Put(dir)
+	if err != nil {
+		return "", err
+	}
+	return DirectoryID(digest), nil
+}
+
+// ID marshals the directory into a content-addressed ID.
+func (dir *Directory) Digest() (digest.Digest, error) {
 	return directories.Put(dir)
 }
 

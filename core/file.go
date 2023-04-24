@@ -15,11 +15,12 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
 
-var files = newIDStore[FileID, *File]()
+var files = newIDStore[*File]()
 
 // File is a content-addressed file.
 type File struct {
@@ -60,12 +61,21 @@ func (file *File) Clone() *File {
 type FileID string
 
 // ID marshals the file into a content-addressed ID.
-func (file *File) ID() (FileID, error) {
-	return files.Put(file)
+func (id FileID) Digest() digest.Digest {
+	return digest.Digest(id)
 }
 
 func (id FileID) ToFile() (*File, error) {
-	return files.Get(id)
+	return files.Get(id.Digest())
+}
+
+// ID marshals the file into a content-addressed ID.
+func (file *File) ID() (FileID, error) {
+	digest, err := files.Put(file)
+	if err != nil {
+		return "", err
+	}
+	return FileID(digest), nil
 }
 
 func (file *File) State() (llb.State, error) {
