@@ -14,13 +14,16 @@ func InstallDnsmasq(name string) error {
 		return err
 	}
 
-	pidfile := pidfilePath(name)
+	hostsFile := hostsPath(name)
+	if err := createIfNeeded(hostsFile); err != nil {
+		return err
+	}
 
 	config := dnsmasqConfig{
 		Domain:             name + ".local",
 		NetworkInterface:   name + "0",
-		PidFile:            pidfile,
-		AddnHostsFile:      hostsPath(name),
+		PidFile:            pidfilePath(name),
+		AddnHostsFile:      hostsFile,
 		UpstreamResolvFile: upstreamResolvPath,
 	}
 

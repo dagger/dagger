@@ -949,16 +949,6 @@ func setupNetwork(netName, netCIDR string) (string, error) {
 		return "", nil
 	}
 
-	err := network.InstallDnsmasq(netName)
-	if err != nil {
-		return "", fmt.Errorf("install dnsmasq: %w", err)
-	}
-
-	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
-	if err != nil {
-		return "", fmt.Errorf("install cni: %w", err)
-	}
-
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
 		return "", fmt.Errorf("bridge from cidr: %w", err)
@@ -967,6 +957,16 @@ func setupNetwork(netName, netCIDR string) (string, error) {
 	err = network.InstallResolvconf(netName, bridge.String())
 	if err != nil {
 		return "", fmt.Errorf("install resolv.conf: %w", err)
+	}
+
+	err = network.InstallDnsmasq(netName)
+	if err != nil {
+		return "", fmt.Errorf("install dnsmasq: %w", err)
+	}
+
+	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	if err != nil {
+		return "", fmt.Errorf("install cni: %w", err)
 	}
 
 	return cniConfigPath, nil
