@@ -41,6 +41,15 @@ type BuildArg struct {
 	Value string `json:"value"`
 }
 
+// A simple key value object that represents an environment variable.
+type EnvVars struct {
+	// The environment variable name.
+	Name string `json:"name"`
+
+	// "The environment variable value."
+	Value string `json:"value"`
+}
+
 // Key value object that represents a Pipeline label.
 type PipelineLabel struct {
 	// Label name.
@@ -817,6 +826,17 @@ func (r *Container) WithEnvVariable(name string, value string) *Container {
 	q := r.q.Select("withEnvVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Retrieves this container plus the given list of environment variables.
+func (r *Container) WithEnvVariables(args []EnvVars) *Container {
+	q := r.q.Select("withEnvVariables")
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,

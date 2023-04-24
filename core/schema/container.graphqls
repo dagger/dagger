@@ -163,6 +163,16 @@ type Container {
     value: String!
   ): Container!
 
+  """
+  Retrieves this container plus the given list of environment variables.
+  """
+  withEnvVariables(
+    """
+    List of environment variables to add.
+    """
+    args: [EnvVars!]!
+  ): Container!
+
   "Retrieves the list of labels passed to container."
   labels: [Label!]!
 

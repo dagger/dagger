@@ -24,3 +24,18 @@ input PipelineLabel {
   """
   value: String!
 }
+
+"""
+A simple key value object that represents an environment variable.
+"""
+input EnvVars {
+  """
+  The environment variable name.
+  """
+  name: String!
+
+  """
+  "The environment variable value."
+  """
+  value: String!
+}

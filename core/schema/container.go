@@ -53,6 +53,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"envVariables":         router.ToResolver(s.envVariables),
 			"envVariable":          router.ToResolver(s.envVariable),
 			"withEnvVariable":      router.ToResolver(s.withEnvVariable),
+			"withEnvVariables":     router.ToResolver(s.withEnvVariables),
 			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
 			"withoutEnvVariable":   router.ToResolver(s.withoutEnvVariable),
 			"withLabel":            router.ToResolver(s.withLabel),
@@ -305,6 +306,26 @@ func (s *containerSchema) withEnvVariable(ctx *router.Context, parent *core.Cont
 
 		return cfg
 	})
+}
+
+type containerWithVariablesArgs struct {
+	Args []containerWithVariableArgs
+}
+
+func (s *containerSchema) withEnvVariables(ctx *router.Context, parent *core.Container, args containerWithVariablesArgs) (*core.Container, error) {
+	container := parent
+	for _, envVar := range args.Args {
+		if envVar.Name == "" || envVar.Value == "" {
+			return nil, fmt.Errorf("has to contain name and value arguments")
+		}
+
+		updatedContainer, err := s.withEnvVariable(ctx, container, envVar)
+		if err != nil {
+			return nil, err
+		}
+		container = updatedContainer
+	}
+	return container, nil
 }
 
 type containerWithoutVariableArgs struct {
