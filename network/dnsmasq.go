@@ -93,7 +93,6 @@ domain={{.Domain}}
 expand-hosts
 pid-file={{.PidFile}}
 except-interface=lo
-bind-dynamic
 no-hosts
 interface={{.NetworkInterface}}
 addn-hosts={{.AddnHostsFile}}
