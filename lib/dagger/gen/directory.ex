@@ -27,15 +27,35 @@ defmodule Dagger.Directory do
     def docker_build(%__MODULE__{} = directory, args) do
       selection = select(directory.selection, "dockerBuild")
 
-      {_opts, selection} =
-        [:dockerfile, :platform, :build_args, :target]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:dockerfile]) do
+            arg(selection, "dockerfile", args[:dockerfile])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:platform]) do
+            arg(selection, "platform", args[:platform])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:build_args]) do
+            arg(selection, "buildArgs", args[:build_args])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:target]) do
+            arg(selection, "target", args[:target])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: directory.client}
     end
@@ -46,15 +66,12 @@ defmodule Dagger.Directory do
     def entries(%__MODULE__{} = directory, args) do
       selection = select(directory.selection, "entries")
 
-      {_opts, selection} =
-        [:path]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:path]) do
+          arg(selection, "path", args[:path])
+        else
+          selection
+        end
 
       execute(selection, directory.client)
     end
@@ -101,15 +118,21 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "pipeline")
       selection = arg(selection, "name", Keyword.fetch!(args, :name))
 
-      {_opts, selection} =
-        [:description, :labels]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:description]) do
+            arg(selection, "description", args[:description])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:labels]) do
+            arg(selection, "labels", args[:labels])
+          else
+            selection
+          end
+      )
 
       %Dagger.Directory{selection: selection, client: directory.client}
     end
@@ -122,15 +145,21 @@ defmodule Dagger.Directory do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "directory", Keyword.fetch!(args, :directory))
 
-      {_opts, selection} =
-        [:exclude, :include]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:exclude]) do
+            arg(selection, "exclude", args[:exclude])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:include]) do
+            arg(selection, "include", args[:include])
+          else
+            selection
+          end
+      )
 
       %Dagger.Directory{selection: selection, client: directory.client}
     end
@@ -143,15 +172,12 @@ defmodule Dagger.Directory do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "source", Keyword.fetch!(args, :source))
 
-      {_opts, selection} =
-        [:permissions]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:permissions]) do
+          arg(selection, "permissions", args[:permissions])
+        else
+          selection
+        end
 
       %Dagger.Directory{selection: selection, client: directory.client}
     end
@@ -163,15 +189,12 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "withNewDirectory")
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
-      {_opts, selection} =
-        [:permissions]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:permissions]) do
+          arg(selection, "permissions", args[:permissions])
+        else
+          selection
+        end
 
       %Dagger.Directory{selection: selection, client: directory.client}
     end
@@ -184,15 +207,12 @@ defmodule Dagger.Directory do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "contents", Keyword.fetch!(args, :contents))
 
-      {_opts, selection} =
-        [:permissions]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:permissions]) do
+          arg(selection, "permissions", args[:permissions])
+        else
+          selection
+        end
 
       %Dagger.Directory{selection: selection, client: directory.client}
     end

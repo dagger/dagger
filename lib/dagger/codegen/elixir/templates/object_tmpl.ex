@@ -168,9 +168,18 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
   defp render_optional_args(args) do
     args =
-      for arg <- args,
-          arg["type"]["kind"] != "NON_NULL" do
-        Function.format_name(arg["name"])
+      for arg <- args, arg["type"]["kind"] != "NON_NULL" do
+        name = arg["name"]
+        arg_name = Function.format_name(name)
+
+        quote do
+          selection =
+            if not is_nil(args[unquote(arg_name)]) do
+              arg(selection, unquote(name), args[unquote(arg_name)])
+            else
+              selection
+            end
+        end
       end
 
     case args do
@@ -179,15 +188,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
       args ->
         quote do
-          {_opts, selection} =
-            unquote(args)
-            |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-              if not is_nil(args[arg]) do
-                {args, arg(selection, to_string(arg), args[arg])}
-              else
-                {args, selection}
-              end
-            end)
+          (unquote_splicing(args))
         end
     end
   end

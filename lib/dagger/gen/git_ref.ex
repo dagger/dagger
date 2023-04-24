@@ -17,15 +17,21 @@ defmodule Dagger.GitRef do
     def tree(%__MODULE__{} = git_ref, args) do
       selection = select(git_ref.selection, "tree")
 
-      {_opts, selection} =
-        [:ssh_known_hosts, :ssh_auth_socket]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:ssh_known_hosts]) do
+            arg(selection, "sshKnownHosts", args[:ssh_known_hosts])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:ssh_auth_socket]) do
+            arg(selection, "sshAuthSocket", args[:ssh_auth_socket])
+          else
+            selection
+          end
+      )
 
       %Dagger.Directory{selection: selection, client: git_ref.client}
     end

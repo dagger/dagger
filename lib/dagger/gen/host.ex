@@ -10,15 +10,21 @@ defmodule Dagger.Host do
       selection = select(host.selection, "directory")
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
-      {_opts, selection} =
-        [:exclude, :include]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:exclude]) do
+            arg(selection, "exclude", args[:exclude])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:include]) do
+            arg(selection, "include", args[:include])
+          else
+            selection
+          end
+      )
 
       %Dagger.Directory{selection: selection, client: host.client}
     end
@@ -48,15 +54,21 @@ defmodule Dagger.Host do
     def workdir(%__MODULE__{} = host, args) do
       selection = select(host.selection, "workdir")
 
-      {_opts, selection} =
-        [:exclude, :include]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:exclude]) do
+            arg(selection, "exclude", args[:exclude])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:include]) do
+            arg(selection, "include", args[:include])
+          else
+            selection
+          end
+      )
 
       %Dagger.Directory{selection: selection, client: host.client}
     end

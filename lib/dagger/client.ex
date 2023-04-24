@@ -15,7 +15,7 @@ defmodule Dagger.Client do
        %__MODULE__{
          req: Req.new(base_url: "http://#{host}") |> AbsintheClient.attach(),
          conn: conn,
-	 opts: opts
+         opts: opts
        }}
     end
   end

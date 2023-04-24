@@ -10,15 +10,28 @@ defmodule Dagger.Container do
       selection = select(container.selection, "build")
       selection = arg(selection, "context", Keyword.fetch!(args, :context))
 
-      {_opts, selection} =
-        [:dockerfile, :build_args, :target]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:dockerfile]) do
+            arg(selection, "dockerfile", args[:dockerfile])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:build_args]) do
+            arg(selection, "buildArgs", args[:build_args])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:target]) do
+            arg(selection, "target", args[:target])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -46,15 +59,21 @@ defmodule Dagger.Container do
     def endpoint(%__MODULE__{} = container, args) do
       selection = select(container.selection, "endpoint")
 
-      {_opts, selection} =
-        [:port, :scheme]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:port]) do
+            arg(selection, "port", args[:port])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:scheme]) do
+            arg(selection, "scheme", args[:scheme])
+          else
+            selection
+          end
+      )
 
       execute(selection, container.client)
     end
@@ -91,15 +110,46 @@ defmodule Dagger.Container do
     def exec(%__MODULE__{} = container, args) do
       selection = select(container.selection, "exec")
 
-      {_opts, selection} =
-        [:args, :stdin, :redirect_stdout, :redirect_stderr, :experimental_privileged_nesting]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:args]) do
+            arg(selection, "args", args[:args])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:stdin]) do
+            arg(selection, "stdin", args[:stdin])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:redirect_stdout]) do
+            arg(selection, "redirectStdout", args[:redirect_stdout])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:redirect_stderr]) do
+            arg(selection, "redirectStderr", args[:redirect_stderr])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:experimental_privileged_nesting]) do
+            arg(
+              selection,
+              "experimentalPrivilegedNesting",
+              args[:experimental_privileged_nesting]
+            )
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -119,15 +169,12 @@ defmodule Dagger.Container do
       selection = select(container.selection, "export")
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
-      {_opts, selection} =
-        [:platform_variants]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:platform_variants]) do
+          arg(selection, "platformVariants", args[:platform_variants])
+        else
+          selection
+        end
 
       execute(selection, container.client)
     end
@@ -198,15 +245,12 @@ defmodule Dagger.Container do
       selection = select(container.selection, "import")
       selection = arg(selection, "source", Keyword.fetch!(args, :source))
 
-      {_opts, selection} =
-        [:tag]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:tag]) do
+          arg(selection, "tag", args[:tag])
+        else
+          selection
+        end
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -243,15 +287,21 @@ defmodule Dagger.Container do
       selection = select(container.selection, "pipeline")
       selection = arg(selection, "name", Keyword.fetch!(args, :name))
 
-      {_opts, selection} =
-        [:description, :labels]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:description]) do
+            arg(selection, "description", args[:description])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:labels]) do
+            arg(selection, "labels", args[:labels])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -271,15 +321,12 @@ defmodule Dagger.Container do
       selection = select(container.selection, "publish")
       selection = arg(selection, "address", Keyword.fetch!(args, :address))
 
-      {_opts, selection} =
-        [:platform_variants]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:platform_variants]) do
+          arg(selection, "platformVariants", args[:platform_variants])
+        else
+          selection
+        end
 
       execute(selection, container.client)
     end
@@ -322,15 +369,12 @@ defmodule Dagger.Container do
     def with_default_args(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withDefaultArgs")
 
-      {_opts, selection} =
-        [:args]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:args]) do
+          arg(selection, "args", args[:args])
+        else
+          selection
+        end
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -343,15 +387,21 @@ defmodule Dagger.Container do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "directory", Keyword.fetch!(args, :directory))
 
-      {_opts, selection} =
-        [:exclude, :include]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:exclude]) do
+            arg(selection, "exclude", args[:exclude])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:include]) do
+            arg(selection, "include", args[:include])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -382,21 +432,46 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withExec")
       selection = arg(selection, "args", Keyword.fetch!(args, :args))
 
-      {_opts, selection} =
-        [
-          :stdin,
-          :redirect_stdout,
-          :redirect_stderr,
-          :experimental_privileged_nesting,
-          :insecure_root_capabilities
-        ]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:stdin]) do
+            arg(selection, "stdin", args[:stdin])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:redirect_stdout]) do
+            arg(selection, "redirectStdout", args[:redirect_stdout])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:redirect_stderr]) do
+            arg(selection, "redirectStderr", args[:redirect_stderr])
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:experimental_privileged_nesting]) do
+            arg(
+              selection,
+              "experimentalPrivilegedNesting",
+              args[:experimental_privileged_nesting]
+            )
+          else
+            selection
+          end
+
+        selection =
+          if not is_nil(args[:insecure_root_capabilities]) do
+            arg(selection, "insecureRootCapabilities", args[:insecure_root_capabilities])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -408,15 +483,21 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withExposedPort")
       selection = arg(selection, "port", Keyword.fetch!(args, :port))
 
-      {_opts, selection} =
-        [:protocol, :description]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:protocol]) do
+            arg(selection, "protocol", args[:protocol])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:description]) do
+            arg(selection, "description", args[:description])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -439,15 +520,12 @@ defmodule Dagger.Container do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "source", Keyword.fetch!(args, :source))
 
-      {_opts, selection} =
-        [:permissions]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:permissions]) do
+          arg(selection, "permissions", args[:permissions])
+        else
+          selection
+        end
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -470,15 +548,21 @@ defmodule Dagger.Container do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
       selection = arg(selection, "cache", Keyword.fetch!(args, :cache))
 
-      {_opts, selection} =
-        [:source, :sharing]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:source]) do
+            arg(selection, "source", args[:source])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:sharing]) do
+            arg(selection, "sharing", args[:sharing])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -529,15 +613,21 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withNewFile")
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
-      {_opts, selection} =
-        [:contents, :permissions]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+      (
+        selection =
+          if not is_nil(args[:contents]) do
+            arg(selection, "contents", args[:contents])
           else
-            {args, selection}
+            selection
           end
-        end)
+
+        selection =
+          if not is_nil(args[:permissions]) do
+            arg(selection, "permissions", args[:permissions])
+          else
+            selection
+          end
+      )
 
       %Dagger.Container{selection: selection, client: container.client}
     end
@@ -626,15 +716,12 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withoutExposedPort")
       selection = arg(selection, "port", Keyword.fetch!(args, :port))
 
-      {_opts, selection} =
-        [:protocol]
-        |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
-          if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
-          else
-            {args, selection}
-          end
-        end)
+      selection =
+        if not is_nil(args[:protocol]) do
+          arg(selection, "protocol", args[:protocol])
+        else
+          selection
+        end
 
       %Dagger.Container{selection: selection, client: container.client}
     end
