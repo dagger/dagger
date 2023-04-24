@@ -19,10 +19,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "container")
 
       {_opts, selection} =
-        [:id, :platform]
+        ["id", "platform"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end
@@ -46,10 +46,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "directory")
 
       {_opts, selection} =
-        [:id]
+        ["id"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end
@@ -75,10 +75,10 @@ defmodule Dagger.Query do
       selection = arg(selection, "url", Keyword.fetch!(args, :url))
 
       {_opts, selection} =
-        [:keep_git_dir, :experimental_service_host]
+        ["keep_git_dir", "experimental_service_host"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end
@@ -103,10 +103,10 @@ defmodule Dagger.Query do
       selection = arg(selection, "url", Keyword.fetch!(args, :url))
 
       {_opts, selection} =
-        [:experimental_service_host]
+        ["experimental_service_host"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end
@@ -123,10 +123,10 @@ defmodule Dagger.Query do
       selection = arg(selection, "name", Keyword.fetch!(args, :name))
 
       {_opts, selection} =
-        [:description, :labels]
+        ["description", "labels"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end
@@ -170,10 +170,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "socket")
 
       {_opts, selection} =
-        [:id]
+        ["id"]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, to_string(arg), args[arg])}
+            {args, arg(selection, arg, args[arg])}
           else
             {args, selection}
           end

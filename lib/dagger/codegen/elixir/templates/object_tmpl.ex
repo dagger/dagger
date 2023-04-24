@@ -170,7 +170,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     args =
       for arg <- args,
           arg["type"]["kind"] != "NON_NULL" do
-        Function.format_name(arg["name"])
+        Function.format_name(arg["name"]) |> to_string()
       end
 
     case args do
@@ -183,7 +183,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
             unquote(args)
             |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
               if not is_nil(args[arg]) do
-                {args, arg(selection, to_string(arg), args[arg])}
+                {args, arg(selection, arg, args[arg])}
               else
                 {args, selection}
               end
