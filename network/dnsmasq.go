@@ -14,10 +14,12 @@ func InstallDnsmasq(name string) error {
 		return err
 	}
 
+	pidfile := pidfilePath(name)
+
 	config := dnsmasqConfig{
 		Domain:             name + ".local",
 		NetworkInterface:   name + "0",
-		PidFile:            pidfilePath(name),
+		PidFile:            pidfile,
 		AddnHostsFile:      hostsPath(name),
 		UpstreamResolvFile: upstreamResolvPath,
 	}
@@ -28,7 +30,14 @@ func InstallDnsmasq(name string) error {
 		return fmt.Errorf("write dnsmasq.conf: %w", err)
 	}
 
-	dnsmasq := exec.Command(dnsmasqPath, "--no-daemon", "--log-debug", "-u", "root", "--conf-file="+dnsmasqConfigFile)
+	dnsmasq := exec.Command(
+		dnsmasqPath,
+		"--keep-in-foreground",
+		"--log-facility=-",
+		"--log-debug",
+		"-u", "root",
+		"--conf-file="+dnsmasqConfigFile,
+	)
 
 	// forward dnsmasq logs to engine logs for debugging
 	dnsmasq.Stdout = os.Stdout
