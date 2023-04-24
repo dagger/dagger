@@ -86,7 +86,9 @@ func (s *Selection) build(ctx context.Context) (string, error) {
 	var b strings.Builder
 	b.WriteString("query")
 
-	for _, sel := range s.path() {
+	path := s.path()
+
+	for _, sel := range path {
 		b.WriteRune('{')
 
 		if sel.alias != "" {
@@ -112,7 +114,7 @@ func (s *Selection) build(ctx context.Context) (string, error) {
 		}
 	}
 
-	b.WriteString(strings.Repeat("}", len(s.path())))
+	b.WriteString(strings.Repeat("}", len(path)))
 	return b.String(), nil
 }
 
