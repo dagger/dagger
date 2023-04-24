@@ -64,15 +64,13 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
 			return v.String(), nil
-		} else {
-			return strconv.Quote(v.String()), nil
 		}
+		return strconv.Quote(v.String()), nil
 	case reflect.Pointer:
 		if v.IsNil() {
 			return "null", nil
-		} else {
-			return marshalValue(ctx, v.Elem())
 		}
+		return marshalValue(ctx, v.Elem())
 	case reflect.Slice:
 		var b strings.Builder
 		b.WriteRune('[')
