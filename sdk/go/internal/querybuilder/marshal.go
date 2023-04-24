@@ -52,30 +52,29 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		return marshalCustom(ctx, v)
 	}
 
-	var b strings.Builder
-
 	switch t.Kind() {
 	case reflect.Bool:
-		b.WriteString(strconv.FormatBool(v.Bool()))
+		return strconv.FormatBool(v.Bool()), nil
 	case reflect.Int:
-		b.WriteString(strconv.FormatInt(v.Int(), 10))
+		return strconv.FormatInt(v.Int(), 10), nil
 	case reflect.String:
 		name := t.Name()
 		// distinguish enum const values and customScalars from string type
 		// GraphQL complains if you try to put a string literal in place of an enum: FOO vs "FOO"
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
-			b.WriteString(v.String())
+			return v.String(), nil
 		} else {
-			b.WriteString(strconv.Quote(v.String()))
+			return strconv.Quote(v.String()), nil
 		}
 	case reflect.Pointer:
 		if v.IsNil() {
-			b.WriteString("null")
+			return "null", nil
 		} else {
 			return marshalValue(ctx, v.Elem())
 		}
 	case reflect.Slice:
+		var b strings.Builder
 		b.WriteRune('[')
 		n := v.Len()
 		for i := 0; i < n; i++ {
@@ -89,7 +88,9 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 			b.WriteString(m)
 		}
 		b.WriteRune(']')
+		return b.String(), nil
 	case reflect.Struct:
+		var b strings.Builder
 		b.WriteRune('{')
 		n := v.NumField()
 		for i := 0; i < n; i++ {
@@ -111,10 +112,10 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 			b.WriteString(m)
 		}
 		b.WriteRune('}')
+		return b.String(), nil
 	default:
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}
-	return b.String(), nil
 }
 
 func marshalCustom(ctx context.Context, v reflect.Value) (string, error) {
