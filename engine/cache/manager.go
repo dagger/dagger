@@ -194,37 +194,43 @@ func (m *manager) Export(ctx context.Context) error {
 
 	updatedRecords := make([]RecordLayers, 0, len(recordsToExport))
 	for _, record := range recordsToExport {
-		cacheRef, err := m.Worker.CacheManager().Get(ctx, record.CacheRefID, nil, cache.NoUpdateLastUsed)
-		if err != nil {
-			// the ref may be lazy or pruned, just skip it
-			bklog.G(ctx).Debugf("skipping cache ref for export %s: %v", record.CacheRefID, err)
-			continue
-		}
-		remotes, err := cacheRef.GetRemotes(ctx, true, cacheconfig.RefConfig{
-			Compression: compression.Config{
-				Type: compression.Zstd,
-			},
-		}, false, nil)
-		if err != nil {
-			return err
-		}
-		if len(remotes) == 0 {
-			bklog.G(ctx).Errorf("skipping cache ref for export %s: no remotes", record.CacheRefID)
-			continue
-		}
-		if len(remotes) > 1 {
-			bklog.G(ctx).Debugf("multiple remotes for cache ref %s, using the first one", record.CacheRefID)
-		}
-		remote := remotes[0]
-		for _, layer := range remote.Descriptors {
-			if err := m.layerstore.PushLayer(ctx, layer, remote.Provider); err != nil {
+		if err := func() error {
+			cacheRef, err := m.Worker.CacheManager().Get(ctx, record.CacheRefID, nil, cache.NoUpdateLastUsed)
+			if err != nil {
+				// the ref may be lazy or pruned, just skip it
+				bklog.G(ctx).Debugf("skipping cache ref for export %s: %v", record.CacheRefID, err)
+				return nil
+			}
+			defer cacheRef.Release(context.Background())
+			remotes, err := cacheRef.GetRemotes(ctx, true, cacheconfig.RefConfig{
+				Compression: compression.Config{
+					Type: compression.Zstd,
+				},
+			}, false, nil)
+			if err != nil {
 				return err
 			}
+			if len(remotes) == 0 {
+				bklog.G(ctx).Errorf("skipping cache ref for export %s: no remotes", record.CacheRefID)
+				return nil
+			}
+			if len(remotes) > 1 {
+				bklog.G(ctx).Debugf("multiple remotes for cache ref %s, using the first one", record.CacheRefID)
+			}
+			remote := remotes[0]
+			for _, layer := range remote.Descriptors {
+				if err := m.layerstore.PushLayer(ctx, layer, remote.Provider); err != nil {
+					return err
+				}
+			}
+			updatedRecords = append(updatedRecords, RecordLayers{
+				RecordDigest: record.Digest,
+				Layers:       remote.Descriptors,
+			})
+			return nil
+		}(); err != nil {
+			return err
 		}
-		updatedRecords = append(updatedRecords, RecordLayers{
-			RecordDigest: record.Digest,
-			Layers:       remote.Descriptors,
-		})
 	}
 
 	if err := m.client.UpdateCacheLayers(ctx, UpdateCacheLayersRequest{
