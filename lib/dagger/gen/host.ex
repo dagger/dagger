@@ -11,10 +11,10 @@ defmodule Dagger.Host do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
       {_opts, selection} =
-        ["exclude", "include"]
+        [:exclude, :include]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -49,10 +49,10 @@ defmodule Dagger.Host do
       selection = select(host.selection, "workdir")
 
       {_opts, selection} =
-        ["exclude", "include"]
+        [:exclude, :include]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end

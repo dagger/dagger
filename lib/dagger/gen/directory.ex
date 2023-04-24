@@ -28,10 +28,10 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "dockerBuild")
 
       {_opts, selection} =
-        ["dockerfile", "platform", "build_args", "target"]
+        [:dockerfile, :platform, :build_args, :target]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -47,10 +47,10 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "entries")
 
       {_opts, selection} =
-        ["path"]
+        [:path]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -102,10 +102,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "name", Keyword.fetch!(args, :name))
 
       {_opts, selection} =
-        ["description", "labels"]
+        [:description, :labels]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -123,10 +123,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "directory", Keyword.fetch!(args, :directory))
 
       {_opts, selection} =
-        ["exclude", "include"]
+        [:exclude, :include]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -144,10 +144,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "source", Keyword.fetch!(args, :source))
 
       {_opts, selection} =
-        ["permissions"]
+        [:permissions]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -164,10 +164,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "path", Keyword.fetch!(args, :path))
 
       {_opts, selection} =
-        ["permissions"]
+        [:permissions]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
@@ -185,10 +185,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "contents", Keyword.fetch!(args, :contents))
 
       {_opts, selection} =
-        ["permissions"]
+        [:permissions]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end

@@ -18,10 +18,10 @@ defmodule Dagger.GitRef do
       selection = select(git_ref.selection, "tree")
 
       {_opts, selection} =
-        ["ssh_known_hosts", "ssh_auth_socket"]
+        [:ssh_known_hosts, :ssh_auth_socket]
         |> Enum.reduce({args, selection}, fn arg, {args, selection} ->
           if not is_nil(args[arg]) do
-            {args, arg(selection, arg, args[arg])}
+            {args, arg(selection, to_string(arg), args[arg])}
           else
             {args, selection}
           end
