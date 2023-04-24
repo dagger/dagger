@@ -82,26 +82,40 @@ func (s *Selection) build(ctx context.Context) (string, error) {
 	if err := s.marshalArguments(ctx); err != nil {
 		return "", err
 	}
-	fields := []string{
-		"query",
-	}
-	for _, sel := range s.path() {
-		q := sel.name
-		if len(sel.args) > 0 {
-			args := make([]string, 0, len(sel.args))
-			for name, arg := range sel.args {
-				args = append(args, fmt.Sprintf("%s:%s", name, arg.marshalled))
-			}
-			q += "(" + strings.Join(args, ", ") + ")"
-		}
+
+	var b strings.Builder
+	b.WriteString("query")
+
+	path := s.path()
+
+	for _, sel := range path {
+		b.WriteRune('{')
+
 		if sel.alias != "" {
-			q = sel.alias + ":" + q
+			b.WriteString(sel.alias)
+			b.WriteRune(':')
 		}
-		fields = append(fields, q)
+
+		b.WriteString(sel.name)
+
+		if len(sel.args) > 0 {
+			b.WriteRune('(')
+			i := 0
+			for name, arg := range sel.args {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				b.WriteString(name)
+				b.WriteRune(':')
+				b.WriteString(arg.marshalled)
+				i++
+			}
+			b.WriteRune(')')
+		}
 	}
 
-	q := strings.Join(fields, "{") + strings.Repeat("}", len(fields)-1)
-	return q, nil
+	b.WriteString(strings.Repeat("}", len(path)))
+	return b.String(), nil
 }
 
 func (s *Selection) unpack(data interface{}) error {
