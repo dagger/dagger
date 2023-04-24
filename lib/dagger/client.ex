@@ -5,16 +5,17 @@ defmodule Dagger.Client do
 
   alias Dagger.EngineConn
 
-  defstruct [:req, :conn]
+  defstruct [:req, :conn, :opts]
 
-  def connect() do
+  def connect(opts \\ []) do
     with {:ok, conn} <- EngineConn.get() do
       host = EngineConn.host(conn)
 
       {:ok,
        %__MODULE__{
          req: Req.new(base_url: "http://#{host}") |> AbsintheClient.attach(),
-         conn: conn
+         conn: conn,
+	 opts: opts
        }}
     end
   end
@@ -23,13 +24,12 @@ defmodule Dagger.Client do
     EngineConn.disconnect(conn)
   end
 
-  def query(%__MODULE__{} = client, query) when is_binary(query) do
+  def query(%__MODULE__{opts: opts} = client, query) when is_binary(query) do
     Req.post(client.req,
       url: "/query",
       graphql: query,
       auth: {token(client), ""},
-      # TODO: allow to configure via connection options.
-      receive_timeout: 300_000
+      receive_timeout: opts[:timeout] || 300_000
     )
   end
 

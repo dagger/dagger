@@ -7,8 +7,8 @@ defmodule Dagger do
 
   defstruct [:client, :query]
 
-  def connect() do
-    with {:ok, client} <- Dagger.Client.connect() do
+  def connect(opts \\ []) do
+    with {:ok, client} <- Dagger.Client.connect(opts) do
       {:ok,
        %Dagger.Query{
          client: client,
@@ -17,8 +17,8 @@ defmodule Dagger do
     end
   end
 
-  def connect!() do
-    case connect() do
+  def connect!(opts \\ []) do
+    case connect(opts) do
       {:ok, query} -> query
       error -> raise "Cannot connect to Dagger engine, cause: #{inspect(error)}"
     end
