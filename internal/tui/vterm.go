@@ -80,6 +80,14 @@ func (term *Vterm) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			term.Offset = max(0, term.Offset-1)
 		case key.Matches(msg, keys.Down):
 			term.Offset = min(term.vt.UsedHeight()-term.Height, term.Offset+1)
+		case key.Matches(msg, keys.PageUp):
+			term.Offset = max(0, term.Offset-term.Height)
+		case key.Matches(msg, keys.PageDown):
+			term.Offset = min(term.vt.UsedHeight()-term.Height, term.Offset+term.Height)
+		case key.Matches(msg, keys.Home):
+			term.Offset = 0
+		case key.Matches(msg, keys.End):
+			term.Offset = term.vt.UsedHeight() - term.Height
 		}
 	}
 	return term, nil
