@@ -29,6 +29,16 @@ defmodule Dagger.QueryBuilder.SelectionTest do
              "query{core{image(ref:\"alpine\"){foo:file(path:\"/etc/alpine-release\")}}}"
   end
 
+  test "args" do
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", "b")
+      |> Selection.arg("arg1", "c")
+
+    assert Selection.build(root) == "query{a(arg:\"b\",arg1:\"c\")}"
+  end
+
   test "arg collision" do
     root =
       Selection.query()

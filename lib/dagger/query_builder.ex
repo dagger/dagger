@@ -45,7 +45,7 @@ defmodule Dagger.QueryBuilder.Selection do
 
   defp build_args(args) do
     fun = fn {name, value} -> [name, ':', Jason.encode!(value)] end
-    ['(', Enum.map(args, fun), ')']
+    ['(', Enum.map(args, fun) |> Enum.join(","), ')']
   end
 
   def path(selection) do
