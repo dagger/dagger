@@ -341,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-sdk"
-version = "0.2.20"
+version = "0.2.21"
 dependencies = [
  "dagger-core",
  "derive_builder",

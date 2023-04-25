@@ -6,7 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.21 (2023-04-25)
+
+### Chore
+
+ - <csr-id-09881ee39bdfb9201d104e4679a51c3b76b5fe27/> add new dagger-core-version
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 21 days passed between releases.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - add new dagger-core-version ([`09881ee`](https://github.com/kjuulh/dagger-sdk/commit/09881ee39bdfb9201d104e4679a51c3b76b5fe27))
+</details>
+
 ## v0.2.20 (2023-04-03)
+
+<csr-id-ea27fa8168cc54b20fac87c016f479061c6eda91/>
+<csr-id-6ef4bdf587e4aea290b722e7a0aed3184e72d6bb/>
+<csr-id-b55bcc159ffc6a61ecfcc5e3aa3de00a1a73b5b8/>
 
 ### Chore
 
@@ -35,8 +64,8 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 10 commits contributed to the release over the course of 19 calendar days.
- - 19 days passed between releases.
+ - 11 commits contributed to the release over the course of 19 calendar days.
+ - 20 days passed between releases.
  - 10 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 1 unique issue was worked on: [#48](https://github.com/kjuulh/dagger-sdk/issues/48)
 
@@ -49,6 +78,7 @@ and this project adheres to
  * **[#48](https://github.com/kjuulh/dagger-sdk/issues/48)**
     - extract client ([`11d2093`](https://github.com/kjuulh/dagger-sdk/commit/11d20935c697e28caaa671e8da0e70a99d4310fc))
  * **Uncategorized**
+    - Release dagger-core v0.2.9, dagger-sdk v0.2.20 ([`f82075c`](https://github.com/kjuulh/dagger-sdk/commit/f82075c23808073d9500df63c1cd347cd9b99cef))
     - with gen ([`9ea1870`](https://github.com/kjuulh/dagger-sdk/commit/9ea18700e78a7ee09f43e6976b0339dfc2747458))
     - update rust crate futures to 0.3.28 ([`696007c`](https://github.com/kjuulh/dagger-sdk/commit/696007cf45ccbdfc1b8eb45e726940a040f52494))
     - rename projects to point to github/kjuulh/dagger-sdk ([`384294b`](https://github.com/kjuulh/dagger-sdk/commit/384294b39038123b02c406a1038105b111c3b9be))
