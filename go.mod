@@ -18,7 +18,7 @@ require (
 	github.com/charmbracelet/bubbletea v0.23.2
 	github.com/containerd/containerd v1.7.0
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
-	github.com/containerd/stargz-snapshotter v0.14.1
+	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
@@ -27,8 +27,8 @@ require (
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.2.0
-	// https://github.com/moby/buildkit/commit/3187d2d056de7e3f976ef62cd548499dc3472a7e
-	github.com/moby/buildkit v0.11.0-rc3.0.20230331212110-3187d2d056de
+	// https://github.com/moby/buildkit/commit/20af103b6ffa114c92a17cd7d78d24e0020ac29a
+	github.com/moby/buildkit v0.11.0-rc3.0.20230425174740-20af103b6ffa
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
 	github.com/opencontainers/runtime-spec v1.1.0-rc.1
@@ -67,6 +67,7 @@ require (
 	github.com/jackpal/gateway v1.0.7
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
+	github.com/opencontainers/runc v1.1.6
 	github.com/vito/vt100 v0.0.0-20230324203615-1b9f0c41442c
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 )
@@ -134,7 +135,7 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/pprof v0.0.0-20230406165453-00490a63f317 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.3 // indirect
-	github.com/hanwen/go-fuse/v2 v2.1.1-0.20220112183258-f57e95bda82d // indirect
+	github.com/hanwen/go-fuse/v2 v2.2.0 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
@@ -161,7 +162,6 @@ require (
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
 	github.com/onsi/gomega v1.24.2 // indirect
-	github.com/opencontainers/runc v1.1.5 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.2.3 // indirect
@@ -215,8 +215,8 @@ require (
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/containerd/ttrpc v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/cli v23.0.1+incompatible
-	github.com/docker/docker v23.0.3+incompatible
+	github.com/docker/cli v23.0.4+incompatible
+	github.com/docker/docker v23.0.4+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -249,7 +249,7 @@ require (
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.9.0
 	golang.org/x/text v0.9.0 // indirect
-	golang.org/x/time v0.1.0 // indirect
+	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.7.0 // indirect
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	google.golang.org/protobuf v1.29.1 // indirect
