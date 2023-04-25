@@ -232,7 +232,9 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting up engine networking")
-		cniConfigPath, err := setupNetwork(
+		networkContext, cancelNetworking := context.WithCancel(context.Background())
+		defer cancelNetworking()
+		cniConfigPath, err := setupNetwork(networkContext,
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
 		)
@@ -383,6 +385,7 @@ func main() { //nolint:gocyclo
 		}
 		err = goerrors.Join(err, stopCacheErr)
 		err = goerrors.Join(err, stopOperatorSession())
+		cancelNetworking()
 
 		bklog.G(ctx).Infof("stopping server")
 		if os.Getenv("NOTIFY_SOCKET") != "" {
@@ -948,7 +951,7 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 	return &tracev1.ExportTraceServiceResponse{}, nil
 }
 
-func setupNetwork(netName, netCIDR string) (string, error) {
+func setupNetwork(ctx context.Context, netName, netCIDR string) (string, error) {
 	if os.Getenv(servicesDNSEnvName) == "0" {
 		return "", nil
 	}
@@ -963,7 +966,7 @@ func setupNetwork(netName, netCIDR string) (string, error) {
 		return "", fmt.Errorf("install resolv.conf: %w", err)
 	}
 
-	err = network.InstallDnsmasq(netName)
+	err = network.InstallDnsmasq(ctx, netName)
 	if err != nil {
 		return "", fmt.Errorf("install dnsmasq: %w", err)
 	}
