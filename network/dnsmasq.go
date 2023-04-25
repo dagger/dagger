@@ -1,6 +1,7 @@
 package network
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"os"
@@ -8,7 +9,7 @@ import (
 	"path/filepath"
 )
 
-func InstallDnsmasq(name string) error {
+func InstallDnsmasq(ctx context.Context, name string) error {
 	dnsmasqPath, err := exec.LookPath("dnsmasq")
 	if err != nil {
 		return err
@@ -33,7 +34,7 @@ func InstallDnsmasq(name string) error {
 		return fmt.Errorf("write dnsmasq.conf: %w", err)
 	}
 
-	dnsmasq := exec.Command(
+	dnsmasq := exec.CommandContext(ctx,
 		dnsmasqPath,
 		"--keep-in-foreground",
 		"--log-facility=-",

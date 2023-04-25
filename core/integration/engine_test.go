@@ -25,6 +25,7 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 	tarFileName := filepath.Base(tarPath)
 	devEngineTar := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{tarFileName}}).File(tarFileName)
 	return c.Container().Import(devEngineTar).
+		WithEnvVariable("GOTRACEBACK", "all"). // if something goes wrong, dump all the goroutines
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
@@ -38,7 +39,7 @@ func TestEngineExitsZeroOnSignal(t *testing.T) {
 	_, err := devEngineContainer(c).
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents: `#!/bin/sh
-env
+set -ex
 /usr/local/bin/dagger-engine --debug &
 engine_pid=$!
 
