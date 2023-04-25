@@ -75,9 +75,14 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
+
 	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return err
+	}
+
+	if c.EngineName != "" && startOpts.LogOutput != nil {
+		fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
 	}
 
 	// Load default labels asynchronously in the background.

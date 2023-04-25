@@ -204,6 +204,7 @@ func inlineTUI(
 		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 		ProgrockWriter: casette,
 	}
+
 	return engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
