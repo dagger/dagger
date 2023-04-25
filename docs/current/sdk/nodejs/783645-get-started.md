@@ -55,7 +55,7 @@ yarn add @dagger.io/dagger --dev
 Install the TypeScript engine (if not already present):
 
 ```shell
-npm install ts-node
+npm install ts-node typescript @types/node
 ```
 
 Create a TypeScript configuration file (if not already present):
