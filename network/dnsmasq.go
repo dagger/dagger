@@ -14,11 +14,16 @@ func InstallDnsmasq(name string) error {
 		return err
 	}
 
+	hostsFile := hostsPath(name)
+	if err := createIfNeeded(hostsFile); err != nil {
+		return err
+	}
+
 	config := dnsmasqConfig{
 		Domain:             name + ".local",
 		NetworkInterface:   name + "0",
 		PidFile:            pidfilePath(name),
-		AddnHostsFile:      hostsPath(name),
+		AddnHostsFile:      hostsFile,
 		UpstreamResolvFile: upstreamResolvPath,
 	}
 
@@ -28,11 +33,29 @@ func InstallDnsmasq(name string) error {
 		return fmt.Errorf("write dnsmasq.conf: %w", err)
 	}
 
-	dnsmasq := exec.Command(dnsmasqPath, "-u", "root", "--conf-file="+dnsmasqConfigFile)
+	dnsmasq := exec.Command(
+		dnsmasqPath,
+		"--keep-in-foreground",
+		"--log-facility=-",
+		"--log-debug",
+		"-u", "root",
+		"--conf-file="+dnsmasqConfigFile,
+	)
 
-	if b, err := dnsmasq.CombinedOutput(); err != nil {
-		return fmt.Errorf("start dnsmasq: %w; output:\n%s", err, string(b))
+	// forward dnsmasq logs to engine logs for debugging
+	dnsmasq.Stdout = os.Stdout
+	dnsmasq.Stderr = os.Stderr
+
+	if err := dnsmasq.Start(); err != nil {
+		return fmt.Errorf("start dnsmasq: %w", err)
 	}
+
+	go func() {
+		err := dnsmasq.Wait()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "dnsmasq exited: %v\n", err)
+		}
+	}()
 
 	return nil
 }
@@ -70,7 +93,6 @@ domain={{.Domain}}
 expand-hosts
 pid-file={{.PidFile}}
 except-interface=lo
-bind-dynamic
 no-hosts
 interface={{.NetworkInterface}}
 addn-hosts={{.AddnHostsFile}}
