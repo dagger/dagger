@@ -123,7 +123,7 @@ func formatArrayField(fields []*introspection.Field) string {
 	result := []string{}
 
 	for _, f := range fields {
-		result = append(result, fmt.Sprintf("%s: &field.%s", f.Name, toUpperCase(f.Name)))
+		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, toUpperCase(f.Name)))
 	}
 
 	return strings.Join(result, ", ")
