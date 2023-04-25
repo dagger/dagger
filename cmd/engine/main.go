@@ -366,7 +366,11 @@ func main() { //nolint:gocyclo
 			err = serverErr
 			cancel()
 		case <-ctx.Done():
-			err = ctx.Err()
+			// context should only be cancelled when a signal is received, which
+			// isn't an error
+			if ctx.Err() != context.Canceled {
+				err = ctx.Err()
+			}
 		}
 
 		// TODO:(sipsma) make timeouts configurable
