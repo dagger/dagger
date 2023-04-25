@@ -5,7 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.10 (2023-04-25)
+
+### Bug Fixes
+
+ - <csr-id-9d3c21d16b4a64eb7a7b1888365a4c4ea56d7225/> delete other files/folder in downloads: #57
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 1 commit contributed to the release.
+ - 21 days passed between releases.
+ - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - delete other files/folder in downloads: #57 ([`9d3c21d`](https://github.com/kjuulh/dagger-sdk/commit/9d3c21d16b4a64eb7a7b1888365a4c4ea56d7225))
+</details>
+
 ## v0.2.9 (2023-04-03)
+
+<csr-id-b55bcc159ffc6a61ecfcc5e3aa3de00a1a73b5b8/>
 
 ### New Features
 
@@ -27,7 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <csr-read-only-do-not-edit/>
 
- - 7 commits contributed to the release over the course of 19 calendar days.
+ - 8 commits contributed to the release over the course of 19 calendar days.
  - 23 days passed between releases.
  - 7 commits were understood as [conventional](https://www.conventionalcommits.org).
  - 3 unique issues were worked on: [#46](https://github.com/kjuulh/dagger-sdk/issues/46), [#48](https://github.com/kjuulh/dagger-sdk/issues/48), [#51](https://github.com/kjuulh/dagger-sdk/issues/51)
@@ -45,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  * **[#51](https://github.com/kjuulh/dagger-sdk/issues/51)**
     - add musl ci ([`b094ae4`](https://github.com/kjuulh/dagger-sdk/commit/b094ae4f539a880b0bde12841b7db1fbfcc0f123))
  * **Uncategorized**
+    - Release dagger-core v0.2.9, dagger-sdk v0.2.20 ([`f82075c`](https://github.com/kjuulh/dagger-sdk/commit/f82075c23808073d9500df63c1cd347cd9b99cef))
     - with 0.4.2 ([`114f411`](https://github.com/kjuulh/dagger-sdk/commit/114f411cdb0e1043071c0ccc1768d344f78d4fcb))
     - rename projects to point to github/kjuulh/dagger-sdk ([`384294b`](https://github.com/kjuulh/dagger-sdk/commit/384294b39038123b02c406a1038105b111c3b9be))
     - with loggers ([`79d931e`](https://github.com/kjuulh/dagger-sdk/commit/79d931e908c58a0464fd9cf7d6ef02eb50f14c23))

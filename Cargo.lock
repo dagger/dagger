@@ -262,7 +262,7 @@ dependencies = [
 
 [[package]]
 name = "dagger-core"
-version = "0.2.9"
+version = "0.2.10"
 dependencies = [
  "async-trait",
  "base64",
