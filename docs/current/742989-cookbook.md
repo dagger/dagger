@@ -112,6 +112,18 @@ The following code listing performs a multi-stage build.
 ```
 
 </TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/multistage-build/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/multistage-build/main.py
+```
+
+</TabItem>
 </Tabs>
 
 [Learn more](./guides/544174-multistage-build.md)

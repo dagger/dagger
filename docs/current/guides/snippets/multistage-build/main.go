@@ -9,17 +9,18 @@ import (
 )
 
 func main() {
-	// Create dagger client
+	// create dagger client
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		panic(err)
 	}
 	defer client.Close()
 
+	// get host directory
 	project := client.Host().Directory(".")
 
-	// Build our app
+	// build app
 	builder := client.Container().
 		From("golang:latest").
 		WithDirectory("/src", project).
@@ -27,7 +28,7 @@ func main() {
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithExec([]string{"go", "build", "-o", "myapp"})
 
-	// Publish binary on Alpine base
+	// publish binary on alpine base
 	prodImage := client.Container().
 		From("alpine").
 		WithFile("/bin/myapp", builder.File("/src/myapp")).
