@@ -51,6 +51,7 @@ The following code snippet demonstrates a multi-stage build.
 ```python file=./snippets/multistage-build/main.py
 ```
 
+</TabItem>
 </Tabs>
 
 This code listing starts by creating a Dagger client and loading the project to be built. It obtains a reference to the project and then builds the application by using the `golang:latest` image to mount the source directory, sets `CGO_ENABLED=` since the binary will be published on `alpine`, and executes `go build`.
