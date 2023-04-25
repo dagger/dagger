@@ -207,9 +207,11 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
+	utilDirPath := "/dagger-dev"
 	tests := util.GoBase(c).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
-		WithMountedDirectory("/dagger-dev", testEngineUtils).
+		WithMountedDirectory(utilDirPath, testEngineUtils).
+		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv)
@@ -253,15 +255,11 @@ func (t Engine) Dev(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("dev")
 
-	tmpfile, err := os.CreateTemp("", "dagger-engine-export")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmpfile.Name())
-
 	arches := []string{runtime.GOARCH}
 
-	_, err = c.Container().Export(ctx, tmpfile.Name(), dagger.ContainerExportOpts{
+	tarPath := "./bin/engine.tar"
+
+	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
 		PlatformVariants: util.DevEngineContainer(c, arches),
 	})
 	if err != nil {
@@ -272,7 +270,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	imageName := fmt.Sprintf("localhost/%s:latest", util.EngineContainerName)
 
 	// #nosec
-	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tmpfile.Name())
+	loadCmd := exec.CommandContext(ctx, "docker", "load", "-i", tarPath)
 	output, err := loadCmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("docker load failed: %w: %s", err, output)

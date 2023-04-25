@@ -12,14 +12,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func getDevEngine(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	// This loads the engine.tar file from the host into the container, that was set up by
-	// internal/mage/engine.go:test. This is used to spin up additional dev engines.
-	devEngineTar := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"engine.tar"}}).File("engine.tar")
-
-	devEngine = c.Container().Import(devEngineTar)
+	devEngine = devEngineContainer(c)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 	if err != nil {
 		return nil, "", err
@@ -58,7 +54,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
-	devEngineA, endpointA, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 0)
+	devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 0)
 	require.NoError(t, err)
 
 	// This loads the dagger-cli binary from the host into the container, that was set up by
@@ -90,7 +86,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 	require.NotEmpty(t, shaA, "shaA is empty")
 
-	devEngineB, endpointB, err := getDevEngine(ctx, c, registry, "registry", cacheEnv, 1)
+	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 1)
 	require.NoError(t, err)
 
 	outputB, err := c.Container().From("alpine:3.17").
@@ -144,7 +140,7 @@ func TestRemoteCacheS3(t *testing.T) {
 
 		s3Env := "type=s3,mode=max,endpoint_url=" + s3Endpoint + ",access_key_id=minioadmin,secret_access_key=minioadmin,region=mars,use_path_style=true,bucket=" + bucket
 
-		devEngineA, endpointA, err := getDevEngine(ctx, c, s3, "s3", s3Env, 0)
+		devEngineA, endpointA, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", s3Env, 0)
 		require.NoError(t, err)
 
 		cliBinPath := "/.dagger-cli"
@@ -175,7 +171,7 @@ func TestRemoteCacheS3(t *testing.T) {
 		shaA := strings.TrimSpace(gjson.Get(outputA, "container.from.withExec.stdout").String())
 		require.NotEmpty(t, shaA, "shaA is empty")
 
-		devEngineB, endpointB, err := getDevEngine(ctx, c, s3, "s3", s3Env, 1)
+		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", s3Env, 1)
 		require.NoError(t, err)
 
 		outputB, err := c.Container().From("alpine:3.17").

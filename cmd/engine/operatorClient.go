@@ -24,10 +24,12 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
+	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 )
 
 // NewOperatorClient is a dagger client used for querying+configuring engine-wide settings such
@@ -132,6 +134,9 @@ func NewOperatorClient(ctx context.Context, c *bkclient.Client) (_ *dagger.Clien
 		cancel()
 		l.Close()
 		err := <-doneCh
+		if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
+			err = nil // ignore context cancellation, it's expected when engine is shutting down
+		}
 		c.Close()
 		daggerClient.Close()
 		return err
