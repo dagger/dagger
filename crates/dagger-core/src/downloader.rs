@@ -135,20 +135,6 @@ impl Downloader {
                 .context("failed to download CLI from archive")?;
         }
 
-        for file in self.cache_dir()?.read_dir()? {
-            if let Ok(entry) = file {
-                let path = entry.path();
-                if path != cli_bin_path {
-                    tracing::debug!(
-                        path = path.display().to_string(),
-                        cli_bin_path = cli_bin_path.display().to_string(),
-                        "deleting existing dagger-engine"
-                    );
-                    std::fs::remove_file(path)?;
-                }
-            }
-        }
-
         Ok(cli_bin_path)
     }
 

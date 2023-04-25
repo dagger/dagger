@@ -13,7 +13,7 @@ A dagger sdk written in rust for rust.
 - [ ] Start MkBook on how to actually use the sdk
 - [ ] Update to newest upstream release
 - [ ] Fix bugs
-  - [ ] Run in conjunction with golang and other sdks
+  - [x] Run in conjunction with golang and other sdks
   - [ ] Stabilize the initial `Arc<Query>` model into something more extensible
 
 ## Examples
