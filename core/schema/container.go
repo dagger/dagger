@@ -743,7 +743,7 @@ func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.C
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(svc, args.Alias)
+	return parent.WithServiceBinding(ctx, s.gw, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {

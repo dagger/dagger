@@ -49,8 +49,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithExec(nil)
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 

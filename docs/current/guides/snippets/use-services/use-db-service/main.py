@@ -17,11 +17,10 @@ async def main():
             .with_env_variable("MARIADB_DATABASE", "drupal")
             .with_env_variable("MARIADB_ROOT_PASSWORD", "root")
             .with_exposed_port(3306)
-            .with_exec([])
         )
 
-      	# get Drupal base image
-      	# install additional dependencies
+        # get Drupal base image
+        # install additional dependencies
         drupal = (
             client
             .container()

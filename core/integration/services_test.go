@@ -352,7 +352,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
-func TestContainerServiceNoExecError(t *testing.T) {
+func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
 
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
@@ -365,23 +365,6 @@ func TestContainerServiceNoExecError(t *testing.T) {
 		WithExposedPort(8080)
 
 	_, err := srv.Hostname(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
-
-	client := c.Container().
-		From("alpine:3.16.2").
-		WithServiceBinding("www", srv).
-		WithExec([]string{"wget", "http://www:8080"})
-
-	_, err = client.ExitCode(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
-
-	_, err = client.Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
-
-	_, err = client.Stderr(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
 }
@@ -556,7 +539,6 @@ CMD cat index.html
 		fileContent, err := c.Container().
 			WithServiceBinding("www", srv).
 			Build(src).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)
@@ -583,7 +565,6 @@ CMD cat index.html
 		fileContent, err := c.Container().
 			WithServiceBinding("www", srv).
 			Build(gitDir).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)
@@ -610,7 +591,6 @@ CMD cat index.html
 		fileContent, err := gitDir.
 			DockerBuild().
 			WithServiceBinding("www", srv).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)

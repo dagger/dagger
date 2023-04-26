@@ -1325,7 +1325,11 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 	}
 
 	if metaSt == nil {
-		return "", ErrContainerNoExec
+		ctr, err := container.WithExec(ctx, gw, container.Platform, ContainerExecOpts{})
+		if err != nil {
+			return "", err
+		}
+		return ctr.MetaFileContents(ctx, gw, filePath)
 	}
 
 	file, err := NewFile(
@@ -1557,8 +1561,16 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, gw bkgw.Client, svc *Container, alias string) (*Container, error) {
 	container = container.Clone()
+
+	if svc.Meta == nil {
+		var err error
+		svc, err = svc.WithExec(ctx, gw, svc.Platform, ContainerExecOpts{})
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	svcID, err := svc.ID()
 	if err != nil {
@@ -1570,14 +1582,9 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 	})
 
 	if alias != "" {
-		hn, err := svc.HostnameOrErr()
-		if err != nil {
-			return nil, fmt.Errorf("get hostname: %w", err)
-		}
-
 		container.HostAliases = append(container.HostAliases, HostAlias{
 			Alias:  alias,
-			Target: hn,
+			Target: svc.Hostname,
 		})
 	}
 
