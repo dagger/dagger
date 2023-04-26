@@ -375,7 +375,7 @@ The following code listing exports the contents of a container directory to the 
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
-### Publish image to registry with multiple tags 
+### Publish image to registry with multiple tags
 
 The following code listing tags a container image multiple times and publishes it to a remote registry (Docker Hub). Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub username and password respectively.
 
