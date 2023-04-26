@@ -37,10 +37,12 @@ The code samples in this tutorial are based on the above FastAPI project. If usi
 The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html). 
 :::
 
-Create a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) for your project (if you don't already have one). Example:
+Create a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) for your project (if you don't already have one):
 
 ```shell
 python3 -m venv .venv && source .venv/bin/activate
+```
+
 Install the Dagger Python SDK in your project's virtual environment using `pip`:
 
 ```shell
