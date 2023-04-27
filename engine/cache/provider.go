@@ -72,6 +72,7 @@ func (r *urlReaderAt) ReadAt(p []byte, off int64) (int, error) {
 			return 0, err
 		}
 		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", off))
+		//nolint:bodyclose // the body is closed once we're done with it
 		resp, err := r.httpClient.Do(req)
 		if err != nil {
 			return 0, err
