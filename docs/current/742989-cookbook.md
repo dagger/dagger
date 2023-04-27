@@ -9,26 +9,49 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Set host working directory
+### Set working directory
 
-The following code listing sets the host working directory for the Dagger pipeline.
+The following code listing sets the current directory on the host as the working directory for the Dagger pipeline.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/work-with-host-filesystem/set-workdir/main.go
+```go file=./guides/snippets/work-with-host-filesystem/set-workdir-current/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./guides/snippets/work-with-host-filesystem/set-workdir/index.mts
+```typescript file=./guides/snippets/work-with-host-filesystem/set-workdir-current/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/work-with-host-filesystem/set-workdir/main.py
+```python file=./guides/snippets/work-with-host-filesystem/set-workdir-current/main.py
+```
+
+</TabItem>
+</Tabs>
+
+The following code listing sets the parent directory on the host as the working directory for the Dagger pipeline (useful when the Dagger pipeline is in a sub-directory of the project).
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/main.py
 ```
 
 </TabItem>

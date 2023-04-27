@@ -31,24 +31,47 @@ This guide assumes that:
 
 ## Set the host working directory
 
-The easiest way to set the working directory on the host for your CI pipeline is at the time of client instantiation, as a client configuration option. The following example shows how to set the host working directory:
+The easiest way to set the working directory for the Dagger CI pipeline is at the time of client instantiation, as a client configuration option. The following example shows how to set the current directory on the host as the working directory:
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/work-with-host-filesystem/set-workdir/main.go
+```go file=./snippets/work-with-host-filesystem/set-workdir-current/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```typescript file=./snippets/work-with-host-filesystem/set-workdir/index.mts
+```typescript file=./snippets/work-with-host-filesystem/set-workdir-current/index.mts
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/work-with-host-filesystem/set-workdir/main.py
+```python file=./snippets/work-with-host-filesystem/set-workdir-current/main.py
+```
+
+</TabItem>
+</Tabs>
+
+When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. The following example shows how to set the parent directory as the working directory:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/work-with-host-filesystem/set-workdir-parent/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./snippets/work-with-host-filesystem/set-workdir-parent/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/work-with-host-filesystem/set-workdir-parent/main.py
 ```
 
 </TabItem>
