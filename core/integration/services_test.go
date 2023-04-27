@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -99,6 +98,23 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 			From("python").
 			WithExposedPort(8000).
 			WithExec([]string{"python", "-m", "http.server"})
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		ep, err := srv.Endpoint(ctx)
+		require.NoError(t, err)
+
+		require.Equal(t, hn+":8000", ep)
+	})
+
+	t.Run("hostname and endpoint force default command", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+				Args: []string{"python", "-m", "http.server"},
+			})
 
 		hn, err := srv.Hostname(ctx)
 		require.NoError(t, err)
@@ -352,7 +368,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
-func TestContainerServiceNoExecError(t *testing.T) {
+func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
 
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
@@ -362,11 +378,27 @@ func TestContainerServiceNoExecError(t *testing.T) {
 
 	srv := c.Container().
 		From("alpine:3.16.2").
-		WithExposedPort(8080)
+		WithExposedPort(8080).
+		// using error to compare hostname after WithServiceBinding
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: []string{"sh", "-c", "echo nope; exit 42"},
+		})
 
-	_, err := srv.Hostname(ctx)
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
+
+	host2, err := srv.WithExec(nil).Hostname(ctx)
+	require.NoError(t, err)
+	require.Equal(t, host, host2)
+
+	client := c.Container().
+		From("alpine:3.16.2").
+		WithServiceBinding("www", srv).
+		WithExec([]string{"wget", "http://www:8080"})
+
+	_, err = client.ExitCode(ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	require.Contains(t, err.Error(), "start "+host+" (aliased as www)")
 }
 
 //go:embed testdata/udp-service.go

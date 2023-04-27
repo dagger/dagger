@@ -1523,7 +1523,12 @@ func (container *Container) Endpoint(port int, scheme string) (string, error) {
 		port = container.Ports[0].Port
 	}
 
-	endpoint := fmt.Sprintf("%s:%d", container.Hostname, port)
+	host, err := container.HostnameOrErr()
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", host, port)
 	if scheme != "" {
 		endpoint = scheme + "://" + endpoint
 	}
@@ -1565,16 +1570,8 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(ctx context.Context, gw bkgw.Client, svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
 	container = container.Clone()
-
-	if svc.Meta == nil {
-		var err error
-		svc, err = svc.WithExec(ctx, gw, svc.Platform, ContainerExecOpts{})
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	svcID, err := svc.ID()
 	if err != nil {
@@ -1586,9 +1583,14 @@ func (container *Container) WithServiceBinding(ctx context.Context, gw bkgw.Clie
 	})
 
 	if alias != "" {
+		hn, err := svc.HostnameOrErr()
+		if err != nil {
+			return nil, fmt.Errorf("get hostname: %w", err)
+		}
+
 		container.HostAliases = append(container.HostAliases, HostAlias{
 			Alias:  alias,
-			Target: svc.Hostname,
+			Target: hn,
 		})
 	}
 

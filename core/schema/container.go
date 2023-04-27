@@ -184,6 +184,13 @@ func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, 
 	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
+func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Container) (*core.Container, error) {
+	if parent.Meta == nil {
+		return s.withExec(ctx, parent, containerExecArgs{})
+	}
+	return parent, nil
+}
+
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
 	return parent.ExitCode(ctx, s.gw)
 }
@@ -712,6 +719,11 @@ func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, 
 		return "", ErrServicesDisabled
 	}
 
+	parent, err := s.withDefaultExec(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
 	return parent.HostnameOrErr()
 }
 
@@ -723,6 +735,11 @@ type containerEndpointArgs struct {
 func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
 	if !s.servicesEnabled {
 		return "", ErrServicesDisabled
+	}
+
+	parent, err := s.withDefaultExec(ctx, parent)
+	if err != nil {
+		return "", err
 	}
 
 	return parent.Endpoint(args.Port, args.Scheme)
@@ -743,7 +760,12 @@ func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.C
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(ctx, s.gw, svc, args.Alias)
+	svc, err = s.withDefaultExec(ctx, svc)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithServiceBinding(svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {
