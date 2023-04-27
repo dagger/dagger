@@ -308,6 +308,7 @@ func (c *client) UpdateCacheRecords(
 	return resp, nil
 }
 
+//nolint:dupl
 func (c *client) UpdateCacheLayers(
 	ctx context.Context,
 	req UpdateCacheLayersRequest,
@@ -339,6 +340,7 @@ func (c *client) UpdateCacheLayers(
 	return nil
 }
 
+//nolint:dupl
 func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/import", nil)
 	if err != nil {
@@ -361,6 +363,7 @@ func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, err
 	return config, nil
 }
 
+//nolint:dupl
 func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadURLRequest) (*GetLayerDownloadURLResponse, error) {
 	bodyR, bodyW := io.Pipe()
 	encoder := json.NewEncoder(bodyW)
@@ -393,6 +396,7 @@ func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadUR
 	return resp, nil
 }
 
+//nolint:dupl
 func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLRequest) (*GetLayerUploadURLResponse, error) {
 	bodyR, bodyW := io.Pipe()
 	encoder := json.NewEncoder(bodyW)
@@ -425,6 +429,7 @@ func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLReq
 	return resp, nil
 }
 
+//nolint:dupl
 func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfigRequest) (*GetCacheMountConfigResponse, error) {
 	bodyR, bodyW := io.Pipe()
 	encoder := json.NewEncoder(bodyW)
@@ -457,6 +462,7 @@ func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfi
 	return resp, nil
 }
 
+//nolint:dupl
 func (c *client) GetCacheMountUploadURL(ctx context.Context, req GetCacheMountUploadURLRequest) (*GetCacheMountUploadURLResponse, error) {
 	bodyR, bodyW := io.Pipe()
 	encoder := json.NewEncoder(bodyW)
