@@ -3177,6 +3177,16 @@ func TestContainerNoExec(t *testing.T) {
 	stderr, err := c.Container().From("alpine:3.16.2").Stderr(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", stderr)
+
+	_, err = c.Container().
+		From("alpine:3.16.2").
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: nil,
+		}).
+		ExitCode(ctx)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no command has been set")
 }
 
 func TestContainerWithMountedFileOwner(t *testing.T) {

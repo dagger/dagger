@@ -498,6 +498,8 @@ type Container {
   withExec(
     """
     Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+
+    If empty, the container's default command is used.
     """
     args: [String!]!
 
@@ -572,19 +574,22 @@ type Container {
 
   """
   Exit code of the last executed command. Zero means success.
-  Errors if no command has been executed.
+
+  Will execute default command if none is set, or error if there's no default.
   """
   exitCode: Int!
 
   """
   The output stream of the last executed command.
-  Errors if no command has been executed.
+
+  Will execute default command if none is set, or error if there's no default.
   """
   stdout: String!
 
   """
   The error stream of the last executed command.
-  Errors if no command has been executed.
+
+  Will execute default command if none is set, or error if there's no default.
   """
   stderr: String!
 
@@ -719,7 +724,10 @@ type Container {
   exposedPorts: [Port!]!
 
   """
-  Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+  Establish a runtime dependency on a service.
+
+  The service will be started automatically when needed and detached when it is
+  no longer needed, executing the default command if none is set.
 
   The service will be reachable from the container via the provided hostname alias.
 

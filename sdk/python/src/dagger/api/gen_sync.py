@@ -342,7 +342,9 @@ class Container(Type):
     @typecheck
     def exit_code(self) -> int:
         """Exit code of the last executed command. Zero means success.
-        Errors if no command has been executed.
+
+        Will execute default command if none is set, or error if there's no
+        default.
 
         Returns
         -------
@@ -714,7 +716,9 @@ class Container(Type):
     @typecheck
     def stderr(self) -> str:
         """The error stream of the last executed command.
-        Errors if no command has been executed.
+
+        Will execute default command if none is set, or error if there's no
+        default.
 
         Returns
         -------
@@ -737,7 +741,9 @@ class Container(Type):
     @typecheck
     def stdout(self) -> str:
         """The output stream of the last executed command.
-        Errors if no command has been executed.
+
+        Will execute default command if none is set, or error if there's no
+        default.
 
         Returns
         -------
@@ -889,6 +895,7 @@ class Container(Type):
         args:
             Command to run instead of the container's default command (e.g.,
             ["run", "main.go"]).
+            If empty, the container's default command is used.
         skip_entrypoint:
             If the container has an entrypoint, ignore it for args rather than
             using it to wrap them.
@@ -1268,9 +1275,11 @@ class Container(Type):
 
     @typecheck
     def with_service_binding(self, alias: str, service: "Container") -> "Container":
-        """Establish a runtime dependency on a service. The service will be
-        started automatically when needed and detached when it is no longer
-        needed.
+        """Establish a runtime dependency on a service.
+
+        The service will be started automatically when needed and detached
+        when it is
+        no longer needed, executing the default command if none is set.
 
         The service will be reachable from the container via the provided
         hostname alias.

@@ -352,7 +352,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
-func TestContainerServiceNoExec(t *testing.T) {
+func TestContainerServiceNoExecError(t *testing.T) {
 	t.Parallel()
 
 	checkNotDisabled(t, engine.ServicesDNSEnvName)

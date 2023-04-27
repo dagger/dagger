@@ -996,6 +996,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		args = append(cfg.Entrypoint, args...)
 	}
 
+	if len(args) == 0 {
+		return nil, errors.New("no command has been set")
+	}
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
 		container.Pipeline.LLBOpt(),
