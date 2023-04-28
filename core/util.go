@@ -241,6 +241,15 @@ func mergeEnv(src []string, dst []string) []string {
 
 // mergeMap inserts src map elements into dst.
 func mergeMap(src map[string]string, dst map[string]string) map[string]string {
+	// Handle nil values
+	if dst == nil {
+		return src
+	}
+
+	if src == nil {
+		return dst
+	}
+
 	for k, v := range src {
 		dst[k] = v
 	}
