@@ -211,3 +211,39 @@ func cloneMap[K comparable, T any](src map[K]T) map[K]T {
 	}
 	return dst
 }
+
+func envToMap(src []string) map[string]string {
+	dst := map[string]string{}
+
+	for _, e := range src {
+		env := strings.Split(e, "=")
+		dst[env[0]] = env[1]
+	}
+
+	return dst
+}
+
+func mapToEnv(src map[string]string) []string {
+	dst := []string{}
+
+	for k, v := range src {
+		dst = append(dst, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return dst
+}
+
+// mergeEnv returns the addition of src and dest.
+// It replaces any duplication variable by dst values.
+func mergeEnv(src []string, dst []string) []string {
+	return mapToEnv(mergeMap(envToMap(src), envToMap(dst)))
+}
+
+// mergeMap inserts src map elements into dst.
+func mergeMap(src map[string]string, dst map[string]string) map[string]string {
+	for k, v := range src {
+		dst[k] = v
+	}
+
+	return dst
+}

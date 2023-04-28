@@ -3725,3 +3725,65 @@ func TestContainerForceCompression(t *testing.T) {
 		})
 	}
 }
+
+func TestContainerBuildConsistency(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	// Create a builder container
+	builderCtr := c.Directory().WithNewFile(
+		"Dockerfile",
+		`
+FROM node:alpine
+
+ENV FOO=BAR
+LABEL "com.example.test-should-replace"="foo"
+RUN node --version
+`,
+	)
+
+	// Create a container with envs variables and labels
+	testCtr := c.Container().
+		WithEnvVariable("BOOL", "DOG").
+		WithEnvVariable("FOO", "BAZ").
+		WithLabel("com.example.test-should-exist", "test").
+		WithLabel("com.example.test-should-replace", "bar").
+		Build(builderCtr)
+
+	labelShouldExist, err := testCtr.Label(ctx, "com.example.test-should-exist")
+	require.NoError(t, err)
+	require.Equal(t, "test", labelShouldExist)
+
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "com.example.test-should-replace")
+	require.NoError(t, err)
+	require.Equal(t, "foo", labelShouldBeReplaced)
+
+	envShouldExist, err := testCtr.EnvVariable(ctx, "BOOL")
+	require.NoError(t, err)
+	require.Equal(t, "DOG", envShouldExist)
+
+	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envShouldBeReplaced)
+}
+
+func TestContainerFromConsistency(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	// Create a container with envs and pull alpine image on it
+	testCtr := c.Container().
+		WithEnvVariable("FOO", "BAR").
+		WithEnvVariable("PATH", "/replace/me").
+		From("alpine:3.16.2")
+
+	envShouldExist, err := testCtr.EnvVariable(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envShouldExist)
+
+	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "PATH")
+	require.NoError(t, err)
+	require.Equal(t, "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", envShouldBeReplaced)
+}
