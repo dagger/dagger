@@ -127,49 +127,33 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     required_args = render_required_args(args)
     optional_args = render_optional_args(args)
 
-    if not is_nil(optional_args) do
-      required_args ++ [optional_args]
-    else
-      required_args
-    end
+    required_args ++ optional_args
   end
 
   defp render_required_args(args) do
     for arg <- args,
         arg["type"]["kind"] == "NON_NULL" do
-      name = Function.format_var_name(arg["name"])
-      arg_name = to_string(name)
+      name = Function.format_var_name(fun_arg_name(arg))
 
       quote do
-        selection = arg(selection, unquote(arg_name), Keyword.fetch!(args, unquote(name)))
+        selection = arg(selection, unquote(arg["name"]), unquote(to_macro_var(name)))
       end
     end
   end
 
   defp render_optional_args(args) do
-    args =
-      for arg <- args, not required_arg?(arg) do
-        name = arg["name"]
-        arg_name = Function.format_var_name(name)
+    for arg <- args, not required_arg?(arg) do
+      name = arg["name"]
+      arg_name = Function.format_var_name(name)
 
-        quote do
-          selection =
-            if not is_nil(args[unquote(arg_name)]) do
-              arg(selection, unquote(name), args[unquote(arg_name)])
-            else
-              selection
-            end
-        end
+      quote do
+        selection =
+          if not is_nil(optional_args[unquote(arg_name)]) do
+            arg(selection, unquote(name), optional_args[unquote(arg_name)])
+          else
+            selection
+          end
       end
-
-    case args do
-      [] ->
-        nil
-
-      args ->
-        quote do
-          (unquote_splicing(args))
-        end
     end
   end
 
@@ -180,7 +164,43 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   defp fun_args([]), do: []
-  defp fun_args(_args), do: [to_macro_var(:args)]
+
+  defp fun_args(args) do
+    {required_args, optional_args} =
+      args
+      |> Enum.split_with(&required_arg?/1)
+
+    required_fun_args(required_args) ++ optional_fun_args(optional_args)
+  end
+
+  defp required_fun_args(args) do
+    args
+    |> Enum.map(&Function.format_var_name(fun_arg_name(&1)))
+    |> Enum.map(&to_macro_var/1)
+  end
+
+  defp optional_fun_args([]), do: []
+
+  defp optional_fun_args(_args) do
+    [
+      quote do
+        unquote(to_macro_var(:optional_args)) \\ []
+      end
+    ]
+  end
+
+  # Field name id has no meaning since we don't have a typespec. Use
+  # type name to argument name instead.
+  defp fun_arg_name(%{
+         "name" => "id",
+         "type" => %{kind: "NON_NULL", ofType: %{"name" => type_name}}
+       }) do
+    type_name
+  end
+
+  defp fun_arg_name(%{"name" => name}) do
+    name
+  end
 
   defp to_macro_var(var), do: Macro.var(var, __MODULE__)
 end

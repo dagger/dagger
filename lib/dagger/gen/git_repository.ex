@@ -6,9 +6,9 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Returns details on one branch.\n\n## Required Arguments\n\n* `name` - Branch's name (e.g., \"main\").\n\n## Optional Arguments"
-    def branch(%__MODULE__{} = git_repository, args) do
+    def branch(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "branch")
-      selection = arg(selection, "name", Keyword.fetch!(args, :name))
+      selection = arg(selection, "name", name)
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )
@@ -23,18 +23,18 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Returns details on one commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\").\n\n## Optional Arguments"
-    def commit(%__MODULE__{} = git_repository, args) do
+    def commit(%__MODULE__{} = git_repository, id) do
       selection = select(git_repository.selection, "commit")
-      selection = arg(selection, "id", Keyword.fetch!(args, :id))
+      selection = arg(selection, "id", id)
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )
 
   (
     @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\").\n\n## Optional Arguments"
-    def tag(%__MODULE__{} = git_repository, args) do
+    def tag(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "tag")
-      selection = arg(selection, "name", Keyword.fetch!(args, :name))
+      selection = arg(selection, "name", name)
       %Dagger.GitRef{selection: selection, client: git_repository.client}
     end
   )

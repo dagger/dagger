@@ -14,24 +14,22 @@ defmodule Dagger.GitRef do
 
   (
     @doc "The filesystem tree at this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
-    def tree(%__MODULE__{} = git_ref, args) do
+    def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
       selection = select(git_ref.selection, "tree")
 
-      (
-        selection =
-          if not is_nil(args[:ssh_known_hosts]) do
-            arg(selection, "sshKnownHosts", args[:ssh_known_hosts])
-          else
-            selection
-          end
+      selection =
+        if not is_nil(optional_args[:ssh_known_hosts]) do
+          arg(selection, "sshKnownHosts", optional_args[:ssh_known_hosts])
+        else
+          selection
+        end
 
-        selection =
-          if not is_nil(args[:ssh_auth_socket]) do
-            arg(selection, "sshAuthSocket", args[:ssh_auth_socket])
-          else
-            selection
-          end
-      )
+      selection =
+        if not is_nil(optional_args[:ssh_auth_socket]) do
+          arg(selection, "sshAuthSocket", optional_args[:ssh_auth_socket])
+        else
+          selection
+        end
 
       %Dagger.Directory{selection: selection, client: git_ref.client}
     end

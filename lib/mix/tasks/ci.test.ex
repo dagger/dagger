@@ -13,20 +13,20 @@ defmodule Mix.Tasks.Ci.Test do
     repo =
       client
       |> Dagger.Query.host()
-      |> Dagger.Host.directory(path: ".", exclude: [".elixir_ls", "_build", "deps"])
+      |> Dagger.Host.directory(".", exclude: [".elixir_ls", "_build", "deps"])
       |> Dagger.Directory.id()
 
     client
-    |> Dagger.Query.pipeline(name: "Test")
-    |> Dagger.Query.container([])
-    |> Dagger.Container.from(address: elixir_image)
-    |> Dagger.Container.with_mounted_directory(path: "/dagger_ex", source: repo)
-    |> Dagger.Container.with_workdir(path: "/dagger_ex")
-    |> Dagger.Container.with_env_variable(name: "MIX_ENV", value: "test")
-    |> Dagger.Container.with_exec(args: ["mix", "local.rebar", "--force"])
-    |> Dagger.Container.with_exec(args: ["mix", "local.hex", "--force"])
-    |> Dagger.Container.with_exec(args: ["mix", "deps.get"])
-    |> Dagger.Container.with_exec(args: ["mix", "test", "--color"])
+    |> Dagger.Query.pipeline("Test")
+    |> Dagger.Query.container()
+    |> Dagger.Container.from(elixir_image)
+    |> Dagger.Container.with_mounted_directory("/dagger_ex", repo)
+    |> Dagger.Container.with_workdir("/dagger_ex")
+    |> Dagger.Container.with_env_variable("MIX_ENV", "test")
+    |> Dagger.Container.with_exec(["mix", "local.rebar", "--force"])
+    |> Dagger.Container.with_exec(["mix", "local.hex", "--force"])
+    |> Dagger.Container.with_exec(["mix", "deps.get"])
+    |> Dagger.Container.with_exec(["mix", "test", "--color"])
     |> Dagger.Container.stdout()
     |> IO.puts()
 
