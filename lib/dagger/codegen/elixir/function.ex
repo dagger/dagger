@@ -12,4 +12,22 @@ defmodule Dagger.Codegen.Elixir.Function do
     |> Macro.underscore()
     |> String.to_atom()
   end
+
+  def define(fun_name, args, guard \\ nil, body) when is_atom(fun_name) and is_list(args) do
+    case guard do
+      nil ->
+        quote do
+          def unquote(fun_name)(unquote_splicing(args)) do
+            unquote(body)
+          end
+        end
+
+      guard ->
+        quote do
+          def unquote(fun_name)(unquote_splicing(args)) when unquote(guard) do
+            unquote(body)
+          end
+        end
+    end
+  end
 end

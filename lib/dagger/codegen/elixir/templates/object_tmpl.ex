@@ -61,11 +61,11 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         %{"kind" => "OBJECT", "name" => name}
       ) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
-    fun_args = if(args == [], do: [], else: [Macro.var(:args, __MODULE__)])
     args = render_args(args)
+    fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
 
-    quote do
-      def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
+    body =
+      quote do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
         unquote_splicing(args)
@@ -75,22 +75,24 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
           client: unquote(mod_var_name).client
         }
       end
-    end
+
+    Function.define(fun_name, fun_args, body)
   end
 
   def format_function(field_name, fun_name, {mod_var_name, args}, _) do
-    fun_args = if(args == [], do: [], else: [Macro.var(:args, __MODULE__)])
     args = render_args(args)
+    fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
 
-    quote do
-      def unquote(fun_name)(%__MODULE__{} = unquote(mod_var_name), unquote_splicing(fun_args)) do
+    body =
+      quote do
         selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
         unquote_splicing(args)
 
         execute(selection, unquote(mod_var_name).client)
       end
-    end
+
+    Function.define(fun_name, fun_args, body)
   end
 
   defp format_deprecated(%{"isDeprecated" => true, "deprecationReason" => reason}) do
@@ -192,4 +194,13 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         end
     end
   end
+
+  defp module_fun_arg(mod_var_name) do
+    quote do
+      %__MODULE__{} = unquote(mod_var_name)
+    end
+  end
+
+  defp fun_args([]), do: []
+  defp fun_args(_args), do: [Macro.var(:args, __MODULE__)]
 end
