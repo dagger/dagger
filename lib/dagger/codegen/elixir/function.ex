@@ -7,13 +7,29 @@ defmodule Dagger.Codegen.Elixir.Function do
     |> String.to_atom()
   end
 
-  def format_name(name) when is_binary(name) do
+  def format_var_name(name) when is_binary(name) do
+    format_name(name)
+  end
+
+  defp format_fun_name(name) when is_atom(name) do
+    name
+    |> to_string()
+    |> format_fun_name()
+  end
+
+  defp format_fun_name(name) when is_binary(name) do
+    format_name(name)
+  end
+
+  defp format_name(name) when is_binary(name) do
     name
     |> Macro.underscore()
     |> String.to_atom()
   end
 
-  def define(fun_name, args, guard \\ nil, body) when is_atom(fun_name) and is_list(args) do
+  def define(fun_name, args, guard \\ nil, body) when is_list(args) do
+    fun_name = format_fun_name(fun_name)
+
     case guard do
       nil ->
         quote do

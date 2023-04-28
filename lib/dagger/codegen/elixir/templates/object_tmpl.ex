@@ -5,7 +5,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
   def render_object(%{"name" => name, "fields" => fields, "description" => desc} = _full_type) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
-    defs = render_functions(Function.format_name(name), fields)
+    defs = render_functions(Function.format_var_name(name), fields)
 
     quote do
       defmodule unquote(mod_name) do
@@ -34,65 +34,56 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
           "type" => %{"ofType" => type_ref}
         } = field
       ) do
-    mod_var_name = Macro.var(mod_var_name, __MODULE__)
-    fun_name = Function.format_name(name)
+    mod_var_name = to_macro_var(mod_var_name)
     deprecated = format_deprecated(field)
     doc = format_doc(field)
-    fun = format_function(name, fun_name, {mod_var_name, args}, type_ref)
+    fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
+    fun_body = format_function_body(name, {mod_var_name, args}, type_ref)
 
-    body = [doc, fun]
+    fun = [doc, Function.define(name, fun_args, fun_body)]
 
-    body =
+    fun =
       if not is_nil(deprecated) do
-        [deprecated | body]
+        [deprecated | fun]
       else
-        body
+        fun
       end
 
     quote do
-      (unquote_splicing(body))
+      (unquote_splicing(fun))
     end
   end
 
-  def format_function(
+  def format_function_body(
         field_name,
-        fun_name,
         {mod_var_name, args},
         %{"kind" => "OBJECT", "name" => name}
       ) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
     args = render_args(args)
-    fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
 
-    body =
-      quote do
-        selection = select(unquote(mod_var_name).selection, unquote(field_name))
+    quote do
+      selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
-        unquote_splicing(args)
+      unquote_splicing(args)
 
-        %unquote(mod_name){
-          selection: selection,
-          client: unquote(mod_var_name).client
-        }
-      end
-
-    Function.define(fun_name, fun_args, body)
+      %unquote(mod_name){
+        selection: selection,
+        client: unquote(mod_var_name).client
+      }
+    end
   end
 
-  def format_function(field_name, fun_name, {mod_var_name, args}, _) do
+  def format_function_body(field_name, {mod_var_name, args}, _) do
     args = render_args(args)
-    fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
 
-    body =
-      quote do
-        selection = select(unquote(mod_var_name).selection, unquote(field_name))
+    quote do
+      selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
-        unquote_splicing(args)
+      unquote_splicing(args)
 
-        execute(selection, unquote(mod_var_name).client)
-      end
-
-    Function.define(fun_name, fun_args, body)
+      execute(selection, unquote(mod_var_name).client)
+    end
   end
 
   defp format_deprecated(%{"isDeprecated" => true, "deprecationReason" => reason}) do
@@ -141,7 +132,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   defp format_arg_doc(%{"name" => name, "description" => description}) do
-    name = Function.format_name(name)
+    name = Function.format_var_name(name)
     "* `#{name}` - #{description}"
   end
 
@@ -159,7 +150,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   defp render_required_args(args) do
     for arg <- args,
         arg["type"]["kind"] == "NON_NULL" do
-      name = Function.format_name(arg["name"])
+      name = Function.format_var_name(arg["name"])
       arg_name = to_string(name)
 
       quote do
@@ -172,7 +163,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     args =
       for arg <- args, arg["type"]["kind"] != "NON_NULL" do
         name = arg["name"]
-        arg_name = Function.format_name(name)
+        arg_name = Function.format_var_name(name)
 
         quote do
           selection =
@@ -202,5 +193,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   defp fun_args([]), do: []
-  defp fun_args(_args), do: [Macro.var(:args, __MODULE__)]
+  defp fun_args(_args), do: [to_macro_var(:args)]
+
+  defp to_macro_var(var), do: Macro.var(var, __MODULE__)
 end
