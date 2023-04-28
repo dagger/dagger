@@ -18,7 +18,7 @@ This page describes problems you may encounter when using Dagger, and their solu
 
 A Dagger pipeline may hang or become unresponsive, eventually generating a BuildKit error such as `buildkit failed to respond` or `container state improper`.
 
-To resolve this error, you must stop and remove the Dagger Engine container and clear unused volumes and the cache:
+To resolve this error, you must stop and remove the Dagger Engine container and clear unused volumes and the cache.
 
 1. Stop and remove the Dagger Engine container:
 
@@ -34,5 +34,9 @@ To resolve this error, you must stop and remove the Dagger Engine container and 
   docker volume prune
   docker system prune
   ```
+
+:::tip
+If you are using a different container runtime, replace the commands above with the correct equivalents for your runtime.
+:::
 
 You should now be able to re-run your Dagger pipeline successfully.
