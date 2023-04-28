@@ -84,10 +84,6 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	// engine should shutdown with exit code 0 when receiving SIGTERM
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
 	engineName := "my-special-engine"
 	devEngine := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).

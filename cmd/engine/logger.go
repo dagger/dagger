@@ -27,7 +27,7 @@ func init() {
 	}
 
 	tel = telemetry.New(false)
-	tel.SetRunID("")
+	tel.SetRunID("00000000-0000-0000-0000-000000000000")
 
 	logrus.AddHook(&cloudHook{})
 }
