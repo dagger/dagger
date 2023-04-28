@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
@@ -107,6 +106,26 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 		require.NoError(t, err)
 
 		require.Equal(t, hn+":8000", ep)
+	})
+
+	t.Run("hostname and endpoint force default command", func(t *testing.T) {
+		srv := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+				Args: []string{"python", "-m", "http.server"},
+			})
+
+		hn, err := srv.Hostname(ctx)
+		require.NoError(t, err)
+
+		ep, err := srv.Endpoint(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hn+":8000", ep)
+
+		exp, err := srv.WithExec(nil).Hostname(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hn, exp)
 	})
 
 	t.Run("endpoint can specify arbitrary port", func(t *testing.T) {
@@ -352,7 +371,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
 
-func TestContainerServiceNoExecError(t *testing.T) {
+func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
 
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
@@ -362,11 +381,14 @@ func TestContainerServiceNoExecError(t *testing.T) {
 
 	srv := c.Container().
 		From("alpine:3.16.2").
-		WithExposedPort(8080)
+		WithExposedPort(8080).
+		// using error to compare hostname after WithServiceBinding
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: []string{"sh", "-c", "echo nope; exit 42"},
+		})
 
-	_, err := srv.Hostname(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	host, err := srv.Hostname(ctx)
+	require.NoError(t, err)
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -375,15 +397,7 @@ func TestContainerServiceNoExecError(t *testing.T) {
 
 	_, err = client.ExitCode(ctx)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
-
-	_, err = client.Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
-
-	_, err = client.Stderr(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	require.Contains(t, err.Error(), "start "+host+" (aliased as www)")
 }
 
 //go:embed testdata/udp-service.go
@@ -556,7 +570,6 @@ CMD cat index.html
 		fileContent, err := c.Container().
 			WithServiceBinding("www", srv).
 			Build(src).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)
@@ -583,7 +596,6 @@ CMD cat index.html
 		fileContent, err := c.Container().
 			WithServiceBinding("www", srv).
 			Build(gitDir).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)
@@ -610,7 +622,6 @@ CMD cat index.html
 		fileContent, err := gitDir.
 			DockerBuild().
 			WithServiceBinding("www", srv).
-			WithExec(nil).
 			Stdout(ctx)
 		require.NoError(t, err)
 		require.Equal(t, content, fileContent)

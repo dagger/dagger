@@ -844,7 +844,8 @@ export class Container extends BaseClient {
 
   /**
    * Exit code of the last executed command. Zero means success.
-   * Errors if no command has been executed.
+   *
+   * Will execute default command if none is set, or error if there's no default.
    */
   async exitCode(): Promise<number> {
     const response: Awaited<number> = await computeQuery(
@@ -1170,7 +1171,8 @@ export class Container extends BaseClient {
 
   /**
    * The error stream of the last executed command.
-   * Errors if no command has been executed.
+   *
+   * Will execute default command if none is set, or error if there's no default.
    */
   async stderr(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1188,7 +1190,8 @@ export class Container extends BaseClient {
 
   /**
    * The output stream of the last executed command.
-   * Errors if no command has been executed.
+   *
+   * Will execute default command if none is set, or error if there's no default.
    */
   async stdout(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
@@ -1309,6 +1312,8 @@ export class Container extends BaseClient {
   /**
    * Retrieves this container after executing the specified command inside it.
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
    * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
@@ -1658,7 +1663,10 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+   * Establish a runtime dependency on a service.
+   *
+   * The service will be started automatically when needed and detached when it is
+   * no longer needed, executing the default command if none is set.
    *
    * The service will be reachable from the container via the provided hostname alias.
    *

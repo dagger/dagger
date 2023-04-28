@@ -349,7 +349,8 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 }
 
 // Exit code of the last executed command. Zero means success.
-// Errors if no command has been executed.
+//
+// Will execute default command if none is set, or error if there's no default.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	if r.exitCode != nil {
 		return *r.exitCode, nil
@@ -691,7 +692,8 @@ func (r *Container) Rootfs() *Directory {
 }
 
 // The error stream of the last executed command.
-// Errors if no command has been executed.
+//
+// Will execute default command if none is set, or error if there's no default.
 func (r *Container) Stderr(ctx context.Context) (string, error) {
 	if r.stderr != nil {
 		return *r.stderr, nil
@@ -705,7 +707,8 @@ func (r *Container) Stderr(ctx context.Context) (string, error) {
 }
 
 // The output stream of the last executed command.
-// Errors if no command has been executed.
+//
+// Will execute default command if none is set, or error if there's no default.
 func (r *Container) Stdout(ctx context.Context) (string, error) {
 	if r.stdout != nil {
 		return *r.stdout, nil
@@ -1236,7 +1239,10 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 	}
 }
 
-// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+// Establish a runtime dependency on a service.
+//
+// The service will be started automatically when needed and detached when it is
+// no longer needed, executing the default command if none is set.
 //
 // The service will be reachable from the container via the provided hostname alias.
 //

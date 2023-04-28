@@ -153,7 +153,7 @@ ENV FOO=bar
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).WithExec([]string{}).Stdout(ctx)
+		env, err := c.Container().Build(src).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -172,7 +172,7 @@ CMD goenv
 
 		env, err := c.Container().Build(src, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).WithExec([]string{}).Stdout(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -191,7 +191,7 @@ CMD goenv
 
 		sub := c.Directory().WithDirectory("subcontext", src).Directory("subcontext")
 
-		env, err := c.Container().Build(sub).WithExec([]string{}).Stdout(ctx)
+		env, err := c.Container().Build(sub).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -212,7 +212,7 @@ CMD goenv
 
 		env, err := c.Container().Build(sub, dagger.ContainerBuildOpts{
 			Dockerfile: "subdir/Dockerfile.whee",
-		}).WithExec([]string{}).Stdout(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 	})
@@ -230,11 +230,11 @@ ENV FOO=$FOOARG
 CMD goenv
 `)
 
-		env, err := c.Container().Build(src).WithExec([]string{}).Stdout(ctx)
+		env, err := c.Container().Build(src).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=bar\n")
 
-		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).WithExec([]string{}).Stdout(ctx)
+		env, err = c.Container().Build(src, dagger.ContainerBuildOpts{BuildArgs: []dagger.BuildArg{{Name: "FOOARG", Value: "barbar"}}}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, env, "FOO=barbar\n")
 	})
@@ -252,11 +252,11 @@ FROM base AS stage2
 CMD echo "stage2"
 `)
 
-		output, err := c.Container().Build(src).WithExec([]string{}).Stdout(ctx)
+		output, err := c.Container().Build(src).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage2\n")
 
-		output, err = c.Container().Build(src, dagger.ContainerBuildOpts{Target: "stage1"}).WithExec([]string{}).Stdout(ctx)
+		output, err = c.Container().Build(src, dagger.ContainerBuildOpts{Target: "stage1"}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, output, "stage1\n")
 		require.NotContains(t, output, "stage2\n")
@@ -277,7 +277,7 @@ CMD cat /secret
 
 		stdout, err := c.Container().Build(src, dagger.ContainerBuildOpts{
 			Secrets: []*dagger.Secret{sec},
-		}).WithExec([]string{}).Stdout(ctx)
+		}).Stdout(ctx)
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
 	})
@@ -3162,21 +3162,31 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 	require.Equal(t, fmt.Sprintf("%s-from-outside\n%s-from-inside\n", randID, randID), out)
 }
 
-func TestContainerNoExecError(t *testing.T) {
+func TestContainerNoExec(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	_, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	code, err := c.Container().From("alpine:3.16.2").ExitCode(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, code)
 
-	_, err = c.Container().From("alpine:3.16.2").Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	stdout, err := c.Container().From("alpine:3.16.2").Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", stdout)
 
-	_, err = c.Container().From("alpine:3.16.2").Stderr(ctx)
+	stderr, err := c.Container().From("alpine:3.16.2").Stderr(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "", stderr)
+
+	_, err = c.Container().
+		From("alpine:3.16.2").
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
+			Args: nil,
+		}).
+		ExitCode(ctx)
+
 	require.Error(t, err)
-	require.Contains(t, err.Error(), core.ErrContainerNoExec.Error())
+	require.Contains(t, err.Error(), "no command has been set")
 }
 
 func TestContainerWithMountedFileOwner(t *testing.T) {

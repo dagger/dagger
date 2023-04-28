@@ -996,6 +996,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 		args = append(cfg.Entrypoint, args...)
 	}
 
+	if len(args) == 0 {
+		return nil, errors.New("no command has been set")
+	}
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
 		container.Pipeline.LLBOpt(),
@@ -1325,7 +1329,11 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 	}
 
 	if metaSt == nil {
-		return "", ErrContainerNoExec
+		ctr, err := container.WithExec(ctx, gw, container.Platform, ContainerExecOpts{})
+		if err != nil {
+			return "", err
+		}
+		return ctr.MetaFileContents(ctx, gw, filePath)
 	}
 
 	file, err := NewFile(
@@ -1515,7 +1523,12 @@ func (container *Container) Endpoint(port int, scheme string) (string, error) {
 		port = container.Ports[0].Port
 	}
 
-	endpoint := fmt.Sprintf("%s:%d", container.Hostname, port)
+	host, err := container.HostnameOrErr()
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", host, port)
 	if scheme != "" {
 		endpoint = scheme + "://" + endpoint
 	}
