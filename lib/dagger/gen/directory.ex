@@ -5,7 +5,7 @@ defmodule Dagger.Directory do
   defstruct [:selection, :client]
 
   (
-    @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare.\n\n## Optional Arguments"
+    @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare."
     def diff(%__MODULE__{} = directory, other) do
       selection = select(directory.selection, "diff")
       selection = arg(selection, "other", other)
@@ -14,7 +14,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves a directory at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory to retrieve (e.g., \"/src\").\n\n## Optional Arguments"
+    @doc "Retrieves a directory at the given path.\n\n## Required Arguments\n\n* `path` - Location of the directory to retrieve (e.g., \"/src\")."
     def directory(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "directory")
       selection = arg(selection, "path", path)
@@ -23,7 +23,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Builds a new Docker container from this directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build."
+    @doc "Builds a new Docker container from this directory.\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build."
     def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "dockerBuild")
 
@@ -60,7 +60,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Returns a list of files and directories at the given path.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `path` - Location of the directory to look at (e.g., \"/src\")."
+    @doc "Returns a list of files and directories at the given path.\n\n\n\n## Optional Arguments\n\n* `path` - Location of the directory to look at (e.g., \"/src\")."
     def entries(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "entries")
 
@@ -76,7 +76,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\").\n\n## Optional Arguments"
+    @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\")."
     def export(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "export")
       selection = arg(selection, "path", path)
@@ -85,7 +85,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\").\n\n## Optional Arguments"
+    @doc "Retrieves a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
     def file(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "file")
       selection = arg(selection, "path", path)
@@ -94,7 +94,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "The content-addressed identifier of the directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The content-addressed identifier of the directory."
     def id(%__MODULE__{} = directory) do
       selection = select(directory.selection, "id")
       execute(selection, directory.client)
@@ -102,7 +102,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "load a project's metadata\n\n## Required Arguments\n\n* `config_path` - \n\n## Optional Arguments"
+    @doc "load a project's metadata\n\n## Required Arguments\n\n* `config_path` -"
     def load_project(%__MODULE__{} = directory, config_path) do
       selection = select(directory.selection, "loadProject")
       selection = arg(selection, "configPath", config_path)
@@ -213,7 +213,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory with all file/dir timestamps set to the given time.\n\n## Required Arguments\n\n* `timestamp` - Timestamp to set dir/files in.\n\nFormatted in seconds following Unix epoch (e.g., 1672531199).\n\n## Optional Arguments"
+    @doc "Retrieves this directory with all file/dir timestamps set to the given time.\n\n## Required Arguments\n\n* `timestamp` - Timestamp to set dir/files in.\n\nFormatted in seconds following Unix epoch (e.g., 1672531199)."
     def with_timestamps(%__MODULE__{} = directory, timestamp) do
       selection = select(directory.selection, "withTimestamps")
       selection = arg(selection, "timestamp", timestamp)
@@ -222,7 +222,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory with the directory at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the directory to remove (e.g., \".github/\").\n\n## Optional Arguments"
+    @doc "Retrieves this directory with the directory at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the directory to remove (e.g., \".github/\")."
     def without_directory(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "withoutDirectory")
       selection = arg(selection, "path", path)
@@ -231,7 +231,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Retrieves this directory with the file at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the file to remove (e.g., \"/file.txt\").\n\n## Optional Arguments"
+    @doc "Retrieves this directory with the file at the given path removed.\n\n## Required Arguments\n\n* `path` - Location of the file to remove (e.g., \"/file.txt\")."
     def without_file(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "withoutFile")
       selection = arg(selection, "path", path)

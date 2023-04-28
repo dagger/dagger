@@ -83,20 +83,23 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   defp deprecated_reason(_), do: nil
 
   defp format_doc(%{"description" => desc, "args" => args}) do
-    required_args_doc = format_required_args_doc(args) |> IO.iodata_to_binary()
-    optional_args_doc = format_optional_args_doc(args) |> IO.iodata_to_binary()
+    sep = ['\n', '\n']
+    doc = [desc]
 
-    """
-    #{desc}
+    required_args_doc =
+      case format_required_args_doc(args) do
+        [] -> []
+        args_doc -> ["## Required Arguments", '\n', '\n', args_doc]
+      end
 
-    ## Required Arguments
+    optional_args_doc =
+      case format_optional_args_doc(args) do
+        [] -> []
+        args_doc -> ["## Optional Arguments", '\n', '\n', args_doc]
+      end
 
-    #{required_args_doc}
-
-    ## Optional Arguments
-
-    #{optional_args_doc}
-    """
+    (doc ++ sep ++ required_args_doc ++ sep ++ optional_args_doc)
+    |> IO.iodata_to_binary()
     |> String.trim()
   end
 

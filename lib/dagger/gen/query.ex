@@ -5,7 +5,7 @@ defmodule Dagger.Query do
   defstruct [:selection, :client]
 
   (
-    @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\").\n\n## Optional Arguments"
+    @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."
     def cache_volume(%__MODULE__{} = query, key) do
       selection = select(query.selection, "cacheVolume")
       selection = arg(selection, "key", key)
@@ -14,7 +14,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Loads a container from ID.\n\nNull ID returns an empty container (scratch).\nOptional platform argument initializes new containers to execute and publish as that platform.\nPlatform defaults to that of the builder's host.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` -"
+    @doc "Loads a container from ID.\n\nNull ID returns an empty container (scratch).\nOptional platform argument initializes new containers to execute and publish as that platform.\nPlatform defaults to that of the builder's host.\n\n\n\n## Optional Arguments\n\n* `id` - \n* `platform` -"
     def container(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "container")
 
@@ -37,7 +37,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "The default platform of the builder.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The default platform of the builder."
     def default_platform(%__MODULE__{} = query) do
       selection = select(query.selection, "defaultPlatform")
       execute(selection, query.client)
@@ -45,7 +45,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Load a directory by ID. No argument produces an empty directory.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "Load a directory by ID. No argument produces an empty directory.\n\n\n\n## Optional Arguments\n\n* `id` -"
     def directory(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "directory")
 
@@ -61,7 +61,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
+    @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
     def file(%__MODULE__{} = query, id) do
       selection = select(query.selection, "file")
       selection = arg(selection, "id", id)
@@ -94,7 +94,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Queries the host environment.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Queries the host environment."
     def host(%__MODULE__{} = query) do
       selection = select(query.selection, "host")
       %Dagger.Host{selection: selection, client: query.client}
@@ -143,7 +143,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Look up a project by name\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments"
+    @doc "Look up a project by name\n\n## Required Arguments\n\n* `name` -"
     def project(%__MODULE__{} = query, name) do
       selection = select(query.selection, "project")
       selection = arg(selection, "name", name)
@@ -152,7 +152,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
+    @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` -"
     def secret(%__MODULE__{} = query, id) do
       selection = select(query.selection, "secret")
       selection = arg(selection, "id", id)
@@ -161,7 +161,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret\n\n## Optional Arguments"
+    @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret"
     def set_secret(%__MODULE__{} = query, name, plaintext) do
       selection = select(query.selection, "setSecret")
       selection = arg(selection, "name", name)
@@ -171,7 +171,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Loads a socket by its ID.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @doc "Loads a socket by its ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
     def socket(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "socket")
 

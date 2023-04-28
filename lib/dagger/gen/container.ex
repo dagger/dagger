@@ -36,7 +36,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves default arguments for future commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves default arguments for future commands."
     def default_args(%__MODULE__{} = container) do
       selection = select(container.selection, "defaultArgs")
       execute(selection, container.client)
@@ -44,7 +44,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves a directory at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the directory to retrieve (e.g., \"./src\").\n\n## Optional Arguments"
+    @doc "Retrieves a directory at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the directory to retrieve (e.g., \"./src\")."
     def directory(%__MODULE__{} = container, path) do
       selection = select(container.selection, "directory")
       selection = arg(selection, "path", path)
@@ -53,7 +53,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
+    @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
     def endpoint(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "endpoint")
 
@@ -76,7 +76,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves entrypoint to be prepended to the arguments of all commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
     def entrypoint(%__MODULE__{} = container) do
       selection = select(container.selection, "entrypoint")
       execute(selection, container.client)
@@ -84,7 +84,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the value of the specified environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable to retrieve (e.g., \"PATH\").\n\n## Optional Arguments"
+    @doc "Retrieves the value of the specified environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable to retrieve (e.g., \"PATH\")."
     def env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "envVariable")
       selection = arg(selection, "name", name)
@@ -93,7 +93,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of environment variables passed to commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the list of environment variables passed to commands."
     def env_variables(%__MODULE__{} = container) do
       selection = select(container.selection, "envVariables")
       execute(selection, container.client)
@@ -101,7 +101,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
+    @doc "Retrieves this container after executing the specified command inside it.\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
     @deprecated "Replaced by `withExec`."
     def exec(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "exec")
@@ -150,7 +150,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Exit code of the last executed command. Zero means success.\nErrors if no command has been executed.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Exit code of the last executed command. Zero means success.\nErrors if no command has been executed."
     def exit_code(%__MODULE__{} = container) do
       selection = select(container.selection, "exitCode")
       execute(selection, container.client)
@@ -175,7 +175,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of exposed ports.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the list of exposed ports.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
       execute(selection, container.client)
@@ -183,7 +183,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves a file at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the file to retrieve (e.g., \"./README.md\").\n\n## Optional Arguments"
+    @doc "Retrieves a file at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the file to retrieve (e.g., \"./README.md\")."
     def file(%__MODULE__{} = container, path) do
       selection = select(container.selection, "file")
       selection = arg(selection, "path", path)
@@ -192,7 +192,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from a pulled base image.\n\n## Required Arguments\n\n* `address` - Image's address from its registry.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g., \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments"
+    @doc "Initializes this container from a pulled base image.\n\n## Required Arguments\n\n* `address` - Image's address from its registry.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g., \"docker.io/dagger/dagger:main\")."
     def from(%__MODULE__{} = container, address) do
       selection = select(container.selection, "from")
       selection = arg(selection, "address", address)
@@ -201,7 +201,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container's root filesystem. Mounts are not included.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves this container's root filesystem. Mounts are not included."
     @deprecated "Replaced by `rootfs`."
     def fs(%__MODULE__{} = container) do
       selection = select(container.selection, "fs")
@@ -210,7 +210,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     def hostname(%__MODULE__{} = container) do
       selection = select(container.selection, "hostname")
       execute(selection, container.client)
@@ -218,7 +218,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "A unique identifier for this container.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "A unique identifier for this container."
     def id(%__MODULE__{} = container) do
       selection = select(container.selection, "id")
       execute(selection, container.client)
@@ -226,7 +226,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
     def image_ref(%__MODULE__{} = container) do
       selection = select(container.selection, "imageRef")
       execute(selection, container.client)
@@ -251,7 +251,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the value of the specified label.\n\n## Required Arguments\n\n* `name` - \n\n## Optional Arguments"
+    @doc "Retrieves the value of the specified label.\n\n## Required Arguments\n\n* `name` -"
     def label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "label")
       selection = arg(selection, "name", name)
@@ -260,7 +260,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of labels passed to container.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the list of labels passed to container."
     def labels(%__MODULE__{} = container) do
       selection = select(container.selection, "labels")
       execute(selection, container.client)
@@ -268,7 +268,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of paths where a directory is mounted.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the list of paths where a directory is mounted."
     def mounts(%__MODULE__{} = container) do
       selection = select(container.selection, "mounts")
       execute(selection, container.client)
@@ -300,7 +300,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The platform this container executes and publishes as.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The platform this container executes and publishes as."
     def platform(%__MODULE__{} = container) do
       selection = select(container.selection, "platform")
       execute(selection, container.client)
@@ -325,7 +325,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container's root filesystem. Mounts are not included.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves this container's root filesystem. Mounts are not included."
     def rootfs(%__MODULE__{} = container) do
       selection = select(container.selection, "rootfs")
       %Dagger.Directory{selection: selection, client: container.client}
@@ -333,7 +333,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The error stream of the last executed command.\nErrors if no command has been executed.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The error stream of the last executed command.\nErrors if no command has been executed."
     def stderr(%__MODULE__{} = container) do
       selection = select(container.selection, "stderr")
       execute(selection, container.client)
@@ -341,7 +341,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The output stream of the last executed command.\nErrors if no command has been executed.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The output stream of the last executed command.\nErrors if no command has been executed."
     def stdout(%__MODULE__{} = container) do
       selection = select(container.selection, "stdout")
       execute(selection, container.client)
@@ -349,7 +349,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the user to be set for all commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the user to be set for all commands."
     def user(%__MODULE__{} = container) do
       selection = select(container.selection, "user")
       execute(selection, container.client)
@@ -357,7 +357,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Configures default arguments for future commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
+    @doc "Configures default arguments for future commands.\n\n\n\n## Optional Arguments\n\n* `args` - Arguments to prepend to future executions (e.g., [\"-v\", \"--no-cache\"])."
     def with_default_args(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "withDefaultArgs")
 
@@ -398,7 +398,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"]).\n\n## Optional Arguments"
+    @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"])."
     def with_entrypoint(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withEntrypoint")
       selection = arg(selection, "args", args)
@@ -407,7 +407,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\").\n\n## Optional Arguments"
+    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\")."
     def with_env_variable(%__MODULE__{} = container, name, value) do
       selection = select(container.selection, "withEnvVariable")
       selection = arg(selection, "name", name)
@@ -490,7 +490,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
+    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` -"
     @deprecated "Replaced by `withRootfs`."
     def with_fs(%__MODULE__{} = container, id) do
       selection = select(container.selection, "withFS")
@@ -518,7 +518,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus the given label.\n\n## Required Arguments\n\n* `name` - The name of the label (e.g., \"org.opencontainers.artifact.created\").\n* `value` - The value of the label (e.g., \"2023-01-01T00:00:00Z\").\n\n## Optional Arguments"
+    @doc "Retrieves this container plus the given label.\n\n## Required Arguments\n\n* `name` - The name of the label (e.g., \"org.opencontainers.artifact.created\").\n* `value` - The value of the label (e.g., \"2023-01-01T00:00:00Z\")."
     def with_label(%__MODULE__{} = container, name, value) do
       selection = select(container.selection, "withLabel")
       selection = arg(selection, "name", name)
@@ -553,7 +553,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted directory (e.g., \"/mnt/directory\").\n* `source` - Identifier of the mounted directory.\n\n## Optional Arguments"
+    @doc "Retrieves this container plus a directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted directory (e.g., \"/mnt/directory\").\n* `source` - Identifier of the mounted directory."
     def with_mounted_directory(%__MODULE__{} = container, path, source) do
       selection = select(container.selection, "withMountedDirectory")
       selection = arg(selection, "path", path)
@@ -563,7 +563,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a file mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the mounted file.\n\n## Optional Arguments"
+    @doc "Retrieves this container plus a file mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the mounted file."
     def with_mounted_file(%__MODULE__{} = container, path, source) do
       selection = select(container.selection, "withMountedFile")
       selection = arg(selection, "path", path)
@@ -573,7 +573,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount.\n\n## Optional Arguments"
+    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount."
     def with_mounted_secret(%__MODULE__{} = container, path, source) do
       selection = select(container.selection, "withMountedSecret")
       selection = arg(selection, "path", path)
@@ -583,7 +583,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a temporary directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the temporary directory (e.g., \"/tmp/temp_dir\").\n\n## Optional Arguments"
+    @doc "Retrieves this container plus a temporary directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the temporary directory (e.g., \"/tmp/temp_dir\")."
     def with_mounted_temp(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withMountedTemp")
       selection = arg(selection, "path", path)
@@ -616,7 +616,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container with a registry authentication for a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to bind the authentication to.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).\n* `username` - The username of the registry's account (e.g., \"Dagger\").\n* `secret` - The API key, password or token to authenticate to this registry.\n\n## Optional Arguments"
+    @doc "Retrieves this container with a registry authentication for a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to bind the authentication to.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).\n* `username` - The username of the registry's account (e.g., \"Dagger\").\n* `secret` - The API key, password or token to authenticate to this registry."
     def with_registry_auth(%__MODULE__{} = container, address, username, secret) do
       selection = select(container.selection, "withRegistryAuth")
       selection = arg(selection, "address", address)
@@ -627,7 +627,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
+    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` -"
     def with_rootfs(%__MODULE__{} = container, id) do
       selection = select(container.selection, "withRootfs")
       selection = arg(selection, "id", id)
@@ -636,7 +636,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus an env variable containing the given secret.\n\n## Required Arguments\n\n* `name` - The name of the secret variable (e.g., \"API_SECRET\").\n* `secret` - The identifier of the secret value.\n\n## Optional Arguments"
+    @doc "Retrieves this container plus an env variable containing the given secret.\n\n## Required Arguments\n\n* `name` - The name of the secret variable (e.g., \"API_SECRET\").\n* `secret` - The identifier of the secret value."
     def with_secret_variable(%__MODULE__{} = container, name, secret) do
       selection = select(container.selection, "withSecretVariable")
       selection = arg(selection, "name", name)
@@ -646,7 +646,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container\n\n## Optional Arguments"
+    @doc "Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
@@ -656,7 +656,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a socket forwarded to the given Unix socket path.\n\n## Required Arguments\n\n* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\").\n* `source` - Identifier of the socket to forward.\n\n## Optional Arguments"
+    @doc "Retrieves this container plus a socket forwarded to the given Unix socket path.\n\n## Required Arguments\n\n* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\").\n* `source` - Identifier of the socket to forward."
     def with_unix_socket(%__MODULE__{} = container, path, source) do
       selection = select(container.selection, "withUnixSocket")
       selection = arg(selection, "path", path)
@@ -666,7 +666,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container with a different command user.\n\n## Required Arguments\n\n* `name` - The user to set (e.g., \"root\").\n\n## Optional Arguments"
+    @doc "Retrieves this container with a different command user.\n\n## Required Arguments\n\n* `name` - The user to set (e.g., \"root\")."
     def with_user(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withUser")
       selection = arg(selection, "name", name)
@@ -675,7 +675,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container with a different working directory.\n\n## Required Arguments\n\n* `path` - The path to set as the working directory (e.g., \"/app\").\n\n## Optional Arguments"
+    @doc "Retrieves this container with a different working directory.\n\n## Required Arguments\n\n* `path` - The path to set as the working directory (e.g., \"/app\")."
     def with_workdir(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withWorkdir")
       selection = arg(selection, "path", path)
@@ -684,7 +684,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container minus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n\n## Optional Arguments"
+    @doc "Retrieves this container minus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\")."
     def without_env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withoutEnvVariable")
       selection = arg(selection, "name", name)
@@ -710,7 +710,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container minus the given environment label.\n\n## Required Arguments\n\n* `name` - The name of the label to remove (e.g., \"org.opencontainers.artifact.created\").\n\n## Optional Arguments"
+    @doc "Retrieves this container minus the given environment label.\n\n## Required Arguments\n\n* `name` - The name of the label to remove (e.g., \"org.opencontainers.artifact.created\")."
     def without_label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withoutLabel")
       selection = arg(selection, "name", name)
@@ -719,7 +719,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after unmounting everything at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\").\n\n## Optional Arguments"
+    @doc "Retrieves this container after unmounting everything at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\")."
     def without_mount(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withoutMount")
       selection = arg(selection, "path", path)
@@ -728,7 +728,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container without the registry authentication of a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to remove the authentication from.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).\n\n## Optional Arguments"
+    @doc "Retrieves this container without the registry authentication of a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to remove the authentication from.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main)."
     def without_registry_auth(%__MODULE__{} = container, address) do
       selection = select(container.selection, "withoutRegistryAuth")
       selection = arg(selection, "address", address)
@@ -737,7 +737,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container with a previously added Unix socket removed.\n\n## Required Arguments\n\n* `path` - Location of the socket to remove (e.g., \"/tmp/socket\").\n\n## Optional Arguments"
+    @doc "Retrieves this container with a previously added Unix socket removed.\n\n## Required Arguments\n\n* `path` - Location of the socket to remove (e.g., \"/tmp/socket\")."
     def without_unix_socket(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withoutUnixSocket")
       selection = arg(selection, "path", path)
@@ -746,7 +746,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the working directory for all commands.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "Retrieves the working directory for all commands."
     def workdir(%__MODULE__{} = container) do
       selection = select(container.selection, "workdir")
       execute(selection, container.client)

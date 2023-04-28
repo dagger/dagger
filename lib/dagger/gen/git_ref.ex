@@ -5,7 +5,7 @@ defmodule Dagger.GitRef do
   defstruct [:selection, :client]
 
   (
-    @doc "The digest of the current value of this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @doc "The digest of the current value of this ref."
     def digest(%__MODULE__{} = git_ref) do
       selection = select(git_ref.selection, "digest")
       execute(selection, git_ref.client)
@@ -13,7 +13,7 @@ defmodule Dagger.GitRef do
   )
 
   (
-    @doc "The filesystem tree at this ref.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
+    @doc "The filesystem tree at this ref.\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
     def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
       selection = select(git_ref.selection, "tree")
 

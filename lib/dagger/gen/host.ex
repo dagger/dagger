@@ -29,7 +29,7 @@ defmodule Dagger.Host do
   )
 
   (
-    @doc "Accesses an environment variable on the host.\n\n## Required Arguments\n\n* `name` - Name of the environment variable (e.g., \"PATH\").\n\n## Optional Arguments"
+    @doc "Accesses an environment variable on the host.\n\n## Required Arguments\n\n* `name` - Name of the environment variable (e.g., \"PATH\")."
     def env_variable(%__MODULE__{} = host, name) do
       selection = select(host.selection, "envVariable")
       selection = arg(selection, "name", name)
@@ -38,7 +38,7 @@ defmodule Dagger.Host do
   )
 
   (
-    @doc "Accesses a Unix socket on the host.\n\n## Required Arguments\n\n* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\").\n\n## Optional Arguments"
+    @doc "Accesses a Unix socket on the host.\n\n## Required Arguments\n\n* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\")."
     def unix_socket(%__MODULE__{} = host, path) do
       selection = select(host.selection, "unixSocket")
       selection = arg(selection, "path", path)
@@ -47,7 +47,7 @@ defmodule Dagger.Host do
   )
 
   (
-    @doc "Retrieves the current working directory on the host.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
+    @doc "Retrieves the current working directory on the host.\n\n\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
     @deprecated "Use `directory` with path set to '.' instead."
     def workdir(%__MODULE__{} = host, optional_args \\ []) do
       selection = select(host.selection, "workdir")
