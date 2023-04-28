@@ -27,23 +27,41 @@ defmodule Dagger.Codegen.Elixir.Function do
     |> String.to_atom()
   end
 
-  def define(fun_name, args, guard \\ nil, body) when is_list(args) do
+  def define(fun_name, args, guard \\ nil, body, opts \\ []) when is_list(args) do
     fun_name = format_fun_name(fun_name)
+    doc = opts[:doc] |> doc_to_quote()
 
-    case guard do
-      nil ->
-        quote do
-          def unquote(fun_name)(unquote_splicing(args)) do
-            unquote(body)
+    fun =
+      case guard do
+        nil ->
+          quote do
+            def unquote(fun_name)(unquote_splicing(args)) do
+              unquote(body)
+            end
           end
-        end
 
-      guard ->
-        quote do
-          def unquote(fun_name)(unquote_splicing(args)) when unquote(guard) do
-            unquote(body)
+        guard ->
+          quote do
+            def unquote(fun_name)(unquote_splicing(args)) when unquote(guard) do
+              unquote(body)
+            end
           end
-        end
+      end
+
+    quote do
+      (unquote_splicing(remove_nil([doc | [fun]])))
     end
+  end
+
+  defp doc_to_quote(nil), do: quote(do: @doc false)
+
+  defp doc_to_quote(doc) when is_binary(doc) do
+    quote do
+      @doc unquote(doc)
+    end
+  end
+
+  defp remove_nil(list) do
+    Enum.filter(list, &(not is_nil(&1)))
   end
 end
