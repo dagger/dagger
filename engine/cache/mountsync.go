@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/containerd/containerd/archive"
@@ -72,6 +73,9 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 					MediaType: syncedCacheMount.MediaType,
 				}, []mount.Mount{mnt})
 				if err != nil {
+					if removeErr := removeAllUnderDir(cacheMountDir); removeErr != nil {
+						err = errors.Join(err, fmt.Errorf("failed to empty out cache mount dir after failure %q: %w", cacheMountDir, removeErr))
+					}
 					return fmt.Errorf("failed to apply cache mount: %w", err)
 				}
 
@@ -233,4 +237,17 @@ func withCacheMount(ctx context.Context, mountManager *mounts.MountManager, cach
 		return fmt.Errorf("expected bind mount, got %s", mnt.Type)
 	}
 	return cb(ctx, mnt)
+}
+
+func removeAllUnderDir(dir string) error {
+	dirents, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("failed to read dir %s: %w", dir, err)
+	}
+	for _, dirent := range dirents {
+		if err := os.RemoveAll(filepath.Join(dir, dirent.Name())); err != nil {
+			return fmt.Errorf("failed to remove %s: %w", dirent.Name(), err)
+		}
+	}
+	return nil
 }
