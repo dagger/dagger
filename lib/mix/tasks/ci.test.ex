@@ -16,17 +16,27 @@ defmodule Mix.Tasks.Ci.Test do
       |> Dagger.Host.directory(".", exclude: [".elixir_ls", "_build", "deps"])
       |> Dagger.Directory.id()
 
-    client
-    |> Dagger.Query.pipeline("Test")
-    |> Dagger.Query.container()
-    |> Dagger.Container.from(elixir_image)
-    |> Dagger.Container.with_mounted_directory("/dagger_ex", repo)
-    |> Dagger.Container.with_workdir("/dagger_ex")
-    |> Dagger.Container.with_env_variable("MIX_ENV", "test")
-    |> Dagger.Container.with_exec(["mix", "local.rebar", "--force"])
-    |> Dagger.Container.with_exec(["mix", "local.hex", "--force"])
-    |> Dagger.Container.with_exec(["mix", "deps.get"])
+    base_image =
+      client
+      |> Dagger.Query.pipeline("Prepare")
+      |> Dagger.Query.container()
+      |> Dagger.Container.from(elixir_image)
+      |> Dagger.Container.with_mounted_directory("/dagger_ex", repo)
+      |> Dagger.Container.with_workdir("/dagger_ex")
+      |> Dagger.Container.with_exec(["mix", "local.rebar", "--force"])
+      |> Dagger.Container.with_exec(["mix", "local.hex", "--force"])
+      |> Dagger.Container.with_env_variable("MIX_ENV", "test")
+      |> Dagger.Container.with_exec(["mix", "deps.get"])
+
+    base_image
+    |> Dagger.Container.pipeline("Test")
     |> Dagger.Container.with_exec(["mix", "test", "--color"])
+    |> Dagger.Container.stdout()
+    |> IO.puts()
+
+    base_image
+    |> Dagger.Container.pipeline("Check Format")
+    |> Dagger.Container.with_exec(["mix", "format", "--check-formatted"])
     |> Dagger.Container.stdout()
     |> IO.puts()
 
