@@ -3,7 +3,7 @@ module github.com/dagger/dagger/internal/mage
 go 1.20
 
 require (
-	dagger.io/dagger v0.6.0
+	dagger.io/dagger v0.6.1
 	github.com/hexops/gotextdiff v1.0.3
 	github.com/magefile/mage v1.14.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
@@ -17,8 +17,8 @@ require (
 	github.com/iancoleman/strcase v0.2.0 // indirect
 	github.com/stretchr/testify v1.8.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.1 // indirect
-	golang.org/x/sys v0.6.0 // indirect
-	golang.org/x/tools v0.2.0 // indirect
+	golang.org/x/sys v0.7.0 // indirect
+	golang.org/x/tools v0.8.0 // indirect
 )
 
 // needed to resolve "ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules"
