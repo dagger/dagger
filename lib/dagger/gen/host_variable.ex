@@ -5,8 +5,8 @@ defmodule Dagger.HostVariable do
   defstruct [:selection, :client]
 
   (
-    @deprecated "been superseded by `setSecret`"
     @doc "A secret referencing the value of this variable.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @deprecated "been superseded by `setSecret`"
     def secret(%__MODULE__{} = host_variable) do
       selection = select(host_variable.selection, "secret")
       %Dagger.Secret{selection: selection, client: host_variable.client}

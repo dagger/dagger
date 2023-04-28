@@ -35,22 +35,13 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         } = field
       ) do
     mod_var_name = to_macro_var(mod_var_name)
-    deprecated = format_deprecated(field)
     fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
     fun_body = format_function_body(name, {mod_var_name, args}, type_ref)
 
-    fun = Function.define(name, fun_args, nil, fun_body, doc: format_doc(field))
-
-    fun =
-      if not is_nil(deprecated) do
-        [deprecated | [fun]]
-      else
-        [fun]
-      end
-
-    quote do
-      (unquote_splicing(fun))
-    end
+    Function.define(name, fun_args, nil, fun_body,
+      doc: format_doc(field),
+      deprecated: deprecated_reason(field)
+    )
   end
 
   def format_function_body(
@@ -85,13 +76,11 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     end
   end
 
-  defp format_deprecated(%{"isDeprecated" => true, "deprecationReason" => reason}) do
-    quote do
-      @deprecated unquote(reason)
-    end
+  defp deprecated_reason(%{"isDeprecated" => true, "deprecationReason" => reason}) do
+    reason
   end
 
-  defp format_deprecated(_), do: nil
+  defp deprecated_reason(_), do: nil
 
   defp format_doc(%{"description" => desc, "args" => args}) do
     required_args_doc = format_required_args_doc(args) |> IO.iodata_to_binary()

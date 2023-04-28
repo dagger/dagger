@@ -30,8 +30,9 @@ defmodule Dagger.Codegen.Elixir.Function do
   def define(fun_name, args, guard \\ nil, body, opts \\ []) when is_list(args) do
     fun_name = format_fun_name(fun_name)
     doc = opts[:doc] |> doc_to_quote()
+    deprecated = opts[:deprecated] |> deprecated_to_quote()
 
-    fun =
+    fun = [
       case guard do
         nil ->
           quote do
@@ -47,21 +48,36 @@ defmodule Dagger.Codegen.Elixir.Function do
             end
           end
       end
+    ]
 
     quote do
-      (unquote_splicing(remove_nil([doc | [fun]])))
+      (unquote_splicing(doc ++ deprecated ++ fun))
     end
   end
 
-  defp doc_to_quote(nil), do: quote(do: @doc false)
+  defp doc_to_quote(nil) do
+    [
+      quote do
+        @doc false
+      end
+    ]
+  end
 
   defp doc_to_quote(doc) when is_binary(doc) do
-    quote do
-      @doc unquote(doc)
-    end
+    [
+      quote do
+        @doc unquote(doc)
+      end
+    ]
   end
 
-  defp remove_nil(list) do
-    Enum.filter(list, &(not is_nil(&1)))
+  defp deprecated_to_quote(nil), do: []
+
+  defp deprecated_to_quote(deprecated) do
+    [
+      quote do
+        @deprecated unquote(deprecated)
+      end
+    ]
   end
 end

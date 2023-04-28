@@ -49,8 +49,8 @@ defmodule Dagger.Host do
   )
 
   (
-    @deprecated "Use `directory` with path set to '.' instead."
     @doc "Retrieves the current working directory on the host.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
+    @deprecated "Use `directory` with path set to '.' instead."
     def workdir(%__MODULE__{} = host, args) do
       selection = select(host.selection, "workdir")
 

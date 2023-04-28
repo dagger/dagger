@@ -105,8 +105,8 @@ defmodule Dagger.Container do
   )
 
   (
-    @deprecated "Replaced by `withExec`."
     @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
+    @deprecated "Replaced by `withExec`."
     def exec(%__MODULE__{} = container, args) do
       selection = select(container.selection, "exec")
 
@@ -207,8 +207,8 @@ defmodule Dagger.Container do
   )
 
   (
-    @deprecated "Replaced by `rootfs`."
     @doc "Retrieves this container's root filesystem. Mounts are not included.\n\n## Required Arguments\n\n\n\n## Optional Arguments"
+    @deprecated "Replaced by `rootfs`."
     def fs(%__MODULE__{} = container) do
       selection = select(container.selection, "fs")
       %Dagger.Directory{selection: selection, client: container.client}
@@ -504,8 +504,8 @@ defmodule Dagger.Container do
   )
 
   (
-    @deprecated "Replaced by `withRootfs`."
     @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` - \n\n## Optional Arguments"
+    @deprecated "Replaced by `withRootfs`."
     def with_fs(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withFS")
       selection = arg(selection, "id", Keyword.fetch!(args, :id))
