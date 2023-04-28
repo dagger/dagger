@@ -121,8 +121,11 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 
 		ep, err := srv.Endpoint(ctx)
 		require.NoError(t, err)
-
 		require.Equal(t, hn+":8000", ep)
+
+		exp, err := srv.WithExec(nil).Hostname(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hn, exp)
 	})
 
 	t.Run("endpoint can specify arbitrary port", func(t *testing.T) {
@@ -386,10 +389,6 @@ func TestContainerServiceNoExec(t *testing.T) {
 
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
-
-	host2, err := srv.WithExec(nil).Hostname(ctx)
-	require.NoError(t, err)
-	require.Equal(t, host, host2)
 
 	client := c.Container().
 		From("alpine:3.16.2").
