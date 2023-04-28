@@ -77,7 +77,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
   end
 
   defp deprecated_reason(%{"isDeprecated" => true, "deprecationReason" => reason}) do
-    reason
+    String.trim_trailing(reason, ".")
   end
 
   defp deprecated_reason(_), do: nil
