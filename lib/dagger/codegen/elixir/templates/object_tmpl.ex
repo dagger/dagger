@@ -189,15 +189,6 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
     ]
   end
 
-  # Field name id has no meaning since we don't have a typespec. Use
-  # type name to argument name instead.
-  defp fun_arg_name(%{
-         "name" => "id",
-         "type" => %{kind: "NON_NULL", ofType: %{"name" => type_name}}
-       }) do
-    type_name
-  end
-
   defp fun_arg_name(%{"name" => name}) do
     name
   end
