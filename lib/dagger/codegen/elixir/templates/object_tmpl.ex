@@ -102,16 +102,20 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
   defp format_required_args_doc(args) do
     args
-    |> Enum.filter(&(&1["type"]["kind"] == "NON_NULL"))
+    |> Enum.filter(&required_arg?/1)
     |> Enum.map(&format_arg_doc/1)
     |> Enum.intersperse('\n')
   end
 
   defp format_optional_args_doc(args) do
     args
-    |> Enum.filter(&(&1["type"]["kind"] != "NON_NULL"))
+    |> Enum.filter(&(not required_arg?(&1)))
     |> Enum.map(&format_arg_doc/1)
     |> Enum.intersperse('\n')
+  end
+
+  defp required_arg?(arg) do
+    arg["type"]["kind"] == "NON_NULL"
   end
 
   defp format_arg_doc(%{"name" => name, "description" => description}) do
@@ -144,7 +148,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
   defp render_optional_args(args) do
     args =
-      for arg <- args, arg["type"]["kind"] != "NON_NULL" do
+      for arg <- args, not required_arg?(arg) do
         name = arg["name"]
         arg_name = Function.format_var_name(name)
 
