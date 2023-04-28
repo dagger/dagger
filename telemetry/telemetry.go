@@ -36,7 +36,7 @@ type Telemetry struct {
 	doneCh chan struct{}
 }
 
-func New() *Telemetry {
+func New(printURLMessage bool) *Telemetry {
 	t := &Telemetry{
 		runID:  uuid.NewString(),
 		url:    pushURL,
@@ -49,7 +49,9 @@ func New() *Telemetry {
 	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
 		t.token = token
 		t.enable = true
-		fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
+		if printURLMessage {
+			fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
+		}
 
 		pts := strings.Split(token, ".")
 
@@ -65,7 +67,7 @@ func New() *Telemetry {
 			jwtClaims := map[string]interface{}{}
 			err = json.Unmarshal(jwtPayload, &jwtClaims)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not unmarsjal JWT payload: %v", err)
+				fmt.Fprintf(os.Stderr, "could not unmarshal JWT payload: %v", err)
 				t.enable = false
 			}
 			if v, ok := jwtClaims["id"].(string); ok {

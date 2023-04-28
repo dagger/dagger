@@ -397,6 +397,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
+		tel.Flush()
 		return detect.Shutdown(context.TODO())
 	}
 
