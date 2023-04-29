@@ -32,5 +32,5 @@ jobs:
         uses: crazy-max/ghaction-github-runtime@v2
       - name: Run dagger [CI]
         run: |
-          export _EXPERIMENTAL_DAGGER_CACHE_CONFIG="_type=gha,mode=max,url=$ACTIONS_CACHE_URL,token=$ACTIONS_RUNTIME_TOKEN"
+          export _EXPERIMENTAL_DAGGER_CACHE_CONFIG="type=gha,mode=max,url=$ACTIONS_CACHE_URL,token=$ACTIONS_RUNTIME_TOKEN"
           cargo run -p ci -- pr
