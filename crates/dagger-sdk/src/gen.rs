@@ -115,7 +115,7 @@ pub struct PipelineLabel {
 }
 #[derive(Clone)]
 pub struct CacheVolume {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -129,7 +129,7 @@ impl CacheVolume {
 }
 #[derive(Clone)]
 pub struct Container {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -1728,7 +1728,7 @@ impl Container {
 }
 #[derive(Clone)]
 pub struct Directory {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2235,7 +2235,7 @@ impl Directory {
 }
 #[derive(Clone)]
 pub struct EnvVariable {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2256,7 +2256,7 @@ impl EnvVariable {
 }
 #[derive(Clone)]
 pub struct File {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2323,7 +2323,7 @@ impl File {
 }
 #[derive(Clone)]
 pub struct GitRef {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2382,7 +2382,7 @@ impl GitRef {
 }
 #[derive(Clone)]
 pub struct GitRepository {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2451,7 +2451,7 @@ impl GitRepository {
 }
 #[derive(Clone)]
 pub struct Host {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2592,7 +2592,7 @@ impl Host {
 }
 #[derive(Clone)]
 pub struct HostVariable {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2617,7 +2617,7 @@ impl HostVariable {
 }
 #[derive(Clone)]
 pub struct Label {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2638,7 +2638,7 @@ impl Label {
 }
 #[derive(Clone)]
 pub struct Port {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2665,7 +2665,7 @@ impl Port {
 }
 #[derive(Clone)]
 pub struct Project {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -2718,7 +2718,7 @@ impl Project {
 }
 #[derive(Clone)]
 pub struct Query {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3087,7 +3087,7 @@ impl Query {
 }
 #[derive(Clone)]
 pub struct Secret {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
@@ -3108,7 +3108,7 @@ impl Secret {
 }
 #[derive(Clone)]
 pub struct Socket {
-    pub proc: Arc<Child>,
+    pub proc: Option<Arc<Child>>,
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }

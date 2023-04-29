@@ -18,7 +18,7 @@ pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust
     Ok(quote! {
         #[derive(Clone)]
         pub struct $(t.name.pipe(|s| format_name(s))) {
-            pub proc: $arc<$child>,
+            pub proc: Option<$arc<$child>>,
             pub selection: $selection,
             pub graphql_client: $graphql_client
         }

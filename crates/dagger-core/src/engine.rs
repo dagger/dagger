@@ -23,10 +23,25 @@ impl Engine {
     pub async fn start(
         &self,
         cfg: &Config,
-    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
+    ) -> eyre::Result<(ConnectParams, Option<tokio::process::Child>)> {
         tracing::info!("starting dagger-engine");
 
-        // TODO: Add from existing session as well
-        self.from_cli(cfg).await
+        if let Ok(conn) = self.from_session_env().await {
+            return Ok((conn, None));
+        }
+
+        let (conn, proc) = self.from_cli(cfg).await?;
+
+        Ok((conn, Some(proc)))
+    }
+
+    async fn from_session_env(&self) -> eyre::Result<ConnectParams> {
+        let port = std::env::var("DAGGER_SESSION_PORT").map(|p| p.parse::<u64>())??;
+        let token = std::env::var("DAGGER_SESSION_TOKEN")?;
+
+        Ok(ConnectParams {
+            port,
+            session_token: token,
+        })
     }
 }

@@ -21,7 +21,7 @@ pub async fn connect_opts(cfg: Config) -> eyre::Result<DaggerConn> {
     let (conn, proc) = DaggerEngine::new().start(&cfg).await?;
 
     Ok(Arc::new(Query {
-        proc: Arc::new(proc),
+        proc: proc.map(|p| Arc::new(p)),
         selection: query(),
         graphql_client: Arc::new(DefaultGraphQLClient::new(&conn)),
     }))
