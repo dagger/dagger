@@ -30,8 +30,7 @@ jobs:
       -
         name: Expose GitHub Runtime
         uses: crazy-max/ghaction-github-runtime@v2
-      - name: export proper cache config
+      - name: Run dagger [CI]
         run: |
           export _EXPERIMENTAL_DAGGER_CACHE_CONFIG="_type=gha,mode=max,url=$ACTIONS_CACHE_URL,token=$ACTIONS_RUNTIME_TOKEN"
-      - name: Run dagger [CI]
-        run: cargo run -p ci -- pr
+          cargo run -p ci -- pr
