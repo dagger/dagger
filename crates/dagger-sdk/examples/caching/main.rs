@@ -7,7 +7,7 @@ async fn main() -> eyre::Result<()> {
     let host_source_dir = client.host().directory_opts(
         "./examples/caching/app",
         dagger_sdk::HostDirectoryOptsBuilder::default()
-            .exclude(vec!["node_modules", "ci/"])
+            .exclude(vec!["node_modules/", "ci/"])
             .build()?,
     );
 

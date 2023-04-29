@@ -143,6 +143,10 @@ pub struct ContainerBuildOpts<'a> {
     /// Default: './Dockerfile'.
     #[builder(setter(into, strip_option), default)]
     pub dockerfile: Option<&'a str>,
+    /// Secrets to pass to the build.
+    /// They will be mounted at /run/secrets/[secret-name].
+    #[builder(setter(into, strip_option), default)]
+    pub secrets: Option<Vec<SecretId>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -184,6 +188,13 @@ pub struct ContainerExportOpts {
     pub platform_variants: Option<Vec<ContainerId>>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerImportOpts<'a> {
+    /// Identifies the tag to import from the archive, if the archive bundles
+    /// multiple tags.
+    #[builder(setter(into, strip_option), default)]
+    pub tag: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPipelineOpts<'a> {
     /// Pipeline description.
     #[builder(setter(into, strip_option), default)]
@@ -213,6 +224,11 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// Patterns to include in the written directory (e.g., ["*.go", "go.mod", "go.sum"]).
     #[builder(setter(into, strip_option), default)]
     pub include: Option<Vec<&'a str>>,
+    /// A user:group to set for the directory and its contents.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
@@ -233,6 +249,9 @@ pub struct ContainerWithExecOpts<'a> {
     /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
     #[builder(setter(into, strip_option), default)]
     pub redirect_stdout: Option<&'a str>,
+    /// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    #[builder(setter(into, strip_option), default)]
+    pub skip_entrypoint: Option<bool>,
     /// Content to write to the command's standard input before closing (e.g., "Hello world").
     #[builder(setter(into, strip_option), default)]
     pub stdin: Option<&'a str>,
@@ -247,14 +266,27 @@ pub struct ContainerWithExposedPortOpts<'a> {
     pub protocol: Option<NetworkProtocol>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithFileOpts {
+pub struct ContainerWithFileOpts<'a> {
+    /// A user:group to set for the file.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
     /// Permission given to the copied file (e.g., 0600).
     /// Default: 0644.
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerWithMountedCacheOpts {
+pub struct ContainerWithMountedCacheOpts<'a> {
+    /// A user:group to set for the mounted cache directory.
+    /// Note that this changes the ownership of the specified mount along with the
+    /// initial filesystem provided by source (if any). It does not have any effect
+    /// if/when the cache has already been created.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
     /// Sharing mode of the cache volume.
     #[builder(setter(into, strip_option), default)]
     pub sharing: Option<CacheSharingMode>,
@@ -263,14 +295,51 @@ pub struct ContainerWithMountedCacheOpts {
     pub source: Option<DirectoryId>,
 }
 #[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedDirectoryOpts<'a> {
+    /// A user:group to set for the mounted directory and its contents.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedFileOpts<'a> {
+    /// A user or user:group to set for the mounted file.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithMountedSecretOpts<'a> {
+    /// A user:group to set for the mounted secret.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithNewFileOpts<'a> {
     /// Content of the file to write (e.g., "Hello world!").
     #[builder(setter(into, strip_option), default)]
     pub contents: Option<&'a str>,
+    /// A user:group to set for the file.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
     /// Permission given to the written file (e.g., 0600).
     /// Default: 0644.
     #[builder(setter(into, strip_option), default)]
     pub permissions: Option<isize>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithUnixSocketOpts<'a> {
+    /// A user:group to set for the mounted socket.
+    /// The user and group can either be an ID (1000:1000) or a name (foo:bar).
+    /// If the group is omitted, it defaults to the same as the user.
+    #[builder(setter(into, strip_option), default)]
+    pub owner: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithoutExposedPortOpts {
@@ -316,6 +385,9 @@ impl Container {
         }
         if let Some(target) = opts.target {
             query = query.arg("target", target);
+        }
+        if let Some(secrets) = opts.secrets {
+            query = query.arg("secrets", secrets);
         }
 
         return Container {
@@ -458,7 +530,7 @@ impl Container {
         };
     }
     /// Exit code of the last executed command. Zero means success.
-    /// Errors if no command has been executed.
+    /// Will execute default command if none is set, or error if there's no default.
     pub async fn exit_code(&self) -> eyre::Result<isize> {
         let query = self.selection.select("exitCode");
 
@@ -578,6 +650,48 @@ impl Container {
         let query = self.selection.select("imageRef");
 
         query.execute(self.graphql_client.clone()).await
+    }
+    /// Reads the container from an OCI tarball.
+    /// NOTE: this involves unpacking the tarball to an OCI store on the host at
+    /// $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - File to read the container from.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn import(&self, source: FileId) -> Container {
+        let mut query = self.selection.select("import");
+
+        query = query.arg("source", source);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+
+    /// Reads the container from an OCI tarball.
+    /// NOTE: this involves unpacking the tarball to an OCI store on the host at
+    /// $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - File to read the container from.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn import_opts<'a>(&self, source: FileId, opts: ContainerImportOpts<'a>) -> Container {
+        let mut query = self.selection.select("import");
+
+        query = query.arg("source", source);
+        if let Some(tag) = opts.tag {
+            query = query.arg("tag", tag);
+        }
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
     }
     /// Retrieves the value of the specified label.
     pub async fn label(&self, name: impl Into<String>) -> eyre::Result<String> {
@@ -707,14 +821,14 @@ impl Container {
         };
     }
     /// The error stream of the last executed command.
-    /// Errors if no command has been executed.
+    /// Will execute default command if none is set, or error if there's no default.
     pub async fn stderr(&self) -> eyre::Result<String> {
         let query = self.selection.select("stderr");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The output stream of the last executed command.
-    /// Errors if no command has been executed.
+    /// Will execute default command if none is set, or error if there's no default.
     pub async fn stdout(&self) -> eyre::Result<String> {
         let query = self.selection.select("stdout");
 
@@ -802,6 +916,9 @@ impl Container {
         if let Some(include) = opts.include {
             query = query.arg("include", include);
         }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
 
         return Container {
             proc: self.proc.clone(),
@@ -855,6 +972,8 @@ impl Container {
     /// # Arguments
     ///
     /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+    ///
+    /// If empty, the container's default command is used.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exec(&self, args: Vec<impl Into<String>>) -> Container {
         let mut query = self.selection.select("withExec");
@@ -876,6 +995,8 @@ impl Container {
     /// # Arguments
     ///
     /// * `args` - Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+    ///
+    /// If empty, the container's default command is used.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_exec_opts<'a>(
         &self,
@@ -888,6 +1009,9 @@ impl Container {
             "args",
             args.into_iter().map(|i| i.into()).collect::<Vec<String>>(),
         );
+        if let Some(skip_entrypoint) = opts.skip_entrypoint {
+            query = query.arg("skipEntrypoint", skip_entrypoint);
+        }
         if let Some(stdin) = opts.stdin {
             query = query.arg("stdin", stdin);
         }
@@ -1005,11 +1129,11 @@ impl Container {
     /// * `path` - Location of the copied file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the file to copy.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_file_opts(
+    pub fn with_file_opts<'a>(
         &self,
         path: impl Into<String>,
         source: FileId,
-        opts: ContainerWithFileOpts,
+        opts: ContainerWithFileOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withFile");
 
@@ -1017,6 +1141,9 @@ impl Container {
         query = query.arg("source", source);
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
         }
 
         return Container {
@@ -1070,11 +1197,11 @@ impl Container {
     /// * `path` - Location of the cache directory (e.g., "/cache/node_modules").
     /// * `cache` - Identifier of the cache volume to mount.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn with_mounted_cache_opts(
+    pub fn with_mounted_cache_opts<'a>(
         &self,
         path: impl Into<String>,
         cache: CacheId,
-        opts: ContainerWithMountedCacheOpts,
+        opts: ContainerWithMountedCacheOpts<'a>,
     ) -> Container {
         let mut query = self.selection.select("withMountedCache");
 
@@ -1085,6 +1212,9 @@ impl Container {
         }
         if let Some(sharing) = opts.sharing {
             query = query.arg_enum("sharing", sharing);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
         }
 
         return Container {
@@ -1099,6 +1229,7 @@ impl Container {
     ///
     /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
     /// * `source` - Identifier of the mounted directory.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_directory(
         &self,
         path: impl Into<String>,
@@ -1115,17 +1246,74 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
+
+    /// Retrieves this container plus a directory mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted directory (e.g., "/mnt/directory").
+    /// * `source` - Identifier of the mounted directory.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_directory_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        source: DirectoryId,
+        opts: ContainerWithMountedDirectoryOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedDirectory");
+
+        query = query.arg("path", path.into());
+        query = query.arg("source", source);
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Retrieves this container plus a file mounted at the given path.
     ///
     /// # Arguments
     ///
     /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
     /// * `source` - Identifier of the mounted file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_file(&self, path: impl Into<String>, source: FileId) -> Container {
         let mut query = self.selection.select("withMountedFile");
 
         query = query.arg("path", path.into());
         query = query.arg("source", source);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+
+    /// Retrieves this container plus a file mounted at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the mounted file (e.g., "/tmp/file.txt").
+    /// * `source` - Identifier of the mounted file.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_file_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        source: FileId,
+        opts: ContainerWithMountedFileOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedFile");
+
+        query = query.arg("path", path.into());
+        query = query.arg("source", source);
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
 
         return Container {
             proc: self.proc.clone(),
@@ -1139,11 +1327,40 @@ impl Container {
     ///
     /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
     /// * `source` - Identifier of the secret to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_mounted_secret(&self, path: impl Into<String>, source: SecretId) -> Container {
         let mut query = self.selection.select("withMountedSecret");
 
         query = query.arg("path", path.into());
         query = query.arg("source", source);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+
+    /// Retrieves this container plus a secret mounted into a file at the given path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the secret file (e.g., "/tmp/secret.txt").
+    /// * `source` - Identifier of the secret to mount.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_mounted_secret_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        source: SecretId,
+        opts: ContainerWithMountedSecretOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withMountedSecret");
+
+        query = query.arg("path", path.into());
+        query = query.arg("source", source);
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
 
         return Container {
             proc: self.proc.clone(),
@@ -1204,6 +1421,9 @@ impl Container {
         }
         if let Some(permissions) = opts.permissions {
             query = query.arg("permissions", permissions);
+        }
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
         }
 
         return Container {
@@ -1268,7 +1488,9 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.
+    /// Establish a runtime dependency on a service.
+    /// The service will be started automatically when needed and detached when it is
+    /// no longer needed, executing the default command if none is set.
     /// The service will be reachable from the container via the provided hostname alias.
     /// The service dependency will also convey to any files or directories produced by the container.
     /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
@@ -1299,11 +1521,40 @@ impl Container {
     ///
     /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
     /// * `source` - Identifier of the socket to forward.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_unix_socket(&self, path: impl Into<String>, source: SocketId) -> Container {
         let mut query = self.selection.select("withUnixSocket");
 
         query = query.arg("path", path.into());
         query = query.arg("source", source);
+
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+
+    /// Retrieves this container plus a socket forwarded to the given Unix socket path.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the forwarded Unix socket (e.g., "/tmp/socket").
+    /// * `source` - Identifier of the socket to forward.
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_unix_socket_opts<'a>(
+        &self,
+        path: impl Into<String>,
+        source: SocketId,
+        opts: ContainerWithUnixSocketOpts<'a>,
+    ) -> Container {
+        let mut query = self.selection.select("withUnixSocket");
+
+        query = query.arg("path", path.into());
+        query = query.arg("source", source);
+        if let Some(owner) = opts.owner {
+            query = query.arg("owner", owner);
+        }
 
         return Container {
             proc: self.proc.clone(),
@@ -1494,6 +1745,10 @@ pub struct DirectoryDockerBuildOpts<'a> {
     /// The platform to build.
     #[builder(setter(into, strip_option), default)]
     pub platform: Option<Platform>,
+    /// Secrets to pass to the build.
+    /// They will be mounted at /run/secrets/[secret-name].
+    #[builder(setter(into, strip_option), default)]
+    pub secrets: Option<Vec<SecretId>>,
     /// Target build stage to build.
     #[builder(setter(into, strip_option), default)]
     pub target: Option<&'a str>,
@@ -1611,6 +1866,9 @@ impl Directory {
         }
         if let Some(target) = opts.target {
             query = query.arg("target", target);
+        }
+        if let Some(secrets) = opts.secrets {
+            query = query.arg("secrets", secrets);
         }
 
         return Container {

@@ -89,6 +89,7 @@ impl InnerCliSession {
             while let Ok(Some(line)) = stdout_bufr.next_line().await {
                 if let Ok(conn) = serde_json::from_str::<ConnectParams>(&line) {
                     sender.send(conn).await.unwrap();
+                    continue;
                 }
 
                 if let Some(logger) = &logger {
