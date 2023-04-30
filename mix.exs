@@ -32,7 +32,8 @@ defmodule Dagger.MixProject do
   defp package do
     %{
       name: "dagger_ex",
-      licences: ["MIT"],
+      description: "https://dagger.io SDK for Elixir",
+      licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/wingyplus/dagger_ex"}
     }
   end
