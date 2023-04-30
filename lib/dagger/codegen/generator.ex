@@ -17,26 +17,53 @@ defmodule Dagger.Codegen.Compiler do
   # Compile GraphQL introspection into Elixir code.
 
   alias Dagger.Codegen.Elixir.Templates.ObjectTmpl
+  alias Dagger.Codegen.Elixir.Templates.ScalarTmpl
 
-  def compile(introspection) do
-    compile_types(introspection["__schema"]["types"])
+  def compile(
+        %{
+          "__schema" => %{
+            "types" => types
+          }
+        } = _introspection
+      ) do
+    compile_types(types)
   end
 
   defp compile_types(types) do
-    compile_modules(types |> Enum.filter(&(&1["kind"] == "OBJECT")))
+    compile_modules(
+      types |> Enum.filter(&(&1["kind"] in ["OBJECT", "SCALAR"])),
+      graphql_introspection_types()
+    )
   end
 
-  defp compile_modules(object_types) do
+  defp compile_modules(object_types, excludes) when is_list(excludes) do
     object_types
-    |> Enum.filter(&(&1["name"] not in graphql_introspection_types()))
-    |> Enum.map(&render_object/1)
+    |> Enum.filter(&(&1["name"] not in excludes))
+    |> Enum.map(&render/1)
   end
 
   defp graphql_introspection_types() do
-    ["__Type", "__Directive", "__Field", "__InputValue", "__EnumValue", "__Schema"]
+    [
+      "__Type",
+      "__Directive",
+      "__Field",
+      "__InputValue",
+      "__EnumValue",
+      "__Schema",
+      "Int",
+      "Float",
+      "String",
+      "ID",
+      "Boolean",
+      "DateTime"
+    ]
   end
 
-  defp render_object(%{"name" => name} = full_type) do
+  defp render(%{"name" => name, "kind" => "OBJECT"} = full_type) do
     {"#{Macro.underscore(name)}.ex", ObjectTmpl.render_object(full_type)}
+  end
+
+  defp render(%{"name" => name, "kind" => "SCALAR"} = full_type) do
+    {"#{Macro.underscore(name)}.ex", ScalarTmpl.render_scalar(full_type)}
   end
 end

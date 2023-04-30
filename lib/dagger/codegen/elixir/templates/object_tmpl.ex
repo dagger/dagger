@@ -138,8 +138,31 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         arg["type"]["kind"] == "NON_NULL" do
       name = Function.format_var_name(fun_arg_name(arg))
 
-      quote do
-        selection = arg(selection, unquote(arg["name"]), unquote(to_macro_var(name)))
+      case arg do
+        %{"type" => %{"ofType" => %{"name" => type_name}}}
+        when type_name in [
+               "ContainerID",
+               "CacheID",
+               "DirectoryID",
+               "FileID",
+               "SecretID",
+               "SocketID"
+             ] ->
+          id_mod = Module.concat([Dagger, Function.format_module_name(type_name)])
+
+          quote do
+            selection =
+              arg(
+                selection,
+                unquote(arg["name"]),
+                unquote(id_mod).get_id(unquote(to_macro_var(name)))
+              )
+          end
+
+        _ ->
+          quote do
+            selection = arg(selection, unquote(arg["name"]), unquote(to_macro_var(name)))
+          end
       end
     end
   end

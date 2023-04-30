@@ -14,7 +14,6 @@ defmodule Mix.Tasks.Ci.Test do
       client
       |> Dagger.Query.host()
       |> Dagger.Host.directory(".", exclude: [".elixir_ls", "_build", "deps"])
-      |> Dagger.Directory.id()
 
     base_image =
       client

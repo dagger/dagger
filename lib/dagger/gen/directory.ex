@@ -8,7 +8,7 @@ defmodule Dagger.Directory do
     @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare."
     def diff(%__MODULE__{} = directory, other) do
       selection = select(directory.selection, "diff")
-      selection = arg(selection, "other", other)
+      selection = arg(selection, "other", Dagger.DirectoryID.get_id(other))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -146,7 +146,7 @@ defmodule Dagger.Directory do
     def with_directory(%__MODULE__{} = directory, path, directory, optional_args \\ []) do
       selection = select(directory.selection, "withDirectory")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "directory", directory)
+      selection = arg(selection, "directory", Dagger.DirectoryID.get_id(directory))
 
       selection =
         if not is_nil(optional_args[:exclude]) do
@@ -171,7 +171,7 @@ defmodule Dagger.Directory do
     def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
       selection = select(directory.selection, "withFile")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", source)
+      selection = arg(selection, "source", Dagger.FileID.get_id(source))
 
       selection =
         if not is_nil(optional_args[:permissions]) do
