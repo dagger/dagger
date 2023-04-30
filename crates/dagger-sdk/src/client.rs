@@ -5,20 +5,24 @@ use dagger_core::graphql_client::DefaultGraphQLClient;
 use dagger_core::config::Config;
 use dagger_core::engine::Engine as DaggerEngine;
 
+use crate::errors::ConnectError;
 use crate::gen::Query;
 use crate::logging::StdLogger;
 use crate::querybuilder::query;
 
 pub type DaggerConn = Arc<Query>;
 
-pub async fn connect() -> eyre::Result<DaggerConn> {
+pub async fn connect() -> Result<DaggerConn, ConnectError> {
     let cfg = Config::new(None, None, None, None, Some(Arc::new(StdLogger::default())));
 
     connect_opts(cfg).await
 }
 
-pub async fn connect_opts(cfg: Config) -> eyre::Result<DaggerConn> {
-    let (conn, proc) = DaggerEngine::new().start(&cfg).await?;
+pub async fn connect_opts(cfg: Config) -> Result<DaggerConn, ConnectError> {
+    let (conn, proc) = DaggerEngine::new()
+        .start(&cfg)
+        .await
+        .map_err(ConnectError::FailedToConnect)?;
 
     Ok(Arc::new(Query {
         proc: proc.map(|p| Arc::new(p)),

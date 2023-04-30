@@ -235,8 +235,10 @@ fn render_output_type(funcs: &CommonFunctions, type_ref: &TypeRef) -> rust::Toke
         };
     }
 
+    let dagger_error = rust::import("crate::errors", "DaggerError");
+
     quote! {
-        eyre::Result<$output_type>
+        Result<$output_type, $dagger_error>
     }
 }
 

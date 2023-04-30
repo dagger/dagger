@@ -1,8 +1,9 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
 use dagger_core::graphql_client::DynGraphQLClient;
-use eyre::Context;
 use serde::{Deserialize, Serialize};
+
+use crate::errors::{DaggerError, DaggerUnpackError};
 
 pub fn query() -> Selection {
     Selection::default()
@@ -92,7 +93,7 @@ impl Selection {
         s
     }
 
-    pub fn build(&self) -> eyre::Result<String> {
+    pub fn build(&self) -> Result<String, DaggerError> {
         let mut fields = vec!["query".to_string()];
 
         for sel in self.path() {
@@ -117,7 +118,7 @@ impl Selection {
         Ok(fields.join("{") + &"}".repeat(fields.len() - 1))
     }
 
-    pub async fn execute<D>(&self, gql_client: DynGraphQLClient) -> eyre::Result<D>
+    pub async fn execute<D>(&self, gql_client: DynGraphQLClient) -> Result<D, DaggerError>
     where
         D: for<'de> Deserialize<'de>,
     {
@@ -127,7 +128,7 @@ impl Selection {
 
         let resp: Option<serde_json::Value> = match gql_client.query(&query).await {
             Ok(r) => r,
-            Err(e) => eyre::bail!(e),
+            Err(e) => return Err(DaggerError::Query(e)),
         };
 
         let resp: Option<D> = self.unpack_resp(resp)?;
@@ -151,7 +152,10 @@ impl Selection {
         selections
     }
 
-    pub(crate) fn unpack_resp<D>(&self, resp: Option<serde_json::Value>) -> eyre::Result<Option<D>>
+    pub(crate) fn unpack_resp<D>(
+        &self,
+        resp: Option<serde_json::Value>,
+    ) -> Result<Option<D>, DaggerError>
     where
         D: for<'de> Deserialize<'de>,
     {
@@ -161,21 +165,23 @@ impl Selection {
         }
     }
 
-    fn unpack_resp_value<D>(&self, r: serde_json::Value) -> eyre::Result<D>
+    fn unpack_resp_value<D>(&self, r: serde_json::Value) -> Result<D, DaggerError>
     where
         D: for<'de> Deserialize<'de>,
     {
         if let Some(o) = r.as_object() {
             let keys = o.keys();
             if keys.len() != 1 {
-                eyre::bail!("too many nested objects inside graphql response")
+                return Err(DaggerError::Unpack(DaggerUnpackError::TooManyNestedObjects));
             }
 
             let first = keys.into_iter().next().unwrap();
             return self.unpack_resp_value(o.get(first).unwrap().clone());
         }
 
-        serde_json::from_value::<D>(r).context("could not deserialize response")
+        serde_json::from_value::<D>(r)
+            .map_err(DaggerUnpackError::Deserialize)
+            .map_err(DaggerError::Unpack)
     }
 }
 

@@ -1,6 +1,7 @@
 #![deny(warnings)]
 
 mod client;
+pub mod errors;
 mod gen;
 pub mod logging;
 mod querybuilder;

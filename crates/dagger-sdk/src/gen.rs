@@ -1,3 +1,4 @@
+use crate::errors::DaggerError;
 use crate::querybuilder::Selection;
 use dagger_core::graphql_client::DynGraphQLClient;
 use derive_builder::Builder;
@@ -121,7 +122,7 @@ pub struct CacheVolume {
 }
 
 impl CacheVolume {
-    pub async fn id(&self) -> eyre::Result<CacheId> {
+    pub async fn id(&self) -> Result<CacheId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await
@@ -397,7 +398,7 @@ impl Container {
         };
     }
     /// Retrieves default arguments for future commands.
-    pub async fn default_args(&self) -> eyre::Result<Vec<String>> {
+    pub async fn default_args(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("defaultArgs");
 
         query.execute(self.graphql_client.clone()).await
@@ -427,7 +428,7 @@ impl Container {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn endpoint(&self) -> eyre::Result<String> {
+    pub async fn endpoint(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("endpoint");
 
         query.execute(self.graphql_client.clone()).await
@@ -441,7 +442,10 @@ impl Container {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn endpoint_opts<'a>(&self, opts: ContainerEndpointOpts<'a>) -> eyre::Result<String> {
+    pub async fn endpoint_opts<'a>(
+        &self,
+        opts: ContainerEndpointOpts<'a>,
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("endpoint");
 
         if let Some(port) = opts.port {
@@ -454,7 +458,7 @@ impl Container {
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves entrypoint to be prepended to the arguments of all commands.
-    pub async fn entrypoint(&self) -> eyre::Result<Vec<String>> {
+    pub async fn entrypoint(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("entrypoint");
 
         query.execute(self.graphql_client.clone()).await
@@ -464,7 +468,7 @@ impl Container {
     /// # Arguments
     ///
     /// * `name` - The name of the environment variable to retrieve (e.g., "PATH").
-    pub async fn env_variable(&self, name: impl Into<String>) -> eyre::Result<String> {
+    pub async fn env_variable(&self, name: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("envVariable");
 
         query = query.arg("name", name.into());
@@ -531,7 +535,7 @@ impl Container {
     }
     /// Exit code of the last executed command. Zero means success.
     /// Will execute default command if none is set, or error if there's no default.
-    pub async fn exit_code(&self) -> eyre::Result<isize> {
+    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("exitCode");
 
         query.execute(self.graphql_client.clone()).await
@@ -545,7 +549,7 @@ impl Container {
     /// * `path` - Host's destination path (e.g., "./tarball").
     /// Path can be relative to the engine's workdir or absolute.
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
         let mut query = self.selection.select("export");
 
         query = query.arg("path", path.into());
@@ -566,7 +570,7 @@ impl Container {
         &self,
         path: impl Into<String>,
         opts: ContainerExportOpts,
-    ) -> eyre::Result<bool> {
+    ) -> Result<bool, DaggerError> {
         let mut query = self.selection.select("export");
 
         query = query.arg("path", path.into());
@@ -634,19 +638,19 @@ impl Container {
     }
     /// Retrieves a hostname which can be used by clients to reach this container.
     /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-    pub async fn hostname(&self) -> eyre::Result<String> {
+    pub async fn hostname(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("hostname");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// A unique identifier for this container.
-    pub async fn id(&self) -> eyre::Result<ContainerId> {
+    pub async fn id(&self) -> Result<ContainerId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The unique image reference which can only be retrieved immediately after the 'Container.From' call.
-    pub async fn image_ref(&self) -> eyre::Result<String> {
+    pub async fn image_ref(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("imageRef");
 
         query.execute(self.graphql_client.clone()).await
@@ -694,7 +698,7 @@ impl Container {
         };
     }
     /// Retrieves the value of the specified label.
-    pub async fn label(&self, name: impl Into<String>) -> eyre::Result<String> {
+    pub async fn label(&self, name: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("label");
 
         query = query.arg("name", name.into());
@@ -712,7 +716,7 @@ impl Container {
         }];
     }
     /// Retrieves the list of paths where a directory is mounted.
-    pub async fn mounts(&self) -> eyre::Result<Vec<String>> {
+    pub async fn mounts(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("mounts");
 
         query.execute(self.graphql_client.clone()).await
@@ -763,7 +767,7 @@ impl Container {
         };
     }
     /// The platform this container executes and publishes as.
-    pub async fn platform(&self) -> eyre::Result<Platform> {
+    pub async fn platform(&self) -> Result<Platform, DaggerError> {
         let query = self.selection.select("platform");
 
         query.execute(self.graphql_client.clone()).await
@@ -778,7 +782,7 @@ impl Container {
     ///
     /// Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn publish(&self, address: impl Into<String>) -> eyre::Result<String> {
+    pub async fn publish(&self, address: impl Into<String>) -> Result<String, DaggerError> {
         let mut query = self.selection.select("publish");
 
         query = query.arg("address", address.into());
@@ -800,7 +804,7 @@ impl Container {
         &self,
         address: impl Into<String>,
         opts: ContainerPublishOpts,
-    ) -> eyre::Result<String> {
+    ) -> Result<String, DaggerError> {
         let mut query = self.selection.select("publish");
 
         query = query.arg("address", address.into());
@@ -822,20 +826,20 @@ impl Container {
     }
     /// The error stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
-    pub async fn stderr(&self) -> eyre::Result<String> {
+    pub async fn stderr(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stderr");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The output stream of the last executed command.
     /// Will execute default command if none is set, or error if there's no default.
-    pub async fn stdout(&self) -> eyre::Result<String> {
+    pub async fn stdout(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stdout");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the user to be set for all commands.
-    pub async fn user(&self) -> eyre::Result<String> {
+    pub async fn user(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("user");
 
         query.execute(self.graphql_client.clone()).await
@@ -1720,7 +1724,7 @@ impl Container {
         };
     }
     /// Retrieves the working directory for all commands.
-    pub async fn workdir(&self) -> eyre::Result<String> {
+    pub async fn workdir(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("workdir");
 
         query.execute(self.graphql_client.clone()).await
@@ -1882,7 +1886,7 @@ impl Directory {
     /// # Arguments
     ///
     /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub async fn entries(&self) -> eyre::Result<Vec<String>> {
+    pub async fn entries(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("entries");
 
         query.execute(self.graphql_client.clone()).await
@@ -1896,7 +1900,7 @@ impl Directory {
     pub async fn entries_opts<'a>(
         &self,
         opts: DirectoryEntriesOpts<'a>,
-    ) -> eyre::Result<Vec<String>> {
+    ) -> Result<Vec<String>, DaggerError> {
         let mut query = self.selection.select("entries");
 
         if let Some(path) = opts.path {
@@ -1910,7 +1914,7 @@ impl Directory {
     /// # Arguments
     ///
     /// * `path` - Location of the copied directory (e.g., "logs/").
-    pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
         let mut query = self.selection.select("export");
 
         query = query.arg("path", path.into());
@@ -1934,7 +1938,7 @@ impl Directory {
         };
     }
     /// The content-addressed identifier of the directory.
-    pub async fn id(&self) -> eyre::Result<DirectoryId> {
+    pub async fn id(&self) -> Result<DirectoryId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await
@@ -2242,13 +2246,13 @@ pub struct EnvVariable {
 
 impl EnvVariable {
     /// The environment variable name.
-    pub async fn name(&self) -> eyre::Result<String> {
+    pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The environment variable value.
-    pub async fn value(&self) -> eyre::Result<String> {
+    pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
 
         query.execute(self.graphql_client.clone()).await
@@ -2263,7 +2267,7 @@ pub struct File {
 
 impl File {
     /// Retrieves the contents of the file.
-    pub async fn contents(&self) -> eyre::Result<String> {
+    pub async fn contents(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("contents");
 
         query.execute(self.graphql_client.clone()).await
@@ -2273,7 +2277,7 @@ impl File {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "output.txt").
-    pub async fn export(&self, path: impl Into<String>) -> eyre::Result<bool> {
+    pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
         let mut query = self.selection.select("export");
 
         query = query.arg("path", path.into());
@@ -2281,7 +2285,7 @@ impl File {
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the content-addressed identifier of the file.
-    pub async fn id(&self) -> eyre::Result<FileId> {
+    pub async fn id(&self) -> Result<FileId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await
@@ -2297,7 +2301,7 @@ impl File {
         };
     }
     /// Gets the size of the file, in bytes.
-    pub async fn size(&self) -> eyre::Result<isize> {
+    pub async fn size(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("size");
 
         query.execute(self.graphql_client.clone()).await
@@ -2338,7 +2342,7 @@ pub struct GitRefTreeOpts<'a> {
 
 impl GitRef {
     /// The digest of the current value of this ref.
-    pub async fn digest(&self) -> eyre::Result<String> {
+    pub async fn digest(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("digest");
 
         query.execute(self.graphql_client.clone()).await
@@ -2405,7 +2409,7 @@ impl GitRepository {
         };
     }
     /// Lists of branches on the repository.
-    pub async fn branches(&self) -> eyre::Result<Vec<String>> {
+    pub async fn branches(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("branches");
 
         query.execute(self.graphql_client.clone()).await
@@ -2443,7 +2447,7 @@ impl GitRepository {
         };
     }
     /// Lists of tags on the repository.
-    pub async fn tags(&self) -> eyre::Result<Vec<String>> {
+    pub async fn tags(&self) -> Result<Vec<String>, DaggerError> {
         let query = self.selection.select("tags");
 
         query.execute(self.graphql_client.clone()).await
@@ -2609,7 +2613,7 @@ impl HostVariable {
         };
     }
     /// The value of this variable.
-    pub async fn value(&self) -> eyre::Result<String> {
+    pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
 
         query.execute(self.graphql_client.clone()).await
@@ -2624,13 +2628,13 @@ pub struct Label {
 
 impl Label {
     /// The label name.
-    pub async fn name(&self) -> eyre::Result<String> {
+    pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The label value.
-    pub async fn value(&self) -> eyre::Result<String> {
+    pub async fn value(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("value");
 
         query.execute(self.graphql_client.clone()).await
@@ -2645,19 +2649,19 @@ pub struct Port {
 
 impl Port {
     /// The port description.
-    pub async fn description(&self) -> eyre::Result<String> {
+    pub async fn description(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("description");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The port number.
-    pub async fn port(&self) -> eyre::Result<isize> {
+    pub async fn port(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("port");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The transport layer network protocol.
-    pub async fn protocol(&self) -> eyre::Result<NetworkProtocol> {
+    pub async fn protocol(&self) -> Result<NetworkProtocol, DaggerError> {
         let query = self.selection.select("protocol");
 
         query.execute(self.graphql_client.clone()).await
@@ -2692,25 +2696,25 @@ impl Project {
         };
     }
     /// install the project's schema
-    pub async fn install(&self) -> eyre::Result<bool> {
+    pub async fn install(&self) -> Result<bool, DaggerError> {
         let query = self.selection.select("install");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// name of the project
-    pub async fn name(&self) -> eyre::Result<String> {
+    pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// schema provided by the project
-    pub async fn schema(&self) -> eyre::Result<String> {
+    pub async fn schema(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("schema");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// sdk used to generate code for and/or execute this project
-    pub async fn sdk(&self) -> eyre::Result<String> {
+    pub async fn sdk(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("sdk");
 
         query.execute(self.graphql_client.clone()).await
@@ -2825,7 +2829,7 @@ impl Query {
         };
     }
     /// The default platform of the builder.
-    pub async fn default_platform(&self) -> eyre::Result<Platform> {
+    pub async fn default_platform(&self) -> Result<Platform, DaggerError> {
         let query = self.selection.select("defaultPlatform");
 
         query.execute(self.graphql_client.clone()).await
@@ -3094,13 +3098,13 @@ pub struct Secret {
 
 impl Secret {
     /// The identifier for this secret.
-    pub async fn id(&self) -> eyre::Result<SecretId> {
+    pub async fn id(&self) -> Result<SecretId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await
     }
     /// The value of this secret.
-    pub async fn plaintext(&self) -> eyre::Result<String> {
+    pub async fn plaintext(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("plaintext");
 
         query.execute(self.graphql_client.clone()).await
@@ -3115,7 +3119,7 @@ pub struct Socket {
 
 impl Socket {
     /// The content-addressed identifier of the socket.
-    pub async fn id(&self) -> eyre::Result<SocketId> {
+    pub async fn id(&self) -> Result<SocketId, DaggerError> {
         let query = self.selection.select("id");
 
         query.execute(self.graphql_client.clone()).await

@@ -15,7 +15,7 @@ pub struct GraphQLError {
 #[derive(Deserialize, Debug, Clone)]
 #[allow(dead_code)]
 pub struct GraphQLErrorMessage {
-    message: String,
+    pub message: String,
     locations: Option<Vec<GraphQLErrorLocation>>,
     extensions: Option<HashMap<String, String>>,
     path: Option<Vec<GraphQLErrorPathParam>>,
