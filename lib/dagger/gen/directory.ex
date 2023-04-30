@@ -23,7 +23,7 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "Builds a new Docker container from this directory.\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build."
+    @doc "Builds a new Docker container from this directory.\n\n\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use (e.g., \"frontend.Dockerfile\").\n\nDefaults: './Dockerfile'.\n* `platform` - The platform to build.\n* `build_args` - Build arguments to use in the build.\n* `target` - Target build stage to build.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name]."
     def docker_build(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "dockerBuild")
 
@@ -51,6 +51,13 @@ defmodule Dagger.Directory do
       selection =
         if not is_nil(optional_args[:target]) do
           arg(selection, "target", optional_args[:target])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:secrets]) do
+          arg(selection, "secrets", optional_args[:secrets])
         else
           selection
         end

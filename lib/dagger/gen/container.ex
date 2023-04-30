@@ -5,7 +5,7 @@ defmodule Dagger.Container do
   defstruct [:selection, :client]
 
   (
-    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n\nDefault: './Dockerfile'.\n* `build_args` - Additional build arguments.\n* `target` - Target build stage to build."
+    @doc "Initializes this container from a Dockerfile build.\n\n## Required Arguments\n\n* `context` - Directory context used by the Dockerfile.\n\n## Optional Arguments\n\n* `dockerfile` - Path to the Dockerfile to use.\n\nDefault: './Dockerfile'.\n* `build_args` - Additional build arguments.\n* `target` - Target build stage to build.\n* `secrets` - Secrets to pass to the build.\n\nThey will be mounted at /run/secrets/[secret-name]."
     def build(%__MODULE__{} = container, context, optional_args \\ []) do
       selection = select(container.selection, "build")
       selection = arg(selection, "context", context)
@@ -27,6 +27,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:target]) do
           arg(selection, "target", optional_args[:target])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:secrets]) do
+          arg(selection, "secrets", optional_args[:secrets])
         else
           selection
         end
@@ -150,7 +157,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Exit code of the last executed command. Zero means success.\nErrors if no command has been executed."
+    @doc "Exit code of the last executed command. Zero means success.\n\nWill execute default command if none is set, or error if there's no default."
     def exit_code(%__MODULE__{} = container) do
       selection = select(container.selection, "exitCode")
       execute(selection, container.client)
@@ -333,7 +340,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The error stream of the last executed command.\nErrors if no command has been executed."
+    @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
     def stderr(%__MODULE__{} = container) do
       selection = select(container.selection, "stderr")
       execute(selection, container.client)
@@ -341,7 +348,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "The output stream of the last executed command.\nErrors if no command has been executed."
+    @doc "The output stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
     def stdout(%__MODULE__{} = container) do
       selection = select(container.selection, "stdout")
       execute(selection, container.client)
@@ -373,7 +380,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a directory written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"/tmp/directory\").\n* `directory` - Identifier of the directory to write\n\n## Optional Arguments\n\n* `exclude` - Patterns to exclude in the written directory (e.g., [\"node_modules/**\", \".gitignore\", \".git/\"]).\n* `include` - Patterns to include in the written directory (e.g., [\"*.go\", \"go.mod\", \"go.sum\"])."
+    @doc "Retrieves this container plus a directory written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"/tmp/directory\").\n* `directory` - Identifier of the directory to write\n\n## Optional Arguments\n\n* `exclude` - Patterns to exclude in the written directory (e.g., [\"node_modules/**\", \".gitignore\", \".git/\"]).\n* `include` - Patterns to include in the written directory (e.g., [\"*.go\", \"go.mod\", \"go.sum\"]).\n* `owner` - A user:group to set for the directory and its contents.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
     def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
       selection = select(container.selection, "withDirectory")
       selection = arg(selection, "path", path)
@@ -389,6 +396,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:include]) do
           arg(selection, "include", optional_args[:include])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
         else
           selection
         end
@@ -417,10 +431,17 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\n## Optional Arguments\n\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command\nwith \"sudo\" or executing `docker run` with the `--privileged` flag. Containerization\ndoes not provide any security guarantees when using this option. It should only be used\nwhen absolutely necessary and only with trusted commands."
+    @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\nIf empty, the container's default command is used.\n\n## Optional Arguments\n\n* `skip_entrypoint` - If the container has an entrypoint, ignore it for args rather than using it to wrap them.\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command\nwith \"sudo\" or executing `docker run` with the `--privileged` flag. Containerization\ndoes not provide any security guarantees when using this option. It should only be used\nwhen absolutely necessary and only with trusted commands."
     def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withExec")
       selection = arg(selection, "args", args)
+
+      selection =
+        if not is_nil(optional_args[:skip_entrypoint]) do
+          arg(selection, "skipEntrypoint", optional_args[:skip_entrypoint])
+        else
+          selection
+        end
 
       selection =
         if not is_nil(optional_args[:stdin]) do
@@ -500,7 +521,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
+    @doc "Retrieves this container plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644.\n* `owner` - A user:group to set for the file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
     def with_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withFile")
       selection = arg(selection, "path", path)
@@ -509,6 +530,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:permissions]) do
           arg(selection, "permissions", optional_args[:permissions])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
         else
           selection
         end
@@ -528,7 +556,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a cache volume mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\").\n* `cache` - Identifier of the cache volume to mount.\n\n## Optional Arguments\n\n* `source` - Identifier of the directory to use as the cache volume's root.\n* `sharing` - Sharing mode of the cache volume."
+    @doc "Retrieves this container plus a cache volume mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\").\n* `cache` - Identifier of the cache volume to mount.\n\n## Optional Arguments\n\n* `source` - Identifier of the directory to use as the cache volume's root.\n* `sharing` - Sharing mode of the cache volume.\n* `owner` - A user:group to set for the mounted cache directory.\n\nNote that this changes the ownership of the specified mount along with the\ninitial filesystem provided by source (if any). It does not have any effect\nif/when the cache has already been created.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
     def with_mounted_cache(%__MODULE__{} = container, path, cache, optional_args \\ []) do
       selection = select(container.selection, "withMountedCache")
       selection = arg(selection, "path", path)
@@ -548,36 +576,67 @@ defmodule Dagger.Container do
           selection
         end
 
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
 
   (
-    @doc "Retrieves this container plus a directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted directory (e.g., \"/mnt/directory\").\n* `source` - Identifier of the mounted directory."
-    def with_mounted_directory(%__MODULE__{} = container, path, source) do
+    @doc "Retrieves this container plus a directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted directory (e.g., \"/mnt/directory\").\n* `source` - Identifier of the mounted directory.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted directory and its contents.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    def with_mounted_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedDirectory")
       selection = arg(selection, "path", path)
       selection = arg(selection, "source", source)
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
 
   (
-    @doc "Retrieves this container plus a file mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the mounted file."
-    def with_mounted_file(%__MODULE__{} = container, path, source) do
+    @doc "Retrieves this container plus a file mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the mounted file.\n\n## Optional Arguments\n\n* `owner` - A user or user:group to set for the mounted file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    def with_mounted_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedFile")
       selection = arg(selection, "path", path)
       selection = arg(selection, "source", source)
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
 
   (
-    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount."
-    def with_mounted_secret(%__MODULE__{} = container, path, source) do
+    @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted secret.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    def with_mounted_secret(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedSecret")
       selection = arg(selection, "path", path)
       selection = arg(selection, "source", source)
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -592,7 +651,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/tmp/file.txt\").\n\n## Optional Arguments\n\n* `contents` - Content of the file to write (e.g., \"Hello world!\").\n* `permissions` - Permission given to the written file (e.g., 0600).\n\nDefault: 0644."
+    @doc "Retrieves this container plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/tmp/file.txt\").\n\n## Optional Arguments\n\n* `contents` - Content of the file to write (e.g., \"Hello world!\").\n* `permissions` - Permission given to the written file (e.g., 0600).\n\nDefault: 0644.\n* `owner` - A user:group to set for the file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
     def with_new_file(%__MODULE__{} = container, path, optional_args \\ []) do
       selection = select(container.selection, "withNewFile")
       selection = arg(selection, "path", path)
@@ -607,6 +666,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:permissions]) do
           arg(selection, "permissions", optional_args[:permissions])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
         else
           selection
         end
@@ -646,7 +712,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Establish a runtime dependency on a service. The service will be started automatically when needed and detached when it is no longer needed.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
+    @doc "Establish a runtime dependency on a service.\n\nThe service will be started automatically when needed and detached when it is\nno longer needed, executing the default command if none is set.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
@@ -656,11 +722,19 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus a socket forwarded to the given Unix socket path.\n\n## Required Arguments\n\n* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\").\n* `source` - Identifier of the socket to forward."
-    def with_unix_socket(%__MODULE__{} = container, path, source) do
+    @doc "Retrieves this container plus a socket forwarded to the given Unix socket path.\n\n## Required Arguments\n\n* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\").\n* `source` - Identifier of the socket to forward.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted socket.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
+    def with_unix_socket(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withUnixSocket")
       selection = arg(selection, "path", path)
       selection = arg(selection, "source", source)
+
+      selection =
+        if not is_nil(optional_args[:owner]) do
+          arg(selection, "owner", optional_args[:owner])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
