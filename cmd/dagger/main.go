@@ -18,6 +18,7 @@ var (
 	workdir    string
 
 	cpuprofile string
+	pprofAddr  string
 	debugLogs  bool
 )
 
@@ -30,6 +31,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
+	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
 	rootCmd.PersistentFlags().MarkHidden("project")
@@ -64,6 +66,12 @@ var rootCmd = &cobra.Command{
 
 			if err := trace.Start(traceF); err != nil {
 				return fmt.Errorf("start trace: %w", err)
+			}
+		}
+
+		if pprofAddr != "" {
+			if err := setupDebugHandlers(pprofAddr); err != nil {
+				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
 
