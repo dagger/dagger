@@ -15,6 +15,9 @@ defmodule Dagger.Session do
 
   defp wait_for_session(port, engine_conn_pid) do
     receive do
+      {^port, {:data, "Connected to engine" <> _rest}} ->
+        wait_for_session(port, engine_conn_pid)
+
       {^port, {:data, session}} ->
         send(engine_conn_pid, {self(), Jason.decode!(session)})
         :ok
