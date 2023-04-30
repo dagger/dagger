@@ -6,7 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v0.2.22 (2023-04-29)
+
+### New Features
+
+ - <csr-id-2a29a66217fa4d6c530ea1ce670c8836383e7051/> dagger-run support
+ - <csr-id-eb7470c604169d1a15976078c0889d5cc7011257/> update to dagger-5.1
+
+### Commit Statistics
+
+<csr-read-only-do-not-edit/>
+
+ - 2 commits contributed to the release.
+ - 4 days passed between releases.
+ - 2 commits were understood as [conventional](https://www.conventionalcommits.org).
+ - 0 issues like '(#ID)' were seen in commit messages
+
+### Commit Details
+
+<csr-read-only-do-not-edit/>
+
+<details><summary>view details</summary>
+
+ * **Uncategorized**
+    - dagger-run support ([`2a29a66`](https://github.com/kjuulh/dagger-sdk/commit/2a29a66217fa4d6c530ea1ce670c8836383e7051))
+    - update to dagger-5.1 ([`eb7470c`](https://github.com/kjuulh/dagger-sdk/commit/eb7470c604169d1a15976078c0889d5cc7011257))
+</details>
+
 ## v0.2.21 (2023-04-25)
+
+<csr-id-09881ee39bdfb9201d104e4679a51c3b76b5fe27/>
 
 ### Chore
 
@@ -16,7 +45,7 @@ and this project adheres to
 
 <csr-read-only-do-not-edit/>
 
- - 1 commit contributed to the release.
+ - 2 commits contributed to the release.
  - 21 days passed between releases.
  - 1 commit was understood as [conventional](https://www.conventionalcommits.org).
  - 0 issues like '(#ID)' were seen in commit messages
@@ -28,6 +57,7 @@ and this project adheres to
 <details><summary>view details</summary>
 
  * **Uncategorized**
+    - Release dagger-sdk v0.2.21 ([`6937ef0`](https://github.com/kjuulh/dagger-sdk/commit/6937ef0ace797315013513aa7e2af39a9206a738))
     - add new dagger-core-version ([`09881ee`](https://github.com/kjuulh/dagger-sdk/commit/09881ee39bdfb9201d104e4679a51c3b76b5fe27))
 </details>
 

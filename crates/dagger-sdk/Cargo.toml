@@ -1,6 +1,6 @@
 [package]
 name = "dagger-sdk"
-version = "0.2.21"
+version = "0.2.22"
 edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
@@ -11,7 +11,7 @@ publish = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dagger-core = { workspace = true, version = "0.2.10" }
+dagger-core = { workspace = true, version = "^0.2.11" }
 
 eyre = { workspace = true }
 tokio = { workspace = true }
