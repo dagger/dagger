@@ -2,6 +2,7 @@ defmodule Dagger.MixProject do
   use Mix.Project
 
   @version "0.1.0"
+  @source_url "https://github.com/wingyplus/dagger_ex"
 
   def project do
     [
@@ -34,13 +35,17 @@ defmodule Dagger.MixProject do
       name: "dagger_ex",
       description: "https://dagger.io SDK for Elixir",
       licenses: ["MIT"],
-      links: %{"GitHub" => "https://github.com/wingyplus/dagger_ex"}
+      links: %{
+        "GitHub" => "https://github.com/wingyplus/dagger_ex",
+        "Changelog" => "#{@source_url}/blob/v#{@version}/CHANGELOG.md"
+      }
     }
   end
 
   defp docs do
     [
       source_ref: "v#{@version}",
+      source_url: @source_url,
       main: "Dagger",
       extras: ["getting_started.livemd"]
     ]
