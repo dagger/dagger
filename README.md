@@ -4,7 +4,7 @@ A dagger sdk written in rust for rust.
 
 ## Plan for next release
 
-- [ ] Introduce [thiserror](https://docs.rs/thiserror/latest/thiserror/) for
+- [x] Introduce [thiserror](https://docs.rs/thiserror/latest/thiserror/) for
       better errors
 - [x] Add compatibility with `dagger run`
 - [ ] Add open telemetry tracing to the sdk
