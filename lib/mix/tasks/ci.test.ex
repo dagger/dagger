@@ -27,18 +27,28 @@ defmodule Mix.Tasks.Ci.Test do
       |> Dagger.Container.with_env_variable("MIX_ENV", "test")
       |> Dagger.Container.with_exec(["mix", "deps.get"])
 
+    [
+      Task.async(__MODULE__, :test, [base_image]),
+      Task.async(__MODULE__, :check_format, [base_image])
+    ]
+    |> Task.await_many(:timer.seconds(180))
+
+    Dagger.disconnect(client)
+  end
+
+  def test(base_image) do
     base_image
     |> Dagger.Container.pipeline("Test")
     |> Dagger.Container.with_exec(["mix", "test", "--color"])
     |> Dagger.Container.stdout()
     |> IO.puts()
+  end
 
+  def check_format(base_image) do
     base_image
     |> Dagger.Container.pipeline("Check Format")
     |> Dagger.Container.with_exec(["mix", "format", "--check-formatted"])
     |> Dagger.Container.stdout()
     |> IO.puts()
-
-    Dagger.disconnect(client)
   end
 end
