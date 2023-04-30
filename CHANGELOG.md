@@ -1,4 +1,11 @@
-# 0.1.0
+# Changelog
+
+## 0.1.1
+
+* Support Dagger v0.5.1
+* Fix source reference not presents in ExDoc.
+
+## 0.1.0
 
 Kick-off the project <3
 
