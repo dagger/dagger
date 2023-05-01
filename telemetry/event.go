@@ -12,8 +12,8 @@ type Event struct {
 	Version   string    `json:"v"`
 	Timestamp time.Time `json:"ts"`
 
-	RunID string `json:"run_id"`
 	OrgID string `json:"org_id"`
+	RunID string `json:"run_id,omitempty"`
 
 	Type    EventType `json:"type"`
 	Payload Payload   `json:"payload"`
@@ -21,8 +21,16 @@ type Event struct {
 
 type EventType string
 
+type EventScope string
+
+const (
+	EventScopeSystem = EventScope("system")
+	EventScopeRun    = EventScope("run")
+)
+
 type Payload interface {
 	Type() EventType
+	Scope() EventScope
 }
 
 var _ Payload = OpPayload{}
@@ -40,7 +48,8 @@ type OpPayload struct {
 	Error     string     `json:"error"`
 }
 
-func (OpPayload) Type() EventType { return EventType("op") }
+func (OpPayload) Type() EventType   { return EventType("op") }
+func (OpPayload) Scope() EventScope { return EventScopeRun }
 
 var _ Payload = LogPayload{}
 
@@ -50,4 +59,5 @@ type LogPayload struct {
 	Stream int    `json:"stream"`
 }
 
-func (LogPayload) Type() EventType { return EventType("log") }
+func (LogPayload) Type() EventType   { return EventType("log") }
+func (LogPayload) Scope() EventScope { return EventScopeRun }

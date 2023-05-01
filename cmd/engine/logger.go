@@ -27,7 +27,6 @@ func init() {
 	}
 
 	tel = telemetry.New(false)
-	tel.SetRunID("00000000-0000-0000-0000-000000000000")
 
 	logrus.AddHook(&cloudHook{})
 }
@@ -65,6 +64,10 @@ type engineLogPayload struct {
 
 func (engineLogPayload) Type() telemetry.EventType {
 	return telemetry.EventType("engine_log")
+}
+
+func (engineLogPayload) Scope() telemetry.EventScope {
+	return telemetry.EventScopeSystem
 }
 
 type engineMetadata struct {
