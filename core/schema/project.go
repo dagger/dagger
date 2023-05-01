@@ -91,7 +91,7 @@ type loadProjectArgs struct {
 func (s *projectSchema) loadProject(ctx *router.Context, parent *core.Directory, args loadProjectArgs) (*Project, error) {
 	projectState, err := project.Load(ctx, parent, args.ConfigPath, s.projectStates, &s.mu, s.gw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load project: %w", err)
 	}
 	return &Project{Name: projectState.Name()}, nil
 }
@@ -115,7 +115,11 @@ func (s *projectSchema) schema(ctx *router.Context, parent *Project, args any) (
 	if !ok {
 		return "", fmt.Errorf("project %q not found", parent.Name)
 	}
-	return projectState.Schema(ctx, s.gw, s.platform)
+	schema, err := projectState.Schema(ctx, s.gw, s.platform)
+	if err != nil {
+		return "", fmt.Errorf("failed to get schema: %w", err)
+	}
+	return schema, nil
 }
 
 func (s *projectSchema) sdk(ctx *router.Context, parent *Project, args any) (string, error) {

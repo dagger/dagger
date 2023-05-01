@@ -34,7 +34,6 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
 	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
-	rootCmd.PersistentFlags().MarkHidden("project")
 
 	rootCmd.AddCommand(
 		listenCmd,

@@ -58,12 +58,12 @@ func Load(
 ) (*State, error) {
 	file, err := workdir.File(ctx, configPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
 	}
 
 	cfgBytes, err := file.Contents(ctx, gw)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read project config at path %q: %w", configPath, err)
 	}
 
 	s := &State{
@@ -72,7 +72,7 @@ func Load(
 		resolvers:  make(router.Resolvers),
 	}
 	if err := json.Unmarshal(cfgBytes, &s.config); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal project config: %w", err)
 	}
 
 	if s.config.Name == "" {
@@ -117,19 +117,19 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		// otherwise go ask the extension for its schema
 		runtimeFS, err := p.Runtime(ctx, gw, platform)
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to get runtime filesystem: %w", err)
 			return
 		}
 
 		fsState, err := runtimeFS.State()
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to get runtime filesystem state: %w", err)
 			return
 		}
 
 		wdState, err := p.workdir.State()
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to get workdir state: %w", err)
 			return
 		}
 
@@ -141,26 +141,26 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
 		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform))
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to marshal output mount: %w", err)
 			return
 		}
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: outputDef.ToPB(),
 		})
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to solve output mount: %w", err)
 			return
 		}
 		ref, err := res.SingleRef()
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to get output mount ref: %w", err)
 			return
 		}
 		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
 			Filename: "/schema.graphql",
 		})
 		if err != nil {
-			rerr = err
+			rerr = fmt.Errorf("failed to read schema: %w", err)
 			return
 		}
 		p.schema = string(outputBytes)
