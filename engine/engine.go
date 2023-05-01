@@ -409,6 +409,7 @@ func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
 			}
 
 			payload := telemetry.OpPayload{
+				RunID:    t.RunID(),
 				OpID:     id,
 				OpName:   custom.Name,
 				Internal: custom.Internal,
@@ -430,6 +431,7 @@ func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
 
 		for _, l := range ev.Logs {
 			t.Push(telemetry.LogPayload{
+				RunID:  t.RunID(),
 				OpID:   l.Vertex.String(),
 				Data:   string(l.Data),
 				Stream: l.Stream,

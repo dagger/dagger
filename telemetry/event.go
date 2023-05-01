@@ -6,13 +6,12 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 )
 
-const eventVersion = "2023-02-28.01"
+const eventVersion = "2023-05-01.01"
 
 type Event struct {
 	Version   string    `json:"v"`
 	Timestamp time.Time `json:"ts"`
 
-	RunID string `json:"run_id"`
 	OrgID string `json:"org_id"`
 
 	Type    EventType `json:"type"`
@@ -28,6 +27,7 @@ type Payload interface {
 var _ Payload = OpPayload{}
 
 type OpPayload struct {
+	RunID    string        `json:"run_id"`
 	OpID     string        `json:"op_id"`
 	OpName   string        `json:"op_name"`
 	Pipeline pipeline.Path `json:"pipeline"`
@@ -45,6 +45,7 @@ func (OpPayload) Type() EventType { return EventType("op") }
 var _ Payload = LogPayload{}
 
 type LogPayload struct {
+	RunID  string `json:"run_id"`
 	OpID   string `json:"op_id"`
 	Data   string `json:"data"`
 	Stream int    `json:"stream"`
