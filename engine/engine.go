@@ -389,7 +389,7 @@ func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.
 }
 
 func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
-	t := telemetry.New()
+	t := telemetry.New(true)
 	defer t.Flush()
 
 	for ev := range ch {

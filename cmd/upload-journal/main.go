@@ -28,7 +28,7 @@ func main() {
 	}
 	journal := args[0]
 
-	t := telemetry.New()
+	t := telemetry.New(true)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

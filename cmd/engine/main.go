@@ -288,6 +288,8 @@ func main() { //nolint:gocyclo
 		}
 		cfg.Root = root
 
+		go logMetrics(context.Background(), cfg.Root)
+
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return errors.Wrapf(err, "failed to create %s", root)
 		}
@@ -397,6 +399,7 @@ func main() { //nolint:gocyclo
 	}
 
 	app.After = func(_ *cli.Context) error {
+		tel.Flush()
 		return detect.Shutdown(context.TODO())
 	}
 
