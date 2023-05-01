@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/dagger/dagger/engine/cache"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
@@ -44,6 +45,7 @@ import (
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/bboltcachestorage"
+	"github.com/moby/buildkit/solver/llbsolver/mounts"
 	"github.com/moby/buildkit/util/apicaps"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/moby/buildkit/util/appdefaults"
@@ -333,29 +335,11 @@ func main() { //nolint:gocyclo
 			}
 		}
 
-		// Create a "private" in memory listener for the server that allows us to do some
-		// server setup before officially starting the server on the unix socket listeners
-		// used by actual clients. This enables, for example, clients to wait for cache
-		// mounts to be synchronized before actually connecting and starting to use them.
-		bklog.G(ctx).Debug("creating engine in mem listener")
-		memListener := newInMemListener(server)
-		memClient, err := memListener.NewClient(ctx)
-		if err != nil {
-			return err
-		}
-
-		bklog.G(ctx).Debug("creating engine operator client")
-		daggerClient, stopOperatorSession, err := NewOperatorClient(ctx, memClient)
-		if err != nil {
-			return err
-		}
-		defer stopOperatorSession()
 		bklog.G(ctx).Debug("starting optional cache mount synchronization")
-		err = cacheManager.StartCacheMountSynchronization(ctx, daggerClient)
+		err = cacheManager.StartCacheMountSynchronization(ctx)
 		if err != nil {
-			cancel()
 			bklog.G(ctx).WithError(err).Error("failed to start cache mount synchronization")
-			return err
+			// continue on, doesn't need to be fatal
 		}
 
 		// start serving on the listeners for actual clients
@@ -386,7 +370,6 @@ func main() { //nolint:gocyclo
 			bklog.G(ctx).WithError(stopCacheErr).Error("failed to stop cache")
 		}
 		err = goerrors.Join(err, stopCacheErr)
-		err = goerrors.Join(err, stopOperatorSession())
 		cancelNetworking()
 
 		bklog.G(ctx).Infof("stopping server")
@@ -756,10 +739,12 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheManager, err := cache.NewManager(ctx, cache.ManagerConfig{
-		KeyStore:    cacheStorage,
-		ResultStore: worker.NewCacheResultStorage(wc),
-		Worker:      w,
-		ServiceURL:  cacheServiceURL,
+		KeyStore:     cacheStorage,
+		ResultStore:  worker.NewCacheResultStorage(wc),
+		Worker:       w,
+		MountManager: mounts.NewMountManager("dagger-cache", w.CacheManager(), sessionManager),
+		ServiceURL:   cacheServiceURL,
+		EngineID:     w.Labels()[engine.EngineNameLabel],
 	})
 	if err != nil {
 		return nil, nil, err

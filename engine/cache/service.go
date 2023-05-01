@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/containerd/containerd/content"
 	remotecache "github.com/moby/buildkit/cache/remotecache/v1"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
@@ -31,6 +30,13 @@ The process on import is as follows:
   - The cache service responds with that cache config
   - The engine creates a cache manager from the cache config and plugs it into the combined cache
     manager with the actual local cache
+
+For cache mounts, the process is:
+  - At engine startup, GetCacheMountConfig is called and any cache mounts returned are synced locally
+    to the corresponding cache mount. This happens before any clients can connect to ensure consistency.
+    The cache mount is a compressed tarball of the cache mount contents.
+  - At engine shutdown, those cache mounts are synced back to the cache service. GetCacheMountUploadURL
+    is called to get a URL to upload to, which may or may not be the same as the original download URL.
 */
 type Service interface {
 	// GetConfig returns configuration needed for the engine to push layer blobs
@@ -45,11 +51,27 @@ type Service interface {
 	UpdateCacheLayers(context.Context, UpdateCacheLayersRequest) error
 
 	// ImportCache returns a cache config that the engine can turn into cache manager.
-	ImportCache(ctx context.Context) (*remotecache.CacheConfig, error)
+	ImportCache(context.Context) (*remotecache.CacheConfig, error)
+
+	// GetLayerDownloadURL returns a URL that the engine can use to download the layer blob. The URL
+	// is only valid for a limited time so this API should only be called right as the layer is needed.
+	GetLayerDownloadURL(context.Context, GetLayerDownloadURLRequest) (*GetLayerDownloadURLResponse, error)
+
+	// GetLayerUploadURL returns a URL that the engine can use to upload the layer blob. The URL is only
+	// valid for a limited time so this API should only be called right as the layer is to be uploaded.
+	GetLayerUploadURL(context.Context, GetLayerUploadURLRequest) (*GetLayerUploadURLResponse, error)
+
+	// GetCacheMountConfig returns a list of cache mounts that the engine should sync locally. It contains
+	// metadata like digest+size plus a time-limited URL that the engine can use to download the cache mounts.
+	GetCacheMountConfig(context.Context, GetCacheMountConfigRequest) (*GetCacheMountConfigResponse, error)
+
+	// GetCacheMountUploadURL returns a URL that the engine can use to upload the cache mount blob. The URL is only
+	// valid for a limited time so this API should only be called right as the cache mount is to be uploaded.
+	GetCacheMountUploadURL(context.Context, GetCacheMountUploadURLRequest) (*GetCacheMountUploadURLResponse, error)
 }
 
 type GetConfigRequest struct {
-	CacheMountIDs []string
+	EngineID string
 }
 
 func (r GetConfigRequest) String() string {
@@ -61,7 +83,6 @@ func (r GetConfigRequest) String() string {
 }
 
 type Config struct {
-	S3            *S3LayerStoreConfig
 	ImportPeriod  time.Duration
 	ExportPeriod  time.Duration
 	ExportTimeout time.Duration
@@ -144,9 +165,45 @@ type RecordLayers struct {
 	Layers       []ocispecs.Descriptor
 }
 
-type LayerStore interface {
-	content.Provider
-	PushLayer(ctx context.Context, layer ocispecs.Descriptor, provider content.Provider) error
+type GetLayerDownloadURLRequest struct {
+	Digest digest.Digest
+}
+
+type GetLayerDownloadURLResponse struct {
+	URL string
+}
+
+type GetLayerUploadURLRequest struct {
+	Digest digest.Digest
+}
+
+type GetLayerUploadURLResponse struct {
+	URL string
+}
+
+type GetCacheMountConfigRequest struct {
+}
+
+type GetCacheMountConfigResponse struct {
+	SyncedCacheMounts []SyncedCacheMountConfig
+}
+
+type SyncedCacheMountConfig struct {
+	Name      string
+	Digest    digest.Digest
+	Size      int64
+	MediaType string
+	URL       string
+}
+
+type GetCacheMountUploadURLRequest struct {
+	CacheName string
+	Digest    digest.Digest
+	Size      int64
+}
+
+type GetCacheMountUploadURLResponse struct {
+	URL string
 }
 
 type client struct {
@@ -251,6 +308,7 @@ func (c *client) UpdateCacheRecords(
 	return resp, nil
 }
 
+//nolint:dupl
 func (c *client) UpdateCacheLayers(
 	ctx context.Context,
 	req UpdateCacheLayersRequest,
@@ -282,6 +340,7 @@ func (c *client) UpdateCacheLayers(
 	return nil
 }
 
+//nolint:dupl
 func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/import", nil)
 	if err != nil {
@@ -302,4 +361,136 @@ func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, err
 		return nil, err
 	}
 	return config, nil
+}
+
+//nolint:dupl
+func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadURLRequest) (*GetLayerDownloadURLResponse, error) {
+	bodyR, bodyW := io.Pipe()
+	encoder := json.NewEncoder(bodyW)
+	go func() {
+		defer bodyW.Close()
+		if err := encoder.Encode(req); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to encode request")
+		}
+	}()
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/layerDownloadURL", bodyR)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", httpResp.StatusCode)
+	}
+
+	resp := &GetLayerDownloadURLResponse{}
+	if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+//nolint:dupl
+func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLRequest) (*GetLayerUploadURLResponse, error) {
+	bodyR, bodyW := io.Pipe()
+	encoder := json.NewEncoder(bodyW)
+	go func() {
+		defer bodyW.Close()
+		if err := encoder.Encode(req); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to encode request")
+		}
+	}()
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/layerUploadURL", bodyR)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", httpResp.StatusCode)
+	}
+
+	resp := &GetLayerUploadURLResponse{}
+	if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+//nolint:dupl
+func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfigRequest) (*GetCacheMountConfigResponse, error) {
+	bodyR, bodyW := io.Pipe()
+	encoder := json.NewEncoder(bodyW)
+	go func() {
+		defer bodyW.Close()
+		if err := encoder.Encode(req); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to encode request")
+		}
+	}()
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/cacheMountConfig", bodyR)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", httpResp.StatusCode)
+	}
+
+	resp := &GetCacheMountConfigResponse{}
+	if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+//nolint:dupl
+func (c *client) GetCacheMountUploadURL(ctx context.Context, req GetCacheMountUploadURLRequest) (*GetCacheMountUploadURLResponse, error) {
+	bodyR, bodyW := io.Pipe()
+	encoder := json.NewEncoder(bodyW)
+	go func() {
+		defer bodyW.Close()
+		if err := encoder.Encode(req); err != nil {
+			bklog.G(ctx).WithError(err).Error("failed to encode request")
+		}
+	}()
+
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/cacheMountUploadURL", bodyR)
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	httpResp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", httpResp.StatusCode)
+	}
+
+	resp := &GetCacheMountUploadURLResponse{}
+	if err := json.NewDecoder(httpResp.Body).Decode(resp); err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
