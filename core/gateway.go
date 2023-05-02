@@ -19,7 +19,7 @@ import (
 
 const (
 	// Exec errors will only include the last this number of bytes of output.
-	maxExecErrorOutputBytes = 2 * 1024
+	MaxExecErrorOutputBytes = 2 * 1024
 
 	// A magic env var that's interpreted by the shim, telling it to just output
 	// the stdout/stderr contents rather than actually execute anything.
@@ -186,11 +186,14 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		// Use a circular buffer to only save the last N bytes of output, which lets
 		// us prevent enormous error messages while retaining the output most likely
 		// to be of interest.
-		ctrOut, err := circbuf.NewBuffer(maxExecErrorOutputBytes)
+		// NOTE: this is technically redundant with the output truncation done by
+		// the shim itself now, but still useful as a fallback in case something
+		// goes haywire there or if the session is talking to an older engine.
+		ctrOut, err := circbuf.NewBuffer(MaxExecErrorOutputBytes)
 		if err != nil {
 			return
 		}
-		ctrErr, err := circbuf.NewBuffer(maxExecErrorOutputBytes)
+		ctrErr, err := circbuf.NewBuffer(MaxExecErrorOutputBytes)
 		if err != nil {
 			return
 		}
