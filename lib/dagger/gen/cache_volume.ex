@@ -2,10 +2,12 @@
 defmodule Dagger.CacheVolume do
   @moduledoc "A directory whose contents persist across runs."
   use Dagger.QueryBuilder
+  @type t() :: %__MODULE__{}
   defstruct [:selection, :client]
 
   (
     @doc ""
+    @spec id(t()) :: Dagger.CacheID.t()
     def id(%__MODULE__{} = cache_volume) do
       selection = select(cache_volume.selection, "id")
       execute(selection, cache_volume.client)

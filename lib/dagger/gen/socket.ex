@@ -2,10 +2,12 @@
 defmodule Dagger.Socket do
   @moduledoc ""
   use Dagger.QueryBuilder
+  @type t() :: %__MODULE__{}
   defstruct [:selection, :client]
 
   (
     @doc "The content-addressed identifier of the socket."
+    @spec id(t()) :: Dagger.SocketID.t()
     def id(%__MODULE__{} = socket) do
       selection = select(socket.selection, "id")
       execute(selection, socket.client)

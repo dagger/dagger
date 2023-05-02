@@ -31,6 +31,7 @@ defmodule Dagger.Codegen.Elixir.Function do
     fun_name = format_fun_name(fun_name)
     doc = opts[:doc] |> doc_to_quote()
     deprecated = opts[:deprecated] |> deprecated_to_quote()
+    typespec = opts[:spec] |> spec_to_quote(fun_name)
 
     fun = [
       case guard do
@@ -51,7 +52,7 @@ defmodule Dagger.Codegen.Elixir.Function do
     ]
 
     quote do
-      (unquote_splicing(doc ++ deprecated ++ fun))
+      (unquote_splicing(doc ++ deprecated ++ typespec ++ fun))
     end
   end
 
@@ -77,6 +78,16 @@ defmodule Dagger.Codegen.Elixir.Function do
     [
       quote do
         @deprecated unquote(deprecated)
+      end
+    ]
+  end
+
+  defp spec_to_quote(nil, _), do: []
+
+  defp spec_to_quote({arg_types, return_type}, fun_name) do
+    [
+      quote do
+        @spec unquote(fun_name)(unquote_splicing(arg_types)) :: unquote(return_type)
       end
     ]
   end

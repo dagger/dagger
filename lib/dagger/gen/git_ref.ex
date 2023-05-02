@@ -2,10 +2,12 @@
 defmodule Dagger.GitRef do
   @moduledoc "A git ref (tag, branch or commit)."
   use Dagger.QueryBuilder
+  @type t() :: %__MODULE__{}
   defstruct [:selection, :client]
 
   (
     @doc "The digest of the current value of this ref."
+    @spec digest(t()) :: String.t()
     def digest(%__MODULE__{} = git_ref) do
       selection = select(git_ref.selection, "digest")
       execute(selection, git_ref.client)
@@ -14,6 +16,7 @@ defmodule Dagger.GitRef do
 
   (
     @doc "The filesystem tree at this ref.\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
+    @spec tree(t(), keyword()) :: Dagger.Directory.t()
     def tree(%__MODULE__{} = git_ref, optional_args \\ []) do
       selection = select(git_ref.selection, "tree")
 

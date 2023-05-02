@@ -16,9 +16,9 @@ defmodule Dagger.Codegen.Compiler do
 
   # Compile GraphQL introspection into Elixir code.
 
-  alias Dagger.Codegen.Elixir.Templates.EnumTmpl
-  alias Dagger.Codegen.Elixir.Templates.ObjectTmpl
-  alias Dagger.Codegen.Elixir.Templates.ScalarTmpl
+  alias Dagger.Codegen.Elixir.Templates.Enum, as: EnumTmpl
+  alias Dagger.Codegen.Elixir.Templates.Object
+  alias Dagger.Codegen.Elixir.Templates.Scalar
 
   def compile(
         %{
@@ -62,15 +62,19 @@ defmodule Dagger.Codegen.Compiler do
     ]
   end
 
-  defp render(%{"name" => name, "kind" => "OBJECT"} = full_type) do
-    {"#{Macro.underscore(name)}.ex", ObjectTmpl.render_object(full_type)}
-  end
+  defp render(%{"name" => name, "kind" => kind} = full_type) do
+    q =
+      case kind do
+        "OBJECT" ->
+          Object.render(full_type)
 
-  defp render(%{"name" => name, "kind" => "SCALAR"} = full_type) do
-    {"#{Macro.underscore(name)}.ex", ScalarTmpl.render_scalar(full_type)}
-  end
+        "SCALAR" ->
+          Scalar.render(full_type)
 
-  defp render(%{"name" => name, "kind" => "ENUM"} = full_type) do
-    {"#{Macro.underscore(name)}.ex", EnumTmpl.render_enum(full_type)}
+        "ENUM" ->
+          EnumTmpl.render(full_type)
+      end
+
+    {"#{Macro.underscore(name)}.ex", q}
   end
 end

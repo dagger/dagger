@@ -1,4 +1,4 @@
-defmodule Dagger.Codegen.Elixir.Templates.ScalarTmpl do
+defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
@@ -14,7 +14,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ScalarTmpl do
 
   @support_gen_fun Map.keys(@required_mods)
 
-  def render_scalar(%{"name" => name, "description" => desc}) when name in @support_gen_fun do
+  def render(%{"name" => name, "description" => desc}) when name in @support_gen_fun do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
     required_name = @required_mods[name]
 
@@ -42,7 +42,7 @@ defmodule Dagger.Codegen.Elixir.Templates.ScalarTmpl do
     end
   end
 
-  def render_scalar(%{"name" => name, "description" => desc}) do
+  def render(%{"name" => name, "description" => desc}) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
 
     quote do

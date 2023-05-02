@@ -2,10 +2,12 @@
 defmodule Dagger.Secret do
   @moduledoc "A reference to a secret value, which can be handled more safely than the value itself."
   use Dagger.QueryBuilder
+  @type t() :: %__MODULE__{}
   defstruct [:selection, :client]
 
   (
     @doc "The identifier for this secret."
+    @spec id(t()) :: Dagger.SecretID.t()
     def id(%__MODULE__{} = secret) do
       selection = select(secret.selection, "id")
       execute(selection, secret.client)
@@ -14,6 +16,7 @@ defmodule Dagger.Secret do
 
   (
     @doc "The value of this secret."
+    @spec plaintext(t()) :: String.t()
     def plaintext(%__MODULE__{} = secret) do
       selection = select(secret.selection, "plaintext")
       execute(selection, secret.client)

@@ -2,10 +2,12 @@
 defmodule Dagger.Port do
   @moduledoc "A port exposed by a container."
   use Dagger.QueryBuilder
+  @type t() :: %__MODULE__{}
   defstruct [:selection, :client]
 
   (
     @doc "The port description."
+    @spec description(t()) :: String.t()
     def description(%__MODULE__{} = port) do
       selection = select(port.selection, "description")
       execute(selection, port.client)
@@ -14,6 +16,7 @@ defmodule Dagger.Port do
 
   (
     @doc "The port number."
+    @spec port(t()) :: integer()
     def port(%__MODULE__{} = port) do
       selection = select(port.selection, "port")
       execute(selection, port.client)
@@ -22,6 +25,7 @@ defmodule Dagger.Port do
 
   (
     @doc "The transport layer network protocol."
+    @spec protocol(t()) :: Dagger.NetworkProtocol.t()
     def protocol(%__MODULE__{} = port) do
       selection = select(port.selection, "protocol")
       execute(selection, port.client)

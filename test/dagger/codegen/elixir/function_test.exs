@@ -134,6 +134,34 @@ defmodule Dagger.Codegen.Elixir.FunctionTest do
                """
                |> format_code()
     end
+
+    test "define typespec" do
+      body =
+        quote do
+          nil
+        end
+
+      fun =
+        Function.define(:hello, [Macro.var(:a, __MODULE__), Macro.var(:b, __MODULE__)], nil, body,
+          spec: {
+            [
+              quote(do: String.t()),
+              quote(do: atom())
+            ],
+            quote(do: String.t() | nil)
+          }
+        )
+
+      assert format_code(fun) ==
+               """
+               @doc false
+               @spec hello(String.t(), atom()) :: String.t() | nil
+               def hello(a, b) do
+                 nil
+               end
+               """
+               |> format_code()
+    end
   end
 
   defp format_code(code) when is_binary(code) do

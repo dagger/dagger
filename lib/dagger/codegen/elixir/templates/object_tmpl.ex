@@ -1,9 +1,9 @@
-defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
+defmodule Dagger.Codegen.Elixir.Templates.Object do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
 
-  def render_object(%{"name" => name, "fields" => fields, "description" => desc} = _full_type) do
+  def render(%{"name" => name, "fields" => fields, "description" => desc} = _full_type) do
     mod_name = Module.concat([Dagger, Function.format_module_name(name)])
     defs = render_functions(Function.format_var_name(name), fields)
 
@@ -12,6 +12,8 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
         @moduledoc unquote(desc)
 
         use Dagger.QueryBuilder
+
+        @type t() :: %__MODULE__{}
 
         defstruct [:selection, :client]
 
@@ -40,7 +42,8 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
 
     Function.define(name, fun_args, nil, fun_body,
       doc: format_doc(field),
-      deprecated: deprecated_reason(field)
+      deprecated: deprecated_reason(field),
+      spec: format_spec(field)
     )
   end
 
@@ -180,6 +183,87 @@ defmodule Dagger.Codegen.Elixir.Templates.ObjectTmpl do
             selection
           end
       end
+    end
+  end
+
+  defp format_spec(field) do
+    {[quote(do: t()) | render_arg_types(field["args"])], render_return_type(field["type"])}
+  end
+
+  defp render_arg_types(args) do
+    {required_args, optional_args} =
+      args
+      |> Enum.split_with(&required_arg?/1)
+
+    required_arg_types =
+      for %{"type" => type} <- required_args do
+        render_return_type(type)
+      end
+
+    if optional_args != [] do
+      required_arg_types ++ [quote(do: keyword())]
+    else
+      required_arg_types
+    end
+  end
+
+  defp render_return_type(%{"kind" => "NON_NULL", "ofType" => type}) do
+    render_return_type(type)
+  end
+
+  defp render_return_type(%{"kind" => "OBJECT", "name" => type}) do
+    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+
+    quote do
+      unquote(mod_name).t()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "LIST", "ofType" => type}) do
+    type = render_return_type(type)
+
+    quote do
+      [unquote(type)]
+    end
+  end
+
+  defp render_return_type(%{"kind" => "ENUM", "name" => type}) do
+    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+
+    quote do
+      unquote(mod_name).t()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "SCALAR", "name" => "String"}) do
+    quote do
+      String.t()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "SCALAR", "name" => "Int"}) do
+    quote do
+      integer()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "SCALAR", "name" => "Float"}) do
+    quote do
+      float()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "SCALAR", "name" => "Boolean"}) do
+    quote do
+      boolean()
+    end
+  end
+
+  defp render_return_type(%{"kind" => "SCALAR", "name" => type}) do
+    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+
+    quote do
+      unquote(mod_name).t()
     end
   end
 
