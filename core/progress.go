@@ -1,10 +1,9 @@
 package core
 
 import (
-	"context"
-
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/vito/progrock"
 )
 
 // Override the progress pipeline of every LLB vertex in the DAG.
@@ -12,12 +11,9 @@ import (
 // FIXME: this can't be done in a normal way because Buildkit doesn't currently
 // allow overriding the metadata of DefinitionOp. See this PR and comment:
 // https://github.com/moby/buildkit/pull/2819
-func overrideProgress(ctx context.Context, def *llb.Definition, pipeline pipeline.Path) {
+func overrideProgress(rec *progrock.Recorder, def *llb.Definition, pipeline pipeline.Path) {
 	for dgst, metadata := range def.Metadata {
-		metadata.ProgressGroups = append(
-			metadata.ProgressGroups,
-			pipeline.ProgressGroup(ctx),
-		)
+		metadata.ProgressGroup = pipeline.ProgressGroup(rec)
 		def.Metadata[dgst] = metadata
 	}
 }

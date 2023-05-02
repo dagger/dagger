@@ -11,6 +11,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vito/progrock"
 )
 
 type Host struct {
@@ -34,7 +35,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, rec *progrock.Recorder, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -65,7 +66,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 
 	localOpts := []llb.LocalOption{
 		// Inject Pipelin
-		directoryPipeline.LLBOpt(ctx),
+		directoryPipeline.LLBOpt(rec),
 
 		// Custom name
 		llb.WithCustomNamef("upload %s", absPath),
@@ -93,7 +94,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
-		directoryPipeline.LLBOpt(ctx),
+		directoryPipeline.LLBOpt(rec),
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 

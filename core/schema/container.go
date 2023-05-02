@@ -131,7 +131,7 @@ type containerFromArgs struct {
 }
 
 func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, args.Address)
+	return parent.From(ctx, s.rec, s.gw, args.Address)
 }
 
 type containerBuildArgs struct {
@@ -181,7 +181,7 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
+	return parent.WithExec(ctx, s.rec, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Container) (*core.Container, error) {
@@ -594,7 +594,7 @@ func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Contai
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithDirectory(ctx, s.gw, args.Path, dir, args.CopyFilter, args.Owner)
+	return parent.WithDirectory(ctx, s.rec, s.gw, args.Path, dir, args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -607,7 +607,7 @@ func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, 
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithFile(ctx, s.gw, args.Path, file, args.Permissions, args.Owner)
+	return parent.WithFile(ctx, s.rec, s.gw, args.Path, file, args.Permissions, args.Owner)
 }
 
 type containerWithNewFileArgs struct {
@@ -616,7 +616,7 @@ type containerWithNewFileArgs struct {
 }
 
 func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
+	return parent.WithNewFile(ctx, s.rec, s.gw, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
 }
 
 type containerWithUnixSocketArgs struct {

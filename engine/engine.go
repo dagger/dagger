@@ -615,10 +615,8 @@ func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.
 				vtx.Error = &v.Error
 			}
 		}
-		if v.ProgressGroups == nil {
-			for _, g := range v.ProgressGroups {
-				vtx.Groups = append(vtx.Groups, g.Id)
-			}
+		if v.ProgressGroup != nil {
+			vtx.Groups = []string{v.ProgressGroup.Id}
 		}
 
 		var custom pipeline.CustomName

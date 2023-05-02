@@ -46,7 +46,7 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 	// of following more optimized cache codepaths.
 	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
 	filename := digest.FromString(args.URL).Encoded()
-	st := llb.HTTP(args.URL, llb.Filename(filename), pipeline.LLBOpt(ctx))
+	st := llb.HTTP(args.URL, llb.Filename(filename), pipeline.LLBOpt(s.rec))
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {

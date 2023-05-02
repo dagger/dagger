@@ -111,7 +111,7 @@ func (file *File) Stat(ctx context.Context, rec *progrock.Recorder, gw bkgw.Clie
 	})
 }
 
-func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
+func (file *File) WithTimestamps(ctx context.Context, rec *progrock.Recorder, unix int) (*File, error) {
 	file = file.Clone()
 
 	st, err := file.State()
@@ -123,7 +123,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	stamped := llb.Scratch().File(
 		llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)),
-		file.Pipeline.LLBOpt(ctx),
+		file.Pipeline.LLBOpt(rec),
 	)
 
 	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
@@ -180,7 +180,7 @@ func (file *File) Export(
 				return nil, err
 			}
 
-			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt(ctx))
+			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt(rec))
 
 			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
 			if err != nil {
