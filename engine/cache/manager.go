@@ -263,6 +263,9 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 	}
 	defer req.Body.Close()
 	req.ContentLength = readerAt.Size()
+	for k, v := range getURLResp.Headers {
+		req.Header.Set(k, v)
+	}
 
 	resp, err := m.httpClient.Do(req)
 	if err != nil {
