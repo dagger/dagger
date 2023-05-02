@@ -2,9 +2,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
+  alias Dagger.Codegen.Elixir.Module, as: Mod
 
   def render(%{"name" => name, "description" => desc, "enumValues" => enum_values}) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(name)])
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
 
     type = render_possible_enum_values(enum_values)
 

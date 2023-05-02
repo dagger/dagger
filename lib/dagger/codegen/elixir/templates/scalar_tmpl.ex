@@ -2,6 +2,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
+  alias Dagger.Codegen.Elixir.Module, as: Mod
 
   @required_mods %{
     "ContainerID" => "Container",
@@ -15,10 +16,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   @support_gen_fun Map.keys(@required_mods)
 
   def render(%{"name" => name, "description" => desc}) when name in @support_gen_fun do
-    mod_name = Module.concat([Dagger, Function.format_module_name(name)])
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
     required_name = @required_mods[name]
 
-    required_mod = Module.concat([Dagger, Function.format_module_name(required_name)])
+    required_mod = Module.concat([Dagger, Mod.format_name(required_name)])
 
     required_var =
       required_name
@@ -43,7 +44,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   end
 
   def render(%{"name" => name, "description" => desc}) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(name)])
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
 
     quote do
       defmodule unquote(mod_name) do

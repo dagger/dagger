@@ -2,9 +2,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
+  alias Dagger.Codegen.Elixir.Module, as: Mod
 
   def render(%{"name" => name, "fields" => fields, "description" => desc} = _full_type) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(name)])
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
     defs = render_functions(Function.format_var_name(name), fields)
 
     quote do
@@ -52,7 +53,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
         {mod_var_name, args},
         %{"kind" => "OBJECT", "name" => name}
       ) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(name)])
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
     args = render_args(args)
 
     quote do
@@ -151,7 +152,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
                "SecretID",
                "SocketID"
              ] ->
-          id_mod = Module.concat([Dagger, Function.format_module_name(type_name)])
+          id_mod = Module.concat([Dagger, Mod.format_name(type_name)])
 
           quote do
             selection =
@@ -212,7 +213,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_return_type(%{"kind" => "OBJECT", "name" => type}) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+    mod_name = Module.concat([Dagger, Mod.format_name(type)])
 
     quote do
       unquote(mod_name).t()
@@ -228,7 +229,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_return_type(%{"kind" => "ENUM", "name" => type}) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+    mod_name = Module.concat([Dagger, Mod.format_name(type)])
 
     quote do
       unquote(mod_name).t()
@@ -260,7 +261,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_return_type(%{"kind" => "SCALAR", "name" => type}) do
-    mod_name = Module.concat([Dagger, Function.format_module_name(type)])
+    mod_name = Module.concat([Dagger, Mod.format_name(type)])
 
     quote do
       unquote(mod_name).t()
