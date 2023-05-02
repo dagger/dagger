@@ -52,7 +52,8 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 var waitDelay time.Duration
-var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
+var whichTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI")
+var useShinyNewTUI = whichTUI != ""
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -123,10 +124,15 @@ func run(ctx context.Context, args []string) error {
 		})
 	}
 
-	return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
+	switch whichTUI {
+	case "inline":
+		return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
+	default:
+		return interactiveTUI(ctx, sessionToken, sessionL, subCmd, quit)
+	}
 }
 
-func interactiveUI(
+func interactiveTUI(
 	ctx context.Context,
 	sessionToken uuid.UUID,
 	sessionL net.Listener,
