@@ -37,6 +37,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 		},
 		"Container": router.ObjectResolver{
 			"id":                   router.ToResolver(s.id),
+			"sync":                 router.ToResolver(s.sync),
 			"from":                 router.ToResolver(s.from),
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
@@ -120,6 +121,14 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 		return nil, err
 	}
 	return ctr, err
+}
+
+func (s *containerSchema) sync(ctx *router.Context, parent *core.Container, _ any) (core.ContainerID, error) {
+	err := parent.Evaluate(ctx.Context, s.gw, nil)
+	if err != nil {
+		return "", err
+	}
+	return parent.ID()
 }
 
 func (s *containerSchema) id(ctx *router.Context, parent *core.Container, args any) (core.ContainerID, error) {

@@ -544,6 +544,12 @@ class Container(Type):
         return await _ctx.execute(ContainerID)
 
     @typecheck
+    async def sync(self) -> "Container":
+        _ctx = self._select("sync", [])
+        await _ctx.execute(ContainerID)
+        return self
+
+    @typecheck
     async def image_ref(self) -> Optional[str]:
         """The unique image reference which can only be retrieved immediately
         after the 'Container.From' call.

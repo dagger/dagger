@@ -19,6 +19,9 @@ type Container {
   "A unique identifier for this container."
   id: ContainerID!
 
+  "Force evaluation in the engine."
+  sync: ContainerID!
+
   "The platform this container executes and publishes as."
   platform: Platform!
 

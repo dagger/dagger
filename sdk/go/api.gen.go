@@ -2553,6 +2553,12 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Force evaluation in the engine.
+func (r *Container) Sync(ctx context.Context) (*Container, error) {
+	q := r.q.Select("sync")
+	return r, q.Execute(ctx, r.c)
+}
+
 // The default platform of the builder.
 func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	q := r.q.Select("defaultPlatform")
