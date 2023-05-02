@@ -5,7 +5,8 @@ import dagger
 
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr, workdir="..")) as client:
-
-        print("foo")
+    
+        entries = await client.host().directory(".").entries()
+        print(entries)
 
 anyio.run(main)

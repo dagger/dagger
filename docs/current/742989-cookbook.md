@@ -9,36 +9,9 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Set working directory
+### List host directory contents
 
-The following code listing sets the parent directory on the host as the working directory for the Dagger pipeline (useful when the Dagger pipeline is in a sub-directory of the project).
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/work-with-host-filesystem/set-workdir-parent/main.py
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/421437-work-with-host-filesystem.md)
-
-### Get host directory
-
-The following code listing obtains a reference to the host working directory.
+The following code listing obtains a reference to the host working directory and lists the directory's contents.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -56,6 +29,29 @@ The following code listing obtains a reference to the host working directory.
 <TabItem value="Python">
 
 ```python file=./guides/snippets/work-with-host-filesystem/list-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. The following listing revises the previous one, obtaining a reference to the parent directory on the host and listing its contents:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-parent/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.py
 ```
 
 </TabItem>

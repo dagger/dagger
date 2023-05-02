@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -16,9 +17,13 @@ func main() {
 		log.Println(err)
 		return
 	}
-
 	defer client.Close()
 
-	fmt.Print("foo")
-	
+	entries, err := client.Host().Directory(".").Entries(ctx)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	fmt.Println(entries)
 }
