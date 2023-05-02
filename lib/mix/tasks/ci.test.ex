@@ -3,6 +3,17 @@ defmodule Mix.Tasks.Ci.Test do
 
   use Mix.Task
 
+  @ignore [
+    ".lexical",
+    ".elixir_ls",
+    "_build",
+    "deps",
+    "*.livemd",
+    "*.md",
+    ".git*",
+    "LICENSE"
+  ]
+
   def run(_) do
     Application.ensure_all_started(:dagger_ex)
 
@@ -13,7 +24,7 @@ defmodule Mix.Tasks.Ci.Test do
     repo =
       client
       |> Dagger.Query.host()
-      |> Dagger.Host.directory(".", exclude: [".elixir_ls", "_build", "deps"])
+      |> Dagger.Host.directory(".", exclude: @ignore)
 
     base_image =
       client
