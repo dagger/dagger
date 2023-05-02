@@ -178,7 +178,8 @@ type GetLayerUploadURLRequest struct {
 }
 
 type GetLayerUploadURLResponse struct {
-	URL string
+	URL     string
+	Headers map[string]string
 }
 
 type GetCacheMountConfigRequest struct {
@@ -203,7 +204,8 @@ type GetCacheMountUploadURLRequest struct {
 }
 
 type GetCacheMountUploadURLResponse struct {
-	URL string
+	URL     string
+	Headers map[string]string
 }
 
 type client struct {

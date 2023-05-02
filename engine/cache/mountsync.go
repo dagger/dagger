@@ -165,17 +165,15 @@ func (m *manager) StartCacheMountSynchronization(ctx context.Context) error {
 						return fmt.Errorf("failed to create http request: %w", err)
 					}
 					httpReq.ContentLength = contentLength // set it here, go stdlib will ignore if set on Header (??!!)
+					for k, v := range getURLResp.Headers {
+						httpReq.Header.Set(k, v)
+					}
 					resp, err := m.httpClient.Do(httpReq)
 					if err != nil {
 						return fmt.Errorf("failed to upload cache mount: %w", err)
 					}
 					defer resp.Body.Close()
 					if resp.StatusCode != http.StatusOK {
-						// get the error message from the body
-						body, err := io.ReadAll(resp.Body)
-						if err == nil {
-							return fmt.Errorf("failed to upload cache mount: %s, %s", resp.Status, body)
-						}
 						return fmt.Errorf("failed to upload cache mount: %s", resp.Status)
 					}
 
