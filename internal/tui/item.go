@@ -26,13 +26,12 @@ import (
 func NewItem(v *bkclient.Vertex, width int) *Item {
 	var name pipeline.CustomName
 	if json.Unmarshal([]byte(v.Name), &name) != nil {
-		panic("TODO")
-		// name.Name = v.Name
-		// if pg := v.ProgressGroup.GetId(); pg != "" {
-		// 	if err := json.Unmarshal([]byte(pg), &name.Pipeline); err != nil {
-		// 		panic("unmarshal pipeline: " + err.Error())
-		// 	}
-		// }
+		name.Name = v.Name
+		if pg := v.ProgressGroup.GetId(); pg != "" {
+			if err := json.Unmarshal([]byte(pg), &name.Pipeline); err != nil {
+				panic("unmarshal pipeline: " + err.Error())
+			}
+		}
 	}
 
 	group := []string{}

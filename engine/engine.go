@@ -587,8 +587,6 @@ func cacheConfigFromEnv() (string, map[string]string, error) {
 }
 
 func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.StatusUpdate {
-	// TODO?: handle resolve image config and other things that don't support
-	// ProgressGroup and use CustomName
 	var status progrock.StatusUpdate
 	for _, v := range event.Vertexes {
 		vtx := &progrock.Vertex{
@@ -615,8 +613,12 @@ func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.
 				vtx.Error = &v.Error
 			}
 		}
+
 		if v.ProgressGroup != nil {
-			vtx.Groups = []string{v.ProgressGroup.Id}
+			var pipelinePath pipeline.Path
+			if json.Unmarshal([]byte(v.ProgressGroup.Id), &pipelinePath) == nil {
+				vtx.Groups = []string{pipelinePath.RecorderGroup(rec).Group.Id}
+			}
 		}
 
 		var custom pipeline.CustomName

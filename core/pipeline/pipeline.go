@@ -69,10 +69,9 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 }
 
 func (g Path) ProgressGroup(rec *progrock.Recorder) *pb.ProgressGroup {
-	rec = g.RecorderGroup(rec)
 	return &pb.ProgressGroup{
-		Id:   rec.Group.Id,
-		Name: rec.Group.Name, // TODO(vito): this is not the full path
+		Id:   g.ID(),
+		Name: g.Name(),
 	}
 }
 
