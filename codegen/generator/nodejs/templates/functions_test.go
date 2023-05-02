@@ -10,6 +10,7 @@ import (
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/stretchr/testify/require"
+	"github.com/vito/progrock"
 )
 
 var currentSchema *introspection.Schema
@@ -17,11 +18,11 @@ var currentSchema *introspection.Schema
 func init() {
 	ctx := context.Background()
 
-	engineConf := &engine.Config{
+	engineConf := engine.Config{
 		RunnerHost:   internalengine.RunnerHost(),
 		NoExtensions: true,
 	}
-	err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
+	err := engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, r *router.Router) error {
 		var err error
 		currentSchema, err = generator.Introspect(ctx, r)
 		if err != nil {
