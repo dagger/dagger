@@ -11,7 +11,7 @@ async def main():
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
     
-        out = await (
+        await (
             client.container()
             .from_("alpine:latest")
             .with_workdir("/tmp")
@@ -20,8 +20,7 @@ async def main():
             .export(hostdir)
         )
 
-    with open(os.path.join(hostdir, "index.html"), "r") as file:
-        contents = file.readlines()
+    contents = await anyio.Path(hostdir, "index.html").read_text()
 
     print(contents)
 

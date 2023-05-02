@@ -10,4 +10,4 @@ connect(async (client: Client) => {
 
   console.log(contents)
   
-}, {LogOutput: process.stderr, Workdir: "."})
+}, {LogOutput: process.stderr})

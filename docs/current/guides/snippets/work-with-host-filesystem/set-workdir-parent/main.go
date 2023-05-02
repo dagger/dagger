@@ -18,4 +18,7 @@ func main() {
 	}
 
 	defer client.Close()
+
+	fmt.Print("foo")
+	
 }

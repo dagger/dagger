@@ -1,23 +1,19 @@
 import sys
 import tempfile
-import os
 
 import anyio
 import dagger
 
-async def main():
+async def main(workdir: anyio.Path):
+    for i, file in enumerate(["foo.txt", "bar.txt", "baz.rar"]):
+        await (workdir / file).write_text(str(i + 1))
 
-    dir = tempfile.gettempdir()
-    files = ["foo.txt","bar.txt","baz.rar"]
-    count = 1
-    for file in files:
-        with open(os.path.join(dir, file), "w") as out:
-            out.write(str(count))
-            count = count+1
+    cfg = dagger.Config(log_output=sys.stderr, workdir=workdir)
 
-    async with dagger.Connection(dagger.Config(log_output=sys.stderr, workdir=dir)) as client:
-    
-        entries = await client.host().directory(".", ["*.rar"], ["*.*"]).entries()
-        print(entries)
+    async with dagger.Connection(cfg) as client:
+        entries = await client.host().directory(".", exclude=["*.rar"], include=["*.*"]).entries()
 
-anyio.run(main)
+    print(entries)
+
+with tempfile.TemporaryDirectory() as workdir:
+    anyio.run(main, anyio.Path(workdir))

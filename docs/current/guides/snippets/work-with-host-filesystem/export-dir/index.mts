@@ -7,7 +7,7 @@ const hostdir = os.tmpdir()
 
 connect(async (client: Client) => {
 
-  const out = await client.container()
+  await client.container()
 		.from("alpine:latest")
 		.withWorkdir("/tmp")
 		.withExec(["wget", "https://dagger.io"])

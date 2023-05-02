@@ -31,28 +31,7 @@ This guide assumes that:
 
 ## Set the host working directory
 
-The easiest way to set the working directory for the Dagger CI pipeline is at the time of client instantiation, as a client configuration option. The following example shows how to set the current directory on the host as the working directory:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./snippets/work-with-host-filesystem/set-workdir-current/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./snippets/work-with-host-filesystem/set-workdir-current/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./snippets/work-with-host-filesystem/set-workdir-current/main.py
-```
-
-</TabItem>
-</Tabs>
+The easiest way to set the working directory for the Dagger CI pipeline is at the time of client instantiation, as a client configuration option. By default, Dagger uses the current directory on the host as the working directory.
 
 When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. The following example shows how to set the parent directory as the working directory:
 
@@ -110,7 +89,7 @@ The `host` type provides information about the host's execution environment. Its
 
 ## List directory contents with filters
 
-It's possible to restrict a directory list to a subset of directory entries, by specifying a list of filename patterns to include or exclude.
+It's possible to restrict a `Directory` to a subset of directory entries, by specifying a list of filename patterns to include or exclude.
 
 The following example shows how to obtain a reference to the host working directory containing only `*.rar` files:
 

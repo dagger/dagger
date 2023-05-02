@@ -12,7 +12,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr), dagger.WithWorkdir("."))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		log.Println(err)
 		return

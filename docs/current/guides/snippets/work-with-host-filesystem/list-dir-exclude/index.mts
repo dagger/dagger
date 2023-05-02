@@ -14,7 +14,7 @@ for (const file of files) {
 
 connect(async (client: Client) => {
 
-  const entries = await client.host().directory(dir, {"exclude":["*.txt"]}).entries()
+  const entries = await client.host().directory(".", {"exclude":["*.txt"]}).entries()
   console.log(entries)
   
-}, {LogOutput: process.stderr, Workdir: "."})
+}, {LogOutput: process.stderr, Workdir: dir})

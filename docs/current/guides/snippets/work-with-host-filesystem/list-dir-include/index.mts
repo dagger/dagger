@@ -14,7 +14,7 @@ for (const file of files) {
 
 connect(async (client: Client) => {
 
-  const entries = await client.host().directory(dir, {"include":["*.rar"]}).entries()
+  const entries = await client.host().directory(".", {"include":["*.rar"]}).entries()
   console.log(entries)
   
-}, {LogOutput: process.stderr, Workdir: "."})
+}, {LogOutput: process.stderr, Workdir: dir})

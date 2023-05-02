@@ -11,29 +11,6 @@ import TabItem from "@theme/TabItem";
 
 ### Set working directory
 
-The following code listing sets the current directory on the host as the working directory for the Dagger pipeline.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/set-workdir-current/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```typescript file=./guides/snippets/work-with-host-filesystem/set-workdir-current/index.mts
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/work-with-host-filesystem/set-workdir-current/main.py
-```
-
-</TabItem>
-</Tabs>
-
 The following code listing sets the parent directory on the host as the working directory for the Dagger pipeline (useful when the Dagger pipeline is in a sub-directory of the project).
 
 <Tabs groupId="language">
