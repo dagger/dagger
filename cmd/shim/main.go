@@ -191,19 +191,48 @@ func shim() int {
 		// if we are being requested to just obtain the output of a previously failed exec,
 		// do that and exit
 		stdoutFile, err := os.Open(stdoutPath)
-		if err != nil && !os.IsNotExist(err) {
+		if err == nil {
+			stdoutFileSize, err := stdoutFile.Seek(0, io.SeekEnd)
+			if err != nil {
+				panic(err)
+			}
+			seekFromEnd := stdoutFileSize
+			if seekFromEnd > core.MaxExecErrorOutputBytes {
+				// copy the last MaxExecErrorOutputBytes bytes only
+				seekFromEnd = core.MaxExecErrorOutputBytes
+			}
+			_, err = stdoutFile.Seek(-int64(seekFromEnd), io.SeekEnd)
+			if err != nil {
+				panic(err)
+			}
+			_, err = io.Copy(os.Stdout, stdoutFile)
+			if err != nil {
+				panic(err)
+			}
+		} else if !os.IsNotExist(err) {
 			panic(err)
 		}
-		_, err = io.Copy(os.Stdout, stdoutFile)
-		if err != nil {
-			panic(err)
-		}
+
 		stderrFile, err := os.Open(stderrPath)
-		if err != nil && !os.IsNotExist(err) {
-			panic(err)
-		}
-		_, err = io.Copy(os.Stderr, stderrFile)
-		if err != nil {
+		if err == nil {
+			stderrFileSize, err := stderrFile.Seek(0, io.SeekEnd)
+			if err != nil {
+				panic(err)
+			}
+			seekFromEnd := stderrFileSize
+			if seekFromEnd > core.MaxExecErrorOutputBytes {
+				// copy the last MaxExecErrorOutputBytes bytes only
+				seekFromEnd = core.MaxExecErrorOutputBytes
+			}
+			_, err = stderrFile.Seek(-int64(seekFromEnd), io.SeekEnd)
+			if err != nil {
+				panic(err)
+			}
+			_, err = io.Copy(os.Stderr, stderrFile)
+			if err != nil {
+				panic(err)
+			}
+		} else if !os.IsNotExist(err) {
 			panic(err)
 		}
 		return 0

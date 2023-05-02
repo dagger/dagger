@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/base64"
@@ -2910,6 +2911,38 @@ func TestContainerExecError(t *testing.T) {
 
 		require.Contains(t, err.Error(), outMsg)
 		require.Contains(t, err.Error(), errMsg)
+	})
+
+	t.Run("truncates output past a maximum size", func(t *testing.T) {
+		// fill a byte buffer with a string that is twice the size of the max output
+		// size, then base64 encode it
+		var stdoutBuf bytes.Buffer
+		for i := 0; i < 2*core.MaxExecErrorOutputBytes; i++ {
+			stdoutBuf.WriteByte('a')
+		}
+		stdoutStr := stdoutBuf.String()
+		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
+
+		var stderrBuf bytes.Buffer
+		for i := 0; i < 2*core.MaxExecErrorOutputBytes; i++ {
+			stderrBuf.WriteByte('b')
+		}
+		stderrStr := stderrBuf.String()
+		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
+
+		_, err = c.Container().
+			From("alpine:3.16.2").
+			WithExec(
+				[]string{"sh", "-c", fmt.Sprintf(
+					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
+				)},
+			).
+			ExitCode(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes])
+		require.NotContains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes+1])
+		require.Contains(t, err.Error(), stderrStr[:core.MaxExecErrorOutputBytes])
+		require.NotContains(t, err.Error(), stderrStr[:core.MaxExecErrorOutputBytes+1])
 	})
 }
 
