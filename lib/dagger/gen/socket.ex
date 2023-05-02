@@ -7,7 +7,7 @@ defmodule Dagger.Socket do
 
   (
     @doc "The content-addressed identifier of the socket."
-    @spec id(t()) :: Dagger.SocketID.t()
+    @spec id(t()) :: Dagger.Socket.t()
     def id(%__MODULE__{} = socket) do
       selection = select(socket.selection, "id")
       execute(selection, socket.client)

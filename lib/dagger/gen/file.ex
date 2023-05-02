@@ -26,7 +26,7 @@ defmodule Dagger.File do
 
   (
     @doc "Retrieves the content-addressed identifier of the file."
-    @spec id(t()) :: Dagger.FileID.t()
+    @spec id(t()) :: Dagger.File.t()
     def id(%__MODULE__{} = file) do
       selection = select(file.selection, "id")
       execute(selection, file.client)

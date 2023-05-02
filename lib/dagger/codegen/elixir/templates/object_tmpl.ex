@@ -261,7 +261,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_return_type(%{"kind" => "SCALAR", "name" => type}) do
-    mod_name = Module.concat([Dagger, Mod.format_name(type)])
+    # Convert *ID type into object type.
+    mod_name = Module.concat([Dagger, type |> String.trim_trailing("ID") |> Mod.format_name()])
 
     quote do
       unquote(mod_name).t()

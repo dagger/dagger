@@ -7,7 +7,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Gets the difference between this directory and an another directory.\n\n## Required Arguments\n\n* `other` - Identifier of the directory to compare."
-    @spec diff(t(), Dagger.DirectoryID.t()) :: Dagger.Directory.t()
+    @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
     def diff(%__MODULE__{} = directory, other) do
       selection = select(directory.selection, "diff")
       selection = arg(selection, "other", Dagger.DirectoryID.get_id(other))
@@ -109,7 +109,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "The content-addressed identifier of the directory."
-    @spec id(t()) :: Dagger.DirectoryID.t()
+    @spec id(t()) :: Dagger.Directory.t()
     def id(%__MODULE__{} = directory) do
       selection = select(directory.selection, "id")
       execute(selection, directory.client)
@@ -153,8 +153,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory plus a directory written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"/src/\").\n* `directory` - Identifier of the directory to copy.\n\n## Optional Arguments\n\n* `exclude` - Exclude artifacts that match the given pattern (e.g., [\"node_modules/\", \".git*\"]).\n* `include` - Include only artifacts that match the given pattern (e.g., [\"app/\", \"package.*\"])."
-    @spec with_directory(t(), String.t(), Dagger.DirectoryID.t(), keyword()) ::
-            Dagger.Directory.t()
+    @spec with_directory(t(), String.t(), Dagger.Directory.t(), keyword()) :: Dagger.Directory.t()
     def with_directory(%__MODULE__{} = directory, path, directory, optional_args \\ []) do
       selection = select(directory.selection, "withDirectory")
       selection = arg(selection, "path", path)
@@ -180,7 +179,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Retrieves this directory plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644."
-    @spec with_file(t(), String.t(), Dagger.FileID.t(), keyword()) :: Dagger.Directory.t()
+    @spec with_file(t(), String.t(), Dagger.File.t(), keyword()) :: Dagger.Directory.t()
     def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
       selection = select(directory.selection, "withFile")
       selection = arg(selection, "path", path)

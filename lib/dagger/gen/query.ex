@@ -67,7 +67,7 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec file(t(), Dagger.FileID.t()) :: Dagger.File.t()
+    @spec file(t(), Dagger.File.t()) :: Dagger.File.t()
     def file(%__MODULE__{} = query, id) do
       selection = select(query.selection, "file")
       selection = arg(selection, "id", Dagger.FileID.get_id(id))
@@ -164,7 +164,7 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec secret(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
+    @spec secret(t(), Dagger.Secret.t()) :: Dagger.Secret.t()
     def secret(%__MODULE__{} = query, id) do
       selection = select(query.selection, "secret")
       selection = arg(selection, "id", Dagger.SecretID.get_id(id))

@@ -7,7 +7,7 @@ defmodule Dagger.Secret do
 
   (
     @doc "The identifier for this secret."
-    @spec id(t()) :: Dagger.SecretID.t()
+    @spec id(t()) :: Dagger.Secret.t()
     def id(%__MODULE__{} = secret) do
       selection = select(secret.selection, "id")
       execute(selection, secret.client)

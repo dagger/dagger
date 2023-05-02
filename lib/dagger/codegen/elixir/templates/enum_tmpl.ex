@@ -24,7 +24,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
             unquote(String.to_atom(value))
           end,
           doc: desc,
-          deprecated: deprecated_reason
+          deprecated: deprecated_reason,
+          spec: {[], quote(do: unquote(String.to_atom(value)))}
         )
       end
 

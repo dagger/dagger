@@ -7,7 +7,7 @@ defmodule Dagger.CacheVolume do
 
   (
     @doc ""
-    @spec id(t()) :: Dagger.CacheID.t()
+    @spec id(t()) :: Dagger.Cache.t()
     def id(%__MODULE__{} = cache_volume) do
       selection = select(cache_volume.selection, "id")
       execute(selection, cache_volume.client)
