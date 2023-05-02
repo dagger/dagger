@@ -185,12 +185,12 @@ func inlineTUI(
 	subCmd *exec.Cmd,
 	quit func(),
 ) error {
-	casette := progrock.NewCasette()
+	tape := progrock.NewTape()
 	if debugLogs {
-		casette.ShowInternal(true)
+		tape.ShowInternal(true)
 	}
 
-	stop := progrock.DefaultUI().RenderLoop(quit, casette, os.Stderr, true)
+	stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
 	defer stop()
 
 	cmdline := strings.Join(subCmd.Args, " ")
@@ -202,7 +202,7 @@ func inlineTUI(
 		RunnerHost:     internalengine.RunnerHost(),
 		DisableHostRW:  disableHostRW,
 		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		ProgrockWriter: casette,
+		ProgrockWriter: tape,
 	}
 
 	return engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
