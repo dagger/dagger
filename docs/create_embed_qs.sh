@@ -18,7 +18,7 @@ query='
   container {
     from(address: "golang") {
       withExec(
-        args: ["sh", "-c", "git clone https://github.com/vikram-dagger/hello-dagger /usr/src/app/hello-dagger"]
+        args: ["sh", "-c", "git clone https://github.com/dagger/hello-dagger /usr/src/app/hello-dagger"]
       ) {
         withWorkdir(path: "/usr/src/app/hello-dagger") {
           withExec(
@@ -46,7 +46,7 @@ query='
   container {
     from(address: "python:3") {
       withExec(
-        args: ["sh", "-c", "git clone https://github.com/vikram-dagger/hello-dagger /usr/src/app/hello-dagger"]
+        args: ["sh", "-c", "git clone https://github.com/dagger/hello-dagger /usr/src/app/hello-dagger"]
       ) {
         withWorkdir(path: "/usr/src/app/hello-dagger") {
           withExec(args: ["sh", "-c", "mkdir ci && pip install dagger-io"]) {
@@ -72,7 +72,7 @@ query='
   container {
     from(address: "node") {
       withExec(
-        args: ["sh", "-c", "git clone --depth=1 https://github.com/vikram-dagger/hello-dagger /usr/src/app/hello-dagger"]
+        args: ["sh", "-c", "git clone --depth=1 https://github.com/dagger/hello-dagger /usr/src/app/hello-dagger"]
       ) {
         withWorkdir(path: "/usr/src/app/hello-dagger") {
           withExec(args: ["sh", "-c", "mkdir ci && npm install @dagger.io/dagger --save-dev && npm pkg set type=module"]) {
@@ -98,7 +98,7 @@ query='
   container {
     from(address: "node") {
       withExec(
-        args: ["sh", "-c", "git clone --depth=1 https://github.com/vikram-dagger/hello-dagger /usr/src/app/hello-dagger"]
+        args: ["sh", "-c", "git clone --depth=1 https://github.com/dagger/hello-dagger /usr/src/app/hello-dagger"]
       ) {
         withWorkdir(path: "/usr/src/app/hello-dagger") {
           withExec(args: ["sh", "-c", "mkdir ci && npm install @dagger.io/dagger --save-dev && npm pkg set type=module"]) {
