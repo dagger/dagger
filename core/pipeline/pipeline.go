@@ -54,6 +54,7 @@ func (g Path) String() string {
 	return strings.Join(parts, " / ")
 }
 
+// RecorderGroup converts the path to a Progrock recorder for the group.
 func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	for _, p := range g {
 		var labels []*progrock.Label
@@ -63,8 +64,12 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 				Value: l.Value,
 			})
 		}
+
+		// WithGroup stores an internal hierarchy of groups by name, so this will
+		// always return the same group ID throughout the session.
 		rec = rec.WithGroup(p.Name, labels...)
 	}
+
 	return rec
 }
 
