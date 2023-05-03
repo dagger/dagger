@@ -35,4 +35,4 @@ connect(async (client: Client) => {
       .export(`./build-node-${nodeVersion}`)
   }
   // highlight-end
-})
+}, {LogOutput: process.stdout})

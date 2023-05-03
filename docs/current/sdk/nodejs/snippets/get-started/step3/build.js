@@ -26,5 +26,5 @@
       .directory("build/")
       .export("./build")
     // highlight-end
-  })
+  }, {LogOutput: process.stdout})
 })()
