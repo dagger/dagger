@@ -81,7 +81,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("invalid empty schema")
 			}
 			// TODO:
-			// fmt.Println(schemaStr)
+			fmt.Println(schemaStr)
 			schema, err := gqlparser.LoadSchema(&ast.Source{
 				Input: schemaStr,
 			})

@@ -18,25 +18,19 @@ func (p *State) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Clien
 		return nil, err
 	}
 	workdir := "/src"
-	addSSHKnownHosts, err := withGithubSSHKnownHosts()
-	if err != nil {
-		return nil, err
-	}
 	ctrSrcPath := filepath.Join(workdir, filepath.Dir(p.configPath), subpath)
 	entrypointScript := fmt.Sprintf(`#!/bin/sh
 set -exu
 # go to the workdir
 cd %q
-# redirect local unix socket (graphql server) to a bound tcp port
-socat TCP-LISTEN:8080 UNIX-CONNECT:/dagger.sock &
 # run the extension
-exec dagger-py "$@"
+python3 main.py "$@"
 `,
 		ctrSrcPath)
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
 	return core.NewDirectorySt(ctx,
 		llb.Merge([]llb.State{
-			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(gw)).
+			llb.Image("python:3.10-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),
 			llb.Scratch().
 				File(llb.Copy(contextState, p.workdir.Dir, "/src")),
@@ -55,7 +49,6 @@ exec dagger-py "$@"
 					llb.Scratch(),
 					llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
 				),
-				addSSHKnownHosts,
 			).
 			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
 		"",
