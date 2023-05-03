@@ -39,8 +39,8 @@ To resolve this error, you must stop and remove the Dagger Engine container and 
   docker system prune
   ```
 
+You should now be able to re-run your Dagger pipeline successfully.
+
 :::tip
 If you have custom-provisioned the Dagger Engine, please adjust the above commands to your environment.
 :::
-
-You should now be able to re-run your Dagger pipeline successfully.
