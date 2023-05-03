@@ -109,10 +109,13 @@ func (t *Telemetry) Push(p Payload, ts time.Time) {
 	ev := &Event{
 		Version:   eventVersion,
 		Timestamp: ts,
-		RunID:     t.runID,
 		OrgID:     t.orgID,
 		Type:      p.Type(),
 		Payload:   p,
+	}
+
+	if p.Scope() == EventScopeRun {
+		ev.RunID = t.runID
 	}
 
 	t.mu.Lock()
