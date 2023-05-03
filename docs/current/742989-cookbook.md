@@ -34,7 +34,7 @@ The following code listing obtains a reference to the host working directory and
 </TabItem>
 </Tabs>
 
-When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory. 
+When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory.
 
 The following listing revises the previous one, obtaining a reference to the parent directory on the host and listing its contents.
 
