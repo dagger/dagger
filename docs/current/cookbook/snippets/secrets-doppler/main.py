@@ -11,7 +11,7 @@ async def main():
         # get secret from Doppler
         secretPlaintext = await get_doppler_secret("PROJECT-ID", "CONFIG-ID", "SECRET-ID")
 
-        # read secret from host variable
+        # load secret into Dagger
         secret = client.set_secret("ghApiToken", secretPlaintext)
 
         # use secret in container environment
@@ -38,7 +38,7 @@ async def get_doppler_secret(project_id, config_id, secret_id):
     headersAuth = {
         'Authorization': 'Bearer ' + os.environ.get("DOPPLER_TOKEN")
     }
-    
+
     # read API response
     response = requests.get(secret_uri, headers=headersAuth)
     json = response.json()

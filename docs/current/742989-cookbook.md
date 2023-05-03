@@ -487,7 +487,7 @@ Set up [Application Default Credentials (ADC)](https://cloud.google.com/docs/aut
 
 ### Load secret from Doppler
 
-The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API.
+The following code listing reads a secret (a GitHub API token) from Doppler and uses it in a Dagger pipeline to interact with the GitHub API.
 
 Set the [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) as a host environment variable named `DOPPLER_TOKEN` and replace the `PROJECT-ID`, `CONFIG-ID` and `SECRET-ID` placeholders with your Doppler project, configuration and secret identifiers respectively.
 
@@ -507,6 +507,35 @@ Set the [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) as
 <TabItem value="Python">
 
 ```python file=./snippets/secrets-doppler/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
+### Load secret from Hashicorp Vault
+
+The following code listing reads a secret (a GitHub API token) from a Hashicorp Vault Key/Value v2 engine and uses it in a Dagger pipeline to interact with the GitHub API.
+
+Set the Hashicorp Vault URI, namespace, role and secret identifiers as host environment variables named `VAULT_ADDRESS`, `VAULT_NAMESPACE`, `VAULT_ROLE_ID` and `VAULT_SECRET_ID` respectively. Replace the `MOUNT-PATH`, `SECRET-ID` and `SECRET-KEY` placeholders with your Hashicorp Vault mount point, secret identifier and key respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secrets-vault/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/secrets-vault/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secrets-vault/main.py
 ```
 
 </TabItem>
