@@ -456,6 +456,64 @@ The following code listing demonstrates how to inject a file in a container as a
 
 [Learn more](./guides/723462-use-secrets.md)
 
+### Load secret from Google Cloud Secret Manager
+
+The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API.
+
+Set up [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/provide-credentials-adc) and replace the `PROJECT-ID` and `SECRET-ID` placeholders with your Google Cloud project and secret identifiers respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-secrets/external/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/use-secrets/external/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-secrets/external/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
+### Load secret from Doppler
+
+The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API. 
+
+Set the [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) as a host environment variable named `DOPPLER_TOKEN` and replace the `PROJECT-ID`, `CONFIG-ID` and `SECRET-ID` placeholders with your Doppler project, configuration and secret identifiers respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./snippets/secrets-doppler/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./snippets/secrets-doppler/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./snippets/secrets-doppler/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
 ## Optimizations
 
 ### Cache dependencies
@@ -514,9 +572,9 @@ The following code listing uses a cache volume to persist a service's data acros
 
 ## Integrations
 
-### Amazon Web Services
+### AWS Cloud Development Kit
 
-The following code listing builds, publishes and deploys a container using the AWS Cloud Development Kit (CDK).
+The following code listing builds, publishes and deploys a container using the Amazon Web Services (AWS) Cloud Development Kit (CDK).
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -535,9 +593,7 @@ The following code listing builds, publishes and deploys a container using the A
 
 [Learn more](./guides/899944-aws-cdk-ecs.md)
 
-### Google Cloud
-
-#### Google Cloud Run
+### Google Cloud Run
 
 The following code listing builds, publishes and deploys a container using Google Container Registry and Google Cloud Run.
 
@@ -563,33 +619,6 @@ The following code listing builds, publishes and deploys a container using Googl
 </Tabs>
 
 [Learn more](./guides/620941-github-google-cloud.md)
-
-#### Google Cloud Secret Manager
-
-The following code listing reads a secret from Google Cloud Secret Manager.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/use-secrets/external/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./guides/snippets/use-secrets/external/index.mjs
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/use-secrets/external/main.py
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/723462-use-secrets.md)
 
 ### GitHub Actions
 
