@@ -1,6 +1,5 @@
 import sys
 import anyio
-import requests
 import os
 import hvac
 
