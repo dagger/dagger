@@ -494,19 +494,19 @@ Set the Hashicorp Vault URI, namespace, role and secret identifiers as host envi
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./snippets/secrets-vault/main.go
+```go file=./cookbook/snippets/secrets-vault/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./snippets/secrets-vault/index.mjs
+```javascript file=./cookbook/snippets/secrets-vault/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./snippets/secrets-vault/main.py
+```python file=./cookbook/snippets/secrets-vault/main.py
 ```
 
 </TabItem>
