@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/dagger/dagger/engine"
+	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/identity"
@@ -31,52 +34,34 @@ var doCmd = &cobra.Command{
 			return fmt.Errorf("failed to parse top-level flags: %w", err)
 		}
 		dynamicCmdArgs := flags.Args()
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		if err != nil {
-			return fmt.Errorf("failed to normalize paths: %w", err)
+
+		engineConf := &engine.Config{
+			RunnerHost:    internalengine.RunnerHost(),
+			NoExtensions:  true, // we load them ourselves for now
+			JournalWriter: journal.Discard{},
+		}
+		if debugLogs {
+			engineConf.LogOutput = os.Stderr
+		}
+		// TODO: dumb kludge, cleanup definnition of workdir/configPath
+		workdir, configPath := workdir, configPath
+		if v, ok := os.LookupEnv("DAGGER_WORKDIR"); ok && (workdir == "" || workdir == ".") {
+			workdir = v
+		}
+		if configPath == "" {
+			configPath = os.Getenv("DAGGER_CONFIG")
+		}
+		if !strings.HasPrefix(workdir, "git://") {
+			engineConf.Workdir = workdir
+			engineConf.ConfigPath = configPath
 		}
 
 		cmd.Println("Loading+installing project (use --debug to track progress)...")
-		return withEngine(cmd.Context(), "", journal.Discard{}, os.Stderr, func(ctx context.Context, r *router.Router) error {
-			res := struct {
-				Host struct {
-					Workdir struct {
-						LoadProject struct {
-							Name   string
-							Schema string
-						}
-					}
-				}
-			}{}
-
-			configRelPath, err := filepath.Rel(workdir, configPath)
+		return engine.Start(cmd.Context(), engineConf, func(ctx context.Context, r *router.Router) error {
+			schemaStr, err := getProjectSchema(ctx, workdir, configPath, r)
 			if err != nil {
-				return fmt.Errorf("failed to get config relative path: %w", err)
+				return fmt.Errorf("failed to get project schema: %w", err)
 			}
-
-			_, err = r.Do(ctx,
-				`query LoadProject($configPath: String!) {
-					host {
-						workdir {
-							loadProject(configPath: $configPath) {
-								name
-								schema
-								install
-							}
-						}
-					}
-				}`,
-				"LoadProject",
-				map[string]any{
-					"configPath": configRelPath,
-				},
-				&res,
-			)
-			if err != nil {
-				return err
-			}
-
-			schemaStr := res.Host.Workdir.LoadProject.Schema
 			if schemaStr == "" {
 				return fmt.Errorf("invalid empty schema")
 			}
@@ -219,6 +204,7 @@ func addCmd(parentCmd *cobra.Command, field *ast.FieldDefinition, schema *ast.Sc
 				}
 			}
 
+			// TODO: better to print this after session closes so there's less overlap with progress output
 			fmt.Println(res)
 			return nil
 		},
@@ -247,4 +233,110 @@ func addCmd(parentCmd *cobra.Command, field *ast.FieldDefinition, schema *ast.Sc
 		}
 	}
 	return nil
+}
+
+func getProjectSchema(ctx context.Context, workdir, configPath string, r *router.Router) (string, error) {
+	url, err := url.Parse(workdir)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse config path: %w", err)
+	}
+	switch url.Scheme {
+	case "":
+		return getLocalProjectSchema(ctx, workdir, configPath, r)
+	case "git":
+		return getGitProjectSchema(ctx, url, configPath, r)
+	}
+	return "", fmt.Errorf("unsupported scheme %s", url.Scheme)
+}
+
+func getLocalProjectSchema(ctx context.Context, workdir, configPath string, r *router.Router) (string, error) {
+	res := struct {
+		Host struct {
+			Workdir struct {
+				LoadProject struct {
+					Schema string
+				}
+			}
+		}
+	}{}
+
+	configRelPath, err := filepath.Rel(workdir, configPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to get config relative path: %w", err)
+	}
+
+	_, err = r.Do(ctx,
+		`query LoadProject($configPath: String!) {
+					host {
+						workdir {
+							loadProject(configPath: $configPath) {
+								schema
+								install
+							}
+						}
+					}
+				}`,
+		"LoadProject",
+		map[string]any{
+			"configPath": configRelPath,
+		},
+		&res,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return res.Host.Workdir.LoadProject.Schema, nil
+}
+
+func getGitProjectSchema(ctx context.Context, url *url.URL, configPath string, r *router.Router) (string, error) {
+	// TODO: cleanup, factor project url parsing out into its own thing
+	if url.Scheme != "git" {
+		return "", fmt.Errorf("expected git scheme, got %s", url.Scheme)
+	}
+	repo := url.Host + url.Path
+	ref := url.Fragment
+	if ref == "" {
+		ref = "main"
+	}
+
+	res := struct {
+		Git struct {
+			Branch struct {
+				Tree struct {
+					LoadProject struct {
+						Name   string
+						Schema string
+					}
+				}
+			}
+		}
+	}{}
+	_, err := r.Do(ctx,
+		`query LoadProject($repo: String!, $ref: String!, $configPath: String!) {
+				git(url: $repo) {
+					branch(name: $ref) {
+						tree {
+							loadProject(configPath: $configPath) {
+								name
+								schema
+								install
+							}
+						}
+					}
+				}
+			}`,
+		"LoadProject",
+		map[string]any{
+			"repo":       repo,
+			"ref":        ref,
+			"configPath": configPath,
+		},
+		&res,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	return res.Git.Branch.Tree.LoadProject.Schema, nil
 }

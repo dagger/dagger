@@ -1,20 +1,30 @@
-name: "Publish Go SDK"
+name: lint-daggerized
+
 on:
   push:
     branches: ["main"]
-    tags: ["sdk/go/v**"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  # Enable manual trigger for easy debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Optional: allow read access to pull request. Use with `only-new-issues` option.
+  # pull-requests: read
+
 jobs:
-  publish:
-    if: github.repository == 'dagger/dagger'
+  engine:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-go@v3
-        with:
-          go-version: "1.20"
-      - run: ./hack/make sdk:go:publish ${{ github.ref_name }}
+      - uses: sipsma/dagger-experiments@v5
+      - run: dagger do --debug --project demos/go-entrypoints/dagger.json ci '${{ toJson(github.event) }}'
         env:
-          GITHUB_PAT: ${{ secrets.RELEASE_DAGGER_CI_TOKEN }}
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
             # _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3

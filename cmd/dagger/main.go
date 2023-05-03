@@ -7,7 +7,6 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -73,10 +72,7 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-
-		var err error
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		return err
+		return nil
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		pprof.StopCPUProfile()
