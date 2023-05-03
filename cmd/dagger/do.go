@@ -36,7 +36,7 @@ var doCmd = &cobra.Command{
 			return fmt.Errorf("failed to normalize paths: %w", err)
 		}
 
-		cmd.Println("Loading+installing project...")
+		cmd.Println("Loading+installing project (use --debug to track progress)...")
 		return withEngine(cmd.Context(), "", journal.Discard{}, os.Stderr, func(ctx context.Context, r *router.Router) error {
 			res := struct {
 				Host struct {
@@ -81,7 +81,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("invalid empty schema")
 			}
 			// TODO:
-			fmt.Println(schemaStr)
+			// fmt.Println(schemaStr)
 			schema, err := gqlparser.LoadSchema(&ast.Source{
 				Input: schemaStr,
 			})
@@ -116,7 +116,7 @@ var doCmd = &cobra.Command{
 				cmd.Println(subCmd.UsageString())
 				return fmt.Errorf("entrypoint not found or not set")
 			}
-			cmd.Println("Running", subCmd.Name(), "...")
+			cmd.Printf("Running command %q...\n", subCmd.Name())
 			err = subCmd.Execute()
 			if err != nil {
 				cmd.PrintErrln("Error:", err.Error())
