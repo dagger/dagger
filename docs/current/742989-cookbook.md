@@ -352,6 +352,35 @@ The following code listing demonstrates how to inject a file in a container as a
 
 [Learn more](./guides/723462-use-secrets.md)
 
+### Load secret from Doppler
+
+The following code listing reads a secret (a GitHub API token) from Doppler and uses it in a Dagger pipeline to interact with the GitHub API.
+
+Set the [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) as a host environment variable named `DOPPLER_TOKEN` and replace the `PROJECT-ID`, `CONFIG-ID` and `SECRET-ID` placeholders with your Doppler project, configuration and secret identifiers respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/secrets-doppler/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/secrets-doppler/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/secrets-doppler/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
 ## Optimizations
 
 ### Cache dependencies
