@@ -487,7 +487,7 @@ Set up [Application Default Credentials (ADC)](https://cloud.google.com/docs/aut
 
 ### Load secret from Doppler
 
-The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API. 
+The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API.
 
 Set the [Doppler Service Token](https://docs.doppler.com/docs/service-tokens) as a host environment variable named `DOPPLER_TOKEN` and replace the `PROJECT-ID`, `CONFIG-ID` and `SECRET-ID` placeholders with your Doppler project, configuration and secret identifiers respectively.
 
