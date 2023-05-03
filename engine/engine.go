@@ -183,7 +183,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		return handleSolveEvents(ctx, recorder, startOpts, solveCh)
+		return handleSolveEvents(recorder, startOpts, solveCh)
 	})
 
 	eg.Go(func() error {
@@ -262,7 +262,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	return nil
 }
 
-func handleSolveEvents(ctx context.Context, recorder *progrock.Recorder, startOpts Config, upstreamCh chan *bkclient.SolveStatus) error {
+func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh chan *bkclient.SolveStatus) error {
 	eg := &errgroup.Group{}
 	readers := []chan *bkclient.SolveStatus{}
 
