@@ -74,7 +74,7 @@ class CLISession(SyncResourceManager):
         for _ in range(10):
             try:
                 proc = subprocess.Popen(
-                    args,
+                    args,  # noqa: S603
                     bufsize=0,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
