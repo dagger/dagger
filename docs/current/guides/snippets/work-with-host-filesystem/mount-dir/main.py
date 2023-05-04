@@ -9,10 +9,10 @@ async def main():
     
         out = await (
             client.container()
-		    .from_("alpine:latest")
-		    .with_directory("/host", client.host().directory("."))
-    		.with_exec(["ls", "/host"])
-		    .stdout()
+            .from_("alpine:latest")
+            .with_directory("/host", client.host().directory("."))
+            .with_exec(["ls", "/host"])
+            .stdout()
         )
 
     print(out)

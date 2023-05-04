@@ -1,16 +1,13 @@
 import sys
-import os
 import tempfile
 
 import anyio
 import dagger
 
-async def main():
-
-    hostdir = tempfile.gettempdir()
+async def main(hostdir: str):
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-    
+
         await (
             client.container()
             .from_("alpine:latest")
@@ -24,4 +21,5 @@ async def main():
 
     print(contents)
 
-anyio.run(main)
+with tempfile.TemporaryDirectory() as hostdir:
+    anyio.run(main, hostdir)
