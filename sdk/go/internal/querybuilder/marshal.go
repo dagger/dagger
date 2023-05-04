@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
-
-	"golang.org/x/sync/errgroup"
 )
 
 // GraphQLMarshaller is an internal interface for marshalling an object into GraphQL.
@@ -55,67 +54,63 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 
 	switch t.Kind() {
 	case reflect.Bool:
-		return fmt.Sprintf("%t", v.Bool()), nil
+		return strconv.FormatBool(v.Bool()), nil
 	case reflect.Int:
-		return fmt.Sprintf("%d", v.Int()), nil
+		return strconv.FormatInt(v.Int(), 10), nil
 	case reflect.String:
 		name := t.Name()
 		// distinguish enum const values and customScalars from string type
 		// GraphQL complains if you try to put a string literal in place of an enum: FOO vs "FOO"
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
-			return fmt.Sprintf("%s", v.String()), nil //nolint:gosimple,staticcheck
+			return v.String(), nil
 		}
-		return fmt.Sprintf("%q", v.String()), nil //nolint:gosimple,staticcheck
+		return strconv.Quote(v.String()), nil
 	case reflect.Pointer:
 		if v.IsNil() {
 			return "null", nil
 		}
 		return marshalValue(ctx, v.Elem())
 	case reflect.Slice:
+		var b strings.Builder
+		b.WriteRune('[')
 		n := v.Len()
-		elems := make([]string, n)
-		eg, gctx := errgroup.WithContext(ctx)
 		for i := 0; i < n; i++ {
-			i := i
-			eg.Go(func() error {
-				m, err := marshalValue(gctx, v.Index(i))
-				if err != nil {
-					return err
-				}
-				elems[i] = m
-				return nil
-			})
+			m, err := marshalValue(ctx, v.Index(i))
+			if err != nil {
+				return "", err
+			}
+			if i > 0 {
+				b.WriteRune(',')
+			}
+			b.WriteString(m)
 		}
-		if err := eg.Wait(); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("[%s]", strings.Join(elems, ",")), nil
+		b.WriteRune(']')
+		return b.String(), nil
 	case reflect.Struct:
+		var b strings.Builder
+		b.WriteRune('{')
 		n := v.NumField()
-		elems := make([]string, n)
-		eg, gctx := errgroup.WithContext(ctx)
 		for i := 0; i < n; i++ {
-			i := i
-			eg.Go(func() error {
-				f := t.Field(i)
-				name := f.Name
-				tag := strings.SplitN(f.Tag.Get("json"), ",", 2)[0]
-				if tag != "" {
-					name = tag
-				}
-				m, err := marshalValue(gctx, v.Field(i))
-				if err != nil {
-					return err
-				}
-				elems[i] = fmt.Sprintf("%s:%s", name, m)
-				return nil
-			})
+			f := t.Field(i)
+			m, err := marshalValue(ctx, v.Field(i))
+			if err != nil {
+				return "", err
+			}
+			if i > 0 {
+				b.WriteRune(',')
+			}
+			tag := strings.SplitN(f.Tag.Get("json"), ",", 2)[0]
+			if tag == "" {
+				b.WriteString(f.Name)
+			} else {
+				b.WriteString(tag)
+			}
+			b.WriteRune(':')
+			b.WriteString(m)
 		}
-		if err := eg.Wait(); err != nil {
-			return "", err
-		}
-		return fmt.Sprintf("{%s}", strings.Join(elems, ",")), nil
+		b.WriteRune('}')
+		return b.String(), nil
 	default:
 		panic(fmt.Errorf("unsupported argument of kind %s", t.Kind()))
 	}
