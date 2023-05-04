@@ -615,21 +615,22 @@ func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.
 			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
 				vtx.Canceled = true
 			} else {
-				vtx.Error = &v.Error
+				msg := v.Error
+				vtx.Error = &msg
 			}
 		}
 
 		if v.ProgressGroup != nil {
 			var pipelinePath pipeline.Path
 			if json.Unmarshal([]byte(v.ProgressGroup.Id), &pipelinePath) == nil {
-				vtx.Groups = []string{pipelinePath.RecorderGroup(rec).Group.Id}
+				vtx.Group = &pipelinePath.RecorderGroup(rec).Group.Id
 			}
 		}
 
 		var custom pipeline.CustomName
 		if json.Unmarshal([]byte(v.Name), &custom) == nil {
 			vtx.Name = custom.Name
-			vtx.Groups = []string{custom.Pipeline.RecorderGroup(rec).Group.Id}
+			vtx.Group = &custom.Pipeline.RecorderGroup(rec).Group.Id
 			vtx.Internal = custom.Internal
 		}
 
