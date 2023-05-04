@@ -10648,10 +10648,10 @@ spdy@^4.0.2:
     select-hose "^2.0.0"
     spdy-transport "^3.0.0"
 
-spectaql@^2.0.5:
-  version "2.0.5"
-  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.5.tgz#af692cfee4ef0c396424b2a349d9d65d3bcd933f"
-  integrity sha512-AkODv4O42XomRFBCKc2f9Knmd4f4N/TTsgs9tuv8drojPiT0Tc0Q4R8xo97o+S1OawnhRxzCK+OYkfAUzEXRCg==
+spectaql@^2.0.7:
+  version "2.0.7"
+  resolved "https://registry.yarnpkg.com/spectaql/-/spectaql-2.0.7.tgz#ec1d4ec4fbc1beedd25cc8bd41452fc7b80d8ad6"
+  integrity sha512-sK7H3OCB4SilvLcU4iUKk59xU4U8bnGayclsrgT/SqrVy2lLcamyH9MCwvDx88WK9b7kP4cQ3WdH7IDFNyTdZA==
   dependencies:
     "@anvilco/apollo-server-plugin-introspection-metadata" "^2.0.1"
     "@graphql-tools/load-files" "^6.3.2"
