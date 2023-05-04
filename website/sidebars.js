@@ -145,40 +145,9 @@ module.exports = {
       ],
     },
     {
-      type: "category",
-      label: "CUE SDK",
-      collapsible: false,
-      collapsed: false,
-      items: [
-        {
-          type: "doc",
-          label: "Overview",
-          id: "current/sdk/cue/index",
-        },
-        "current/sdk/cue/getting-started/install",
-        {
-          type: "doc",
-          label: "Get Started",
-          id: "current/sdk/cue/getting-started/get-started",
-        },
-        {
-          type: "doc",
-          label: "Guides",
-          id: "current/sdk/cue/guides",
-        },
-        {
-          type: "doc",
-          label: "Reference",
-          id: "current/sdk/cue/reference",
-        },
-      ],
-    },
-
-    {
       type: "doc",
       id: "current/faq",
     },
-
     {
       type: "doc",
       id: "current/contributing",
