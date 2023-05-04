@@ -30,8 +30,11 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 	Example: `  Run a Dagger pipeline written in Go:
     dagger run go run main.go
 
+  Run a Dagger pipeline written in Node.js:
+    dagger run node index.mjs
+
   Run a Dagger pipeline written in Python:
-    dagger run node pipeline.mjs
+    dagger run python main.py
 
   Run a Dagger API request directly:
     jq -n '{query:"{container{id}}"}' | \
