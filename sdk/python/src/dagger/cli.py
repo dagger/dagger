@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import rich
 import typer
@@ -18,14 +18,16 @@ def main():
     """Dagger client."""
 
 
-output_opt = typer.Option(None, help="File to write generated code")
-sync_opt = typer.Option(False, help="Generate a client for sync code")
-
-
 @app.command()
 def generate(
-    output: Optional[Path] = output_opt,  # noqa: UP007
-    sync: bool = sync_opt,
+    output: Annotated[
+        Optional[Path],  # noqa: UP007
+        typer.Option(help="File to write generated code"),
+    ] = None,
+    sync: Annotated[
+        bool,
+        typer.Option(help="Generate a client for sync code"),
+    ] = False,
 ):
     """Generate a client for the Dagger API."""
     # not using `dagger.Connection` because codegen is

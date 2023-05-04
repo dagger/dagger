@@ -1,5 +1,6 @@
 import logging
 import sys
+from typing import Annotated
 
 import anyio
 import typer
@@ -13,7 +14,10 @@ app = typer.Typer()
 
 @app.command()
 def main(
-    schema: bool = typer.Option(False, "-schema", help="Save schema to file and exit"),
+    schema: Annotated[
+        bool,
+        typer.Option("-schema", help="Save schema to file and exit"),
+    ] = False
 ):
     """Entrypoint for a dagger extension."""
     sys.path.insert(0, ".")
