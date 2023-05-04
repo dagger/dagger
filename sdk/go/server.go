@@ -21,6 +21,15 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
+type Context struct {
+	context.Context
+	client *Client
+}
+
+func (c *Context) Client() *Client {
+	return c.client
+}
+
 func Serve(entrypoints ...any) {
 	ctx := context.Background()
 
@@ -334,7 +343,15 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs json.RawMessage) 
 		}
 		callArgs = append(callArgs, reflect.ValueOf(parent).Elem())
 	}
-	callArgs = append(callArgs, reflect.ValueOf(ctx))
+	client, err := Connect(ctx, WithLogOutput(os.Stderr))
+	if err != nil {
+		return nil, err
+	}
+	defer client.Close()
+	callArgs = append(callArgs, reflect.ValueOf(Context{
+		Context: ctx,
+		client:  client,
+	}))
 
 	rawArgMap := map[string]json.RawMessage{}
 	if err := json.Unmarshal(rawArgs, &rawArgMap); err != nil {
@@ -364,9 +381,9 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs json.RawMessage) 
 	if len(results) != 2 {
 		return nil, fmt.Errorf("resolver %s.%s returned %d results, expected 2", name, name, len(results))
 	}
-	err := results[1].Interface()
-	if err != nil {
-		return nil, err.(error)
+	returnErr := results[1].Interface()
+	if returnErr != nil {
+		return nil, returnErr.(error)
 	}
 	return results[0].Interface(), nil
 }
@@ -487,13 +504,13 @@ func (ts *goTypes) walkArgsAndReturns(fn *goFunc, state walkState) error {
 	}
 
 	if len(fn.args) == fn.typ.NumIn() {
-		return fmt.Errorf("func must take a least one arg of context.Context")
+		return fmt.Errorf("func must take a least one arg of dagger.Context")
 	}
 
-	// verify next arg is a context.Context
+	// verify next arg is a dagger.Context
 	contextParam := fn.typ.In(len(fn.args))
-	if contextParam != reflect.TypeOf((*context.Context)(nil)).Elem() {
-		return fmt.Errorf("first arg of func must be context.Context: %s", contextParam.Kind())
+	if contextParam != reflect.TypeOf((*Context)(nil)).Elem() {
+		return fmt.Errorf("first arg of func must be dagger.Context: %s", contextParam.Kind())
 	}
 
 	// fill in rest of user defined args (if any)
@@ -676,9 +693,10 @@ func writeErrorf(err error) {
 }
 
 func init() {
-	// TODO:(sipsma) silly hack to get netlify models to have better names
-	// need more general solution
+	// TODO:(sipsma) silly hack, is there a pre-made list of these somewhere?
+	// Or can we have a rule that "ALLCAPS" becomes "allcaps" instead of aLLCAPS?
 	strcase.ConfigureAcronym("URL", "url")
+	strcase.ConfigureAcronym("CI", "ci")
 }
 
 func lowerCamelCase(s string) string {
