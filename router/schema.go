@@ -161,6 +161,7 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 
 		if pipelineable, ok := p.Source.(Pipelineable); ok {
 			recorder = pipelineable.PipelinePath().RecorderGroup(recorder)
+			p.Context = progrock.RecorderToContext(p.Context, recorder)
 		}
 
 		dig, err := queryDigest(p)

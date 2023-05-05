@@ -17,7 +17,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
 )
 
 const (
@@ -35,8 +34,6 @@ const (
 )
 
 type State struct {
-	rec *progrock.Recorder
-
 	config     Config
 	workdir    *core.Directory
 	configPath string
@@ -53,7 +50,6 @@ type State struct {
 
 func Load(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	workdir *core.Directory,
 	configPath string,
 	cache map[string]*State,
@@ -65,7 +61,7 @@ func Load(
 		return nil, err
 	}
 
-	cfgBytes, err := file.Contents(ctx, rec, gw)
+	cfgBytes, err := file.Contents(ctx, gw)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +107,7 @@ func (p *State) Schema(ctx context.Context, gw bkgw.Client, platform specs.Platf
 		// TODO: remove this once all extensions migrate to code-first
 		schemaFile, err := p.workdir.File(ctx, path.Join(path.Dir(p.configPath), schemaPath))
 		if err == nil {
-			schemaBytes, err := schemaFile.Contents(ctx, p.rec, gw)
+			schemaBytes, err := schemaFile.Contents(ctx, gw)
 			if err == nil {
 				p.schema = string(schemaBytes)
 				return
@@ -186,7 +182,7 @@ func (p *State) Extensions(
 			switch {
 			case dep.Local != nil:
 				depConfigPath := filepath.ToSlash(filepath.Join(filepath.Dir(p.configPath), dep.Local.Path))
-				depState, err := Load(ctx, p.rec, p.workdir, depConfigPath, cache, cacheMu, gw)
+				depState, err := Load(ctx, p.workdir, depConfigPath, cache, cacheMu, gw)
 				if err != nil {
 					rerr = err
 					return
@@ -198,7 +194,7 @@ func (p *State) Extensions(
 					rerr = err
 					return
 				}
-				depState, err := Load(ctx, p.rec, gitFS, dep.Git.Path, cache, cacheMu, gw)
+				depState, err := Load(ctx, gitFS, dep.Git.Path, cache, cacheMu, gw)
 				if err != nil {
 					rerr = err
 					return

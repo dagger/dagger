@@ -12,7 +12,6 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -85,7 +84,7 @@ func (p NetworkProtocol) Network() string {
 
 // WithServices runs the given function with the given services started,
 // detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
+func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
 	var zero T
 
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
@@ -105,7 +104,7 @@ func WithServices[T any](ctx context.Context, rec *progrock.Recorder, gw bkgw.Cl
 
 		aliases := aliases
 		eg.Go(func() error {
-			svc, err := svc.Start(ctx, rec, gw)
+			svc, err := svc.Start(ctx, gw)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
 			}

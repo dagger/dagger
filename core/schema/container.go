@@ -147,7 +147,7 @@ func (s *containerSchema) build(ctx *router.Context, parent *core.Container, arg
 	if err != nil {
 		return nil, err
 	}
-	return parent.Build(ctx, s.rec, s.gw, dir, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	return parent.Build(ctx, s.gw, dir, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }
 
 type containerWithRootFSArgs struct {
@@ -192,15 +192,15 @@ func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Cont
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
-	return parent.ExitCode(ctx, s.rec, s.gw)
+	return parent.ExitCode(ctx, s.gw)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.rec, s.gw, "stdout")
+	return parent.MetaFileContents(ctx, s.gw, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.rec, s.gw, "stderr")
+	return parent.MetaFileContents(ctx, s.gw, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
@@ -440,7 +440,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, s.rec, s.gw, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, s.gw, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
 }
 
 type containerWithMountedFileArgs struct {
@@ -534,7 +534,7 @@ type containerDirectoryArgs struct {
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.rec, s.gw, args.Path)
+	return parent.Directory(ctx, s.gw, args.Path)
 }
 
 type containerFileArgs struct {
@@ -542,7 +542,7 @@ type containerFileArgs struct {
 }
 
 func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.rec, s.gw, args.Path)
+	return parent.File(ctx, s.gw, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -651,7 +651,7 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.rec, s.host, args.Path, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh); err != nil {
 		return false, err
 	}
 
@@ -669,14 +669,14 @@ func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, a
 		return nil, err
 	}
 
-	src, err := file.Open(ctx, s.rec, s.host, s.gw)
+	src, err := file.Open(ctx, s.host, s.gw)
 	if err != nil {
 		return nil, err
 	}
 
 	defer src.Close()
 
-	return parent.Import(ctx, s.rec, s.host, src, args.Tag, s.ociStore)
+	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {

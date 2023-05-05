@@ -348,7 +348,6 @@ const defaultDockerfileName = "Dockerfile"
 
 func (container *Container) Build(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	gw bkgw.Client,
 	context *Directory,
 	dockerfile string,
@@ -375,7 +374,7 @@ func (container *Container) Build(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	return WithServices(ctx, rec, gw, container.Services, func() (*Container, error) {
+	return WithServices(ctx, gw, container.Services, func() (*Container, error) {
 		platform := container.Platform
 
 		opts := map[string]string{
@@ -740,7 +739,8 @@ func (container *Container) WithSecretVariable(ctx context.Context, name string,
 	return container, nil
 }
 
-func (container *Container) Directory(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, dirPath string) (*Directory, error) {
+func (container *Container) Directory(ctx context.Context, gw bkgw.Client, dirPath string) (*Directory, error) {
+
 	dir, _, err := locatePath(ctx, container, dirPath, NewDirectory)
 	if err != nil {
 		return nil, err
@@ -748,7 +748,7 @@ func (container *Container) Directory(ctx context.Context, rec *progrock.Recorde
 
 	// check that the directory actually exists so the user gets an error earlier
 	// rather than when the dir is used
-	info, err := dir.Stat(ctx, rec, gw, ".")
+	info, err := dir.Stat(ctx, gw, ".")
 	if err != nil {
 		return nil, err
 	}
@@ -760,7 +760,7 @@ func (container *Container) Directory(ctx context.Context, rec *progrock.Recorde
 	return dir, nil
 }
 
-func (container *Container) File(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, filePath string) (*File, error) {
+func (container *Container) File(ctx context.Context, gw bkgw.Client, filePath string) (*File, error) {
 	file, _, err := locatePath(ctx, container, filePath, NewFile)
 	if err != nil {
 		return nil, err
@@ -768,7 +768,7 @@ func (container *Container) File(ctx context.Context, rec *progrock.Recorder, gw
 
 	// check that the file actually exists so the user gets an error earlier
 	// rather than when the file is used
-	info, err := file.Stat(ctx, rec, gw)
+	info, err := file.Stat(ctx, gw)
 	if err != nil {
 		return nil, err
 	}
@@ -1253,12 +1253,12 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
+func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
 	if container.FS == nil {
 		return nil
 	}
 
-	_, err := WithServices(ctx, rec, gw, container.Services, func() (*bkgw.Result, error) {
+	_, err := WithServices(ctx, gw, container.Services, func() (*bkgw.Result, error) {
 		st, err := container.FSState()
 		if err != nil {
 			return nil, err
@@ -1281,8 +1281,8 @@ func (container *Container) Evaluate(ctx context.Context, rec *progrock.Recorder
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) (int, error) {
-	content, err := container.MetaFileContents(ctx, rec, gw, "exitCode")
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
+	content, err := container.MetaFileContents(ctx, gw, "exitCode")
 	if err != nil {
 		return 0, err
 	}
@@ -1290,14 +1290,28 @@ func (container *Container) ExitCode(ctx context.Context, rec *progrock.Recorder
 	return strconv.Atoi(content)
 }
 
-func (container *Container) Start(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) (*Service, error) {
+func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	if container.Hostname == "" {
 		return nil, ErrContainerNoExec
 	}
 
 	health := newHealth(gw, container.Hostname, container.Ports)
 
+	// annotate the container as a service so they can be treated differently
+	// in the UI
+	pipeline := container.Pipeline.Add(pipeline.Pipeline{
+		Name: fmt.Sprintf("service %s", container.Hostname),
+		Labels: []pipeline.Label{
+			{
+				Name:  pipeline.ServiceHostnameLabel,
+				Value: container.Hostname,
+			},
+		},
+	})
+
+	rec := progrock.RecorderFromContext(ctx)
 	svcCtx, stop := context.WithCancel(context.Background())
+	svcCtx = progrock.RecorderToContext(svcCtx, rec)
 
 	checked := make(chan error, 1)
 	go func() {
@@ -1306,19 +1320,7 @@ func (container *Container) Start(ctx context.Context, rec *progrock.Recorder, g
 
 	exited := make(chan error, 1)
 	go func() {
-		// annotate the container as a service so they can be treated differently
-		// in the UI
-		pipeline := container.Pipeline.Add(pipeline.Pipeline{
-			Name: fmt.Sprintf("service %s", container.Hostname),
-			Labels: []pipeline.Label{
-				{
-					Name:  pipeline.ServiceHostnameLabel,
-					Value: container.Hostname,
-				},
-			},
-		})
-
-		exited <- container.Evaluate(svcCtx, rec, gw, &pipeline)
+		exited <- container.Evaluate(svcCtx, gw, &pipeline)
 	}()
 
 	select {
@@ -1345,7 +1347,7 @@ func (container *Container) Start(ctx context.Context, rec *progrock.Recorder, g
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, filePath string) (string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
 	metaSt, err := container.MetaState()
 	if err != nil {
 		return "", err
@@ -1356,7 +1358,7 @@ func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, rec, gw, filePath)
+		return ctr.MetaFileContents(ctx, gw, filePath)
 	}
 
 	file, err := NewFile(
@@ -1371,7 +1373,7 @@ func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.
 		return "", err
 	}
 
-	content, err := file.Contents(ctx, rec, gw)
+	content, err := file.Contents(ctx, gw)
 	if err != nil {
 		return "", err
 	}
@@ -1381,7 +1383,6 @@ func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.
 
 func (container *Container) Publish(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	gw bkgw.Client,
 	ref string,
 	platformVariants []ContainerID,
@@ -1404,7 +1405,7 @@ func (container *Container) Publish(
 	defer wg.Wait()
 
 	res, err := bkClient.Build(ctx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return container.export(ctx, rec, gw, platformVariants)
+		return container.export(ctx, gw, platformVariants)
 	}, ch)
 	if err != nil {
 		return "", err
@@ -1435,7 +1436,6 @@ func (container *Container) Publish(
 
 func (container *Container) Export(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	host *Host,
 	dest string,
 	platformVariants []ContainerID,
@@ -1461,7 +1461,7 @@ func (container *Container) Export(
 			return out, nil
 		},
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return container.export(ctx, rec, gw, platformVariants)
+		return container.export(ctx, gw, platformVariants)
 	})
 }
 
@@ -1469,7 +1469,6 @@ const OCIStoreName = "dagger-oci"
 
 func (container *Container) Import(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	host *Host,
 	source io.Reader,
 	tag string,
@@ -1626,7 +1625,6 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 
 func (container *Container) export(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	gw bkgw.Client,
 	platformVariants []ContainerID,
 ) (*bkgw.Result, error) {
@@ -1652,7 +1650,7 @@ func (container *Container) export(
 		return nil, errors.New("no containers to export")
 	}
 
-	return WithServices(ctx, rec, gw, services, func() (*bkgw.Result, error) {
+	return WithServices(ctx, gw, services, func() (*bkgw.Result, error) {
 		if len(containers) == 1 {
 			exportContainer := containers[0]
 

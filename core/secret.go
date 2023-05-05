@@ -6,7 +6,6 @@ import (
 	"os"
 
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/vito/progrock"
 )
 
 // Secret is a content-addressed secret.
@@ -67,13 +66,13 @@ func (secret *Secret) IsOldFormat() bool {
 	return secret.FromFile != "" || secret.FromHostEnv != ""
 }
 
-func (secret *Secret) LegacyPlaintext(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client) ([]byte, error) {
+func (secret *Secret) LegacyPlaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
 	if secret.FromFile != "" {
 		file, err := secret.FromFile.ToFile()
 		if err != nil {
 			return nil, err
 		}
-		return file.Contents(ctx, rec, gw)
+		return file.Contents(ctx, gw)
 	}
 
 	if secret.FromHostEnv != "" {

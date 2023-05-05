@@ -18,7 +18,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
-	"github.com/vito/progrock"
 )
 
 // Directory is a content-addressed directory.
@@ -124,10 +123,10 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
-func (dir *Directory) Stat(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, src string) (*fstypes.Stat, error) {
+func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, rec, gw, dir.Services, func() (*fstypes.Stat, error) {
+	return WithServices(ctx, gw, dir.Services, func() (*fstypes.Stat, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
@@ -158,10 +157,10 @@ func (dir *Directory) Stat(ctx context.Context, rec *progrock.Recorder, gw bkgw.
 	})
 }
 
-func (dir *Directory) Entries(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, src string) ([]string, error) {
+func (dir *Directory) Entries(ctx context.Context, gw bkgw.Client, src string) ([]string, error) {
 	src = path.Join(dir.Dir, src)
 
-	return WithServices(ctx, rec, gw, dir.Services, func() ([]string, error) {
+	return WithServices(ctx, gw, dir.Services, func() ([]string, error) {
 		res, err := gw.Solve(ctx, bkgw.SolveRequest{
 			Definition: dir.LLB,
 		})
@@ -473,7 +472,6 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 
 func (dir *Directory) Export(
 	ctx context.Context,
-	rec *progrock.Recorder,
 	host *Host,
 	dest string,
 	bkClient *bkclient.Client,
@@ -489,7 +487,7 @@ func (dir *Directory) Export(
 		Type:      bkclient.ExporterLocal,
 		OutputDir: dest,
 	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, rec, gw, dir.Services, func() (*bkgw.Result, error) {
+		return WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
 			src, err := dir.State()
 			if err != nil {
 				return nil, err

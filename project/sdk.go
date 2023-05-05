@@ -30,7 +30,7 @@ func (p *State) Runtime(ctx context.Context, gw bkgw.Client, platform specs.Plat
 	if err != nil {
 		return nil, err
 	}
-	if _, err := runtimeFS.Stat(ctx, p.rec, gw, "."); err != nil {
+	if _, err := runtimeFS.Stat(ctx, gw, "."); err != nil {
 		return nil, err
 	}
 	return runtimeFS, nil

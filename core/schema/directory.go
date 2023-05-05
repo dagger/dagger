@@ -130,7 +130,7 @@ type entriesArgs struct {
 }
 
 func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.rec, s.gw, args.Path)
+	return parent.Entries(ctx, s.gw, args.Path)
 }
 
 type dirFileArgs struct {
@@ -199,7 +199,7 @@ type dirExportArgs struct {
 }
 
 func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.rec, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
 	if err != nil {
 		return false, err
 	}
@@ -224,5 +224,5 @@ func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Director
 	if err != nil {
 		return ctr, err
 	}
-	return ctr.Build(ctx, s.rec, s.gw, parent, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	return ctr.Build(ctx, s.gw, parent, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }

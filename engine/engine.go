@@ -123,7 +123,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	}
 
 	router := router.New(startOpts.SessionToken, recorder)
-	secretStore := secret.NewStore(recorder)
+	secretStore := secret.NewStore()
 
 	socketProviders := SocketProvider{
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
