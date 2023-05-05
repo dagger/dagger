@@ -217,4 +217,3 @@ sops secrets_sops.yaml
 :::warning
 Please note that anyone will be able to read all secrets stored in `tests/secrets_sops.yaml` by following the steps above.
 :::
-

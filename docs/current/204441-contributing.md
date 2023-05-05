@@ -156,13 +156,13 @@ more](https://docusaurus.io/docs/markdown-features/links).
 
 To run all linters:
 
-```
+```shell
 ./hack/make lint
 ```
 
 To list available linters:
 
-```
+```shell
 > ./hack/make -l | grep lint
 docs:lint              lints documentation files
 engine:lint            lints the engine
