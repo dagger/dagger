@@ -6,12 +6,15 @@ updates:
       interval: "monthly"
     labels:
       - "kind/dependencies"
+      - "area/engine"
+      - "area/cli"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "monthly"
     labels:
       - "kind/dependencies"
+      - "area/tooling"
   - package-ecosystem: "npm"
     directory: "/sdk/nodejs"
     schedule:
@@ -26,7 +29,7 @@ updates:
       interval: "monthly"
     labels:
       - "kind/dependencies"
-      - "area/website"
+      - "area/docs"
 
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
