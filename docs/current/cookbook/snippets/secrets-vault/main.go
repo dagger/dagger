@@ -13,7 +13,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
 	if err != nil {
 		panic(err)
 	}
@@ -26,14 +26,14 @@ func main() {
 	}
 
 	// load secret into Dagger
-	secret = client.setSecret("ghApiToken", secretPlaintext)
+	secret := client.SetSecret("ghApiToken", secretPlaintext)
 
 	// use secret in container environment
-	out, err := client.container().
+	out, err := client.Container().
 		From("alpine:3.17").
 		WithSecretVariable("GITHUB_API_TOKEN", secret).
 		WithExec([]string{"apk", "add", "curl"}).
-		WithExec([]string{"sh", "-c", 'curl "https://api.github.com/repos/dagger/dagger/issues" --header "Accept: application/vnd.github+json" --header "Authorization: Bearer $GITHUB_API_TOKEN"'}).
+		WithExec([]string{"sh", "-c", "curl \"https://api.github.com/repos/dagger/dagger/issues\" --header \"Accept: application/vnd.github+json\" --header \"Authorization: Bearer $GITHUB_API_TOKEN\""}).
 		Stdout(ctx)
 
 	// print result
@@ -45,34 +45,32 @@ func getVaultSecret(mountPath, secretID, secretKey string) (string, error) {
 
 	// check for required variables in host environment
 	address := os.Getenv("VAULT_ADDRESS")
-	namespace := os.Getenv("VAULT_NAMESPACE")
 	role_id := os.Getenv("VAULT_ROLE_ID")
 	secret_id := os.Getenv("VAULT_SECRET_ID")
 
 	// create Vault client
 	client, err := vault.New(
 		vault.WithAddress(address),
-		vault.WithRequestTimeout(30*time.Second),
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	// log in to Vault
 	resp, err := client.Auth.AppRoleLogin(
 		ctx,
 		schema.AppRoleLoginRequest{
-			RoleId:   role,
-			SecretId: secret,
+			RoleId:   role_id,
+			SecretId: secret_id,
 		},
 		vault.WithMountPath(mountPath),
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	if err := client.SetToken(resp.Auth.ClientToken); err != nil {
-		return nil, err
+		return "", err
 	}
 
 	// read and return secret
@@ -82,7 +80,7 @@ func getVaultSecret(mountPath, secretID, secretKey string) (string, error) {
 		vault.WithMountPath(mountPath),
 	)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	return s.Data.Data[secretKey], nil
+	return fmt.Sprintf("%s", secret.Data.Data[secretKey]), nil
 }
