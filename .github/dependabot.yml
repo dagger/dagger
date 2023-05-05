@@ -23,6 +23,17 @@ updates:
       - dependency-name: "*"
         update-types: ["version-update:semver-patch"]
 
+  - package-ecosystem: "gomod"
+    directory: "/internal/mage"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "kind/dependencies"
+      - "area/tooling"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+
   - package-ecosystem: "npm"
     directory: "/sdk/nodejs"
     schedule:
