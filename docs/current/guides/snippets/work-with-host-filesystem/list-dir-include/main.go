@@ -18,7 +18,7 @@ func main() {
 
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr), dagger.WithWorkdir(dir))
 	if err != nil {
 		log.Println(err)
 		return

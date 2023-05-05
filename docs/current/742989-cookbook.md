@@ -9,29 +9,51 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Set host working directory
+### List host directory contents
 
-The following code listing sets the host working directory for the Dagger pipeline.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/work-with-host-filesystem/set-workdir/main.go
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/421437-work-with-host-filesystem.md)
-
-### Get host directory
-
-The following code listing obtains a reference to the host working directory.
+The following code listing obtains a reference to the host working directory and lists the directory's contents.
 
 <Tabs groupId="language">
 <TabItem value="Go">
 
 ```go file=./guides/snippets/work-with-host-filesystem/list-dir/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+When the Dagger pipeline code is in a sub-directory, it may be more useful to set the parent directory (the project's root directory) as the working directory.
+
+The following listing revises the previous one, obtaining a reference to the parent directory on the host and listing its contents.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-parent/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir-parent/main.py
 ```
 
 </TabItem>
@@ -50,6 +72,18 @@ The following code listing mounts a host directory in a container at the `/host`
 ```
 
 </TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/mount-dir/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/mount-dir/main.py
+```
+
+</TabItem>
 </Tabs>
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
@@ -62,6 +96,18 @@ The following code listing obtains a reference to the host working directory con
 <TabItem value="Go">
 
 ```go file=./guides/snippets/work-with-host-filesystem/list-dir-exclude/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-exclude/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir-exclude/main.py
 ```
 
 </TabItem>
@@ -80,6 +126,18 @@ The following code listing obtains a reference to the host working directory con
 ```
 
 </TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-include/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir-include/main.py
+```
+
+</TabItem>
 </Tabs>
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
@@ -92,6 +150,18 @@ The following code listing obtains a reference to the host working directory con
 <TabItem value="Go">
 
 ```go file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```typescript file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/index.mts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/work-with-host-filesystem/list-dir-exclude-include/main.py
 ```
 
 </TabItem>

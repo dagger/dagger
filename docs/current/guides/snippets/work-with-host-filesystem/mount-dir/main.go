@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"dagger.io/dagger"
 )
@@ -11,7 +12,7 @@ import (
 func main() {
 	ctx := context.Background()
 
-	client, err := dagger.Connect(ctx, dagger.WithWorkdir("."))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		log.Println(err)
 		return
