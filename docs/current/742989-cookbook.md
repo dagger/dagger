@@ -202,7 +202,7 @@ The following code listing builds an image using an existing Dockerfile.
 
 ### Add OCI annotations to image
 
-The following code listing adds[ OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
+The following code listing adds [OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
 
 <Tabs groupId="language">
 <TabItem value="Go">
