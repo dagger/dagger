@@ -21,4 +21,4 @@ connect(async (client) => {
     .stderr()
   console.log(out)
 
-}, { LogOutput: process.stdout })
+}, { LogOutput: process.stderr })

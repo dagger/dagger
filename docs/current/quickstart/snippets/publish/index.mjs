@@ -39,4 +39,4 @@ connect(async (client) => {
   console.log(`Published image to: ${imageRef}`)
   // highlight-end
 
-}, { LogOutput: process.stdout })
+}, { LogOutput: process.stderr })

@@ -33,4 +33,4 @@ connect(async (client) => {
 
   console.log("build dir contents:\n", e)
 
-}, { LogOutput: process.stdout })
+}, { LogOutput: process.stderr })

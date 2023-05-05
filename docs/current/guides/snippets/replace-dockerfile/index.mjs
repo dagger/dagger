@@ -52,7 +52,7 @@ connect(async (client) => {
 
     console.log(`Published to ${addr}`)
 
-}, { LogOutput: process.stdout })
+}, { LogOutput: process.stderr })
 
 
 function setDependencies(container) {
