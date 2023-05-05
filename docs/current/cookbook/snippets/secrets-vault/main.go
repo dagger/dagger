@@ -2,8 +2,8 @@ package main
 
 import (
 	"context"
-	"os"
 	"fmt"
+	"os"
 
 	"dagger.io/dagger"
 	"github.com/hashicorp/vault-client-go"
