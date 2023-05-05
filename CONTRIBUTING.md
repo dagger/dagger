@@ -1,5 +1,5 @@
 The best way to find a good contribution is to use Dagger for something. Then write down what problems you encounter.
-Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing CUE package.
+Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing package.
 Then pick an item that you're comfortable with in terms of difficulty, and give it a try. 🙂
 
 You can ask questions along the way, we're always happy to help you with your contribution. The bigger the contribution,
@@ -159,7 +159,6 @@ dagger do lint
 # Only run a specific linter:
 dagger do lint markdown
 
-# Look inside the ci.cue file to see all available linters
 ```
 
 ### How to re-run all GitHub Actions jobs?
@@ -181,9 +180,7 @@ git push -f mybranch
 
 Yes! The Dagger repository has Github Codespaces configuration included to help you get started contributing directly from GitHub.
 
-The versions of `dagger` and `cue` you are working against will be pre-installed so you can develop your packages, plans and tests with the right tools.
-
-You will also have basic syntax highlighting and formatting for CUE in Visual Studio Code via pre-installed extensions.
+The versions of `dagger` you are working against will be pre-installed so you can develop your packages, plans and tests with the right tools.
 
 Support for other platforms, such as Gitpod, may be added if there is demand. Visit the [developer experience](https://github.com/dagger/dagger/discussions/2052) discussion on GitHub to show your interest.
 
