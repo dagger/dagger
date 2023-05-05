@@ -39,5 +39,5 @@ connect(
     }
     // highlight-end
   },
-  { LogOutput: process.stdout }
+  { LogOutput: process.stderr }
 )

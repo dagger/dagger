@@ -17,7 +17,7 @@ func build(ctx context.Context) error {
 	fmt.Println("Building with Dagger")
 
 	// initialize Dagger client
-	client, err := dagger.Connect(ctx)
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
 	}
