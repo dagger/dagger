@@ -96,5 +96,5 @@ type fileWithTimestampsArgs struct {
 }
 
 func (s *fileSchema) withTimestamps(ctx *router.Context, parent *core.File, args fileWithTimestampsArgs) (*core.File, error) {
-	return parent.WithTimestamps(ctx, s.rec, args.Timestamp)
+	return parent.WithTimestamps(ctx, args.Timestamp)
 }

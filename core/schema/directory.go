@@ -99,7 +99,7 @@ type withNewDirectoryArgs struct {
 }
 
 func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
-	return parent.WithNewDirectory(ctx, s.rec, args.Path, args.Permissions)
+	return parent.WithNewDirectory(ctx, args.Path, args.Permissions)
 }
 
 type withDirectoryArgs struct {
@@ -114,7 +114,7 @@ func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Direct
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithDirectory(ctx, s.rec, args.Path, dir, args.CopyFilter, nil)
+	return parent.WithDirectory(ctx, args.Path, dir, args.CopyFilter, nil)
 }
 
 type dirWithTimestampsArgs struct {
@@ -122,7 +122,7 @@ type dirWithTimestampsArgs struct {
 }
 
 func (s *directorySchema) withTimestamps(ctx *router.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
-	return parent.WithTimestamps(ctx, s.rec, args.Timestamp)
+	return parent.WithTimestamps(ctx, args.Timestamp)
 }
 
 type entriesArgs struct {
@@ -148,7 +148,7 @@ type withNewFileArgs struct {
 }
 
 func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
-	return parent.WithNewFile(ctx, s.rec, args.Path, []byte(args.Contents), args.Permissions, nil)
+	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions, nil)
 }
 
 type withFileArgs struct {
@@ -163,7 +163,7 @@ func (s *directorySchema) withFile(ctx *router.Context, parent *core.Directory, 
 		return nil, err
 	}
 
-	return parent.WithFile(ctx, s.rec, args.Path, file, args.Permissions, nil)
+	return parent.WithFile(ctx, args.Path, file, args.Permissions, nil)
 }
 
 type withoutDirectoryArgs struct {
@@ -171,7 +171,7 @@ type withoutDirectoryArgs struct {
 }
 
 func (s *directorySchema) withoutDirectory(ctx *router.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
-	return parent.Without(ctx, s.rec, args.Path)
+	return parent.Without(ctx, args.Path)
 }
 
 type withoutFileArgs struct {
@@ -179,7 +179,7 @@ type withoutFileArgs struct {
 }
 
 func (s *directorySchema) withoutFile(ctx *router.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
-	return parent.Without(ctx, s.rec, args.Path)
+	return parent.Without(ctx, args.Path)
 }
 
 type diffArgs struct {
@@ -191,7 +191,7 @@ func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args
 	if err != nil {
 		return nil, err
 	}
-	return parent.Diff(ctx, s.rec, dir)
+	return parent.Diff(ctx, dir)
 }
 
 type dirExportArgs struct {

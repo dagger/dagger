@@ -281,7 +281,7 @@ func (r PipelineMetaResolver) ResolveImageConfig(ctx context.Context, ref string
 	return r.Resolver.ResolveImageConfig(ctx, ref, opt)
 }
 
-func (container *Container) From(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, addr string) (*Container, error) {
+func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string) (*Container, error) {
 	container = container.Clone()
 
 	platform := container.Platform
@@ -325,7 +325,7 @@ func (container *Container) From(ctx context.Context, rec *progrock.Recorder, gw
 	fsSt := llb.Image(
 		digested.String(),
 		llb.WithCustomNamef("pull %s", ref),
-		p.LLBOpt(rec),
+		p.LLBOpt(ctx),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
@@ -431,7 +431,7 @@ func (container *Container) Build(
 			return nil, err
 		}
 
-		overrideProgress(rec, def, container.Pipeline.Add(pipeline.Pipeline{
+		overrideProgress(ctx, def, container.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
 		}))
 
@@ -485,7 +485,7 @@ func (container *Container) WithRootFS(ctx context.Context, dir *Directory) (*Co
 	return container, nil
 }
 
-func (container *Container) WithDirectory(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
+func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, subdir string, src *Directory, filter CopyFilter, owner string) (*Container, error) {
 	container = container.Clone()
 
 	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
@@ -494,11 +494,11 @@ func (container *Container) WithDirectory(ctx context.Context, rec *progrock.Rec
 			return nil, err
 		}
 
-		return dir.WithDirectory(ctx, rec, ".", src, filter, ownership)
+		return dir.WithDirectory(ctx, ".", src, filter, ownership)
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
 	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
@@ -507,11 +507,11 @@ func (container *Container) WithFile(ctx context.Context, rec *progrock.Recorder
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, rec, ".", src, permissions, ownership)
+		return dir.WithFile(ctx, ".", src, permissions, ownership)
 	})
 }
 
-func (container *Container) WithNewFile(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
+func (container *Container) WithNewFile(ctx context.Context, gw bkgw.Client, dest string, content []byte, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
 	dir, file := filepath.Split(dest)
@@ -521,7 +521,7 @@ func (container *Container) WithNewFile(ctx context.Context, rec *progrock.Recor
 			return nil, err
 		}
 
-		return dir.WithNewFile(ctx, rec, file, content, permissions, ownership)
+		return dir.WithNewFile(ctx, file, content, permissions, ownership)
 	})
 }
 
@@ -998,7 +998,7 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 	return container, nil
 }
 
-func (container *Container) WithExec(ctx context.Context, rec *progrock.Recorder, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
 
 	cfg := container.Config
@@ -1025,7 +1025,7 @@ func (container *Container) WithExec(ctx context.Context, rec *progrock.Recorder
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		container.Pipeline.LLBOpt(rec),
+		container.Pipeline.LLBOpt(ctx),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
@@ -1048,7 +1048,7 @@ func (container *Container) WithExec(ctx context.Context, rec *progrock.Recorder
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt(rec)),
+			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt(ctx)),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1270,7 +1270,7 @@ func (container *Container) Evaluate(ctx context.Context, rec *progrock.Recorder
 		}
 
 		if pipelineOverride != nil {
-			overrideProgress(rec, def, *pipelineOverride)
+			overrideProgress(ctx, def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
@@ -1352,7 +1352,7 @@ func (container *Container) MetaFileContents(ctx context.Context, rec *progrock.
 	}
 
 	if metaSt == nil {
-		ctr, err := container.WithExec(ctx, rec, gw, container.Platform, ContainerExecOpts{})
+		ctr, err := container.WithExec(ctx, gw, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return "", err
 		}

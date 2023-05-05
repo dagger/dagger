@@ -623,7 +623,7 @@ func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.
 		if v.ProgressGroup != nil {
 			var pipelinePath pipeline.Path
 			if json.Unmarshal([]byte(v.ProgressGroup.Id), &pipelinePath) == nil {
-				vtx.Group = &pipelinePath.RecorderGroup(rec).Group.Id
+				vtx.Group = &pipelinePath.RecorderGroup(ctx).Group.Id
 			}
 		}
 
