@@ -55,13 +55,13 @@ yarn add @dagger.io/dagger --dev
 Install the TypeScript engine (if not already present):
 
 ```shell
-npm install ts-node
+npm install ts-node typescript
 ```
 
 Create a TypeScript configuration file (if not already present):
 
 ```shell
-tsc --init --module esnext --moduleResolution nodenext
+npx tsc --init --module esnext --moduleResolution nodenext
 ```
 
 In your project directory, create a new file named `build.mts` and add the following code to it.
