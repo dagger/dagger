@@ -3,43 +3,77 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
+      - "area/engine"
+      - "area/cli"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
+      - "area/tooling"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+
+  - package-ecosystem: "gomod"
+    directory: "/internal/mage"
+    schedule:
+      interval: "monthly"
+    labels:
+      - "kind/dependencies"
+      - "area/tooling"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+
   - package-ecosystem: "npm"
     directory: "/sdk/nodejs"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/nodejs"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
-      - "area/website"
+      - "area/docs"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/go"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
 
   - package-ecosystem: "pip"
     directory: "/sdk/python"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/python"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
