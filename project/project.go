@@ -300,47 +300,6 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 			st.AddMount("/src", wdState, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
 		}
 
-		// TODO: /mnt should maybe be configurable?
-		for path, dirID := range collectDirPaths(ctx.ResolveParams.Args, fsMountPath, nil) {
-			dir, err := dirID.ToDirectory()
-			if err != nil {
-				return nil, err
-			}
-
-			dirSt, err := dir.State()
-			if err != nil {
-				return nil, err
-			}
-			// TODO: it should be possible for this to be outputtable by the action; the only question
-			// is how to expose that ability in a non-confusing way, just needs more thought
-			st.AddMount(path, dirSt, llb.SourcePath(dir.Dir), llb.ForceNoOutput)
-		}
-
-		// Mount in the parent type if it is a Filesystem
-		// FIXME:(sipsma) got to be a better way than string matching parent type... But not easy
-		// to just use go type matching because the parent result may be a Filesystem struct or
-		// an untyped map[string]interface{}.
-		// FIXME(vito): this might be broken with the transition away from
-		// directoryIDPayload
-		if ctx.ResolveParams.Info.ParentType.Name() == "Directory" {
-			var parentFS core.Directory
-			bytes, err := json.Marshal(parent)
-			if err != nil {
-				return nil, err
-			}
-			if err := json.Unmarshal(bytes, &parentFS); err != nil {
-				return nil, err
-			}
-
-			fsState, err := parentFS.State()
-			if err != nil {
-				return nil, err
-			}
-
-			// FIXME:(sipsma) not a good place to hardcode mounting this in, same as mounting in resolver args
-			st.AddMount("/mnt/.parent", fsState, llb.ForceNoOutput)
-		}
-
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
 		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(platform), llb.WithCustomName(name))
 		if err != nil {
@@ -371,6 +330,7 @@ func (p *State) resolver(runtimeFS *core.Directory, sdk string, gw bkgw.Client, 
 	})
 }
 
+/* TODO:  delete this
 func collectDirPaths(arg interface{}, curPath string, dirPaths map[string]core.DirectoryID) map[string]core.DirectoryID {
 	if dirPaths == nil {
 		dirPaths = make(map[string]core.DirectoryID)
@@ -392,3 +352,4 @@ func collectDirPaths(arg interface{}, curPath string, dirPaths map[string]core.D
 	}
 	return dirPaths
 }
+*/

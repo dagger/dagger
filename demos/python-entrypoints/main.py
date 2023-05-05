@@ -11,7 +11,7 @@ from dagger.server.cli import app
 
 @strawberry.type
 class Hello:
-    greeting: str = "Hello"
+    greeting: strawberry.Private[str] = "Hello"
 
     @strawberry.field(description="Say hello with the given message")
     def say(self, msg: Annotated[str, strawberry.argument(description="The message to greet")]) -> str:

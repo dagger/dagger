@@ -9,60 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestExtensionMount(t *testing.T) {
-	ctx := context.Background()
-	c, err := dagger.Connect(
-		ctx,
-		dagger.WithWorkdir("../../"),
-		dagger.WithConfigPath("testdata/extension/dagger.json"),
-		dagger.WithLogOutput(os.Stdout),
-	)
-	require.NoError(t, err)
-	defer c.Close()
-
-	res := struct {
-		Directory struct {
-			WithNewFile struct {
-				ID string
-			}
-		}
-	}{}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `{
-					directory {
-						withNewFile(path: "foo", contents: "bar") {
-							id
-						}
-					}
-				}`,
-		},
-		&dagger.Response{Data: &res},
-	)
-	require.NoError(t, err)
-
-	res2 := struct {
-		Test struct {
-			TestMount string
-		}
-	}{}
-	err = c.Do(ctx,
-		&dagger.Request{
-			Query: `query TestMount($in: DirectoryID!) {
-					test {
-						testMount(in: $in)
-					}
-				}`,
-			Variables: map[string]any{
-				"in": res.Directory.WithNewFile.ID,
-			},
-		},
-		&dagger.Response{Data: &res2},
-	)
-	require.NoError(t, err)
-	require.Equal(t, res2.Test.TestMount, "bar")
-}
-
 /*
 	TODO:(sipsma) more test cases to add
 
@@ -77,8 +23,6 @@ func TestExtensionMount(t *testing.T) {
 * Circular types (i.e. structs that have fields that reference themselves, etc.)
 */
 func TestCodeToSchema(t *testing.T) {
-	t.Skipf("vito: ReturnDirectory stopped working, haven't figured out why yet")
-
 	ctx := context.Background()
 	c, err := dagger.Connect(
 		ctx,

@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/dagger/dagger/codegen/generator"
+	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/engine/journal"
@@ -16,7 +18,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
 )
@@ -58,28 +59,41 @@ var doCmd = &cobra.Command{
 
 		cmd.Println("Loading+installing project (use --debug to track progress)...")
 		return engine.Start(cmd.Context(), engineConf, func(ctx context.Context, r *router.Router) error {
-			schemaStr, err := getProjectSchema(ctx, workdir, configPath, r)
+			_, err := getProjectSchema(ctx, workdir, configPath, r)
 			if err != nil {
 				return fmt.Errorf("failed to get project schema: %w", err)
 			}
-			if schemaStr == "" {
-				return fmt.Errorf("invalid empty schema")
-			}
-			// TODO:
-			// fmt.Println(schemaStr)
-			schema, err := gqlparser.LoadSchema(&ast.Source{
-				Input: schemaStr,
-			})
+			schema, err := generator.Introspect(ctx, r)
 			if err != nil {
-				return fmt.Errorf("failed to parse schema: %w", err)
+				return fmt.Errorf("failed to introspect schema: %w", err)
+			}
+			typesByName := map[string]*introspection.Type{}
+			for _, t := range schema.Types {
+				typesByName[t.Name] = t
 			}
 
-			visited := map[string]struct{}{}
-			for _, field := range schema.Query.Fields {
-				if field.Name == "__schema" || field.Name == "__type" {
+			// TODO: add some metadata to the introspection to make this more maintainable
+			coreQueries := map[string]struct{}{
+				"cacheVolume":     {},
+				"container":       {},
+				"defaultPlatform": {},
+				"directory":       {},
+				"file":            {},
+				"git":             {},
+				"host":            {},
+				"http":            {},
+				"pipeline":        {},
+				"project":         {},
+				"secret":          {},
+				"setSecret":       {},
+				"socket":          {},
+			}
+
+			for _, field := range schema.Query().Fields {
+				if _, ok := coreQueries[field.Name]; ok {
 					continue
 				}
-				if err := addCmd(cmd, field, schema, visited, r); err != nil {
+				if err := addCmd(cmd, field, typesByName, r); err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
 			}
@@ -113,12 +127,7 @@ var doCmd = &cobra.Command{
 	},
 }
 
-func addCmd(parentCmd *cobra.Command, field *ast.FieldDefinition, schema *ast.Schema, visited map[string]struct{}, r *router.Router) error {
-	_, ok := visited[field.Name]
-	if ok {
-		return nil
-	}
-	visited[field.Name] = struct{}{}
+func addCmd(parentCmd *cobra.Command, field *introspection.Field, typesByName map[string]*introspection.Type, r *router.Router) error {
 	subcmd := &cobra.Command{
 		Use:   field.Name,
 		Short: field.Description,
@@ -210,31 +219,68 @@ func addCmd(parentCmd *cobra.Command, field *ast.FieldDefinition, schema *ast.Sc
 		},
 	}
 	parentCmd.AddCommand(subcmd)
-	for _, arg := range field.Arguments {
-		if arg.Type.Name() != "String" {
-			return fmt.Errorf("unsupported argument type %s", arg.Type.Name())
+	for _, arg := range field.Args {
+		argType := arg.TypeRef.Name
+		if ofType := arg.TypeRef.OfType; ofType != nil {
+			argType = ofType.Name
+		}
+		if argType != "String" {
+			return fmt.Errorf("unsupported argument type %q for %q", argType, arg.Name)
 		}
 		subcmd.Flags().String(arg.Name, "", "")
 	}
 
-	switch field.Type.Name() {
-	case "String", "Int", "Float", "Boolean", "ID":
-		// don't recurse
-	default:
-		// TODO: support lists maybe?
-		obj, ok := schema.Types[field.Type.Name()]
-		if !ok {
-			return fmt.Errorf("undefined type %s", field.Type.Name())
-		}
-		for _, objField := range obj.Fields {
-			if err := addCmd(subcmd, objField, schema, visited, r); err != nil {
-				return fmt.Errorf("failed to add subcmd: %w", err)
+	fieldType := field.TypeRef.Name
+	if ofType := field.TypeRef.OfType; ofType != nil {
+		fieldType = ofType.Name
+	}
+
+	// TODO: add metadata to introspection to make this more maintainable
+	coreTypes := map[string]struct{}{
+		"Project":       {},
+		"Label":         {},
+		"__Schema":      {},
+		"__Type":        {},
+		"Directory":     {},
+		"File":          {},
+		"Secret":        {},
+		"Socket":        {},
+		"CacheVolume":   {},
+		"GitRef":        {},
+		"__EnumValue":   {},
+		"GitRepository": {},
+		"Container":     {},
+		"Host":          {},
+		"HostVariable":  {},
+		"__InputValue":  {},
+		"Query":         {},
+		"Port":          {},
+		"EnvVariable":   {},
+		"__Field":       {},
+		"__Directive":   {},
+	}
+
+	fieldKind := field.TypeRef.Kind
+	if ofType := field.TypeRef.OfType; ofType != nil {
+		fieldKind = ofType.Kind
+	}
+	if fieldKind == introspection.TypeKindObject {
+		if _, ok := coreTypes[fieldType]; !ok {
+			obj, ok := typesByName[fieldType]
+			if !ok {
+				return fmt.Errorf("undefined type %s", fieldType)
+			}
+			for _, objField := range obj.Fields {
+				if err := addCmd(subcmd, objField, typesByName, r); err != nil {
+					return fmt.Errorf("failed to add subcmd: %w", err)
+				}
 			}
 		}
 	}
 	return nil
 }
 
+// TODO: update to just install, rename
 func getProjectSchema(ctx context.Context, workdir, configPath string, r *router.Router) (string, error) {
 	url, err := url.Parse(workdir)
 	if err != nil {

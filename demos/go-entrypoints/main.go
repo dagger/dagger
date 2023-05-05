@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"path/filepath"
 
 	"dagger.io/dagger"
@@ -11,13 +10,7 @@ func main() {
 	dagger.Serve(
 		Build,
 		Test,
-		Ci,
 	)
-}
-
-func Ci(ctx dagger.Context, inputPayload string) (string, error) {
-	fmt.Println(inputPayload)
-	return inputPayload, nil
 }
 
 // Build the go binary from the given go repo, branch, and subpath. Silly right now due to lack of host export, but proves concept
