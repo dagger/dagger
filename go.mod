@@ -51,8 +51,8 @@ require (
 	golang.org/x/crypto v0.8.0
 	golang.org/x/mod v0.9.0
 	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.7.0
-	golang.org/x/term v0.7.0
+	golang.org/x/sys v0.8.0
+	golang.org/x/term v0.8.0
 	google.golang.org/grpc v1.54.0
 	oss.terrastruct.com/d2 v0.4.0
 )
