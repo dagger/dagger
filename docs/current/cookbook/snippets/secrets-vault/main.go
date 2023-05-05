@@ -20,7 +20,7 @@ func main() {
 	defer client.Close()
 
 	// get secret from Vault
-	secretPlaintext, err := getVaultSecret(MOUNT-PATH, SECRET-ID, SECRET-KEY)
+	secretPlaintext, err := getVaultSecret("MOUNT-PATH", "SECRET-ID", "SECRET-KEY")
 	if err != nil {
 		panic(err)
 	}

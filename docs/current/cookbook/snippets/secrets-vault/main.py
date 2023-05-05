@@ -9,7 +9,7 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # get secret from Vault
-        secretPlaintext = await get_vault_secret(MOUNT-PATH, SECRET-ID, SECRET-KEY)
+        secretPlaintext = await get_vault_secret("MOUNT-PATH", "SECRET-ID", "SECRET-KEY")
 
         # load secret into Dagger
         secret = client.set_secret("ghApiToken", secretPlaintext)

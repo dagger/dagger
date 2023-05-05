@@ -5,7 +5,7 @@ import fetch from "node-fetch"
 connect(async (client) => {
 
   // get secret from Vault
-  const secretPlaintext = await getVaultSecret(MOUNT-PATH, SECRET-ID, SECRET-KEY)
+  const secretPlaintext = await getVaultSecret("MOUNT-PATH", "SECRET-ID", "SECRET-KEY")
 
   // load secret into Dagger
   const secret = client.setSecret("ghApiToken", secretPlaintext)
