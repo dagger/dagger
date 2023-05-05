@@ -1,5 +1,5 @@
-import pathlib
 import typing
+from os import PathLike
 
 import attrs
 import httpx
@@ -25,8 +25,8 @@ class Config:
         response (default).
     """
 
-    workdir: pathlib.Path | str = ""
-    config_path: pathlib.Path | str = ""
+    workdir: PathLike[str] | str = ""
+    config_path: PathLike[str] | str = ""
     log_output: typing.TextIO | None = None
     timeout: int = 10
     execute_timeout: int | float | None = None
