@@ -202,7 +202,7 @@ The following code listing builds an image using an existing Dockerfile.
 
 ### Add OCI annotations to image
 
-The following code listing adds OpenContainer Initiative (OCI) annotations to an image.
+The following code listing adds[ OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -377,7 +377,7 @@ The following code listing exports the contents of a container directory to the 
 
 ### Publish image to registry with multiple tags
 
-The following code listing tags a container image multiple times and publishes it to a remote registry (Docker Hub). Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub username and password respectively.
+The following code listing tags a container image multiple times and publishes it to a remote registry (Docker Hub). Set the Docker Hub username and password as host environment variables named `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` respectively.
 
 <Tabs groupId="language">
 <TabItem value="Go">

@@ -23,9 +23,11 @@ func main() {
 		From("alpine").
 		WithLabel("org.opencontainers.image.title", "my-alpine").
 		WithLabel("org.opencontainers.image.version", "1.0").
-		WithLabel("org.opencontainers.image.created", time.Now().String())
+		WithLabel("org.opencontainers.image.created", time.Now().String()).
+		WithLabel("org.opencontainers.image.source", "https://github.com/alpinelinux/docker-alpine").
+		WithLabel("org.opencontainers.image.licenses", "MIT")
 
-	addr, err := ctr.Publish(ctx, "localhost:5000/my-alpine")
+	addr, err := ctr.Publish(ctx, "ttl.sh/my-alpine")
 	if err != nil {
 		panic(err)
 	}
