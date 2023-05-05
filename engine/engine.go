@@ -195,7 +195,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			// Thankfully we can just yeet the gateway into the store.
 			secretStore.SetGateway(gw)
 
-			gwClient := core.NewGatewayClient(gw, cacheConfigType, cacheConfigAttrs)
+			gwClient := core.NewGatewayClient(gw, recorder, cacheConfigType, cacheConfigAttrs)
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:         router,
 				Recorder:       recorder,
@@ -620,18 +620,17 @@ func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.
 			}
 		}
 
-		if v.ProgressGroup != nil {
-			var pipelinePath pipeline.Path
-			if json.Unmarshal([]byte(v.ProgressGroup.Id), &pipelinePath) == nil {
-				vtx.Group = &pipelinePath.RecorderGroup(ctx).Group.Id
-			}
-		}
-
 		var custom pipeline.CustomName
 		if json.Unmarshal([]byte(v.Name), &custom) == nil {
 			vtx.Name = custom.Name
-			vtx.Group = &custom.Pipeline.RecorderGroup(rec).Group.Id
 			vtx.Internal = custom.Internal
+
+			// these vertexes don't come from LLB, so we need to switch them into
+			// their appropriate group
+			status.Memberships = append(status.Memberships, &progrock.Membership{
+				Group:    custom.Pipeline.RecorderGroup(rec).Group.Id,
+				Vertexes: []string{v.Digest.String()},
+			})
 		}
 
 		status.Vertexes = append(status.Vertexes, vtx)

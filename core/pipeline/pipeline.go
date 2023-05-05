@@ -1,7 +1,6 @@
 package pipeline
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 
@@ -81,16 +80,15 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	return rec
 }
 
-func (g Path) ProgressGroup(ctx context.Context) *pb.ProgressGroup {
-	rec := g.RecorderGroup(progrock.RecorderFromContext(ctx))
+func (g Path) ProgressGroup() *pb.ProgressGroup {
 	return &pb.ProgressGroup{
 		Id:   g.ID(),
 		Name: g.Name(),
 	}
 }
 
-func (g Path) LLBOpt(ctx context.Context) llb.ConstraintsOpt {
-	pg := g.ProgressGroup(ctx)
+func (g Path) LLBOpt() llb.ConstraintsOpt {
+	pg := g.ProgressGroup()
 	return llb.ProgressGroup(pg.Id, pg.Name, pg.Weak)
 }
 

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"strings"
@@ -9,12 +10,14 @@ import (
 	"time"
 
 	"github.com/armon/circbuf"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 )
 
 const (
@@ -30,19 +33,42 @@ const (
 // of execs when they fail.
 type GatewayClient struct {
 	bkgw.Client
+	rootRecorder     *progrock.Recorder
 	refs             map[*ref]struct{}
 	cacheConfigType  string
 	cacheConfigAttrs map[string]string
 	mu               sync.Mutex
 }
 
-func NewGatewayClient(baseClient bkgw.Client, cacheConfigType string, cacheConfigAttrs map[string]string) *GatewayClient {
+func NewGatewayClient(baseClient bkgw.Client, rootRecorder *progrock.Recorder, cacheConfigType string, cacheConfigAttrs map[string]string) *GatewayClient {
 	return &GatewayClient{
 		Client:           baseClient,
+		rootRecorder:     rootRecorder,
 		cacheConfigType:  cacheConfigType,
 		cacheConfigAttrs: cacheConfigAttrs,
 		refs:             make(map[*ref]struct{}),
 	}
+}
+
+func joinDef(rec *progrock.Recorder, def *pb.Definition) {
+	// TODO(vito): while we're maintaining compatibility with the old
+	// ProgressGroup-based flow, we can just parse paths out and emit
+	// memberships.
+	//
+	// in the future it might make sense to use a ctx-bound Recorder that's
+	// already scoped to groups instead, but that wouldn't support places where
+	// we append custom pipelines to the path. (which we might get rid of
+	// someday.)
+
+	// dgsts := make([]digest.Digest, 0, len(def.Metadata))
+	for d, meta := range def.Metadata {
+		// dgsts = append(dgsts, d)
+		var p pipeline.Path
+		if json.Unmarshal([]byte(meta.ProgressGroup.GetId()), &p) == nil {
+			p.RecorderGroup(rec).Join(d)
+		}
+	}
+	// rec.Join(dgsts...)
 }
 
 func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bkgw.Result, rerr error) {
@@ -52,6 +78,12 @@ func (g *GatewayClient) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *bk
 			Type:  g.cacheConfigType,
 			Attrs: g.cacheConfigAttrs,
 		}}
+	}
+	if req.Definition != nil {
+		joinDef(g.rootRecorder, req.Definition)
+	}
+	for _, input := range req.FrontendInputs {
+		joinDef(g.rootRecorder, input)
 	}
 	res, err := g.Client.Solve(ctx, req)
 	if err != nil {

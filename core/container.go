@@ -325,7 +325,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	fsSt := llb.Image(
 		digested.String(),
 		llb.WithCustomNamef("pull %s", ref),
-		p.LLBOpt(ctx),
+		p.LLBOpt(),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
@@ -430,7 +430,7 @@ func (container *Container) Build(
 			return nil, err
 		}
 
-		overrideProgress(ctx, def, container.Pipeline.Add(pipeline.Pipeline{
+		overrideProgress(def, container.Pipeline.Add(pipeline.Pipeline{
 			Name: "docker build",
 		}))
 
@@ -1025,7 +1025,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		container.Pipeline.LLBOpt(ctx),
+		container.Pipeline.LLBOpt(),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
@@ -1048,7 +1048,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt(ctx)),
+			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt()),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1270,7 +1270,7 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 		}
 
 		if pipelineOverride != nil {
-			overrideProgress(ctx, def, *pipelineOverride)
+			overrideProgress(def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{

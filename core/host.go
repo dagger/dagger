@@ -65,7 +65,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 
 	localOpts := []llb.LocalOption{
 		// Inject Pipelin
-		directoryPipeline.LLBOpt(ctx),
+		directoryPipeline.LLBOpt(),
 
 		// Custom name
 		llb.WithCustomNamef("upload %s", absPath),
@@ -93,7 +93,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
-		directoryPipeline.LLBOpt(ctx),
+		directoryPipeline.LLBOpt(),
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 

@@ -218,7 +218,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 
 	parent, _ := path.Split(dest)
 	if parent != "" {
-		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), dir.Pipeline.LLBOpt(ctx))
+		st = st.File(llb.Mkdir(parent, 0755, llb.WithParents(true)), dir.Pipeline.LLBOpt())
 	}
 
 	opts := []llb.MkfileOption{}
@@ -228,7 +228,7 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 
 	st = st.File(
 		llb.Mkfile(dest, permissions, content, opts...),
-		dir.Pipeline.LLBOpt(ctx),
+		dir.Pipeline.LLBOpt(),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -285,7 +285,7 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 
 	st = st.File(
 		llb.Copy(srcSt, src.Dir, path.Join(dir.Dir, subdir), opts...),
-		dir.Pipeline.LLBOpt(ctx),
+		dir.Pipeline.LLBOpt(),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -312,7 +312,7 @@ func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory,
 			CopyDirContentsOnly: true,
 			CreatedTime:         &t,
 		}),
-		dir.Pipeline.LLBOpt(ctx),
+		dir.Pipeline.LLBOpt(),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -345,7 +345,7 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 		permissions = 0755
 	}
 
-	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), dir.Pipeline.LLBOpt(ctx))
+	st = st.File(llb.Mkdir(dest, permissions, llb.WithParents(true)), dir.Pipeline.LLBOpt())
 
 	err = dir.SetState(ctx, st)
 	if err != nil {
@@ -386,7 +386,7 @@ func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, pe
 
 	st = st.File(
 		llb.Copy(srcSt, src.File, path.Join(dir.Dir, subdir), opts...),
-		dir.Pipeline.LLBOpt(ctx),
+		dir.Pipeline.LLBOpt(),
 	)
 
 	err = dir.SetState(ctx, st)
@@ -420,7 +420,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt(ctx)), "", pipeline, platform, nil)
+	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {
@@ -446,7 +446,7 @@ func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, e
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt, dir.Pipeline.LLBOpt(ctx)))
+	err = dir.SetState(ctx, llb.Diff(lowerSt, upperSt, dir.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -462,7 +462,7 @@ func (dir *Directory) Without(ctx context.Context, path string) (*Directory, err
 		return nil, err
 	}
 
-	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), dir.Pipeline.LLBOpt(ctx)))
+	err = dir.SetState(ctx, st.File(llb.Rm(path, llb.WithAllowWildcard(true)), dir.Pipeline.LLBOpt()))
 	if err != nil {
 		return nil, err
 	}
@@ -498,7 +498,7 @@ func (dir *Directory) Export(
 				src = llb.Scratch().File(llb.Copy(src, dir.Dir, ".", &llb.CopyInfo{
 					CopyDirContentsOnly: true,
 				}),
-					dir.Pipeline.LLBOpt(ctx),
+					dir.Pipeline.LLBOpt(),
 				)
 
 				def, err := src.Marshal(ctx, llb.Platform(dir.Platform))
