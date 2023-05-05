@@ -19,5 +19,5 @@ connect(
     val = await httpSrv.endpoint({ scheme: "http" });
     console.log(val);
   },
-  { LogOutput: process.stdout }
+  { LogOutput: process.stderr }
 );

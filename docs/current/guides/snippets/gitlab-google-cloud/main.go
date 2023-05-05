@@ -17,7 +17,7 @@ const GCR_PUBLISH_ADDRESS = "gcr.io/PROJECT/myapp"
 func main() {
     // create Dagger client
     ctx := context.Background()
-    daggerClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+    daggerClient, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
     if err != nil {
         panic(err)
     }

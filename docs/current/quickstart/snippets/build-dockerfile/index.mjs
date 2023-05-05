@@ -12,4 +12,4 @@ connect(async (client) => {
     .publish('ttl.sh/hello-dagger-' + Math.floor(Math.random() * 10000000))
   console.log(`Published image to: ${imageRef}`)
 
-}, { LogOutput: process.stdout })
+}, { LogOutput: process.stderr })
