@@ -3,19 +3,19 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
   - package-ecosystem: "npm"
     directory: "/sdk/nodejs"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/nodejs"
@@ -23,7 +23,7 @@ updates:
   - package-ecosystem: "npm"
     directory: "/website"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "area/website"
@@ -31,7 +31,7 @@ updates:
   - package-ecosystem: "gomod"
     directory: "/sdk/go"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/go"
@@ -39,7 +39,7 @@ updates:
   - package-ecosystem: "pip"
     directory: "/sdk/python"
     schedule:
-      interval: "daily"
+      interval: "monthly"
     labels:
       - "kind/dependencies"
       - "sdk/python"
