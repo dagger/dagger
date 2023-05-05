@@ -255,6 +255,85 @@ The following code listing builds a single image for different CPU architectures
 
 [Learn more](./guides/406009-multiplatform-support.md)
 
+### Build image from Dockerfile
+
+The following code listing builds an image using an existing Dockerfile.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./quickstart/snippets/build-dockerfile/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./quickstart/snippets/build-dockerfile/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./quickstart/snippets/build-dockerfile/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./quickstart/429462-quickstart-build-dockerfile.mdx)
+
+### Add OCI annotations to image
+
+The following code listing adds [OpenContainer Initiative (OCI) annotations](https://github.com/opencontainers/image-spec/blob/v1.0/annotations.md) to an image.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/oci-annotations/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/oci-annotations/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/oci-annotations/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Define build-time variables
+
+The following code listing defines various environment variables for build purposes.
+
+<Tabs groupId="language" className="embeds">
+<TabItem value="Go">
+
+```go file=./guides/snippets/multi-builds/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/multi-builds/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/multi-builds/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/648384-multi-builds.md)
+
 ### Access private Git repository
 
 The following code listing demonstrates how to access a private Git repository using SSH.
@@ -309,9 +388,9 @@ The following code listing creates a temporary MariaDB database service and bind
 
 ## Outputs
 
-### Publish container to Docker Hub
+### Publish image to registry
 
-The following code listing publishes a container to a remote registry (Docker Hub). Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub username and password respectively.
+The following code listing publishes a container image to a remote registry (Docker Hub). Replace the `DOCKER-HUB-USERNAME` and `DOCKER-HUB-PASSWORD` placeholders with your Docker Hub username and password respectively.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -336,7 +415,7 @@ The following code listing publishes a container to a remote registry (Docker Hu
 
 [Learn more](./guides/723462-use-secrets.md)
 
-### Export container image to host
+### Export image to host
 
 The following code listing exports a container image from a Dagger pipeline to the host.
 
@@ -377,6 +456,31 @@ The following code listing exports the contents of a container directory to the 
 </Tabs>
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
+
+### Publish image to registry with multiple tags
+
+The following code listing tags a container image multiple times and publishes it to a remote registry (Docker Hub). Set the Docker Hub username and password as host environment variables named `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/multiple-tags/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/multiple-tags/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/multiple-tags/main.py
+```
+
+</TabItem>
+</Tabs>
 
 ## Secrets
 
@@ -427,6 +531,64 @@ The following code listing demonstrates how to inject a file in a container as a
 <TabItem value="Python">
 
 ```python file=./guides/snippets/use-secrets/host-fs/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
+### Load secret from Google Cloud Secret Manager
+
+The following code listing reads a secret (a GitHub API token) from Google Cloud Secret Manager and uses it in a Dagger pipeline to interact with the GitHub API.
+
+Set up [Application Default Credentials (ADC)](https://cloud.google.com/docs/authentication/provide-credentials-adc) and replace the `PROJECT-ID` and `SECRET-ID` placeholders with your Google Cloud project and secret identifiers respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/use-secrets/external/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/use-secrets/external/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/use-secrets/external/main.py
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/723462-use-secrets.md)
+
+### Load secret from Hashicorp Vault
+
+The following code listing reads a secret (a GitHub API token) from a Hashicorp Vault Key/Value v2 engine and uses it in a Dagger pipeline to interact with the GitHub API.
+
+Set the Hashicorp Vault URI, namespace, role and secret identifiers as host environment variables named `VAULT_ADDRESS`, `VAULT_NAMESPACE`, `VAULT_ROLE_ID` and `VAULT_SECRET_ID` respectively. Replace the `MOUNT-PATH`, `SECRET-ID` and `SECRET-KEY` placeholders with your Hashicorp Vault mount point, secret identifier and key respectively.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/secrets-vault/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/secrets-vault/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/secrets-vault/main.py
 ```
 
 </TabItem>
@@ -492,9 +654,9 @@ The following code listing uses a cache volume to persist a service's data acros
 
 ## Integrations
 
-### Amazon Web Services
+### AWS Cloud Development Kit
 
-The following code listing builds, publishes and deploys a container using the AWS Cloud Development Kit (CDK).
+The following code listing builds, publishes and deploys a container using the Amazon Web Services (AWS) Cloud Development Kit (CDK).
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -513,9 +675,7 @@ The following code listing builds, publishes and deploys a container using the A
 
 [Learn more](./guides/899944-aws-cdk-ecs.md)
 
-### Google Cloud
-
-#### Google Cloud Run
+### Google Cloud Run
 
 The following code listing builds, publishes and deploys a container using Google Container Registry and Google Cloud Run.
 
@@ -541,33 +701,6 @@ The following code listing builds, publishes and deploys a container using Googl
 </Tabs>
 
 [Learn more](./guides/620941-github-google-cloud.md)
-
-#### Google Cloud Secret Manager
-
-The following code listing reads a secret from Google Cloud Secret Manager.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./guides/snippets/use-secrets/external/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./guides/snippets/use-secrets/external/index.mjs
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./guides/snippets/use-secrets/external/main.py
-```
-
-</TabItem>
-</Tabs>
-
-[Learn more](./guides/723462-use-secrets.md)
 
 ### GitHub Actions
 

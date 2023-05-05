@@ -1,0 +1,42 @@
+import sys
+import anyio
+import datetime
+import os
+
+import dagger
+
+async def main():
+    # define tags
+    tags = ["latest", "1.0-alpine", "1.0", "1.0.0"]
+
+    if "DOCKERHUB_USERNAME" not in os.environ:
+        raise EnvironmentError("DOCKERHUB_USERNAME environment variable must be set")
+
+    if "DOCKERHUB_PASSWORD" not in os.environ:
+        raise EnvironmentError("DOCKERHUB_PASSWORD environment variable must be set")
+
+    username = os.environ.get("DOCKERHUB_USERNAME")
+    password = os.environ.get("DOCKERHUB_PASSWORD")
+
+    # create Dagger client
+    async with dagger.Connection(dagger.Config(log_output=sys.stderr, workdir=".")) as client:
+
+        # set secret as string value
+        secret = client.set_secret("password", password)
+
+        # create and publish image with multiple tags
+        container = (
+          client
+          .container()
+          .from_("alpine")
+        )
+
+        for tag in tags:
+            addr = await (
+              container
+              .with_registry_auth("docker.io", username, secret)
+              .publish(f"{username}/my-alpine:{tag}")
+            )
+            print(f"Published at: {addr}")
+
+anyio.run(main)
