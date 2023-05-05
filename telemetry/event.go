@@ -12,7 +12,6 @@ type Event struct {
 	Version   string    `json:"v"`
 	Timestamp time.Time `json:"ts"`
 
-	OrgID string `json:"org_id"`
 	RunID string `json:"run_id,omitempty"`
 
 	Type    EventType `json:"type"`
