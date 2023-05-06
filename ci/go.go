@@ -2,15 +2,15 @@ package main
 
 import "dagger.io/dagger"
 
-type Go struct {
+type GoTargets struct {
 	SrcDir *dagger.Directory
 }
 
-func (s SDK) Go(ctx dagger.Context) (Go, error) {
-	return Go(s), nil
+func (s SDKTargets) Go(ctx dagger.Context) (GoTargets, error) {
+	return GoTargets(s), nil
 }
 
-func (g Go) Lint(ctx dagger.Context) (string, error) {
+func (g GoTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("sdk").Pipeline("go").Pipeline("lint")
 
@@ -19,7 +19,7 @@ func (g Go) Lint(ctx dagger.Context) (string, error) {
 		WithMountedDirectory("/app", g.SrcDir).
 		WithWorkdir("/app/sdk/go").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-		Stdout(ctx)
+		Stderr(ctx)
 	if err != nil {
 		return "", err
 	}

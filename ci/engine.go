@@ -2,15 +2,7 @@ package main
 
 import "dagger.io/dagger"
 
-type Engine struct {
-	SrcDir *dagger.Directory
-}
-
-func (t Targets) Engine(ctx dagger.Context) (Engine, error) {
-	return Engine(t), nil
-}
-
-func (e Engine) Lint(ctx dagger.Context) (string, error) {
+func (e EngineTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("engine").Pipeline("lint")
 

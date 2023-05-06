@@ -8,22 +8,30 @@ func main() {
 	dagger.Serve(CI)
 }
 
-func CI(ctx dagger.Context, repo, branch string) (Targets, error) {
-	// TODO: add support for "default" target and make this it
-	return Targets{
-		// TODO: passing SrcDir will be replaced with Project API
+func CI(ctx dagger.Context, repo, branch string) (CITargets, error) {
+	return CITargets{
 		SrcDir: ctx.Client().Git(repo).Branch(branch).Tree(),
 	}, nil
 }
 
-type Targets struct {
+type CITargets struct {
 	SrcDir *dagger.Directory
 }
 
-func (t Targets) SDK(ctx dagger.Context) (SDK, error) {
-	return SDK(t), nil
+// Dagger SDK targets
+func (t CITargets) SDK(ctx dagger.Context) (SDKTargets, error) {
+	return SDKTargets(t), nil
 }
 
-type SDK struct {
+type SDKTargets struct {
+	SrcDir *dagger.Directory
+}
+
+// Dagger Engine targets
+func (t CITargets) Engine(ctx dagger.Context) (EngineTargets, error) {
+	return EngineTargets(t), nil
+}
+
+type EngineTargets struct {
 	SrcDir *dagger.Directory
 }

@@ -8,13 +8,14 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Python struct {
+type PythonTargets struct {
+	// configuration for targets
 	RepoSrcDir *dagger.Directory
 	SDKSrcDir  *dagger.Directory
 	Base       *dagger.Container
 }
 
-func (s SDK) Python(ctx dagger.Context) (Python, error) {
+func (s SDKTargets) Python(ctx dagger.Context) (PythonTargets, error) {
 	const (
 		path          = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		venv          = "/opt/venv"
@@ -59,14 +60,15 @@ func (s SDK) Python(ctx dagger.Context) (Python, error) {
 		WithRootfs(base.Rootfs().WithDirectory(mountPath, sdkSrcDir)).
 		WithExec([]string{"poetry", "install", "--without", "docs"})
 
-	return Python{
+	return PythonTargets{
 		SDKSrcDir:  sdkSrcDir,
 		RepoSrcDir: s.SrcDir,
 		Base:       deps,
 	}, nil
 }
 
-func (p Python) Lint(ctx dagger.Context) (string, error) {
+// Lint the Dagger Python SDK
+func (p PythonTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: would be cool to write this in python... need support for mixed
 	// languages in single project (or project nesting type thing)
 

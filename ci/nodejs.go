@@ -7,13 +7,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Nodejs struct {
+type NodejsTargets struct {
 	RepoSrcDir *dagger.Directory
 	SDKSrcDir  *dagger.Directory
 	Base       *dagger.Container
 }
 
-func (s SDK) Nodejs(ctx dagger.Context) (Nodejs, error) {
+func (s SDKTargets) Nodejs(ctx dagger.Context) (NodejsTargets, error) {
 	sdkSrcDir := s.SrcDir.Directory("sdk/nodejs")
 
 	base := ctx.Client().Container().
@@ -35,14 +35,14 @@ func (s SDK) Nodejs(ctx dagger.Context) (Nodejs, error) {
 			WithDirectory("/workdir", sdkSrcDir),
 	)
 
-	return Nodejs{
+	return NodejsTargets{
 		RepoSrcDir: s.SrcDir,
 		SDKSrcDir:  sdkSrcDir,
 		Base:       src,
 	}, nil
 }
 
-func (n Nodejs) Lint(ctx dagger.Context) (string, error) {
+func (n NodejsTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("sdk").Pipeline("nodejs").Pipeline("lint")
 
