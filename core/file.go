@@ -30,19 +30,23 @@ type File struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
+func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
+	return &File{
+		LLB:      def,
+		File:     file,
+		Pipeline: pipeline,
+		Platform: platform,
+		Services: services,
+	}
+}
+
+func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	return &File{
-		LLB:      def.ToPB(),
-		File:     file,
-		Pipeline: pipeline,
-		Platform: platform,
-		Services: services,
-	}, nil
+	return NewFile(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a

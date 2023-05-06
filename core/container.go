@@ -784,11 +784,9 @@ func locatePath[T *File | *Directory](
 	ctx context.Context,
 	container *Container,
 	containerPath string,
-	init func(context.Context, llb.State, string, pipeline.Path, specs.Platform, ServiceBindings) (T, error),
+	init func(context.Context, *pb.Definition, string, pipeline.Path, specs.Platform, ServiceBindings) T,
 ) (T, *ContainerMount, error) {
 	containerPath = absPath(container.Config.WorkingDir, containerPath)
-
-	var found T
 
 	// NB(vito): iterate in reverse order so we'll find deeper mounts first
 	for i := len(container.Mounts) - 1; i >= 0; i-- {
@@ -803,11 +801,6 @@ func locatePath[T *File | *Directory](
 				return nil, nil, fmt.Errorf("%s: cannot retrieve path from cache", containerPath)
 			}
 
-			st, err := mnt.SourceState()
-			if err != nil {
-				return nil, nil, err
-			}
-
 			sub := mnt.SourcePath
 			if containerPath != mnt.Target {
 				// make relative portion relative to the source path
@@ -817,25 +810,26 @@ func locatePath[T *File | *Directory](
 				}
 			}
 
-			found, err := init(ctx, st, sub, container.Pipeline, container.Platform, container.Services)
-			if err != nil {
-				return nil, nil, err
-			}
-			return found, &mnt, nil
+			return init(
+				ctx,
+				mnt.Source,
+				sub,
+				container.Pipeline,
+				container.Platform,
+				container.Services,
+			), &mnt, nil
 		}
 	}
 
 	// Not found in a mount
-	st, err := container.FSState()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	found, err = init(ctx, st, containerPath, container.Pipeline, container.Platform, container.Services)
-	if err != nil {
-		return nil, nil, err
-	}
-	return found, nil, nil
+	return init(
+		ctx,
+		container.FS,
+		containerPath,
+		container.Pipeline,
+		container.Platform,
+		container.Services,
+	), nil, nil
 }
 
 func (container *Container) withMounted(
@@ -1348,12 +1342,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 }
 
 func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
-	metaSt, err := container.MetaState()
-	if err != nil {
-		return "", err
-	}
-
-	if metaSt == nil {
+	if container.Meta == nil {
 		ctr, err := container.WithExec(ctx, gw, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return "", err
@@ -1361,17 +1350,14 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 		return ctr.MetaFileContents(ctx, gw, filePath)
 	}
 
-	file, err := NewFile(
+	file := NewFile(
 		ctx,
-		*metaSt,
+		container.Meta,
 		path.Join(metaSourcePath, filePath),
 		container.Pipeline,
 		container.Platform,
 		container.Services,
 	)
-	if err != nil {
-		return "", err
-	}
 
 	content, err := file.Contents(ctx, gw)
 	if err != nil {

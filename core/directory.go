@@ -31,19 +31,23 @@ type Directory struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func NewDirectory(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
+func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
+	return &Directory{
+		LLB:      def,
+		Dir:      dir,
+		Platform: platform,
+		Pipeline: pipeline.Copy(),
+		Services: services,
+	}
+}
+
+func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	return &Directory{
-		LLB:      def.ToPB(),
-		Dir:      dir,
-		Platform: platform,
-		Pipeline: pipeline.Copy(),
-		Services: services,
-	}, nil
+	return NewDirectory(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -420,7 +424,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
+	return NewDirectorySt(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

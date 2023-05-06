@@ -97,7 +97,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
-	return NewDirectory(ctx, st, "", p, platform, nil)
+	return NewDirectorySt(ctx, st, "", p, platform, nil)
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

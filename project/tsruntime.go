@@ -34,7 +34,7 @@ func (p *State) tsRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 		addSSHKnownHosts,
 	)
 
-	return core.NewDirectory(ctx,
+	return core.NewDirectorySt(ctx,
 		llb.Merge([]llb.State{
 			llb.Image("node:16-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),

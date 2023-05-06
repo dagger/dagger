@@ -53,5 +53,5 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 		svcs[*args.ExperimentalServiceHost] = nil
 	}
 
-	return core.NewFile(ctx, st, filename, pipeline, s.platform, svcs)
+	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, svcs)
 }

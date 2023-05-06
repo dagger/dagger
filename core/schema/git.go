@@ -140,5 +140,5 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
-	return core.NewDirectory(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
+	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

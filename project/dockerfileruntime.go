@@ -41,5 +41,5 @@ func (p *State) dockerfileRuntime(ctx context.Context, subpath string, gw bkgw.C
 		return nil, err
 	}
 
-	return core.NewDirectory(ctx, newSt, "", pipeline.Path{}, platform, nil)
+	return core.NewDirectorySt(ctx, newSt, "", pipeline.Path{}, platform, nil)
 }
