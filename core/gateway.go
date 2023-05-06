@@ -272,6 +272,12 @@ func (g recordingGateway) Solve(ctx context.Context, opts bkgw.SolveRequest) (*b
 	}
 
 	for _, input := range opts.FrontendInputs {
+		if input == nil {
+			// TODO(vito): we currently pass a nil def to Dockerfile inputs, should
+			// probably change that to llb.Scratch
+			continue
+		}
+
 		recordVertexes(rec, input)
 	}
 
