@@ -389,7 +389,7 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 
 		eg.Go(func() error {
 			for ev := range ch {
-				if err := recorder.Record(bk2progrock(recorder, ev)); err != nil {
+				if err := recorder.Record(bk2progrock(ev)); err != nil {
 					return err
 				}
 			}
@@ -591,7 +591,7 @@ func cacheConfigFromEnv() (string, map[string]string, error) {
 	return typeVal, attrs, nil
 }
 
-func bk2progrock(rec *progrock.Recorder, event *bkclient.SolveStatus) *progrock.StatusUpdate {
+func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	var status progrock.StatusUpdate
 	for _, v := range event.Vertexes {
 		vtx := &progrock.Vertex{
