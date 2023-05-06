@@ -75,6 +75,11 @@ func (id FileID) ToFile() (*File, error) {
 	return &file, nil
 }
 
+func (file *File) PipelinePath() pipeline.Path {
+	// TODO(vito): test
+	return file.Pipeline
+}
+
 func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }

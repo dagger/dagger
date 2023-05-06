@@ -288,9 +288,11 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
 	// We create a sub-pipeline to encapsulate both.
+	pipelineName := fmt.Sprintf("from %s", addr)
 	p := container.Pipeline.Add(pipeline.Pipeline{
-		Name: fmt.Sprintf("from %s", addr),
+		Name: pipelineName,
 	})
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
 
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
@@ -335,6 +337,9 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	container.FS = def.ToPB()
 
+	// associate vertexes to the 'from' sub-pipeline
+	recordVertexes(subRecorder, container.FS)
+
 	// merge config.Env with imgSpec.Config.Env
 	imgSpec.Config.Env = append(container.Config.Env, imgSpec.Config.Env...)
 	container.Config = imgSpec.Config
@@ -373,6 +378,12 @@ func (container *Container) Build(
 
 	// set image ref to empty string
 	container.ImageRef = ""
+
+	pipelineName := "docker build"
+	subPipeline := container.Pipeline.Add(pipeline.Pipeline{
+		Name: pipelineName,
+	})
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
 
 	return WithServices(ctx, gw, container.Services, func() (*Container, error) {
 		platform := container.Platform
@@ -430,9 +441,10 @@ func (container *Container) Build(
 			return nil, err
 		}
 
-		overrideProgress(def, container.Pipeline.Add(pipeline.Pipeline{
-			Name: "docker build",
-		}))
+		// associate vertexes to the 'docker build' sub-pipeline
+		recordVertexes(subRecorder, def.ToPB())
+
+		overrideProgress(def, subPipeline)
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1264,6 +1276,7 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 		}
 
 		if pipelineOverride != nil {
+			recordVertexes(progrock.RecorderFromContext(ctx), def.ToPB())
 			overrideProgress(def, *pipelineOverride)
 		}
 
@@ -1293,8 +1306,9 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	// annotate the container as a service so they can be treated differently
 	// in the UI
+	pipelineName := fmt.Sprintf("service %s", container.Hostname)
 	pipeline := container.Pipeline.Add(pipeline.Pipeline{
-		Name: fmt.Sprintf("service %s", container.Hostname),
+		Name: pipelineName,
 		Labels: []pipeline.Label{
 			{
 				Name:  pipeline.ServiceHostnameLabel,
@@ -1302,8 +1316,8 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 			},
 		},
 	})
+	rec := progrock.RecorderFromContext(ctx).WithGroup(pipelineName)
 
-	rec := progrock.RecorderFromContext(ctx)
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
 

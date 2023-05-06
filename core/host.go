@@ -11,6 +11,7 @@ import (
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/vito/progrock"
 )
 
 type Host struct {
@@ -57,9 +58,11 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	}
 
 	// Create a sub-pipeline to group llb.Local instructions
+	pipelineName := fmt.Sprintf("host.directory %s", absPath)
 	directoryPipeline := p.Add(pipeline.Pipeline{
-		Name: fmt.Sprintf("host.directory %s", absPath),
+		Name: pipelineName,
 	})
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
 
 	localID := fmt.Sprintf("host:%s", absPath)
 
@@ -97,7 +100,17 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
-	return NewDirectorySt(ctx, st, "", p, platform, nil)
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	defPB := def.ToPB()
+
+	// associate vertexes to the 'host.directory' sub-pipeline
+	recordVertexes(subRecorder, defPB)
+
+	return NewDirectory(ctx, defPB, "", p, platform, nil), nil
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

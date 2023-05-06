@@ -82,6 +82,11 @@ func (dir *Directory) ID() (DirectoryID, error) {
 	return encodeID[DirectoryID](dir)
 }
 
+func (dir *Directory) PipelinePath() pipeline.Path {
+	// TODO(vito): test
+	return dir.Pipeline
+}
+
 func (dir *Directory) State() (llb.State, error) {
 	if dir.LLB == nil {
 		return llb.Scratch(), nil
