@@ -11,10 +11,12 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
@@ -66,6 +68,10 @@ func (file *File) ID() (FileID, error) {
 	return encodeID[FileID](file)
 }
 
+func (id FileID) String() string {
+	return string(id)
+}
+
 func (id FileID) ToFile() (*File, error) {
 	var file File
 	if err := decodeID(&file, id); err != nil {
@@ -75,9 +81,22 @@ func (id FileID) ToFile() (*File, error) {
 	return &file, nil
 }
 
+var _ router.Pipelineable = (*File)(nil)
+
 func (file *File) PipelinePath() pipeline.Path {
 	// TODO(vito): test
 	return file.Pipeline
+}
+
+var _ router.Digestible = (*File)(nil)
+
+// Digest returns the file's content hash.
+func (file *File) Digest() (digest.Digest, error) {
+	id, err := file.ID()
+	if err != nil {
+		return "", err
+	}
+	return digest.FromString(id.String()), nil
 }
 
 func (file *File) State() (llb.State, error) {

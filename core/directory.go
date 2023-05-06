@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -62,6 +64,10 @@ func (dir *Directory) Clone() *Directory {
 // DirectoryID is an opaque value representing a content-addressed directory.
 type DirectoryID string
 
+func (id DirectoryID) String() string {
+	return string(id)
+}
+
 // ToDirectory converts the ID into a real Directory.
 func (id DirectoryID) ToDirectory() (*Directory, error) {
 	var dir Directory
@@ -82,9 +88,22 @@ func (dir *Directory) ID() (DirectoryID, error) {
 	return encodeID[DirectoryID](dir)
 }
 
+var _ router.Pipelineable = (*Directory)(nil)
+
 func (dir *Directory) PipelinePath() pipeline.Path {
 	// TODO(vito): test
 	return dir.Pipeline
+}
+
+var _ router.Digestible = (*Directory)(nil)
+
+// Digest returns the directory's content hash.
+func (dir *Directory) Digest() (digest.Digest, error) {
+	id, err := dir.ID()
+	if err != nil {
+		return "", err
+	}
+	return digest.FromString(id.String()), nil
 }
 
 func (dir *Directory) State() (llb.State, error) {

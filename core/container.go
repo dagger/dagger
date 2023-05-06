@@ -21,6 +21,7 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/router"
 	"github.com/docker/distribution/reference"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
@@ -128,11 +129,16 @@ func (container *Container) ID() (ContainerID, error) {
 	return encodeID[ContainerID](container)
 }
 
+var _ router.Pipelineable = (*Container)(nil)
+
+// PipelinePath returns the container's pipeline path.
 func (container *Container) PipelinePath() pipeline.Path {
 	return container.Pipeline
 }
 
-// ID marshals the container into a content-addressed ID.
+var _ router.Digestible = (*Container)(nil)
+
+// Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
 	id, err := container.ID()
 	if err != nil {

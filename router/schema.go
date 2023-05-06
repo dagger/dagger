@@ -77,33 +77,25 @@ func (s *staticSchema) Dependencies() []ExecutableSchema {
 type Context struct {
 	context.Context
 	ResolveParams graphql.ResolveParams
-	Vertex        *progrock.VertexRecorder
+
+	// Vertex is a recorder for sending logs to the request's vertex in the
+	// progress stream.
+	Vertex *progrock.VertexRecorder
 }
 
-func queryDigest(params graphql.ResolveParams) (digest.Digest, error) {
-	type subset struct {
-		Source any
-		Field  string
-		Args   map[string]any
-	}
-
-	payload, err := json.Marshal(subset{
-		Source: params.Source,
-		Field:  params.Info.FieldName,
-		Args:   params.Args,
-	})
-	if err != nil {
-		return "", err
-	}
-
-	return digest.SHA256.FromBytes(payload), nil
-}
-
+// Pipelineable is any object which can return a pipeline.Path.
+//
+// It is used to construct a Progrock recorder group that is passed via ctx to
+// the resolver.
 type Pipelineable interface {
 	PipelinePath() pipeline.Path
 }
 
-type Digestible interface { // sorry
+// Digestible is any object which can return a digest of its content.
+//
+// It is used to record the request's result as an output of the request's
+// vertex in the progress stream.
+type Digestible interface {
 	Digest() (digest.Digest, error)
 }
 
@@ -112,22 +104,6 @@ type Digestible interface { // sorry
 func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.FieldResolveFn {
 	return func(p graphql.ResolveParams) (any, error) {
 		recorder := progrock.RecorderFromContext(p.Context)
-
-		name := p.Info.FieldName
-		if len(p.Args) > 0 {
-			name += "("
-			args := []string{}
-			for name, val := range p.Args {
-				jv, err := json.Marshal(val)
-				if err != nil {
-					return nil, fmt.Errorf("failed to marshal arg %s: %w", name, err)
-				}
-
-				args = append(args, fmt.Sprintf("%s: %s", name, jv))
-			}
-			name += strings.Join(args, ", ")
-			name += ")"
-		}
 
 		var args A
 		argBytes, err := json.Marshal(p.Args)
@@ -149,27 +125,15 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 			}
 		}
 
-		var inputs []digest.Digest
-		if edible, ok := p.Source.(Digestible); ok {
-			id, err := edible.Digest()
-			if err != nil {
-				return nil, fmt.Errorf("failed to compute digest: %w", err)
-			}
-
-			inputs = append(inputs, id)
-		}
-
 		if pipelineable, ok := p.Source.(Pipelineable); ok {
 			recorder = pipelineable.PipelinePath().RecorderGroup(recorder)
 			p.Context = progrock.RecorderToContext(p.Context, recorder)
 		}
 
-		dig, err := queryDigest(p)
+		vtx, err := queryVertex(recorder, p)
 		if err != nil {
-			return nil, fmt.Errorf("failed to compute query digest: %w", err)
+			return nil, err
 		}
-
-		vtx := recorder.Vertex(dig, name, progrock.WithInputs(inputs...), progrock.Internal())
 
 		ctx := Context{
 			Context:       p.Context,
@@ -211,4 +175,63 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 	return ToResolver(func(ctx *Context, parent any, args any) (any, error) {
 		return nil, err
 	})
+}
+
+func queryVertex(recorder *progrock.Recorder, params graphql.ResolveParams) (*progrock.VertexRecorder, error) {
+	dig, err := queryDigest(params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute query digest: %w", err)
+	}
+
+	name := params.Info.FieldName
+	if len(params.Args) > 0 {
+		name += "("
+		args := []string{}
+		for name, val := range params.Args {
+			jv, err := json.Marshal(val)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal arg %s: %w", name, err)
+			}
+
+			args = append(args, fmt.Sprintf("%s: %s", name, jv))
+		}
+		name += strings.Join(args, ", ")
+		name += ")"
+	}
+
+	var inputs []digest.Digest
+	if edible, ok := params.Source.(Digestible); ok {
+		id, err := edible.Digest()
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute digest: %w", err)
+		}
+
+		inputs = append(inputs, id)
+	}
+
+	return recorder.Vertex(
+		dig,
+		name,
+		progrock.WithInputs(inputs...),
+		progrock.Internal(),
+	), nil
+}
+
+func queryDigest(params graphql.ResolveParams) (digest.Digest, error) {
+	type subset struct {
+		Source any
+		Field  string
+		Args   map[string]any
+	}
+
+	payload, err := json.Marshal(subset{
+		Source: params.Source,
+		Field:  params.Info.FieldName,
+		Args:   params.Args,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return digest.SHA256.FromBytes(payload), nil
 }
