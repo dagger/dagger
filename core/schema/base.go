@@ -10,12 +10,10 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/vito/progrock"
 )
 
 type InitializeArgs struct {
 	Router        *router.Router
-	Recorder      *progrock.Recorder
 	Workdir       string
 	Gateway       *core.GatewayClient
 	BKClient      *bkclient.Client
@@ -34,7 +32,6 @@ type InitializeArgs struct {
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
 		router:    params.Router,
-		rec:       params.Recorder,
 		gw:        params.Gateway,
 		bkClient:  params.BKClient,
 		solveOpts: params.SolveOpts,
@@ -67,7 +64,6 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 }
 
 type baseSchema struct {
-	rec       *progrock.Recorder
 	router    *router.Router
 	gw        bkgw.Client
 	bkClient  *bkclient.Client

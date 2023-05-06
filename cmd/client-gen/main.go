@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/codegen/generator"
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
@@ -50,7 +49,7 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 		RunnerHost:   internalengine.RunnerHost(),
 		NoExtensions: true,
 	}
-	return engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, r *router.Router) error {
+	return engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		lang, err := getLang(cmd)
 		if err != nil {
 			return err

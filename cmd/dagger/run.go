@@ -118,7 +118,7 @@ func run(ctx context.Context, args []string) error {
 		subCmd.Stdout = os.Stdout
 		subCmd.Stderr = os.Stderr
 
-		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
+		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, api *router.Router) error {
 			go http.Serve(sessionL, api) // nolint:gosec
 			return subCmd.Run()
 		})
@@ -150,7 +150,7 @@ func interactiveTUI(
 	exited := make(chan error, 1)
 
 	var finalModel tui.Model
-	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
+	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		err := subCmd.Start()
@@ -205,7 +205,9 @@ func inlineTUI(
 		ProgrockWriter: tape,
 	}
 
-	return engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, api *router.Router) error {
+	return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+		rec := progrock.RecorderFromContext(ctx)
+
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		cmdVtx := rec.Vertex("cmd", cmdline)

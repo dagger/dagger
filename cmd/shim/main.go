@@ -23,7 +23,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/vito/progrock"
 	"golang.org/x/sys/unix"
 )
 
@@ -531,7 +530,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 			LogOutput:    os.Stderr,
 		}
 		go func() {
-			err := engine.Start(ctx, engineConf, func(ctx context.Context, rec *progrock.Recorder, r *router.Router) error {
+			err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 				return http.Serve(l, r) //nolint:gosec
 			})
 			if err != nil {

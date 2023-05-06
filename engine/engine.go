@@ -60,7 +60,7 @@ type Config struct {
 	UserAgent      string
 }
 
-type StartCallback func(context.Context, *progrock.Recorder, *router.Router) error
+type StartCallback func(context.Context, *router.Router) error
 
 func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if startOpts.RunnerHost == "" {
@@ -98,6 +98,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	}
 
 	recorder := progrock.NewRecorder(startOpts.ProgrockWriter, labels...)
+	ctx = progrock.RecorderToContext(ctx, recorder)
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
 	if err != nil {
@@ -198,7 +199,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			gwClient := core.NewGatewayClient(gw, cacheConfigType, cacheConfigAttrs)
 			coreAPI, err := schema.New(schema.InitializeArgs{
 				Router:         router,
-				Recorder:       recorder,
 				Workdir:        startOpts.Workdir,
 				Gateway:        gwClient,
 				BKClient:       c.BuildkitClient,
@@ -233,7 +233,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 				return nil, nil
 			}
 
-			if err := fn(ctx, recorder, router); err != nil {
+			if err := fn(ctx, router); err != nil {
 				return nil, err
 			}
 
