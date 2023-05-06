@@ -270,6 +270,8 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 }
 
 func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
 	st, err := dir.State()
 	if err != nil {
 		return nil, err
