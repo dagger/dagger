@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -137,6 +138,7 @@ func (m *manager) Export(ctx context.Context) error {
 
 	err := m.KeyStore.Walk(func(id string) error {
 		cacheKey := CacheKey{ID: id}
+
 		err := m.KeyStore.WalkBacklinks(id, func(linkedID string, linkInfo solver.CacheInfoLink) error {
 			link := Link{
 				ID:       id,
@@ -151,11 +153,27 @@ func (m *manager) Export(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		err = m.KeyStore.WalkResults(id, func(cacheResult solver.CacheResult) error {
 			res, err := m.ResultStore.Load(ctx, cacheResult)
 			if err != nil {
-				// the ref may be lazy or pruned, just skip it
+				// The ref may be lazy or pruned, we'll just skip it, but if it's not found we can
+				// also release the result from the key store to save work in the future.
+				// The implementation of Release results in not only the result metadata to be cleared,
+				// but also the key itself if it has no more results, any links associated with the key,
+				// and (recursively) any keys that no longer have any links after removal of the links.
+				// It's safe to do this while walking because all the Walk* methods in KeyStore are just
+				// a no-op when called with an id that's not found, as opposed to returning an error.
 				bklog.G(ctx).Debugf("skipping cache result %s for %s: %v", cacheResult.ID, id, err)
+
+				// TODO: the error we want to match against is `errNotFound` in buildkit's cache
+				// package, but that's not exported. Should modify upstream, in meantime have to
+				// resort to string matching.
+				if strings.HasSuffix(err.Error(), "not found") {
+					if err := m.KeyStore.Release(cacheResult.ID); err != nil {
+						bklog.G(ctx).WithError(err).Errorf("failed to release cache result %s", cacheResult.ID)
+					}
+				}
 				return nil
 			}
 			defer res.Release(context.Background()) // TODO: hold on until later export?
@@ -175,6 +193,7 @@ func (m *manager) Export(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		cacheKeys = append(cacheKeys, cacheKey)
 		return nil
 	})
