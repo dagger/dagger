@@ -8,11 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+type customStringType string
+
 func TestMarshalGQL(t *testing.T) {
 	var (
 		str         = "hello world"
 		strNullPtr  *string
-		strPtrSlice = []*string{&str}
+		strPtrSlice                  = []*string{&str}
+		customStr   customStringType = "test"
 	)
 
 	testCases := []struct {
@@ -59,6 +62,10 @@ func TestMarshalGQL(t *testing.T) {
 		{
 			v:      &strPtrSlice,
 			expect: `["hello world"]`,
+		},
+		{
+			v:      customStr,
+			expect: "test",
 		},
 	}
 
@@ -128,6 +135,9 @@ func TestCustomMarshaller(t *testing.T) {
 }
 
 func TestIsZeroValue(t *testing.T) {
+	// emptyPtr covers the case of nil reflect.Pointer:
+	var emptyPtr *string
+
 	zero := []any{
 		"",
 		0,
@@ -135,8 +145,10 @@ func TestIsZeroValue(t *testing.T) {
 		struct {
 			Foo string
 		}{},
+		emptyPtr,
 	}
 
+	stringPtr := "test"
 	nonZero := []any{
 		"hello",
 		42,
@@ -146,6 +158,7 @@ func TestIsZeroValue(t *testing.T) {
 		}{
 			Foo: "bar",
 		},
+		&stringPtr,
 	}
 
 	for _, i := range zero {
