@@ -371,6 +371,18 @@ func (m *manager) Save(key *solver.CacheKey, s solver.Result, createdAt time.Tim
 	return m.inner.Save(key, s, createdAt)
 }
 
+func (m *manager) ReleaseUnreferenced(ctx context.Context) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// this method isn't in the solver.CacheManager interface (this is how buildkit calls it upstream too)
+	if c, ok := m.localCache.(interface {
+		ReleaseUnreferenced(context.Context) error
+	}); ok {
+		return c.ReleaseUnreferenced(ctx)
+	}
+	return nil
+}
+
 func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (*remotecache.DescriptorProviderPair, error) {
 	if layerMetadata.Annotations == nil {
 		return nil, fmt.Errorf("missing annotations for layer %s", layerMetadata.Blob)
@@ -403,6 +415,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 type Manager interface {
 	solver.CacheManager
 	StartCacheMountSynchronization(context.Context) error
+	ReleaseUnreferenced(context.Context) error
 	Close(context.Context) error
 }
 
@@ -413,6 +426,16 @@ type defaultCacheManager struct {
 var _ Manager = defaultCacheManager{}
 
 func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context) error {
+	return nil
+}
+
+func (c defaultCacheManager) ReleaseUnreferenced(ctx context.Context) error {
+	// this method isn't in the solver.CacheManager interface (this is how buildkit calls it upstream too)
+	if c, ok := c.CacheManager.(interface {
+		ReleaseUnreferenced(context.Context) error
+	}); ok {
+		return c.ReleaseUnreferenced(ctx)
+	}
 	return nil
 }
 
