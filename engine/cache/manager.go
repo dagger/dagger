@@ -229,6 +229,9 @@ func (m *manager) Export(ctx context.Context) error {
 
 	updatedRecords := make([]RecordLayers, 0, len(recordsToExport))
 	pushLayersStart := time.Now()
+	// keep track of what layers we've already pushed as they can show up multiple times
+	// across different cache refs
+	pushedLayers := make(map[string]struct{})
 	for _, record := range recordsToExport {
 		if err := func() error {
 			bklog.G(ctx).Debugf("exporting cache ref %s", record.CacheRefID)
@@ -244,6 +247,9 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			defer cacheRef.Release(context.Background())
+
+			bklog.G(ctx).Debugf("getting remotes for cache ref %s", record.CacheRefID)
+			getRemotesStart := time.Now()
 			remotes, err := cacheRef.GetRemotes(ctx, true, cacheconfig.RefConfig{
 				Compression: compression.Config{
 					Type: compression.Zstd,
@@ -252,6 +258,8 @@ func (m *manager) Export(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			bklog.G(ctx).Debugf("finished getting remotes for cache ref %s in %s", record.CacheRefID, time.Since(getRemotesStart))
+
 			if len(remotes) == 0 {
 				bklog.G(ctx).Errorf("skipping cache ref for export %s: no remotes", record.CacheRefID)
 				return nil
@@ -260,11 +268,19 @@ func (m *manager) Export(ctx context.Context) error {
 				bklog.G(ctx).Debugf("multiple remotes for cache ref %s, using the first one", record.CacheRefID)
 			}
 			remote := remotes[0]
+
+			bklog.G(ctx).Debugf("pushing layers for cache ref %s", record.CacheRefID)
+			pushRefLayersStart := time.Now()
 			for _, layer := range remote.Descriptors {
+				if _, ok := pushedLayers[layer.Digest.String()]; ok {
+					continue
+				}
 				if err := m.pushLayer(ctx, layer, remote.Provider); err != nil {
 					return err
 				}
+				pushedLayers[layer.Digest.String()] = struct{}{}
 			}
+			bklog.G(ctx).Debugf("finished pushing layers for cache ref %s in %s", record.CacheRefID, time.Since(pushRefLayersStart))
 			updatedRecords = append(updatedRecords, RecordLayers{
 				RecordDigest: record.Digest,
 				Layers:       remote.Descriptors,
