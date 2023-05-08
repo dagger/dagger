@@ -8,7 +8,8 @@ defmodule Dagger.Client do
   defstruct [:req, :conn, :opts]
 
   def connect(opts \\ []) do
-    with {:ok, conn} <- EngineConn.get(opts) do
+    with {:ok, opts} <- NimbleOptions.validate(opts, connect_schema()),
+         {:ok, conn} <- EngineConn.get(opts) do
       host = EngineConn.host(conn)
 
       {:ok,
@@ -18,6 +19,33 @@ defmodule Dagger.Client do
          opts: opts
        }}
     end
+  end
+
+  def connect_schema() do
+    [
+      workdir: [
+        type: :string,
+        doc: "Sets the engine workdir."
+      ],
+      config_path: [
+        type: :string,
+        doc: "Sets the engine config path."
+      ],
+      log_output: [
+        type: :atom,
+        doc: "Sets the progress writer."
+      ],
+      connect_timeout: [
+        type: :timeout,
+        doc: "Sets timeout when connect to the engine.",
+        default: :timer.seconds(10)
+      ],
+      query_timeout: [
+        type: :timeout,
+        doc: "Sets timeout when executing a query.",
+        default: :infinity
+      ]
+    ]
   end
 
   def disconnect(%__MODULE__{conn: conn}) do
