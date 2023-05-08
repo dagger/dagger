@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,9 +93,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		cancelImport()
 	}()
 	go func() {
+		importTicker := time.NewTicker(config.ImportPeriod)
+		defer importTicker.Stop()
 		for {
 			select {
-			case <-time.After(config.ImportPeriod):
+			case <-importTicker.C:
 			case <-m.startCloseCh:
 				return
 			}
@@ -110,9 +113,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	go func() {
 		defer close(m.doneCh)
 		var shutdown bool
+		exportTicker := time.NewTicker(config.ExportPeriod)
+		defer exportTicker.Stop()
 		for {
 			select {
-			case <-time.After(config.ExportPeriod):
+			case <-exportTicker.C:
 			case <-m.startCloseCh:
 				shutdown = true
 				// always run a final export before shutdown
@@ -132,11 +137,20 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 }
 
 func (m *manager) Export(ctx context.Context) error {
+	bklog.G(ctx).Debug("starting cache export")
+	cacheExportStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished cache export in %s", time.Since(cacheExportStart))
+	}()
+
 	var cacheKeys []CacheKey
 	var links []Link
 
+	bklog.G(ctx).Debug("starting cache export key store walk")
+	keyStoreWalkStart := time.Now()
 	err := m.KeyStore.Walk(func(id string) error {
 		cacheKey := CacheKey{ID: id}
+
 		err := m.KeyStore.WalkBacklinks(id, func(linkedID string, linkInfo solver.CacheInfoLink) error {
 			link := Link{
 				ID:       id,
@@ -151,11 +165,27 @@ func (m *manager) Export(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		err = m.KeyStore.WalkResults(id, func(cacheResult solver.CacheResult) error {
 			res, err := m.ResultStore.Load(ctx, cacheResult)
 			if err != nil {
-				// the ref may be lazy or pruned, just skip it
+				// The ref may be lazy or pruned, we'll just skip it, but if it's not found we can
+				// also release the result from the key store to save work in the future.
+				// The implementation of Release results in not only the result metadata to be cleared,
+				// but also the key itself if it has no more results, any links associated with the key,
+				// and (recursively) any keys that no longer have any links after removal of the links.
+				// It's safe to do this while walking because all the Walk* methods in KeyStore are just
+				// a no-op when called with an id that's not found, as opposed to returning an error.
 				bklog.G(ctx).Debugf("skipping cache result %s for %s: %v", cacheResult.ID, id, err)
+
+				// TODO: the error we want to match against is `errNotFound` in buildkit's cache
+				// package, but that's not exported. Should modify upstream, in meantime have to
+				// resort to string matching.
+				if strings.HasSuffix(err.Error(), "not found") {
+					if err := m.KeyStore.Release(cacheResult.ID); err != nil {
+						bklog.G(ctx).WithError(err).Errorf("failed to release cache result %s", cacheResult.ID)
+					}
+				}
 				return nil
 			}
 			defer res.Release(context.Background()) // TODO: hold on until later export?
@@ -175,13 +205,17 @@ func (m *manager) Export(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+
 		cacheKeys = append(cacheKeys, cacheKey)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished cache export key store walk in %s", time.Since(keyStoreWalkStart))
 
+	bklog.G(ctx).Debug("calling update cache records")
+	updateCacheRecordsStart := time.Now()
 	updateCacheRecordsResp, err := m.cacheClient.UpdateCacheRecords(ctx, UpdateCacheRecordsRequest{
 		CacheKeys: cacheKeys,
 		Links:     links,
@@ -189,14 +223,27 @@ func (m *manager) Export(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished update cache records call in %s", time.Since(updateCacheRecordsStart))
+
 	recordsToExport := updateCacheRecordsResp.ExportRecords
 	if len(recordsToExport) == 0 {
+		bklog.G(ctx).Debug("no cache records to export")
 		return nil
 	}
 
 	updatedRecords := make([]RecordLayers, 0, len(recordsToExport))
+	pushLayersStart := time.Now()
+	// keep track of what layers we've already pushed as they can show up multiple times
+	// across different cache refs
+	pushedLayers := make(map[string]struct{})
 	for _, record := range recordsToExport {
 		if err := func() error {
+			bklog.G(ctx).Debugf("exporting cache ref %s", record.CacheRefID)
+			exportCacheRefStart := time.Now()
+			defer func() {
+				bklog.G(ctx).Debugf("finished exporting cache ref %s in %s", record.CacheRefID, time.Since(exportCacheRefStart))
+			}()
+
 			cacheRef, err := m.Worker.CacheManager().Get(ctx, record.CacheRefID, nil, cache.NoUpdateLastUsed)
 			if err != nil {
 				// the ref may be lazy or pruned, just skip it
@@ -204,6 +251,9 @@ func (m *manager) Export(ctx context.Context) error {
 				return nil
 			}
 			defer cacheRef.Release(context.Background())
+
+			bklog.G(ctx).Debugf("getting remotes for cache ref %s", record.CacheRefID)
+			getRemotesStart := time.Now()
 			remotes, err := cacheRef.GetRemotes(ctx, true, cacheconfig.RefConfig{
 				Compression: compression.Config{
 					Type: compression.Zstd,
@@ -212,6 +262,8 @@ func (m *manager) Export(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
+			bklog.G(ctx).Debugf("finished getting remotes for cache ref %s in %s", record.CacheRefID, time.Since(getRemotesStart))
+
 			if len(remotes) == 0 {
 				bklog.G(ctx).Errorf("skipping cache ref for export %s: no remotes", record.CacheRefID)
 				return nil
@@ -220,11 +272,19 @@ func (m *manager) Export(ctx context.Context) error {
 				bklog.G(ctx).Debugf("multiple remotes for cache ref %s, using the first one", record.CacheRefID)
 			}
 			remote := remotes[0]
+
+			bklog.G(ctx).Debugf("pushing layers for cache ref %s", record.CacheRefID)
+			pushRefLayersStart := time.Now()
 			for _, layer := range remote.Descriptors {
+				if _, ok := pushedLayers[layer.Digest.String()]; ok {
+					continue
+				}
 				if err := m.pushLayer(ctx, layer, remote.Provider); err != nil {
 					return err
 				}
+				pushedLayers[layer.Digest.String()] = struct{}{}
 			}
+			bklog.G(ctx).Debugf("finished pushing layers for cache ref %s in %s", record.CacheRefID, time.Since(pushRefLayersStart))
 			updatedRecords = append(updatedRecords, RecordLayers{
 				RecordDigest: record.Digest,
 				Layers:       remote.Descriptors,
@@ -234,17 +294,27 @@ func (m *manager) Export(ctx context.Context) error {
 			return err
 		}
 	}
+	bklog.G(ctx).Debugf("finished pushing layers in %s", time.Since(pushLayersStart))
 
+	bklog.G(ctx).Debugf("calling update cache layers")
+	updateCacheLayersStart := time.Now()
 	if err := m.cacheClient.UpdateCacheLayers(ctx, UpdateCacheLayersRequest{
 		UpdatedRecords: updatedRecords,
 	}); err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished update cache layers call in %s", time.Since(updateCacheLayersStart))
 
 	return nil
 }
 
 func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, provider content.Provider) error {
+	bklog.G(ctx).Debugf("pushing layer %s", layerDesc.Digest)
+	pushLayerStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished pushing layer %s in %s", layerDesc.Digest, time.Since(pushLayerStart))
+	}()
+
 	getURLResp, err := m.cacheClient.GetLayerUploadURL(ctx, GetLayerUploadURLRequest{Digest: layerDesc.Digest})
 	if err != nil {
 		return err
@@ -279,11 +349,22 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 }
 
 func (m *manager) Import(ctx context.Context) error {
+	bklog.G(ctx).Debug("importing cache")
+	importCacheStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished importing cache in %s", time.Since(importCacheStart))
+	}()
+
+	bklog.G(ctx).Debug("calling import cache")
+	importCacheCallStart := time.Now()
 	cacheConfig, err := m.cacheClient.ImportCache(ctx)
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished import cache call in %s", time.Since(importCacheCallStart))
 
+	bklog.G(ctx).Debug("creating descriptor provider pairs")
+	createDescProviderPairsStart := time.Now()
 	descProvider := remotecache.DescriptorProvider{}
 	for _, layer := range cacheConfig.Layers {
 		providerPair, err := m.descriptorProviderPair(layer)
@@ -292,11 +373,15 @@ func (m *manager) Import(ctx context.Context) error {
 		}
 		descProvider[layer.Blob] = *providerPair
 	}
+	bklog.G(ctx).Debugf("finished creating descriptor provider pairs in %s", time.Since(createDescProviderPairsStart))
 
+	bklog.G(ctx).Debug("parsing cache config")
+	parseCacheConfigStart := time.Now()
 	chain := remotecache.NewCacheChains()
 	if err := remotecache.ParseConfig(*cacheConfig, descProvider, chain); err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished parsing cache config in %s", time.Since(parseCacheConfigStart))
 
 	keyStore, resultStore, err := remotecache.NewCacheKeyStorage(chain, m.Worker)
 	if err != nil {
@@ -352,6 +437,18 @@ func (m *manager) Save(key *solver.CacheKey, s solver.Result, createdAt time.Tim
 	return m.inner.Save(key, s, createdAt)
 }
 
+func (m *manager) ReleaseUnreferenced(ctx context.Context) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	// this method isn't in the solver.CacheManager interface (this is how buildkit calls it upstream too)
+	if c, ok := m.localCache.(interface {
+		ReleaseUnreferenced(context.Context) error
+	}); ok {
+		return c.ReleaseUnreferenced(ctx)
+	}
+	return nil
+}
+
 func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (*remotecache.DescriptorProviderPair, error) {
 	if layerMetadata.Annotations == nil {
 		return nil, fmt.Errorf("missing annotations for layer %s", layerMetadata.Blob)
@@ -384,6 +481,7 @@ func (m *manager) descriptorProviderPair(layerMetadata remotecache.CacheLayer) (
 type Manager interface {
 	solver.CacheManager
 	StartCacheMountSynchronization(context.Context) error
+	ReleaseUnreferenced(context.Context) error
 	Close(context.Context) error
 }
 
@@ -394,6 +492,16 @@ type defaultCacheManager struct {
 var _ Manager = defaultCacheManager{}
 
 func (defaultCacheManager) StartCacheMountSynchronization(ctx context.Context) error {
+	return nil
+}
+
+func (c defaultCacheManager) ReleaseUnreferenced(ctx context.Context) error {
+	// this method isn't in the solver.CacheManager interface (this is how buildkit calls it upstream too)
+	if c, ok := c.CacheManager.(interface {
+		ReleaseUnreferenced(context.Context) error
+	}); ok {
+		return c.ReleaseUnreferenced(ctx)
+	}
 	return nil
 }
 
