@@ -9,11 +9,41 @@ defmodule Dagger do
 
   defstruct [:client, :query]
 
+  @connect_schema [
+    workdir: [
+      type: :string,
+      doc: "Sets the engine workdir."
+    ],
+    config_path: [
+      type: :string,
+      doc: "Sets the engine config path."
+    ],
+    log_output: [
+      type: :atom,
+      doc: "Sets the progress writer."
+    ],
+    connect_timeout: [
+      type: :timeout,
+      doc: "Sets timeout when connect to the engine.",
+      default: :timer.seconds(10)
+    ],
+    query_timeout: [
+      type: :timeout,
+      doc: "Sets timeout when executing a query.",
+      default: :infinity
+    ]
+  ]
+
   @doc """
   Connecting to Dagger.
+
+  ## Options
+
+  #{NimbleOptions.docs(@connect_schema)}
   """
   def connect(opts \\ []) do
-    with {:ok, client} <- Dagger.Client.connect(opts) do
+    with {:ok, opts} <- NimbleOptions.validate(opts, @connect_schema),
+         {:ok, client} <- Dagger.Client.connect(opts) do
       {:ok,
        %Dagger.Query{
          client: client,

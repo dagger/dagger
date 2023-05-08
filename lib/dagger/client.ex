@@ -8,7 +8,7 @@ defmodule Dagger.Client do
   defstruct [:req, :conn, :opts]
 
   def connect(opts \\ []) do
-    with {:ok, conn} <- EngineConn.get() do
+    with {:ok, conn} <- EngineConn.get(opts) do
       host = EngineConn.host(conn)
 
       {:ok,
@@ -29,7 +29,7 @@ defmodule Dagger.Client do
       url: "/query",
       graphql: query,
       auth: {token(client), ""},
-      receive_timeout: opts[:timeout] || 300_000
+      receive_timeout: opts[:query_timeout] || 300_000
     )
   end
 

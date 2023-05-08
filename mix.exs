@@ -26,6 +26,7 @@ defmodule Dagger.MixProject do
     [
       {:req, "~> 0.3"},
       {:absinthe_client, "~> 0.1"},
+      {:nimble_options, "~> 1.0"},
       {:ex_doc, "~> 0.27", only: :dev, runtime: false}
     ]
   end

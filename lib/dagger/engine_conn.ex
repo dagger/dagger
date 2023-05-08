@@ -4,16 +4,15 @@ defmodule Dagger.EngineConn do
   defstruct [:port, :token, :session_pid]
 
   @doc false
-  # TODO: plan c: construct conn by downloading cli.
-  def get() do
-    case from_session_env() do
+  def get(opts) do
+    case from_session_env(opts) do
       {:ok, conn} -> {:ok, conn}
-      _otherwise -> from_local_cli()
+      _otherwise -> from_local_cli(opts)
     end
   end
 
   @doc false
-  def from_session_env() do
+  def from_session_env(_opts) do
     with {:ok, port} <- System.fetch_env("DAGGER_SESSION_PORT"),
          {:ok, token} <- System.fetch_env("DAGGER_SESSION_TOKEN") do
       {:ok,
@@ -25,16 +24,19 @@ defmodule Dagger.EngineConn do
   end
 
   @doc false
-  def from_local_cli() do
+  def from_local_cli(opts) do
+    connect_timeout = opts[:connect_timeout]
+
     with {:ok, bin} <- System.fetch_env("_EXPERIMENTAL_DAGGER_CLI_BIN"),
          bin when is_binary(bin) <- System.find_executable(bin) do
+      # TODO: setup logger base on `opts`.
       session_pid = spawn_link(Dagger.Session, :start, [bin, self(), &Dagger.StdoutLogger.log/1])
 
       receive do
         {^session_pid, %{"port" => port, "session_token" => token}} ->
           {:ok, %__MODULE__{port: port, token: token, session_pid: session_pid}}
       after
-        300_000 -> {:error, :session_timeout}
+        connect_timeout -> {:error, :session_timeout}
       end
     else
       nil -> {:error, :no_executable}

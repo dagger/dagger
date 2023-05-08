@@ -62,10 +62,14 @@ defmodule Mix.Tasks.Ci.Test do
   end
 
   def with_session(fun, opts \\ []) when is_function(fun, 1) do
-    with {:ok, client} <- Dagger.connect(opts) do
-      result = fun.(client)
-      Dagger.disconnect(client)
-      result
+    case Dagger.connect(opts) do
+      {:ok, client} ->
+        result = fun.(client)
+        Dagger.disconnect(client)
+        result
+
+      {:error, :session_timeout} ->
+        raise "Cannot connect to Dagger engine due to session connect timed out."
     end
   end
 end
