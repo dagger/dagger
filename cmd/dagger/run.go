@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -190,6 +192,16 @@ func inlineTUI(
 		tape.ShowInternal(true)
 	}
 
+	mw := progrock.MultiWriter{tape}
+	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
+		w, err := newProgrockWriter(log)
+		if err != nil {
+			return fmt.Errorf("open progrock log: %w", err)
+		}
+
+		mw = append(mw, w)
+	}
+
 	stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
 	defer stop()
 
@@ -202,7 +214,7 @@ func inlineTUI(
 		RunnerHost:     internalengine.RunnerHost(),
 		DisableHostRW:  disableHostRW,
 		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		ProgrockWriter: tape,
+		ProgrockWriter: mw,
 	}
 
 	return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
@@ -226,4 +238,31 @@ type progOutWriter struct {
 func (w progOutWriter) Write(p []byte) (int, error) {
 	w.prog.Send(tui.CommandOutMsg{Output: p})
 	return len(p), nil
+}
+
+func newProgrockWriter(dest string) (progrock.Writer, error) {
+	f, err := os.Create(dest)
+	if err != nil {
+		return nil, err
+	}
+
+	return progrockFileWriter{
+		enc: json.NewEncoder(f),
+		c:   f,
+	}, nil
+}
+
+type progrockFileWriter struct {
+	enc *json.Encoder
+	c   io.Closer
+}
+
+var _ progrock.Writer = progrockFileWriter{}
+
+func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
+	return p.enc.Encode(update)
+}
+
+func (p progrockFileWriter) Close() error {
+	return p.c.Close()
 }
