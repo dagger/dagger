@@ -133,9 +133,17 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 }
 
 func (m *manager) Export(ctx context.Context) error {
+	bklog.G(ctx).Debug("starting cache export")
+	cacheExportStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished cache export in %s", time.Since(cacheExportStart))
+	}()
+
 	var cacheKeys []CacheKey
 	var links []Link
 
+	bklog.G(ctx).Debug("starting cache export key store walk")
+	keyStoreWalkStart := time.Now()
 	err := m.KeyStore.Walk(func(id string) error {
 		cacheKey := CacheKey{ID: id}
 
@@ -200,7 +208,10 @@ func (m *manager) Export(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished cache export key store walk in %s", time.Since(keyStoreWalkStart))
 
+	bklog.G(ctx).Debug("calling update cache records")
+	updateCacheRecordsStart := time.Now()
 	updateCacheRecordsResp, err := m.cacheClient.UpdateCacheRecords(ctx, UpdateCacheRecordsRequest{
 		CacheKeys: cacheKeys,
 		Links:     links,
@@ -208,14 +219,24 @@ func (m *manager) Export(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished update cache records call in %s", time.Since(updateCacheRecordsStart))
+
 	recordsToExport := updateCacheRecordsResp.ExportRecords
 	if len(recordsToExport) == 0 {
+		bklog.G(ctx).Debug("no cache records to export")
 		return nil
 	}
 
 	updatedRecords := make([]RecordLayers, 0, len(recordsToExport))
+	pushLayersStart := time.Now()
 	for _, record := range recordsToExport {
 		if err := func() error {
+			bklog.G(ctx).Debugf("exporting cache ref %s", record.CacheRefID)
+			exportCacheRefStart := time.Now()
+			defer func() {
+				bklog.G(ctx).Debugf("finished exporting cache ref %s in %s", record.CacheRefID, time.Since(exportCacheRefStart))
+			}()
+
 			cacheRef, err := m.Worker.CacheManager().Get(ctx, record.CacheRefID, nil, cache.NoUpdateLastUsed)
 			if err != nil {
 				// the ref may be lazy or pruned, just skip it
@@ -253,17 +274,27 @@ func (m *manager) Export(ctx context.Context) error {
 			return err
 		}
 	}
+	bklog.G(ctx).Debugf("finished pushing layers in %s", time.Since(pushLayersStart))
 
+	bklog.G(ctx).Debugf("calling update cache layers")
+	updateCacheLayersStart := time.Now()
 	if err := m.cacheClient.UpdateCacheLayers(ctx, UpdateCacheLayersRequest{
 		UpdatedRecords: updatedRecords,
 	}); err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished update cache layers call in %s", time.Since(updateCacheLayersStart))
 
 	return nil
 }
 
 func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, provider content.Provider) error {
+	bklog.G(ctx).Debugf("pushing layer %s", layerDesc.Digest)
+	pushLayerStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished pushing layer %s in %s", layerDesc.Digest, time.Since(pushLayerStart))
+	}()
+
 	getURLResp, err := m.cacheClient.GetLayerUploadURL(ctx, GetLayerUploadURLRequest{Digest: layerDesc.Digest})
 	if err != nil {
 		return err
@@ -298,11 +329,22 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 }
 
 func (m *manager) Import(ctx context.Context) error {
+	bklog.G(ctx).Debug("importing cache")
+	importCacheStart := time.Now()
+	defer func() {
+		bklog.G(ctx).Debugf("finished importing cache in %s", time.Since(importCacheStart))
+	}()
+
+	bklog.G(ctx).Debug("calling import cache")
+	importCacheCallStart := time.Now()
 	cacheConfig, err := m.cacheClient.ImportCache(ctx)
 	if err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished import cache call in %s", time.Since(importCacheCallStart))
 
+	bklog.G(ctx).Debug("creating descriptor provider pairs")
+	createDescProviderPairsStart := time.Now()
 	descProvider := remotecache.DescriptorProvider{}
 	for _, layer := range cacheConfig.Layers {
 		providerPair, err := m.descriptorProviderPair(layer)
@@ -311,11 +353,15 @@ func (m *manager) Import(ctx context.Context) error {
 		}
 		descProvider[layer.Blob] = *providerPair
 	}
+	bklog.G(ctx).Debugf("finished creating descriptor provider pairs in %s", time.Since(createDescProviderPairsStart))
 
+	bklog.G(ctx).Debug("parsing cache config")
+	parseCacheConfigStart := time.Now()
 	chain := remotecache.NewCacheChains()
 	if err := remotecache.ParseConfig(*cacheConfig, descProvider, chain); err != nil {
 		return err
 	}
+	bklog.G(ctx).Debugf("finished parsing cache config in %s", time.Since(parseCacheConfigStart))
 
 	keyStore, resultStore, err := remotecache.NewCacheKeyStorage(chain, m.Worker)
 	if err != nil {
