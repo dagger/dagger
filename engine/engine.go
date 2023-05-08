@@ -88,7 +88,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	// Load default labels asynchronously in the background.
 	go pipeline.LoadRootLabels(startOpts.Workdir, c.EngineName)
 
-	// NB: we can probably just make this synchronous
+	// NB(vito): this RootLabels call effectively makes loading labels
+	// synchronous, but it was already required for running just about any query
+	// (see core/query.go), and it's still helpful to have the separate
+	// LoadRootLabels step until we can get rid of the core/query.go call site.
 	labels := []*progrock.Label{}
 	for _, label := range pipeline.RootLabels() {
 		labels = append(labels, &progrock.Label{

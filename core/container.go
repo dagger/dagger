@@ -449,7 +449,6 @@ func (container *Container) Build(
 
 		// associate vertexes to the 'docker build' sub-pipeline
 		recordVertexes(subRecorder, def.ToPB())
-
 		overrideProgress(def, subPipeline)
 
 		container.FS = def.ToPB()
@@ -1388,7 +1387,6 @@ func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client
 
 func (container *Container) Publish(
 	ctx context.Context,
-	gw bkgw.Client,
 	ref string,
 	platformVariants []ContainerID,
 	bkClient *bkclient.Client,
