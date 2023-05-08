@@ -93,9 +93,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		cancelImport()
 	}()
 	go func() {
+		importTicker := time.NewTicker(config.ImportPeriod)
+		defer importTicker.Stop()
 		for {
 			select {
-			case <-time.After(config.ImportPeriod):
+			case <-importTicker.C:
 			case <-m.startCloseCh:
 				return
 			}
@@ -111,9 +113,11 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	go func() {
 		defer close(m.doneCh)
 		var shutdown bool
+		exportTicker := time.NewTicker(config.ExportPeriod)
+		defer exportTicker.Stop()
 		for {
 			select {
-			case <-time.After(config.ExportPeriod):
+			case <-exportTicker.C:
 			case <-m.startCloseCh:
 				shutdown = true
 				// always run a final export before shutdown
