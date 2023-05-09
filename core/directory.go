@@ -68,6 +68,14 @@ func (id DirectoryID) String() string {
 	return string(id)
 }
 
+// DirectoryID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = DirectoryID("")
+
+func (id DirectoryID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
+}
+
 // ToDirectory converts the ID into a real Directory.
 func (id DirectoryID) ToDirectory() (*Directory, error) {
 	var dir Directory
@@ -95,6 +103,8 @@ func (dir *Directory) PipelinePath() pipeline.Path {
 	return dir.Pipeline
 }
 
+// Directory is digestible so that it can be recorded as an output of the
+// --debug vertex that created it.
 var _ router.Digestible = (*Directory)(nil)
 
 // Digest returns the directory's content hash.
@@ -103,7 +113,7 @@ func (dir *Directory) Digest() (digest.Digest, error) {
 	if err != nil {
 		return "", err
 	}
-	return digest.FromString(id.String()), nil
+	return id.Digest()
 }
 
 func (dir *Directory) State() (llb.State, error) {

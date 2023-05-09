@@ -148,12 +148,12 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 		}
 
 		if edible, ok := any(res).(Digestible); ok {
-			id, err := edible.Digest()
+			dg, err := edible.Digest()
 			if err != nil {
 				return nil, fmt.Errorf("failed to compute digest: %w", err)
 			}
 
-			vtx.Output(id)
+			vtx.Output(dg)
 		}
 
 		vtx.Done(nil)
@@ -183,11 +183,25 @@ func queryVertex(recorder *progrock.Recorder, params graphql.ResolveParams) (*pr
 		return nil, fmt.Errorf("failed to compute query digest: %w", err)
 	}
 
+	var inputs []digest.Digest
+
 	name := params.Info.FieldName
 	if len(params.Args) > 0 {
 		name += "("
 		args := []string{}
 		for name, val := range params.Args {
+			if dg, ok := val.(Digestible); ok {
+				d, err := dg.Digest()
+				if err != nil {
+					return nil, fmt.Errorf("failed to compute digest for param %q: %w", name, err)
+				}
+
+				inputs = append(inputs, d)
+
+				// display digest instead
+				val = d
+			}
+
 			jv, err := json.Marshal(val)
 			if err != nil {
 				return nil, fmt.Errorf("failed to marshal arg %s: %w", name, err)
@@ -199,7 +213,6 @@ func queryVertex(recorder *progrock.Recorder, params graphql.ResolveParams) (*pr
 		name += ")"
 	}
 
-	var inputs []digest.Digest
 	if edible, ok := params.Source.(Digestible); ok {
 		id, err := edible.Digest()
 		if err != nil {

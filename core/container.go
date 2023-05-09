@@ -109,6 +109,14 @@ func (id ContainerID) String() string {
 	return string(id)
 }
 
+// ContainerID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = ContainerID("")
+
+func (id ContainerID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
+}
+
 func (id ContainerID) ToContainer() (*Container, error) {
 	var container Container
 
@@ -136,6 +144,8 @@ func (container *Container) PipelinePath() pipeline.Path {
 	return container.Pipeline
 }
 
+// Container is digestible so that it can be recorded as an output of the
+// --debug vertex that created it.
 var _ router.Digestible = (*Container)(nil)
 
 // Digest returns the container's content hash.
@@ -144,7 +154,7 @@ func (container *Container) Digest() (digest.Digest, error) {
 	if err != nil {
 		return "", err
 	}
-	return digest.FromString(id.String()), nil
+	return id.Digest()
 }
 
 type HostAlias struct {

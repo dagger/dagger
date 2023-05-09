@@ -63,13 +63,16 @@ func (file *File) Clone() *File {
 // FileID is an opaque value representing a content-addressed file.
 type FileID string
 
-// ID marshals the file into a content-addressed ID.
-func (file *File) ID() (FileID, error) {
-	return encodeID[FileID](file)
-}
-
 func (id FileID) String() string {
 	return string(id)
+}
+
+// FileID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = FileID("")
+
+func (id FileID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
 }
 
 func (id FileID) ToFile() (*File, error) {
@@ -81,6 +84,11 @@ func (id FileID) ToFile() (*File, error) {
 	return &file, nil
 }
 
+// ID marshals the file into a content-addressed ID.
+func (file *File) ID() (FileID, error) {
+	return encodeID[FileID](file)
+}
+
 var _ router.Pipelineable = (*File)(nil)
 
 func (file *File) PipelinePath() pipeline.Path {
@@ -88,6 +96,8 @@ func (file *File) PipelinePath() pipeline.Path {
 	return file.Pipeline
 }
 
+// File is digestible so that it can be recorded as an output of the --debug
+// vertex that created it.
 var _ router.Digestible = (*File)(nil)
 
 // Digest returns the file's content hash.
@@ -96,7 +106,7 @@ func (file *File) Digest() (digest.Digest, error) {
 	if err != nil {
 		return "", err
 	}
-	return digest.FromString(id.String()), nil
+	return id.Digest()
 }
 
 func (file *File) State() (llb.State, error) {
