@@ -21,11 +21,11 @@ describe("NodeJS sdk Connect", function () {
 
     await connect(
       async (client) => {
-        assert.equal(client["client"]["url"], "http://127.0.0.1:1234/query")
-        assert.equal(
-          client["client"]["options"]["headers"]["Authorization"],
-          "Basic Zm9vOg=="
+        const authorization = JSON.stringify(
+          client?.["client"]["requestConfig"].headers
         )
+        assert.equal(client["client"]["url"], "http://127.0.0.1:1234/query")
+        assert.equal(authorization, `{"Authorization":"Basic Zm9vOg=="}`)
       },
       { LogOutput: process.stderr }
     )
