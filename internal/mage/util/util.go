@@ -31,6 +31,9 @@ func Repository(c *dagger.Client) *dagger.Directory {
 			"**/.pytest_cache",
 
 			// go
+			// go.work is ignored so that you can use ../foo during local dev and let
+			// this exclude rule reflect what the PR would run with, as a reminder to
+			// actually bump dependencies
 			"go.work",
 			"go.work.sum",
 		},
@@ -53,8 +56,6 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// modules
 			"**/go.mod",
 			"**/go.sum",
-			// "**/go.work",
-			// "**/go.work.sum",
 
 			// embedded files
 			"**/*.go.tmpl",
