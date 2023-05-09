@@ -1,9 +1,18 @@
 package auth
 
 import (
+	"context"
 	"testing"
 
+	"github.com/docker/cli/cli/config/configfile"
+	"github.com/moby/buildkit/session/auth"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	testRegistryUser    = "dagger"
+	testRegistrySecret  = "daggersecret"
+	testRegistryAddress = "dagger.io"
 )
 
 func TestParseAuthAddress(t *testing.T) {
@@ -101,4 +110,23 @@ func TestParseAuthAddress(t *testing.T) {
 			require.Equalf(t, tt.Expected, result, "Invalid sanitization reference for [%q]. Expected [%s] but got [%s]", name, tt.Expected, tt.InputAddress)
 		})
 	}
+}
+
+func TestRegistryAuthProvider(t *testing.T) {
+	ctx := context.Background()
+	cfg := configfile.ConfigFile{}
+	registry := NewRegistryAuthProvider(&cfg)
+
+	t.Run("add and retrieve credentials", func(t *testing.T) {
+		err := registry.AddCredential(testRegistryAddress, testRegistryUser, testRegistrySecret)
+		require.NoError(t, err)
+		credentialsRequest := &auth.CredentialsRequest{
+			Host: testRegistryAddress,
+		}
+		credentialsRes, err := registry.Credentials(ctx, credentialsRequest)
+		require.NoError(t, err)
+		require.NotNil(t, credentialsRes)
+		require.Equal(t, testRegistryUser, credentialsRes.Username)
+		require.Equal(t, testRegistrySecret, credentialsRes.Secret)
+	})
 }
