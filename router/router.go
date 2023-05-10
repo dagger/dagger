@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
@@ -175,4 +176,26 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)
 	mux.ServeHTTP(w, req)
+}
+
+func EngineConn(r *Router) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		resp := httptest.NewRecorder()
+		r.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }

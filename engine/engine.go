@@ -46,10 +46,8 @@ const (
 )
 
 type Config struct {
-	Workdir    string
-	ConfigPath string
-	// If true, do not load project extensions
-	NoExtensions   bool
+	Workdir        string
+	ConfigPath     string
 	LogOutput      io.Writer
 	JournalURI     string
 	JournalWriter  journal.Writer
@@ -223,17 +221,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			}
 			if err := router.Add(coreAPI); err != nil {
 				return nil, err
-			}
-
-			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-				_, err = installExtensions(
-					ctx,
-					router,
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
 			}
 
 			if fn == nil {
@@ -522,41 +509,6 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	}
 	defaultPlatform := platforms.DefaultSpec()
 	return &defaultPlatform, nil
-}
-
-func installExtensions(ctx context.Context, r *router.Router, configPath string) (*schema.Project, error) {
-	res := struct {
-		Core struct {
-			Directory struct {
-				LoadProject schema.Project
-			}
-		}
-	}{}
-
-	_, err := r.Do(ctx,
-		// FIXME:(sipsma) toggling install is extremely weird here, need better way
-		`
-			query LoadProject($configPath: String!) {
-				host {
-					workdir {
-						loadProject(configPath: $configPath) {
-							name
-							install
-						}
-					}
-				}
-			}`,
-		"LoadProject",
-		map[string]any{
-			"configPath": configPath,
-		},
-		&res,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &res.Core.Directory.LoadProject, nil
 }
 
 type AnyDirSource struct{}

@@ -44,10 +44,9 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	engineConf := engine.Config{
-		Workdir:      workdir,
-		ConfigPath:   configPath,
-		RunnerHost:   internalengine.RunnerHost(),
-		NoExtensions: true,
+		Workdir:    workdir,
+		ConfigPath: configPath,
+		RunnerHost: internalengine.RunnerHost(),
 	}
 	return engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		lang, err := getLang(cmd)

@@ -10,6 +10,7 @@ func (s SDKTargets) Go(ctx dagger.Context) (GoTargets, error) {
 	return GoTargets(s), nil
 }
 
+// Lint the Dagger Go SDK
 func (g GoTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("sdk").Pipeline("go").Pipeline("lint")

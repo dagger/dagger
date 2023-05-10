@@ -9,8 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/dagger/dagger/codegen/generator"
-	"github.com/dagger/dagger/codegen/introspection"
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/engine/journal"
@@ -36,9 +35,8 @@ var doCmd = &cobra.Command{
 		}
 		dynamicCmdArgs := flags.Args()
 
-		engineConf := &engine.Config{
+		engineConf := engine.Config{
 			RunnerHost:    internalengine.RunnerHost(),
-			NoExtensions:  true, // we load them ourselves for now
 			JournalWriter: journal.Discard{},
 		}
 		if debugLogs {
@@ -59,41 +57,27 @@ var doCmd = &cobra.Command{
 
 		cmd.Println("Loading+installing project (use --debug to track progress)...")
 		return engine.Start(cmd.Context(), engineConf, func(ctx context.Context, r *router.Router) error {
-			_, err := getProjectSchema(ctx, workdir, configPath, r)
+			opts := []dagger.ClientOpt{
+				dagger.WithConn(router.EngineConn(r)),
+			}
+			if debugLogs {
+				opts = append(opts, dagger.WithLogOutput(os.Stderr))
+			}
+			c, err := dagger.Connect(ctx, opts...)
+			if err != nil {
+				return fmt.Errorf("failed to connect to dagger: %w", err)
+			}
+
+			proj, err := getProject(ctx, workdir, configPath, c)
 			if err != nil {
 				return fmt.Errorf("failed to get project schema: %w", err)
 			}
-			schema, err := generator.Introspect(ctx, r)
+			projCmds, err := proj.Commands(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to introspect schema: %w", err)
+				return fmt.Errorf("failed to get project commands: %w", err)
 			}
-			typesByName := map[string]*introspection.Type{}
-			for _, t := range schema.Types {
-				typesByName[t.Name] = t
-			}
-
-			// TODO: add some metadata to the introspection to make this more maintainable
-			coreQueries := map[string]struct{}{
-				"cacheVolume":     {},
-				"container":       {},
-				"defaultPlatform": {},
-				"directory":       {},
-				"file":            {},
-				"git":             {},
-				"host":            {},
-				"http":            {},
-				"pipeline":        {},
-				"project":         {},
-				"secret":          {},
-				"setSecret":       {},
-				"socket":          {},
-			}
-
-			for _, field := range schema.Query().Fields {
-				if _, ok := coreQueries[field.Name]; ok {
-					continue
-				}
-				if err := addCmd(cmd, field, typesByName, r); err != nil {
+			for _, projCmd := range projCmds {
+				if err := addCmd(ctx, cmd, projCmd, c, r); err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
 			}
@@ -127,10 +111,26 @@ var doCmd = &cobra.Command{
 	},
 }
 
-func addCmd(parentCmd *cobra.Command, field *introspection.Field, typesByName map[string]*introspection.Type, r *router.Router) error {
+func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) error {
+	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
+	// internally be doing this so it's not needed explicitly
+	projCmdID, err := projCmd.ID(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cmd id: %w", err)
+	}
+	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: dagger.ProjectCommandID(projCmdID)})
+
+	name, err := projCmd.Name(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cmd name: %w", err)
+	}
+	description, err := projCmd.Description(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cmd description: %w", err)
+	}
 	subcmd := &cobra.Command{
-		Use:   field.Name,
-		Short: field.Description,
+		Use:   name,
+		Short: description,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var cmds []*cobra.Command
 			curCmd := cmd
@@ -219,170 +219,55 @@ func addCmd(parentCmd *cobra.Command, field *introspection.Field, typesByName ma
 		},
 	}
 	parentCmd.AddCommand(subcmd)
-	for _, arg := range field.Args {
-		argType := arg.TypeRef.Name
-		if ofType := arg.TypeRef.OfType; ofType != nil {
-			argType = ofType.Name
+
+	projFlags, err := projCmd.Flags(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cmd flags: %w", err)
+	}
+	for _, flag := range projFlags {
+		flagName, err := flag.Name(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get flag name: %w", err)
 		}
-		if argType != "String" {
-			return fmt.Errorf("unsupported argument type %q for %q", argType, arg.Name)
+		flagDescription, err := flag.Description(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get flag description: %w", err)
 		}
-		subcmd.Flags().String(arg.Name, "", "")
+		subcmd.Flags().String(flagName, "", flagDescription)
 	}
-
-	fieldType := field.TypeRef.Name
-	if ofType := field.TypeRef.OfType; ofType != nil {
-		fieldType = ofType.Name
+	projSubcommands, err := projCmd.Subcommands(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get cmd subcommands: %w", err)
 	}
-
-	// TODO: add metadata to introspection to make this more maintainable
-	coreTypes := map[string]struct{}{
-		"Project":       {},
-		"Label":         {},
-		"__Schema":      {},
-		"__Type":        {},
-		"Directory":     {},
-		"File":          {},
-		"Secret":        {},
-		"Socket":        {},
-		"CacheVolume":   {},
-		"GitRef":        {},
-		"__EnumValue":   {},
-		"GitRepository": {},
-		"Container":     {},
-		"Host":          {},
-		"HostVariable":  {},
-		"__InputValue":  {},
-		"Query":         {},
-		"Port":          {},
-		"EnvVariable":   {},
-		"__Field":       {},
-		"__Directive":   {},
-	}
-
-	fieldKind := field.TypeRef.Kind
-	if ofType := field.TypeRef.OfType; ofType != nil {
-		fieldKind = ofType.Kind
-	}
-	if fieldKind == introspection.TypeKindObject {
-		if _, ok := coreTypes[fieldType]; !ok {
-			obj, ok := typesByName[fieldType]
-			if !ok {
-				return fmt.Errorf("undefined type %s", fieldType)
-			}
-			for _, objField := range obj.Fields {
-				if err := addCmd(subcmd, objField, typesByName, r); err != nil {
-					return fmt.Errorf("failed to add subcmd: %w", err)
-				}
-			}
+	for _, subProjCmd := range projSubcommands {
+		err := addCmd(ctx, subcmd, subProjCmd, c, r)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// TODO: update to just install, rename
-func getProjectSchema(ctx context.Context, workdir, configPath string, r *router.Router) (string, error) {
+func getProject(ctx context.Context, workdir, configPath string, c *dagger.Client) (*dagger.Project, error) {
 	url, err := url.Parse(workdir)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse config path: %w", err)
+		return nil, fmt.Errorf("failed to parse config path: %w", err)
 	}
 	switch url.Scheme {
 	case "":
-		return getLocalProjectSchema(ctx, workdir, configPath, r)
+		configRelPath, err := filepath.Rel(workdir, configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config relative path: %w", err)
+		}
+		return c.Project().Load(c.Host().Directory(workdir), configRelPath), nil
 	case "git":
-		return getGitProjectSchema(ctx, url, configPath, r)
-	}
-	return "", fmt.Errorf("unsupported scheme %s", url.Scheme)
-}
-
-func getLocalProjectSchema(ctx context.Context, workdir, configPath string, r *router.Router) (string, error) {
-	res := struct {
-		Host struct {
-			Workdir struct {
-				LoadProject struct {
-					Schema string
-				}
-			}
+		// TODO: cleanup, factor project url parsing out into its own thing
+		repo := url.Host + url.Path
+		ref := url.Fragment
+		if ref == "" {
+			ref = "main"
 		}
-	}{}
-
-	configRelPath, err := filepath.Rel(workdir, configPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to get config relative path: %w", err)
+		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
 	}
-
-	_, err = r.Do(ctx,
-		`query LoadProject($configPath: String!) {
-					host {
-						workdir {
-							loadProject(configPath: $configPath) {
-								schema
-								install
-							}
-						}
-					}
-				}`,
-		"LoadProject",
-		map[string]any{
-			"configPath": configRelPath,
-		},
-		&res,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return res.Host.Workdir.LoadProject.Schema, nil
-}
-
-func getGitProjectSchema(ctx context.Context, url *url.URL, configPath string, r *router.Router) (string, error) {
-	// TODO: cleanup, factor project url parsing out into its own thing
-	if url.Scheme != "git" {
-		return "", fmt.Errorf("expected git scheme, got %s", url.Scheme)
-	}
-	repo := url.Host + url.Path
-	ref := url.Fragment
-	if ref == "" {
-		ref = "main"
-	}
-
-	res := struct {
-		Git struct {
-			Branch struct {
-				Tree struct {
-					LoadProject struct {
-						Name   string
-						Schema string
-					}
-				}
-			}
-		}
-	}{}
-	_, err := r.Do(ctx,
-		`query LoadProject($repo: String!, $ref: String!, $configPath: String!) {
-				git(url: $repo) {
-					branch(name: $ref) {
-						tree {
-							loadProject(configPath: $configPath) {
-								name
-								schema
-								install
-							}
-						}
-					}
-				}
-			}`,
-		"LoadProject",
-		map[string]any{
-			"repo":       repo,
-			"ref":        ref,
-			"configPath": configPath,
-		},
-		&res,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	return res.Git.Branch.Tree.LoadProject.Schema, nil
+	return nil, fmt.Errorf("unsupported scheme %s", url.Scheme)
 }
