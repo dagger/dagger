@@ -19,13 +19,12 @@ func TestCacheMapConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			val, initializer, found := c.GetOrInitialize(commonKey)
-			if found {
-				require.True(t, initialized[val])
-			} else {
+			val, err := c.GetOrInitialize(commonKey, func() (int, error) {
 				initialized[i] = true
-				initializer.Put(i)
-			}
+				return i, nil
+			})
+			require.NoError(t, err)
+			require.True(t, initialized[val])
 		}()
 	}
 

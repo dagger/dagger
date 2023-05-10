@@ -389,13 +389,23 @@ func (container *Container) Build(
 	target string,
 	secrets []SecretID,
 ) (*Container, error) {
-	cached, initializer, found := buildCache.GetOrInitialize(cacheKey(container, context, dockerfile, buildArgs, target, secrets))
-	if found {
-		return cached, nil
-	}
+	return buildCache.GetOrInitialize(
+		cacheKey(container, context, dockerfile, buildArgs, target, secrets),
+		func() (*Container, error) {
+			return container.buildUncached(ctx, gw, context, dockerfile, buildArgs, target, secrets)
+		},
+	)
+}
 
-	defer initializer.Release()
-
+func (container *Container) buildUncached(
+	ctx context.Context,
+	gw bkgw.Client,
+	context *Directory,
+	dockerfile string,
+	buildArgs []BuildArg,
+	target string,
+	secrets []SecretID,
+) (*Container, error) {
 	container = container.Clone()
 
 	container.Services.Merge(context.Services)
@@ -493,8 +503,6 @@ func (container *Container) Build(
 
 			container.Config = imgSpec.Config
 		}
-
-		initializer.Put(container)
 
 		return container, nil
 	})
@@ -1512,13 +1520,22 @@ func (container *Container) Import(
 	tag string,
 	store content.Store,
 ) (*Container, error) {
-	cached, initializer, found := importCache.GetOrInitialize(cacheKey(container, source, tag))
-	if found {
-		return cached, nil
-	}
+	return importCache.GetOrInitialize(
+		cacheKey(container, source, tag),
+		func() (*Container, error) {
+			return container.importUncached(ctx, gw, host, source, tag, store)
+		},
+	)
+}
 
-	defer initializer.Release()
-
+func (container *Container) importUncached(
+	ctx context.Context,
+	gw bkgw.Client,
+	host *Host,
+	source FileID,
+	tag string,
+	store content.Store,
+) (*Container, error) {
 	file, err := source.ToFile()
 	if err != nil {
 		return nil, err
@@ -1585,8 +1602,6 @@ func (container *Container) Import(
 	}
 
 	container.Config = imgSpec.Config
-
-	initializer.Put(container)
 
 	return container, nil
 }
