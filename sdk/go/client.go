@@ -58,6 +58,13 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 	})
 }
 
+// WithConn sets the engine connection explicitly
+func WithConn(conn engineconn.EngineConn) ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.Conn = conn
+	})
+}
+
 // Connect to a Dagger Engine
 func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	defer func() {

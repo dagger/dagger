@@ -21,6 +21,7 @@ type Config struct {
 	ConfigPath   string
 	NoExtensions bool
 	LogOutput    io.Writer
+	Conn         EngineConn
 }
 
 type ConnectParams struct {
@@ -29,7 +30,12 @@ type ConnectParams struct {
 }
 
 func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
-	// Prefer DAGGER_SESSION_PORT if set
+	// Prefer explicitly set conn
+	if cfg.Conn != nil {
+		return cfg.Conn, nil
+	}
+
+	// Try DAGGER_SESSION_PORT next
 	conn, ok, err := FromSessionEnv()
 	if err != nil {
 		return nil, err
@@ -76,4 +82,18 @@ type RoundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f RoundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type RoundTripperConn RoundTripperFunc
+
+func (f RoundTripperConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f RoundTripperConn) Host() string {
+	return "roundtripperconn"
+}
+
+func (f RoundTripperConn) Close() error {
+	return nil
 }

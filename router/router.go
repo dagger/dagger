@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net"
 	"net/http"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router/internal/handler"
@@ -178,42 +175,4 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	mux := http.NewServeMux()
 	mux.Handle("/query", h)
 	mux.ServeHTTP(w, req)
-}
-
-func (r *Router) ServeConn(conn net.Conn) error {
-	l := &singleConnListener{
-		conn: conn,
-	}
-
-	s := http.Server{
-		Handler:           r,
-		ReadHeaderTimeout: 30 * time.Second,
-	}
-	return s.Serve(l)
-}
-
-// converts a pre-existing net.Conn into a net.Listener that returns the conn
-type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
-}
-
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	defer l.l.Unlock()
-
-	if l.conn == nil {
-		return nil, io.ErrClosedPipe
-	}
-	c := l.conn
-	l.conn = nil
-	return c, nil
-}
-
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
-	return nil
 }
