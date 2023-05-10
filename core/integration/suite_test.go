@@ -3,6 +3,7 @@ package core
 import (
 	"archive/tar"
 	"context"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
@@ -196,4 +197,10 @@ func checkNotDisabled(t *testing.T, env string) { //nolint:unparam
 	if os.Getenv(env) == "0" {
 		t.Skipf("disabled via %s=0", env)
 	}
+}
+
+func computeMD5FromReader(reader io.Reader) string {
+	h := md5.New()
+	io.Copy(h, reader)
+	return fmt.Sprintf("%x", h.Sum(nil))
 }

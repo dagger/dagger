@@ -1,9 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,4 +194,55 @@ func TestFileWithTimestamps(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, ls, "Access: 1985-10-26 08:15:00.000000000 +0000")
 	require.Contains(t, ls, "Modify: 1985-10-26 08:15:00.000000000 +0000")
+}
+
+func TestFileContents(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	// Set three types of file sizes for test data,
+	// the third one uses a size larger than the max chunk size:
+	testFiles := []struct {
+		size int
+		hash string
+	}{
+		{size: core.MaxFileContentsChunkSize / 2},
+		{size: core.MaxFileContentsChunkSize},
+		{size: core.MaxFileContentsChunkSize * 2},
+		{size: core.MaxFileContentsSize + 1},
+	}
+	tempDir := t.TempDir()
+	for i, testFile := range testFiles {
+		filename := strconv.Itoa(i)
+		dest := filepath.Join(tempDir, filename)
+		var buf bytes.Buffer
+		for i := 0; i < testFile.size; i++ {
+			buf.WriteByte('a')
+		}
+		err := os.WriteFile(dest, buf.Bytes(), 0600)
+		require.NoError(t, err)
+
+		// Compute and store hash for generated test data:
+		testFiles[i].hash = computeMD5FromReader(&buf)
+	}
+
+	hostDir := c.Host().Directory(tempDir)
+	alpine := c.Container().
+		From("alpine:3.16.2").WithDirectory(".", hostDir)
+
+	// Grab file contents and compare hashes to validate integrity:
+	for i, testFile := range testFiles {
+		filename := strconv.Itoa(i)
+		contents, err := alpine.File(filename).Contents(ctx)
+
+		// Assert error on larger files:
+		if testFile.size > core.MaxFileContentsSize {
+			require.Error(t, err)
+			continue
+		}
+
+		require.NoError(t, err)
+		contentsHash := computeMD5FromReader(strings.NewReader(contents))
+		require.Equal(t, testFile.hash, contentsHash)
+	}
 }
