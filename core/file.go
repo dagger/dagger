@@ -18,7 +18,14 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+)
+
+var (
+	// ErrFileContentsExceedsLimit is returned when a file that exceeds
+	// MaxFileContentsSize is passed to Contents method:
+	ErrFileContentsExceedsLimit = errors.New("file exceeds limit")
 )
 
 // File is a content-addressed file.
@@ -127,7 +134,13 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 			return nil, err
 		}
 
+		// Error on files that exceed MaxFileContentsSize:
 		fileSize := int(st.GetSize_())
+		if fileSize > MaxFileContentsSize {
+			return nil, ErrFileContentsExceedsLimit
+		}
+
+		// Allocate buffer with the given file size:
 		contents := make([]byte, fileSize)
 
 		// Use a chunked reader to overcome issues when

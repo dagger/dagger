@@ -29,6 +29,10 @@ const (
 	// order to keep space for any Protocol Buffers overhead:
 	MaxFileContentsChunkSize = 15938355
 
+	// MaxFileContentsSize sets the limit of the maximum file size
+	// that can be retrieved using File.Contents, currently set to 128MB:
+	MaxFileContentsSize = 128 << 20
+
 	// A magic env var that's interpreted by the shim, telling it to just output
 	// the stdout/stderr contents rather than actually execute anything.
 	DebugFailedExecEnv = "_DAGGER_SHIM_DEBUG_FAILED_EXEC"

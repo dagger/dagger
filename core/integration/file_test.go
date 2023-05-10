@@ -209,6 +209,7 @@ func TestFileContents(t *testing.T) {
 		{size: core.MaxFileContentsChunkSize / 2},
 		{size: core.MaxFileContentsChunkSize},
 		{size: core.MaxFileContentsChunkSize * 2},
+		{size: core.MaxFileContentsSize + 1},
 	}
 	tempDir := t.TempDir()
 	for i, testFile := range testFiles {
@@ -233,6 +234,13 @@ func TestFileContents(t *testing.T) {
 	for i, testFile := range testFiles {
 		filename := strconv.Itoa(i)
 		contents, err := alpine.File(filename).Contents(ctx)
+
+		// Assert error on larger files:
+		if testFile.size > core.MaxFileContentsSize {
+			require.Error(t, err)
+			continue
+		}
+
 		require.NoError(t, err)
 		contentsHash := computeMD5FromReader(strings.NewReader(contents))
 		require.Equal(t, testFile.hash, contentsHash)
