@@ -5,13 +5,13 @@ import (
 )
 
 type cacheMap[K comparable, T any] struct {
-	cache map[K]T
+	cache map[K]*cacheInitializer[K, T]
 	l     sync.Mutex
 }
 
 func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
 	return &cacheMap[K, T]{
-		cache: make(map[K]T),
+		cache: make(map[K]*cacheInitializer[K, T]),
 	}
 }
 
@@ -19,59 +19,71 @@ func (cache *cacheMap[K, T]) Get(key K) (T, bool) {
 	cache.l.Lock()
 	defer cache.l.Unlock()
 
-	val, found := cache.cache[key]
-	return val, found
+	init, found := cache.cache[key]
+	if found {
+		init.Wait()
+		return init.val, true
+	}
+
+	var zero T
+	return zero, false
 }
 
 type Initializer[T any] interface {
-	// Put sets the value and releases the lock on the cache.
+	// Put sets the value and wakes up any callers waiting for it.
 	Put(val T)
 
-	// Release will release the lock on the cache.
+	// Release removes the initializer from the cache if it has not been
+	// initialized.
 	Release()
 }
 
-// TODO per-key locks
 func (cache *cacheMap[K, T]) GetOrInitialize(key K) (T, Initializer[T], bool) {
-	cache.l.Lock()
-
-	val, found := cache.cache[key]
-	if found {
-		cache.l.Unlock()
-		return val, nil, true
-	}
-
-	// leave l locked until initializer is released
-	//
-	// TODO: per-key locks
-
-	return val, &cacheInitializer[K, T]{
-		key:   key,
-		cache: cache,
-	}, found
-}
-
-func (cache *cacheMap[K, T]) Put(key K, val T) {
 	cache.l.Lock()
 	defer cache.l.Unlock()
 
-	cache.cache[key] = val
+	init, found := cache.cache[key]
+	if found {
+		init.Wait()
+		return init.val, nil, true
+	}
+
+	init = &cacheInitializer[K, T]{
+		wg:    new(sync.WaitGroup),
+		key:   key,
+		cache: cache,
+	}
+
+	init.wg.Add(1)
+
+	cache.cache[key] = init
+
+	var zero T
+	return zero, init, found
 }
 
 type cacheInitializer[K comparable, T any] struct {
+	wg    *sync.WaitGroup
 	key   K
+	val   T
 	cache *cacheMap[K, T]
 	done  bool
 }
 
+func (init *cacheInitializer[K, T]) Wait() {
+	init.wg.Wait()
+}
+
 func (init *cacheInitializer[K, T]) Put(val T) {
-	init.cache.cache[init.key] = val
+	init.val = val
 	init.done = true
-	init.cache.l.Unlock()
+	init.wg.Done()
 }
 
 func (init *cacheInitializer[K, T]) Release() {
 	if !init.done {
+		init.cache.l.Lock()
+		delete(init.cache.cache, init.key)
 		init.cache.l.Unlock()
 	}
 }
