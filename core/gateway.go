@@ -24,6 +24,11 @@ const (
 	// Exec errors will only include the last this number of bytes of output.
 	MaxExecErrorOutputBytes = 2 * 1024
 
+	// MaxFileContentsChunkSize sets the maximum chunk size for ReadFile calls
+	// Equals around 95% of the max message size (16777216) in
+	// order to keep space for any Protocol Buffers overhead:
+	MaxFileContentsChunkSize = 15938355
+
 	// A magic env var that's interpreted by the shim, telling it to just output
 	// the stdout/stderr contents rather than actually execute anything.
 	DebugFailedExecEnv = "_DAGGER_SHIM_DEBUG_FAILED_EXEC"

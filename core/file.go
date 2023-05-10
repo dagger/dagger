@@ -113,6 +113,7 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
+// Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
 	return WithServices(ctx, gw, file.Services, func() ([]byte, error) {
 		ref, err := gwRef(ctx, gw, file.LLB)
@@ -120,9 +121,35 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 			return nil, err
 		}
 
-		return ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: file.File,
-		})
+		// Stat the file and preallocate file contents buffer:
+		st, err := file.Stat(ctx, gw)
+		if err != nil {
+			return nil, err
+		}
+
+		fileSize := int(st.GetSize_())
+		contents := make([]byte, fileSize)
+
+		// Use a chunked reader to overcome issues when
+		// the input file exceeds MaxFileContentsChunkSize:
+		var offset int
+		for offset < fileSize {
+			chunk, err := ref.ReadFile(ctx, bkgw.ReadRequest{
+				Filename: file.File,
+				Range: &bkgw.FileRange{
+					Offset: offset,
+					Length: MaxFileContentsChunkSize,
+				},
+			})
+			if err != nil {
+				return nil, err
+			}
+
+			// Copy the chunk and increment offset for subsequent reads:
+			copy(contents[offset:], chunk)
+			offset += len(chunk)
+		}
+		return contents, nil
 	})
 }
 

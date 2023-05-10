@@ -1,9 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,4 +194,47 @@ func TestFileWithTimestamps(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, ls, "Access: 1985-10-26 08:15:00.000000000 +0000")
 	require.Contains(t, ls, "Modify: 1985-10-26 08:15:00.000000000 +0000")
+}
+
+func TestFileContents(t *testing.T) {
+	c, ctx := connect(t)
+	defer c.Close()
+
+	src := c.Host().Directory(".")
+	alpine := c.Container().
+		From("alpine:3.16.2").
+		WithDirectory("/src", src).WithWorkdir("/src")
+
+	// Set three types of file sizes for test data,
+	// the third one uses a size larger than the max chunk size:
+	fileSizes := []int{
+		// core.MaxFileContentsChunkSize / 2,
+		// core.MaxFileContentsChunkSize,
+		core.MaxFileContentsChunkSize * 2,
+	}
+
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+
+	// Generate and write data for each file size:
+	for i, size := range fileSizes {
+		filename := strconv.Itoa(i)
+		dest := filepath.Join(wd, filename)
+		var buf bytes.Buffer
+		for i := 0; i < size; i++ {
+			buf.WriteByte('a')
+		}
+		err := os.WriteFile(dest, buf.Bytes(), 0600)
+		require.NoError(t, err)
+		defer os.Remove(dest)
+
+		// Compute hash for generated test data:
+		bufHash := computeMD5FromReader(&buf)
+
+		// Grab file contents and compare hashes to validate integrity:
+		contents, err := alpine.File(filename).Contents(ctx)
+		require.NoError(t, err)
+		contentsHash := computeMD5FromReader(strings.NewReader(contents))
+		require.Equal(t, bufHash, contentsHash)
+	}
 }
