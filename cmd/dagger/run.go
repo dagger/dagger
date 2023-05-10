@@ -54,8 +54,8 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 var waitDelay time.Duration
-var whichTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI")
-var useShinyNewTUI = whichTUI != ""
+var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
+var interactive bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -66,6 +66,14 @@ func init() {
 		"cleanup-timeout",
 		10*time.Second,
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
+	)
+
+	runCmd.Flags().BoolVarP(
+		&interactive,
+		"interactive",
+		"i",
+		false,
+		"use interactive tree-style TUI",
 	)
 }
 
@@ -126,11 +134,10 @@ func run(ctx context.Context, args []string) error {
 		})
 	}
 
-	switch whichTUI {
-	case "inline":
-		return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
-	default:
+	if interactive {
 		return interactiveTUI(ctx, sessionToken, sessionL, subCmd, quit)
+	} else {
+		return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
 	}
 }
 
@@ -149,35 +156,29 @@ func interactiveTUI(
 	subCmd.Stdout = progOutWriter{program}
 	subCmd.Stderr = progOutWriter{program}
 
-	exited := make(chan error, 1)
+	tuiErrs := make(chan error, 1)
 
 	var finalModel tui.Model
+	go func() {
+		m, err := program.Run()
+		finalModel = m.(tui.Model)
+		tuiErrs <- err
+	}()
+
 	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
-		err := subCmd.Start()
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			exitErr := subCmd.Wait()
-			exited <- exitErr
-			program.Send(tui.CommandExitMsg{Err: exitErr})
-		}()
-
-		m, err := program.Run()
-		finalModel = m.(tui.Model)
-		return err
+		cmdErr := subCmd.Run()
+		program.Send(tui.CommandExitMsg{Err: cmdErr})
+		return cmdErr
 	})
 
+	tuiErr := <-tuiErrs
 	if finalModel.IsDone() {
-		// propagate command result
-		return <-exited
+		return err
 	}
 
-	// something else happened; bubble up error, if any
-	return err
+	return errors.Join(tuiErr, err)
 }
 
 func inlineTUI(
@@ -217,7 +218,8 @@ func inlineTUI(
 		ProgrockWriter: mw,
 	}
 
-	return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+	var cmdErr error
+	err := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
 		rec := progrock.RecorderFromContext(ctx)
 
 		go http.Serve(sessionL, api) // nolint:gosec
@@ -225,10 +227,16 @@ func inlineTUI(
 		cmdVtx := rec.Vertex("cmd", cmdline)
 		subCmd.Stdout = cmdVtx.Stdout()
 		subCmd.Stderr = cmdVtx.Stderr()
-		cmdVtx.Done(subCmd.Run())
 
+		cmdErr = subCmd.Run()
+		cmdVtx.Done(cmdErr)
 		return nil
 	})
+	if cmdErr != nil {
+		return cmdErr
+	}
+
+	return err
 }
 
 type progOutWriter struct {
