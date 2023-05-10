@@ -136,9 +136,9 @@ func run(ctx context.Context, args []string) error {
 
 	if interactive {
 		return interactiveTUI(ctx, sessionToken, sessionL, subCmd, quit)
-	} else {
-		return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
 	}
+
+	return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
 }
 
 func interactiveTUI(
