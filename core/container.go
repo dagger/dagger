@@ -1502,7 +1502,7 @@ func (container *Container) Export(
 
 const OCIStoreName = "dagger-oci"
 
-var importCache = newCacheMap[FileID, *Container]()
+var importCache = newCacheMap[uint64, *Container]()
 
 func (container *Container) Import(
 	ctx context.Context,
@@ -1512,7 +1512,7 @@ func (container *Container) Import(
 	tag string,
 	store content.Store,
 ) (*Container, error) {
-	cached, initializer, found := importCache.GetOrInitialize(source)
+	cached, initializer, found := importCache.GetOrInitialize(cacheKey(source, tag))
 	if found {
 		return cached, nil
 	}
