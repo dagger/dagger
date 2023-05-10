@@ -389,7 +389,7 @@ func (container *Container) Build(
 	target string,
 	secrets []SecretID,
 ) (*Container, error) {
-	cached, initializer, found := buildCache.GetOrInitialize(cacheKey(context, dockerfile, buildArgs, target, secrets))
+	cached, initializer, found := buildCache.GetOrInitialize(cacheKey(container, context, dockerfile, buildArgs, target, secrets))
 	if found {
 		return cached, nil
 	}
@@ -1512,7 +1512,7 @@ func (container *Container) Import(
 	tag string,
 	store content.Store,
 ) (*Container, error) {
-	cached, initializer, found := importCache.GetOrInitialize(cacheKey(source, tag))
+	cached, initializer, found := importCache.GetOrInitialize(cacheKey(container, source, tag))
 	if found {
 		return cached, nil
 	}
