@@ -37,5 +37,11 @@ func (m *cacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error)
 	c.val, c.err = fn()
 	c.wg.Done()
 
+	if c.err != nil {
+		m.l.Lock()
+		delete(m.calls, key)
+		m.l.Unlock()
+	}
+
 	return c.val, c.err
 }
