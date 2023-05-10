@@ -3726,7 +3726,7 @@ func TestContainerForceCompression(t *testing.T) {
 	}
 }
 
-func TestContainerBuildConsistency(t *testing.T) {
+func TestContainerBuildMergesWithParents(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -3768,7 +3768,7 @@ RUN node --version
 	require.Equal(t, "BAR", envShouldBeReplaced)
 }
 
-func TestContainerFromConsistency(t *testing.T) {
+func TestContainerFromMergesWithParent(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -3777,7 +3777,9 @@ func TestContainerFromConsistency(t *testing.T) {
 	testCtr := c.Container().
 		WithEnvVariable("FOO", "BAR").
 		WithEnvVariable("PATH", "/replace/me").
-		From("alpine:3.16.2")
+		WithLabel("moby.buildkit.frontend.caps", "replace-me").
+		WithLabel("com.example.test-should-exist", "exist").
+		From("docker/dockerfile:1.5")
 
 	envShouldExist, err := testCtr.EnvVariable(ctx, "FOO")
 	require.NoError(t, err)
@@ -3786,4 +3788,16 @@ func TestContainerFromConsistency(t *testing.T) {
 	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "PATH")
 	require.NoError(t, err)
 	require.Equal(t, "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", envShouldBeReplaced)
+
+	labelShouldExist, err := testCtr.Label(ctx, "com.example.test-should-exist")
+	require.NoError(t, err)
+	require.Equal(t, "exist", labelShouldExist)
+
+	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.buildkit.frontend.network.none")
+	require.NoError(t, err)
+	require.Equal(t, "true", existingLabelFromImageShouldExist)
+
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.buildkit.frontend.caps")
+	require.NoError(t, err)
+	require.Equal(t, "moby.buildkit.frontend.inputs,moby.buildkit.frontend.subrequests,moby.buildkit.frontend.contexts", labelShouldBeReplaced)
 }
