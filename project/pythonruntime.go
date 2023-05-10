@@ -34,7 +34,7 @@ exec dagger-py "$@"
 `,
 		ctrSrcPath)
 	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
-	return core.NewDirectory(ctx,
+	return core.NewDirectorySt(ctx,
 		llb.Merge([]llb.State{
 			llb.Image("python:3.10.6-alpine", llb.WithMetaResolver(gw)).
 				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),

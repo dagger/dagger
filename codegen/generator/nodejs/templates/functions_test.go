@@ -17,7 +17,7 @@ var currentSchema *introspection.Schema
 func init() {
 	ctx := context.Background()
 
-	engineConf := &engine.Config{
+	engineConf := engine.Config{
 		RunnerHost:   internalengine.RunnerHost(),
 		NoExtensions: true,
 	}

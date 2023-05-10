@@ -6,6 +6,7 @@ import (
 
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/vito/progrock"
 )
 
 type Pipeline struct {
@@ -51,6 +52,32 @@ func (g Path) String() string {
 		parts = append(parts, part.Name)
 	}
 	return strings.Join(parts, " / ")
+}
+
+// RecorderGroup converts the path to a Progrock recorder for the group.
+func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
+	if len(g) == 0 {
+		return rec
+	}
+
+	// drop the "root" pipeline; it's already initialized by Progrock
+	g = g[1:]
+
+	for _, p := range g {
+		var labels []*progrock.Label
+		for _, l := range p.Labels {
+			labels = append(labels, &progrock.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		}
+
+		// WithGroup stores an internal hierarchy of groups by name, so this will
+		// always return the same group ID throughout the session.
+		rec = rec.WithGroup(p.Name, labels...)
+	}
+
+	return rec
 }
 
 func (g Path) ProgressGroup() *pb.ProgressGroup {

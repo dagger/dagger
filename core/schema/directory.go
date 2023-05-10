@@ -78,7 +78,7 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 	}
 
 	platform := s.baseSchema.platform
-	return core.NewDirectory(ctx, llb.Scratch(), "", parent.PipelinePath(), platform, nil)
+	return core.NewDirectorySt(ctx, llb.Scratch(), "", parent.PipelinePath(), platform, nil)
 }
 
 func (s *directorySchema) id(ctx *router.Context, parent *core.Directory, args any) (core.DirectoryID, error) {

@@ -43,7 +43,7 @@ func init() {
 func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
-	engineConf := &engine.Config{
+	engineConf := engine.Config{
 		Workdir:      workdir,
 		ConfigPath:   configPath,
 		RunnerHost:   internalengine.RunnerHost(),

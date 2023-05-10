@@ -11,10 +11,12 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	fstypes "github.com/tonistiigi/fsutil/types"
 )
@@ -30,19 +32,23 @@ type File struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func NewFile(ctx context.Context, st llb.State, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
+func NewFile(ctx context.Context, def *pb.Definition, file string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *File {
+	return &File{
+		LLB:      def,
+		File:     file,
+		Pipeline: pipeline,
+		Platform: platform,
+		Services: services,
+	}
+}
+
+func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*File, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	return &File{
-		LLB:      def.ToPB(),
-		File:     file,
-		Pipeline: pipeline,
-		Platform: platform,
-		Services: services,
-	}, nil
+	return NewFile(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -57,9 +63,16 @@ func (file *File) Clone() *File {
 // FileID is an opaque value representing a content-addressed file.
 type FileID string
 
-// ID marshals the file into a content-addressed ID.
-func (file *File) ID() (FileID, error) {
-	return encodeID[FileID](file)
+func (id FileID) String() string {
+	return string(id)
+}
+
+// FileID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = FileID("")
+
+func (id FileID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
 }
 
 func (id FileID) ToFile() (*File, error) {
@@ -69,6 +82,31 @@ func (id FileID) ToFile() (*File, error) {
 	}
 
 	return &file, nil
+}
+
+// ID marshals the file into a content-addressed ID.
+func (file *File) ID() (FileID, error) {
+	return encodeID[FileID](file)
+}
+
+var _ router.Pipelineable = (*File)(nil)
+
+func (file *File) PipelinePath() pipeline.Path {
+	// TODO(vito): test
+	return file.Pipeline
+}
+
+// File is digestible so that it can be recorded as an output of the --debug
+// vertex that created it.
+var _ router.Digestible = (*File)(nil)
+
+// Digest returns the file's content hash.
+func (file *File) Digest() (digest.Digest, error) {
+	id, err := file.ID()
+	if err != nil {
+		return "", err
+	}
+	return id.Digest()
 }
 
 func (file *File) State() (llb.State, error) {

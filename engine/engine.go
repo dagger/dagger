@@ -36,7 +36,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
@@ -47,35 +49,59 @@ type Config struct {
 	Workdir    string
 	ConfigPath string
 	// If true, do not load project extensions
-	NoExtensions  bool
-	LogOutput     io.Writer
-	JournalURI    string
-	JournalWriter journal.Writer
-	DisableHostRW bool
-	RunnerHost    string
-	SessionToken  string
-	UserAgent     string
-
-	// WARNING: this is currently exposed directly but will be removed or
-	// replaced with something incompatible in the future.
-	RawBuildkitStatus chan *bkclient.SolveStatus
+	NoExtensions   bool
+	LogOutput      io.Writer
+	JournalURI     string
+	JournalWriter  journal.Writer
+	ProgrockWriter progrock.Writer
+	DisableHostRW  bool
+	RunnerHost     string
+	SessionToken   string
+	UserAgent      string
 }
 
 type StartCallback func(context.Context, *router.Router) error
 
-func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
-	if startOpts == nil || startOpts.RunnerHost == "" {
+func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
+	if startOpts.RunnerHost == "" {
 		return fmt.Errorf("must specify runner host")
+	}
+
+	if startOpts.ProgrockWriter == nil {
+		startOpts.ProgrockWriter = progrock.Discard{}
 	}
 
 	remote, err := url.Parse(startOpts.RunnerHost)
 	if err != nil {
 		return err
 	}
+
 	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return err
 	}
+
+	if c.EngineName != "" && startOpts.LogOutput != nil {
+		fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
+	}
+
+	// Load default labels asynchronously in the background.
+	go pipeline.LoadRootLabels(startOpts.Workdir, c.EngineName)
+
+	// NB(vito): this RootLabels call effectively makes loading labels
+	// synchronous, but it was already required for running just about any query
+	// (see core/query.go), and it's still helpful to have the separate
+	// LoadRootLabels step until we can get rid of the core/query.go call site.
+	labels := []*progrock.Label{}
+	for _, label := range pipeline.RootLabels() {
+		labels = append(labels, &progrock.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+
+	recorder := progrock.NewRecorder(startOpts.ProgrockWriter, labels...)
+	ctx = progrock.RecorderToContext(ctx, recorder)
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
 	if err != nil {
@@ -86,9 +112,6 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-
-	// Load default labels asynchronously in the background.
-	go pipeline.LoadRootLabels(startOpts.Workdir, c.EngineName)
 
 	_, err = os.Stat(startOpts.ConfigPath)
 	switch {
@@ -103,7 +126,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 		return err
 	}
 
-	router := router.New(startOpts.SessionToken)
+	router := router.New(startOpts.SessionToken, recorder)
 	secretStore := secret.NewStore()
 
 	socketProviders := SocketProvider{
@@ -164,7 +187,7 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		return handleSolveEvents(startOpts, solveCh)
+		return handleSolveEvents(recorder, startOpts, solveCh)
 	})
 
 	eg.Go(func() error {
@@ -242,14 +265,9 @@ func Start(ctx context.Context, startOpts *Config, fn StartCallback) error {
 	return nil
 }
 
-func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus) error {
+func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh chan *bkclient.SolveStatus) error {
 	eg := &errgroup.Group{}
 	readers := []chan *bkclient.SolveStatus{}
-
-	// Dispatch events to raw listener
-	if startOpts.RawBuildkitStatus != nil {
-		readers = append(readers, startOpts.RawBuildkitStatus)
-	}
 
 	// (Optionally) Upload Telemetry
 	telemetryCh := make(chan *bkclient.SolveStatus)
@@ -307,11 +325,7 @@ func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus)
 		switch u.Scheme {
 		case "":
 			eg.Go(func() error {
-				f, err := os.OpenFile(
-					startOpts.JournalURI,
-					os.O_APPEND|os.O_CREATE|os.O_WRONLY,
-					0644,
-				)
+				f, err := os.Create(startOpts.JournalURI)
 				if err != nil {
 					return err
 				}
@@ -369,6 +383,25 @@ func handleSolveEvents(startOpts *Config, upstreamCh chan *bkclient.SolveStatus)
 			}
 
 			return journalW.Close()
+		})
+	}
+
+	if startOpts.ProgrockWriter != nil {
+		ch := make(chan *bkclient.SolveStatus)
+		readers = append(readers, ch)
+
+		eg.Go(func() error {
+			for ev := range ch {
+				if err := recorder.Record(bk2progrock(ev)); err != nil {
+					return err
+				}
+			}
+
+			// mark all groups completed
+			recorder.Complete()
+
+			// close the recorder so the UI exits
+			return recorder.Close()
 		})
 	}
 
@@ -559,4 +592,73 @@ func cacheConfigFromEnv() (string, map[string]string, error) {
 	}
 	delete(attrs, "type")
 	return typeVal, attrs, nil
+}
+
+func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
+	var status progrock.StatusUpdate
+	for _, v := range event.Vertexes {
+		vtx := &progrock.Vertex{
+			Id:     v.Digest.String(),
+			Name:   v.Name,
+			Cached: v.Cached,
+		}
+		if strings.Contains(v.Name, "[hide]") {
+			vtx.Internal = true
+		}
+		for _, input := range v.Inputs {
+			vtx.Inputs = append(vtx.Inputs, input.String())
+		}
+		if v.Started != nil {
+			vtx.Started = timestamppb.New(*v.Started)
+		}
+		if v.Completed != nil {
+			vtx.Completed = timestamppb.New(*v.Completed)
+		}
+		if v.Error != "" {
+			if strings.HasSuffix(v.Error, context.Canceled.Error()) {
+				vtx.Canceled = true
+			} else {
+				msg := v.Error
+				vtx.Error = &msg
+			}
+		}
+
+		// clean up any shimmied CustomNames
+		// TODO(vito): remove this once we stop relying on ProgressGroup/CustomName
+		// JSON embedding for progress
+		var custom pipeline.CustomName
+		if json.Unmarshal([]byte(v.Name), &custom) == nil {
+			vtx.Name = custom.Name
+			vtx.Internal = custom.Internal
+		}
+
+		status.Vertexes = append(status.Vertexes, vtx)
+	}
+
+	for _, s := range event.Statuses {
+		task := &progrock.VertexTask{
+			Vertex:  s.Vertex.String(),
+			Name:    s.ID, // remap
+			Total:   s.Total,
+			Current: s.Current,
+		}
+		if s.Started != nil {
+			task.Started = timestamppb.New(*s.Started)
+		}
+		if s.Completed != nil {
+			task.Completed = timestamppb.New(*s.Completed)
+		}
+		status.Tasks = append(status.Tasks, task)
+	}
+
+	for _, s := range event.Logs {
+		status.Logs = append(status.Logs, &progrock.VertexLog{
+			Vertex:    s.Vertex.String(),
+			Stream:    progrock.LogStream(s.Stream),
+			Data:      s.Data,
+			Timestamp: timestamppb.New(s.Timestamp),
+		})
+	}
+
+	return &status
 }

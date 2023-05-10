@@ -524,7 +524,7 @@ func toggleNesting(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error listening on session socket: %w", err)
 		}
-		engineConf := &engine.Config{
+		engineConf := engine.Config{
 			SessionToken: sessionToken.String(),
 			RunnerHost:   "unix:///.runner.sock",
 			LogOutput:    os.Stderr,

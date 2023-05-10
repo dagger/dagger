@@ -19,7 +19,7 @@ func (p *State) goRuntime(ctx context.Context, subpath string, gw bkgw.Client, p
 	}
 
 	workdir := "/src"
-	return core.NewDirectory(ctx,
+	return core.NewDirectorySt(ctx,
 		goBase(gw).Run(llb.Shlex(
 			fmt.Sprintf(
 				`go build -o /entrypoint -ldflags '-s -d -w' %s`,

@@ -11,10 +11,12 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/router"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -31,19 +33,23 @@ type Directory struct {
 	Services ServiceBindings `json:"services,omitempty"`
 }
 
-func NewDirectory(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
+func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) *Directory {
+	return &Directory{
+		LLB:      def,
+		Dir:      dir,
+		Platform: platform,
+		Pipeline: pipeline.Copy(),
+		Services: services,
+	}
+}
+
+func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {
 		return nil, err
 	}
 
-	return &Directory{
-		LLB:      def.ToPB(),
-		Dir:      dir,
-		Platform: platform,
-		Pipeline: pipeline.Copy(),
-		Services: services,
-	}, nil
+	return NewDirectory(ctx, def.ToPB(), dir, pipeline, platform, services), nil
 }
 
 // Clone returns a deep copy of the container suitable for modifying in a
@@ -57,6 +63,18 @@ func (dir *Directory) Clone() *Directory {
 
 // DirectoryID is an opaque value representing a content-addressed directory.
 type DirectoryID string
+
+func (id DirectoryID) String() string {
+	return string(id)
+}
+
+// DirectoryID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = DirectoryID("")
+
+func (id DirectoryID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
+}
 
 // ToDirectory converts the ID into a real Directory.
 func (id DirectoryID) ToDirectory() (*Directory, error) {
@@ -76,6 +94,26 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 // ID marshals the directory into a content-addressed ID.
 func (dir *Directory) ID() (DirectoryID, error) {
 	return encodeID[DirectoryID](dir)
+}
+
+var _ router.Pipelineable = (*Directory)(nil)
+
+func (dir *Directory) PipelinePath() pipeline.Path {
+	// TODO(vito): test
+	return dir.Pipeline
+}
+
+// Directory is digestible so that it can be recorded as an output of the
+// --debug vertex that created it.
+var _ router.Digestible = (*Directory)(nil)
+
+// Digest returns the directory's content hash.
+func (dir *Directory) Digest() (digest.Digest, error) {
+	id, err := dir.ID()
+	if err != nil {
+		return "", err
+	}
+	return id.Digest()
 }
 
 func (dir *Directory) State() (llb.State, error) {
@@ -261,6 +299,8 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 }
 
 func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
 	st, err := dir.State()
 	if err != nil {
 		return nil, err
@@ -420,7 +460,7 @@ func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Pla
 		states = append(states, state)
 	}
 
-	return NewDirectory(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
+	return NewDirectorySt(ctx, llb.Merge(states, pipeline.LLBOpt()), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

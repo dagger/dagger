@@ -9,12 +9,15 @@ import (
 	"time"
 
 	"github.com/armon/circbuf"
+	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 	fstypes "github.com/tonistiigi/fsutil/types"
+	"github.com/vito/progrock"
 )
 
 const (
@@ -26,8 +29,12 @@ const (
 	DebugFailedExecEnv = "_DAGGER_SHIM_DEBUG_FAILED_EXEC"
 )
 
-// GatewayClient wraps the standard buildkit gateway client with errors that include the output
-// of execs when they fail.
+// GatewayClient wraps the standard buildkit gateway client with a few extensions:
+//
+// * Errors include the output of execs when they fail.
+// * Vertexes are joined to the Progrock group using the recorder from ctx.
+// * Cache imports can be configured across all Solves.
+// * All Solved results can be retrieved for cache exports.
 type GatewayClient struct {
 	bkgw.Client
 	refs             map[*ref]struct{}
@@ -38,7 +45,10 @@ type GatewayClient struct {
 
 func NewGatewayClient(baseClient bkgw.Client, cacheConfigType string, cacheConfigAttrs map[string]string) *GatewayClient {
 	return &GatewayClient{
-		Client:           baseClient,
+		// Wrap the client with recordingGateway just so we can separate concerns a
+		// tiny bit.
+		Client: recordingGateway{baseClient},
+
 		cacheConfigType:  cacheConfigType,
 		cacheConfigAttrs: cacheConfigAttrs,
 		refs:             make(map[*ref]struct{}),
@@ -226,4 +236,72 @@ type nopCloser struct {
 
 func (n *nopCloser) Close() error {
 	return nil
+}
+
+type recordingGateway struct {
+	bkgw.Client
+}
+
+// ResolveImageConfig records the image config resolution vertex as a member of
+// the current progress group, and calls the inner ResolveImageConfig.
+func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
+	rec := progrock.RecorderFromContext(ctx)
+
+	// HACK(vito): this is how Buildkit determines the vertex digest. Keep this
+	// in sync with Buildkit until a better way to do this arrives. It hasn't
+	// changed in 5 years, surely it won't soon, right?
+	id := ref
+	if platform := opt.Platform; platform == nil {
+		id += platforms.Format(platforms.DefaultSpec())
+	} else {
+		id += platforms.Format(*platform)
+	}
+
+	rec.Join(digest.FromString(id))
+
+	return g.Client.ResolveImageConfig(ctx, ref, opt)
+}
+
+// Solve records the vertexes of the definition and frontend inputs as members
+// of the current progress group, and calls the inner Solve.
+func (g recordingGateway) Solve(ctx context.Context, opts bkgw.SolveRequest) (*bkgw.Result, error) {
+	rec := progrock.RecorderFromContext(ctx)
+
+	if opts.Definition != nil {
+		recordVertexes(rec, opts.Definition)
+	}
+
+	for _, input := range opts.FrontendInputs {
+		if input == nil {
+			// TODO(vito): we currently pass a nil def to Dockerfile inputs, should
+			// probably change that to llb.Scratch
+			continue
+		}
+
+		recordVertexes(rec, input)
+	}
+
+	return g.Client.Solve(ctx, opts)
+}
+
+func recordVertexes(recorder *progrock.Recorder, def *pb.Definition) {
+	dgsts := []digest.Digest{}
+	for dgst, meta := range def.Metadata {
+		_ = meta
+		if meta.ProgressGroup != nil {
+			if meta.ProgressGroup.Id != "" && meta.ProgressGroup.Id[0] == '[' {
+				// Dagger progress group with pipeline.Path embedded
+				// TODO(vito): remove this when we fully switch off of ProgressGroup
+				dgsts = append(dgsts, dgst)
+			} else {
+				// Regular progress group, i.e. from Dockerfile; record it as a
+				// subgroup.
+				recorder.WithGroup(meta.ProgressGroup.Name).Join(dgst)
+			}
+		} else {
+			dgsts = append(dgsts, dgst)
+		}
+	}
+
+	recorder.Join(dgsts...)
 }

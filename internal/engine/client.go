@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -78,9 +77,6 @@ func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client,
 	c, err := bkclient.New(ctx, buildkitdHost, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("buildkit client: %w", err)
-	}
-	if engineName != "" {
-		fmt.Fprintf(os.Stderr, "Connected to engine %s\n", engineName)
 	}
 
 	return &Client{
