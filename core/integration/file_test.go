@@ -200,41 +200,41 @@ func TestFileContents(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	src := c.Host().Directory(".")
-	alpine := c.Container().
-		From("alpine:3.16.2").
-		WithDirectory("/src", src).WithWorkdir("/src")
-
 	// Set three types of file sizes for test data,
 	// the third one uses a size larger than the max chunk size:
-	fileSizes := []int{
-		// core.MaxFileContentsChunkSize / 2,
-		// core.MaxFileContentsChunkSize,
-		core.MaxFileContentsChunkSize * 2,
+	testFiles := []struct {
+		size int
+		hash string
+	}{
+		{size: core.MaxFileContentsChunkSize / 2},
+		{size: core.MaxFileContentsChunkSize},
+		{size: core.MaxFileContentsChunkSize * 2},
 	}
-
-	wd, err := os.Getwd()
-	require.NoError(t, err)
-
-	// Generate and write data for each file size:
-	for i, size := range fileSizes {
+	tempDir := t.TempDir()
+	for i, testFile := range testFiles {
 		filename := strconv.Itoa(i)
-		dest := filepath.Join(wd, filename)
+		dest := filepath.Join(tempDir, filename)
 		var buf bytes.Buffer
-		for i := 0; i < size; i++ {
+		for i := 0; i < testFile.size; i++ {
 			buf.WriteByte('a')
 		}
 		err := os.WriteFile(dest, buf.Bytes(), 0600)
 		require.NoError(t, err)
-		defer os.Remove(dest)
 
-		// Compute hash for generated test data:
-		bufHash := computeMD5FromReader(&buf)
+		// Compute and store hash for generated test data:
+		testFiles[i].hash = computeMD5FromReader(&buf)
+	}
 
-		// Grab file contents and compare hashes to validate integrity:
+	hostDir := c.Host().Directory(tempDir)
+	alpine := c.Container().
+		From("alpine:3.16.2").WithDirectory(".", hostDir)
+
+	// Grab file contents and compare hashes to validate integrity:
+	for i, testFile := range testFiles {
+		filename := strconv.Itoa(i)
 		contents, err := alpine.File(filename).Contents(ctx)
 		require.NoError(t, err)
 		contentsHash := computeMD5FromReader(strings.NewReader(contents))
-		require.Equal(t, bufHash, contentsHash)
+		require.Equal(t, testFile.hash, contentsHash)
 	}
 }
