@@ -1,14 +1,10 @@
 The best way to find a good contribution is to use Dagger for something. Then write down what problems you encounter.
-Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing package.
+Could be as simple as a question you had, that the docs didn't answer. Or a bug in the tool, or a missing feature.
 Then pick an item that you're comfortable with in terms of difficulty, and give it a try. 🙂
 
 You can ask questions along the way, we're always happy to help you with your contribution. The bigger the contribution,
 the earlier you should talk to maintainers to make sure you're taking the right approach and are not wasting your effort
 on something that will not get merged.
-
-## Package Style Guide
-
-If you're contributing to the project, be sure to follow the code style guides in our documentation.
 
 ## GitHub Workflow
 
@@ -152,14 +148,28 @@ more](https://docusaurus.io/docs/markdown-features/links).
 
 ### How to run linters locally?
 
+To run all linters:
+
 ```shell
-# From the repository root, run all linters:
-dagger do lint
-
-# Only run a specific linter:
-dagger do lint markdown
-
+./hack/make lint
 ```
+
+To list available linters:
+
+```shell
+> ./hack/make -l | grep lint
+docs:lint              lints documentation files
+engine:lint            lints the engine
+lint                   runs all linters
+sdk:all:lint           runs all SDK linters
+sdk:go:lint            lints the Go SDK
+sdk:nodejs:lint        lints the Node.js SDK
+sdk:python:lint        lints the Python SDK
+```
+
+:::tip
+The `docs:lint` is misleading as it only lints the Markdown and Node.js snippets in documentation. Go snippets in documentation are linted in `engine:lint` and Python snippets are linted in `sdk:python:lint`.
+:::
 
 ### How to re-run all GitHub Actions jobs?
 
@@ -175,33 +185,3 @@ git commit --amend -s
 # Force push the new commit to re-run all GitHub Actions jobs:
 git push -f mybranch
 ```
-
-### Can I use a remote development environment?
-
-Yes! The Dagger repository has Github Codespaces configuration included to help you get started contributing directly from GitHub.
-
-The versions of `dagger` you are working against will be pre-installed so you can develop your packages, plans and tests with the right tools.
-
-Support for other platforms, such as Gitpod, may be added if there is demand. Visit the [developer experience](https://github.com/dagger/dagger/discussions/2052) discussion on GitHub to show your interest.
-
-### How can I add a new secret for integration tests?
-
-1/4. Ensure that you have [SOPS](https://github.com/mozilla/sops) installed.
-
-2/4. Run the following from the top-level of your local repository fork:
-
-```shell
-cd tests
-export SOPS_AGE_KEY_FILE="$PWD/age_key.txt"
-sops secrets_sops.yaml
-# Add a new secret with the correct value
-# Use one of the existing ones as an example
-```
-
-3/4. Save the `tests/secrets_sops.yaml` file.
-
-4/4. Commit and push the changes.
-
-:::warning
-Please note that anyone will be able to read all secrets stored in `tests/secrets_sops.yaml` by following the steps above.
-:::
