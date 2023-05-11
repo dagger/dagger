@@ -34,8 +34,8 @@ module.exports = {
     {
       type: "category",
       label: "Go SDK",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "doc",
@@ -58,8 +58,8 @@ module.exports = {
     {
       type: "category",
       label: "Node.js SDK",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "doc",
@@ -82,8 +82,8 @@ module.exports = {
     {
       type: "category",
       label: "Python SDK",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "doc",
@@ -106,8 +106,8 @@ module.exports = {
     {
       type: "category",
       label: "GraphQL API",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "doc",
@@ -127,8 +127,8 @@ module.exports = {
     {
       type: "category",
       label: "CLI",
-      collapsible: false,
-      collapsed: false,
+      collapsible: true,
+      collapsed: true,
       items: [
         {
           type: "doc",
