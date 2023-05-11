@@ -35,6 +35,9 @@ func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
 		return nil, err
 	}
 	if ok {
+		if cfg.Workdir != "" {
+			return nil, fmt.Errorf("cannot configure workdir for existing session (please use --workdir or host.directory with absolute paths instead)")
+		}
 		return conn, nil
 	}
 
