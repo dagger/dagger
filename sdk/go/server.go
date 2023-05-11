@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	goast "go/ast"
@@ -30,6 +29,7 @@ func (c *Context) Client() *Client {
 	return c.client
 }
 
+//nolint:gocyclo
 func Serve(entrypoints ...any) {
 	ctx := context.Background()
 
@@ -69,9 +69,7 @@ func Serve(entrypoints ...any) {
 		if err != nil {
 			writeErrorf(err)
 		}
-		if err := types.fillParamNames(parsed, fileSet); err != nil {
-			writeErrorf(err)
-		}
+		types.fillParamNames(parsed, fileSet)
 	}
 
 	// if the schema is being requested, just return that
@@ -114,21 +112,22 @@ func Serve(entrypoints ...any) {
 
 	var fn *goFunc
 	strukt, ok := types.Structs[objName]
-	if ok {
+	switch {
+	case ok:
 		for _, m := range strukt.methods {
 			if lowerCamelCase(m.name) == fieldName {
 				fn = m
 				break
 			}
 		}
-	} else if objName == "Query" {
+	case objName == "Query":
 		for _, f := range types.Funcs {
 			if lowerCamelCase(f.name) == fieldName {
 				fn = f
 				break
 			}
 		}
-	} else {
+	default:
 		writeErrorf(fmt.Errorf("unknown struct: %s", objName))
 	}
 
@@ -312,8 +311,8 @@ type goParam struct {
 	typ  reflect.Type
 }
 
-func (f *goFunc) srcPathAndLine() (string, int) {
-	pc := f.val.Pointer()
+func (fn *goFunc) srcPathAndLine() (string, int) {
+	pc := fn.val.Pointer()
 	fun := runtime.FuncForPC(pc)
 	return fun.FileLine(pc)
 }
@@ -329,7 +328,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 	var callArgs []reflect.Value
 	if fn.receiver != nil {
 		name = fmt.Sprintf("%s.%s", fn.receiver.typ.Name(), fn.name)
-		parent, err := convertInput(ctx, rawParent, fn.receiver.typ, client)
+		parent, err := convertInput(rawParent, fn.receiver.typ, client)
 		if err != nil {
 			return nil, fmt.Errorf("unable to convert parent: %w", err)
 		}
@@ -349,15 +348,16 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 			argIsOptional = true
 		}
 
-		if argValuePresent {
-			argVal, err := convertInput(ctx, rawArg, arg.typ, client)
+		switch {
+		case argValuePresent:
+			argVal, err := convertInput(rawArg, arg.typ, client)
 			if err != nil {
 				return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 			}
 			callArgs = append(callArgs, reflect.ValueOf(argVal))
-		} else if !argIsOptional {
+		case !argIsOptional:
 			return nil, fmt.Errorf("missing required argument %s", arg.name)
-		} else {
+		default:
 			callArgs = append(callArgs, reflect.New(arg.typ).Elem())
 		}
 	}
@@ -534,7 +534,7 @@ func (ts *goTypes) walkArgsAndReturns(fn *goFunc, state walkState) error {
 }
 
 // TODO: update name of method, does much more now
-func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) (rerr error) {
+func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
 	goast.Inspect(parsed, func(n goast.Node) bool {
 		if n == nil {
 			return false
@@ -542,9 +542,9 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) (r
 		switch f := n.(type) {
 		case *goast.FuncDecl:
 			if f.Recv == nil {
-				rerr = errors.Join(rerr, ts.fillFuncParamNames(f, fileSet))
+				ts.fillFuncParamNames(f, fileSet)
 			} else {
-				rerr = errors.Join(rerr, ts.fillMethodParamNames(f))
+				ts.fillMethodParamNames(f)
 			}
 		case *goast.GenDecl:
 			// check if it's a struct we know about, if so, fill in the doc string
@@ -564,23 +564,21 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) (r
 			}
 		default:
 		}
-		// continue walking if no error
-		return rerr == nil
+		return true
 	})
-	return rerr
 }
 
-func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) error {
+func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) {
 	if len(decl.Recv.List) != 1 {
-		return nil
+		return
 	}
 	recvIdent, ok := decl.Recv.List[0].Type.(*goast.Ident)
 	if !ok {
-		return nil
+		return
 	}
 	recv, ok := ts.Structs[recvIdent.Name]
 	if !ok {
-		return nil
+		return
 	}
 	var fn *goFunc
 	for _, m := range recv.methods {
@@ -592,7 +590,7 @@ func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) error {
 	if fn == nil {
 		// not found
 		// TODO: have caller verify every func was found eventually
-		return nil
+		return
 	}
 	fn.doc = decl.Doc.Text()
 
@@ -605,11 +603,9 @@ func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) error {
 			argIndex++
 		}
 	}
-
-	return nil
 }
 
-func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileSet) error {
+func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileSet) {
 	// TODO: this probably doesn't work when funcs have duplicated names across packages
 
 	// TODO: rename this to indicate it also fills in the real func name and docs in addition to param names
@@ -639,7 +635,7 @@ func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileS
 	if fn == nil {
 		// not found
 		// TODO: have caller verify every func was found eventually
-		return nil
+		return
 	}
 
 	astParamList := decl.Type.Params.List[1:] // skip the dagger.Context param
@@ -651,7 +647,6 @@ func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileS
 			argIndex++
 		}
 	}
-	return nil
 }
 
 func writeErrorf(err error) {
@@ -789,7 +784,7 @@ func convertResult(ctx context.Context, result any) (any, error) {
 }
 
 // TODO: doc, basically inverse of convertResult
-func convertInput(ctx context.Context, input any, desiredType reflect.Type, client *Client) (any, error) {
+func convertInput(input any, desiredType reflect.Type, client *Client) (any, error) {
 	// check if desiredType implements querybuilder.GraphQLMarshaller, in which case it's a core type e.g. Container
 	marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 	if desiredType.Implements(marshaller) {
@@ -850,7 +845,7 @@ func convertInput(ctx context.Context, input any, desiredType reflect.Type, clie
 	inputObj := reflect.ValueOf(newInput).Elem()
 	switch desiredType.Kind() {
 	case reflect.Pointer:
-		x, err := convertInput(ctx, inputObj.Interface(), desiredType.Elem(), client)
+		x, err := convertInput(inputObj.Interface(), desiredType.Elem(), client)
 		if err != nil {
 			return nil, err
 		}
@@ -858,7 +853,7 @@ func convertInput(ctx context.Context, input any, desiredType reflect.Type, clie
 	case reflect.Slice:
 		for i := 0; i < inputObj.Len(); i++ {
 			value := inputObj.Index(i).Interface()
-			convertedValue, err := convertInput(ctx, value, desiredType.Elem(), client)
+			convertedValue, err := convertInput(value, desiredType.Elem(), client)
 			if err != nil {
 				return nil, err
 			}
@@ -873,7 +868,7 @@ func convertInput(ctx context.Context, input any, desiredType reflect.Type, clie
 			}
 			value := inputMap[lowerCamelCase(desiredType.Field(i).Name)]
 			desiredValueType := desiredType.Field(i).Type
-			convertedField, err := convertInput(ctx, value, desiredValueType, client)
+			convertedField, err := convertInput(value, desiredValueType, client)
 			if err != nil {
 				return nil, err
 			}
@@ -883,7 +878,7 @@ func convertInput(ctx context.Context, input any, desiredType reflect.Type, clie
 	case reflect.Map:
 		for _, key := range inputObj.MapKeys() {
 			value := inputObj.MapIndex(key).Interface()
-			convertedValue, err := convertInput(ctx, value, desiredType.Elem(), client)
+			convertedValue, err := convertInput(value, desiredType.Elem(), client)
 			if err != nil {
 				return nil, err
 			}

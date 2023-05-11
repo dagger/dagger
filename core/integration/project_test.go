@@ -66,7 +66,3 @@ func TestCodeToSchema(t *testing.T) {
 	require.Equal(t, `foo`, res.Test.RequiredTypes)
 	require.Equal(t, "parent-child", res.Test.ParentResolver.SubField)
 }
-
-func ptrTo[T any](v T) *T {
-	return &v
-}

@@ -144,7 +144,7 @@ func (p *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 
-	var commands []ProjectCommand
+	commands := make([]ProjectCommand, 0, len(schema.Query.Fields))
 	for _, field := range schema.Query.Fields {
 		if field.Name == "__schema" || field.Name == "__type" {
 			continue

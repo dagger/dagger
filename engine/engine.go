@@ -41,10 +41,6 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	daggerJSONName = "dagger.json"
-)
-
 type Config struct {
 	Workdir        string
 	LogOutput      io.Writer
