@@ -15,7 +15,7 @@ import httpx
 from beartype import beartype
 from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
-from beartype.vale import IsInstance
+from beartype.vale import Is, IsInstance
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
@@ -227,6 +227,21 @@ class Input(Object):
     """Input object type."""
 
 
+InputType = Annotated[Input, Is[lambda o: attrs.has(o)]]
+InputTypeSeq = Annotated[Sequence[InputType], ~IsInstance[str]]
+
+InputHint = TypeHint(InputType)
+InputSeqHint = TypeHint(InputTypeSeq)
+
+
+def as_input_arg(val):
+    if InputHint.is_bearable(val):
+        return attrs.asdict(val)
+    if InputSeqHint.is_bearable(val):
+        return [attrs.asdict(v) for v in val]
+    return val
+
+
 @attrs.define
 class Type(Object):
     """Object type."""
@@ -234,7 +249,11 @@ class Type(Object):
     _ctx: Context
 
     def _select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
-        _args = {arg.name: arg.value for arg in args if arg.value is not arg.default}
+        _args = {
+            arg.name: as_input_arg(arg.value)
+            for arg in args
+            if arg.value is not arg.default
+        }
         return self._ctx.select(self.graphql_name, field_name, _args)
 
     def with_(self, cb: Callable[[Self], Self]) -> Self:
