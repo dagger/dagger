@@ -356,11 +356,10 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	// associate vertexes to the 'from' sub-pipeline
 	recordVertexes(subRecorder, container.FS)
 
-	// Merge environment and labels from previous container to the new one.
-	// Ff the environment variable or label also exists in the new configuration,
+	// Merge environment, labels and exposed ports from previous container to the new one.
+	// If the environment variable, label or exposed port also exists in the new configuration,
 	// it will replace the old one.
-	imgSpec.Config.Env = mergeEnv(imgSpec.Config.Env, container.Config.Env)
-	imgSpec.Config.Labels = mergeMap(imgSpec.Config.Labels, container.Config.Labels)
+	imgSpec.Config = mergeImageConfig(imgSpec.Config, container.Config)
 
 	container.Config = imgSpec.Config
 
@@ -505,11 +504,10 @@ func (container *Container) buildUncached(
 				return nil, err
 			}
 
-			// Merge environment and labels from previous container to the new one.
-			// Ff the environment variable or label also exists in the new configuration,
+			// Merge environment, labels and exposed ports from previous container to the new one.
+			// If the environment variable, label or exposed port also exists in the new configuration,
 			// it will replace the old one.
-			imgSpec.Config.Env = mergeEnv(imgSpec.Config.Env, container.Config.Env)
-			imgSpec.Config.Labels = mergeMap(imgSpec.Config.Labels, container.Config.Labels)
+			imgSpec.Config = mergeImageConfig(imgSpec.Config, container.Config)
 
 			container.Config = imgSpec.Config
 		}

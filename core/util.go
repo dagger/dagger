@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"io/fs"
 	"path"
 	"strconv"
@@ -212,31 +213,45 @@ func cloneMap[K comparable, T any](src map[K]T) map[K]T {
 	return dst
 }
 
-func envToMap(src []string) map[string]string {
-	dst := map[string]string{}
+func parseKeyValue(env string) (string, string) {
+	parts := strings.SplitN(env, "=", 2)
 
-	for _, e := range src {
-		env := strings.Split(e, "=")
-		dst[env[0]] = env[1]
+	v := ""
+	if len(parts) > 1 {
+		v = parts[1]
 	}
 
-	return dst
+	return parts[0], v
 }
 
-func mapToEnv(src map[string]string) []string {
-	dst := []string{}
+func addEnv(env []string, k, v string) []string {
+	gotOne := false
 
-	for k, v := range src {
-		dst = append(dst, fmt.Sprintf("%s=%s", k, v))
+	for i, envVar := range env {
+		key, _ := parseKeyValue(envVar)
+		if shell.EqualEnvKeys(key, k) {
+			env[i] = fmt.Sprintf("%s=%s", k, v)
+			gotOne = true
+			break
+		}
 	}
 
-	return dst
+	if !gotOne {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return env
 }
 
 // mergeEnv returns the addition of src and dest.
 // It replaces any duplication variable by dst values.
 func mergeEnv(src []string, dst []string) []string {
-	return mapToEnv(mergeMap(envToMap(src), envToMap(dst)))
+	for _, e := range src {
+		k, v := parseKeyValue(e)
+		dst = addEnv(dst, k, v)
+	}
+
+	return dst
 }
 
 // mergeMap inserts src map elements into dst.
@@ -252,6 +267,15 @@ func mergeMap(src map[string]string, dst map[string]string) map[string]string {
 
 	for k, v := range src {
 		dst[k] = v
+	}
+
+	return dst
+}
+
+func mergeImageConfig(src specs.ImageConfig, dst specs.ImageConfig) specs.ImageConfig {
+	dst.Env = mergeEnv(src.Env, dst.Env)
+	if dst.Labels != nil || src.Labels != nil {
+		dst.Labels = mergeMap(src.Labels, dst.Labels)
 	}
 
 	return dst

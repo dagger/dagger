@@ -3749,7 +3749,16 @@ RUN node --version
 		WithEnvVariable("FOO", "BAZ").
 		WithLabel("com.example.test-should-exist", "test").
 		WithLabel("com.example.test-should-replace", "bar").
+		WithExposedPort(5000).
 		Build(builderCtr)
+
+	envShouldExist, err := testCtr.EnvVariable(ctx, "BOOL")
+	require.NoError(t, err)
+	require.Equal(t, "DOG", envShouldExist)
+
+	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envShouldBeReplaced)
 
 	labelShouldExist, err := testCtr.Label(ctx, "com.example.test-should-exist")
 	require.NoError(t, err)
@@ -3759,13 +3768,12 @@ RUN node --version
 	require.NoError(t, err)
 	require.Equal(t, "foo", labelShouldBeReplaced)
 
-	envShouldExist, err := testCtr.EnvVariable(ctx, "BOOL")
+	ports, err := testCtr.ExposedPorts(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "DOG", envShouldExist)
 
-	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "FOO")
+	port, err := ports[0].Port(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "BAR", envShouldBeReplaced)
+	require.Equal(t, 5000, port)
 }
 
 func TestContainerFromMergesWithParent(t *testing.T) {
@@ -3779,6 +3787,7 @@ func TestContainerFromMergesWithParent(t *testing.T) {
 		WithEnvVariable("PATH", "/replace/me").
 		WithLabel("moby.buildkit.frontend.caps", "replace-me").
 		WithLabel("com.example.test-should-exist", "exist").
+		WithExposedPort(5000).
 		From("docker/dockerfile:1.5")
 
 	envShouldExist, err := testCtr.EnvVariable(ctx, "FOO")
@@ -3800,4 +3809,11 @@ func TestContainerFromMergesWithParent(t *testing.T) {
 	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.buildkit.frontend.caps")
 	require.NoError(t, err)
 	require.Equal(t, "moby.buildkit.frontend.inputs,moby.buildkit.frontend.subrequests,moby.buildkit.frontend.contexts", labelShouldBeReplaced)
+
+	ports, err := testCtr.ExposedPorts(ctx)
+	require.NoError(t, err)
+
+	port, err := ports[0].Port(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5000, port)
 }
