@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
+	workdir string
 )
 
 var rootCmd = &cobra.Command{
@@ -34,7 +33,6 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
 	rootCmd.Flags().StringP("output", "o", "", "output file")
 	rootCmd.Flags().String("package", "", "package name")
 	rootCmd.Flags().String("lang", "", "language to generate in")

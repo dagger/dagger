@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
@@ -21,9 +20,20 @@ import (
 	"github.com/vektah/gqlparser/v2/formatter"
 )
 
+var (
+	projectURI string
+	configPath string
+)
+
+func init() {
+	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", ".", "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
+	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, relative to the project's root directory.")
+}
+
 var doCmd = &cobra.Command{
 	Use:                "do",
 	DisableFlagParsing: true,
+	Hidden:             true, // for now, remove once we're ready for primetime
 	RunE: func(cmd *cobra.Command, args []string) error {
 		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
 		flags.SetInterspersed(false) // stop parsing at first possible dynamic subcommand
@@ -36,19 +46,12 @@ var doCmd = &cobra.Command{
 		dynamicCmdArgs := flags.Args()
 
 		engineConf := engine.Config{
+			Workdir:       workdir,
 			RunnerHost:    internalengine.RunnerHost(),
 			JournalWriter: journal.Discard{},
 		}
 		if debugLogs {
 			engineConf.LogOutput = os.Stderr
-		}
-		// TODO: dumb kludge, cleanup definition of workdir
-		workdir, configPath := workdir, configPath
-		if v, ok := os.LookupEnv("DAGGER_WORKDIR"); ok && (workdir == "" || workdir == ".") {
-			workdir = v
-		}
-		if !strings.HasPrefix(workdir, "git://") {
-			engineConf.Workdir = workdir
 		}
 
 		cmd.Println("Loading+installing project (use --debug to track progress)...")
@@ -64,7 +67,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
 
-			proj, err := getProject(ctx, workdir, configPath, c)
+			proj, err := getProject(c)
 			if err != nil {
 				return fmt.Errorf("failed to get project schema: %w", err)
 			}
@@ -149,11 +152,6 @@ func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.Projec
 						return
 					}
 					val := flag.Value.String()
-					/* TODO: think more about difference between required and not required, set vs. unset
-					if val == "" {
-						?
-					}
-					*/
 					uniqueVarName := fmt.Sprintf("%s_%s_%s", cmd.Name(), flag.Name, identity.NewID())
 					queryVars[uniqueVarName] = val
 					curSelection.Arguments = append(curSelection.Arguments, &ast.Argument{
@@ -183,8 +181,6 @@ func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.Projec
 				}},
 			})
 			queryBytes := b.Bytes()
-			// TODO:
-			// fmt.Println(string(queryBytes))
 
 			resMap := map[string]any{}
 			_, err := r.Do(cmd.Context(), string(queryBytes), opName, queryVars, &resMap)
@@ -244,20 +240,35 @@ func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.Projec
 	return nil
 }
 
-func getProject(ctx context.Context, workdir, configPath string, c *dagger.Client) (*dagger.Project, error) {
-	url, err := url.Parse(workdir)
+func getProject(c *dagger.Client) (*dagger.Project, error) {
+	projectURI, configPath := projectURI, configPath
+	if projectURI == "" || projectURI == "." {
+		// it's unset or default value, use env if present
+		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
+			projectURI = v
+		}
+	}
+
+	url, err := url.Parse(projectURI)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse config path: %w", err)
 	}
 	switch url.Scheme {
-	case "":
-		configRelPath, err := filepath.Rel(workdir, configPath)
+	case "": // local path
+		projectAbsPath, err := filepath.Abs(projectURI)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get project absolute path: %w", err)
+		}
+		configAbsPath, err := filepath.Abs(configPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get config absolute path: %w", err)
+		}
+		configRelPath, err := filepath.Rel(projectAbsPath, configAbsPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config relative path: %w", err)
 		}
-		return c.Project().Load(c.Host().Directory(workdir), configRelPath), nil
+		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
 	case "git":
-		// TODO: cleanup, factor project url parsing out into its own thing
 		repo := url.Host + url.Path
 		ref := url.Fragment
 		if ref == "" {

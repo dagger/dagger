@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
+	workdir string
 
 	cpuprofile string
 	pprofAddr  string
@@ -31,8 +30,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
-
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
 
 	rootCmd.AddCommand(
 		listenCmd,

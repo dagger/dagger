@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
 
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql"
@@ -100,9 +101,11 @@ func (p *Project) Clone() *Project {
 func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, source *Directory, configPath string) (*Project, error) {
 	p = p.Clone()
 	p.Directory = source
+
+	configPath = p.normalizeConfigPath(configPath)
 	p.ConfigPath = configPath
 
-	configFile, err := source.File(ctx, configPath)
+	configFile, err := source.File(ctx, p.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
 	}
@@ -154,6 +157,15 @@ func (p *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
 	}
 
 	return commands, nil
+}
+
+// figure out if we were passed a path to a dagger.json file or a parent dir that may contain such a file
+func (p *Project) normalizeConfigPath(configPath string) string {
+	baseName := path.Base(configPath)
+	if baseName == "dagger.json" {
+		return configPath
+	}
+	return path.Join(configPath, "dagger.json")
 }
 
 func (p *Project) schemaToCommand(field *gqlparserast.FieldDefinition, schema *gqlparserast.Schema) (*ProjectCommand, error) {
