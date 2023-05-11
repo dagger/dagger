@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"io/fs"
 	"path"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/dagger/dagger/core/reffs"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
