@@ -21,6 +21,10 @@ func init() {
 	if Version == "" {
 		Version = DevelopmentVersion
 	}
+	// normalize Version to semver
+	if semver.IsValid("v" + Version) {
+		Version = "v" + Version
+	}
 }
 
 func ImageRef() string {
@@ -34,12 +38,12 @@ func ImageRef() string {
 	// If Version is set to something besides a semver tag, then it's a build off our main branch.
 	// For now, this also defaults to using the "main" tag, but in the future if we tag engine
 	// images with git sha then we could use that instead
-	if semver.IsValid(Version) {
+	if !semver.IsValid(Version) {
 		return fmt.Sprintf("%s:main", EngineImageRepo)
 	}
 
 	// Version is a semver tag, so use the engine image at that tag
-	return fmt.Sprintf("%s:v%s", EngineImageRepo, Version)
+	return fmt.Sprintf("%s:%s", EngineImageRepo, Version)
 }
 
 func RunnerHost() string {
