@@ -359,7 +359,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	// Merge environment, labels and exposed ports from previous container to the new one.
 	// If the environment variable, label or exposed port also exists in the new configuration,
 	// it will replace the old one.
-	imgSpec.Config = mergeImageConfig(imgSpec.Config, container.Config)
+	imgSpec.Config = mergeImageConfig(container.Config, imgSpec.Config)
 
 	container.Config = imgSpec.Config
 
@@ -507,7 +507,7 @@ func (container *Container) buildUncached(
 			// Merge environment, labels and exposed ports from previous container to the new one.
 			// If the environment variable, label or exposed port also exists in the new configuration,
 			// it will replace the old one.
-			imgSpec.Config = mergeImageConfig(imgSpec.Config, container.Config)
+			imgSpec.Config = mergeImageConfig(container.Config, imgSpec.Config)
 
 			container.Config = imgSpec.Config
 		}

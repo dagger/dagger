@@ -273,9 +273,9 @@ func mergeMap(src map[string]string, dst map[string]string) map[string]string {
 }
 
 func mergeImageConfig(src specs.ImageConfig, dst specs.ImageConfig) specs.ImageConfig {
-	dst.Env = mergeEnv(src.Env, dst.Env)
+	dst.Env = mergeEnv(dst.Env, src.Env)
 	if dst.Labels != nil || src.Labels != nil {
-		dst.Labels = mergeMap(src.Labels, dst.Labels)
+		dst.Labels = mergeMap(dst.Labels, src.Labels)
 	}
 
 	return dst
