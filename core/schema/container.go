@@ -664,19 +664,7 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	file, err := args.Source.ToFile()
-	if err != nil {
-		return nil, err
-	}
-
-	src, err := file.Open(ctx, s.host, s.gw)
-	if err != nil {
-		return nil, err
-	}
-
-	defer src.Close()
-
-	return parent.Import(ctx, s.host, src, args.Tag, s.ociStore)
+	return parent.Import(ctx, s.gw, s.host, args.Source, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {

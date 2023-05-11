@@ -367,7 +367,37 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 const defaultDockerfileName = "Dockerfile"
 
+var buildCache = newCacheMap[uint64, *Container]()
+
+func cacheKey(keys ...any) uint64 {
+	hash := xxh3.New()
+
+	enc := json.NewEncoder(hash)
+	for _, key := range keys {
+		enc.Encode(key)
+	}
+
+	return hash.Sum64()
+}
+
 func (container *Container) Build(
+	ctx context.Context,
+	gw bkgw.Client,
+	context *Directory,
+	dockerfile string,
+	buildArgs []BuildArg,
+	target string,
+	secrets []SecretID,
+) (*Container, error) {
+	return buildCache.GetOrInitialize(
+		cacheKey(container, context, dockerfile, buildArgs, target, secrets),
+		func() (*Container, error) {
+			return container.buildUncached(ctx, gw, context, dockerfile, buildArgs, target, secrets)
+		},
+	)
+}
+
+func (container *Container) buildUncached(
 	ctx context.Context,
 	gw bkgw.Client,
 	context *Directory,
@@ -1480,16 +1510,47 @@ func (container *Container) Export(
 
 const OCIStoreName = "dagger-oci"
 
+var importCache = newCacheMap[uint64, *Container]()
+
 func (container *Container) Import(
 	ctx context.Context,
+	gw bkgw.Client,
 	host *Host,
-	source io.Reader,
+	source FileID,
 	tag string,
 	store content.Store,
 ) (*Container, error) {
+	return importCache.GetOrInitialize(
+		cacheKey(container, source, tag),
+		func() (*Container, error) {
+			return container.importUncached(ctx, gw, host, source, tag, store)
+		},
+	)
+}
+
+func (container *Container) importUncached(
+	ctx context.Context,
+	gw bkgw.Client,
+	host *Host,
+	source FileID,
+	tag string,
+	store content.Store,
+) (*Container, error) {
+	file, err := source.ToFile()
+	if err != nil {
+		return nil, err
+	}
+
+	src, err := file.Open(ctx, host, gw)
+	if err != nil {
+		return nil, err
+	}
+
+	defer src.Close()
+
 	container = container.Clone()
 
-	stream := archive.NewImageImportStream(source, "")
+	stream := archive.NewImageImportStream(src, "")
 
 	desc, err := stream.Import(ctx, store)
 	if err != nil {
