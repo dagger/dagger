@@ -41,6 +41,25 @@ async def test_container_build():
         assert words[0] == "dagger"
 
 
+async def test_container_build_args():
+    dockerfile = """\
+    FROM alpine:3.16.2
+    ARG SPAM=spam
+    ENV SPAM=$SPAM
+    CMD printenv
+    """
+    async with dagger.Connection() as client:
+        out = await (
+            client.container()
+            .build(
+                client.directory().with_new_file("Dockerfile", dockerfile),
+                build_args=[dagger.BuildArg("SPAM", "egg")],
+            )
+            .stdout()
+        )
+        assert "SPAM=egg" in out
+
+
 @pytest.mark.parametrize("val", ["spam", ""])
 async def test_container_with_env_variable(val):
     async with dagger.Connection() as client:
