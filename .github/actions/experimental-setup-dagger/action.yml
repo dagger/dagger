@@ -1,0 +1,19 @@
+name: 'Experimental test action for setting up latest dagger CLI'
+description: 'Experimental test action for setting up latest dagger CLI'
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-go@v3
+      with:
+        go-version: "1.20"
+    - run: go build -o /usr/local/bin/dagger ./cmd/dagger
+      shell: bash
+      env:
+        CGO_ENABLED: "0"
+    - run: echo "DAGGER_PROJECT=${{ github.repositoryUrl }}#${{ github.sha }}" >> $GITHUB_ENV
+      shell: bash
+    # This proves we are not reliant on the checkout
+    - run: rm -rf * .git
+      shell: bash
+
