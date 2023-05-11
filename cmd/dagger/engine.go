@@ -22,7 +22,7 @@ func withEngine(
 		SessionToken:  sessionToken,
 		RunnerHost:    internalengine.RunnerHost(),
 		DisableHostRW: disableHostRW,
-		JournalURI:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		JournalFile:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 		JournalWriter: journalW,
 	}
 	if debugLogs {

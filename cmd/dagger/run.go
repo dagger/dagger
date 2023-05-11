@@ -213,7 +213,7 @@ func inlineTUI(
 		SessionToken:   sessionToken.String(),
 		RunnerHost:     internalengine.RunnerHost(),
 		DisableHostRW:  disableHostRW,
-		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 		ProgrockWriter: mw,
 	}
 

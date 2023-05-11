@@ -56,7 +56,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 		LogOutput:    os.Stderr,
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
-		JournalURI:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		JournalFile:  os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
 		UserAgent:    labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
 	}
 

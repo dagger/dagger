@@ -44,7 +44,7 @@ import (
 type Config struct {
 	Workdir        string
 	LogOutput      io.Writer
-	JournalURI     string
+	JournalFile    string
 	JournalWriter  journal.Writer
 	ProgrockWriter progrock.Writer
 	DisableHostRW  bool
@@ -283,55 +283,29 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 	}
 
 	// Write events to a journal file
-	if startOpts.JournalURI != "" {
+	if startOpts.JournalFile != "" {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
-		u, err := url.Parse(startOpts.JournalURI)
-		if err != nil {
-			return fmt.Errorf("journal URI: %w", err)
-		}
 
-		switch u.Scheme {
-		case "":
-			eg.Go(func() error {
-				f, err := os.Create(startOpts.JournalURI)
-				if err != nil {
+		eg.Go(func() error {
+			f, err := os.Create(startOpts.JournalFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			enc := json.NewEncoder(f)
+			for ev := range ch {
+				entry := &journal.Entry{
+					Event: ev,
+					TS:    time.Now().UTC(),
+				}
+
+				if err := enc.Encode(entry); err != nil {
 					return err
 				}
-				defer f.Close()
-				enc := json.NewEncoder(f)
-				for ev := range ch {
-					entry := &journal.Entry{
-						Event: ev,
-						TS:    time.Now().UTC(),
-					}
-
-					if err := enc.Encode(entry); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		case "tcp":
-			w, err := journal.Dial("tcp", u.Host)
-			if err != nil {
-				return fmt.Errorf("journal: %w", err)
 			}
-			defer w.Close()
-			eg.Go(func() error {
-				for ev := range ch {
-					entry := &journal.Entry{
-						Event: ev,
-						TS:    time.Now().UTC(),
-					}
-
-					if err := w.WriteEntry(entry); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		}
+			return nil
+		})
 	}
 
 	if startOpts.JournalWriter != nil {

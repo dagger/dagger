@@ -13,7 +13,6 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -52,9 +51,8 @@ var doCmd = &cobra.Command{
 		dynamicCmdArgs := flags.Args()
 
 		engineConf := engine.Config{
-			Workdir:       workdir,
-			RunnerHost:    internalengine.RunnerHost(),
-			JournalWriter: journal.Discard{},
+			Workdir:    workdir,
+			RunnerHost: internalengine.RunnerHost(),
 		}
 		if debugLogs {
 			engineConf.LogOutput = os.Stderr
