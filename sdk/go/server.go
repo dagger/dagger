@@ -323,7 +323,6 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-
 	defer client.Close()
 
 	name := fn.name

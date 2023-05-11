@@ -47,7 +47,6 @@ const (
 
 type Config struct {
 	Workdir        string
-	ConfigPath     string
 	LogOutput      io.Writer
 	JournalURI     string
 	JournalWriter  journal.Writer
@@ -106,26 +105,13 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		return err
 	}
 
-	startOpts.Workdir, startOpts.ConfigPath, err = NormalizePaths(startOpts.Workdir, startOpts.ConfigPath)
+	startOpts.Workdir, err = NormalizeWorkdir(startOpts.Workdir)
 	if err != nil {
 		return err
 	}
 	// TODO: clean up this kludge
 	if strings.HasPrefix(startOpts.Workdir, "git://") {
 		startOpts.Workdir = "."
-	}
-
-	_, err = os.Stat(startOpts.ConfigPath)
-	switch {
-	case err == nil:
-		startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
-		if err != nil {
-			return err
-		}
-	case os.IsNotExist(err):
-		startOpts.ConfigPath = ""
-	default:
-		return err
 	}
 
 	router := router.New(startOpts.SessionToken, recorder)
@@ -464,37 +450,24 @@ func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
 	return nil
 }
 
-func NormalizePaths(workdir, configPath string) (string, string, error) {
+func NormalizeWorkdir(workdir string) (string, error) {
 	if workdir == "" {
 		workdir = os.Getenv("DAGGER_WORKDIR")
-	}
-	if configPath == "" {
-		configPath = os.Getenv("DAGGER_CONFIG")
 	}
 
 	if workdir == "" {
 		var err error
 		workdir, err = os.Getwd()
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 	workdir, err := filepath.Abs(workdir)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	if configPath == "" {
-		configPath = filepath.Join(workdir, daggerJSONName)
-	}
-	if !filepath.IsAbs(configPath) {
-		var err error
-		configPath, err = filepath.Abs(configPath)
-		if err != nil {
-			return "", "", err
-		}
-	}
-	return workdir, configPath, nil
+	return workdir, nil
 }
 
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {

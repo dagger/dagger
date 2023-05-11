@@ -210,7 +210,6 @@ func inlineTUI(
 
 	engineConf := engine.Config{
 		Workdir:        workdir,
-		ConfigPath:     configPath,
 		SessionToken:   sessionToken.String(),
 		RunnerHost:     internalengine.RunnerHost(),
 		DisableHostRW:  disableHostRW,

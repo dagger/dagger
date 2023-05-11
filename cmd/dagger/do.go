@@ -42,17 +42,13 @@ var doCmd = &cobra.Command{
 		if debugLogs {
 			engineConf.LogOutput = os.Stderr
 		}
-		// TODO: dumb kludge, cleanup definnition of workdir/configPath
+		// TODO: dumb kludge, cleanup definition of workdir
 		workdir, configPath := workdir, configPath
 		if v, ok := os.LookupEnv("DAGGER_WORKDIR"); ok && (workdir == "" || workdir == ".") {
 			workdir = v
 		}
-		if configPath == "" {
-			configPath = os.Getenv("DAGGER_CONFIG")
-		}
 		if !strings.HasPrefix(workdir, "git://") {
 			engineConf.Workdir = workdir
-			engineConf.ConfigPath = configPath
 		}
 
 		cmd.Println("Loading+installing project (use --debug to track progress)...")

@@ -17,11 +17,9 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir      string
-	ConfigPath   string
-	NoExtensions bool
-	LogOutput    io.Writer
-	Conn         EngineConn
+	Workdir   string
+	LogOutput io.Writer
+	Conn      EngineConn
 }
 
 type ConnectParams struct {

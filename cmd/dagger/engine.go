@@ -19,7 +19,6 @@ func withEngine(
 ) error {
 	engineConf := engine.Config{
 		Workdir:       workdir,
-		ConfigPath:    configPath,
 		SessionToken:  sessionToken,
 		RunnerHost:    internalengine.RunnerHost(),
 		DisableHostRW: disableHostRW,

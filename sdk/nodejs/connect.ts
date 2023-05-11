@@ -13,11 +13,6 @@ export interface ConnectOpts {
    */
   Workdir?: string
   /**
-   * Use to overwrite Dagger config
-   * @defaultValue dagger.json
-   */
-  ConfigPath?: string
-  /**
    * Enable logs output
    * @example
    * LogOutput

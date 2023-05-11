@@ -37,20 +37,6 @@ func WithWorkdir(path string) ClientOpt {
 	})
 }
 
-// WithConfigPath sets the engine config path
-func WithConfigPath(path string) ClientOpt {
-	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.ConfigPath = path
-	})
-}
-
-// WithNoExtensions disables installing extensions
-func WithNoExtensions() ClientOpt {
-	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.NoExtensions = true
-	})
-}
-
 // WithLogOutput sets the progress writer
 func WithLogOutput(writer io.Writer) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
