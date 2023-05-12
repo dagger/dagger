@@ -42,6 +42,19 @@ func NewClient(api string) (*Client, error) {
 	}, nil
 }
 
+type UserResponse struct {
+	UserID string `json:"user_id"`
+}
+
+func (c *Client) User(ctx context.Context) (*UserResponse, error) {
+	var res UserResponse
+	if err := c.apiReq(ctx, "GET", "/user", nil, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 type CreateOrgRequest struct {
 	Name string `json:"name"`
 }
@@ -61,17 +74,23 @@ func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*CreateO
 	return &res, nil
 }
 
-func (c *Client) apiReq(ctx context.Context, method, path string, reqType, dest any) error {
-	payload, err := json.Marshal(reqType)
-	if err != nil {
-		return fmt.Errorf("marshal: %w", err)
+func (c *Client) apiReq(ctx context.Context, method, path string, reqBody, resBody any) error {
+	var body io.Reader
+	if reqBody != nil {
+		payload, err := json.Marshal(reqBody)
+		if err != nil {
+			return fmt.Errorf("marshal: %w", err)
+		}
+
+		body = bytes.NewBuffer(payload)
 	}
 
-	req, err := http.NewRequest("POST", c.u.JoinPath(path).String(), bytes.NewBuffer(payload))
+	req, err := http.NewRequest(method, c.u.JoinPath(path).String(), body)
 	if err != nil {
 		return fmt.Errorf("request: %w", err)
 	}
-	if reqType != nil {
+
+	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
 
@@ -90,7 +109,7 @@ func (c *Client) apiReq(ctx context.Context, method, path string, reqType, dest 
 		return fmt.Errorf("bad response: %s", res.Status)
 	}
 
-	if err := json.NewDecoder(res.Body).Decode(dest); err != nil {
+	if err := json.NewDecoder(res.Body).Decode(resBody); err != nil {
 		return fmt.Errorf("unmarshal: %w", err)
 	}
 

@@ -64,7 +64,23 @@ func (cli *CloudCLI) Client() (*cloud.Client, error) {
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
-	return auth.Login(ctx)
+
+	if err := auth.Login(ctx); err != nil {
+		return err
+	}
+
+	client, err := cli.Client()
+	if err != nil {
+		return err
+	}
+
+	user, err := client.User(ctx)
+	if err != nil {
+		return err
+	}
+
+	lg.Info().Str("user", user.UserID).Msg("logged in")
+	return nil
 }
 
 func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {

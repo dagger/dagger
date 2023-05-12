@@ -81,6 +81,8 @@ func Login(ctx context.Context) error {
 		}
 	}()
 
+	defer srv.Shutdown(ctx)
+
 	// Generate random state
 	b := make([]byte, 32)
 	_, err := rand.Read(b)
@@ -100,7 +102,6 @@ func Login(ctx context.Context) error {
 	var req *http.Request
 	select {
 	case req = <-requestCh:
-		srv.Shutdown(ctx)
 	case <-ctx.Done():
 		lg.Info().Msg("giving up")
 		return nil
@@ -121,13 +122,7 @@ func Login(ctx context.Context) error {
 		return err
 	}
 
-	if err := saveCredentials(token); err != nil {
-		return err
-	}
-
-	lg.Info().Msg("logged in successfully")
-
-	return nil
+	return saveCredentials(token)
 }
 
 // Logout deletes the client credentials
