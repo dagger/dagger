@@ -81,17 +81,3 @@ type RoundTripperFunc func(*http.Request) (*http.Response, error)
 func (f RoundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
-
-type RoundTripperConn RoundTripperFunc
-
-func (f RoundTripperConn) Do(r *http.Request) (*http.Response, error) {
-	return f(r)
-}
-
-func (f RoundTripperConn) Host() string {
-	return "roundtripperconn"
-}
-
-func (f RoundTripperConn) Close() error {
-	return nil
-}

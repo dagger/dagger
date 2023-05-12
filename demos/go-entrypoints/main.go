@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	dagger.Serve(
+	dagger.ServeCommands(
 		Build,
 		Test,
 	)

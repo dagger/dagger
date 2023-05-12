@@ -5,7 +5,7 @@ import (
 )
 
 func main() {
-	dagger.Serve(CI)
+	dagger.ServeCommands(CI)
 }
 
 // Dagger CI targets

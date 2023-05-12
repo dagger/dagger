@@ -7,7 +7,7 @@ import (
 )
 
 func main() {
-	dagger.Serve(Test{})
+	dagger.ServeCommands(Test{})
 }
 
 type Test struct {

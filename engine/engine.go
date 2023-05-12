@@ -105,10 +105,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if err != nil {
 		return err
 	}
-	// TODO: clean up this kludge
-	if strings.HasPrefix(startOpts.Workdir, "git://") {
-		startOpts.Workdir = "."
-	}
 
 	router := router.New(startOpts.SessionToken, recorder)
 	secretStore := secret.NewStore()

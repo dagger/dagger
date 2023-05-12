@@ -30,7 +30,7 @@ func (c *Context) Client() *Client {
 }
 
 //nolint:gocyclo
-func Serve(entrypoints ...any) {
+func ServeCommands(entrypoints ...any) {
 	ctx := context.Background()
 
 	types := &goTypes{
