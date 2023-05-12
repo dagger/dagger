@@ -128,6 +128,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 }
 
 func TestSecretPlaintext(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -141,6 +142,7 @@ func TestSecretPlaintext(t *testing.T) {
 }
 
 func TestNewSecret(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -157,6 +159,7 @@ func TestNewSecret(t *testing.T) {
 }
 
 func TestWhitespaceSecretScrubbed(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 

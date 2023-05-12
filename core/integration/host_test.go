@@ -135,6 +135,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 }
 
 func TestHostDirectoryRelative(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte("hello"), 0600))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0755))
@@ -171,6 +172,7 @@ func TestHostDirectoryRelative(t *testing.T) {
 }
 
 func TestHostDirectoryAbsolute(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "some-file"), []byte("hello"), 0600))
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "some-dir"), 0755))

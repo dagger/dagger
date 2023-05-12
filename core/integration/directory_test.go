@@ -317,6 +317,7 @@ func TestDirectoryWithDirectoryIncludeExclude(t *testing.T) {
 }
 
 func TestDirectoryWithNewDirectory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -343,6 +344,7 @@ func TestDirectoryWithNewDirectory(t *testing.T) {
 }
 
 func TestDirectoryWithFile(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -389,6 +391,7 @@ func TestDirectoryWithFile(t *testing.T) {
 }
 
 func TestDirectoryWithTimestamps(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
@@ -611,6 +614,7 @@ func TestDirectoryExport(t *testing.T) {
 }
 
 func TestDirectoryDockerBuild(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
