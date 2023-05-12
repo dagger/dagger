@@ -74,6 +74,27 @@ func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*CreateO
 	return &res, nil
 }
 
+type AddOrgUserRequest struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+type AddOrgUserResponse struct {
+	OrgID     string    `json:"org_id"`
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (c *Client) AddUserToOrg(ctx context.Context, orgName string, req *AddOrgUserRequest) (*AddOrgUserResponse, error) {
+	var res AddOrgUserResponse
+	if err := c.apiReq(ctx, "POST", "/orgs/"+orgName+"/users", req, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 func (c *Client) apiReq(ctx context.Context, method, path string, reqBody, resBody any) error {
 	var body io.Reader
 	if reqBody != nil {

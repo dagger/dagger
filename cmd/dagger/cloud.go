@@ -21,29 +21,34 @@ func init() {
 	cloudCmd.PersistentFlags().BoolVar(&cloud.Trace, "trace", false, "Print API request/response headers")
 
 	loginCmd := &cobra.Command{
-		Use:          "login",
-		Short:        "Authenticate with Dagger Cloud",
-		RunE:         cloud.Login,
-		SilenceUsage: true,
+		Use:   "login",
+		Short: "Authenticate with Dagger Cloud",
+		RunE:  cloud.Login,
 	}
 	cloudCmd.AddCommand(loginCmd)
 
 	orgCmd := &cobra.Command{
-		Use:    "org",
-		Short:  "Dagger Cloud org management",
-		Hidden: true,
+		Use:   "org",
+		Short: "Dagger Cloud org management",
 	}
 	cloudCmd.AddCommand(orgCmd)
 
 	orgCreateCmd := &cobra.Command{
-		Use:          "create",
-		Short:        "Create a new org",
-		RunE:         cloud.CreateOrg,
-		Args:         cobra.ExactArgs(1),
-		Hidden:       true,
-		SilenceUsage: true,
+		Use:   "create",
+		Short: "Create a new org",
+		RunE:  cloud.CreateOrg,
+		Args:  cobra.ExactArgs(1),
 	}
 	orgCmd.AddCommand(orgCreateCmd)
+
+	orgAddUserCmd := &cobra.Command{
+		Use:   "add-user <ORG> <USER_ID>",
+		Short: "Add a user to an org",
+		RunE:  cloud.AddOrgUser,
+		Args:  cobra.ExactArgs(2),
+	}
+	orgAddUserCmd.Flags().String("role", "member", "Role to assign to the user (member or admin)")
+	orgCmd.AddCommand(orgAddUserCmd)
 }
 
 type CloudCLI struct {
@@ -105,6 +110,40 @@ func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
 		Str("name", org.Name).
 		Str("id", org.OrgID).
 		Msg("created org")
+
+	return nil
+}
+
+func (cli *CloudCLI) AddOrgUser(cmd *cobra.Command, args []string) error {
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
+
+	client, err := cli.Client()
+	if err != nil {
+		return err
+	}
+
+	orgName := args[0]
+	userID := args[1]
+	role, err := cmd.Flags().GetString("role")
+	if err != nil {
+		return err
+	}
+
+	res, err := client.AddUserToOrg(ctx, orgName, &cloud.AddOrgUserRequest{
+		UserID: userID,
+		Role:   role,
+	})
+	if err != nil {
+		return err
+	}
+
+	lg.Info().
+		Str("org_name", orgName).
+		Str("org_id", res.OrgID).
+		Str("user", res.UserID).
+		Str("role", res.Role).
+		Msg("added user to org")
 
 	return nil
 }
