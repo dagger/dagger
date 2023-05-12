@@ -74,21 +74,39 @@ func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*CreateO
 	return &res, nil
 }
 
-type AddOrgUserRequest struct {
+type AddOrgUserRoleRequest struct {
 	UserID string `json:"user_id"`
 	Role   string `json:"role"`
 }
 
-type AddOrgUserResponse struct {
+type AddOrgUserRoleResponse struct {
 	OrgID     string    `json:"org_id"`
 	UserID    string    `json:"user_id"`
 	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
-func (c *Client) AddUserToOrg(ctx context.Context, orgName string, req *AddOrgUserRequest) (*AddOrgUserResponse, error) {
-	var res AddOrgUserResponse
+func (c *Client) AddOrgUserRole(ctx context.Context, orgName string, req *AddOrgUserRoleRequest) (*AddOrgUserRoleResponse, error) {
+	var res AddOrgUserRoleResponse
 	if err := c.apiReq(ctx, "POST", "/orgs/"+orgName+"/users", req, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+type RemoveOrgUserRoleRequest struct {
+	UserID string `json:"user_id"`
+	Role   string `json:"role"`
+}
+
+type RemoveOrgUserRoleResponse struct {
+	Existed bool `json:"existed"`
+}
+
+func (c *Client) RemoveOrgUserRole(ctx context.Context, orgName string, req *RemoveOrgUserRoleRequest) (*RemoveOrgUserRoleResponse, error) {
+	var res RemoveOrgUserRoleResponse
+	if err := c.apiReq(ctx, "DELETE", "/orgs/"+orgName+"/users", req, &res); err != nil {
 		return nil, err
 	}
 
@@ -130,8 +148,10 @@ func (c *Client) apiReq(ctx context.Context, method, path string, reqBody, resBo
 		return fmt.Errorf("bad response: %s", res.Status)
 	}
 
-	if err := json.NewDecoder(res.Body).Decode(resBody); err != nil {
-		return fmt.Errorf("unmarshal: %w", err)
+	if resBody != nil {
+		if err := json.NewDecoder(res.Body).Decode(resBody); err != nil {
+			return fmt.Errorf("unmarshal: %w", err)
+		}
 	}
 
 	return nil

@@ -43,12 +43,21 @@ func init() {
 
 	orgAddUserCmd := &cobra.Command{
 		Use:   "add-user <ORG> <USER_ID>",
-		Short: "Add a user to an org",
-		RunE:  cloud.AddOrgUser,
+		Short: "Add a user role to an org",
+		RunE:  cloud.AddOrgUserRole,
 		Args:  cobra.ExactArgs(2),
 	}
 	orgAddUserCmd.Flags().String("role", "member", "Role to assign to the user (member or admin)")
 	orgCmd.AddCommand(orgAddUserCmd)
+
+	orgRemoveUserCmd := &cobra.Command{
+		Use:   "remove-user <ORG> <USER_ID>",
+		Short: "Remove a user role from an org",
+		RunE:  cloud.RemoveOrgUserRole,
+		Args:  cobra.ExactArgs(2),
+	}
+	orgRemoveUserCmd.Flags().String("role", "member", "Role to remove from the user (member or admin)")
+	orgCmd.AddCommand(orgRemoveUserCmd)
 }
 
 type CloudCLI struct {
@@ -114,7 +123,7 @@ func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func (cli *CloudCLI) AddOrgUser(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) AddOrgUserRole(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
@@ -130,7 +139,7 @@ func (cli *CloudCLI) AddOrgUser(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	res, err := client.AddUserToOrg(ctx, orgName, &cloud.AddOrgUserRequest{
+	res, err := client.AddOrgUserRole(ctx, orgName, &cloud.AddOrgUserRoleRequest{
 		UserID: userID,
 		Role:   role,
 	})
@@ -139,11 +148,44 @@ func (cli *CloudCLI) AddOrgUser(cmd *cobra.Command, args []string) error {
 	}
 
 	lg.Info().
-		Str("org_name", orgName).
-		Str("org_id", res.OrgID).
+		Str("org", orgName).
 		Str("user", res.UserID).
 		Str("role", res.Role).
 		Msg("added user to org")
+
+	return nil
+}
+
+func (cli *CloudCLI) RemoveOrgUserRole(cmd *cobra.Command, args []string) error {
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
+
+	client, err := cli.Client()
+	if err != nil {
+		return err
+	}
+
+	orgName := args[0]
+	userID := args[1]
+	role, err := cmd.Flags().GetString("role")
+	if err != nil {
+		return err
+	}
+
+	res, err := client.RemoveOrgUserRole(ctx, orgName, &cloud.RemoveOrgUserRoleRequest{
+		UserID: userID,
+		Role:   role,
+	})
+	if err != nil {
+		return err
+	}
+
+	lg.Info().
+		Str("org", orgName).
+		Str("user", userID).
+		Str("role", role).
+		Bool("existed", res.Existed).
+		Msg("removed user role from org")
 
 	return nil
 }
