@@ -57,6 +57,24 @@ func init() {
 	}
 	orgRemoveUserCmd.Flags().String("role", "member", "Role to remove from the user (member or admin)")
 	orgCmd.AddCommand(orgRemoveUserCmd)
+
+	orgCreateTokenCmd := &cobra.Command{
+		Use:   "create-token <ORG> <TOKEN_NAME>",
+		Short: "Create a token for sending logs to Dagger Cloud",
+		RunE:  cloud.CreateOrgEngineToken,
+		Args:  cobra.ExactArgs(1),
+	}
+	orgCreateTokenCmd.Flags().String("name", "default", "Name for the token")
+	orgCmd.AddCommand(orgCreateTokenCmd)
+
+	orgDeleteTokenCmd := &cobra.Command{
+		Use:   "delete-token <ORG> <TOKEN_NAME>",
+		Short: "Delete a token",
+		RunE:  cloud.DeleteOrgEngineToken,
+		Args:  cobra.ExactArgs(1),
+	}
+	orgDeleteTokenCmd.Flags().String("name", "default", "Name of the token to delete")
+	orgCmd.AddCommand(orgDeleteTokenCmd)
 }
 
 type CloudCLI struct {
@@ -185,6 +203,67 @@ func (cli *CloudCLI) RemoveOrgUserRole(cmd *cobra.Command, args []string) error 
 		Str("role", role).
 		Bool("existed", res.Existed).
 		Msg("removed user role from org")
+
+	return nil
+}
+
+func (cli *CloudCLI) CreateOrgEngineToken(cmd *cobra.Command, args []string) error {
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
+
+	client, err := cli.Client()
+	if err != nil {
+		return err
+	}
+
+	orgName := args[0]
+	tokenName, err := cmd.Flags().GetString("name")
+	if err != nil {
+		return err
+	}
+
+	res, err := client.CreateOrgEngineToken(ctx, orgName, &cloud.CreateOrgEngineTokenRequest{
+		Name: tokenName,
+	})
+	if err != nil {
+		return err
+	}
+
+	lg.Info().
+		Str("org", orgName).
+		Str("name", tokenName).
+		Str("token", res.Token).
+		Msg("created engine token")
+
+	return nil
+}
+
+func (cli *CloudCLI) DeleteOrgEngineToken(cmd *cobra.Command, args []string) error {
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
+
+	client, err := cli.Client()
+	if err != nil {
+		return err
+	}
+
+	orgName := args[0]
+	tokenName, err := cmd.Flags().GetString("name")
+	if err != nil {
+		return err
+	}
+
+	res, err := client.DeleteOrgEngineToken(ctx, orgName, &cloud.DeleteOrgEngineTokenRequest{
+		Name: tokenName,
+	})
+	if err != nil {
+		return err
+	}
+
+	lg.Info().
+		Str("name", tokenName).
+		Bool("existed", res.Existed).
+		Msg("deleted engine token")
 
 	return nil
 }

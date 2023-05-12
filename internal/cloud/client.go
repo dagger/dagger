@@ -113,6 +113,42 @@ func (c *Client) RemoveOrgUserRole(ctx context.Context, orgName string, req *Rem
 	return &res, nil
 }
 
+type CreateOrgEngineTokenRequest struct {
+	Name string `json:"name"`
+}
+
+type CreateOrgEngineTokenResponse struct {
+	OrgID     string    `json:"org_id"`
+	Token     string    `json:"token"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (c *Client) CreateOrgEngineToken(ctx context.Context, orgName string, req *CreateOrgEngineTokenRequest) (*CreateOrgEngineTokenResponse, error) {
+	var res CreateOrgEngineTokenResponse
+	if err := c.apiReq(ctx, "POST", "/orgs/"+orgName+"/tokens", req, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
+type DeleteOrgEngineTokenRequest struct {
+	Name string `json:"name"`
+}
+
+type DeleteOrgEngineTokenResponse struct {
+	Existed bool `json:"existed"`
+}
+
+func (c *Client) DeleteOrgEngineToken(ctx context.Context, orgName string, req *DeleteOrgEngineTokenRequest) (*DeleteOrgEngineTokenResponse, error) {
+	var res DeleteOrgEngineTokenResponse
+	if err := c.apiReq(ctx, "DELETE", "/orgs/"+orgName+"/tokens", req, &res); err != nil {
+		return nil, err
+	}
+
+	return &res, nil
+}
+
 func (c *Client) apiReq(ctx context.Context, method, path string, reqBody, resBody any) error {
 	var body io.Reader
 	if reqBody != nil {
