@@ -70,6 +70,7 @@ require (
 	github.com/opencontainers/runc v1.1.7
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
 	github.com/prometheus/procfs v0.9.0
+	github.com/rs/zerolog v1.29.1
 	github.com/vito/progrock v0.5.1
 	github.com/vito/vt100 v0.1.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
@@ -262,6 +263,3 @@ require (
 	google.golang.org/protobuf v1.30.0
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-// for 'dagger cloud login'
-replace golang.org/x/oauth2 => github.com/dagger/oauth2 v0.0.0-20220802193326-c4e3911df5f5

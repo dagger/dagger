@@ -6,13 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/mitchellh/go-homedir"
 	"github.com/pkg/browser"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
 )
 
@@ -28,16 +28,19 @@ var authConfig = &oauth2.Config{
 	RedirectURL: fmt.Sprintf("http://localhost:%d/callback", callbackPort),
 	Scopes:      []string{"openid", "offline_access"},
 	Endpoint: oauth2.Endpoint{
-		AuthStyle:     oauth2.AuthStyleInParams,
-		AuthURL:       "https://" + authDomain + "/authorize",
-		TokenURL:      "https://" + authDomain + "/oauth/token",
-		DeviceAuthURL: "https://" + authDomain + "/oauth/device/code",
+		AuthStyle: oauth2.AuthStyleInParams,
+		AuthURL:   "https://" + authDomain + "/authorize",
+		TokenURL:  "https://" + authDomain + "/oauth/token",
 	},
 }
 
 // Login logs the user in and stores the credentials for later use.
 // Interactive messages are printed to w.
 func Login(ctx context.Context) error {
+	lg := log.Ctx(ctx)
+
+	lg.Info().Msg("logging in to " + authDomain)
+
 	// oauth2 localhost handler
 	requestCh := make(chan *http.Request)
 
@@ -73,57 +76,56 @@ func Login(ctx context.Context) error {
 	go func() {
 		err := srv.ListenAndServe()
 		if err != http.ErrServerClosed {
-			log.Println("oauth2 callback server error:", err)
+			lg.Fatal().Err(err).Msg("auth server failed")
 		}
 	}()
 
-	var token *oauth2.Token
-
 	// Generate random state
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		return fmt.Errorf("rand: %w", err)
+	}
 	state := hex.EncodeToString(b)
 
 	tokenURL := authConfig.AuthCodeURL(state)
-	log.Printf("attempting to open %s", tokenURL)
+
+	lg.Info().Msgf("opening %s", tokenURL)
+
 	if err := browser.OpenURL(tokenURL); err != nil {
-		log.Printf("could not open browser, attempting device auth flow")
-		da, err := authConfig.AuthDevice(ctx)
-		if err != nil {
-			return err
-		}
+		lg.Warn().Err(err).Msg("could not open browser; please follow the above URL manually")
+	}
 
-		log.Printf("visit the following link to authorize this CLI instance: %s", da.VerificationURIComplete)
-
-		// use a moderate interval, the `Poll` method below will do a backoff
-		// in case the server returns an error to slow down.
-		token, err = authConfig.Poll(ctx, da)
-		if err != nil {
-			return err
-		}
-	} else {
-		r := <-requestCh
+	var req *http.Request
+	select {
+	case req = <-requestCh:
 		srv.Shutdown(ctx)
+	case <-ctx.Done():
+		lg.Info().Msg("giving up")
+		return nil
+	}
 
-		responseState := r.URL.Query().Get("state")
-		if state != responseState {
-			return fmt.Errorf("corrupted login challenge (%q != %q)", state, responseState)
-		}
+	responseState := req.URL.Query().Get("state")
+	if state != responseState {
+		return fmt.Errorf("corrupted login challenge (%q != %q)", state, responseState)
+	}
 
-		if oauthError := r.URL.Query().Get("error"); oauthError != "" {
-			description := r.URL.Query().Get("error_description")
-			return fmt.Errorf("authentication error: %s (%s)", oauthError, description)
-		}
+	if oauthError := req.URL.Query().Get("error"); oauthError != "" {
+		description := req.URL.Query().Get("error_description")
+		return fmt.Errorf("authentication error: %s (%s)", oauthError, description)
+	}
 
-		token, err = authConfig.Exchange(ctx, r.URL.Query().Get("code"))
-		if err != nil {
-			return err
-		}
+	token, err := authConfig.Exchange(ctx, req.URL.Query().Get("code"))
+	if err != nil {
+		return err
 	}
 
 	if err := saveCredentials(token); err != nil {
 		return err
 	}
+
+	lg.Info().Msg("logged in successfully")
+
 	return nil
 }
 
@@ -142,6 +144,8 @@ func Logout() error {
 }
 
 func SetAuthHeader(ctx context.Context, req *http.Request) error {
+	lg := log.Ctx(ctx)
+
 	// Load the current token.
 	token, err := loadCredentials()
 	// Silently ignore errors if we can't find the credentials.
@@ -158,7 +162,7 @@ func SetAuthHeader(ctx context.Context, req *http.Request) error {
 
 	// If we did refresh the token, store it back
 	if newToken.AccessToken != token.AccessToken || newToken.RefreshToken != token.RefreshToken {
-		log.Println("refreshed access token")
+		lg.Debug().Msg("refreshed access token")
 		if err := saveCredentials(newToken); err != nil {
 			return err
 		}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -82,6 +83,10 @@ func (c *Client) apiReq(ctx context.Context, method, path string, reqType, dest 
 	defer res.Body.Close()
 
 	if res.StatusCode >= 400 {
+		body, err := io.ReadAll(res.Body)
+		if err == nil {
+			return fmt.Errorf("bad response: %s\n\n%s", res.Status, string(body))
+		}
 		return fmt.Errorf("bad response: %s", res.Status)
 	}
 

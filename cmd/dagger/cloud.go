@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"os"
 
 	"github.com/dagger/dagger/internal/cloud"
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -62,11 +62,14 @@ func (cli *CloudCLI) Client() (*cloud.Client, error) {
 }
 
 func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
-	return auth.Login(cmd.Context())
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
+	return auth.Login(ctx)
 }
 
 func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
-	ctx := cmd.Context()
+	lg := Logger(os.Stderr)
+	ctx := lg.WithContext(cmd.Context())
 
 	client, err := cli.Client()
 	if err != nil {
@@ -82,9 +85,10 @@ func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Println("created org", org.Name)
-	fmt.Println()
-	fmt.Println("id:", org.OrgID)
+	lg.Info().
+		Str("name", org.Name).
+		Str("id", org.OrgID).
+		Msg("created org")
 
 	return nil
 }
