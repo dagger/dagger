@@ -2,6 +2,7 @@ package main
 
 import "dagger.io/dagger"
 
+// Lint the Dagger engine code
 func (e EngineTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("engine").Pipeline("lint")

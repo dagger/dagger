@@ -15,6 +15,7 @@ type PythonTargets struct {
 	Base       *dagger.Container
 }
 
+// Dagger Python SDK targets
 func (s SDKTargets) Python(ctx dagger.Context) (PythonTargets, error) {
 	const (
 		path          = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -68,7 +69,7 @@ func (s SDKTargets) Python(ctx dagger.Context) (PythonTargets, error) {
 }
 
 // Lint the Dagger Python SDK
-func (p PythonTargets) Lint(ctx dagger.Context) (string, error) {
+func (p PythonTargets) Lint(ctx dagger.Context, foo string) (string, error) {
 	// TODO: would be cool to write this in python... need support for mixed
 	// languages in single project (or project nesting type thing)
 

@@ -6,6 +6,7 @@ type GoTargets struct {
 	SrcDir *dagger.Directory
 }
 
+// Dagger Go SDK targets
 func (s SDKTargets) Go(ctx dagger.Context) (GoTargets, error) {
 	return GoTargets(s), nil
 }

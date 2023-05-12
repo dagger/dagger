@@ -13,6 +13,7 @@ type NodejsTargets struct {
 	Base       *dagger.Container
 }
 
+// Dagger Nodejs SDK targets
 func (s SDKTargets) Nodejs(ctx dagger.Context) (NodejsTargets, error) {
 	sdkSrcDir := s.SrcDir.Directory("sdk/nodejs")
 
@@ -42,6 +43,7 @@ func (s SDKTargets) Nodejs(ctx dagger.Context) (NodejsTargets, error) {
 	}, nil
 }
 
+// Lint the Nodejs SDK
 func (n NodejsTargets) Lint(ctx dagger.Context) (string, error) {
 	// TODO: pipeline should be automatically set
 	c := ctx.Client().Pipeline("sdk").Pipeline("nodejs").Pipeline("lint")

@@ -7,6 +7,7 @@ import (
 	"runtime/pprof"
 	"runtime/trace"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/tracing"
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -68,6 +69,11 @@ var rootCmd = &cobra.Command{
 			if err := setupDebugHandlers(pprofAddr); err != nil {
 				return fmt.Errorf("start pprof: %w", err)
 			}
+		}
+		var err error
+		workdir, err = engine.NormalizeWorkdir(workdir)
+		if err != nil {
+			return err
 		}
 		return nil
 	},

@@ -8,6 +8,7 @@ func main() {
 	dagger.Serve(CI)
 }
 
+// Dagger CI targets
 func CI(ctx dagger.Context, repo, branch string) (CITargets, error) {
 	return CITargets{
 		SrcDir: ctx.Client().Git(repo).Branch(branch).Tree(),

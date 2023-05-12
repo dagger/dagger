@@ -3,17 +3,18 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
-	"github.com/moby/buildkit/identity"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -25,8 +26,13 @@ var (
 	configPath string
 )
 
+const (
+	projectURIDefault = "."
+	commandSeparator  = ":"
+)
+
 func init() {
-	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", ".", "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
+	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
 	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, relative to the project's root directory.")
 }
 
@@ -76,9 +82,11 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to get project commands: %w", err)
 			}
 			for _, projCmd := range projCmds {
-				if err := addCmd(ctx, cmd, projCmd, c, r); err != nil {
+				subCmds, err := addCmd(ctx, nil, projCmd, c, r)
+				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
+				cmd.AddCommand(subCmds...)
 			}
 
 			subCmd, _, err := cmd.Find(dynamicCmdArgs)
@@ -102,74 +110,94 @@ var doCmd = &cobra.Command{
 			err = subCmd.Execute()
 			if err != nil {
 				cmd.PrintErrln("Error:", err.Error())
-				cmd.Println(subCmd.UsageString())
-				return fmt.Errorf("failed to execute subcmd: %w", err)
+				return errors.Join(fmt.Errorf("failed to execute subcmd: %w", err), pflag.ErrHelp)
 			}
 			return nil
 		})
 	},
 }
 
-func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) error {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	projCmdID, err := projCmd.ID(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cmd id: %w", err)
+		return nil, fmt.Errorf("failed to get cmd id: %w", err)
 	}
 	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: dagger.ProjectCommandID(projCmdID)})
 
-	name, err := projCmd.Name(ctx)
+	projCmdName, err := projCmd.Name(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cmd name: %w", err)
+		return nil, fmt.Errorf("failed to get cmd name: %w", err)
 	}
 	description, err := projCmd.Description(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get cmd description: %w", err)
+		return nil, fmt.Errorf("failed to get cmd description: %w", err)
 	}
+
+	projFlags, err := projCmd.Flags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cmd flags: %w", err)
+	}
+
+	projSubcommands, err := projCmd.Subcommands(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cmd subcommands: %w", err)
+	}
+	isLeafCmd := len(projSubcommands) == 0
+
+	var parentCmd *cobra.Command
+	var cmdName string
+	if len(cmdStack) == 0 {
+		cmdName = projCmdName
+	} else {
+		parentCmd = cmdStack[len(cmdStack)-1]
+		cmdName = getCommandName(parentCmd) + commandSeparator + projCmdName
+	}
+
 	subcmd := &cobra.Command{
-		Use:   name,
-		Short: description,
+		Use:         cmdName,
+		Short:       description,
+		Annotations: map[string]string{},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var cmds []*cobra.Command
-			curCmd := cmd
-			for curCmd.Name() != "do" { // TODO: I guess this rules out entrypoints named do, probably fine?
-				cmds = append(cmds, curCmd)
-				curCmd = curCmd.Parent()
+			if !isLeafCmd {
+				// just print the usage
+				return pflag.ErrHelp
 			}
 
 			queryVars := map[string]any{}
 			varDefinitions := ast.VariableDefinitionList{}
 			topSelection := &ast.Field{}
 			curSelection := topSelection
-			for i := range cmds {
-				cmd := cmds[len(cmds)-1-i]
-				curSelection.Name = cmd.Name()
-				cmd.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) {
+			for i, cmd := range cmdStack {
+				cmdName := getSubcommandName(cmd)
+				curSelection.Name = cmdName
+				for _, flagName := range commandAnnotations(cmd.Annotations).getCommandSpecificFlags() {
 					// skip help flag
 					// TODO: doc that users can't name an args help
-					if flag.Name == "help" {
-						return
+					if flagName == "help" {
+						continue
 					}
-					val := flag.Value.String()
-					uniqueVarName := fmt.Sprintf("%s_%s_%s", cmd.Name(), flag.Name, identity.NewID())
-					queryVars[uniqueVarName] = val
+					flagVal, err := cmd.Flags().GetString(flagName)
+					if err != nil {
+						return fmt.Errorf("failed to get flag %q: %w", flagName, err)
+					}
+					queryVars[flagName] = flagVal
 					curSelection.Arguments = append(curSelection.Arguments, &ast.Argument{
-						Name:  flag.Name,
-						Value: &ast.Value{Raw: uniqueVarName},
+						Name:  flagName,
+						Value: &ast.Value{Raw: flagName},
 					})
 					varDefinitions = append(varDefinitions, &ast.VariableDefinition{
-						Variable: uniqueVarName,
+						Variable: flagName,
 						Type:     ast.NonNullNamedType("String", nil),
 					})
-				})
-				if i < len(cmds)-1 {
+				}
+				if i < len(cmdStack)-1 {
 					newSelection := &ast.Field{}
 					curSelection.SelectionSet = ast.SelectionSet{newSelection}
 					curSelection = newSelection
 				}
 			}
-
 			var b bytes.Buffer
 			opName := "Do"
 			formatter.NewFormatter(&b).FormatQueryDocument(&ast.QueryDocument{
@@ -189,14 +217,13 @@ func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.Projec
 			}
 			var res string
 			resSelection := resMap
-			for i := range cmds {
-				cmd := cmds[len(cmds)-1-i]
-				next := resSelection[cmd.Name()]
+			for i, cmd := range cmdStack {
+				next := resSelection[getSubcommandName(cmd)]
 				switch next := next.(type) {
 				case map[string]any:
 					resSelection = next
 				case string:
-					if i < len(cmds)-1 {
+					if i < len(cmdStack)-1 {
 						return fmt.Errorf("expected object, got string")
 					}
 					res = next
@@ -204,45 +231,78 @@ func addCmd(ctx context.Context, parentCmd *cobra.Command, projCmd dagger.Projec
 					return fmt.Errorf("unexpected type %T", next)
 				}
 			}
-
 			// TODO: better to print this after session closes so there's less overlap with progress output
 			fmt.Println(res)
 			return nil
 		},
 	}
-	parentCmd.AddCommand(subcmd)
 
-	projFlags, err := projCmd.Flags(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get cmd flags: %w", err)
+	if parentCmd != nil {
+		subcmd.Flags().AddFlagSet(parentCmd.Flags())
 	}
 	for _, flag := range projFlags {
 		flagName, err := flag.Name(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get flag name: %w", err)
+			return nil, fmt.Errorf("failed to get flag name: %w", err)
 		}
 		flagDescription, err := flag.Description(ctx)
 		if err != nil {
-			return fmt.Errorf("failed to get flag description: %w", err)
+			return nil, fmt.Errorf("failed to get flag description: %w", err)
 		}
 		subcmd.Flags().String(flagName, "", flagDescription)
+		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
-	projSubcommands, err := projCmd.Subcommands(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get cmd subcommands: %w", err)
-	}
+	returnCmds := []*cobra.Command{subcmd}
+	cmdStack = append(cmdStack, subcmd)
 	for _, subProjCmd := range projSubcommands {
-		err := addCmd(ctx, subcmd, subProjCmd, c, r)
+		subCmds, err := addCmd(ctx, cmdStack, subProjCmd, c, r)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		returnCmds = append(returnCmds, subCmds...)
 	}
-	return nil
+
+	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		cmd.Printf("\nCommand %s - %s\n", getCommandName(cmd), description)
+
+		cmd.Printf("\nAvailable Subcommands:\n")
+		maxNameLen := 0
+		for _, subcmd := range returnCmds[1:] {
+			nameLen := len(getCommandName(subcmd))
+			if nameLen > maxNameLen {
+				maxNameLen = nameLen
+			}
+		}
+		// we want to ensure the doc strings line up so they are readable
+		spacing := strings.Repeat(" ", maxNameLen+2)
+		for _, subcmd := range returnCmds[1:] {
+			cmd.Printf("  %s%s%s\n", getCommandName(subcmd), spacing[len(getCommandName(subcmd)):], subcmd.Short)
+		}
+
+		fmt.Printf("\nFlags:\n")
+		maxFlagLen := 0
+		var flags []*pflag.Flag
+		cmd.NonInheritedFlags().VisitAll(func(flag *pflag.Flag) {
+			if flag.Name == "help" {
+				return
+			}
+			flags = append(flags, flag)
+			if len(flag.Name) > maxFlagLen {
+				maxFlagLen = len(flag.Name)
+			}
+		})
+		flagSpacing := strings.Repeat(" ", maxFlagLen+2)
+		for _, flag := range flags {
+			cmd.Printf("  --%s%s%s\n", flag.Name, flagSpacing[len(flag.Name):], flag.Usage)
+		}
+	})
+
+	return returnCmds, nil
 }
 
 func getProject(c *dagger.Client) (*dagger.Project, error) {
 	projectURI, configPath := projectURI, configPath
-	if projectURI == "" || projectURI == "." {
+	if projectURI == "" || projectURI == projectURIDefault {
 		// it's unset or default value, use env if present
 		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
 			projectURI = v
@@ -277,4 +337,38 @@ func getProject(c *dagger.Client) (*dagger.Project, error) {
 		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
 	}
 	return nil, fmt.Errorf("unsupported scheme %s", url.Scheme)
+}
+
+func getCommandName(cmd *cobra.Command) string {
+	// name is like "dagger do a:b:c", we return just "a:b:c" here
+	nameSplit := strings.Split(cmd.Name(), " ")
+	return nameSplit[len(nameSplit)-1]
+}
+
+func getSubcommandName(cmd *cobra.Command) string {
+	// if command name is "a:b:c", we return just "c" here
+	nameSplit := strings.Split(getCommandName(cmd), commandSeparator)
+	return nameSplit[len(nameSplit)-1]
+}
+
+// certain pieces of metadata about cobra commands are difficult or impossible to set
+// other than in the generic annotations, this wraps that map with some helpers
+type commandAnnotations map[string]string
+
+const (
+	commandSpecificFlagsKey = "flags"
+)
+
+// These are the flags defined on the command itself. Tried using cobra's Local and
+// NonInheritedFlags but could not get them to work as needed.
+func (m commandAnnotations) addCommandSpecificFlag(name string) {
+	m[commandSpecificFlagsKey] = strings.Join(append(m.getCommandSpecificFlags(), name), ",")
+}
+
+func (m commandAnnotations) getCommandSpecificFlags() []string {
+	split := strings.Split(m[commandSpecificFlagsKey], ",")
+	if len(split) == 1 && split[0] == "" {
+		return nil
+	}
+	return split
 }
