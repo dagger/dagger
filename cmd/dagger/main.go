@@ -46,6 +46,10 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// if we got this far, CLI parsing worked just fine; no
+		// need to show usage for runtime errors
+		cmd.SilenceUsage = true
+
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
 			if err != nil {
