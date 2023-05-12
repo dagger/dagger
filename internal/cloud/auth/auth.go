@@ -10,17 +10,18 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/mitchellh/go-homedir"
+	"github.com/adrg/xdg"
 	"github.com/pkg/browser"
 	"github.com/rs/zerolog/log"
 	"golang.org/x/oauth2"
 )
 
 const (
-	credentialsFile = "~/.config/dagger/credentials" // #nosec
-	authDomain      = "auth.dagger.cloud"
-	callbackPort    = 38932
+	authDomain   = "auth.dagger.cloud"
+	callbackPort = 38932
 )
+
+var credentialsFile = filepath.Join(xdg.ConfigHome, "dagger", "credentials.json")
 
 var authConfig = &oauth2.Config{
 	// https://manage.auth0.com/dashboard/us/dagger-io/applications/brEY7u4SEoFypOgYBdYMs32b4ShRVIEv/settings
@@ -131,12 +132,7 @@ func Login(ctx context.Context) error {
 
 // Logout deletes the client credentials
 func Logout() error {
-	credentialsFilePath, err := homedir.Expand(credentialsFile)
-	if err != nil {
-		panic(err)
-	}
-
-	err = os.Remove(credentialsFilePath)
+	err := os.Remove(credentialsFile)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -179,11 +175,7 @@ func HasCredentials() bool {
 }
 
 func loadCredentials() (*oauth2.Token, error) {
-	f, err := homedir.Expand(credentialsFile)
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(f)
+	data, err := os.ReadFile(credentialsFile)
 	if err != nil {
 		return nil, err
 	}
@@ -200,15 +192,11 @@ func saveCredentials(token *oauth2.Token) error {
 		return err
 	}
 
-	f, err := homedir.Expand(credentialsFile)
-	if err != nil {
-		panic(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(f), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(credentialsFile), 0o755); err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(f, data, 0o600); err != nil {
+	if err := os.WriteFile(credentialsFile, data, 0o600); err != nil {
 		return err
 	}
 	return nil
