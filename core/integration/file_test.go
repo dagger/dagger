@@ -175,6 +175,7 @@ func TestFileExport(t *testing.T) {
 }
 
 func TestFileWithTimestamps(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -197,6 +198,7 @@ func TestFileWithTimestamps(t *testing.T) {
 }
 
 func TestFileContents(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 
