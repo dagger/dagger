@@ -73,7 +73,11 @@ func Login(ctx context.Context) error {
 		requestCh <- r
 	})
 
-	srv := &http.Server{Addr: fmt.Sprintf("localhost:%d", callbackPort), Handler: m}
+	srv := &http.Server{ // nolint: gosec
+		Addr:    fmt.Sprintf("localhost:%d", callbackPort),
+		Handler: m,
+	}
+
 	go func() {
 		err := srv.ListenAndServe()
 		if err != http.ErrServerClosed {

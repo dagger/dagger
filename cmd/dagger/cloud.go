@@ -13,10 +13,9 @@ var cloudCmd = &cobra.Command{
 	Short: "Dagger Cloud commands",
 }
 
-var cloudAPI string
-
 func init() {
 	cloud := &CloudCLI{}
+
 	cloudCmd.PersistentFlags().StringVar(&cloud.API, "api", "https://api.dagger.cloud", "Dagger Cloud API URL")
 	cloudCmd.PersistentFlags().BoolVar(&cloud.Trace, "trace", false, "Print API request/response headers")
 
