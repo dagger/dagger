@@ -9,24 +9,24 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/opencontainers/go-digest"
 )
 
 type TreeEntry interface {
 	tea.Model
 
-	ID() digest.Digest
-	Inputs() []digest.Digest
+	ID() string
+	Inputs() []string
 
 	Name() string
 
 	Entries() []TreeEntry
 
+	Infinite() bool
+
 	Started() *time.Time
 	Completed() *time.Time
 	Cached() bool
-	Error() string
-	Service() bool
+	Error() *string
 
 	SetWidth(int)
 	SetHeight(int)
@@ -137,7 +137,7 @@ func (m *Tree) statusView(item TreeEntry) string {
 	if item.Cached() {
 		return cachedStatus.String()
 	}
-	if item.Error() != "" {
+	if item.Error() != nil {
 		return failedStatus.String()
 	}
 	if item.Started() != nil {
@@ -464,7 +464,7 @@ func findOldestIncompleteEntry(entry TreeEntry) TreeEntry {
 		cached := e.Cached()
 		entries := e.Entries()
 
-		if e.Service() {
+		if e.Infinite() {
 			// avoid following services, since they run forever
 			return
 		}

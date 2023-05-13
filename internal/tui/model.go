@@ -12,8 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/dagger/dagger/internal/engine/journal"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func New(quit func(), r journal.Reader, rootName string) *Model {
@@ -30,7 +31,7 @@ func New(quit func(), r journal.Reader, rootName string) *Model {
 		},
 		root:      root,
 		rootLogs:  rootLogs,
-		itemsByID: make(map[digest.Digest]*Item),
+		itemsByID: make(map[string]*Item),
 		details:   Details{},
 		follow:    true,
 		journal:   r,
@@ -46,7 +47,7 @@ type Model struct {
 	quit func()
 
 	journal   journal.Reader
-	itemsByID map[digest.Digest]*Item
+	itemsByID map[string]*Item
 	root      *Group
 	rootLogs  *Vterm
 
@@ -87,13 +88,16 @@ type EditorExitMsg struct {
 
 type endMsg struct{}
 
-func (m Model) adjustLocalTime(t *time.Time) *time.Time {
+func (m Model) adjustLocalTime(t *timestamppb.Timestamp) *timestamppb.Timestamp {
 	if t == nil {
 		return nil
 	}
 
-	adjusted := t.Add(m.localTimeDiff)
-	return &adjusted
+	adjusted := t.AsTime().Add(m.localTimeDiff)
+	cp := proto.Clone(t).(*timestamppb.Timestamp)
+	cp.Seconds = int64(adjusted.Unix())
+	cp.Nanos = int32(adjusted.Nanosecond())
+	return cp
 }
 
 type followMsg struct{}
@@ -144,8 +148,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.details.SetItem(m.tree.Current()),
 			followTick(),
 		)
-	case *journal.Entry:
-		return m.processSolveStatus(msg.Event)
+	case *progrock.StatusUpdate:
+		return m.processSolveStatus(msg)
 	case spinner.TickMsg:
 		cmds := []tea.Cmd{}
 
@@ -270,19 +274,19 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd) {
+func (m Model) processSolveStatus(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{
 		m.waitForActivity(),
 	}
 
 	for _, v := range msg.Vertexes {
 		if m.localTimeDiff == 0 && v.Started != nil {
-			m.localTimeDiff = time.Since(*v.Started)
+			m.localTimeDiff = time.Since(v.Started.AsTime())
 		}
 		v.Started = m.adjustLocalTime(v.Started)
 		v.Completed = m.adjustLocalTime(v.Completed)
 
-		item := m.itemsByID[v.Digest]
+		item := m.itemsByID[v.Id]
 		if item == nil {
 			item = NewItem(v, m.width)
 			cmds = append(cmds, item.Init())
@@ -297,7 +301,7 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 		item.UpdateVertex(v)
 	}
 
-	for _, s := range msg.Statuses {
+	for _, s := range msg.Tasks {
 		item := m.itemsByID[s.Vertex]
 		if item == nil {
 			continue
