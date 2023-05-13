@@ -95,50 +95,39 @@ func Run(cmd *cobra.Command, args []string) {
 }
 
 func run(ctx context.Context, args []string) error {
-	sessionToken, err := uuid.NewRandom()
-	if err != nil {
-		return fmt.Errorf("generate uuid: %w", err)
-	}
+	return withEngineAndTUI(ctx, func(ctx context.Context, api *router.Router, logs io.Writer, sessionToken string) error {
+		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("session listen: %w", err)
+		}
+		defer sessionL.Close()
 
-	sessionL, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return fmt.Errorf("session listen: %w", err)
-	}
-	defer sessionL.Close()
+		sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
+		os.Setenv("DAGGER_SESSION_PORT", sessionPort)
+		os.Setenv("DAGGER_SESSION_TOKEN", sessionToken)
 
-	sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
-	os.Setenv("DAGGER_SESSION_PORT", sessionPort)
-	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
+		subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 
-	ctx, quit := context.WithCancel(ctx)
-	defer quit()
-
-	subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
-
-	// allow piping to the command
-	subCmd.Stdin = os.Stdin
-
-	// NB: go run lets its child process roam free when you interrupt it, so
-	// make sure they all get signalled. (you don't normally notice this in a
-	// shell because Ctrl+C sends to the process group.)
-	ensureChildProcessesAreKilled(subCmd)
-
-	if !useShinyNewTUI {
+		// allow piping to the command
 		subCmd.Stdin = os.Stdin
-		subCmd.Stdout = os.Stdout
-		subCmd.Stderr = os.Stderr
 
-		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, api *router.Router) error {
-			go http.Serve(sessionL, api) // nolint:gosec
-			return subCmd.Run()
-		})
-	}
+		// NB: go run lets its child process roam free when you interrupt it, so
+		// make sure they all get signalled. (you don't normally notice this in a
+		// shell because Ctrl+C sends to the process group.)
+		ensureChildProcessesAreKilled(subCmd)
 
-	if interactive {
-		return interactiveTUI(ctx, sessionToken, sessionL, subCmd, quit)
-	}
+		if logs != nil {
+			subCmd.Stdout = logs
+			subCmd.Stderr = logs
+		} else {
+			subCmd.Stdout = os.Stdout
+			subCmd.Stderr = os.Stderr
+		}
 
-	return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
+		go http.Serve(sessionL, api) // nolint:gosec
+
+		return subCmd.Run()
+	})
 }
 
 func interactiveTUI(
@@ -183,10 +172,8 @@ func interactiveTUI(
 
 func inlineTUI(
 	ctx context.Context,
-	sessionToken uuid.UUID,
-	sessionL net.Listener,
-	subCmd *exec.Cmd,
-	quit func(),
+	engineConf engine.Config,
+	fn EngineTUIFunc,
 ) error {
 	tape := progrock.NewTape()
 	if debugLogs {
@@ -272,4 +259,44 @@ func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
 
 func (p progrockFileWriter) Close() error {
 	return p.c.Close()
+}
+
+type EngineTUIFunc func(
+	ctx context.Context,
+	api *router.Router,
+	tui *tea.Program,
+	sessionToken string,
+) error
+
+func withEngineAndTUI(
+	ctx context.Context,
+	fn EngineTUIFunc,
+) error {
+	sessionToken, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("generate uuid: %w", err)
+	}
+
+	engineConf := engine.Config{
+		Workdir:       workdir,
+		SessionToken:  sessionToken.String(),
+		RunnerHost:    internalengine.RunnerHost(),
+		DisableHostRW: disableHostRW,
+		JournalFile:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+	}
+
+	if !useShinyNewTUI {
+		return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+			return fn(ctx, api, nil, sessionToken.String())
+		})
+	}
+
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+
+	// if interactive {
+	// 	return interactiveTUI(ctx, engineConf, sessionToken, fn)
+	// }
+
+	return inlineTUI(ctx, engineConf, fn)
 }
