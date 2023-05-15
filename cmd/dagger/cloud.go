@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 
 	"github.com/dagger/dagger/internal/cloud"
@@ -61,19 +62,18 @@ func init() {
 	orgCreateTokenCmd := &cobra.Command{
 		Use:   "create-token <ORG> <TOKEN_NAME>",
 		Short: "Create a token for sending logs to Dagger Cloud",
-		RunE:  cloud.CreateOrgEngineToken,
+		RunE:  cloud.CreateOrgEngineIngestionToken,
 		Args:  cobra.ExactArgs(1),
 	}
 	orgCreateTokenCmd.Flags().String("name", "default", "Name for the token")
 	orgCmd.AddCommand(orgCreateTokenCmd)
 
 	orgDeleteTokenCmd := &cobra.Command{
-		Use:   "delete-token <ORG> <TOKEN_NAME>",
+		Use:   "delete-token <ORG> <TOKEN>",
 		Short: "Delete a token",
-		RunE:  cloud.DeleteOrgEngineToken,
-		Args:  cobra.ExactArgs(1),
+		RunE:  cloud.DeleteOrgEngineIngestionToken,
+		Args:  cobra.ExactArgs(2),
 	}
-	orgDeleteTokenCmd.Flags().String("name", "default", "Name of the token to delete")
 	orgCmd.AddCommand(orgDeleteTokenCmd)
 }
 
@@ -82,8 +82,8 @@ type CloudCLI struct {
 	Trace bool
 }
 
-func (cli *CloudCLI) Client() (*cloud.Client, error) {
-	client, err := cloud.NewClient(cli.API)
+func (cli *CloudCLI) Client(ctx context.Context) (*cloud.Client, error) {
+	client, err := cloud.NewClient(ctx, cli.API)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	lg.Info().Str("user", user.UserID).Msg("logged in")
+	lg.Info().Str("user", user.ID).Msg("logged in")
 	return nil
 }
 
@@ -118,7 +118,7 @@ func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
@@ -134,7 +134,7 @@ func (cli *CloudCLI) CreateOrg(cmd *cobra.Command, args []string) error {
 
 	lg.Info().
 		Str("name", org.Name).
-		Str("id", org.OrgID).
+		Str("id", org.ID).
 		Msg("created org")
 
 	return nil
@@ -144,7 +144,7 @@ func (cli *CloudCLI) AddOrgUserRole(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
@@ -156,9 +156,15 @@ func (cli *CloudCLI) AddOrgUserRole(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	res, err := client.AddOrgUserRole(ctx, orgName, &cloud.AddOrgUserRoleRequest{
+	org, err := client.Org(ctx, orgName)
+	if err != nil {
+		return err
+	}
+
+	res, err := client.AddOrgUserRole(ctx, &cloud.AddOrgUserRoleRequest{
+		OrgID:  org.ID,
 		UserID: userID,
-		Role:   role,
+		Role:   cloud.NewRole(role),
 	})
 	if err != nil {
 		return err
@@ -167,7 +173,7 @@ func (cli *CloudCLI) AddOrgUserRole(cmd *cobra.Command, args []string) error {
 	lg.Info().
 		Str("org", orgName).
 		Str("user", res.UserID).
-		Str("role", res.Role).
+		Str("role", res.Role.String()).
 		Msg("added user to org")
 
 	return nil
@@ -177,7 +183,7 @@ func (cli *CloudCLI) RemoveOrgUserRole(cmd *cobra.Command, args []string) error 
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
@@ -189,9 +195,15 @@ func (cli *CloudCLI) RemoveOrgUserRole(cmd *cobra.Command, args []string) error 
 		return err
 	}
 
-	res, err := client.RemoveOrgUserRole(ctx, orgName, &cloud.RemoveOrgUserRoleRequest{
+	org, err := client.Org(ctx, orgName)
+	if err != nil {
+		return err
+	}
+
+	res, err := client.RemoveOrgUserRole(ctx, &cloud.RemoveOrgUserRoleRequest{
+		OrgID:  org.ID,
 		UserID: userID,
-		Role:   role,
+		Role:   cloud.NewRole(role),
 	})
 	if err != nil {
 		return err
@@ -207,11 +219,11 @@ func (cli *CloudCLI) RemoveOrgUserRole(cmd *cobra.Command, args []string) error 
 	return nil
 }
 
-func (cli *CloudCLI) CreateOrgEngineToken(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) CreateOrgEngineIngestionToken(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
@@ -222,8 +234,14 @@ func (cli *CloudCLI) CreateOrgEngineToken(cmd *cobra.Command, args []string) err
 		return err
 	}
 
-	res, err := client.CreateOrgEngineToken(ctx, orgName, &cloud.CreateOrgEngineTokenRequest{
-		Name: tokenName,
+	org, err := client.Org(ctx, orgName)
+	if err != nil {
+		return err
+	}
+
+	res, err := client.CreateOrgEngineIngestionToken(ctx, &cloud.CreateOrgEngineIngestionTokenRequest{
+		OrgID: org.ID,
+		Name:  tokenName,
 	})
 	if err != nil {
 		return err
@@ -238,30 +256,32 @@ func (cli *CloudCLI) CreateOrgEngineToken(cmd *cobra.Command, args []string) err
 	return nil
 }
 
-func (cli *CloudCLI) DeleteOrgEngineToken(cmd *cobra.Command, args []string) error {
+func (cli *CloudCLI) DeleteOrgEngineIngestionToken(cmd *cobra.Command, args []string) error {
 	lg := Logger(os.Stderr)
 	ctx := lg.WithContext(cmd.Context())
 
-	client, err := cli.Client()
+	client, err := cli.Client(ctx)
 	if err != nil {
 		return err
 	}
 
 	orgName := args[0]
-	tokenName, err := cmd.Flags().GetString("name")
+	token := args[1]
+
+	org, err := client.Org(ctx, orgName)
 	if err != nil {
 		return err
 	}
 
-	res, err := client.DeleteOrgEngineToken(ctx, orgName, &cloud.DeleteOrgEngineTokenRequest{
-		Name: tokenName,
+	res, err := client.DeleteOrgEngineIngestionToken(ctx, &cloud.DeleteOrgEngineIngestionTokenRequest{
+		OrgID: org.ID,
+		Token: token,
 	})
 	if err != nil {
 		return err
 	}
 
 	lg.Info().
-		Str("name", tokenName).
 		Bool("existed", res.Existed).
 		Msg("deleted engine token")
 

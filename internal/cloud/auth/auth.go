@@ -138,39 +138,35 @@ func Logout() error {
 	return err
 }
 
-func SetAuthHeader(ctx context.Context, req *http.Request) error {
-	lg := log.Ctx(ctx)
-
-	// Load the current token.
-	token, err := loadCredentials()
-	// Silently ignore errors if we can't find the credentials.
-	if err != nil {
-		return nil
-	}
-
-	// Try and refresh the token
-	source := authConfig.TokenSource(ctx, token)
-	newToken, err := source.Token()
-	if err != nil {
-		return err
-	}
-
-	// If we did refresh the token, store it back
-	if newToken.AccessToken != token.AccessToken || newToken.RefreshToken != token.RefreshToken {
-		lg.Debug().Msg("refreshed access token")
-		if err := saveCredentials(newToken); err != nil {
-			return err
-		}
-	}
-
-	// Finally, set the auth header
-	newToken.SetAuthHeader(req)
-	return nil
+func TokenSource(ctx context.Context) oauth2.TokenSource {
+	return loginTokenSource{ctx}
 }
 
-func HasCredentials() bool {
-	_, err := loadCredentials()
-	return err == nil
+// loginTokenSource is a TokenSource that will re-login if a token is not available or cannot be refreshed.
+type loginTokenSource struct {
+	ctx context.Context
+}
+
+func (src loginTokenSource) Token() (*oauth2.Token, error) {
+	token, err := loadCredentials()
+	if err != nil {
+		if err := Login(src.ctx); err != nil {
+			return nil, err
+		}
+
+		return src.Token()
+	}
+
+	token, err = authConfig.TokenSource(src.ctx, token).Token()
+	if err != nil {
+		if err := Login(src.ctx); err != nil {
+			return nil, err
+		}
+
+		return src.Token()
+	}
+
+	return token, nil
 }
 
 func loadCredentials() (*oauth2.Token, error) {

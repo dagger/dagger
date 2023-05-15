@@ -1,32 +1,29 @@
 package cloud
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"net/url"
-	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
+	"github.com/shurcooL/graphql"
+	"golang.org/x/oauth2"
 )
 
 type Client struct {
 	Trace bool
 
 	u *url.URL
-	c *http.Client
+	c *graphql.Client
 
 	l sync.Mutex
 
 	retryLogin bool
 }
 
-func NewClient(api string) (*Client, error) {
+func NewClient(ctx context.Context, api string) (*Client, error) {
 	if api == "" {
 		api = "https://api.dagger.cloud"
 	}
@@ -36,215 +33,189 @@ func NewClient(api string) (*Client, error) {
 		return nil, err
 	}
 
+	httpClient := oauth2.NewClient(ctx, auth.TokenSource(ctx))
+
 	return &Client{
 		u: u,
-		c: http.DefaultClient,
+		c: graphql.NewClient(api+"/query", httpClient),
 	}, nil
 }
 
 type UserResponse struct {
-	UserID string `json:"user_id"`
+	ID string
 }
 
 func (c *Client) User(ctx context.Context) (*UserResponse, error) {
-	var res UserResponse
-	if err := c.apiReq(ctx, "GET", "/user", nil, &res); err != nil {
+	var q struct {
+		User UserResponse `graphql:"user"`
+	}
+	err := c.c.Query(ctx, &q, nil)
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
+	return &q.User, nil
+}
+
+type OrgResponse struct {
+	ID        string
+	Name      string
+	CreatedAt time.Time
+}
+
+func (c *Client) Org(ctx context.Context, name string) (*OrgResponse, error) {
+	var q struct {
+		Org OrgResponse `graphql:"org(name: $name)"`
+	}
+	err := c.c.Query(ctx, &q, map[string]any{
+		"name": graphql.String(name),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &q.Org, nil
 }
 
 type CreateOrgRequest struct {
-	Name string `json:"name"`
+	Name string
 }
 
 type CreateOrgResponse struct {
-	OrgID     string    `json:"org_id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string
+	Name      string
+	CreatedAt time.Time
 }
 
 func (c *Client) CreateOrg(ctx context.Context, req *CreateOrgRequest) (*CreateOrgResponse, error) {
-	var res CreateOrgResponse
-	if err := c.apiReq(ctx, "POST", "/orgs", req, &res); err != nil {
+	var m struct {
+		CreateOrg CreateOrgResponse `graphql:"createOrg(name: $name)"`
+	}
+	err := c.c.Mutate(ctx, &m, map[string]any{
+		"name": graphql.String(req.Name),
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
+	return &m.CreateOrg, nil
+}
+
+type Role string
+
+func NewRole(str string) Role {
+	return Role(strings.ToUpper(str))
+}
+
+func (role Role) String() string {
+	return strings.ToLower(string(role))
 }
 
 type AddOrgUserRoleRequest struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	OrgID  string
+	UserID string
+	Role   Role
 }
 
 type AddOrgUserRoleResponse struct {
-	OrgID     string    `json:"org_id"`
-	UserID    string    `json:"user_id"`
-	Role      string    `json:"role"`
-	CreatedAt time.Time `json:"created_at"`
+	OrgID     string
+	UserID    string
+	Role      Role
+	CreatedAt time.Time
 }
 
-func (c *Client) AddOrgUserRole(ctx context.Context, orgName string, req *AddOrgUserRoleRequest) (*AddOrgUserRoleResponse, error) {
-	var res AddOrgUserRoleResponse
-	if err := c.apiReq(ctx, "POST", "/orgs/"+orgName+"/users", req, &res); err != nil {
+func (c *Client) AddOrgUserRole(ctx context.Context, req *AddOrgUserRoleRequest) (*AddOrgUserRoleResponse, error) {
+	var m struct {
+		AddOrgUserRole AddOrgUserRoleResponse `graphql:"addOrgUserRole(org: $org, user: $user, role: $role)"`
+	}
+	err := c.c.Mutate(ctx, &m, map[string]any{
+		"org":  graphql.ID(req.OrgID),
+		"user": graphql.ID(req.UserID),
+		"role": req.Role,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
+	return &m.AddOrgUserRole, nil
 }
 
 type RemoveOrgUserRoleRequest struct {
-	UserID string `json:"user_id"`
-	Role   string `json:"role"`
+	OrgID  string
+	UserID string
+	Role   Role
 }
 
 type RemoveOrgUserRoleResponse struct {
-	Existed bool `json:"existed"`
+	Existed bool
 }
 
-func (c *Client) RemoveOrgUserRole(ctx context.Context, orgName string, req *RemoveOrgUserRoleRequest) (*RemoveOrgUserRoleResponse, error) {
-	var res RemoveOrgUserRoleResponse
-	if err := c.apiReq(ctx, "DELETE", "/orgs/"+orgName+"/users", req, &res); err != nil {
+func (c *Client) RemoveOrgUserRole(ctx context.Context, req *RemoveOrgUserRoleRequest) (*RemoveOrgUserRoleResponse, error) {
+	var m struct {
+		RemoveOrgUserRole bool `graphql:"removeOrgUserRole(org: $org, user: $user, role: $role)"`
+	}
+	err := c.c.Mutate(ctx, &m, map[string]any{
+		"org":  graphql.ID(req.OrgID),
+		"user": graphql.ID(req.UserID),
+		"role": req.Role,
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
+	return &RemoveOrgUserRoleResponse{
+		Existed: m.RemoveOrgUserRole,
+	}, nil
 }
 
-type CreateOrgEngineTokenRequest struct {
-	Name string `json:"name"`
+type CreateOrgEngineIngestionTokenRequest struct {
+	OrgID string
+	Name  string
 }
 
-type CreateOrgEngineTokenResponse struct {
-	OrgID     string    `json:"org_id"`
-	Token     string    `json:"token"`
-	CreatedAt time.Time `json:"created_at"`
+type CreateOrgEngineIngestionTokenResponse struct {
+	OrgID     string
+	Token     string
+	CreatedAt time.Time
 }
 
-func (c *Client) CreateOrgEngineToken(ctx context.Context, orgName string, req *CreateOrgEngineTokenRequest) (*CreateOrgEngineTokenResponse, error) {
-	var res CreateOrgEngineTokenResponse
-	if err := c.apiReq(ctx, "POST", "/orgs/"+orgName+"/tokens", req, &res); err != nil {
+func (c *Client) CreateOrgEngineIngestionToken(ctx context.Context, req *CreateOrgEngineIngestionTokenRequest) (*CreateOrgEngineIngestionTokenResponse, error) {
+	var m struct {
+		CreateOrgEngineIngestionToken CreateOrgEngineIngestionTokenResponse `graphql:"createOrgEngineIngestionToken(org: $org, name: $name)"`
+	}
+	err := c.c.Mutate(ctx, &m, map[string]any{
+		"org":  graphql.ID(req.OrgID),
+		"name": graphql.String(req.Name),
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
+	return &m.CreateOrgEngineIngestionToken, nil
 }
 
-type DeleteOrgEngineTokenRequest struct {
-	Name string `json:"name"`
+type DeleteOrgEngineIngestionTokenRequest struct {
+	OrgID string
+	Token string
 }
 
-type DeleteOrgEngineTokenResponse struct {
-	Existed bool `json:"existed"`
+type DeleteOrgEngineIngestionTokenResponse struct {
+	Existed bool
 }
 
-func (c *Client) DeleteOrgEngineToken(ctx context.Context, orgName string, req *DeleteOrgEngineTokenRequest) (*DeleteOrgEngineTokenResponse, error) {
-	var res DeleteOrgEngineTokenResponse
-	if err := c.apiReq(ctx, "DELETE", "/orgs/"+orgName+"/tokens", req, &res); err != nil {
+func (c *Client) DeleteOrgEngineIngestionToken(ctx context.Context, req *DeleteOrgEngineIngestionTokenRequest) (*DeleteOrgEngineIngestionTokenResponse, error) {
+	var m struct {
+		DeleteOrgEngineIngestionToken bool `graphql:"deleteOrgEngineIngestionToken(org: $org, token: $token)"`
+	}
+	err := c.c.Mutate(ctx, &m, map[string]any{
+		"org":   graphql.ID(req.OrgID),
+		"token": graphql.String(req.Token),
+	})
+	if err != nil {
 		return nil, err
 	}
 
-	return &res, nil
-}
-
-func (c *Client) apiReq(ctx context.Context, method, path string, reqBody, resBody any) error {
-	var body io.Reader
-	if reqBody != nil {
-		payload, err := json.Marshal(reqBody)
-		if err != nil {
-			return fmt.Errorf("marshal: %w", err)
-		}
-
-		body = bytes.NewBuffer(payload)
-	}
-
-	req, err := http.NewRequest(method, c.u.JoinPath(path).String(), body)
-	if err != nil {
-		return fmt.Errorf("request: %w", err)
-	}
-
-	if reqBody != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	res, err := c.doWithAuth(ctx, req)
-	if err != nil {
-		return fmt.Errorf("do: %w", err)
-	}
-
-	defer res.Body.Close()
-
-	if res.StatusCode >= 400 {
-		body, err := io.ReadAll(res.Body)
-		if err == nil {
-			return fmt.Errorf("bad response: %s\n\n%s", res.Status, string(body))
-		}
-		return fmt.Errorf("bad response: %s", res.Status)
-	}
-
-	if resBody != nil {
-		if err := json.NewDecoder(res.Body).Decode(resBody); err != nil {
-			return fmt.Errorf("unmarshal: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func (c *Client) doWithAuth(ctx context.Context, req *http.Request) (*http.Response, error) {
-	req = req.WithContext(ctx)
-
-	// OAuth2 authentication
-	if err := auth.SetAuthHeader(ctx, req); err != nil {
-		// if token is invalid or expired, we should handle re-auth in sync
-		// fashion.
-		c.l.Lock()
-		defer c.l.Unlock()
-
-		// only client trying to re-auth. other waiting clients shouldn't
-		// re-trigger auth
-		if c.retryLogin {
-			// If we fail to refresh an access token, try to log in again.
-			c.retryLogin = false
-			err := auth.Login(ctx)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		if err := auth.SetAuthHeader(ctx, req); err != nil {
-			return nil, err
-		}
-	}
-
-	// req.Header.Set("User-Agent", version.Long())
-
-	if c.Trace {
-		req.Header.Write(os.Stderr)
-		fmt.Fprintln(os.Stderr)
-	}
-
-	resp, err := c.c.Do(req)
-	if err != nil {
-		return resp, err
-	}
-
-	if c.Trace {
-		resp.Header.Write(os.Stderr)
-		fmt.Fprintln(os.Stderr)
-	}
-
-	// If there's an auth problem, login and retry the request
-	if resp.StatusCode == http.StatusUnauthorized && c.retryLogin {
-		c.retryLogin = false
-		err := auth.Login(ctx)
-		if err != nil {
-			return resp, err
-		}
-		return c.doWithAuth(ctx, req)
-	}
-
-	return resp, err
+	return &DeleteOrgEngineIngestionTokenResponse{
+		Existed: m.DeleteOrgEngineIngestionToken,
+	}, nil
 }
