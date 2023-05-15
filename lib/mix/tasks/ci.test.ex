@@ -50,7 +50,6 @@ defmodule Mix.Tasks.Ci.Test do
     |> Dagger.Container.pipeline("Test")
     |> Dagger.Container.with_exec(["mix", "test", "--color"])
     |> Dagger.Container.stdout()
-    |> IO.puts()
   end
 
   def check_format(base_image) do
@@ -58,7 +57,6 @@ defmodule Mix.Tasks.Ci.Test do
     |> Dagger.Container.pipeline("Check Format")
     |> Dagger.Container.with_exec(["mix", "format", "--check-formatted"])
     |> Dagger.Container.stdout()
-    |> IO.puts()
   end
 
   def with_session(fun, opts \\ []) when is_function(fun, 1) do

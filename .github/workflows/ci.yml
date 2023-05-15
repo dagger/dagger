@@ -43,7 +43,7 @@ jobs:
         run: mix deps.get
       - name: Test
         run: |
-          dagger run mix ci.test
+          dagger run --debug mix ci.test
   test-local-cli:
     name: Test local cli
     runs-on: ubuntu-latest
