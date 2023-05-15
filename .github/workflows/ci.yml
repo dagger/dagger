@@ -1,3 +1,4 @@
+# TODO: windows support
 name: CI
 on:
   push:
@@ -6,6 +7,9 @@ on:
     branches: ["main"]
 permissions:
   contents: read
+env:
+  DAGGER_VERSION: '0.5.2'
+  XDG_CACHE_HOME: /tmp/.cache
 jobs:
   test-session-env:
     name: Test session env
@@ -16,10 +20,10 @@ jobs:
         run: |
           LOCAL_BIN="$HOME/.local/bin"
           mkdir -p "$LOCAL_BIN"
-          curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
-          tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
+          curl -LO https://github.com/dagger/dagger/releases/download/v${DAGGER_VERSION}/dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz
+          tar xzvf "dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz"
           mv dagger "$LOCAL_BIN"
-          rm -rf dagger_v0.5.0_linux_amd64*
+          rm -rf "dagger_v${DAGGER_VERSION}_linux_amd64*"
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - name: Show Dagger version
         run: |
@@ -49,10 +53,10 @@ jobs:
         run: |
           LOCAL_BIN="$HOME/.local/bin"
           mkdir -p "$LOCAL_BIN"
-          curl -LO https://github.com/dagger/dagger/releases/download/v0.5.0/dagger_v0.5.0_linux_amd64.tar.gz
-          tar xzvf dagger_v0.5.0_linux_amd64.tar.gz
+          curl -LO https://github.com/dagger/dagger/releases/download/v${DAGGER_VERSION}/dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz
+          tar xzvf "dagger_v${DAGGER_VERSION}_linux_amd64.tar.gz"
           mv dagger "$LOCAL_BIN"
-          rm -rf dagger_v0.5.0_linux_amd64*
+          rm -rf dagger_v${DAGGER_VERSION}_linux_amd64*
           echo "$LOCAL_BIN" >> "$GITHUB_PATH"
       - name: Show Dagger version
         run: |
@@ -75,3 +79,29 @@ jobs:
           _EXPERIMENTAL_DAGGER_CLI_BIN: dagger
         run: |
           mix ci.test
+  test-downloaded-cli:
+    name: Test downloaded cli
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.14.4'
+          otp-version: '25.3'
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+      - name: Install dependencies
+        run: mix deps.get
+      - name: Test
+        env:
+          _EXPERIMENTAL_DAGGER_CLI_BIN: dagger
+        run: |
+          mix ci.test
+      - name: Verify dagger binary exists
+        run: |
+          test -f "${XDG_CACHE_HOME}/dagger/dagger-${DAGGER_VERSION}"
