@@ -111,6 +111,18 @@ The only changes we made to enable faster cross-compilation are:
 
 The final image is still multi-platform because each `Container` set as a `PlatformVariant` was initialized with a specific platform (after the cross-compilation has occurred, at the bottom of the `for` loop in the code above).
 
+### Add caching
+
+Caching can significantly improve the speed of your builds in Dagger by saving and reusing the results of expensive operations, such as downloading dependencies or compiling code. Dagger supports caching via the `withMountedCache()` function, which mounts a cache directory from the host machine into the container.
+
+The following code listing compiles the Go project twice. The first compilation will take longer because the cache directories are empty. The second compilation should be faster, as the cache directories will contain the necessary Go modules and build outputs from the first compilation:
+
+```go file=./snippets/multiplatform-support/cache/main.go
+
+```
+
+This example defines a `build()` function that sets up the container, mounts the cache directories, and compiles the Go project. The function runs twice, and the build time for each run is measured. The second build is faster, demonstrating the benefits of using cache mounts.
+
 ## Support for non-Linux platforms
 
 The previous examples work with different architectures but the OS of the platform is always `linux`.
