@@ -16,7 +16,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
@@ -95,7 +94,7 @@ func Run(cmd *cobra.Command, args []string) {
 }
 
 func run(ctx context.Context, args []string) error {
-	return withEngineAndTUI(ctx, func(ctx context.Context, api *router.Router, logs io.Writer, sessionToken string) error {
+	return withEngineAndTUI(ctx, func(ctx context.Context, api *router.Router, sessionToken string) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("session listen: %w", err)
@@ -116,58 +115,80 @@ func run(ctx context.Context, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		if logs != nil {
-			subCmd.Stdout = logs
-			subCmd.Stderr = logs
+		go http.Serve(sessionL, api) // nolint:gosec
+
+		var cmdErr error
+		if useShinyNewTUI {
+			rec := progrock.RecorderFromContext(ctx)
+
+			cmdline := strings.Join(subCmd.Args, " ")
+			cmdVtx := rec.Vertex("cmd", cmdline)
+			subCmd.Stdout = cmdVtx.Stdout()
+			subCmd.Stderr = cmdVtx.Stderr()
+
+			cmdErr = subCmd.Run()
+			cmdVtx.Done(cmdErr)
 		} else {
 			subCmd.Stdout = os.Stdout
 			subCmd.Stderr = os.Stderr
+			cmdErr = subCmd.Run()
 		}
 
 		go http.Serve(sessionL, api) // nolint:gosec
 
-		return subCmd.Run()
+		return cmdErr
 	})
+}
+
+func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
+	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
+		fileW, err := newProgrockWriter(log)
+		if err != nil {
+			return nil, fmt.Errorf("open progrock log: %w", err)
+		}
+
+		return progrock.MultiWriter{progW, fileW}, nil
+	}
+
+	return progW, nil
 }
 
 func interactiveTUI(
 	ctx context.Context,
-	sessionToken uuid.UUID,
-	sessionL net.Listener,
-	subCmd *exec.Cmd,
-	quit func(),
+	engineConf engine.Config,
+	fn EngineTUIFunc,
 ) error {
-	journalR, journalW := journal.Pipe()
-
-	cmdline := strings.Join(subCmd.Args, " ")
-	program := tea.NewProgram(tui.New(quit, journalR, cmdline), tea.WithAltScreen())
-
-	subCmd.Stdout = progOutWriter{program}
-	subCmd.Stderr = progOutWriter{program}
-
-	tuiErrs := make(chan error, 1)
-
-	var finalModel tui.Model
-	go func() {
-		m, err := program.Run()
-		finalModel = m.(tui.Model)
-		tuiErrs <- err
-	}()
-
-	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
-		go http.Serve(sessionL, api) // nolint:gosec
-
-		cmdErr := subCmd.Run()
-		program.Send(tui.CommandExitMsg{Err: cmdErr})
-		return cmdErr
-	})
-
-	tuiErr := <-tuiErrs
-	if finalModel.IsDone() {
+	progR, progW := progrock.Pipe()
+	progW, err := progrockTee(progW)
+	if err != nil {
 		return err
 	}
 
-	return errors.Join(tuiErr, err)
+	engineConf.ProgrockWriter = progW
+
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
+
+	program := tea.NewProgram(tui.New(quit, progR), tea.WithAltScreen())
+
+	tuiDone := make(chan error, 1)
+	go func() {
+		_, err := program.Run()
+		tuiDone <- err
+	}()
+
+	var cbErr error
+	engineErr := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+		cbErr = fn(ctx, api, engineConf.SessionToken)
+		return cbErr
+	})
+	if cbErr != nil {
+		// avoid unnecessary error wrapping
+		return cbErr
+	}
+
+	tuiErr := <-tuiDone
+	return errors.Join(tuiErr, engineErr)
 }
 
 func inlineTUI(
@@ -180,49 +201,29 @@ func inlineTUI(
 		tape.ShowInternal(true)
 	}
 
-	mw := progrock.MultiWriter{tape}
-	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
-		w, err := newProgrockWriter(log)
-		if err != nil {
-			return fmt.Errorf("open progrock log: %w", err)
-		}
-
-		mw = append(mw, w)
+	progW, engineErr := progrockTee(tape)
+	if engineErr != nil {
+		return engineErr
 	}
+
+	engineConf.ProgrockWriter = progW
+
+	ctx, quit := context.WithCancel(ctx)
+	defer quit()
 
 	stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
 	defer stop()
 
-	cmdline := strings.Join(subCmd.Args, " ")
-
-	engineConf := engine.Config{
-		Workdir:        workdir,
-		SessionToken:   sessionToken.String(),
-		RunnerHost:     internalengine.RunnerHost(),
-		DisableHostRW:  disableHostRW,
-		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		ProgrockWriter: mw,
-	}
-
-	var cmdErr error
-	err := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		rec := progrock.RecorderFromContext(ctx)
-
-		go http.Serve(sessionL, api) // nolint:gosec
-
-		cmdVtx := rec.Vertex("cmd", cmdline)
-		subCmd.Stdout = cmdVtx.Stdout()
-		subCmd.Stderr = cmdVtx.Stderr()
-
-		cmdErr = subCmd.Run()
-		cmdVtx.Done(cmdErr)
-		return nil
+	var cbErr error
+	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+		cbErr = fn(ctx, api, engineConf.SessionToken)
+		return cbErr
 	})
-	if cmdErr != nil {
-		return cmdErr
+	if cbErr != nil {
+		return cbErr
 	}
 
-	return err
+	return engineErr
 }
 
 type progOutWriter struct {
@@ -264,7 +265,6 @@ func (p progrockFileWriter) Close() error {
 type EngineTUIFunc func(
 	ctx context.Context,
 	api *router.Router,
-	tui *tea.Program,
 	sessionToken string,
 ) error
 
@@ -287,16 +287,13 @@ func withEngineAndTUI(
 
 	if !useShinyNewTUI {
 		return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-			return fn(ctx, api, nil, sessionToken.String())
+			return fn(ctx, api, engineConf.SessionToken)
 		})
 	}
 
-	ctx, quit := context.WithCancel(ctx)
-	defer quit()
-
-	// if interactive {
-	// 	return interactiveTUI(ctx, engineConf, sessionToken, fn)
-	// }
+	if interactive {
+		return interactiveTUI(ctx, engineConf, fn)
+	}
 
 	return inlineTUI(ctx, engineConf, fn)
 }

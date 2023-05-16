@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -40,9 +39,9 @@ type TreeEntry interface {
 type Tree struct {
 	viewport viewport.Model
 
-	root    TreeEntry
-	current TreeEntry
-	focus   bool
+	root          TreeEntry
+	currentOffset int
+	focus         bool
 
 	spinner   spinner.Model
 	collapsed map[TreeEntry]bool
@@ -60,9 +59,6 @@ func (m *Tree) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Tree) SetRoot(root TreeEntry) {
 	m.root = root
-	if m.current == nil {
-		m.current = root
-	}
 }
 
 func (m *Tree) SetWidth(width int) {
@@ -81,8 +77,12 @@ func (m *Tree) UsedHeight() int {
 	return m.height(m.root)
 }
 
+func (m Tree) Root() TreeEntry {
+	return m.root
+}
+
 func (m Tree) Current() TreeEntry {
-	return m.current
+	return m.nth(m.root, m.currentOffset)
 }
 
 func (m *Tree) Focus(focus bool) {
@@ -90,7 +90,7 @@ func (m *Tree) Focus(focus bool) {
 }
 
 func (m *Tree) Open() tea.Cmd {
-	return m.current.Open()
+	return m.Current().Open()
 }
 
 func (m *Tree) View() string {
@@ -98,10 +98,9 @@ func (m *Tree) View() string {
 		return "no root"
 	}
 
-	offset := m.currentOffset(m.root)
+	offset := m.currentOffset
 
-	views := m.itemView(m.root, []bool{})
-	log.Println("views", len(views))
+	views := m.itemView(0, m.root, []bool{})
 
 	m.viewport.SetContent(strings.Join(views, "\n"))
 
@@ -175,32 +174,6 @@ func (m *Tree) timerView(item TreeEntry) string {
 	return itemTimerStyle.Render(fmt.Sprintf("%.[2]*[1]fs ", sec, prec))
 }
 
-func (m *Tree) currentOffset(item TreeEntry) int {
-	if item == m.current {
-		return 0
-	}
-
-	offset := 1
-
-	entries := item.Entries()
-	for i, entry := range entries {
-		if entry == item {
-			return i
-		}
-
-		if !m.collapsed[entry] {
-			entryOffset := m.currentOffset(entry)
-			if entryOffset != -1 {
-				return offset + entryOffset
-			}
-		}
-
-		offset += m.height(entry)
-	}
-
-	return -1
-}
-
 func (m *Tree) height(item TreeEntry) int {
 	height := 1
 	entries := item.Entries()
@@ -215,7 +188,7 @@ func (m *Tree) height(item TreeEntry) int {
 	return height
 }
 
-func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
+func (m *Tree) itemView(offset int, item TreeEntry, padding []bool) []string {
 	renderedItems := []string{}
 
 	status := " " + m.statusView(item) + " "
@@ -247,8 +220,8 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 		Render(" " + expandView + name + " ")
 
 	view := status + treePrefix
-	if item == m.current {
-		if m.focus {
+	if item == m.Current() {
+		if m.focus && offset == m.currentOffset {
 			view += selectedStyle.Render(itemView + timerView)
 		} else {
 			view += selectedStyleBlur.Render(itemView + timerView)
@@ -258,6 +231,7 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 	}
 
 	renderedItems = append(renderedItems, view)
+	offset++
 
 	entries := item.Entries()
 	if entries == nil || m.collapsed[item] {
@@ -272,32 +246,34 @@ func (m *Tree) itemView(item TreeEntry, padding []bool) []string {
 			pad = append(pad, false)
 		}
 
-		renderedItems = append(renderedItems, m.itemView(s, pad)...)
+		views := m.itemView(offset, s, pad)
+		offset += len(views)
+		renderedItems = append(renderedItems, views...)
 	}
 
 	return renderedItems
 }
 
 func (m *Tree) MoveUp() {
-	prev := m.findPrev(m.current)
-	if prev != nil {
-		m.current = prev
+	if m.currentOffset == 0 {
+		return
 	}
+	m.currentOffset--
 }
 
 func (m *Tree) MoveToTop() {
-	m.current = m.root
+	m.currentOffset = 0
 }
 
 func (m *Tree) MoveDown() {
-	next := m.findNext(m.current)
-	if next != nil {
-		m.current = next
+	if m.currentOffset == m.height(m.root)-1 {
+		return
 	}
+	m.currentOffset++
 }
 
 func (m *Tree) MoveToBottom() {
-	m.current = lastEntry(m.root)
+	m.currentOffset = m.height(m.root) - 1
 }
 
 func (m *Tree) PageUp() {
@@ -347,114 +323,22 @@ func (m *Tree) Follow() {
 		return
 	}
 
-	if m.current == nil {
+	current := m.Current()
+	if current == nil {
 		return
 	}
 
-	if m.current.Completed() == nil && len(m.current.Entries()) == 0 {
+	if current.Completed() == nil && len(current.Entries()) == 0 {
 		return
 	}
 
 	oldest := findOldestIncompleteEntry(m.root)
-	if oldest != nil {
-		m.current = oldest
+	if oldest != -1 {
+		m.currentOffset = oldest
 	}
 }
 
-// findParent returns the parent entry containing the given `entry`
-func (m *Tree) findParent(group TreeEntry, entry TreeEntry) TreeEntry {
-	entries := group.Entries()
-	for _, e := range entries {
-		if e == entry {
-			return group
-		}
-		if found := m.findParent(e, entry); found != nil {
-			return found
-		}
-	}
-	return nil
-}
-
-// findSibilingAfter returns the entry immediately after the specified entry within the same parent.
-// `nil` if not found or if entry is the last entry.
-func (m *Tree) findSibilingAfter(parent, entry TreeEntry) TreeEntry {
-	entries := parent.Entries()
-	for i, e := range entries {
-		if e != entry {
-			continue
-		}
-		newPos := i + 1
-		if newPos >= len(entries) {
-			return nil
-		}
-		return entries[newPos]
-	}
-	return nil
-}
-
-// findSibilingBefore returns the entry immediately preceding the specified entry within the same parent.
-// `nil` if not found or if entry is the first entry.
-func (m *Tree) findSibilingBefore(parent, entry TreeEntry) TreeEntry {
-	entries := parent.Entries()
-	for i, e := range entries {
-		if e != entry {
-			continue
-		}
-		newPos := i - 1
-		if newPos < 0 {
-			return nil
-		}
-		return entries[newPos]
-	}
-	return nil
-}
-
-func (m *Tree) findNext(entry TreeEntry) TreeEntry {
-	// If this entry has entries, pick the first child
-	if entries := entry.Entries(); !m.collapsed[entry] && len(entries) > 0 {
-		return entries[0]
-	}
-
-	// Otherwise, pick the next sibiling in the same parent group
-	parent := m.findParent(m.root, entry)
-	if parent == nil {
-		return nil
-	}
-
-	for {
-		if next := m.findSibilingAfter(parent, entry); next != nil {
-			return next
-		}
-		// We reached the end of the group, try again with the grand-parent
-		entry = parent
-		parent = m.findParent(m.root, entry)
-		if parent == nil {
-			return nil
-		}
-	}
-}
-
-func (m *Tree) findPrev(entry TreeEntry) TreeEntry {
-	parent := m.findParent(m.root, entry)
-	if parent == nil {
-		return nil
-	}
-	prev := m.findSibilingBefore(parent, entry)
-	// If there's no previous element, pick the parent.
-	if prev == nil {
-		return parent
-	}
-	// If the previous sibiling is a group, go to the last element recursively
-	for {
-		entries := prev.Entries()
-		if m.collapsed[prev] || len(entries) == 0 {
-			return prev
-		}
-		prev = entries[len(entries)-1]
-	}
-}
-
-func findOldestIncompleteEntry(entry TreeEntry) TreeEntry {
+func findOldestIncompleteEntry(entry TreeEntry) int {
 	var oldestIncompleteEntry TreeEntry
 	oldestStartedTime := time.Time{}
 
@@ -485,5 +369,31 @@ func findOldestIncompleteEntry(entry TreeEntry) TreeEntry {
 
 	search(entry)
 
-	return oldestIncompleteEntry
+	return indexOf(entry, oldestIncompleteEntry)
+}
+
+func indexOf(entry TreeEntry, needle TreeEntry) int {
+	if entry == needle {
+		return 0
+	}
+	for i, child := range entry.Entries() {
+		if found := indexOf(child, needle); found >= 0 {
+			return i + 1 + found
+		}
+	}
+	return -1
+}
+
+func (m *Tree) nth(entry TreeEntry, n int) TreeEntry {
+	if n == 0 {
+		return entry
+	}
+	skipped := 1
+	for _, child := range entry.Entries() {
+		if found := m.nth(child, n-skipped); found != nil {
+			return found
+		}
+		skipped += m.height(child)
+	}
+	return nil
 }

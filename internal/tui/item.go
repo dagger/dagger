@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -40,7 +39,6 @@ type Item struct {
 	id         string
 	inputs     []string
 	name       string
-	group      []string
 	started    *time.Time
 	completed  *time.Time
 	cached     bool
@@ -125,7 +123,7 @@ func (i *Item) UpdateLog(log *progrock.VertexLog) {
 }
 
 func (i *Item) UpdateStatus(task *progrock.VertexTask) {
-	var current int = -1
+	var current = -1
 	for i, s := range i.tasks {
 		if s.Name == task.Name {
 			current = i
@@ -241,14 +239,14 @@ type Group struct {
 	entriesByID map[string]TreeEntry
 }
 
-func NewGroup(id, name string, logs groupModel) *Group {
+func NewGroup(id, name string) *Group {
 	return &Group{
-		groupModel: logs,
+		groupModel: &emptyGroup{}, // TODO remove
 
 		id:          id,
 		name:        name,
 		entries:     []TreeEntry{},
-		entriesByID: make(map[string]TreeEntry),
+		entriesByID: map[string]TreeEntry{},
 	}
 }
 
@@ -304,27 +302,14 @@ func (g *Group) Open() tea.Cmd {
 	return openEditor(subDir)
 }
 
-func (g *Group) Add(group []string, e TreeEntry) {
-	defer g.sort()
-
-	if len(group) == 0 {
-		g.entries = append(g.entries, e)
-		g.entriesByID[string(e.ID())] = e
+func (g *Group) Add(e TreeEntry) {
+	_, has := g.entriesByID[e.ID()]
+	if has {
 		return
 	}
-
-	parent := group[0]
-	sub, ok := g.entriesByID[parent]
-	if !ok {
-		sub = NewGroup(path.Join(g.id, parent), parent, &emptyGroup{})
-		g.entries = append(g.entries, sub)
-		g.entriesByID[sub.Name()] = sub
-	}
-	subGroup, ok := sub.(*Group)
-	if !ok {
-		panic("add item to non-group")
-	}
-	subGroup.Add(group[1:], e)
+	g.entriesByID[e.ID()] = e
+	g.entries = append(g.entries, e)
+	g.sort()
 }
 
 func (g *Group) Cached() bool {
@@ -411,38 +396,23 @@ func (g *Group) sort() {
 	sort.SliceStable(g.entries, func(i, j int) bool {
 		ie := g.entries[i]
 		je := g.entries[j]
-
-		// sort ancestors first
-		if g.isAncestor(ie, je) {
+		switch {
+		case ie.Started() == nil && je.Started() == nil:
+			// both pending
+			return false
+		case ie.Started() == nil && je.Started() != nil:
+			// j started first
+			return false
+		case ie.Started() != nil && je.Started() == nil:
+			// i started first
 			return true
-		} else if g.isAncestor(je, ie) {
+		case ie.Started() != nil && je.Started() != nil:
+			return ie.Started().Before(*je.Started())
+		default:
+			// impossible
 			return false
 		}
-
-		// fall back on name (not sure if this will ever occur)
-		return ie.Name() < je.Name()
 	})
-}
-
-func (g *Group) isAncestor(i, j TreeEntry) bool {
-	if i == j {
-		return false
-	}
-
-	id := i.ID()
-
-	for _, d := range j.Inputs() {
-		if d == id {
-			return true
-		}
-
-		e, ok := g.entriesByID[string(d)]
-		if ok && g.isAncestor(i, e) {
-			return true
-		}
-	}
-
-	return false
 }
 
 type emptyGroup struct {
