@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dagger/dagger/internal/cloud/auth"
@@ -17,10 +16,6 @@ type Client struct {
 
 	u *url.URL
 	c *graphql.Client
-
-	l sync.Mutex
-
-	retryLogin bool
 }
 
 func NewClient(ctx context.Context, api string) (*Client, error) {
