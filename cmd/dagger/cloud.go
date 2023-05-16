@@ -27,6 +27,13 @@ func init() {
 	}
 	cloudCmd.AddCommand(loginCmd)
 
+	logoutCmd := &cobra.Command{
+		Use:   "logout",
+		Short: "Log out of Dagger Cloud",
+		RunE:  cloud.Logout,
+	}
+	cloudCmd.AddCommand(logoutCmd)
+
 	orgCmd := &cobra.Command{
 		Use:   "org",
 		Short: "Dagger Cloud org management",
@@ -111,6 +118,17 @@ func (cli *CloudCLI) Login(cmd *cobra.Command, args []string) error {
 	}
 
 	lg.Info().Str("user", user.ID).Msg("logged in")
+	return nil
+}
+
+func (cli *CloudCLI) Logout(cmd *cobra.Command, args []string) error {
+	lg := Logger(os.Stderr)
+
+	if err := auth.Logout(); err != nil {
+		return err
+	}
+
+	lg.Info().Msg("logged out")
 	return nil
 }
 
