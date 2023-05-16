@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -3598,4 +3599,49 @@ func TestContainerParallelMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, res.Container.A.EnvVariable, "BAR")
 	require.Empty(t, res.Container.B, "BAR")
+}
+
+func TestContainerForceCompression(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		compression       dagger.ImageLayerCompression
+		expectedMediaType string
+	}{
+		{dagger.Gzip, "application/vnd.docker.image.rootfs.diff.tar.gzip"},
+		{dagger.Zstd, "application/vnd.docker.image.rootfs.diff.tar.zstd"},
+		{dagger.Uncompressed, "application/vnd.docker.image.rootfs.diff.tar"},
+		{dagger.Estargz, "application/vnd.oci.image.layer.v1.tar+gzip"},
+	} {
+		tc := tc
+		t.Run(string(tc.compression), func(t *testing.T) {
+			t.Parallel()
+
+			c, ctx := connect(t)
+			defer c.Close()
+
+			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
+			_, err := c.Container().
+				From("alpine:3.16.2").
+				Publish(ctx, ref, dagger.ContainerPublishOpts{
+					ForcedCompression: tc.compression,
+				})
+			require.NoError(t, err)
+
+			parsedRef, err := name.ParseReference(ref, name.Insecure)
+			require.NoError(t, err)
+
+			imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+			require.NoError(t, err)
+			img, err := imgDesc.Image()
+			require.NoError(t, err)
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			for _, layer := range layers {
+				mediaType, err := layer.MediaType()
+				require.NoError(t, err)
+				require.EqualValues(t, tc.expectedMediaType, mediaType)
+			}
+		})
+	}
 }

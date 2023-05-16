@@ -614,6 +614,15 @@ type Container {
     Used for multi-platform image.
     """
     platformVariants: [ContainerID!]
+
+    """
+    Force each layer of the published image to use the specified compression algorithm.
+    If this is unset, then if a layer already has a compressed blob in the engine's
+    cache, that will be used (this can result in a mix of compression algorithms for
+    different layers). If this is unset and a layer has no compressed blob in the
+    engine's cache, then it will be compressed using Gzip.
+    """
+    forcedCompression: ImageLayerCompression
   ): String!
 
   """
@@ -817,4 +826,12 @@ enum NetworkProtocol {
   TCP
   "UDP (User Datagram Protocol)"
   UDP
+}
+
+"Compression algorithm to use for image layers"
+enum ImageLayerCompression {
+  Gzip
+  Zstd
+  EStarGZ
+  Uncompressed
 }

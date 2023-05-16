@@ -1429,6 +1429,7 @@ func (container *Container) Publish(
 	ctx context.Context,
 	ref string,
 	platformVariants []ContainerID,
+	forcedCompression ImageLayerCompression,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
@@ -1442,6 +1443,16 @@ func (container *Container) Publish(
 				"push": "true",
 			},
 		},
+	}
+
+	if forcedCompression != "" {
+		compressionStr := strings.ToLower(string(forcedCompression))
+		solveOpts.Exports[0].Attrs["compression"] = compressionStr
+		solveOpts.Exports[0].Attrs["force-compression"] = "true"
+		if forcedCompression == CompressionEStarGZ {
+			// required for estargz
+			solveOpts.Exports[0].Attrs["oci-mediatypes"] = "true"
+		}
 	}
 
 	ch, wg := mirrorCh(solveCh)
@@ -1498,12 +1509,13 @@ func (container *Container) Export(
 
 	defer out.Close()
 
-	return host.Export(ctx, bkclient.ExportEntry{
+	exportOpts := bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Output: func(map[string]string) (io.WriteCloser, error) {
 			return out, nil
 		},
-	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
+	}
+	return host.Export(ctx, exportOpts, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
 }
@@ -1945,3 +1957,12 @@ func resolveIndex(ctx context.Context, store content.Store, desc specs.Descripto
 
 	return nil, fmt.Errorf("no manifest for platform %s and tag %s", platforms.Format(platform), tag)
 }
+
+type ImageLayerCompression string
+
+const (
+	CompressionGzip         ImageLayerCompression = "Gzip"
+	CompressionZstd         ImageLayerCompression = "Zstd"
+	CompressionEStarGZ      ImageLayerCompression = "EStarGZ"
+	CompressionUncompressed ImageLayerCompression = "Uncompressed"
+)

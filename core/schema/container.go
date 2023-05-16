@@ -435,12 +435,13 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core
 }
 
 type containerPublishArgs struct {
-	Address          string
-	PlatformVariants []core.ContainerID
+	Address           string
+	PlatformVariants  []core.ContainerID
+	ForcedCompression core.ImageLayerCompression
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, s.bkClient, s.solveOpts, s.solveCh)
 }
 
 type containerWithMountedFileArgs struct {

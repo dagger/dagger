@@ -182,8 +182,9 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		Permissions: 0755,
 	})
 
+	registrySvc := registry(c)
 	devEngine = devEngine.
-		WithServiceBinding("registry", registry(c)).
+		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
@@ -214,6 +215,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
 		WithWorkdir("/app").
 		WithServiceBinding("dagger-engine", devEngine).
+		WithServiceBinding("registry", registrySvc).
 		WithEnvVariable("CGO_ENABLED", cgoEnabledEnv)
 
 	// TODO use Container.With() to set this. It'll be much nicer.

@@ -190,6 +190,15 @@ export type ContainerPublishOpts = {
    * Used for multi-platform image.
    */
   platformVariants?: Container[]
+
+  /**
+   * Force each layer of the published image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
+   */
+  forcedCompression?: ImageLayerCompression
 }
 
 export type ContainerWithDefaultArgsOpts = {
@@ -530,6 +539,15 @@ export type HostWorkdirOpts = {
  */
 export type ID = string & { __ID: never }
 
+/**
+ * Compression algorithm to use for image layers
+ */
+export enum ImageLayerCompression {
+  Estargz,
+  Gzip,
+  Uncompressed,
+  Zstd,
+}
 /**
  * Transport layer network protocol associated to a port.
  */
@@ -1137,6 +1155,11 @@ export class Container extends BaseClient {
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. "docker.io/dagger/dagger:main").
    * @param opts.platformVariants Identifiers for other platform specific containers.
    * Used for multi-platform image.
+   * @param opts.forcedCompression Force each layer of the published image to use the specified compression algorithm.
+   * If this is unset, then if a layer already has a compressed blob in the engine's
+   * cache, that will be used (this can result in a mix of compression algorithms for
+   * different layers). If this is unset and a layer has no compressed blob in the
+   * engine's cache, then it will be compressed using Gzip.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(

@@ -655,6 +655,12 @@ type ContainerPublishOpts struct {
 	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
 	PlatformVariants []*Container
+	// Force each layer of the published image to use the specified compression algorithm.
+	// If this is unset, then if a layer already has a compressed blob in the engine's
+	// cache, that will be used (this can result in a mix of compression algorithms for
+	// different layers). If this is unset and a layer has no compressed blob in the
+	// engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
 }
 
 // Publishes this container as a new image to the specified address.
@@ -671,6 +677,13 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
 			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+			break
+		}
+	}
+	// `forcedCompression` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 			break
 		}
 	}
@@ -2670,6 +2683,15 @@ const (
 	Locked  CacheSharingMode = "LOCKED"
 	Private CacheSharingMode = "PRIVATE"
 	Shared  CacheSharingMode = "SHARED"
+)
+
+type ImageLayerCompression string
+
+const (
+	Estargz      ImageLayerCompression = "EStarGZ"
+	Gzip         ImageLayerCompression = "Gzip"
+	Uncompressed ImageLayerCompression = "Uncompressed"
+	Zstd         ImageLayerCompression = "Zstd"
 )
 
 type NetworkProtocol string

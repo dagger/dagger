@@ -54,6 +54,18 @@ class CacheSharingMode(Enum):
     """Shares the cache volume amongst many build pipelines"""
 
 
+class ImageLayerCompression(Enum):
+    """Compression algorithm to use for image layers"""
+
+    EStarGZ = "EStarGZ"
+
+    Gzip = "Gzip"
+
+    Uncompressed = "Uncompressed"
+
+    Zstd = "Zstd"
+
+
 class NetworkProtocol(Enum):
     """Transport layer network protocol associated to a port."""
 
@@ -669,6 +681,7 @@ class Container(Type):
         self,
         address: str,
         platform_variants: Optional[Sequence["Container"]] = None,
+        forced_compression: Optional[ImageLayerCompression] = None,
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
@@ -684,6 +697,16 @@ class Container(Type):
         platform_variants:
             Identifiers for other platform specific containers.
             Used for multi-platform image.
+        forced_compression:
+            Force each layer of the published image to use the specified
+            compression algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's
+            cache, that will be used (this can result in a mix of compression
+            algorithms for
+            different layers). If this is unset and a layer has no compressed
+            blob in the
+            engine's cache, then it will be compressed using Gzip.
 
         Returns
         -------
@@ -702,6 +725,7 @@ class Container(Type):
         _args = [
             Arg("address", address),
             Arg("platformVariants", platform_variants, None),
+            Arg("forcedCompression", forced_compression, None),
         ]
         _ctx = self._select("publish", _args)
         return _ctx.execute_sync(str)
@@ -2801,6 +2825,7 @@ __all__ = [
     "SecretID",
     "SocketID",
     "CacheSharingMode",
+    "ImageLayerCompression",
     "NetworkProtocol",
     "BuildArg",
     "PipelineLabel",
