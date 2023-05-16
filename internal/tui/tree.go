@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -94,12 +95,13 @@ func (m *Tree) Open() tea.Cmd {
 
 func (m *Tree) View() string {
 	if m.root == nil {
-		return ""
+		return "no root"
 	}
 
 	offset := m.currentOffset(m.root)
 
 	views := m.itemView(m.root, []bool{})
+	log.Println("views", len(views))
 
 	m.viewport.SetContent(strings.Join(views, "\n"))
 
