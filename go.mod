@@ -22,14 +22,14 @@ require (
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20221102000338-24d5e47d3b72
 	github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881
-	github.com/docker/distribution v2.8.1+incompatible
+	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.2.0
-	// https://github.com/moby/buildkit/commit/9122e57919acf52ae4fc1f64be19b83d56b05442
-	github.com/moby/buildkit v0.11.0-rc3.0.20230508182616-9122e57919ac
+	// https://github.com/moby/buildkit/commit/3c3a6e9db3fd9f4893e7b8c453ed7698b12a7af0
+	github.com/moby/buildkit v0.11.0-rc3.0.20230515234028-3c3a6e9db3fd
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b
+	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/opencontainers/runtime-spec v1.1.0-rc.1
 	github.com/pelletier/go-toml v1.9.5
 	github.com/pkg/errors v0.9.1
@@ -66,7 +66,7 @@ require (
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.6
-	github.com/prometheus/procfs v0.8.0
+	github.com/prometheus/procfs v0.9.0
 	github.com/vito/progrock v0.2.0
 	github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
@@ -173,7 +173,7 @@ require (
 	github.com/pkg/profile v1.5.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
-	github.com/prometheus/common v0.37.0 // indirect
+	github.com/prometheus/common v0.42.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
@@ -215,12 +215,12 @@ require (
 	github.com/containerd/console v1.0.3 // indirect
 	github.com/containerd/continuity v0.3.0 // indirect
 	github.com/containerd/fifo v1.1.0 // indirect
-	github.com/containerd/nydus-snapshotter v0.3.1 // indirect
+	github.com/containerd/nydus-snapshotter v0.8.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/containerd/ttrpc v1.2.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/cli v23.0.4+incompatible
-	github.com/docker/docker v23.0.4+incompatible
+	github.com/docker/cli v23.0.5+incompatible
+	github.com/docker/docker v23.0.5+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect

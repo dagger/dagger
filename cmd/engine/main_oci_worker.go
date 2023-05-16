@@ -160,10 +160,11 @@ func init() {
 		Name:  "oci-worker-gc-keepstorage",
 		Usage: "Amount of storage GC keep locally (MB)",
 		Value: func() int64 {
-			if defaultConf.Workers.OCI.GCKeepStorage != 0 {
-				return defaultConf.Workers.OCI.GCKeepStorage / 1e6
+			keep := defaultConf.Workers.OCI.GCKeepStorage.AsBytes(defaultConf.Root)
+			if keep == 0 {
+				keep = config.DetectDefaultGCCap().AsBytes(defaultConf.Root)
 			}
-			return config.DetectDefaultGCCap(defaultConf.Root) / 1e6
+			return keep / 1e6
 		}(),
 		Hidden: len(defaultConf.Workers.OCI.GCPolicy) != 0,
 	})
@@ -236,7 +237,7 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	}
 
 	if c.GlobalIsSet("oci-worker-gc-keepstorage") {
-		cfg.Workers.OCI.GCKeepStorage = c.GlobalInt64("oci-worker-gc-keepstorage") * 1e6
+		cfg.Workers.OCI.GCKeepStorage = config.DiskSpace{Bytes: c.GlobalInt64("oci-worker-gc-keepstorage") * 1e6}
 	}
 
 	if c.GlobalIsSet("oci-worker-net") {
