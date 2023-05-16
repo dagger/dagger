@@ -193,6 +193,30 @@ func tarEntries(t *testing.T, path string) []string {
 	return entries
 }
 
+func readTarFile(t *testing.T, pathToTar, pathInTar string) []byte {
+	f, err := os.Open(pathToTar)
+	require.NoError(t, err)
+
+	tr := tar.NewReader(f)
+	for {
+		hdr, err := tr.Next()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			require.NoError(t, err)
+		}
+
+		if hdr.Name == pathInTar {
+			b, err := io.ReadAll(tr)
+			require.NoError(t, err)
+			return b
+		}
+	}
+
+	return nil
+}
+
 func checkNotDisabled(t *testing.T, env string) { //nolint:unparam
 	if os.Getenv(env) == "0" {
 		t.Skipf("disabled via %s=0", env)

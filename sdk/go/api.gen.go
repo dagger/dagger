@@ -368,6 +368,12 @@ type ContainerExportOpts struct {
 	// Identifiers for other platform specific containers.
 	// Used for multi-platform image.
 	PlatformVariants []*Container
+	// Force each layer of the exported image to use the specified compression algorithm.
+	// If this is unset, then if a layer already has a compressed blob in the engine's
+	// cache, that will be used (this can result in a mix of compression algorithms for
+	// different layers). If this is unset and a layer has no compressed blob in the
+	// engine's cache, then it will be compressed using Gzip.
+	ForcedCompression ImageLayerCompression
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
@@ -384,6 +390,13 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 	for i := len(opts) - 1; i >= 0; i-- {
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
 			q = q.Arg("platformVariants", opts[i].PlatformVariants)
+			break
+		}
+	}
+	// `forcedCompression` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
+			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
 			break
 		}
 	}

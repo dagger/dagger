@@ -381,6 +381,7 @@ class Container(Type):
         self,
         path: str,
         platform_variants: Optional[Sequence["Container"]] = None,
+        forced_compression: Optional[ImageLayerCompression] = None,
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
@@ -396,6 +397,16 @@ class Container(Type):
         platform_variants:
             Identifiers for other platform specific containers.
             Used for multi-platform image.
+        forced_compression:
+            Force each layer of the exported image to use the specified
+            compression algorithm.
+            If this is unset, then if a layer already has a compressed blob in
+            the engine's
+            cache, that will be used (this can result in a mix of compression
+            algorithms for
+            different layers). If this is unset and a layer has no compressed
+            blob in the
+            engine's cache, then it will be compressed using Gzip.
 
         Returns
         -------
@@ -412,6 +423,7 @@ class Container(Type):
         _args = [
             Arg("path", path),
             Arg("platformVariants", platform_variants, None),
+            Arg("forcedCompression", forced_compression, None),
         ]
         _ctx = self._select("export", _args)
         return _ctx.execute_sync(bool)

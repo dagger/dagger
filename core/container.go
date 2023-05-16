@@ -1440,7 +1440,7 @@ func (container *Container) Publish(
 			Type: bkclient.ExporterImage,
 			Attrs: map[string]string{
 				"name": ref,
-				"push": "true",
+				"push": strconv.FormatBool(true),
 			},
 		},
 	}
@@ -1448,10 +1448,10 @@ func (container *Container) Publish(
 	if forcedCompression != "" {
 		compressionStr := strings.ToLower(string(forcedCompression))
 		solveOpts.Exports[0].Attrs["compression"] = compressionStr
-		solveOpts.Exports[0].Attrs["force-compression"] = "true"
+		solveOpts.Exports[0].Attrs["force-compression"] = strconv.FormatBool(true)
 		if forcedCompression == CompressionEStarGZ {
 			// required for estargz
-			solveOpts.Exports[0].Attrs["oci-mediatypes"] = "true"
+			solveOpts.Exports[0].Attrs["oci-mediatypes"] = strconv.FormatBool(true)
 		}
 	}
 
@@ -1493,6 +1493,7 @@ func (container *Container) Export(
 	host *Host,
 	dest string,
 	platformVariants []ContainerID,
+	forcedCompression ImageLayerCompression,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
@@ -1515,6 +1516,18 @@ func (container *Container) Export(
 			return out, nil
 		},
 	}
+	if forcedCompression != "" {
+		compressionStr := strings.ToLower(string(forcedCompression))
+		exportOpts.Attrs = map[string]string{
+			"compression":       compressionStr,
+			"force-compression": strconv.FormatBool(true),
+		}
+		if forcedCompression == CompressionEStarGZ {
+			// required for estargz
+			exportOpts.Attrs["oci-mediatypes"] = strconv.FormatBool(true)
+		}
+	}
+
 	return host.Export(ctx, exportOpts, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
