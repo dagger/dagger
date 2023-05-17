@@ -1,6 +1,7 @@
-# dagger-sdk
+> **Warning**
+> This is an **experimental** SDK.
 
-A dagger sdk written in rust for rust.
+# Dagger Rust SDK
 
 ## Plan for next release
 
