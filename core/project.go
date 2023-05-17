@@ -65,11 +65,16 @@ func (id ProjectCommandID) ToProjectCommand() (*ProjectCommand, error) {
 }
 
 type Project struct {
-	Directory  *Directory     `json:"directory"`
-	ConfigPath string         `json:"configPath"`
-	Config     ProjectConfig  `json:"config"`
-	Schema     string         `json:"schema"`
-	Platform   specs.Platform `json:"platform,omitempty"`
+	// The project's root directory
+	Directory *Directory `json:"directory"`
+	// Path to the project's config file relative to the root directory
+	ConfigPath string `json:"configPath"`
+	// The parsed project config
+	Config ProjectConfig `json:"config"`
+	// The graphql schema for the project
+	Schema string `json:"schema"`
+	// The project's platform
+	Platform specs.Platform `json:"platform,omitempty"`
 }
 
 type ProjectConfig struct {
