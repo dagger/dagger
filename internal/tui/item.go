@@ -442,33 +442,3 @@ func (g emptyGroup) View() string {
 func (g emptyGroup) Save(dir string) (string, error) {
 	return "", nil
 }
-
-type logsPrinter struct {
-	*Vterm
-
-	name string
-}
-
-func (lp logsPrinter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	m, cmd := lp.Vterm.Update(msg)
-	lp.Vterm = m.(*Vterm)
-	return lp, cmd
-}
-
-func (lp logsPrinter) Save(dir string) (string, error) {
-	filePath := filepath.Join(dir, sanitizeFilename(lp.name))
-	f, err := os.Create(filePath)
-	if err != nil {
-		return "", err
-	}
-
-	if err := lp.Print(f); err != nil {
-		return "", err
-	}
-
-	if err := f.Close(); err != nil {
-		return "", err
-	}
-
-	return filePath, nil
-}

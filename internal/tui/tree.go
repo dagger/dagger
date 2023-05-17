@@ -288,14 +288,6 @@ func (m *Tree) PageDown() {
 	}
 }
 
-func lastEntry(entry TreeEntry) TreeEntry {
-	entries := entry.Entries()
-	if len(entries) == 0 {
-		return entry
-	}
-	return lastEntry(entries[len(entries)-1])
-}
-
 func (m *Tree) Collapse(entry TreeEntry, recursive bool) {
 	m.setCollapsed(entry, true, recursive)
 }

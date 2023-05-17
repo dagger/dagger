@@ -143,15 +143,6 @@ func inlineTUI(
 	return engineErr
 }
 
-type progOutWriter struct {
-	prog *tea.Program
-}
-
-func (w progOutWriter) Write(p []byte) (int, error) {
-	w.prog.Send(tui.CommandOutMsg{Output: p})
-	return len(p), nil
-}
-
 func newProgrockWriter(dest string) (progrock.Writer, error) {
 	f, err := os.Create(dest)
 	if err != nil {

@@ -87,7 +87,7 @@ func (m Model) adjustLocalTime(t *timestamppb.Timestamp) *timestamppb.Timestamp 
 
 	adjusted := t.AsTime().Add(m.localTimeDiff)
 	cp := proto.Clone(t).(*timestamppb.Timestamp)
-	cp.Seconds = int64(adjusted.Unix())
+	cp.Seconds = adjusted.Unix()
 	cp.Nanos = int32(adjusted.Nanosecond())
 	return cp
 }
