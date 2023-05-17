@@ -3,8 +3,12 @@ import { randomUUID } from "crypto"
 import fs from "fs"
 
 import { TooManyNestedObjectsError } from "../../common/errors/index.js"
-import Client, { connect } from "../../index.js"
-import { ClientContainerOpts, Container, Directory } from "../client.gen.js"
+import Client, {
+  connect,
+  ClientContainerOpts,
+  Container,
+  Directory,
+} from "../../index.js"
 import { queryFlatten, buildQuery } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
