@@ -95,7 +95,7 @@ func (m *Tree) Open() tea.Cmd {
 
 func (m *Tree) View() string {
 	if m.root == nil {
-		return "no root"
+		return ""
 	}
 
 	offset := m.currentOffset
