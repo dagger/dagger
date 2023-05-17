@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 )
@@ -30,7 +31,7 @@ func init() {
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngineAndTUI(ctx, func(ctx context.Context, r *router.Router, sessionToken string) error {
+	if err := withEngineAndTUI(ctx, engine.Config{}, func(ctx context.Context, r *router.Router) error {
 		fmt.Fprintf(os.Stderr, "==> server listening on http://%s/query\n", listenAddress)
 		return http.ListenAndServe(listenAddress, r) //nolint:gosec
 	}); err != nil {

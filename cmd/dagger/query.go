@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -90,7 +91,7 @@ func Query(cmd *cobra.Command, args []string) {
 
 func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
 	res := make(map[string]interface{})
-	err := withEngineAndTUI(ctx, func(ctx context.Context, r *router.Router, sessionToken string) error {
+	err := withEngineAndTUI(ctx, engine.Config{}, func(ctx context.Context, r *router.Router) error {
 		_, err := r.Do(ctx, query, op, vars, &res)
 		return err
 	})

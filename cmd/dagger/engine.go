@@ -13,7 +13,6 @@ import (
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
-	"github.com/google/uuid"
 	"github.com/vito/progrock"
 )
 
@@ -21,7 +20,7 @@ var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
 var interactive bool
 
 func init() {
-	rootCmd.Flags().BoolVarP(
+	rootCmd.PersistentFlags().BoolVarP(
 		&interactive,
 		"interactive",
 		"i",
@@ -30,33 +29,27 @@ func init() {
 	)
 }
 
-type EngineTUIFunc func(
-	ctx context.Context,
-	api *router.Router,
-	sessionToken string,
-) error
-
 func withEngineAndTUI(
 	ctx context.Context,
-	fn EngineTUIFunc,
+	engineConf engine.Config,
+	fn engine.StartCallback,
 ) error {
-	sessionToken, err := uuid.NewRandom()
-	if err != nil {
-		return fmt.Errorf("generate uuid: %w", err)
+	if engineConf.Workdir == "" {
+		engineConf.Workdir = workdir
 	}
 
-	engineConf := engine.Config{
-		Workdir:       workdir,
-		SessionToken:  sessionToken.String(),
-		RunnerHost:    internalengine.RunnerHost(),
-		DisableHostRW: disableHostRW,
-		JournalFile:   os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+	if engineConf.RunnerHost == "" {
+		engineConf.RunnerHost = internalengine.RunnerHost()
+	}
+
+	engineConf.DisableHostRW = disableHostRW
+
+	if engineConf.JournalFile == "" {
+		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
 	if !useShinyNewTUI {
-		return engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-			return fn(ctx, api, engineConf.SessionToken)
-		})
+		return engine.Start(ctx, engineConf, fn)
 	}
 
 	if interactive {
@@ -82,7 +75,7 @@ func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
 func interactiveTUI(
 	ctx context.Context,
 	engineConf engine.Config,
-	fn EngineTUIFunc,
+	fn engine.StartCallback,
 ) error {
 	progR, progW := progrock.Pipe()
 	progW, err := progrockTee(progW)
@@ -105,7 +98,7 @@ func interactiveTUI(
 
 	var cbErr error
 	engineErr := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		cbErr = fn(ctx, api, engineConf.SessionToken)
+		cbErr = fn(ctx, api)
 		return cbErr
 	})
 	if cbErr != nil {
@@ -120,9 +113,10 @@ func interactiveTUI(
 func inlineTUI(
 	ctx context.Context,
 	engineConf engine.Config,
-	fn EngineTUIFunc,
+	fn engine.StartCallback,
 ) error {
 	tape := progrock.NewTape()
+	tape.ShowAllOutput(true)
 	if debugLogs {
 		tape.ShowInternal(true)
 	}
@@ -142,7 +136,7 @@ func inlineTUI(
 
 	var cbErr error
 	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		cbErr = fn(ctx, api, engineConf.SessionToken)
+		cbErr = fn(ctx, api)
 		return cbErr
 	})
 	if cbErr != nil {

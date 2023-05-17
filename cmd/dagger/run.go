@@ -11,7 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/vito/progrock"
 )
@@ -77,7 +79,16 @@ func Run(cmd *cobra.Command, args []string) {
 }
 
 func run(ctx context.Context, args []string) error {
-	return withEngineAndTUI(ctx, func(ctx context.Context, api *router.Router, sessionToken string) error {
+	u, err := uuid.NewRandom()
+	if err != nil {
+		return fmt.Errorf("generate uuid: %w", err)
+	}
+
+	sessionToken := u.String()
+
+	return withEngineAndTUI(ctx, engine.Config{
+		SessionToken: sessionToken,
+	}, func(ctx context.Context, api *router.Router) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("session listen: %w", err)

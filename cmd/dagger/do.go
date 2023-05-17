@@ -11,11 +11,13 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/formatter"
+	"github.com/vito/progrock"
 )
 
 var (
@@ -48,13 +50,17 @@ var doCmd = &cobra.Command{
 		}
 		dynamicCmdArgs := flags.Args()
 
-		// cmd.Println("Loading+installing project (use --debug to track progress)...")
-		return withEngineAndTUI(cmd.Context(), func(ctx context.Context, r *router.Router, sessionToken string) error {
+		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
+			rec := progrock.RecorderFromContext(ctx)
+			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
+			cmd.SetOut(vtx.Stdout())
+			cmd.SetErr(vtx.Stderr())
+			defer func() { vtx.Done(err) }()
+
+			cmd.Println("Loading+installing project...")
+
 			opts := []dagger.ClientOpt{
 				dagger.WithConn(router.EngineConn(r)),
-			}
-			if debugLogs {
-				opts = append(opts, dagger.WithLogOutput(os.Stderr))
 			}
 			c, err := dagger.Connect(ctx, opts...)
 			if err != nil {
