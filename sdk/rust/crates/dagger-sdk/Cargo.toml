@@ -1,0 +1,31 @@
+[package]
+name = "dagger-sdk"
+version = "0.2.22"
+edition = "2021"
+readme = "README.md"
+license-file = "LICENSE.MIT"
+description = "A dagger sdk for rust, written in rust"
+repository = "https://github.com/kjuulh/dagger-sdk"
+publish = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+dagger-core = { workspace = true, version = "^0.2.11" }
+
+eyre = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+
+futures = "0.3.28"
+derive_builder = "0.12.0"
+
+[dev-dependencies]
+pretty_assertions = "1.3.0"
+rand = "0.8.5"
+genco = "0.17.3"
+tracing-test = "0.2.4"
