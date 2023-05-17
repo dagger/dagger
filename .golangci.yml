@@ -37,6 +37,9 @@ linters:
 
 issues:
   exclude-rules:
+    - path: ci
+      linters:
+        - unparam
     - path: _test\.go
       linters:
         - dupl

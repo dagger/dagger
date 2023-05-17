@@ -14,8 +14,7 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
+	workdir string
 
 	cpuprofile string
 	pprofAddr  string
@@ -32,9 +31,6 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
-
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "")
-	rootCmd.PersistentFlags().MarkHidden("project")
 
 	rootCmd.AddCommand(
 		listenCmd,
@@ -74,10 +70,12 @@ var rootCmd = &cobra.Command{
 				return fmt.Errorf("start pprof: %w", err)
 			}
 		}
-
 		var err error
-		workdir, configPath, err = engine.NormalizePaths(workdir, configPath)
-		return err
+		workdir, err = engine.NormalizeWorkdir(workdir)
+		if err != nil {
+			return err
+		}
+		return nil
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
 		pprof.StopCPUProfile()

@@ -17,10 +17,9 @@ type EngineConn interface {
 }
 
 type Config struct {
-	Workdir      string
-	ConfigPath   string
-	NoExtensions bool
-	LogOutput    io.Writer
+	Workdir   string
+	LogOutput io.Writer
+	Conn      EngineConn
 }
 
 type ConnectParams struct {
@@ -29,7 +28,12 @@ type ConnectParams struct {
 }
 
 func Get(ctx context.Context, cfg *Config) (EngineConn, error) {
-	// Prefer DAGGER_SESSION_PORT if set
+	// Prefer explicitly set conn
+	if cfg.Conn != nil {
+		return cfg.Conn, nil
+	}
+
+	// Try DAGGER_SESSION_PORT next
 	conn, ok, err := FromSessionEnv()
 	if err != nil {
 		return nil, err

@@ -23,8 +23,7 @@ import (
 )
 
 var (
-	configPath string
-	workdir    string
+	workdir string
 )
 
 var rootCmd = &cobra.Command{
@@ -34,7 +33,6 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().StringVarP(&configPath, "project", "p", "", "project config file")
 	rootCmd.Flags().StringP("output", "o", "", "output file")
 	rootCmd.Flags().String("package", "", "package name")
 	rootCmd.Flags().String("lang", "", "language to generate in")
@@ -44,10 +42,8 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	ctx := context.Background()
 
 	engineConf := engine.Config{
-		Workdir:      workdir,
-		ConfigPath:   configPath,
-		RunnerHost:   internalengine.RunnerHost(),
-		NoExtensions: true,
+		Workdir:    workdir,
+		RunnerHost: internalengine.RunnerHost(),
 	}
 	return engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		lang, err := getLang(cmd)

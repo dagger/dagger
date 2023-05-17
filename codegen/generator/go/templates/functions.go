@@ -99,18 +99,27 @@ func isListOfObject(t *introspection.TypeRef) bool {
 
 func getArrayField(f *introspection.Field) []*introspection.Field {
 	schema := generator.GetSchema()
-	var fieldType string
 
-	if f.TypeRef.OfType.OfType.OfType != nil {
-		fieldType = f.TypeRef.OfType.OfType.OfType.Name
-	} else {
-		fieldType = f.ParentObject.Name
+	fieldType := f.TypeRef
+	if !fieldType.IsOptional() {
+		fieldType = fieldType.OfType
+	}
+	if !fieldType.IsList() {
+		panic("field is not a list")
+	}
+	fieldType = fieldType.OfType
+	if !fieldType.IsOptional() {
+		fieldType = fieldType.OfType
+	}
+	schemaType := schema.Types.Get(fieldType.Name)
+	if schemaType == nil {
+		panic(fmt.Sprintf("schema type %s is nil", fieldType.Name))
 	}
 
 	var fields []*introspection.Field
 	// Only include scalar fields for now
 	// TODO: include subtype too
-	for _, typeField := range schema.Types.Get(fieldType).Fields {
+	for _, typeField := range schemaType.Fields {
 		if typeField.TypeRef.IsScalar() {
 			fields = append(fields, typeField)
 		}

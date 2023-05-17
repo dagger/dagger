@@ -41,15 +41,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const (
-	daggerJSONName = "dagger.json"
-)
-
 type Config struct {
-	Workdir    string
-	ConfigPath string
-	// If true, do not load project extensions
-	NoExtensions   bool
+	Workdir        string
 	LogOutput      io.Writer
 	JournalURI     string
 	JournalWriter  journal.Writer
@@ -108,21 +101,8 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		return err
 	}
 
-	startOpts.Workdir, startOpts.ConfigPath, err = NormalizePaths(startOpts.Workdir, startOpts.ConfigPath)
+	startOpts.Workdir, err = NormalizeWorkdir(startOpts.Workdir)
 	if err != nil {
-		return err
-	}
-
-	_, err = os.Stat(startOpts.ConfigPath)
-	switch {
-	case err == nil:
-		startOpts.ConfigPath, err = filepath.Rel(startOpts.Workdir, startOpts.ConfigPath)
-		if err != nil {
-			return err
-		}
-	case os.IsNotExist(err):
-		startOpts.ConfigPath = ""
-	default:
 		return err
 	}
 
@@ -219,17 +199,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			}
 			if err := router.Add(coreAPI); err != nil {
 				return nil, err
-			}
-
-			if startOpts.ConfigPath != "" && !startOpts.NoExtensions {
-				_, err = installExtensions(
-					ctx,
-					router,
-					startOpts.ConfigPath,
-				)
-				if err != nil {
-					return nil, err
-				}
 			}
 
 			if fn == nil {
@@ -473,36 +442,24 @@ func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
 	return nil
 }
 
-func NormalizePaths(workdir, configPath string) (string, string, error) {
+func NormalizeWorkdir(workdir string) (string, error) {
 	if workdir == "" {
 		workdir = os.Getenv("DAGGER_WORKDIR")
 	}
+
 	if workdir == "" {
 		var err error
 		workdir, err = os.Getwd()
 		if err != nil {
-			return "", "", err
+			return "", err
 		}
 	}
 	workdir, err := filepath.Abs(workdir)
 	if err != nil {
-		return "", "", err
+		return "", err
 	}
 
-	if configPath == "" {
-		configPath = os.Getenv("DAGGER_CONFIG")
-	}
-	if configPath == "" {
-		configPath = filepath.Join(workdir, daggerJSONName)
-	}
-	if !filepath.IsAbs(configPath) {
-		var err error
-		configPath, err = filepath.Abs(configPath)
-		if err != nil {
-			return "", "", err
-		}
-	}
-	return workdir, configPath, nil
+	return workdir, nil
 }
 
 func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, error) {
@@ -517,41 +474,6 @@ func detectPlatform(ctx context.Context, c *bkclient.Client) (*specs.Platform, e
 	}
 	defaultPlatform := platforms.DefaultSpec()
 	return &defaultPlatform, nil
-}
-
-func installExtensions(ctx context.Context, r *router.Router, configPath string) (*schema.Project, error) {
-	res := struct {
-		Core struct {
-			Directory struct {
-				LoadProject schema.Project
-			}
-		}
-	}{}
-
-	_, err := r.Do(ctx,
-		// FIXME:(sipsma) toggling install is extremely weird here, need better way
-		`
-			query LoadProject($configPath: String!) {
-				host {
-					workdir {
-						loadProject(configPath: $configPath) {
-							name
-							install
-						}
-					}
-				}
-			}`,
-		"LoadProject",
-		map[string]any{
-			"configPath": configPath,
-		},
-		&res,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	return &res.Core.Directory.LoadProject, nil
 }
 
 type AnyDirSource struct{}

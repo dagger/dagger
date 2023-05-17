@@ -34,3 +34,6 @@ var Platform string
 
 //go:embed socket.graphqls
 var Socket string
+
+//go:embed project.graphqls
+var Project string

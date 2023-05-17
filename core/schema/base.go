@@ -4,7 +4,6 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/project"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	bkclient "github.com/moby/buildkit/client"
@@ -53,10 +52,7 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 		&cacheSchema{base},
 		&secretSchema{base},
 		&hostSchema{base, host},
-		&projectSchema{
-			baseSchema:    base,
-			projectStates: make(map[string]*project.State),
-		},
+		&projectSchema{base},
 		&httpSchema{base},
 		&platformSchema{base},
 		&socketSchema{base, host},

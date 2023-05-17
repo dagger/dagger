@@ -89,6 +89,7 @@ require (
 	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
 	github.com/PuerkitoBio/goquery v1.8.1 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
+	github.com/agnivade/levenshtein v1.1.1 // indirect
 	github.com/alecthomas/chroma v0.10.0 // indirect
 	github.com/alecthomas/chroma/v2 v2.7.0 // indirect
 	github.com/andybalholm/cascadia v1.3.1 // indirect
@@ -244,12 +245,12 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/spf13/pflag v1.0.5
 	github.com/tidwall/gjson v1.14.4
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.1 // indirect
+	github.com/vektah/gqlparser/v2 v2.5.1
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.9.0
 	golang.org/x/text v0.9.0 // indirect

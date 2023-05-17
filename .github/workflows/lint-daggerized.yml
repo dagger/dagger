@@ -1,0 +1,36 @@
+name: lint-daggerized
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+  # Enable manual trigger for easy debugging
+  # https://docs.github.com/en/actions/using-workflows/workflow-syntax-for-github-actions#onworkflow_dispatchinputs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # Optional: allow read access to pull request. Use with `only-new-issues` option.
+  # pull-requests: read
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: .github/actions/experimental-setup-dagger
+      - run: dagger do --debug --config ./ci ci sdk go lint
+        env:
+          _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
+      - uses: actions/upload-artifact@v3
+        if: always()
+        name: "Upload journal.log"
+        continue-on-error: true
+        with:
+          name: ${{ github.workflow }}-${{ github.job }}-journal.log
+          path: /tmp/journal.log

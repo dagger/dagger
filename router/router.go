@@ -4,13 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"net"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router/internal/handler"
@@ -180,40 +178,24 @@ func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	mux.ServeHTTP(w, req)
 }
 
-func (r *Router) ServeConn(conn net.Conn) error {
-	l := &singleConnListener{
-		conn: conn,
+func EngineConn(r *Router) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		resp := httptest.NewRecorder()
+		r.ServeHTTP(resp, req)
+		return resp.Result(), nil
 	}
-
-	s := http.Server{
-		Handler:           r,
-		ReadHeaderTimeout: 30 * time.Second,
-	}
-	return s.Serve(l)
 }
 
-// converts a pre-existing net.Conn into a net.Listener that returns the conn
-type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
 }
 
-func (l *singleConnListener) Accept() (net.Conn, error) {
-	l.l.Lock()
-	defer l.l.Unlock()
-
-	if l.conn == nil {
-		return nil, io.ErrClosedPipe
-	}
-	c := l.conn
-	l.conn = nil
-	return c, nil
+func (f DirectConn) Host() string {
+	return ":mem:"
 }
 
-func (l *singleConnListener) Addr() net.Addr {
-	return nil
-}
-
-func (l *singleConnListener) Close() error {
+func (f DirectConn) Close() error {
 	return nil
 }

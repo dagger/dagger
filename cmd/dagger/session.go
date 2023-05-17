@@ -47,9 +47,12 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	labels := &sessionLabels
 
+	workdir, err = engine.NormalizeWorkdir(workdir)
+	if err != nil {
+		return err
+	}
 	startOpts := engine.Config{
 		Workdir:      workdir,
-		ConfigPath:   configPath,
 		LogOutput:    os.Stderr,
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),

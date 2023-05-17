@@ -18,8 +18,7 @@ func init() {
 	ctx := context.Background()
 
 	engineConf := engine.Config{
-		RunnerHost:   internalengine.RunnerHost(),
-		NoExtensions: true,
+		RunnerHost: internalengine.RunnerHost(),
 	}
 	err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		var err error
