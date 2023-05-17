@@ -113,7 +113,6 @@ func inlineTUI(
 	fn engine.StartCallback,
 ) error {
 	tape := progrock.NewTape()
-	tape.ShowAllOutput(true)
 	if debugLogs {
 		tape.ShowInternal(true)
 	}
