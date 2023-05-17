@@ -11,8 +11,6 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine"
-	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -50,16 +48,8 @@ var doCmd = &cobra.Command{
 		}
 		dynamicCmdArgs := flags.Args()
 
-		engineConf := engine.Config{
-			Workdir:    workdir,
-			RunnerHost: internalengine.RunnerHost(),
-		}
-		if debugLogs {
-			engineConf.LogOutput = os.Stderr
-		}
-
-		cmd.Println("Loading+installing project (use --debug to track progress)...")
-		return engine.Start(cmd.Context(), engineConf, func(ctx context.Context, r *router.Router) error {
+		// cmd.Println("Loading+installing project (use --debug to track progress)...")
+		return withEngineAndTUI(cmd.Context(), func(ctx context.Context, r *router.Router, sessionToken string) error {
 			opts := []dagger.ClientOpt{
 				dagger.WithConn(router.EngineConn(r)),
 			}
