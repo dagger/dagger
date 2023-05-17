@@ -13,21 +13,14 @@ import (
 	internalengine "github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
+	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
 )
 
-var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
-var interactive bool
+var useTUI = isatty.IsTerminal(os.Stdout.Fd()) ||
+	isatty.IsTerminal(os.Stderr.Fd())
 
-func init() {
-	rootCmd.PersistentFlags().BoolVarP(
-		&interactive,
-		"interactive",
-		"i",
-		false,
-		"use interactive tree-style TUI",
-	)
-}
+var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 func withEngineAndTUI(
 	ctx context.Context,
@@ -48,7 +41,11 @@ func withEngineAndTUI(
 		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	if !useShinyNewTUI {
+	if !useTUI {
+		if engineConf.LogOutput == nil {
+			engineConf.LogOutput = os.Stderr
+		}
+
 		return engine.Start(ctx, engineConf, fn)
 	}
 

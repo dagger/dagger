@@ -112,7 +112,7 @@ func run(ctx context.Context, args []string) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
 		var cmdErr error
-		if useShinyNewTUI {
+		if useTUI {
 			rec := progrock.RecorderFromContext(ctx)
 
 			cmdline := strings.Join(subCmd.Args, " ")
