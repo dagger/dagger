@@ -5,10 +5,12 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +24,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
 )
 
@@ -3598,4 +3601,88 @@ func TestContainerParallelMutation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, res.Container.A.EnvVariable, "BAR")
 	require.Empty(t, res.Container.B, "BAR")
+}
+
+func TestContainerForceCompression(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		compression             dagger.ImageLayerCompression
+		expectedDockerMediaType string
+		expectedOCIMediaType    string
+	}{
+		{
+			dagger.Gzip,
+			"application/vnd.docker.image.rootfs.diff.tar.gzip",
+			"application/vnd.oci.image.layer.v1.tar+gzip",
+		},
+		{
+			dagger.Zstd,
+			"application/vnd.docker.image.rootfs.diff.tar.zstd",
+			"application/vnd.oci.image.layer.v1.tar+zstd",
+		},
+		{
+			dagger.Uncompressed,
+			"application/vnd.docker.image.rootfs.diff.tar",
+			"application/vnd.oci.image.layer.v1.tar",
+		},
+		{
+			dagger.Estargz,
+			"", // not supported
+			"application/vnd.oci.image.layer.v1.tar+gzip",
+		},
+	} {
+		tc := tc
+		t.Run(string(tc.compression), func(t *testing.T) {
+			t.Parallel()
+
+			c, ctx := connect(t)
+			defer c.Close()
+
+			ref := registryRef("testcontainerpublishforcecompression" + strings.ToLower(string(tc.compression)))
+			_, err := c.Container().
+				From("alpine:3.16.2").
+				Publish(ctx, ref, dagger.ContainerPublishOpts{
+					ForcedCompression: tc.compression,
+				})
+			require.NoError(t, err)
+
+			parsedRef, err := name.ParseReference(ref, name.Insecure)
+			require.NoError(t, err)
+
+			imgDesc, err := remote.Get(parsedRef, remote.WithTransport(http.DefaultTransport))
+			require.NoError(t, err)
+			img, err := imgDesc.Image()
+			require.NoError(t, err)
+			layers, err := img.Layers()
+			require.NoError(t, err)
+			for _, layer := range layers {
+				mediaType, err := layer.MediaType()
+				require.NoError(t, err)
+				expectedMediaType := tc.expectedDockerMediaType
+				if tc.compression == dagger.Estargz {
+					expectedMediaType = tc.expectedOCIMediaType
+				}
+				require.EqualValues(t, expectedMediaType, mediaType)
+			}
+
+			tarPath := filepath.Join(t.TempDir(), "export.tar")
+			_, err = c.Container().
+				From("alpine:3.16.2").
+				Export(ctx, tarPath, dagger.ContainerExportOpts{
+					ForcedCompression: tc.compression,
+				})
+			require.NoError(t, err)
+			indexBytes := readTarFile(t, tarPath, "index.json")
+			var index ocispecs.Index
+			require.NoError(t, json.Unmarshal(indexBytes, &index))
+			manifestDigest := index.Manifests[0].Digest
+			manifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+manifestDigest.Encoded())
+			var manifest ocispecs.Manifest
+			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
+			for _, layer := range manifest.Layers {
+				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
+			}
+		})
+	}
 }

@@ -435,12 +435,13 @@ func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core
 }
 
 type containerPublishArgs struct {
-	Address          string
-	PlatformVariants []core.ContainerID
+	Address           string
+	PlatformVariants  []core.ContainerID
+	ForcedCompression core.ImageLayerCompression
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, s.bkClient, s.solveOpts, s.solveCh)
 }
 
 type containerWithMountedFileArgs struct {
@@ -646,12 +647,13 @@ func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, 
 }
 
 type containerExportArgs struct {
-	Path             string
-	PlatformVariants []core.ContainerID
+	Path              string
+	PlatformVariants  []core.ContainerID
+	ForcedCompression core.ImageLayerCompression
 }
 
 func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, args.ForcedCompression, s.bkClient, s.solveOpts, s.solveCh); err != nil {
 		return false, err
 	}
 
