@@ -400,9 +400,9 @@ func (m Model) errorsView() string {
 		return ""
 	}
 
-	var errs []string
-	for _, err := range m.errors {
-		errs = append(errs, errorStyle.Render(err.Error()))
+	errs := make([]string, len(m.errors))
+	for i, err := range m.errors {
+		errs[i] = errorStyle.Render(err.Error())
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, errs...)
