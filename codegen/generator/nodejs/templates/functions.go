@@ -17,6 +17,7 @@ var (
 	funcMap    = template.FuncMap{
 		"CommentToLines":      commentToLines,
 		"FormatDeprecation":   formatDeprecation,
+		"FormatReturnType":    commonFunc.FormatReturnType,
 		"FormatInputType":     commonFunc.FormatInputType,
 		"FormatOutputType":    commonFunc.FormatOutputType,
 		"FormatEnum":          formatEnum,
@@ -33,6 +34,7 @@ var (
 		"SortEnumFields":      sortEnumFields,
 		"Solve":               solve,
 		"Subtract":            subtract,
+		"ConvertID":           commonFunc.ConvertID,
 	}
 )
 

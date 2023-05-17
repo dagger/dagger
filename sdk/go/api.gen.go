@@ -107,6 +107,7 @@ type Container struct {
 	publish     *string
 	stderr      *string
 	stdout      *string
+	sync        *ContainerID
 	user        *string
 	workdir     *string
 }
@@ -751,6 +752,15 @@ func (r *Container) Stdout(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Forces evaluation of the pipeline in the engine.
+//
+// It doesn't run the default command if no exec has been set.
+func (r *Container) Sync(ctx context.Context) (*Container, error) {
+	q := r.q.Select("sync")
+
+	return r, q.Execute(ctx, r.c)
 }
 
 // Retrieves the user to be set for all commands.
@@ -2551,12 +2561,6 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 		q: q,
 		c: r.c,
 	}
-}
-
-// Force evaluation in the engine.
-func (r *Container) Sync(ctx context.Context) (*Container, error) {
-	q := r.q.Select("sync")
-	return r, q.Execute(ctx, r.c)
 }
 
 // The default platform of the builder.

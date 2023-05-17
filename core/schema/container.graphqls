@@ -19,7 +19,11 @@ type Container {
   "A unique identifier for this container."
   id: ContainerID!
 
-  "Force evaluation in the engine."
+  """
+  Forces evaluation of the pipeline in the engine.
+
+  It doesn't run the default command if no exec has been set.
+  """
   sync: ContainerID!
 
   "The platform this container executes and publishes as."

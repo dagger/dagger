@@ -3,7 +3,8 @@
 	{{- $parentName := .ParentObject.Name }}
 	{{- $required := GetRequiredArgs .Args }}
 	{{- $optionals := GetOptionalArgs .Args }}
-	
+    {{- $convertID := ConvertID . }}
+
 	{{- if and ($optionals) (eq $parentName "Query") }}
 		{{- $parentName = "Client" }}
 	{{- end }}
@@ -26,10 +27,10 @@
 	{{- end }}
 
 	{{- /* Write return type */ -}}
-	{{- "" }}): Promise<{{ .TypeRef | FormatOutputType }}> {
+	{{- "" }}): Promise<{{ . | FormatReturnType }}> {
 
 	{{- if .TypeRef }}
-    const response: Awaited<{{ .TypeRef | FormatOutputType }}> = await computeQuery(
+    {{ if not $convertID }}const response: Awaited<{{ . | FormatReturnType }}> = {{ end }}await computeQuery(
       [
         ...this._queryTree,
         {
@@ -53,7 +54,11 @@
       this.client
     )
 
+    {{ if $convertID -}}
+    return this
+    {{- else -}}
     return response
+    {{- end }}
   }
 	{{- end }}
 {{- end }}

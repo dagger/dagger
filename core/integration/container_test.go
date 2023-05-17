@@ -285,6 +285,26 @@ CMD cat /secret
 		require.NoError(t, err)
 		require.Contains(t, stdout, "***")
 	})
+
+	t.Run("just build, don't execute", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile", "FROM alpine:3.16.2\nCMD false")
+
+		_, err = c.Container().Build(src).Sync(ctx)
+		require.NoError(t, err)
+
+		// unless there's a WithExec
+		_, err = c.Container().Build(src).WithExec(nil).Sync(ctx)
+		require.NotEmpty(t, err)
+	})
+
+	t.Run("just build, short-circuit", func(t *testing.T) {
+		src := contextDir.
+			WithNewFile("Dockerfile", "FROM alpine:3.16.2\nRUN false")
+
+		_, err = c.Container().Build(src).Sync(ctx)
+		require.NotEmpty(t, err)
+	})
 }
 
 func TestContainerWithRootFS(t *testing.T) {
@@ -356,6 +376,25 @@ func TestContainerWithRootFSSubdir(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "Hello, world!\n", out)
+}
+
+func TestContainerExecSync(t *testing.T) {
+	t.Parallel()
+
+	// A successful sync doesn't prove anything. As soon as you call other
+	// leaves to check things, they could be the ones triggering execution.
+	// Still, sync can be useful for short-circuiting.
+	err := testutil.Query(
+		`{
+			container {
+				from(address: "alpine:3.16.2") {
+					withExec(args: ["false"]) {
+						sync
+					}
+				}
+			}
+		}`, nil, nil)
+	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
 }
 
 func TestContainerExecExitCode(t *testing.T) {
@@ -690,7 +729,7 @@ func TestContainerExecWithEntrypoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/root\n", used)
 
-	_, err = withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).ExitCode(ctx)
+	_, err = withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}).Sync(ctx)
 	require.Error(t, err) // 'sh sh -c echo $HOME' is not valid
 
 	skipped, err := withEntry.WithExec([]string{"sh", "-c", "echo $HOME"}, dagger.ContainerWithExecOpts{
@@ -2890,7 +2929,7 @@ func TestContainerExecError(t *testing.T) {
 			WithExec([]string{"sh", "-c", fmt.Sprintf(
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 			)}).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.Error(t, err)
 
 		require.Contains(t, err.Error(), outMsg)
@@ -2909,7 +2948,7 @@ func TestContainerExecError(t *testing.T) {
 					RedirectStderr: "/err",
 				},
 			).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.Error(t, err)
 
 		require.Contains(t, err.Error(), outMsg)
@@ -2940,7 +2979,7 @@ func TestContainerExecError(t *testing.T) {
 					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 				)},
 			).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes])
 		require.NotContains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes+1])

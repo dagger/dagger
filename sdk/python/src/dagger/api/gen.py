@@ -544,12 +544,6 @@ class Container(Type):
         return await _ctx.execute(ContainerID)
 
     @typecheck
-    async def sync(self) -> "Container":
-        _ctx = self._select("sync", [])
-        await _ctx.execute(ContainerID)
-        return self
-
-    @typecheck
     async def image_ref(self) -> Optional[str]:
         """The unique image reference which can only be retrieved immediately
         after the 'Container.From' call.
@@ -812,6 +806,24 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("stdout", _args)
         return await _ctx.execute(str)
+
+    @typecheck
+    async def sync(self) -> "Container":
+        """Forces evaluation of the pipeline in the engine.
+
+        It doesn't run the default command if no exec has been set.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        await _ctx.execute()
+        return self
 
     @typecheck
     async def user(self) -> Optional[str]:
