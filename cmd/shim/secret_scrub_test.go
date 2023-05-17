@@ -150,6 +150,7 @@ func TestScrubSecretWrite(t *testing.T) {
 	t.Parallel()
 	envMap := map[string]string{
 		"secret1":      "secret1 value",
+		"secret2":      "secret2",
 		"sshSecretKey": sshSecretKey,
 		"sshPublicKey": sshPublicKey,
 	}
@@ -161,6 +162,7 @@ func TestScrubSecretWrite(t *testing.T) {
 
 	envNames := []string{
 		"secret1",
+		"secret2",
 		"sshSecretKey",
 		"sshPublicKey",
 	}
@@ -191,5 +193,15 @@ func TestScrubSecretWrite(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "aaa\n***\nno secret\n", out.String())
 		out.Reset()
+	})
+
+	t.Run("multi write", func(t *testing.T) {
+		_, err := w.Write([]byte("secret1 value"))
+		require.NoError(t, err)
+		require.Equal(t, "***", out.String())
+
+		_, err = w.Write([]byte("\nsecret2"))
+		require.NoError(t, err)
+		require.Equal(t, "***\n***", out.String())
 	})
 }
