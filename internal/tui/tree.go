@@ -388,6 +388,9 @@ func (m *Tree) nth(entry TreeEntry, n int) TreeEntry {
 	if n == 0 {
 		return entry
 	}
+	if m.collapsed[entry] {
+		return nil
+	}
 	skipped := 1
 	for _, child := range entry.Entries() {
 		if found := m.nth(child, n-skipped); found != nil {
