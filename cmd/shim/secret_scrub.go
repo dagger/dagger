@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,13 +13,19 @@ import (
 	"github.com/dagger/dagger/core"
 )
 
+var (
+	// scrubString will be used as replacement for found secrets:
+	scrubString = []byte("***")
+)
+
 // SecretScrubWriter is a writer that will scrub secretValues before writing to the underlying writer.
 // It is safe to write to it concurrently.
 type SecretScrubWriter struct {
 	mu sync.Mutex
 	w  io.Writer
 
-	secretLines []string
+	// secrets stores secrets as []byte to avoid overhead when matching them:
+	secrets [][]byte
 }
 
 // Write scrubs secret values from b and replace them with `***`.
@@ -26,37 +33,29 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	scrubbedBytes := scrubSecretBytes(w.secretLines, b)
+	lines := bytes.Split(b, []byte("\n"))
 
-	_, err := w.w.Write(scrubbedBytes)
-	if err != nil {
-		return -1, err
-	}
-
-	return len(b), err
-}
-
-func scrubSecretBytes(secretValues []string, b []byte) []byte {
-	s := string(b)
-	ss := strings.Split(s, "\n")
-
-	out := make([]string, 0, len(ss))
-
-	for _, line := range ss {
-		for _, secretLine := range secretValues {
-			secretLine := strings.TrimSpace(secretLine)
-			if secretLine == "" {
-				continue
-			}
-			// FIXME: I think we can do better
-			line = strings.ReplaceAll(line, secretLine, "***")
+	var written int
+	for i, line := range lines {
+		for _, secretBytes := range w.secrets {
+			line = bytes.ReplaceAll(line, secretBytes, scrubString)
 		}
-		out = append(out, line)
+
+		n, err := w.w.Write(line)
+		if err != nil {
+			return -1, err
+		}
+		written += n
+		if i < len(lines)-1 {
+			n, err := w.w.Write([]byte("\n"))
+			if err != nil {
+				return -1, err
+			}
+			written += n
+		}
 	}
 
-	s = strings.Join(out, "\n")
-
-	return []byte(s)
+	return written, nil
 }
 
 // NewSecretScrubWriter replaces known secrets by "***".
@@ -73,10 +72,17 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 
 	secretLines := splitSecretsByLine(secrets)
 
-	return &SecretScrubWriter{
-		w:           w,
-		secretLines: secretLines,
-	}, nil
+	secretAsBytes := make([][]byte, 0)
+	for _, v := range secretLines {
+		secretAsBytes = append(secretAsBytes, []byte(v))
+	}
+
+	secretScrubWriter := &SecretScrubWriter{
+		w:       w,
+		secrets: secretAsBytes,
+	}
+
+	return secretScrubWriter, nil
 }
 
 func splitSecretsByLine(secrets []string) []string {
@@ -85,6 +91,7 @@ func splitSecretsByLine(secrets []string) []string {
 	for _, secretValue := range secrets {
 		lines := strings.Split(secretValue, "\n")
 		for _, line := range lines {
+			line = strings.TrimSpace(line)
 			if line == "" {
 				continue
 			}

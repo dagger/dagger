@@ -11,7 +11,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSecretScrubWriter_Write(t *testing.T) {
+var (
+	//nolint:typecheck
+	//go:embed testdata/id_ed25519
+	sshSecretKey string
+
+	//nolint:typecheck
+	//go:embed testdata/id_ed25519.pub
+	sshPublicKey string
+)
+
+func TestSecretScrubWriterWrite(t *testing.T) {
+	t.Parallel()
 	fsys := fstest.MapFS{
 		"mysecret": &fstest.MapFile{
 			Data: []byte("my secret file"),
@@ -62,6 +73,7 @@ func TestSecretScrubWriter_Write(t *testing.T) {
 }
 
 func TestLoadSecretsToScrubFromEnv(t *testing.T) {
+	t.Parallel()
 	secretValue := "my secret value"
 	env := []string{
 		fmt.Sprintf("MY_SECRET_ID=%s", secretValue),
@@ -80,6 +92,7 @@ func TestLoadSecretsToScrubFromEnv(t *testing.T) {
 }
 
 func TestLoadSecretsToScrubFromFiles(t *testing.T) {
+	t.Parallel()
 	const currentDirPath = "/mnt"
 	t.Run("/mnt, fs relative, secret absolute", func(t *testing.T) {
 		fsys := fstest.MapFS{
@@ -133,40 +146,50 @@ func TestLoadSecretsToScrubFromFiles(t *testing.T) {
 	})
 }
 
-var (
-	//nolint:typecheck
-	//go:embed testdata/id_ed25519
-	sshSecretKey string
-
-	//nolint:typecheck
-	//go:embed testdata/id_ed25519.pub
-	sshPublicKey string
-)
-
 func TestScrubSecretWrite(t *testing.T) {
-	secrets := []string{
-		"secret1",
-		"secret with space ",
-		sshSecretKey,
-		sshPublicKey,
+	t.Parallel()
+	envMap := map[string]string{
+		"secret1":      "secret1 value",
+		"sshSecretKey": sshSecretKey,
+		"sshPublicKey": sshPublicKey,
 	}
-	secrets = splitSecretsByLine(secrets)
 
-	s := "Not secret\nsecret1\nsecret with space\n" + sshSecretKey + "\n" + sshPublicKey
-	got := scrubSecretBytes(secrets, []byte(s))
-	require.Equal(t, "Not secret\n***\n***\n***\n***\n***\n***\n***\n***\n***\n\n***\n", string(got))
+	env := []string{}
+	for k, v := range envMap {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	envNames := []string{
+		"secret1",
+		"sshSecretKey",
+		"sshPublicKey",
+	}
+
+	out := new(bytes.Buffer)
+	w, err := NewSecretScrubWriter(out, "/", fstest.MapFS{}, env, core.SecretToScrubInfo{
+		Envs:  envNames,
+		Files: []string{},
+	})
+	require.NoError(t, err)
+
+	t.Run("multiline secret", func(t *testing.T) {
+		input := "aaa\n" + sshSecretKey + "\nbbb\nccc"
+		_, err := w.Write([]byte(input))
+		require.NoError(t, err)
+		require.Equal(t, "aaa\n***\n***\n***\n***\n***\n***\n***\n\nbbb\nccc", out.String())
+		out.Reset()
+
+		_, err = w.Write([]byte(sshSecretKey))
+		require.NoError(t, err)
+		require.Equal(t, "***\n***\n***\n***\n***\n***\n***\n", out.String())
+		out.Reset()
+	})
+
+	t.Run("single line secret", func(t *testing.T) {
+		input := "aaa\nsecret1 value\nno secret\n"
+		_, err := w.Write([]byte(input))
+		require.NoError(t, err)
+		require.Equal(t, "aaa\n***\nno secret\n", out.String())
+		out.Reset()
+	})
 }
-
-// func TestScrubSecretMultiWrite(t *testing) {
-// 	secrets := []string{
-// 		"This is secret",
-// 	}
-//
-// 	var buf bytes.Buffer
-// 	w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
-// 		Envs:  []string{"MY_SECRET_ID"},
-// 		Files: []string{"/mysecret", "/subdir/alsosecret"},
-// 	})
-// 	require.NoError(t, err)
-//
-// }
