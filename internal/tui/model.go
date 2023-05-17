@@ -55,6 +55,8 @@ type Model struct {
 
 	follow       bool
 	detailsFocus bool
+
+	errors []error
 }
 
 func (m Model) Init() tea.Cmd {
@@ -118,8 +120,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.processKeyMsg(msg)
 	case EditorExitMsg:
 		if msg.Err != nil {
-			// TODO(vito)
-			// fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
+			m.errors = append(m.errors, msg.Err)
 		}
 		return m, nil
 	case followMsg:
@@ -376,18 +377,35 @@ func (m Model) View() string {
 
 	helpView := m.helpView()
 	statusBarView := m.statusBarView()
+	errorsView := m.errorsView()
 
 	detailsHeight := m.height - treeHeight
 	detailsHeight -= lipgloss.Height(helpView)
 	detailsHeight -= lipgloss.Height(statusBarView)
+	detailsHeight -= lipgloss.Height(errorsView)
+	detailsHeight = max(detailsHeight, 10)
 	m.details.SetHeight(detailsHeight)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		statusBarView,
 		m.tree.View(),
 		m.details.View(),
+		errorsView,
 		helpView,
 	)
+}
+
+func (m Model) errorsView() string {
+	if len(m.errors) == 0 {
+		return ""
+	}
+
+	var errs []string
+	for _, err := range m.errors {
+		errs = append(errs, errorStyle.Render(err.Error()))
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, errs...)
 }
 
 func (m Model) statusBarView() string {
