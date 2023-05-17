@@ -37,5 +37,5 @@ func sanitizeFilename(name string) string {
 			return r
 		}
 	}, name)
-	return strings.Join(strings.Fields(sanitized), " ") + ".log"
+	return strings.Join(strings.Fields(sanitized), " ")
 }

@@ -68,7 +68,7 @@ func (i *Item) Error() *string {
 }
 
 func (i *Item) Save(dir string) (string, error) {
-	filePath := filepath.Join(dir, sanitizeFilename(i.Name()))
+	filePath := filepath.Join(dir, sanitizeFilename(i.Name())) + ".log"
 	f, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("save item to %s as %s: %w", dir, filePath, err)
