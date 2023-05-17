@@ -1747,11 +1747,13 @@ func (container *Container) export(
 			}
 
 			cfgBytes, err := json.Marshal(specs.Image{
-				Architecture: exportContainer.Platform.Architecture,
-				OS:           exportContainer.Platform.OS,
-				OSVersion:    exportContainer.Platform.OSVersion,
-				OSFeatures:   exportContainer.Platform.OSFeatures,
-				Config:       exportContainer.Config,
+				Platform: specs.Platform{
+					Architecture: exportContainer.Platform.Architecture,
+					OS:           exportContainer.Platform.OS,
+					OSVersion:    exportContainer.Platform.OSVersion,
+					OSFeatures:   exportContainer.Platform.OSFeatures,
+				},
+				Config: exportContainer.Config,
 			})
 			if err != nil {
 				return nil, err
@@ -1797,11 +1799,13 @@ func (container *Container) export(
 			}
 
 			cfgBytes, err := json.Marshal(specs.Image{
-				Architecture: exportContainer.Platform.Architecture,
-				OS:           exportContainer.Platform.OS,
-				OSVersion:    exportContainer.Platform.OSVersion,
-				OSFeatures:   exportContainer.Platform.OSFeatures,
-				Config:       exportContainer.Config,
+				Platform: specs.Platform{
+					Architecture: exportContainer.Platform.Architecture,
+					OS:           exportContainer.Platform.OS,
+					OSVersion:    exportContainer.Platform.OSVersion,
+					OSFeatures:   exportContainer.Platform.OSFeatures,
+				},
+				Config: exportContainer.Config,
 			})
 			if err != nil {
 				return nil, err

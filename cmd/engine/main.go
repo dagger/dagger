@@ -166,6 +166,10 @@ func main() { //nolint:gocyclo
 			Name:  "debug",
 			Usage: "enable debug output in logs",
 		},
+		cli.BoolFlag{
+			Name:  "trace",
+			Usage: "enable trace output in logs (highly verbose, could affect performance)",
+		},
 		cli.StringFlag{
 			Name:  "root",
 			Usage: "path to state directory",
@@ -258,6 +262,9 @@ func main() { //nolint:gocyclo
 		logrus.SetFormatter(&logrus.TextFormatter{FullTimestamp: true})
 		if cfg.Debug {
 			logrus.SetLevel(logrus.DebugLevel)
+		}
+		if cfg.Trace {
+			logrus.SetLevel(logrus.TraceLevel)
 		}
 
 		if cfg.GRPC.DebugAddress != "" {
@@ -509,6 +516,9 @@ func setDefaultConfig(cfg *config.Config) {
 func applyMainFlags(c *cli.Context, cfg *config.Config) error {
 	if c.IsSet("debug") {
 		cfg.Debug = c.Bool("debug")
+	}
+	if c.IsSet("trace") {
+		cfg.Trace = c.Bool("trace")
 	}
 	if c.IsSet("root") {
 		cfg.Root = c.String("root")
@@ -867,15 +877,15 @@ func getGCPolicy(cfg config.GCConfig, root string) []client.PruneInfo {
 		return nil
 	}
 	if len(cfg.GCPolicy) == 0 {
-		cfg.GCPolicy = config.DefaultGCPolicy(root, cfg.GCKeepStorage)
+		cfg.GCPolicy = config.DefaultGCPolicy(cfg.GCKeepStorage)
 	}
 	out := make([]client.PruneInfo, 0, len(cfg.GCPolicy))
 	for _, rule := range cfg.GCPolicy {
 		out = append(out, client.PruneInfo{
 			Filter:       rule.Filters,
 			All:          rule.All,
-			KeepBytes:    rule.KeepBytes,
-			KeepDuration: time.Duration(rule.KeepDuration) * time.Second,
+			KeepBytes:    rule.KeepBytes.AsBytes(root),
+			KeepDuration: rule.KeepDuration.Duration,
 		})
 	}
 	return out
