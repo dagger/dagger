@@ -41,7 +41,7 @@ func init() {
 	cloudCmd.AddCommand(orgCmd)
 
 	orgCreateCmd := &cobra.Command{
-		Use:   "create",
+		Use:   "create <ORG>",
 		Short: "Create a new org",
 		RunE:  cloud.CreateOrg,
 		Args:  cobra.ExactArgs(1),
