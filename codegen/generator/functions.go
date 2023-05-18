@@ -46,6 +46,43 @@ func NewCommonFunctions(formatTypeFuncs FormatTypeFuncs) *CommonFunctions {
 	return &CommonFunctions{formatTypeFuncs: formatTypeFuncs}
 }
 
+// FormatReturnType formats a GraphQL type into the SDK language output,
+// unless it's an ID that will be converted which needs to be formatted
+// as an input (for chaining).
+func (c *CommonFunctions) FormatReturnType(f introspection.Field) string {
+	return c.formatType(f.TypeRef, c.ConvertID(f))
+}
+
+// ConvertID returns true if the field returns an ID that should be
+// converted into an object.
+func (c *CommonFunctions) ConvertID(f introspection.Field) bool {
+	if f.Name == "id" {
+		return false
+	}
+	ref := f.TypeRef
+	if ref.Kind == introspection.TypeKindNonNull {
+		ref = ref.OfType
+	}
+	if ref.Kind != introspection.TypeKindScalar {
+		return false
+	}
+
+	// FIXME: As of now all custom scalars are IDs. If that changes we
+	// need to make sure we can tell the difference.
+	alias, ok := CustomScalar[ref.Name]
+
+	// FIXME: We don't have a simple way to convert any ID to its
+	// corresponding object (in codegen) so for now just return the
+	// current instance. Currently, `sync` is the only field where
+	// the error is what we care about but more could be added later.
+	// To avoid wasting a result, we return the ID which is a leaf value
+	// and triggers execution, but then convert to object in the SDK to
+	// allow continued chaining. For this, we're assuming the returned
+	// ID represents the exact same object but if that changes, we'll
+	// need to adjust.
+	return ok && alias == f.ParentObject.Name
+}
+
 // FormatInputType formats a GraphQL type into the SDK language input
 //
 // Example: `String` -> `string`

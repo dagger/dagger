@@ -106,3 +106,16 @@ def test_connection_closed_error():
         ...
     with pytest.raises(TransportError, match="Connection to engine has been closed"):
         client.container().id()
+
+
+def test_container_sync():
+    with dagger.Connection() as client:
+        base = client.container().from_("alpine:3.16.2")
+
+        # short cirtcut
+        with pytest.raises(dagger.QueryError, match="foobar"):
+            base.with_exec(["foobar"]).sync()
+
+        # chaining
+        out = base.with_exec(["echo", "spam"]).sync().stdout()
+        assert out == "spam\n"

@@ -808,6 +808,24 @@ class Container(Type):
         return _ctx.execute_sync(str)
 
     @typecheck
+    def sync(self) -> "Container":
+        """Forces evaluation of the pipeline in the engine.
+
+        It doesn't run the default command if no exec has been set.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        _ctx.execute_sync()
+        return self
+
+    @typecheck
     def user(self) -> Optional[str]:
         """Retrieves the user to be set for all commands.
 

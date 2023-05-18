@@ -1263,6 +1263,25 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Forces evaluation of the pipeline in the engine.
+   *
+   * It doesn't run the default command if no exec has been set.
+   */
+  async sync(): Promise<Container> {
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sync",
+        },
+      ],
+      this.client
+    )
+
+    return this
+  }
+
+  /**
    * Retrieves the user to be set for all commands.
    */
   async user(): Promise<string> {

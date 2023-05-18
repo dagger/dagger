@@ -45,8 +45,9 @@ type {{ $field | FieldOptionsStructName }} struct {
 //
 {{ $field.DeprecationReason | FormatDeprecation }}
 {{- end }}
+{{- $convertID := $field | ConvertID }}
 {{ $field | FieldFunction }} {
-    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") }}
+    {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
     if r.{{ $field.Name }} != nil {
         return *r.{{ $field.Name }}, nil
     }
@@ -66,7 +67,10 @@ type {{ $field | FieldOptionsStructName }} struct {
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
 	{{- end }}
 	{{- end }}
-	{{ if $field.TypeRef.IsObject }}
+    {{ if $convertID }}
+	return r, q.Execute(ctx, r.c)
+
+	{{- else if $field.TypeRef.IsObject }}
 	{{ $typeName := $field.TypeRef | FormatOutputType }}
 	return &{{ $field.TypeRef | FormatOutputType }} {
 		q: q,

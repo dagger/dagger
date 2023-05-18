@@ -18,6 +18,7 @@ var (
 	funcMap    = template.FuncMap{
 		"Comment":                 comment,
 		"FormatDeprecation":       formatDeprecation,
+		"FormatReturnType":        commonFunc.FormatReturnType,
 		"FormatInputType":         commonFunc.FormatInputType,
 		"FormatOutputType":        commonFunc.FormatOutputType,
 		"FormatName":              formatName,
@@ -32,6 +33,7 @@ var (
 		"ToUpperCase":             toUpperCase,
 		"FormatArrayField":        formatArrayField,
 		"FormatArrayToSingleType": formatArrayToSingleType,
+		"ConvertID":               commonFunc.ConvertID,
 	}
 )
 
@@ -200,11 +202,11 @@ func fieldFunction(f introspection.Field) string {
 	}
 	signature += "(" + strings.Join(args, ", ") + ")"
 
-	retType := ""
+	retType := commonFunc.FormatReturnType(f)
 	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
-		retType = fmt.Sprintf("(%s, error)", commonFunc.FormatOutputType(f.TypeRef))
+		retType = fmt.Sprintf("(%s, error)", retType)
 	} else {
-		retType = "*" + commonFunc.FormatOutputType(f.TypeRef)
+		retType = "*" + retType
 	}
 	signature += " " + retType
 

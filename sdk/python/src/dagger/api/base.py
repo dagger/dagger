@@ -5,7 +5,7 @@ import logging
 import typing
 from collections import deque
 from collections.abc import Callable, Sequence
-from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar
+from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
 
 import anyio
 import attrs
@@ -91,21 +91,37 @@ class Context:
     def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(self.build()))
 
+    @overload
+    async def execute(self, return_type: None) -> None:
+        ...
+
+    @overload
     async def execute(self, return_type: type[T]) -> T:
+        ...
+
+    async def execute(self, return_type: type[T] | None = None) -> T | None:
         assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
         with self._handle_execute(query):
             result = await self.session.execute(query)
-        return self.get_value(result, return_type)
+        return self.get_value(result, return_type) if return_type else None
 
+    @overload
+    def execute_sync(self, return_type: None) -> None:
+        ...
+
+    @overload
     def execute_sync(self, return_type: type[T]) -> T:
+        ...
+
+    def execute_sync(self, return_type: type[T] | None = None) -> T | None:
         assert isinstance(self.session, SyncClientSession)
         self.resolve_ids_sync()
         query = self.query()
         with self._handle_execute(query):
             result = self.session.execute(query)
-        return self.get_value(result, return_type)
+        return self.get_value(result, return_type) if return_type else None
 
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""

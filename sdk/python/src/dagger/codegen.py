@@ -381,12 +381,14 @@ class _ObjectField:
         ctx: Context,
         name: str,
         field: GraphQLField,
+        parent: GraphQLObjectType,
     ) -> None:
         self.ctx = ctx
         self.graphql_name = name
         self.graphql = field
 
         self.name = format_name(name)
+        self.named_type = get_named_type(field.type)
         self.args = sorted(
             (_InputField(ctx, *args, parent=self) for args in field.args.items()),
             key=attrgetter("has_default"),
@@ -396,6 +398,27 @@ class _ObjectField:
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
         self.type = format_output_type(field.type).replace("Query", "Client")
+        self.convert_id = False
+
+        # FIXME: We don't have a simple way to convert any ID to its
+        # corresponding object (in codegen) so for now just return the
+        # current instance. Currently, `sync` is the only field where
+        # the error is what we care about but more could be added later.
+        # To avoid wasting a result, we return the ID which is a leaf value
+        # and triggers execution, but then convert to object in the SDK to
+        # allow continued chaining. For this, we're assuming the returned
+        # ID represents the exact same object but if that changes, we'll
+        # need to adjust.
+        if (
+            name != "id"
+            and self.is_leaf
+            and self.is_custom_scalar
+            and self.named_type.name in ctx.id_map
+        ):
+            converted = ctx.id_map[self.named_type.name]
+            if get_named_type(parent).name == converted:
+                self.type = converted
+                self.convert_id = True
 
     @joiner
     def __str__(self) -> Iterator[str]:
@@ -432,10 +455,12 @@ class _ObjectField:
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
         if self.is_leaf:
-            if self.ctx.sync:
-                yield f"return _ctx.execute_sync({self.type})"
+            exec_ = "_ctx.execute_sync" if self.ctx.sync else "await _ctx.execute"
+            if self.convert_id:
+                yield f"{exec_}()"
+                yield "return self"
             else:
-                yield f"return await _ctx.execute({self.type})"
+                yield f"return {exec_}({self.type})"
         else:
             yield f"return {self.type}(_ctx)"
 
@@ -467,7 +492,8 @@ class _ObjectField:
                 )
 
             if self.is_leaf:
-                if return_doc := output_type_description(self.graphql.type):
+                return_doc = output_type_description(self.graphql.type)
+                if not self.convert_id and return_doc:
                     yield chain(
                         (
                             "Returns",
@@ -626,6 +652,6 @@ class Object(ObjectHandler[GraphQLObjectType]):
 
     def fields(self, t: GraphQLObjectType) -> Iterator[_ObjectField]:
         return (
-            _ObjectField(self.ctx, *args)
+            _ObjectField(self.ctx, *args, t)
             for args in cast(GraphQLFieldMap, t.fields).items()
         )
