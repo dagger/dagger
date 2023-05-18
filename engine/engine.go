@@ -569,7 +569,7 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 
 func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error, error) {
 	progSock := filepath.Join(
-		xdg.CacheHome,
+		xdg.RuntimeDir,
 		"dagger",
 		fmt.Sprintf("progrock-%d.sock", time.Now().UnixNano()),
 	)
