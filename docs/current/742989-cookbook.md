@@ -652,6 +652,31 @@ The following code listing uses a cache volume to persist a service's data acros
 
 [Learn more](./guides/757394-use-service-containers.md)
 
+### Add multiple environment variables to a container
+
+The following code listing demonstrates how to add multiple environment variables to a container.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/environment-variables/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/environment-variables/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/environment-variables/main.py
+```
+
+</TabItem>
+</Tabs>
+
 ## Integrations
 
 ### AWS Cloud Development Kit
