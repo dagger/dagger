@@ -3726,7 +3726,7 @@ func TestContainerForceCompression(t *testing.T) {
 	}
 }
 
-func TestContainerBuildMergesWithParents(t *testing.T) {
+func TestContainerBuildMergesWithParent(t *testing.T) {
 	t.Parallel()
 
 	c, ctx := connect(t)
