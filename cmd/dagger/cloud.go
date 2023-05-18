@@ -70,9 +70,8 @@ func init() {
 		Use:   "create-token <ORG> <TOKEN_NAME>",
 		Short: "Create a token for sending logs to Dagger Cloud",
 		RunE:  cloud.CreateOrgEngineIngestionToken,
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.ExactArgs(2),
 	}
-	orgCreateTokenCmd.Flags().String("name", "default", "Name for the token")
 	orgCmd.AddCommand(orgCreateTokenCmd)
 
 	orgDeleteTokenCmd := &cobra.Command{
@@ -247,7 +246,7 @@ func (cli *CloudCLI) CreateOrgEngineIngestionToken(cmd *cobra.Command, args []st
 	}
 
 	orgName := args[0]
-	tokenName, err := cmd.Flags().GetString("name")
+	tokenName := args[1]
 	if err != nil {
 		return err
 	}
