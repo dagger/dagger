@@ -1,8 +1,7 @@
-import Client, { connect } from "@dagger.io/dagger"
-import { Container } from "@dagger.io/dagger/dist/api/client.gen"
+import Client, { connect, Container } from "@dagger.io/dagger"
 
 // create Dagger client
-connect(async (client) => {
+connect(async (client: Client) => {
     // setup container and
     // define environment variables
     const ctr = client

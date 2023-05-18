@@ -3,11 +3,10 @@ import sys
 import anyio
 import dagger
 
-async def main():
-    config = dagger.Config(log_output=sys.stderr)
 
+async def main():
     # create Dagger client
-    async with dagger.Connection(config) as client:
+    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # setup container and
         # define environment variables
         ctr = (
@@ -25,7 +24,6 @@ async def main():
         # print environment variables
         print(await ctr.stdout())
 
-anyio.run(main)
 
 def env_variables(envs: dict[str, str]):
     def env_variables_inner(ctr: dagger.Container):
@@ -33,3 +31,7 @@ def env_variables(envs: dict[str, str]):
             ctr = ctr.with_env_variable(key, value)
         return ctr
     return env_variables_inner
+
+
+anyio.run(main)
+
