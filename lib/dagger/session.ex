@@ -4,7 +4,7 @@ defmodule Dagger.Session do
   def start(bin, engine_conn_pid, logger) do
     port = Port.open({:spawn_executable, bin}, [:binary, :stderr_to_stdout, args: ["session"]])
 
-    with :ok <- wait_for_session(port, engine_conn_pid) do
+    with :ok <- wait_for_session(port, engine_conn_pid, logger) do
       log_polling(port, logger)
     end
   end
@@ -13,14 +13,18 @@ defmodule Dagger.Session do
     send(pid, :quit)
   end
 
-  defp wait_for_session(port, engine_conn_pid) do
+  defp wait_for_session(port, engine_conn_pid, logger) do
     receive do
-      {^port, {:data, "Connected to engine" <> _rest}} ->
-        wait_for_session(port, engine_conn_pid)
+      {^port, {:data, log_line}} ->
+        case Jason.decode(log_line) do
+          {:ok, session} ->
+            send(engine_conn_pid, {self(), session})
+            :ok
 
-      {^port, {:data, session}} ->
-        send(engine_conn_pid, {self(), Jason.decode!(session)})
-        :ok
+          {:error, _} ->
+            logger.(log_line)
+            wait_for_session(port, engine_conn_pid, logger)
+        end
 
       :quit ->
         true = Port.close(port)
