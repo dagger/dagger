@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -93,7 +94,13 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		})
 	}
 
-	recorder := progrock.NewRecorder(startOpts.ProgrockWriter, labels...)
+	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter)
+	if err != nil {
+		return fmt.Errorf("progress forwarding: %w", err)
+	}
+	defer cleanup()
+
+	recorder := progrock.NewRecorder(progW, labels...)
 	ctx = progrock.RecorderToContext(ctx, recorder)
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
@@ -193,6 +200,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
 				Secrets:        secretStore,
 				OCIStore:       ociStore,
+				ProgrockSocket: progSock,
 			})
 			if err != nil {
 				return nil, err
@@ -557,4 +565,28 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	}
 
 	return &status
+}
+
+func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error, error) {
+	progSock := filepath.Join(
+		xdg.CacheHome,
+		"dagger",
+		fmt.Sprintf("progrock-%d.sock", time.Now().UnixNano()),
+	)
+
+	if err := os.MkdirAll(filepath.Dir(progSock), 0700); err != nil {
+		return "", nil, nil, err
+	}
+
+	l, err := net.Listen("unix", progSock)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	progW, err := progrock.ServeRPC(l, w)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	return progSock, progW, l.Close, nil
 }
