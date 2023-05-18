@@ -207,3 +207,16 @@ async def test_container_with():
     assert "SPAM=eggs" in out
     assert "FOO=foo" in out
     assert "BAR=bar" in out
+
+
+async def test_container_sync():
+    async with dagger.Connection() as client:
+        base = client.container().from_("alpine:3.16.2")
+
+        # short cirtcut
+        with pytest.raises(dagger.QueryError, match="foobar"):
+            await base.with_exec(["foobar"]).sync()
+
+        # chaining
+        out = await (await base.with_exec(["echo", "spam"]).sync()).stdout()
+        assert out == "spam\n"

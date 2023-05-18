@@ -2,7 +2,10 @@ import assert from "assert"
 import { randomUUID } from "crypto"
 import fs from "fs"
 
-import { TooManyNestedObjectsError } from "../../common/errors/index.js"
+import {
+  GraphQLRequestError,
+  TooManyNestedObjectsError,
+} from "../../common/errors/index.js"
 import Client, {
   connect,
   ClientContainerOpts,
@@ -163,7 +166,7 @@ describe("NodeJS SDK api", function () {
       const image = client.directory().withNewFile(
         "Dockerfile",
         `
-            FROM alpine    
+            FROM alpine
         `
       )
 
@@ -218,6 +221,26 @@ describe("NodeJS SDK api", function () {
     }
 
     assert.throws(() => queryFlatten(tree), TooManyNestedObjectsError)
+  })
+
+  it("Support container sync", async function () {
+    this.timeout(60000)
+
+    await connect(async (client: Client) => {
+      const base = client.container().from("alpine:3.16.2")
+
+      // short circuit
+      assert.rejects(
+        () => base.withExec(["foobar"]).sync(),
+        GraphQLRequestError
+      )
+
+      // chaining
+      const out = await (
+        await base.withExec(["echo", "foobaz"]).sync()
+      ).stdout()
+      assert.strictEqual(out, "foobaz\n")
+    })
   })
 
   it("Support chainable utils via with()", function () {
