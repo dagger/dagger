@@ -56,6 +56,14 @@ defmodule Dagger.QueryBuilder.Selection do
   def path(%__MODULE__{prev: selection, name: name}, acc), do: path(selection, [name | acc])
 end
 
+defmodule Dagger.QueryError do
+  @moduledoc false
+
+  # TODO: use defexception.
+
+  defstruct [:errors]
+end
+
 defmodule Dagger.QueryBuilder do
   @moduledoc false
 
@@ -65,8 +73,16 @@ defmodule Dagger.QueryBuilder do
   def execute(selection, client) do
     q = Selection.build(selection)
 
-    with {:ok, %{status: 200, body: resp}} <- Client.query(client, q) do
-      get_in(resp, ["data" | Selection.path(selection)])
+    case Client.query(client, q) do
+      {:ok, %{status: 200, body: %{"data" => nil, "errors" => errors}}} ->
+        {:error, %Dagger.QueryError{errors: errors}}
+
+      {:ok, %{status: 200, body: %{"data" => data}}} ->
+        # TODO: returns {:ok, response}.
+        get_in(data, Selection.path(selection))
+
+      otherwise ->
+        otherwise
     end
   end
 
