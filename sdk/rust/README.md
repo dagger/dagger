@@ -1,5 +1,14 @@
 > **Warning**
-> This is an **experimental** SDK.
+> This SDK is **experimental**. Please do not use it for anything mission-critical. Possible issues include:
+
+* Missing features
+* Stability issues
+* Performance issues
+* Lack of polish
+* Upcoming breaking changes
+* Incomplete or out-of-date documentation
+
+Please report any issues you encounter. We appreciate and encourage contributions. If you are a Rust developer interested in contributing to this SDK, we welcome you!
 
 # Dagger Rust SDK
 
