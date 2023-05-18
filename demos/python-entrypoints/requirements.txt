@@ -1,1 +1,1 @@
-dagger-io[server]
+-e ../../sdk/python[server]

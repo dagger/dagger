@@ -1,3 +1,5 @@
+import sys
+
 from .cli import app
 
-app(prog_name="dagger-py")
+sys.exit(app(prog_name="dagger-py"))
