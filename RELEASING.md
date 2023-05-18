@@ -1,13 +1,13 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-April.%2028%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May.%2018%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
-- [🚙 Engine + 🚗 CLI ⏱ `50mins`](#-engine---cli--50mins)
-- [🐹 Go SDK ⏱ `20mins`](#-go-sdk--20mins)
+- [🚙 Engine + 🚗 CLI ⏱ `40mins`](#-engine---cli--40mins)
+- [🐹 Go SDK ⏱ `15mins`](#-go-sdk--15mins)
 - [🐍 Python SDK ⏱ `10mins`](#-python-sdk--10mins)
 - [⬢ Node.js SDK ⏱ `10mins`](#-nodejs-sdk--10mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
-- [🛝 Playground ⏱ `5mins`](#-playground--5mins)
+- [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
 This is a high-level diagram of how all the pieces fit together:
 
@@ -59,7 +59,10 @@ Before you go ahead and produce a new release, remember that it's a team
 effort. The first step is to let the team know what is going to happen,
 preferably a few days in advance so that they can react. We do this by:
 
-- [ ] Create a new thread in Discord, e.g. `? release - 2023.05.11`
+- [x] Create a new post in [Discord
+  #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
+  e.g. [`v0.5.3 release - May 18,
+  2023`](https://discord.com/channels/707636530424053791/1108451145258635366/1108451145258635366)
 
 This allows others to weigh in whether:
 - we should go for a patch / minor bump
@@ -88,25 +91,28 @@ In order to keep this relevant & accurate, we improve this doc during the
 release process. It's the best time to pause, observe how it all fits together,
 and improve it. We want small, constant improvements which compound. Therefore:
 
-- [ ] Open this doc in your code editor. As you go through these steps, check
+- [x] Open this doc in your code editor. As you go through these steps, check
   them off **and also** edit the parts which could be better. As inspiration,
   [see the PR for these changes](https://github.com/dagger/dagger/pull/5056).
+- [x] Update the date in the shields.io badge, first line in this file.
 
 > **Note**
 >
-> We believe in documentation first, automation second. Documenting forces us
-> to understand, and refine this understanding over time. Once we have a good
-> grasp of the problem space, and reach an elegant solution, we automate to
-> speed things up, to make them more efficient. We should still be able to
-> perform things manually if we need to - because things fail 🤷 - and this is
-> where good documentation comes in. Also worth mentioning that when it's time
-> to improve this automation, we want to be looking at the blueprint - this
-> doc! - not the implementation. If you ever tried to migrate from Chef/Puppet
-> to Ansible, you know exactly what I mean.
+> We believe in documentation first, automation second. Documenting a process
+> forces us to really understand it. Continuously editing this documentation
+> refines our understanding. Once we have a good grasp of the problem space,
+> and reach an elegant solution, it comes natural to automate & speed things
+> up, to make the process more efficient. We should still be able to perform
+> things manually if we need to - because things are known to partially fail
+> 🤷. This is where good documentation comes in. It's also worth mentioning
+> that when it's time to improve this automation, we want to be looking at the
+> blueprint - this doc right here - not the implementation. If you ever had to
+> migrate from Chef/Puppet to Ansible, you know what it's like to follow the
+> implementation.
 
 
 
-## 🚙 Engine + 🚗 CLI ⏱ `50mins`
+## 🚙 Engine + 🚗 CLI ⏱ `40mins`
 
 > **Warning**
 >
@@ -114,19 +120,19 @@ and improve it. We want small, constant improvements which compound. Therefore:
 > SDK. This will ensure that all the APIs in the SDK are also available in the
 > Engine it depends on.
 
-### Release
+### Release `30mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
+- [x] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
   `main` branch that you are about to release.
-- [ ] When you have confirmed that all checks are green, run the following:
+- [x] `20mins` When you have confirmed that all checks are green, run the following:
 
 ```console
 git checkout main
 git pull
 
 # git show --summary
-# e.g. export ENGINE_GIT_SHA=a2d8aa020c6df14949abf69ab47d079a34be5a78
-# e.g. export ENGINE_VERSION=v0.5.2
+# e.g. export ENGINE_GIT_SHA=c1a4616f0ad28cb4437beaa72a100df902c74943
+# e.g. export ENGINE_VERSION=v0.5.3
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
 git push origin "${ENGINE_VERSION:?must be set}"
@@ -137,40 +143,37 @@ This will kick off
 After the `publish` job in this workflow passes, a new `draft` PR will
 automatically be created to bump the Engine version in the various SDKs.
 
-- [ ] Open this draft PR in
+- [x] `10mins` Open this draft PR in
   [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
   click on **Ready to review** so that all checks run. 💡 While you wait, maybe
   clean up the changelog below (temporarily skip over the next item).
-- [ ] **After all checks pass**, merge this PR. Tip: go to the **Files
+- [x] **After all checks pass**, merge this PR. Tip: go to the **Files
   changed** tab on the PR to review without an explicit request.
 
-### Changelog
+### Changelog `10mins`
 
 After the release is out, we need to edit the release notes. Here is an example
 of what we are aiming for
 [v0.5.0](https://github.com/dagger/dagger/releases/tag/v0.5.0). Follow these
 steps:
 
-- [ ] Go to the [newly created release on
+- [x] Go to the [newly created release on
   GitHub](https://github.com/dagger/dagger/releases/latest)
-- [ ] Click on **✏️ Edit** & then **Generate release notes** button
-- [ ] Replace **Full Changelog** section with **What to do next?**
-- [ ] Click through each pull request and remove all the ones that don't change
-  any Engine or CLI files
-- [ ] Remove all **New Contributors** which do not have a pull request under
+- [x] Click on **✏️ Edit** & then **Generate release notes** button
+- [x] Replace **Full Changelog** section with **What to do next?**
+- [x] Delete **Changelog** section
+- [x] `5-10mins` In the **What's Changed** section, click through each pull
+  request and remove all the ones that don't change any Engine or CLI files
+- [x] Remove all **New Contributors** which do not have a pull request under
   the **What's Changed** section
-- [ ] Check that release notes look good in `Preview`
-- [ ] Click on **Update release**
-
-> **Note**
-> All in all, releasing the Dagger Engine & CLI, which means all steps in this
-> section, takes around `50mins`.
+- [x] Check that release notes look good in `Preview`
+- [x] Click on **Update release**
 
 
 
-## 🐹 Go SDK ⏱ `20mins`
+## 🐹 Go SDK ⏱ `15mins`
 
-- [ ] ⚠️ Ensure that all SDKs have the same Engine version
+- [x] ⚠️ Ensure that all SDKs have the same Engine version
 
 > **Warning**
 >
@@ -180,20 +183,20 @@ steps:
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-### Release
+### Release `5mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+- [x] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, run the following:
+- [x] `3mins` When you have confirmed that all checks are green, run the following:
 
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fgo&expanded=true
-# e.g. export GO_SDK_VERSION=v0.6.2
+# e.g. export GO_SDK_VERSION=v0.6.3
 # git show --summary
-# e.g. export SDK_GIT_SHA=921a5b694466917615f24e7dca69e39f6341616d
+# e.g. export SDK_GIT_SHA=2b20be4b2d733d29ad74a31b7cc1d68e99a62f2b
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin "sdk/go/${GO_SDK_VERSION:?must be set}"
 ```
@@ -203,13 +206,13 @@ workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-go.yml)
 which publishes to [🐙
 github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 
-- [ ] After the newly published tag appears on [🐙
+- [x] After the newly published tag appears on [🐙
   github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags),
   double-check that is was picked up by
   [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
-  this new version via `open https://pkg.go.dev/dagger.io/dagger@v0.6.2`.
+  this new version via `open https://pkg.go.dev/dagger.io/dagger@v0.6.3`.
   The new version can take up to `15mins` to appear, it's OK to move on.
-- [ ] Bump the Go SDK version in our internal mage CI targets. Submit a new PR
+- [x] `3mins` Bump the Go SDK version in our internal mage CI targets. Submit a new PR
   when you are finished with the rest of the changes.
 
 ```console
@@ -220,11 +223,11 @@ go get -u dagger.io/dagger
 go run main.go -w ../.. engine:lint
 ```
 
-### Changelog
+### Changelog `10mins`
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/go/v0.6.1](https://github.com/dagger/dagger/releases/tag/sdk%2Fgo%2Fv0.6.1).
+[sdk/go/v0.6.3](https://github.com/dagger/dagger/releases/tag/sdk%2Fgo%2Fv0.6.3).
 Follow these steps:
 
 > **Note**
@@ -232,45 +235,49 @@ Follow these steps:
 > To start the release notes, we need to have the [`gh`
 CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 
-- [ ] Generate a draft GitHub release by running the following command:
+- [x] Generate a draft GitHub release by running the following command:
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fgo&expanded=true
-# e.g. export PREVIOUS_GO_SDK_VERSION=v0.6.1
+# e.g. export PREVIOUS_GO_SDK_VERSION=v0.6.2
 
 gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/go/${PREVIOUS_GO_SDK_VERSION:?must be set}" --draft
 ```
 
-- [ ] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
+- [x] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
   with the value in `sdk/go/internal/engineconn/version.gen.go`):
 
 ```
-This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.2`](https://github.com/dagger/dagger/releases/tag/v0.5.2)
+This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.3`](https://github.com/dagger/dagger/releases/tag/v0.5.3)
 ```
 
-- [ ] Add link to pkg.go.dev, e.g. `🐹 https://pkg.go.dev/dagger.io/dagger@v0.6.2`
-- [ ] Click through each pull request and remove all the ones that don't change
+- [x] Add link to pkg.go.dev, e.g. `🐹 https://pkg.go.dev/dagger.io/dagger@v0.6.3`
+- [x] Click through each pull request and remove all the ones that don't change
   any Go SDK files. Some pull requests are labelled with `sdk/go`, which makes
   this process quicker.
-- [ ] Remove all **New Contributors** which do not have a pull request under
+- [x] Remove all **New Contributors** which do not have a pull request under
   the **What's Changed** section.
-- [ ] Lastly, remove **Full Changelog** line since in includes changes across
-  all SDKs + Engine + docs, etc.
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+- [x] Remove **Full Changelog** line since in includes changes across all SDKs
+  + Engine + docs, etc.
+- [x] Lastly, add the following **What to do next?** section:
 
-> **Note**
->
-> All in all, releasing the Dagger Go SDK, which means all steps in this
-> section, takes around `20mins`.
+```
+## What to do next?
+- Read the [documentation](https://docs.dagger.io/sdk/go)
+- Join our [Discord server](https://discord.gg/dagger-io)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+```
+
+- [x] Check that release notes look good in `Preview`
+- [x] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [x] Click on **Publish release**
 
 
 
 ## 🐍 Python SDK ⏱ `10mins`
 
-- [ ] ⚠️ Ensure that all SDKs have the same Engine version
+- [x] ⚠️ Ensure that all SDKs have the same Engine version
 
 > **Warning**
 >
@@ -280,19 +287,19 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.2`](https://gi
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-### Release
+### Release `5mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+- [x] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, run the following:
+- [x] When you have confirmed that all checks are green, run the following:
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fpython&expanded=true
-# e.g. export PYTHON_SDK_VERSION=v0.5.3
+# e.g. export PYTHON_SDK_VERSION=v0.5.4
 # git show --summary
-# e.g. export SDK_GIT_SHA=921a5b694466917615f24e7dca69e39f6341616d
+# e.g. export SDK_GIT_SHA=2b20be4b2d733d29ad74a31b7cc1d68e99a62f2b
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/python/${PYTHON_SDK_VERSION}
 ```
@@ -302,11 +309,11 @@ workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-python.
 which publishes [dagger-io to 🐍 PyPI](https://pypi.org/project/dagger-io)
 
 
-### Changelog
+### Changelog `5mins`
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/python/v0.5.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.5.0).
+[sdk/python/v0.5.4](https://github.com/dagger/dagger/releases/tag/sdk%2Fpython%2Fv0.5.4).
 Follow these steps:
 
 > **Note**
@@ -314,45 +321,49 @@ Follow these steps:
 > To start the release notes, we need to have the [`gh`
 CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 
-- [ ] Generate a draft GitHub release by running the following command:
+- [x] Generate a draft GitHub release by running the following command:
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fpython&expanded=true
-# e.g. export PREVIOUS_PYTHON_SDK_VERSION=v0.5.2
+# e.g. export PREVIOUS_PYTHON_SDK_VERSION=v0.5.3
 
 gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/python/${PREVIOUS_PYTHON_SDK_VERSION:?must be set}" --draft
 ```
-- [ ] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
+- [x] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
   with the value in `sdk/python/src/dagger/engine/_version.py`):
 
 ```
-This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.2`](https://github.com/dagger/dagger/releases/tag/v0.5.2)
+This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.3`](https://github.com/dagger/dagger/releases/tag/v0.5.3)
 ```
 
-- [ ] Add link to PyPI, e.g. `🐍 https://pypi.org/project/dagger-io/0.5.3/`
-- [ ] Add link to ReadTheDocs, e.g. `📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.5.3/`
-- [ ] Click through each pull request and remove all the ones that don't change
-  any Go SDK files. Some pull requests are labelled with `sdk/python`, which makes
-  this process quicker.
-- [ ] Remove all **New Contributors** which do not have a pull request under
+- [x] Add link to PyPI, e.g. `🐍 https://pypi.org/project/dagger-io/0.5.4/`
+- [x] Add link to ReadTheDocs, e.g. `📖 https://dagger-io.readthedocs.io/en/sdk-python-v0.5.4/`
+- [x] Click through each pull request and remove all the ones that don't change
+  any Python SDK files. Some pull requests are labelled with `sdk/python`,
+  which makes this process quicker.
+- [x] Remove all **New Contributors** which do not have a pull request under
   the **What's Changed** section.
-- [ ] Lastly, remove **Full Changelog** line since in includes changes across
-  all SDKs + Engine + docs, etc.
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+- [x] Remove **Full Changelog** line since in includes changes across all SDKs
+  + Engine + docs, etc.
+- [x] Lastly, add the following **What to do next?** section:
 
-> **Note**
->
-> All in all, releasing the Dagger Python SDK, which means all steps in this
-> section, takes around `10mins`.
+```
+## What to do next?
+- Read the [documentation](https://docs.dagger.io/sdk/python)
+- Join our [Discord server](https://discord.gg/dagger-io)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+```
+
+- [x] Check that release notes look good in `Preview`
+- [x] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [x] Click on **Publish release**
 
 
 
 ## ⬢ Node.js SDK ⏱ `10mins`
 
-- [ ] ⚠️ Ensure that all SDKs have the same Engine version
+- [x] ⚠️ Ensure that all SDKs have the same Engine version
 
 > **Warning**
 >
@@ -362,19 +373,19 @@ This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.2`](https://gi
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-### Release
+### Release `5mins`
 
-- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+- [x] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, run the following:
+- [x] When you have confirmed that all checks are green, run the following:
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fnodejs&expanded=true
-# e.g. export NODEJS_SDK_VERSION=v0.5.2
+# e.g. export NODEJS_SDK_VERSION=v0.5.3
 # git show --summary
-# e.g. export SDK_GIT_SHA=70459c05a092902b4dd1f03e9d49be92d94355aa
+# e.g. export SDK_GIT_SHA=2b20be4b2d733d29ad74a31b7cc1d68e99a62f2b
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/nodejs/${NODEJS_SDK_VERSION}
 ```
@@ -383,11 +394,11 @@ This will trigger the [`Publish Node.js SDK`
 workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-nodejs.yml)
 which publishes a new version to [⬢ npmjs.com/package/@dagger.io/dagger](https://www.npmjs.com/package/@dagger.io/dagger)
 
-### Changelog
+### Changelog `5mins`
 
 After the release is out, we need to create a release from the tag. Here is an
 example of what we are aiming for
-[sdk/nodejs/v0.5.0](https://github.com/dagger/dagger/releases/tag/sdk%2Fnodejs%2Fv0.5.0).
+[sdk/nodejs/v0.5.3](https://github.com/dagger/dagger/releases/tag/sdk%2Fnodejs%2Fv0.5.3).
 Follow these steps:
 
 > **Note**
@@ -395,40 +406,44 @@ Follow these steps:
 > To start the release notes, we need to have the [`gh`
 CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 
-- [ ] Generate a draft GitHub release by running the following command:
+- [x] Generate a draft GitHub release by running the following command:
 
 ```console
 # To find the previously released SDK version, go to:
 # https://github.com/dagger/dagger/releases?q=sdk%2Fnodejs&expanded=true
-# e.g. export PREVIOUS_NODEJS_SDK_VERSION=v0.5.1
+# e.g. export PREVIOUS_NODEJS_SDK_VERSION=v0.5.2
 
 gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/nodejs/${PREVIOUS_NODEJS_SDK_VERSION:?must be set}" --draft
 ```
 
-- [ ] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
+- [x] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
   with the value in `sdk/nodejs/provisioning/default.ts`):
 
 ```
-This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.2`](https://github.com/dagger/dagger/releases/tag/v0.5.2)
+This SDK is compatible with 🚙 Engine + 🚗 CLI version [`v0.5.3`](https://github.com/dagger/dagger/releases/tag/v0.5.3)
 ```
 
-- [ ] Add link to NPMJS, e.g. `⬢ https://www.npmjs.com/package/@dagger.io/dagger/v/0.5.2`
-- [ ] Add link to reference docs, e.g. `📒 https://docs.dagger.io/current/sdk/nodejs/reference/modules/api_client_gen`
-- [ ] Click through each pull request and remove all the ones that don't change
-  any Go SDK files. Some pull requests are labelled with `sdk/nodejs`, which makes
-  this process quicker.
-- [ ] Remove all **New Contributors** which do not have a pull request under
+- [x] Add link to NPMJS, e.g. `⬢ https://www.npmjs.com/package/@dagger.io/dagger/v/0.5.3`
+- [x] Add link to reference docs, e.g. `📒 https://docs.dagger.io/current/sdk/nodejs/reference/modules/api_client_gen`
+- [x] Click through each pull request and remove all the ones that don't change
+  any Node.js SDK files. Some pull requests are labelled with `sdk/nodejs`,
+  which makes this process quicker.
+- [x] Remove all **New Contributors** which do not have a pull request under
   the **What's Changed** section.
-- [ ] Lastly, remove **Full Changelog** line since in includes changes across
-  all SDKs + Engine + docs, etc.
-- [ ] Check that release notes look good in `Preview`
-- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
-- [ ] Click on **Publish release**
+- [x] Remove **Full Changelog** line since in includes changes across all SDKs
+  + Engine + docs, etc.
+- [x] Lastly, add the following **What to do next?** section:
 
-> **Note**
->
-> All in all, releasing the Dagger Node.js SDK, which means all steps in this
-> section, takes around `10mins`.
+```
+## What to do next?
+- Read the [documentation](https://docs.dagger.io/sdk/nodejs)
+- Join our [Discord server](https://discord.gg/dagger-io)
+- Follow us on [Twitter](https://twitter.com/dagger_io)
+```
+
+- [x] Check that release notes look good in `Preview`
+- [x] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [x] Click on **Publish release**
 
 
 
@@ -467,16 +482,16 @@ After testing the documentation using the staging website and if you
 are satisfied with it, manually publish the
 production deployment via Netlify as follows:
 
-- [ ] Log in to the [Netlify dashboard for
+- [x] Log in to the [Netlify dashboard for
   https://docs.dagger.io](https://app.netlify.com/sites/docs-dagger-io).
-- [ ] Refer to the list of "production deploys" and select the one you wish to
+- [x] Refer to the list of "production deploys" and select the one you wish to
   deploy. Usually, this will be the most recent one. You can confirm this by
   checking the deployment hash against the latest commit hash in the
   [dagger/dagger repository main branch](https://github.com/dagger/dagger).
-- [ ] On the deployment page, click the "Preview" button to once again
+- [x] On the deployment page, click the "Preview" button to once again
   preview/check the deployment. You can also check the deployment log to
   confirm there were no errors during the documentation build process.
-- [ ] If you are satisfied with the preview, click the "Publish deploy" button.
+- [x] If you are satisfied with the preview, click the "Publish deploy" button.
   This will publish the selected deployment on https://docs.dagger.io
 
 > **Note**
@@ -487,13 +502,9 @@ production deployment via Netlify as follows:
 > this error, click "Options -> Clear cache and retry with latest branch commit"
 > to recreate the deployment with a clean cache.
 
-> **Note**
->
-> This takes less than `5mins` to complete.
 
 
-
-## 🛝 Playground ⏱ `5mins`
+## 🛝 Playground ⏱ `2mins`
 
 The [Dagger Playground](https://play.dagger.cloud) is set to automatically
 update once there's a new release of the Dagger Engine. In order to verify
