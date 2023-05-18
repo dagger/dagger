@@ -356,9 +356,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	// associate vertexes to the 'from' sub-pipeline
 	recordVertexes(subRecorder, container.FS)
 
-	imgSpec.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.Config = imgSpec.Config
-
+	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = digested.String()
 
 	return container, nil
@@ -500,9 +498,7 @@ func (container *Container) buildUncached(
 				return nil, err
 			}
 
-			imgSpec.Config = mergeImageConfig(container.Config, imgSpec.Config)
-
-			container.Config = imgSpec.Config
+			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 		}
 
 		return container, nil

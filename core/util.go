@@ -224,7 +224,9 @@ func parseKeyValue(env string) (string, string) {
 	return parts[0], v
 }
 
+// addEnv adds or updates an environment variable in 'env'.
 func addEnv(env []string, k, v string) []string {
+	// Implementation from the dockerfile2llb project.
 	gotOne := false
 
 	for i, envVar := range env {
@@ -243,53 +245,46 @@ func addEnv(env []string, k, v string) []string {
 	return env
 }
 
-// mergeEnv returns the addition of src and dest.
-// It replaces any duplication variable by dst values.
-// Due to the overriding, the function begins with src values and merge one by
-// one dst values so duplicates keys env values will be overridden by dst.
-func mergeEnv(src []string, dst []string) []string {
-	res := src
-
-	for _, e := range dst {
+// mergeEnv adds or updates environment variables from 'src' in 'dst'.
+func mergeEnv(dst, src []string) []string {
+	for _, e := range src {
 		k, v := parseKeyValue(e)
-		res = addEnv(res, k, v)
+		dst = addEnv(dst, k, v)
 	}
-
-	return res
+	return dst
 }
 
-// mergeMap inserts src map elements into dst.
-// Due to the overriding, the function begins with src values and merge one by
-// one dst values so duplicates keys will be overridden by dst.
-func mergeMap(src map[string]string, dst map[string]string) map[string]string {
-	res := src
-
-	// Handle nil values
-	if dst == nil {
-		return src
-	}
-
+// mergeMap adds or updates every key-value pair from the 'src' map
+// into the 'dst' map.
+func mergeMap(dst, src map[string]string) map[string]string {
 	if src == nil {
 		return dst
 	}
 
-	for k, v := range dst {
-		res[k] = v
+	if dst == nil {
+		return src
 	}
 
-	return res
-}
-
-// mergeImageConfig merge environment, labels and exposed ports from previous container to the new one.
-// If the environment variable, label or exposed port also exists in the new configuration,
-// it will replace the old one.
-// NOTE: there is an issue with merged ports for now.
-// See: https://github.com/dagger/dagger/pull/5052#issuecomment-1546814114
-func mergeImageConfig(src specs.ImageConfig, dst specs.ImageConfig) specs.ImageConfig {
-	dst.Env = mergeEnv(src.Env, dst.Env)
-	if dst.Labels != nil || src.Labels != nil {
-		dst.Labels = mergeMap(src.Labels, dst.Labels)
+	for k, v := range src {
+		dst[k] = v
 	}
 
 	return dst
+}
+
+// mergeImageConfig merges the 'src' image metadata into 'dst'.
+//
+// Only the configurations that have corresponding `WithXXX` and `WithoutXXX`
+// methods in `Container` are added or updated (i.e., `Env`, `Labels` and
+// `ExposedPorts`). Everything else is replaced.
+//
+// NOTE: there is an issue with merged ports for now.
+// See: https://github.com/dagger/dagger/pull/5052#issuecomment-1546814114
+func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
+	res := src
+
+	res.Env = mergeEnv(dst.Env, src.Env)
+	res.Labels = mergeMap(dst.Labels, src.Labels)
+
+	return res
 }
