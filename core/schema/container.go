@@ -181,7 +181,8 @@ type containerExecArgs struct {
 }
 
 func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	return parent.WithExec(ctx, s.gw, s.baseSchema.platform, args.ContainerExecOpts)
+	progSock := &core.Socket{HostPath: s.progSock}
+	return parent.WithExec(ctx, s.gw, progSock, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
 func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Container) (*core.Container, error) {
@@ -192,15 +193,18 @@ func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Cont
 }
 
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
-	return parent.ExitCode(ctx, s.gw)
+	progSock := &core.Socket{HostPath: s.progSock}
+	return parent.ExitCode(ctx, s.gw, progSock)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.gw, "stdout")
+	progSock := &core.Socket{HostPath: s.progSock}
+	return parent.MetaFileContents(ctx, s.gw, progSock, "stdout")
 }
 
 func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	return parent.MetaFileContents(ctx, s.gw, "stderr")
+	progSock := &core.Socket{HostPath: s.progSock}
+	return parent.MetaFileContents(ctx, s.gw, progSock, "stderr")
 }
 
 type containerWithEntrypointArgs struct {

@@ -1048,7 +1048,7 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 	return container, nil
 }
 
-func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSock *Socket, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	container = container.Clone()
 
 	cfg := container.Config
@@ -1081,8 +1081,17 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, defaul
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
+		sid, err := progSock.ID()
+		if err != nil {
+			return nil, err
+		}
+
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
+			llb.AddSSHSocket(
+				llb.SSHID(sid.LLBID()),
+				llb.SSHSocketTarget("/.progrock.sock"),
+			),
 		)
 	}
 
@@ -1332,8 +1341,8 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client) (int, error) {
-	content, err := container.MetaFileContents(ctx, gw, "exitCode")
+func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client, progSock *Socket) (int, error) {
+	content, err := container.MetaFileContents(ctx, gw, progSock, "exitCode")
 	if err != nil {
 		return 0, err
 	}
@@ -1399,13 +1408,13 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 	}
 }
 
-func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, filePath string) (string, error) {
+func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, progSock *Socket, filePath string) (string, error) {
 	if container.Meta == nil {
-		ctr, err := container.WithExec(ctx, gw, container.Platform, ContainerExecOpts{})
+		ctr, err := container.WithExec(ctx, gw, progSock, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return "", err
 		}
-		return ctr.MetaFileContents(ctx, gw, filePath)
+		return ctr.MetaFileContents(ctx, gw, progSock, filePath)
 	}
 
 	file := NewFile(
