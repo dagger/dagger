@@ -114,7 +114,6 @@ func inlineTUI(
 ) error {
 	tape := progrock.NewTape()
 	if debugLogs {
-		tape.ShowAllOutput(true)
 		tape.ShowInternal(true)
 	}
 
