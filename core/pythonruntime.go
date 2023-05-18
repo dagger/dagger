@@ -17,39 +17,31 @@ func (p *Project) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Cli
 		return nil, err
 	}
 	workdir := "/src"
-	ctrSrcPath := filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)
-	entrypointScript := fmt.Sprintf(`#!/bin/sh
+	appdir := filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)
+	entrypoint := fmt.Sprintf(`#!/bin/sh
 set -exu
-# go to the workdir
 cd %q
-# run the extension
-python3 main.py "$@"
+exec python -m dagger.server "$@"
 `,
-		ctrSrcPath)
-	requirementsfile := filepath.Join(ctrSrcPath, "requirements.txt")
+		appdir)
+
 	return NewDirectorySt(ctx,
 		llb.Merge([]llb.State{
-			llb.Image("python:3.10-alpine", llb.WithMetaResolver(gw)).
-				Run(llb.Shlex(`apk add --no-cache file git openssh-client socat`)).Root(),
+			llb.Image("python:3.11-alpine", llb.WithMetaResolver(gw)).
+				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
 			llb.Scratch().
 				File(llb.Copy(contextState, p.Directory.Dir, "/src")),
 		}).
-			// FIXME(samalba): Install python dependencies not as root
-			// FIXME(samalba): errors while installing requirements.txt will be ignored because of the `|| true`. Need to find a better way.
-			Run(llb.Shlex(
-				fmt.Sprintf(
-					`sh -c 'test -f %q && python3 -m pip install --cache-dir=/root/.cache/pipcache -r %q || true'`,
-					requirementsfile, requirementsfile,
-				)),
-				llb.Dir(workdir),
-				llb.AddMount("/src", contextState, llb.SourcePath(p.Directory.Dir)),
+			Run(
+				llb.Shlex("python -m pip install -r requirements.txt"),
+				llb.Dir(appdir),
 				llb.AddMount(
-					"/root/.cache/pipcache",
+					"/root/.cache/pip",
 					llb.Scratch(),
 					llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
 				),
 			).
-			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypointScript))),
+			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypoint))),
 		"",
 		pipeline.Path{},
 		platform,

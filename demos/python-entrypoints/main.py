@@ -5,9 +5,6 @@ import strawberry
 import dagger
 from dagger.server import Server
 
-# TODO: probably not needed
-from dagger.server.cli import app
-
 
 @strawberry.type
 class Hello:
@@ -40,5 +37,3 @@ schema = strawberry.Schema(query=Query)
 
 server = Server(schema, debug=True)
 
-# TODO: probably not needed
-app(prog_name="dagger-server-py")
