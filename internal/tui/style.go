@@ -75,7 +75,7 @@ var (
 
 	selectedStyleBlur = lipgloss.NewStyle().
 				Inline(true).
-				Background(colorForeground).
+				Background(colorFaint).
 				Foreground(colorBackground)
 
 	completedStatus = lipgloss.NewStyle().

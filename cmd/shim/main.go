@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/buildkit/identity"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/vito/progrock"
 	"golang.org/x/sys/unix"
 )
 
@@ -162,12 +164,6 @@ func shim() int {
 		args = os.Args[2:]
 	}
 
-	env, err := toggleNesting(ctx)
-	if err != nil {
-		fmt.Printf("Error toggling nesting: %v\n", err)
-		return 1
-	}
-
 	cmd := exec.Command(name, args...)
 
 	if stdinFile, err := os.Open(stdinPath); err == nil {
@@ -248,11 +244,6 @@ func shim() int {
 		}
 	}
 
-	cmd.Env = os.Environ()
-
-	// append nesting envs if any
-	cmd.Env = append(cmd.Env, env...)
-
 	currentDirPath := "/"
 	shimFS := os.DirFS(currentDirPath)
 
@@ -262,8 +253,9 @@ func shim() int {
 	}
 	defer stdoutFile.Close()
 
+	envToScrub := os.Environ()
 	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
-	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
 	if err != nil {
 		panic(err)
 	}
@@ -276,17 +268,19 @@ func shim() int {
 	defer stderrFile.Close()
 
 	errWriter := io.MultiWriter(stderrFile, os.Stderr)
-	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, cmd.Env, secretsToScrub)
+	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
 	if err != nil {
 		panic(err)
 	}
 	cmd.Stderr = scrubErrWriter
 
 	exitCode := 0
-	if err := cmd.Run(); err != nil {
+	if err := runWithNesting(ctx, cmd); err != nil {
 		exitCode = 1
 		if exiterr, ok := err.(*exec.ExitError); ok {
 			exitCode = exiterr.ExitCode()
+		} else {
+			panic(err)
 		}
 	}
 
@@ -513,31 +507,54 @@ func internalEnv(name string) (string, bool) {
 	return val, true
 }
 
-func toggleNesting(ctx context.Context) ([]string, error) {
-	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); found {
-		// setup a session and associated env vars for the container
-		sessionToken, err := uuid.NewRandom()
-		if err != nil {
-			return nil, fmt.Errorf("error generating session token: %w", err)
-		}
-		l, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			return nil, fmt.Errorf("error listening on session socket: %w", err)
-		}
-		engineConf := engine.Config{
-			SessionToken: sessionToken.String(),
-			RunnerHost:   "unix:///.runner.sock",
-			LogOutput:    os.Stderr,
-		}
-		go func() {
-			err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-				return http.Serve(l, r) //nolint:gosec
-			})
-			if err != nil {
-				fmt.Printf("Error starting engine: %v\n", err)
-			}
-		}()
-		return []string{fmt.Sprintf("DAGGER_SESSION_PORT=%d", l.Addr().(*net.TCPAddr).Port), fmt.Sprintf("DAGGER_SESSION_TOKEN=%s", sessionToken.String())}, nil
+func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
+	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
+		// no nesting; run as normal
+		return cmd.Run()
 	}
-	return []string{}, nil
+
+	// setup a session and associated env vars for the container
+
+	sessionToken, engineErr := uuid.NewRandom()
+	if engineErr != nil {
+		return fmt.Errorf("error generating session token: %w", engineErr)
+	}
+
+	l, engineErr := net.Listen("tcp", "127.0.0.1:0")
+	if engineErr != nil {
+		return fmt.Errorf("error listening on session socket: %w", engineErr)
+	}
+
+	engineConf := engine.Config{
+		SessionToken: sessionToken.String(),
+		RunnerHost:   "unix:///.runner.sock",
+	}
+
+	engineConf.LogOutput = os.Stderr
+	if _, err := os.Stat("/.progrock.sock"); err == nil {
+		progW, err := progrock.DialRPC("unix", "/.progrock.sock")
+		if err != nil {
+			return fmt.Errorf("error connecting to progrock: %w", err)
+		}
+
+		engineConf.ProgrockWriter = progW
+	} else {
+		engineConf.LogOutput = os.Stderr
+	}
+
+	// pass dagger session along to command
+	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
+	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
+
+	var cmdErr error
+	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
+		go http.Serve(l, r) //nolint:gosec
+		cmdErr = cmd.Run()
+		return cmdErr
+	})
+	if cmdErr != nil {
+		// propagate inner error with higher priority
+		return cmdErr
+	}
+	return engineErr
 }

@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
@@ -13,11 +11,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
-	internalengine "github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/internal/engine/journal"
-	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -54,8 +48,6 @@ DAGGER_SESSION_PORT and DAGGER_SESSION_TOKEN will be convieniently injected auto
 }
 
 var waitDelay time.Duration
-var useShinyNewTUI = os.Getenv("_EXPERIMENTAL_DAGGER_TUI") != ""
-var interactive bool
 
 func init() {
 	// don't require -- to disambiguate subcommand flags
@@ -66,14 +58,6 @@ func init() {
 		"cleanup-timeout",
 		10*time.Second,
 		"max duration to wait between SIGTERM and SIGKILL on interrupt",
-	)
-
-	runCmd.Flags().BoolVarP(
-		&interactive,
-		"interactive",
-		"i",
-		false,
-		"use interactive tree-style TUI",
 	)
 }
 
@@ -95,181 +79,55 @@ func Run(cmd *cobra.Command, args []string) {
 }
 
 func run(ctx context.Context, args []string) error {
-	sessionToken, err := uuid.NewRandom()
+	u, err := uuid.NewRandom()
 	if err != nil {
 		return fmt.Errorf("generate uuid: %w", err)
 	}
 
-	sessionL, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return fmt.Errorf("session listen: %w", err)
-	}
-	defer sessionL.Close()
+	sessionToken := u.String()
 
-	sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
-	os.Setenv("DAGGER_SESSION_PORT", sessionPort)
-	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
+	return withEngineAndTUI(ctx, engine.Config{
+		SessionToken: sessionToken,
+	}, func(ctx context.Context, api *router.Router) error {
+		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			return fmt.Errorf("session listen: %w", err)
+		}
+		defer sessionL.Close()
 
-	ctx, quit := context.WithCancel(ctx)
-	defer quit()
+		sessionPort := fmt.Sprintf("%d", sessionL.Addr().(*net.TCPAddr).Port)
+		os.Setenv("DAGGER_SESSION_PORT", sessionPort)
+		os.Setenv("DAGGER_SESSION_TOKEN", sessionToken)
 
-	subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
+		subCmd := exec.CommandContext(ctx, args[0], args[1:]...) // #nosec
 
-	// allow piping to the command
-	subCmd.Stdin = os.Stdin
-
-	// NB: go run lets its child process roam free when you interrupt it, so
-	// make sure they all get signalled. (you don't normally notice this in a
-	// shell because Ctrl+C sends to the process group.)
-	ensureChildProcessesAreKilled(subCmd)
-
-	if !useShinyNewTUI {
+		// allow piping to the command
 		subCmd.Stdin = os.Stdin
-		subCmd.Stdout = os.Stdout
-		subCmd.Stderr = os.Stderr
 
-		return withEngine(ctx, sessionToken.String(), nil, os.Stderr, func(ctx context.Context, api *router.Router) error {
-			go http.Serve(sessionL, api) // nolint:gosec
-			return subCmd.Run()
-		})
-	}
+		// NB: go run lets its child process roam free when you interrupt it, so
+		// make sure they all get signalled. (you don't normally notice this in a
+		// shell because Ctrl+C sends to the process group.)
+		ensureChildProcessesAreKilled(subCmd)
 
-	if interactive {
-		return interactiveTUI(ctx, sessionToken, sessionL, subCmd, quit)
-	}
-
-	return inlineTUI(ctx, sessionToken, sessionL, subCmd, quit)
-}
-
-func interactiveTUI(
-	ctx context.Context,
-	sessionToken uuid.UUID,
-	sessionL net.Listener,
-	subCmd *exec.Cmd,
-	quit func(),
-) error {
-	journalR, journalW := journal.Pipe()
-
-	cmdline := strings.Join(subCmd.Args, " ")
-	program := tea.NewProgram(tui.New(quit, journalR, cmdline), tea.WithAltScreen())
-
-	subCmd.Stdout = progOutWriter{program}
-	subCmd.Stderr = progOutWriter{program}
-
-	tuiErrs := make(chan error, 1)
-
-	var finalModel tui.Model
-	go func() {
-		m, err := program.Run()
-		finalModel = m.(tui.Model)
-		tuiErrs <- err
-	}()
-
-	err := withEngine(ctx, sessionToken.String(), journalW, progOutWriter{program}, func(ctx context.Context, api *router.Router) error {
 		go http.Serve(sessionL, api) // nolint:gosec
 
-		cmdErr := subCmd.Run()
-		program.Send(tui.CommandExitMsg{Err: cmdErr})
-		return cmdErr
-	})
+		var cmdErr error
+		if useTUI {
+			rec := progrock.RecorderFromContext(ctx)
 
-	tuiErr := <-tuiErrs
-	if finalModel.IsDone() {
-		return err
-	}
+			cmdline := strings.Join(subCmd.Args, " ")
+			cmdVtx := rec.Vertex("cmd", cmdline)
+			subCmd.Stdout = cmdVtx.Stdout()
+			subCmd.Stderr = cmdVtx.Stderr()
 
-	return errors.Join(tuiErr, err)
-}
-
-func inlineTUI(
-	ctx context.Context,
-	sessionToken uuid.UUID,
-	sessionL net.Listener,
-	subCmd *exec.Cmd,
-	quit func(),
-) error {
-	tape := progrock.NewTape()
-	if debugLogs {
-		tape.ShowInternal(true)
-	}
-
-	mw := progrock.MultiWriter{tape}
-	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
-		w, err := newProgrockWriter(log)
-		if err != nil {
-			return fmt.Errorf("open progrock log: %w", err)
+			cmdErr = subCmd.Run()
+			cmdVtx.Done(cmdErr)
+		} else {
+			subCmd.Stdout = os.Stdout
+			subCmd.Stderr = os.Stderr
+			cmdErr = subCmd.Run()
 		}
 
-		mw = append(mw, w)
-	}
-
-	stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
-	defer stop()
-
-	cmdline := strings.Join(subCmd.Args, " ")
-
-	engineConf := engine.Config{
-		Workdir:        workdir,
-		SessionToken:   sessionToken.String(),
-		RunnerHost:     internalengine.RunnerHost(),
-		DisableHostRW:  disableHostRW,
-		JournalURI:     os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		ProgrockWriter: mw,
-	}
-
-	var cmdErr error
-	err := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
-		rec := progrock.RecorderFromContext(ctx)
-
-		go http.Serve(sessionL, api) // nolint:gosec
-
-		cmdVtx := rec.Vertex("cmd", cmdline)
-		subCmd.Stdout = cmdVtx.Stdout()
-		subCmd.Stderr = cmdVtx.Stderr()
-
-		cmdErr = subCmd.Run()
-		cmdVtx.Done(cmdErr)
-		return nil
-	})
-	if cmdErr != nil {
 		return cmdErr
-	}
-
-	return err
-}
-
-type progOutWriter struct {
-	prog *tea.Program
-}
-
-func (w progOutWriter) Write(p []byte) (int, error) {
-	w.prog.Send(tui.CommandOutMsg{Output: p})
-	return len(p), nil
-}
-
-func newProgrockWriter(dest string) (progrock.Writer, error) {
-	f, err := os.Create(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	return progrockFileWriter{
-		enc: json.NewEncoder(f),
-		c:   f,
-	}, nil
-}
-
-type progrockFileWriter struct {
-	enc *json.Encoder
-	c   io.Closer
-}
-
-var _ progrock.Writer = progrockFileWriter{}
-
-func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
-	return p.enc.Encode(update)
-}
-
-func (p progrockFileWriter) Close() error {
-	return p.c.Close()
+	})
 }

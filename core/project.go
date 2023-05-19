@@ -103,7 +103,7 @@ func (p *Project) Clone() *Project {
 	return &cp
 }
 
-func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, source *Directory, configPath string) (*Project, error) {
+func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, source *Directory, configPath string) (*Project, error) {
 	p = p.Clone()
 	p.Directory = source
 
@@ -127,7 +127,7 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, so
 		return nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolvers, err := p.getResolvers(ctx, gw)
+	resolvers, err := p.getResolvers(ctx, gw, progSock)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
@@ -271,7 +271,7 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, erro
 	return runtimeFS, nil
 }
 
-func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client) (router.Resolvers, error) {
+func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *Socket) (router.Resolvers, error) {
 	resolvers := make(router.Resolvers)
 	if p.Config.SDK == "" {
 		return nil, fmt.Errorf("sdk not set")
@@ -299,7 +299,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client) (router.Reso
 		objResolver := router.ObjectResolver{}
 		resolvers[obj.Name.Value] = objResolver
 		for _, field := range obj.Fields {
-			objResolver[field.Name.Value], err = p.getResolver(ctx, gw)
+			objResolver[field.Name.Value], err = p.getResolver(ctx, gw, progSock)
 			if err != nil {
 				return nil, err
 			}
@@ -308,7 +308,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client) (router.Reso
 	return resolvers, nil
 }
 
-func (p *Project) getResolver(ctx context.Context, gw bkgw.Client) (graphql.FieldResolveFn, error) {
+func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Socket) (graphql.FieldResolveFn, error) {
 	runtimeFS, err := p.runtime(ctx, gw)
 	if err != nil {
 		return nil, err
@@ -340,9 +340,18 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client) (graphql.Fiel
 			return nil, err
 		}
 
+		sid, err := progSock.ID()
+		if err != nil {
+			return nil, err
+		}
+
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
+			llb.AddSSHSocket(
+				llb.SSHID(sid.LLBID()),
+				llb.SSHSocketTarget("/.progrock.sock"),
+			),
 			// make extensions compatible with the shim, in future we can actually enable retrieval of stdout/stderr
 			llb.AddMount("/.dagger_meta_mount", llb.Scratch(), llb.Tmpfs()),
 			llb.AddMount(inputMountPath, input, llb.Readonly),

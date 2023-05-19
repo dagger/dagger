@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -44,7 +45,7 @@ import (
 type Config struct {
 	Workdir        string
 	LogOutput      io.Writer
-	JournalURI     string
+	JournalFile    string
 	JournalWriter  journal.Writer
 	ProgrockWriter progrock.Writer
 	DisableHostRW  bool
@@ -93,7 +94,13 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		})
 	}
 
-	recorder := progrock.NewRecorder(startOpts.ProgrockWriter, labels...)
+	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter)
+	if err != nil {
+		return fmt.Errorf("progress forwarding: %w", err)
+	}
+	defer cleanup()
+
+	recorder := progrock.NewRecorder(progW, labels...)
 	ctx = progrock.RecorderToContext(ctx, recorder)
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
@@ -193,6 +200,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
 				Secrets:        secretStore,
 				OCIStore:       ociStore,
+				ProgrockSocket: progSock,
 			})
 			if err != nil {
 				return nil, err
@@ -283,55 +291,29 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 	}
 
 	// Write events to a journal file
-	if startOpts.JournalURI != "" {
+	if startOpts.JournalFile != "" {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
-		u, err := url.Parse(startOpts.JournalURI)
-		if err != nil {
-			return fmt.Errorf("journal URI: %w", err)
-		}
 
-		switch u.Scheme {
-		case "":
-			eg.Go(func() error {
-				f, err := os.Create(startOpts.JournalURI)
-				if err != nil {
+		eg.Go(func() error {
+			f, err := os.Create(startOpts.JournalFile)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			enc := json.NewEncoder(f)
+			for ev := range ch {
+				entry := &journal.Entry{
+					Event: ev,
+					TS:    time.Now().UTC(),
+				}
+
+				if err := enc.Encode(entry); err != nil {
 					return err
 				}
-				defer f.Close()
-				enc := json.NewEncoder(f)
-				for ev := range ch {
-					entry := &journal.Entry{
-						Event: ev,
-						TS:    time.Now().UTC(),
-					}
-
-					if err := enc.Encode(entry); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		case "tcp":
-			w, err := journal.Dial("tcp", u.Host)
-			if err != nil {
-				return fmt.Errorf("journal: %w", err)
 			}
-			defer w.Close()
-			eg.Go(func() error {
-				for ev := range ch {
-					entry := &journal.Entry{
-						Event: ev,
-						TS:    time.Now().UTC(),
-					}
-
-					if err := w.WriteEntry(entry); err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		}
+			return nil
+		})
 	}
 
 	if startOpts.JournalWriter != nil {
@@ -583,4 +565,28 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	}
 
 	return &status
+}
+
+func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error, error) {
+	progSock := filepath.Join(
+		xdg.RuntimeDir,
+		"dagger",
+		fmt.Sprintf("progrock-%d.sock", time.Now().UnixNano()),
+	)
+
+	if err := os.MkdirAll(filepath.Dir(progSock), 0700); err != nil {
+		return "", nil, nil, err
+	}
+
+	l, err := net.Listen("unix", progSock)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	progW, err := progrock.ServeRPC(l, w)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	return progSock, progW, l.Close, nil
 }

@@ -1424,6 +1424,10 @@ github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc/go.mod h1:ZjcWmF
 github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17pCcGlemwknint6hfoeCVQrEMVwxRLRjXpq+BU=
 github.com/vito/progrock v0.2.0 h1:DXZkJysDmTQ3xv+rz0w4WqsYcw6L/1mVRsSwCABem3k=
 github.com/vito/progrock v0.2.0/go.mod h1:rCnvnxqE6ugs4WjS/DTLlhbDR8ANb7pgwtIHDuFr5ac=
+github.com/vito/progrock v0.2.1-0.20230518185953-c005e3ac3d7f h1:Z4GeXtSoqDkOdXrlhAAtw3btjnSoXRarKErrndT/c+o=
+github.com/vito/progrock v0.2.1-0.20230518185953-c005e3ac3d7f/go.mod h1:rCnvnxqE6ugs4WjS/DTLlhbDR8ANb7pgwtIHDuFr5ac=
+github.com/vito/progrock v0.3.0 h1:2ScNW313zncpwBUUS7zYzSBm56sOPTA0MnshRQhnv/8=
+github.com/vito/progrock v0.3.0/go.mod h1:rCnvnxqE6ugs4WjS/DTLlhbDR8ANb7pgwtIHDuFr5ac=
 github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4 h1:MX+b1wthWS36Xo9xcnQzxMJVY5pjv/o+1EiORdbJsgk=
 github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4/go.mod h1:qfoJd8OdENFcCg3MFm//aH0ah6b88mqNAYthSr14FuI=
 github.com/vmware/govmomi v0.20.3/go.mod h1:URlwyTFZX72RmxtxuaFL2Uj3fD1JTvZdx59bHWk6aFU=

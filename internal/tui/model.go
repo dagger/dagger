@@ -11,16 +11,13 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dagger/dagger/internal/engine/journal"
-	bkclient "github.com/moby/buildkit/client"
-	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func New(quit func(), r journal.Reader, rootName string) *Model {
-	rootLogs := NewVterm(80)
-	rootView := logsPrinter{Vterm: rootLogs, name: rootName}
-	root := NewGroup("", rootName, rootView)
-	m := &Model{
+func New(quit func(), r progrock.Reader) *Model {
+	return &Model{
 		quit: quit,
 		tree: &Tree{
 			viewport:  viewport.New(80, 1),
@@ -28,27 +25,23 @@ func New(quit func(), r journal.Reader, rootName string) *Model {
 			collapsed: make(map[TreeEntry]bool),
 			focus:     true,
 		},
-		root:      root,
-		rootLogs:  rootLogs,
-		itemsByID: make(map[digest.Digest]*Item),
-		details:   Details{},
-		follow:    true,
-		journal:   r,
-		help:      help.New(),
+		itemsByID:         make(map[string]*Item),
+		groupsByID:        make(map[string]*Group),
+		futureMemberships: make(map[string][]*Group),
+		details:           Details{},
+		follow:            true,
+		updates:           r,
+		help:              help.New(),
 	}
-
-	m.tree.SetRoot(m.root)
-
-	return m
 }
 
 type Model struct {
 	quit func()
 
-	journal   journal.Reader
-	itemsByID map[digest.Digest]*Item
-	root      *Group
-	rootLogs  *Vterm
+	updates           progrock.Reader
+	itemsByID         map[string]*Item
+	groupsByID        map[string]*Group
+	futureMemberships map[string][]*Group
 
 	tree    *Tree
 	details Details
@@ -62,6 +55,8 @@ type Model struct {
 
 	follow       bool
 	detailsFocus bool
+
+	errors []error
 }
 
 func (m Model) Init() tea.Cmd {
@@ -87,13 +82,16 @@ type EditorExitMsg struct {
 
 type endMsg struct{}
 
-func (m Model) adjustLocalTime(t *time.Time) *time.Time {
+func (m Model) adjustLocalTime(t *timestamppb.Timestamp) *timestamppb.Timestamp {
 	if t == nil {
 		return nil
 	}
 
-	adjusted := t.Add(m.localTimeDiff)
-	return &adjusted
+	adjusted := t.AsTime().Add(m.localTimeDiff)
+	cp := proto.Clone(t).(*timestamppb.Timestamp)
+	cp.Seconds = adjusted.Unix()
+	cp.Nanos = int32(adjusted.Nanosecond())
+	return cp
 }
 
 type followMsg struct{}
@@ -118,19 +116,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.tree.SetWidth(msg.Width)
 		m.details.SetWidth(msg.Width)
-		m.root.SetWidth(msg.Width)
 	case tea.KeyMsg:
 		return m.processKeyMsg(msg)
-	case CommandOutMsg:
-		m.rootLogs.Write(msg.Output)
-	case CommandExitMsg:
-		m.done = true
-		if msg.Err != nil {
-			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
-		}
 	case EditorExitMsg:
 		if msg.Err != nil {
-			fmt.Fprintln(m.rootLogs, errorStyle.Render(msg.Err.Error()))
+			m.errors = append(m.errors, msg.Err)
 		}
 		return m, nil
 	case followMsg:
@@ -144,8 +134,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.details.SetItem(m.tree.Current()),
 			followTick(),
 		)
-	case *journal.Entry:
-		return m.processSolveStatus(msg.Event)
+	case *progrock.StatusUpdate:
+		return m.processUpdate(msg)
 	case spinner.TickMsg:
 		cmds := []tea.Cmd{}
 
@@ -257,9 +247,9 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, keys.Expand):
 		m.tree.Expand(m.tree.Current(), false)
 	case key.Matches(msg, keys.CollapseAll):
-		m.tree.Collapse(m.root, true)
+		m.tree.Collapse(m.tree.Root(), true)
 	case key.Matches(msg, keys.ExpandAll):
-		m.tree.Expand(m.root, true)
+		m.tree.Expand(m.tree.Root(), true)
 	case key.Matches(msg, keys.Switch):
 		m.detailsFocus = !m.detailsFocus
 		m.tree.Focus(!m.detailsFocus)
@@ -270,34 +260,75 @@ func (m Model) processKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd) {
+func (m Model) processUpdate(msg *progrock.StatusUpdate) (tea.Model, tea.Cmd) {
 	cmds := []tea.Cmd{
 		m.waitForActivity(),
 	}
 
+	for _, g := range msg.Groups {
+		grp, found := m.groupsByID[g.Id]
+		if !found {
+			grp = NewGroup(g.Id, g.Name)
+			m.groupsByID[g.Id] = grp
+			if g.Parent != nil {
+				parent := m.groupsByID[g.GetParent()]
+				parent.Add(grp)
+			} else {
+				m.tree.SetRoot(grp)
+			}
+		}
+		// TODO: update group completion
+		_ = grp
+	}
+
 	for _, v := range msg.Vertexes {
 		if m.localTimeDiff == 0 && v.Started != nil {
-			m.localTimeDiff = time.Since(*v.Started)
+			m.localTimeDiff = time.Since(v.Started.AsTime())
 		}
 		v.Started = m.adjustLocalTime(v.Started)
 		v.Completed = m.adjustLocalTime(v.Completed)
 
-		item := m.itemsByID[v.Digest]
+		if v.Internal {
+			// ignore
+			continue
+		}
+
+		item := m.itemsByID[v.Id]
 		if item == nil {
 			item = NewItem(v, m.width)
 			cmds = append(cmds, item.Init())
-			m.itemsByID[item.id] = item
+			m.itemsByID[v.Id] = item
 			if !item.Internal() {
-				m.root.Add(item.group, item)
-				m.tree.SetRoot(m.root)
 				cmds = append(cmds, m.details.SetItem(m.tree.Current()))
 			}
 		}
 
+		for _, g := range m.futureMemberships[v.Id] {
+			g.Add(item)
+		}
+
+		delete(m.futureMemberships, v.Id)
+
 		item.UpdateVertex(v)
 	}
 
-	for _, s := range msg.Statuses {
+	for _, mem := range msg.Memberships {
+		g, found := m.groupsByID[mem.Group]
+		if !found {
+			panic("group not found: " + mem.Group)
+		}
+
+		for _, id := range mem.Vertexes {
+			i, found := m.itemsByID[id]
+			if found {
+				g.Add(i)
+			} else {
+				m.futureMemberships[id] = append(m.futureMemberships[id], g)
+			}
+		}
+	}
+
+	for _, s := range msg.Tasks {
 		item := m.itemsByID[s.Vertex]
 		if item == nil {
 			continue
@@ -317,14 +348,15 @@ func (m Model) processSolveStatus(msg *bkclient.SolveStatus) (tea.Model, tea.Cmd
 }
 
 func (m Model) statusBarTimerView() string {
-	if m.root.Started() == nil {
+	root := m.tree.Root()
+	if root == nil || root.Started() == nil {
 		return "0.0s"
 	}
 	current := time.Now()
-	if m.done && m.root.Completed() != nil {
-		current = *m.root.Completed()
+	if m.done && root.Completed() != nil {
+		current = *root.Completed()
 	}
-	diff := current.Sub(*m.root.Started())
+	diff := current.Sub(*root.Started())
 
 	prec := 1
 	sec := diff.Seconds()
@@ -345,18 +377,35 @@ func (m Model) View() string {
 
 	helpView := m.helpView()
 	statusBarView := m.statusBarView()
+	errorsView := m.errorsView()
 
 	detailsHeight := m.height - treeHeight
 	detailsHeight -= lipgloss.Height(helpView)
 	detailsHeight -= lipgloss.Height(statusBarView)
+	detailsHeight -= lipgloss.Height(errorsView)
+	detailsHeight = max(detailsHeight, 10)
 	m.details.SetHeight(detailsHeight)
 
 	return lipgloss.JoinVertical(lipgloss.Left,
 		statusBarView,
 		m.tree.View(),
 		m.details.View(),
+		errorsView,
 		helpView,
 	)
+}
+
+func (m Model) errorsView() string {
+	if len(m.errors) == 0 {
+		return ""
+	}
+
+	errs := make([]string, len(m.errors))
+	for i, err := range m.errors {
+		errs[i] = errorStyle.Render(err.Error())
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, errs...)
 }
 
 func (m Model) statusBarView() string {
@@ -383,7 +432,7 @@ func (m Model) helpView() string {
 
 func (m Model) waitForActivity() tea.Cmd {
 	return func() tea.Msg {
-		msg, ok := m.journal.ReadEntry()
+		msg, ok := m.updates.ReadStatus()
 		if ok {
 			return msg
 		}

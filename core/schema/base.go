@@ -12,17 +12,18 @@ import (
 )
 
 type InitializeArgs struct {
-	Router        *router.Router
-	Workdir       string
-	Gateway       *core.GatewayClient
-	BKClient      *bkclient.Client
-	SolveOpts     bkclient.SolveOpt
-	SolveCh       chan *bkclient.SolveStatus
-	OCIStore      content.Store
-	Platform      specs.Platform
-	DisableHostRW bool
-	Auth          *auth.RegistryAuthProvider
-	Secrets       *secret.Store
+	Router         *router.Router
+	Workdir        string
+	Gateway        *core.GatewayClient
+	BKClient       *bkclient.Client
+	SolveOpts      bkclient.SolveOpt
+	SolveCh        chan *bkclient.SolveStatus
+	OCIStore       content.Store
+	Platform       specs.Platform
+	DisableHostRW  bool
+	Auth           *auth.RegistryAuthProvider
+	Secrets        *secret.Store
+	ProgrockSocket string
 
 	// TODO(vito): remove when stable
 	EnableServices bool
@@ -41,6 +42,8 @@ func New(params InitializeArgs) (router.ExecutableSchema, error) {
 
 		// TODO(vito): remove when stable
 		servicesEnabled: params.EnableServices,
+
+		progSock: params.ProgrockSocket,
 	}
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
@@ -71,4 +74,7 @@ type baseSchema struct {
 
 	// TODO(vito): remove when stable
 	servicesEnabled bool
+
+	// path to Progrock forwarding socket
+	progSock string
 }
