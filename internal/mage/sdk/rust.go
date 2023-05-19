@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
@@ -15,6 +16,7 @@ import (
 
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
+	rustVersionFilePath  = "sdk/rust/crates/dagger-core/src/lib.rs"
 )
 
 var _ SDK = Rust{}
@@ -23,7 +25,31 @@ type Rust mg.Namespace
 
 // Bump implements SDK
 func (Rust) Bump(ctx context.Context, engineVersion string) error {
-	panic("unimplemented")
+	versionStr := `pub const DAGGER_ENGINE_VERSION: &'static str = "([0-9\.-a-zA-Z]+)";`
+	versionStrf := `pub const DAGGER_ENGINE_VERSION: &'static str = "%s";`
+	version := strings.TrimPrefix(engineVersion, "v")
+
+	versionContents, err := os.ReadFile(rustVersionFilePath)
+	if err != nil {
+		return err
+	}
+
+	versionRe, err := regexp.Compile(versionStr)
+	if err != nil {
+		return err
+	}
+
+	versionBumpedContents := versionRe.ReplaceAll(
+		versionContents,
+		[]byte(fmt.Sprintf(versionStrf, version)),
+	)
+
+	err = os.WriteFile(rustVersionFilePath, versionBumpedContents, 0o600)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Generate implements SDK
