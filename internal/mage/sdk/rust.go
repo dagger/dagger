@@ -73,7 +73,7 @@ func (r Rust) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	version := "nightly"
+	version := "rustlang/rust:nightly-slim"
 	generated := r.rustBase(ctx, c.Pipeline(version), version).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
@@ -107,7 +107,7 @@ func (r Rust) Lint(ctx context.Context) error {
 
 	eg, gctx := errgroup.WithContext(ctx)
 
-	base := r.rustBase(ctx, c, "nightly")
+	base := r.rustBase(ctx, c, "rustlang/rust:nightly-slim")
 
 	eg.Go(func() error {
 		_, err = base.
@@ -162,7 +162,7 @@ func (r Rust) Test(ctx context.Context) error {
 
 	eg, egctx := errgroup.WithContext(ctx)
 	for _, version := range []string{
-		"stable", "nightly",
+		"rust:1.69-slim-bullseye", "rustlang/rust:nightly-slim",
 	} {
 		version := version
 		eg.Go(func() error {
@@ -180,7 +180,7 @@ func (r Rust) Test(ctx context.Context) error {
 	return eg.Wait()
 }
 
-func (Rust) rustBase(ctx context.Context, c *dagger.Client, tag string) *dagger.Container {
+func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagger.Container {
 	const (
 		appDir = "sdk/rust"
 	)
@@ -191,7 +191,7 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, tag string) *dagger.
 
 	base := c.
 		Container().
-		From(fmt.Sprintf("rustlang/rust:%s", tag)).
+		From(image).
 		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo")).
 		WithExec([]string{"cargo", "install", "cargo-chef"}).
 		WithWorkdir(mountPath).
