@@ -3725,3 +3725,95 @@ func TestContainerForceCompression(t *testing.T) {
 		})
 	}
 }
+
+func TestContainerBuildMergesWithParent(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	// Create a builder container
+	builderCtr := c.Directory().WithNewFile(
+		"Dockerfile",
+		`
+FROM node:alpine
+
+ENV FOO=BAR
+LABEL "com.example.test-should-replace"="foo"
+RUN node --version
+`,
+	)
+
+	// Create a container with envs variables and labels
+	testCtr := c.Container().
+		WithEnvVariable("BOOL", "DOG").
+		WithEnvVariable("FOO", "BAZ").
+		WithLabel("com.example.test-should-exist", "test").
+		WithLabel("com.example.test-should-replace", "bar").
+		WithExposedPort(5000).
+		Build(builderCtr)
+
+	envShouldExist, err := testCtr.EnvVariable(ctx, "BOOL")
+	require.NoError(t, err)
+	require.Equal(t, "DOG", envShouldExist)
+
+	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envShouldBeReplaced)
+
+	labelShouldExist, err := testCtr.Label(ctx, "com.example.test-should-exist")
+	require.NoError(t, err)
+	require.Equal(t, "test", labelShouldExist)
+
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "com.example.test-should-replace")
+	require.NoError(t, err)
+	require.Equal(t, "foo", labelShouldBeReplaced)
+
+	ports, err := testCtr.ExposedPorts(ctx)
+	require.NoError(t, err)
+
+	port, err := ports[0].Port(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5000, port)
+}
+
+func TestContainerFromMergesWithParent(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+
+	// Create a container with envs and pull alpine image on it
+	testCtr := c.Container().
+		WithEnvVariable("FOO", "BAR").
+		WithEnvVariable("PATH", "/replace/me").
+		WithLabel("moby.buildkit.frontend.caps", "replace-me").
+		WithLabel("com.example.test-should-exist", "exist").
+		WithExposedPort(5000).
+		From("docker/dockerfile:1.5")
+
+	envShouldExist, err := testCtr.EnvVariable(ctx, "FOO")
+	require.NoError(t, err)
+	require.Equal(t, "BAR", envShouldExist)
+
+	envShouldBeReplaced, err := testCtr.EnvVariable(ctx, "PATH")
+	require.NoError(t, err)
+	require.Equal(t, "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", envShouldBeReplaced)
+
+	labelShouldExist, err := testCtr.Label(ctx, "com.example.test-should-exist")
+	require.NoError(t, err)
+	require.Equal(t, "exist", labelShouldExist)
+
+	existingLabelFromImageShouldExist, err := testCtr.Label(ctx, "moby.buildkit.frontend.network.none")
+	require.NoError(t, err)
+	require.Equal(t, "true", existingLabelFromImageShouldExist)
+
+	labelShouldBeReplaced, err := testCtr.Label(ctx, "moby.buildkit.frontend.caps")
+	require.NoError(t, err)
+	require.Equal(t, "moby.buildkit.frontend.inputs,moby.buildkit.frontend.subrequests,moby.buildkit.frontend.contexts", labelShouldBeReplaced)
+
+	ports, err := testCtr.ExposedPorts(ctx)
+	require.NoError(t, err)
+
+	port, err := ports[0].Port(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5000, port)
+}
