@@ -70,8 +70,42 @@ func (r Rust) Generate(ctx context.Context) error {
 }
 
 // Lint implements SDK
-func (Rust) Lint(ctx context.Context) error {
-	panic("unimplemented")
+func (r Rust) Lint(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("rust").Pipeline("lint")
+
+	eg, gctx := errgroup.WithContext(ctx)
+
+	base := r.rustBase(ctx, c, "nightly")
+
+	eg.Go(func() error {
+		_, err = base.
+			WithExec([]string{"cargo", "check", "--all", "--release"}).
+			ExitCode(gctx)
+
+		return err
+	})
+
+	eg.Go(func() error {
+		_, err = base.
+			WithExec([]string{"cargo", "fmt", "--check"}).
+			ExitCode(gctx)
+
+		return err
+	})
+
+	eg.Go(func() error {
+		return lintGeneratedCode(func() error {
+			return r.Generate(gctx)
+		}, rustGeneratedAPIPath)
+	})
+
+	return eg.Wait()
 }
 
 // Publish implements SDK
