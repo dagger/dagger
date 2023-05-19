@@ -6,8 +6,8 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use thiserror::Error;
 
-use crate::connect_params::ConnectParams;
-use crate::gql_client::{ClientConfig, GQLClient};
+use crate::core::connect_params::ConnectParams;
+use crate::core::gql_client::{ClientConfig, GQLClient};
 
 #[async_trait]
 pub trait GraphQLClient {
@@ -49,7 +49,7 @@ impl GraphQLClient for DefaultGraphQLClient {
     }
 }
 
-fn map_graphql_error(gql_error: crate::gql_client::GraphQLError) -> GraphQLError {
+fn map_graphql_error(gql_error: crate::core::gql_client::GraphQLError) -> GraphQLError {
     let message = gql_error.message().to_string();
     let json = gql_error.json();
 

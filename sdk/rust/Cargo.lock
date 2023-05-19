@@ -156,17 +156,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "ci"
-version = "0.1.0"
-dependencies = [
- "clap",
- "color-eyre",
- "dagger-sdk",
- "eyre",
- "tokio",
-]
-
-[[package]]
 name = "clap"
 version = "4.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -294,7 +283,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "dagger-codegen",
- "dagger-core",
+ "dagger-sdk",
  "eyre",
  "serde",
  "serde_json",
@@ -306,7 +295,7 @@ name = "dagger-codegen"
 version = "0.2.8"
 dependencies = [
  "convert_case",
- "dagger-core",
+ "dagger-sdk",
  "eyre",
  "genco",
  "itertools",
@@ -316,43 +305,29 @@ dependencies = [
 ]
 
 [[package]]
-name = "dagger-core"
-version = "0.2.11"
+name = "dagger-sdk"
+version = "0.2.22"
 dependencies = [
  "async-trait",
  "base64",
+ "derive_builder",
  "dirs",
  "eyre",
  "flate2",
+ "futures",
+ "genco",
  "graphql_client",
  "hex",
  "hex-literal",
  "platform-info",
+ "pretty_assertions",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
  "tar",
  "tempfile",
- "thiserror",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "dagger-sdk"
-version = "0.2.22"
-dependencies = [
- "dagger-core",
- "derive_builder",
- "eyre",
- "futures",
- "genco",
- "pretty_assertions",
- "rand",
- "serde",
- "serde_json",
  "thiserror",
  "tokio",
  "tracing",

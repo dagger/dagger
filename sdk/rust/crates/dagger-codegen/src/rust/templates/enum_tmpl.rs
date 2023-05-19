@@ -1,4 +1,4 @@
-use dagger_core::introspection::FullType;
+use dagger_sdk::core::introspection::FullType;
 use genco::prelude::rust;
 use genco::quote;
 use itertools::Itertools;

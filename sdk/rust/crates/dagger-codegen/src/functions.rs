@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dagger_core::introspection::{FullType, FullTypeFields, InputValue, TypeRef, __TypeKind};
+use dagger_sdk::core::introspection::{FullType, FullTypeFields, InputValue, TypeRef, __TypeKind};
 use eyre::ContextCompat;
 
 use crate::utility::OptionExt;
@@ -282,7 +282,7 @@ pub fn input_values_is_empty(input_values: &[InputValue]) -> bool {
 
 #[cfg(test)]
 mod test {
-    use dagger_core::introspection::{FullType, InputValue, TypeRef, __TypeKind};
+    use dagger_sdk::core::introspection::{FullType, InputValue, TypeRef, __TypeKind};
     use pretty_assertions::assert_eq;
 
     use crate::functions::{input_values_has_optionals, type_ref_is_optional};

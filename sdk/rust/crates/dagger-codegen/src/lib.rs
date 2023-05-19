@@ -6,7 +6,7 @@ pub mod rust;
 pub mod utility;
 mod visitor;
 
-use dagger_core::introspection::Schema;
+use dagger_sdk::core::introspection::Schema;
 
 use self::generator::DynGenerator;
 

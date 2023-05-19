@@ -1,5 +1,5 @@
 use convert_case::{Case, Casing};
-use dagger_core::introspection::{FullTypeFields, TypeRef};
+use dagger_sdk::core::introspection::{FullTypeFields, TypeRef};
 use genco::prelude::rust;
 use genco::quote;
 use genco::tokens::quoted;

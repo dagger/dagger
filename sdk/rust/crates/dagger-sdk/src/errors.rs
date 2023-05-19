@@ -13,7 +13,7 @@ pub enum DaggerError {
     #[error("failed to parse input type")]
     Serialize(#[source] eyre::Error),
     #[error("failed to query dagger engine: {0}")]
-    Query(#[source] dagger_core::graphql_client::GraphQLError),
+    Query(#[source] crate::core::graphql_client::GraphQLError),
     #[error("failed to unpack response")]
     Unpack(#[source] DaggerUnpackError),
 }

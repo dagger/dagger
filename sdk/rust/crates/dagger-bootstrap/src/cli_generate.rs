@@ -4,9 +4,9 @@ use std::sync::Arc;
 use clap::{Arg, ArgMatches};
 use dagger_codegen::generate;
 use dagger_codegen::rust::RustGenerator;
-use dagger_core::config::Config;
-use dagger_core::engine::Engine;
-use dagger_core::session::Session;
+use dagger_sdk::core::config::Config;
+use dagger_sdk::core::engine::Engine;
+use dagger_sdk::core::session::Session;
 
 #[allow(dead_code)]
 pub struct GenerateCommand;

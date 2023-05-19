@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::logger::DynLogger;
+use crate::core::logger::DynLogger;
 
 pub struct Config {
     pub workdir_path: Option<PathBuf>,

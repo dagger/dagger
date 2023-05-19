@@ -10,7 +10,9 @@ publish = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-dagger-core = { workspace = true }
+dagger-sdk = { workspace = true, features = [
+  "no-gen",
+], default-features = false }
 
 eyre = { workspace = true }
 serde = { workspace = true }

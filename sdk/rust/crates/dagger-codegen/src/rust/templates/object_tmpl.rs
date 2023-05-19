@@ -1,4 +1,4 @@
-use dagger_core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
+use dagger_sdk::core::introspection::{FullType, FullTypeFields, FullTypeFieldsArgs};
 use genco::prelude::rust;
 use genco::quote;
 
@@ -12,7 +12,7 @@ use crate::utility::OptionExt;
 pub fn render_object(funcs: &CommonFunctions, t: &FullType) -> eyre::Result<rust::Tokens> {
     let selection = rust::import("crate::querybuilder", "Selection");
     let child = rust::import("tokio::process", "Child");
-    let graphql_client = rust::import("dagger_core::graphql_client", "DynGraphQLClient");
+    let graphql_client = rust::import("crate::core::graphql_client", "DynGraphQLClient");
     let arc = rust::import("std::sync", "Arc");
 
     Ok(quote! {

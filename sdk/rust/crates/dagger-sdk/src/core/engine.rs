@@ -1,5 +1,5 @@
-use crate::DAGGER_ENGINE_VERSION;
-use crate::{
+use crate::core::DAGGER_ENGINE_VERSION;
+use crate::core::{
     cli_session::CliSession, config::Config, connect_params::ConnectParams, downloader::Downloader,
 };
 

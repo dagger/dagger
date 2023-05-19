@@ -16,7 +16,7 @@ import (
 
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
-	rustVersionFilePath  = "sdk/rust/crates/dagger-core/src/lib.rs"
+	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
 )
 
 var _ SDK = Rust{}

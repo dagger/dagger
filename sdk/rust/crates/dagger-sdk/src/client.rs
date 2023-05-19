@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use dagger_core::graphql_client::DefaultGraphQLClient;
-
-use dagger_core::config::Config;
-use dagger_core::engine::Engine as DaggerEngine;
+use crate::core::config::Config;
+use crate::core::engine::Engine as DaggerEngine;
+use crate::core::graphql_client::DefaultGraphQLClient;
 
 use crate::errors::ConnectError;
 use crate::gen::Query;

@@ -4,12 +4,14 @@ use reqwest::{
     Client, RequestBuilder,
 };
 
-use crate::{config::Config, connect_params::ConnectParams, introspection::IntrospectionResponse};
+use crate::core::{
+    config::Config, connect_params::ConnectParams, introspection::IntrospectionResponse,
+};
 
 #[derive(GraphQLQuery)]
 #[graphql(
-    schema_path = "src/graphql/introspection_schema.graphql",
-    query_path = "src/graphql/introspection_query.graphql",
+    schema_path = "src/core/graphql/introspection_schema.graphql",
+    query_path = "src/core/graphql/introspection_query.graphql",
     responsive_path = "Serialize",
     variable_derive = "Deserialize"
 )]

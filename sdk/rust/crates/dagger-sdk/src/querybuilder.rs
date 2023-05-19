@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Add, sync::Arc};
 
-use dagger_core::graphql_client::DynGraphQLClient;
+use crate::core::graphql_client::DynGraphQLClient;
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{DaggerError, DaggerUnpackError};

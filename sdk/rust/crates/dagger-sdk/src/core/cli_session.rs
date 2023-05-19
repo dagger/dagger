@@ -2,7 +2,7 @@ use std::{fs::canonicalize, path::PathBuf, process::Stdio, sync::Arc};
 
 use tokio::io::AsyncBufReadExt;
 
-use crate::{config::Config, connect_params::ConnectParams};
+use crate::core::{config::Config, connect_params::ConnectParams};
 
 #[derive(Clone, Debug)]
 pub struct CliSession {

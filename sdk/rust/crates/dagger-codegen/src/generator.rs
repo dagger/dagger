@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dagger_core::introspection::Schema;
+use dagger_sdk::core::introspection::Schema;
 
 pub trait Generator {
     fn generate(&self, schema: Schema) -> eyre::Result<String>;

@@ -1,6 +1,6 @@
+use crate::core::graphql_client::DynGraphQLClient;
 use crate::errors::DaggerError;
 use crate::querybuilder::Selection;
-use dagger_core::graphql_client::DynGraphQLClient;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

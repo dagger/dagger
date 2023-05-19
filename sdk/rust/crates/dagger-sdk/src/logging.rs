@@ -1,4 +1,4 @@
-use dagger_core::logger::{DynLogger, Logger};
+use crate::core::logger::{DynLogger, Logger};
 use tracing::Level;
 
 pub fn default_logging() -> eyre::Result<()> {
