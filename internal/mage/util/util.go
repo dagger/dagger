@@ -36,6 +36,9 @@ func Repository(c *dagger.Client) *dagger.Directory {
 			// actually bump dependencies
 			"go.work",
 			"go.work.sum",
+
+			// rust
+			"**/target",
 		},
 	})
 }
@@ -115,7 +118,9 @@ func PlatformDaggerBinary(c *dagger.Client, goos, goarch, goarm string) *dagger.
 		base = base.WithEnvVariable("GOARM", goarm)
 	}
 	return base.
-		WithExec([]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"}).
+		WithExec(
+			[]string{"go", "build", "-o", "./bin/dagger", "-ldflags", "-s -w", "./cmd/dagger"},
+		).
 		File("./bin/dagger")
 }
 
