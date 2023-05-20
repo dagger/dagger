@@ -220,3 +220,16 @@ async def test_container_sync():
         # chaining
         out = await (await base.with_exec(["echo", "spam"]).sync()).stdout()
         assert out == "spam\n"
+
+
+async def test_container_awaitable():
+    async with dagger.Connection() as client:
+        base = client.container().from_("alpine:3.16.2")
+
+        # short cirtcut
+        with pytest.raises(dagger.QueryError, match="foobar"):
+            await base.with_exec(["foobar"])
+
+        # chaining
+        out = await (await base.with_exec(["echo", "spam"])).stdout()
+        assert out == "spam\n"

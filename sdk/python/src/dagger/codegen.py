@@ -429,6 +429,15 @@ class _ObjectField:
             indent(self.func_body()),
         )
 
+        # convenience to await any object that has a sync method
+        # without having to call it explicitly
+        if not self.ctx.sync and self.is_leaf and self.name == "sync":
+            yield from (
+                "",
+                "def __await__(self):",
+                indent("return self.sync().__await__()"),
+            )
+
     def func_signature(self) -> str:
         params = ", ".join(chain(("self",), (a.as_param() for a in self.args)))
         # arbitrary heuristic to force trailing comma in long signatures
