@@ -363,6 +363,8 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	recordVertexes(subRecorder, container.FS)
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+	container = container.updatePortsFromConfig()
+
 	container.ImageRef = digested.String()
 
 	return container, nil
@@ -505,6 +507,7 @@ func (container *Container) buildUncached(
 			}
 
 			container.Config = mergeImageConfig(container.Config, imgSpec.Config)
+			container = container.updatePortsFromConfig()
 		}
 
 		return container, nil
@@ -1713,6 +1716,47 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	container.Config.ExposedPorts = filteredOCI
 
 	return container, nil
+}
+
+func (container *Container) updatePortsFromConfig() *Container {
+	if container.Config.ExposedPorts == nil {
+		return container
+	}
+
+	container = container.Clone()
+
+	// convert to map to preserve the descriptions (not in the OCI spec)
+	existing := make(map[string]*ContainerPort, len(container.Ports))
+	for _, p := range container.Ports {
+		p := p
+		ociPort := fmt.Sprintf("%d/%s", p.Port, p.Protocol.Network())
+		existing[ociPort] = &p
+	}
+
+	ports := make([]ContainerPort, 0, len(container.Config.ExposedPorts))
+	for ociPort := range container.Config.ExposedPorts {
+		p, exists := existing[ociPort]
+		if !exists {
+			// ignore errors when parsing from OCI
+			port, proto, ok := strings.Cut(ociPort, "/")
+			if !ok {
+				continue
+			}
+			portNr, err := strconv.Atoi(port)
+			if err != nil {
+				continue
+			}
+			p = &ContainerPort{
+				Port:     portNr,
+				Protocol: NetworkProtocol(strings.ToUpper(proto)),
+			}
+		}
+		ports = append(ports, *p)
+	}
+
+	container.Ports = ports
+
+	return container
 }
 
 func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {

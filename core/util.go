@@ -278,7 +278,7 @@ func mergeEnv(dst, src []string) []string {
 
 // mergeMap adds or updates every key-value pair from the 'src' map
 // into the 'dst' map.
-func mergeMap(dst, src map[string]string) map[string]string {
+func mergeMap[T any](dst, src map[string]T) map[string]T {
 	if src == nil {
 		return dst
 	}
@@ -299,14 +299,12 @@ func mergeMap(dst, src map[string]string) map[string]string {
 // Only the configurations that have corresponding `WithXXX` and `WithoutXXX`
 // methods in `Container` are added or updated (i.e., `Env`, `Labels` and
 // `ExposedPorts`). Everything else is replaced.
-//
-// NOTE: there is an issue with merged ports for now.
-// See: https://github.com/dagger/dagger/pull/5052#issuecomment-1546814114
 func mergeImageConfig(dst, src specs.ImageConfig) specs.ImageConfig {
 	res := src
 
 	res.Env = mergeEnv(dst.Env, src.Env)
 	res.Labels = mergeMap(dst.Labels, src.Labels)
+	res.ExposedPorts = mergeMap(dst.ExposedPorts, src.ExposedPorts)
 
 	return res
 }
