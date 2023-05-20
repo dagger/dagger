@@ -857,11 +857,25 @@ func (r *Container) WithEntrypoint(args []string) *Container {
 	}
 }
 
+// ContainerWithEnvVariableOpts contains options for Container.WithEnvVariable
+type ContainerWithEnvVariableOpts struct {
+	// Replace ${VAR} or $VAR in the value according to the current environment
+	// variables defined in the container (e.g., "/opt/bin:$PATH").
+	Expand bool
+}
+
 // Retrieves this container plus the given environment variable.
-func (r *Container) WithEnvVariable(name string, value string) *Container {
+func (r *Container) WithEnvVariable(name string, value string, opts ...ContainerWithEnvVariableOpts) *Container {
 	q := r.q.Select("withEnvVariable")
 	q = q.Arg("name", name)
 	q = q.Arg("value", value)
+	// `expand` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].Expand) {
+			q = q.Arg("expand", opts[i].Expand)
+			break
+		}
+	}
 
 	return &Container{
 		q: q,

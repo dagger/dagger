@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"os"
 	"path"
 
 	"github.com/containerd/containerd/content"
@@ -302,16 +303,23 @@ func (s *containerSchema) workdir(ctx *router.Context, parent *core.Container, a
 }
 
 type containerWithVariableArgs struct {
-	Name  string
-	Value string
+	Name   string
+	Value  string
+	Expand bool
 }
 
 func (s *containerSchema) withEnvVariable(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		// NB(vito): buildkit handles replacing properly when we do llb.AddEnv, but
-		// we want to replace it here anyway because someone might publish the image
-		// instead of running it. (there's a test covering this!)
-		cfg.Env = core.AddEnv(cfg.Env, args.Name, args.Value)
+		value := args.Value
+
+		if args.Expand {
+			value = os.Expand(value, func(k string) string {
+				v, _ := core.LookupEnv(cfg.Env, k)
+				return v
+			})
+		}
+
+		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
 
 		return cfg
 	})

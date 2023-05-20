@@ -168,6 +168,12 @@ type Container {
     The value of the environment variable. (e.g., "localhost").
     """
     value: String!
+
+    """
+    Replace ${VAR} or $VAR in the value according to the current environment
+    variables defined in the container (e.g., "/opt/bin:$PATH").
+    """
+    expand: Boolean
   ): Container!
 
   "Retrieves the list of labels passed to container."

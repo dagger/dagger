@@ -238,6 +238,14 @@ export type ContainerWithDirectoryOpts = {
   owner?: string
 }
 
+export type ContainerWithEnvVariableOpts = {
+  /**
+   * Replace ${VAR} or $VAR in the value according to the current environment
+   * variables defined in the container (e.g., "/opt/bin:$PATH").
+   */
+  expand?: boolean
+}
+
 export type ContainerWithExecOpts = {
   /**
    * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
@@ -1368,14 +1376,20 @@ export class Container extends BaseClient {
    * Retrieves this container plus the given environment variable.
    * @param name The name of the environment variable (e.g., "HOST").
    * @param value The value of the environment variable. (e.g., "localhost").
+   * @param opts.expand Replace ${VAR} or $VAR in the value according to the current environment
+   * variables defined in the container (e.g., "/opt/bin:$PATH").
    */
-  withEnvVariable(name: string, value: string): Container {
+  withEnvVariable(
+    name: string,
+    value: string,
+    opts?: ContainerWithEnvVariableOpts
+  ): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withEnvVariable",
-          args: { name, value },
+          args: { name, value, ...opts },
         },
       ],
       host: this.clientHost,
