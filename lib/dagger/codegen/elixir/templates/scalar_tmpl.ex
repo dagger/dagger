@@ -15,7 +15,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
 
   @support_gen_fun Map.keys(@required_mods)
 
-  def render(%{"name" => name, "description" => desc, "private" => %{"mod_name" => mod_name}})
+  def render(%{"name" => name, "description" => desc, "private" => %{mod_name: mod_name}})
       when name in @support_gen_fun do
     required_name = @required_mods[name]
 

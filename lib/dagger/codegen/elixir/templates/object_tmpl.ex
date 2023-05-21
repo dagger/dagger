@@ -4,8 +4,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   alias Dagger.Codegen.Elixir.Function
   alias Dagger.Codegen.Elixir.Module, as: Mod
 
-  def render(%{"name" => name, "fields" => fields, "description" => desc} = _full_type) do
-    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+  def render(
+        %{
+          "name" => name,
+          "fields" => fields,
+          "description" => desc,
+          "private" => %{mod_name: mod_name}
+        } = _full_type
+      ) do
     defs = render_functions(Function.format_var_name(name), fields)
 
     quote do

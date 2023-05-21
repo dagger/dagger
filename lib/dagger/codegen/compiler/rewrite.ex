@@ -18,7 +18,7 @@ defmodule Dagger.Codegen.Compiler.Rewrite do
 
   defp gen_module_name(%{"name" => name} = type) do
     type
-    |> put_private("mod_name", Module.concat([Dagger, Mod.format_name(name)]))
+    |> put_private(:mod_name, Module.concat([Dagger, Mod.format_name(name)]))
   end
 
   defp put_private(%{"private" => private} = type, key, value) do
