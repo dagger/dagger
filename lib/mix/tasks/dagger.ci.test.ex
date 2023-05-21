@@ -1,4 +1,4 @@
-defmodule Mix.Tasks.Ci.Test do
+defmodule Mix.Tasks.Dagger.Ci.Test do
   @moduledoc "Test the project with Dagger."
 
   use Mix.Task

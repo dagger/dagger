@@ -43,7 +43,7 @@ jobs:
         run: mix deps.get
       - name: Test
         run: |
-          dagger run --debug mix ci.test
+          dagger run --debug mix dagger.ci.test
   test-local-cli:
     name: Test local cli
     runs-on: ubuntu-latest
@@ -78,7 +78,7 @@ jobs:
         env:
           _EXPERIMENTAL_DAGGER_CLI_BIN: dagger
         run: |
-          mix ci.test
+          mix dagger.ci.test
   test-downloaded-cli:
     name: Test downloaded cli
     runs-on: ubuntu-latest
@@ -101,7 +101,7 @@ jobs:
         env:
           _EXPERIMENTAL_DAGGER_CLI_BIN: dagger
         run: |
-          mix ci.test
+          mix dagger.ci.test
       - name: Verify dagger binary exists
         run: |
           test -f "${XDG_CACHE_HOME}/dagger/dagger-${DAGGER_VERSION}"
