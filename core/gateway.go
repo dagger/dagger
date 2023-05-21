@@ -22,7 +22,7 @@ import (
 
 const (
 	// Exec errors will only include the last this number of bytes of output.
-	MaxExecErrorOutputBytes = 2 * 1024
+	MaxExecErrorOutputBytes = 100 * 1024
 
 	// MaxFileContentsChunkSize sets the maximum chunk size for ReadFile calls
 	// Equals around 95% of the max message size (16777216) in
