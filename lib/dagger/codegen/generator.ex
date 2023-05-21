@@ -27,20 +27,18 @@ defmodule Dagger.Codegen.Compiler do
           }
         } = _introspection
       ) do
-    compile_types(types)
-  end
-
-  defp compile_types(types) do
-    compile_modules(
-      types |> Enum.filter(&(&1["kind"] in ["ENUM", "OBJECT", "SCALAR"])),
-      graphql_introspection_types()
-    )
-  end
-
-  defp compile_modules(object_types, excludes) when is_list(excludes) do
-    object_types
-    |> Enum.filter(&(&1["name"] not in excludes))
+    types
+    |> Enum.filter(&only_supported_kinds/1)
+    |> Enum.filter(&not_graphql_introspection_types/1)
     |> Enum.map(&render/1)
+  end
+
+  defp only_supported_kinds(%{"kind" => kind}) do
+    kind in ["ENUM", "OBJECT", "SCALAR"]
+  end
+
+  defp not_graphql_introspection_types(%{"name" => name}) do
+    name not in graphql_introspection_types()
   end
 
   defp graphql_introspection_types() do
