@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -135,8 +136,52 @@ func (r Rust) Lint(ctx context.Context) error {
 }
 
 // Publish implements SDK
-func (Rust) Publish(ctx context.Context, tag string) error {
-	panic("unimplemented")
+func (r Rust) Publish(ctx context.Context, tag string) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("rust").Pipeline("publish")
+
+	var (
+		version  = strings.TrimPrefix(tag, "sdk/rust/v")
+		token, _ = util.WithSetHostVar(ctx, c.Host(), "CARGO_REGISTRY_TOKEN").
+				Secret().
+				Plaintext(ctx)
+		dry_run = os.Getenv("CARGO_PUBLISH_DRYRUN")
+		crate   = "dagger-sdk"
+	)
+
+	if token == "" && dry_run == "false" {
+		return errors.New("CARGO_TOKEN environment variable must be set")
+	}
+
+	base := r.
+		rustBase(ctx, c, "rust:1.69-bullseye").
+		WithExec([]string{
+			"cargo", "install", "cargo-edit",
+		}).WithExec([]string{
+		"cargo", "set-version", "-p", crate, version,
+	})
+
+	args := []string{
+		"cargo", "publish", "-p", crate, "-v", "--all-features",
+	}
+
+	if dry_run == "false" {
+		base = base.
+			WithEnvVariable("CARGO_REGISTRY_TOKEN", token).
+			WithExec(args)
+	} else {
+		args = append(args, "--dry-run")
+		base = base.WithExec(args)
+	}
+
+	_, err = base.ExitCode(ctx)
+
+	return err
 }
 
 // Test implements SDK
