@@ -2972,6 +2972,11 @@ func TestContainerExecError(t *testing.T) {
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
+		truncMsg := fmt.Sprintf(
+			core.TruncationMessage,
+			core.MaxExecErrorOutputBytes,
+		)
+
 		_, err = c.Container().
 			From("alpine:3.16.2").
 			WithExec(
@@ -2981,9 +2986,9 @@ func TestContainerExecError(t *testing.T) {
 			).
 			Sync(ctx)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes])
+		require.Contains(t, err.Error(), truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes])
 		require.NotContains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes+1])
-		require.Contains(t, err.Error(), stderrStr[:core.MaxExecErrorOutputBytes])
+		require.Contains(t, err.Error(), truncMsg+stderrStr[:core.MaxExecErrorOutputBytes])
 		require.NotContains(t, err.Error(), stderrStr[:core.MaxExecErrorOutputBytes+1])
 	})
 }

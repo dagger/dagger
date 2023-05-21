@@ -196,6 +196,10 @@ func shim() int {
 			if seekFromEnd > core.MaxExecErrorOutputBytes {
 				// copy the last MaxExecErrorOutputBytes bytes only
 				seekFromEnd = core.MaxExecErrorOutputBytes
+                io.WriteString(os.Stdout, fmt.Sprintf(
+                    core.TruncationMessage,
+                    stdoutFileSize - seekFromEnd,
+                ))
 			}
 			_, err = stdoutFile.Seek(-int64(seekFromEnd), io.SeekEnd)
 			if err != nil {
@@ -219,6 +223,10 @@ func shim() int {
 			if seekFromEnd > core.MaxExecErrorOutputBytes {
 				// copy the last MaxExecErrorOutputBytes bytes only
 				seekFromEnd = core.MaxExecErrorOutputBytes
+                io.WriteString(os.Stderr, fmt.Sprintf(
+                    core.TruncationMessage,
+                    stderrFileSize - seekFromEnd,
+                ))
 			}
 			_, err = stderrFile.Seek(-int64(seekFromEnd), io.SeekEnd)
 			if err != nil {
