@@ -10,4 +10,3 @@ defmodule Dagger.Codegen.Generator do
     Dagger.Codegen.Compiler.compile(resp["data"])
   end
 end
-
