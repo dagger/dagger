@@ -1687,7 +1687,20 @@ func (container *Container) Endpoint(port int, scheme string) (string, error) {
 func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
 	container = container.Clone()
 
-	container.Ports = append(container.Ports, port)
+	// replace existing port to avoid duplicates
+	gotOne := false
+
+	for i, p := range container.Ports {
+		if p.Port == port.Port && p.Protocol == port.Protocol {
+			container.Ports[i] = port
+			gotOne = true
+			break
+		}
+	}
+
+	if !gotOne {
+		container.Ports = append(container.Ports, port)
+	}
 
 	if container.Config.ExposedPorts == nil {
 		container.Config.ExposedPorts = map[string]struct{}{}

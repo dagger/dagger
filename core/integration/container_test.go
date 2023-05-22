@@ -3265,7 +3265,8 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 			Sharing: dagger.Private,
 		}).
 		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
-		WithExposedPort(2375).
+		WithoutExposedPort(2376).
+		WithExposedPort(2375). // not needed, just to be explicit
 		WithExec([]string{
 			"dockerd",
 			"--host=tcp://0.0.0.0:2375",
