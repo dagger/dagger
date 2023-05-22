@@ -411,7 +411,6 @@ The following code listing demonstrates how to invalidate the Dagger cache and t
 </TabItem>
 </Tabs>
 
-
 ## Outputs
 
 ### Publish image to registry
