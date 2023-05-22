@@ -49,7 +49,9 @@ defmodule Dagger.Client do
   end
 
   def disconnect(%__MODULE__{conn: conn}) do
-    EngineConn.disconnect(conn)
+    with :quit <- EngineConn.disconnect(conn) do
+      :ok
+    end
   end
 
   def query(%__MODULE__{opts: opts} = client, query) when is_binary(query) do

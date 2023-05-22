@@ -39,7 +39,7 @@ defmodule Dagger do
   @doc """
   Disconnecting Dagger.
   """
-  def disconnect(%Dagger.Query{client: client}) do
+  def close(%Dagger.Query{client: client}) do
     Dagger.Client.disconnect(client)
   end
 end

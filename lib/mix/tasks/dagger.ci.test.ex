@@ -63,7 +63,7 @@ defmodule Mix.Tasks.Dagger.Ci.Test do
     case Dagger.connect(opts) do
       {:ok, client} ->
         result = fun.(client)
-        Dagger.disconnect(client)
+        Dagger.close(client)
         result
 
       {:error, :session_timeout} ->
