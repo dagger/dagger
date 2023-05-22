@@ -5,6 +5,7 @@ edition = "2021"
 readme = "README.md"
 license-file = "LICENSE.MIT"
 description = "A dagger sdk for rust, written in rust"
+authors = ["kjuulh <contact@kasperhermansen.com>", "Dagger <hello@dagger.io>"]
 repository = "https://github.com/dagger/dagger"
 publish = true
 
