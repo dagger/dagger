@@ -165,7 +165,7 @@ jobs:
 
   sdk-rust:
     name: "sdk / rust"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04-16c-64g-600gb
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
