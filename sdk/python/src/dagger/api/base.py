@@ -92,7 +92,7 @@ class Context:
         return dsl_gql(DSLQuery(self.build()))
 
     @overload
-    async def execute(self, return_type: None) -> None:
+    async def execute(self, return_type: None = None) -> None:
         ...
 
     @overload

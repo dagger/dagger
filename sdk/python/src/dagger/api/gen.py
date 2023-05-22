@@ -825,6 +825,9 @@ class Container(Type):
         await _ctx.execute()
         return self
 
+    def __await__(self):
+        return self.sync().__await__()
+
     @typecheck
     async def user(self) -> Optional[str]:
         """Retrieves the user to be set for all commands.
