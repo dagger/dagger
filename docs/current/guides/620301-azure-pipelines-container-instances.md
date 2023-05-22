@@ -4,7 +4,7 @@ displayed_sidebar: "current"
 category: "guides"
 tags: ["nodejs", "go", "python", "azure-pipelines", "azure-container-instances"]
 authors: ["Vikram Vaswani"]
-date: "2023-07-24"
+date: "2023-05-30"
 ---
 
 import Tabs from "@theme/Tabs";
