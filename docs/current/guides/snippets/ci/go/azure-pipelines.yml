@@ -1,0 +1,18 @@
+trigger:
+- master
+
+pool:
+  name: 'Default'
+  vmImage: ubuntu-latest
+
+steps:
+- task: GoTool@0
+  inputs:
+    version: '1.20'
+
+- script: |
+    go get dagger.io/dagger@latest
+  displayName: 'Install Dagger Go SDK'
+
+- script: go run ci/main.go
+  displayName: 'Run Dagger'
