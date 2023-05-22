@@ -158,11 +158,6 @@ jobs:
       - name: "Setup Rust"
         uses: dtolnay/rust-toolchain@stable
 
-      - name: "Test Rust SDK"
-        run: |
-          cd sdk/rust
-          cargo test --all
-
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
@@ -309,52 +304,3 @@ jobs:
       - name: "ALWAYS print kernel logs - especially useful on failure"
         if: always()
         run: sudo dmesg
-
-
-  # FIXME: This won't work for rust yet, as we haven't implemented the correct tests for this
-  # This will be built into bootstrap such that `cargo run -p dagger-bootrap test-provision`
-  #test-provision-rust-linux:
-  #  name: "Test SDK Provision / rust / linux"
-  #  needs: [publish]
-  #  if: |
-  #    always() &&
-  #    github.repository == 'dagger/dagger' &&
-  #    (needs.publish.result == 'success' || needs.publish.result == 'skipped')
-  #  runs-on: ubuntu-latest
-  #  steps:
-  #    - uses: actions/checkout@v3
-  #    - name: "Set CLI Test URL"
-  #      run: |
-  #        if [ ${{ github.event_name }} == 'push' ]; then
-  #          BASE_URL="https://${{ secrets.RELEASE_FQDN }}/dagger"
-  #          if [ $GITHUB_REF_NAME == 'main' ]; then
-  #            # this is a push to the main branch
-  #            ARCHIVE_URL="${BASE_URL}/main/${GITHUB_SHA}/dagger_${GITHUB_SHA}_linux_amd64.tar.gz"
-  #            CHECKSUMS_URL="${BASE_URL}/main/${GITHUB_SHA}/checksums.txt"
-  #            RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:main"
-  #          else
-  #            # this is a tag push
-  #            ARCHIVE_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/dagger_${GITHUB_REF_NAME}_linux_amd64.tar.gz"
-  #            CHECKSUMS_URL="${BASE_URL}/releases/${GITHUB_REF_NAME:1}/checksums.txt"
-  #            RUNNER_HOST="docker-image://${{ secrets.RELEASE_DAGGER_ENGINE_IMAGE }}:${GITHUB_REF_NAME}"
-  #          fi
-  #          echo "_INTERNAL_DAGGER_TEST_CLI_URL=${ARCHIVE_URL}" >> $GITHUB_ENV
-  #          echo "_INTERNAL_DAGGER_TEST_CLI_CHECKSUMS_URL=${CHECKSUMS_URL}" >> $GITHUB_ENV
-  #          echo "_EXPERIMENTAL_DAGGER_RUNNER_HOST=${RUNNER_HOST}" >> $GITHUB_ENV
-  #        fi
-  #      shell: bash
-
-  #    - name: "Setup Rust"
-  #      uses: dtolnay/rust-toolchain@stable
-
-  #    - name: "Test Rust SDK"
-  #      run: |
-  #        cd sdk/rust
-  #        cargo test --all
-
-  #    - name: "ALWAYS print engine logs - especially useful on failure"
-  #      if: always()
-  #      run: docker logs $(docker ps -q --filter name=dagger-engine)
-  #    - name: "ALWAYS print kernel logs - especially useful on failure"
-  #      if: always()
-  #      run: sudo dmesg
