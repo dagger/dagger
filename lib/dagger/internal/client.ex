@@ -1,12 +1,13 @@
-defmodule Dagger.Client do
-  @moduledoc """
-  The Dagger client.
-  """
+defmodule Dagger.Internal.Client do
+  @moduledoc false
+
+  # Dagger GraphQL client.
 
   alias Dagger.EngineConn
 
   defstruct [:req, :conn, :opts]
 
+  @doc false
   def connect(opts \\ []) do
     with {:ok, opts} <- NimbleOptions.validate(opts, connect_schema()),
          {:ok, conn} <- EngineConn.get(opts) do
@@ -21,6 +22,7 @@ defmodule Dagger.Client do
     end
   end
 
+  @doc false
   def connect_schema() do
     [
       workdir: [
@@ -48,12 +50,14 @@ defmodule Dagger.Client do
     ]
   end
 
-  def disconnect(%__MODULE__{conn: conn}) do
+  @doc false
+  def close(%__MODULE__{conn: conn}) do
     with :quit <- EngineConn.disconnect(conn) do
       :ok
     end
   end
 
+  @doc false
   def query(%__MODULE__{opts: opts} = client, query) when is_binary(query) do
     Req.post(client.req,
       url: "/query",

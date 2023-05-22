@@ -5,8 +5,6 @@ defmodule Dagger do
   See `getting_start.livemd` for starter point.
   """
 
-  use Dagger.QueryBuilder
-
   defstruct [:client, :query]
 
   @doc """
@@ -14,14 +12,14 @@ defmodule Dagger do
 
   ## Options
 
-  #{NimbleOptions.docs(Dagger.Client.connect_schema())}
+  #{NimbleOptions.docs(Dagger.Internal.Client.connect_schema())}
   """
   def connect(opts \\ []) do
-    with {:ok, client} <- Dagger.Client.connect(opts) do
+    with {:ok, client} <- Dagger.Internal.Client.connect(opts) do
       {:ok,
        %Dagger.Query{
          client: client,
-         selection: query()
+         selection: Dagger.QueryBuilder.Selection.query()
        }}
     end
   end
@@ -40,6 +38,6 @@ defmodule Dagger do
   Disconnecting Dagger.
   """
   def close(%Dagger.Query{client: client}) do
-    Dagger.Client.disconnect(client)
+    Dagger.Internal.Client.close(client)
   end
 end

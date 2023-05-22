@@ -68,7 +68,7 @@ defmodule Dagger.QueryBuilder do
   @moduledoc false
 
   alias Dagger.QueryBuilder.Selection
-  alias Dagger.Client
+  alias Dagger.Internal.Client
 
   def execute(selection, client) do
     q = Selection.build(selection)
