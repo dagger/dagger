@@ -53,6 +53,7 @@ By default, Dagger tries to invoke the `docker` executable.
     #!/bin/sh
     lima nerdctl "$@"
     ```
+
   Then, create a symbolic link to the shell script and name it `docker`:
 
   ```shell
