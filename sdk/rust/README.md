@@ -1,14 +1,16 @@
-> **Warning**
-> This SDK is **experimental**. Please do not use it for anything mission-critical. Possible issues include:
+> **Warning** This SDK is **experimental**. Please do not use it for anything
+> mission-critical. Possible issues include:
 
-* Missing features
-* Stability issues
-* Performance issues
-* Lack of polish
-* Upcoming breaking changes
-* Incomplete or out-of-date documentation
+- Missing features
+- Stability issues
+- Performance issues
+- Lack of polish
+- Upcoming breaking changes
+- Incomplete or out-of-date documentation
 
-Please report any issues you encounter. We appreciate and encourage contributions. If you are a Rust developer interested in contributing to this SDK, we welcome you!
+Please report any issues you encounter. We appreciate and encourage
+contributions. If you are a Rust developer interested in contributing to this
+SDK, we welcome you!
 
 # Dagger Rust SDK
 
@@ -20,7 +22,6 @@ Please report any issues you encounter. We appreciate and encourage contribution
 - [ ] Add open telemetry tracing to the sdk
 - [ ] Remove `id().await?` from passing to other dagger graphs, this should make
       the design much cleaner
-- [ ] Start MkBook on how to actually use the sdk
 - [x] Update to newest upstream release
 - [ ] Fix bugs
   - [x] Run in conjunction with golang and other sdks

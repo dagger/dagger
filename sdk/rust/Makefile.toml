@@ -1,10 +1,5 @@
 [tasks.codegen]
 command = "cargo"
-args = ["run", "-p", "ci", "--", "codegen"]
-workspace = false
-
-[tasks.local_codegen]
-command = "cargo"
 args = [
   "run",
   "-p",
@@ -14,12 +9,6 @@ args = [
   "--output",
   "crates/dagger-sdk/src/gen.rs",
 ]
-workspace = false
-
-[tasks.build]
-command = "cargo"
-args = ["run", "-p", "ci", "--", "ci"]
-dependencies = ["codegen"]
 workspace = false
 
 [tasks.fmt]
@@ -34,27 +23,5 @@ dependencies = ["fmt"]
 workspace = false
 
 [tasks.gen]
-dependencies = ["local_codegen", "fmt", "fix"]
-workspace = false
-
-[tasks.release_crate]
-command = "cargo"
-args = [
-  "smart-release",
-  "--allow-fully-generated-changelogs",
-  "--update-crates-index",
-  "dagger-sdk",
-]
-dependencies = ["codegen", "fix"]
-workspace = false
-
-[tasks.release_crate_commit]
-command = "cargo"
-args = [
-  "smart-release",
-  "-e",
-  "--allow-fully-generated-changelogs",
-  "--update-crates-index",
-  "dagger-sdk",
-]
+dependencies = ["codegen", "fmt", "fix"]
 workspace = false
