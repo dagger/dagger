@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,9 @@ import (
 const (
 	// Exec errors will only include the last this number of bytes of output.
 	MaxExecErrorOutputBytes = 2 * 1024
+
+	// TruncationMessage is the message that will be prepended to truncated output.
+	TruncationMessage = "[omitting %d bytes]..."
 
 	// MaxFileContentsChunkSize sets the maximum chunk size for ReadFile calls
 	// Equals around 95% of the max message size (16777216) in
@@ -202,17 +206,20 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 			go ctr.Release(context.Background())
 		}()
 
+		maxTruncMsg := fmt.Sprintf(TruncationMessage, int64(math.MaxInt64))
+		maxOutputBytes := int64(MaxExecErrorOutputBytes + len(maxTruncMsg))
+
 		// Use a circular buffer to only save the last N bytes of output, which lets
 		// us prevent enormous error messages while retaining the output most likely
 		// to be of interest.
 		// NOTE: this is technically redundant with the output truncation done by
 		// the shim itself now, but still useful as a fallback in case something
 		// goes haywire there or if the session is talking to an older engine.
-		ctrOut, err := circbuf.NewBuffer(MaxExecErrorOutputBytes)
+		ctrOut, err := circbuf.NewBuffer(maxOutputBytes)
 		if err != nil {
 			return
 		}
-		ctrErr, err := circbuf.NewBuffer(MaxExecErrorOutputBytes)
+		ctrErr, err := circbuf.NewBuffer(maxOutputBytes)
 		if err != nil {
 			return
 		}
