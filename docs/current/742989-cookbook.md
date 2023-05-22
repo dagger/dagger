@@ -386,6 +386,32 @@ The following code listing creates a temporary MariaDB database service and bind
 
 [Learn more](./guides/757394-use-service-containers.md)
 
+### Invalidate the cache
+
+The following code listing demonstrates how to invalidate the Dagger cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/cache-invalidation/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/cache-invalidation/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/cache-invalidation/main.py
+```
+
+</TabItem>
+</Tabs>
+
+
 ## Outputs
 
 ### Publish image to registry
