@@ -1,0 +1,21 @@
+trigger:
+- master
+
+pool:
+  name: 'Azure Pipelines'
+  vmImage: ubuntu-latest
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.10.11'
+  displayName: 'Install Python'
+
+- script: pip install dagger-io azure-identity azure-mgmt-containerinstance
+  displayName: 'Install Dagger and Azure SDKs'
+
+- script: python ci/main.py
+  displayName: 'Run Dagger'
+  env:
+    DOCKERHUB_PASSWORD: $(DOCKERHUB_PASSWORD)
+    AZURE_CLIENT_SECRET: $(AZURE_CLIENT_SECRET)
