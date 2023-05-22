@@ -2979,12 +2979,13 @@ func TestContainerExecError(t *testing.T) {
 
 		_, err = c.Container().
 			From("alpine:3.16.2").
-			WithExec(
-				[]string{"sh", "-c", fmt.Sprintf(
-					`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
-				)},
+			WithDirectory("/", c.Directory().
+				WithNewFile("encout", encodedOutMsg).
+				WithNewFile("encerr", encodedErrMsg),
 			).
+			WithExec([]string{"sh", "-c", "base64 -d encout >&1; base64 -d encerr >&2; exit 1"}).
 			Sync(ctx)
+
 		require.Error(t, err)
 		require.Contains(t, err.Error(), truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes])
 		require.NotContains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes+1])
