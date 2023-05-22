@@ -37,7 +37,7 @@ This Go program imports the Dagger SDK and defines a `main()` function for the p
 
 - It creates a Dagger client with `dagger.Connect()`. This client provides an interface for executing commands against the Dagger Engine.
 - It uses the client's `Container().From()` method to initialize a new container from a base image. In this example, the base image is `golang:1.19`. This method returns a `Container` representing an OCI-compatible container image.
-- It uses the `Container.withExec()` method to define the command to be executed in the container - in this case, the command `go version`, which returns the Go version string. The `withExec()` method returns a revised `Container` with the results of command execution.
+- It uses the `Container.WithExec()` method to define the command to be executed in the container - in this case, the command `go version`, which returns the Go version string. The `WithExec()` method returns a revised `Container` with the results of command execution.
 - It retrieves the output stream of the last executed with the `Container.Stdout()` method and prints the result to the console.
 
 Run the pipeline by executing the command below from the application directory:
