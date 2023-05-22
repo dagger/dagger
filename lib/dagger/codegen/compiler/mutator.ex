@@ -10,8 +10,8 @@ defmodule Dagger.Codegen.Compiler.Mutator do
   def mutate(type) do
     type
     |> make_private()
-    |> gen_module_name()
     |> rename_query_type()
+    |> gen_module_name()
   end
 
   #
