@@ -3,7 +3,7 @@ defmodule Dagger.Codegen.Compiler do
 
   # Compile GraphQL introspection into Elixir code.
 
-  alias Dagger.Codegen.Compiler.Rewrite
+  alias Dagger.Codegen.Compiler.Mutator
   alias Dagger.Codegen.Elixir.Templates.Enum, as: EnumTmpl
   alias Dagger.Codegen.Elixir.Templates.Object
   alias Dagger.Codegen.Elixir.Templates.Scalar
@@ -20,7 +20,7 @@ defmodule Dagger.Codegen.Compiler do
     types
     |> Enum.filter(&only_supported_kinds/1)
     |> Enum.filter(&not_graphql_introspection_types/1)
-    |> Enum.map(&Rewrite.rewrite/1)
+    |> Enum.map(&Mutator.mutate/1)
     |> Enum.map(&render/1)
   end
 
