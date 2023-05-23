@@ -39,11 +39,26 @@ This guide assumes that you have `nerdctl` installed and running on the host sys
 
 ### Configuration
 
-By default, Dagger tries to invoke the `docker` executable. To use `nerdctl` instead, create a symbolic link to `nerdctl` in your system path and name it `docker`:
+By default, Dagger tries to invoke the `docker` executable.
 
-```shell
-sudo ln -s $(which nerdctl) /usr/local/bin/docker
-```
+- To use `nerdctl` directly, create a symbolic link to `nerdctl` in your system path and name it `docker`:
+
+  ```shell
+  sudo ln -s $(which nerdctl) /usr/local/bin/docker
+  ```
+
+- To use `nerdctl` via `lima`, create the following shell script at `/usr/local/bin/nerdctl`:
+
+    ```shell
+    #!/bin/sh
+    lima nerdctl "$@"
+    ```
+
+  Then, create a symbolic link to the shell script and name it `docker`:
+
+  ```shell
+  sudo ln -s /usr/local/bin/nerdctl /usr/local/bin/docker
+  ```
 
 ## Conclusion
 
