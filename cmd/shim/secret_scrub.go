@@ -6,7 +6,6 @@ import (
 	"io"
 	"io/fs"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -33,27 +32,16 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	lines := bytes.Split(b, []byte("\n"))
-
 	var written int
-	for i, line := range lines {
-		for _, secretBytes := range w.secrets {
-			line = bytes.ReplaceAll(line, secretBytes, scrubString)
-		}
-
-		n, err := w.w.Write(line)
-		if err != nil {
-			return -1, err
-		}
-		written += n
-		if i < len(lines)-1 {
-			n, err := w.w.Write([]byte("\n"))
-			if err != nil {
-				return -1, err
-			}
-			written += n
-		}
+	for _, secretBytes := range w.secrets {
+		b = bytes.ReplaceAll(b, secretBytes, scrubString)
 	}
+
+	n, err := w.w.Write(b)
+	if err != nil {
+		return -1, err
+	}
+	written += n
 
 	return written, nil
 }
@@ -70,10 +58,12 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	}
 	secrets = append(secrets, fileSecrets...)
 
-	secretLines := splitSecretsByLine(secrets)
-
 	secretAsBytes := make([][]byte, 0)
-	for _, v := range secretLines {
+	for _, v := range secrets {
+		// Skip empty env:
+		if len(v) == 0 {
+			continue
+		}
 		secretAsBytes = append(secretAsBytes, []byte(v))
 	}
 
@@ -83,39 +73,6 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 	}
 
 	return secretScrubWriter, nil
-}
-
-func splitSecretsByLine(secrets []string) []string {
-	var secretLines []string
-	savedSecrets := map[string]struct{}{}
-	for _, secretValue := range secrets {
-		lines := strings.Split(secretValue, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			// avoid duplicates lines
-			_, ok := savedSecrets[line]
-			if ok {
-				continue
-			}
-			savedSecrets[line] = struct{}{}
-
-			secretLines = append(secretLines, line)
-		}
-	}
-
-	// Make the secret lines ordered big first
-	// it avoids scrubbing substring of a bigger secret and then
-	// not scrubbing the rest of the bigger secret as it does not
-	// match anymore.
-	sort.SliceStable(secretLines, func(i, j int) bool {
-		return len(secretLines[i]) > len(secretLines[j])
-	})
-
-	return secretLines
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.

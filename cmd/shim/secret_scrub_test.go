@@ -44,11 +44,12 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file.")
+		_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file \nwith line feed.")
 		require.NoError(t, err)
 		want := "I love to share *** to my close ones. But I keep *** to myself. As well as ***."
 		require.Equal(t, want, buf.String())
 	})
+
 	t.Run("do not scrub empty env", func(t *testing.T) {
 		env := append(env, "EMPTY_SECRET_ID=")
 		currentDirPath := "/"
@@ -70,6 +71,7 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 		want := "I love to share my secret value to my close ones. But I keep my secret file to myself."
 		require.Equal(t, want, buf.String())
 	})
+
 }
 
 func TestLoadSecretsToScrubFromEnv(t *testing.T) {
@@ -178,12 +180,12 @@ func TestScrubSecretWrite(t *testing.T) {
 		input := "aaa\n" + sshSecretKey + "\nbbb\nccc"
 		_, err := w.Write([]byte(input))
 		require.NoError(t, err)
-		require.Equal(t, "aaa\n***\n***\n***\n***\n***\n***\n***\n\nbbb\nccc", out.String())
+		require.Equal(t, "aaa\n***\nbbb\nccc", out.String())
 		out.Reset()
 
 		_, err = w.Write([]byte(sshSecretKey))
 		require.NoError(t, err)
-		require.Equal(t, "***\n***\n***\n***\n***\n***\n***\n", out.String())
+		require.Equal(t, "***", out.String())
 		out.Reset()
 	})
 
@@ -204,4 +206,5 @@ func TestScrubSecretWrite(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "***\n***", out.String())
 	})
+
 }
