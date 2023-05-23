@@ -2,8 +2,9 @@ package dagger
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -152,7 +153,7 @@ func TestList(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 
-	c, err := Connect(ctx, WithLogOutput(os.Stdout))
+	c, err := Connect(ctx)
 	require.NoError(t, err)
 
 	defer c.Close()
@@ -182,4 +183,73 @@ func TestList(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "BAR", envName)
 	require.Equal(t, "BAZ", envValue)
+}
+
+func TestExecError(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	c, err := Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("get output and exit code", func(t *testing.T) {
+		t.Parallel()
+
+		outMsg := "STDOUT HERE"
+		errMsg := "STDERR HERE"
+
+		args := []string{"sh", "-c", fmt.Sprintf(
+			`echo %s >&1; echo %s >&2; exit 127`,
+			outMsg,
+			errMsg,
+		)}
+
+		_, err = c.
+			Container().
+			From("alpine:3.16.2").
+			WithExec(args).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.Equal(t, 127, exErr.ExitCode)
+		require.Equal(t, args, exErr.Cmd)
+		require.Equal(t, outMsg, exErr.Stdout)
+		require.Equal(t, errMsg, exErr.Stderr)
+	})
+
+	t.Run("no output", func(t *testing.T) {
+		t.Parallel()
+
+		_, err = c.
+			Container().
+			From("alpine:3.16.2").
+			WithExec([]string{"false"}).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.ErrorContains(t, exErr, "did not complete successfully: exit code: 1")
+		require.Equal(t, "", exErr.Stdout)
+		require.Equal(t, "", exErr.Stderr)
+	})
+
+	t.Run("not an exec error", func(t *testing.T) {
+		t.Parallel()
+
+		_, err = c.
+			Container().
+			From("invalid!").
+			WithExec([]string{"true"}).
+			Sync(ctx)
+
+		var exErr *ExecError
+
+		if errors.As(err, &exErr) {
+			t.Fatal("unexpected ExecError")
+		}
+	})
 }

@@ -2930,10 +2930,12 @@ func TestContainerExecError(t *testing.T) {
 				`echo %s | base64 -d >&1; echo %s | base64 -d >&2; exit 1`, encodedOutMsg, encodedErrMsg,
 			)}).
 			Sync(ctx)
-		require.Error(t, err)
 
-		require.Contains(t, err.Error(), outMsg)
-		require.Contains(t, err.Error(), errMsg)
+		var exErr *dagger.ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.Equal(t, outMsg, exErr.Stdout)
+		require.Equal(t, errMsg, exErr.Stderr)
 	})
 
 	t.Run("includes output of failed exec in error when redirects are enabled", func(t *testing.T) {
@@ -2949,10 +2951,12 @@ func TestContainerExecError(t *testing.T) {
 				},
 			).
 			Sync(ctx)
-		require.Error(t, err)
 
-		require.Contains(t, err.Error(), outMsg)
-		require.Contains(t, err.Error(), errMsg)
+		var exErr *dagger.ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.Equal(t, outMsg, exErr.Stdout)
+		require.Equal(t, errMsg, exErr.Stderr)
 	})
 
 	t.Run("truncates output past a maximum size", func(t *testing.T) {
@@ -2986,11 +2990,11 @@ func TestContainerExecError(t *testing.T) {
 			WithExec([]string{"sh", "-c", "base64 -d encout >&1; base64 -d encerr >&2; exit 1"}).
 			Sync(ctx)
 
-		require.Error(t, err)
-		require.Contains(t, err.Error(), truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes])
-		require.NotContains(t, err.Error(), stdoutStr[:core.MaxExecErrorOutputBytes+1])
-		require.Contains(t, err.Error(), truncMsg+stderrStr[:core.MaxExecErrorOutputBytes])
-		require.NotContains(t, err.Error(), stderrStr[:core.MaxExecErrorOutputBytes+1])
+		var exErr *dagger.ExecError
+
+		require.ErrorAs(t, err, &exErr)
+		require.Equal(t, truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:core.MaxExecErrorOutputBytes], exErr.Stderr)
 	})
 }
 

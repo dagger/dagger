@@ -1,3 +1,5 @@
+from typing import Any
+
 import attrs
 import cattrs
 import graphql
@@ -67,6 +69,7 @@ class QueryErrorValue:
     message: str
     locations: list[QueryErrorLocation]
     path: list[str]
+    extensions: dict[str, Any] = attrs.Factory(dict)
 
     def __str__(self) -> str:
         return self.message
@@ -74,6 +77,20 @@ class QueryErrorValue:
 
 class QueryError(ClientError):
     """The server returned an error for a specific query."""
+
+    _type = None
+
+    def __new__(cls, errors: list[QueryErrorValue], *_):
+        error_types = {
+            subclass._type: subclass  # noqa: SLF001
+            for subclass in cls.__subclasses__()
+            if subclass._type  # noqa: SLF001
+        }
+        try:
+            new_type = error_types[errors[0].extensions["_type"]]
+        except (KeyError, IndexError):
+            return super().__new__(cls)
+        return super().__new__(new_type)
 
     def __init__(self, errors: list[QueryErrorValue], query: graphql.DocumentNode):
         if not errors:
@@ -106,3 +123,19 @@ class QueryError(ClientError):
                 # add caret below line, pointing to start of error
                 res.append(" " * (pad + 1 + locations[nr]) + "^")
         return "\n".join(res)
+
+
+class ExecError(QueryError):
+    """API error from an exec operation."""
+
+    _type = "EXEC_ERROR"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        error: QueryErrorValue = self.args[0]
+        ext = error.extensions
+        self.command: list[str] = ext["cmd"]
+        self.exit_code: int = ext["exitCode"]
+        self.stdout: str = ext["stdout"]
+        self.stderr: str = ext["stderr"]

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -239,11 +241,32 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err := proc.Wait(); err != nil {
 			return
 		}
-		stdout := strings.TrimSpace(ctrOut.String())
-		stderr := strings.TrimSpace(ctrErr.String())
-		returnErr = fmt.Errorf("%w\nStdout:\n%s\nStderr:\n%s", returnErr, stdout, stderr)
+
+		returnErr = &ExecError{
+			original: returnErr,
+			Cmd:      execOp.Exec.Meta.Args,
+			// FIXME: extracting the exit code from the error message is a
+			// quick hack.
+			ExitCode: parseExitCode(returnErr.Error()),
+			Stdout:   strings.TrimSpace(ctrOut.String()),
+			Stderr:   strings.TrimSpace(ctrErr.String()),
+		}
 	}
 	*inputErr = returnErr
+}
+
+func parseExitCode(msg string) int {
+	re := regexp.MustCompile(`exit code: (\d+)`)
+	matches := re.FindStringSubmatch(msg)
+
+	if len(matches) > 1 {
+		code, err := strconv.Atoi(matches[1])
+		if err == nil {
+			return code
+		}
+	}
+
+	return -1
 }
 
 type nopCloser struct {
