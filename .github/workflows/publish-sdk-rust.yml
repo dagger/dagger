@@ -1,8 +1,8 @@
-name: "Publish Go SDK"
+name: "Publish Rust SDK"
 on:
   push:
     branches: ["main"]
-    tags: ["sdk/go/v**"]
+    tags: ["sdk/rust/v**"]
 jobs:
   publish:
     if: github.repository == 'dagger/dagger'
