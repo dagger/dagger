@@ -11,7 +11,7 @@ public class WithExec : GraphQLElement
         }
     }
 
-    public WithExec(ArgList args, IEnumerable<GraphQLElement>? sub = null)
+    public WithExec(string[] args, IEnumerable<GraphQLElement>? sub = null)
     {
         Name = "withExec";
         if (args != null)
@@ -22,14 +22,6 @@ public class WithExec : GraphQLElement
         foreach (var element in sub ?? Enumerable.Empty<GraphQLElement>())
         {
             Body.Add(element);
-        }
-    }
-
-    public class ArgList : List<string>
-    {
-        public ArgList(params string[] args)
-        {
-            AddRange(args);
         }
     }
 }

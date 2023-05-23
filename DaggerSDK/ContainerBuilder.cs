@@ -7,7 +7,7 @@ public class ContainerBuilder
 {
     public string Platform { get; set; } = "";
     public string BaseImage { get; set; } = "";
-    public CommandArgs[] Commands { get; set; } = new CommandArgs[0];
+    public List<string[]> Commands { get; set; } = new();
 
     public GraphQLElement GetQuery()
     {
@@ -19,7 +19,7 @@ public class ContainerBuilder
         var curr = result.Body[0];
         foreach (var c in Commands)
         {
-            var sub = new WithExec(c.args);
+            var sub = new WithExec(c);
             curr.Body.Add(sub);
             curr = sub;
         }
@@ -27,15 +27,5 @@ public class ContainerBuilder
         curr.Body.Add((GraphQLElement)"stdout");
         curr.Body.Add((GraphQLElement)"stderr");
         return result;
-    }
-
-    public class CommandArgs
-    {
-        public string[] args { get; }
-
-        public CommandArgs(params string[] args)
-        {
-            this.args = args;
-        }
     }
 }

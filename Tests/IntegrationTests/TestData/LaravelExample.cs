@@ -36,21 +36,21 @@ public class LaravelExample
     public static GraphQLElement RuntimeQueryElement = new Container(platform: "linux/amd64", new[] {
         new From(address: "php:8.2-apache-buster", new[]
         {
-            new WithExec(args: new ("apt-get", "update"), new []
+            new WithExec(args: new []{"apt-get", "update" }, new []
             {
-                new WithExec(args: new ("apt-get", "install", "--yes", "git-core"), new []
+                new WithExec(args: new []{"apt-get", "install", "--yes", "git-core" }, new []
                 {
-                    new WithExec(args: new ("apt-get", "install", "--yes", "zip"), new[]
+                    new WithExec(args: new []{"apt-get", "install", "--yes", "zip" }, new[]
                     {
-                        new WithExec(args: new ("apt-get", "install", "--yes", "curl"), new[]
+                        new WithExec(args: new []{"apt-get", "install", "--yes", "curl" }, new[]
                         {
-                            new WithExec(args: new ("docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"), new[]
+                            new WithExec(args: new []{"docker-php-ext-install", "pdo", "pdo_mysql", "mysqli" }, new[]
                             {
-                                new WithExec(args: new ("sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"), new[]
+                                new WithExec(args: new []{"sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf" }, new[]
                                 {
-                                    new WithExec(args: new ("sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"), new[]
+                                    new WithExec(args: new []{"sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf" }, new[]
                                     {
-                                        new WithExec(args: new ("a2enmod", "rewrite"), new []
+                                        new WithExec(args: new []{"a2enmod", "rewrite" }, new []
                                         {
                                             (GraphQLElement) "stdout",
                                             (GraphQLElement) "stderr"
@@ -69,16 +69,16 @@ public class LaravelExample
     {
         Platform = "linux/amd64",
         BaseImage = "php:8.2-apache-buster",
-        Commands = new ContainerBuilder.CommandArgs[]
+        Commands = new()
         {
-            new("apt-get", "update"),
-            new("apt-get", "install", "--yes", "git-core"),
-            new("apt-get", "install", "--yes", "zip"),
-            new("apt-get", "install", "--yes", "curl"),
-            new("docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"),
-            new("sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"),
-            new("sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"),
-            new("a2enmod", "rewrite"),
+            new[]{"apt-get", "update"},
+            new[]{"apt-get", "install", "--yes", "git-core"},
+            new[]{"apt-get", "install", "--yes", "zip"},
+            new[]{"apt-get", "install", "--yes", "curl"},
+            new[]{"docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"},
+            new[]{"sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"},
+            new[]{"sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"},
+            new[]{"a2enmod", "rewrite" },
         }
     };
 }
