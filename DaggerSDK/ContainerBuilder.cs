@@ -24,8 +24,8 @@ public class ContainerBuilder
             curr = sub;
         }
 
-        curr.Body.Add((GraphQLElement)"stdout");
-        curr.Body.Add((GraphQLElement)"stderr");
+        curr.Body.Add(new("stdout"));
+        curr.Body.Add(new("stderr"));
         return result;
     }
 }
