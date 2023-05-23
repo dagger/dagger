@@ -80,7 +80,6 @@ dagger run [--debug] [command]
 | ------------ | -----------------------------|
 | `--debug`    | Display underlying API calls |
 
-
 ### Example
 
 Make an HTTP request using `curl`:
