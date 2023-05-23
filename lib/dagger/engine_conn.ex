@@ -128,9 +128,7 @@ defmodule Dagger.EngineConn do
 
   defp start_cli_session(bin_path, opts) do
     connect_timeout = opts[:connect_timeout]
-    # TODO: setup logger base on `opts`.
-    session_pid =
-      spawn_link(Dagger.Session, :start, [bin_path, self(), &Dagger.StdoutLogger.log/1])
+    session_pid = spawn_link(Dagger.Session, :start, [bin_path, self(), opts])
 
     receive do
       {^session_pid, %{"port" => port, "session_token" => token}} ->

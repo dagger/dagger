@@ -1,8 +1,18 @@
 defmodule Dagger.Session do
   @moduledoc false
 
-  def start(bin, engine_conn_pid, logger) do
-    port = Port.open({:spawn_executable, bin}, [:binary, :stderr_to_stdout, args: ["session"]])
+  def start(bin, engine_conn_pid, opts) do
+    workdir = opts[:workdir] || File.cwd!()
+    logger = logger_from(opts[:log_output])
+
+    args = ["--workdir", Path.expand(workdir)]
+
+    port =
+      Port.open({:spawn_executable, bin}, [
+        :binary,
+        :stderr_to_stdout,
+        args: ["session" | args]
+      ])
 
     with :ok <- wait_for_session(port, engine_conn_pid, logger) do
       log_polling(port, logger)
@@ -43,14 +53,8 @@ defmodule Dagger.Session do
         :ok
     end
   end
-end
 
-defmodule Dagger.StdoutLogger do
-  @moduledoc false
-
-  # Log the entry into standard output.
-
-  def log(line) do
-    IO.write(line)
+  defp logger_from(log_output) do
+    fn msg -> IO.binwrite(log_output, msg) end
   end
 end

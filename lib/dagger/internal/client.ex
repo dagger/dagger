@@ -29,13 +29,10 @@ defmodule Dagger.Internal.Client do
         type: :string,
         doc: "Sets the engine workdir."
       ],
-      config_path: [
-        type: :string,
-        doc: "Sets the engine config path."
-      ],
       log_output: [
-        type: :atom,
-        doc: "Sets the progress writer."
+        type: {:or, [:atom, :pid]},
+        doc: "The log device to write the progress.",
+        default: :stderr
       ],
       connect_timeout: [
         type: :timeout,
