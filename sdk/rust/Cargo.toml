@@ -1,0 +1,23 @@
+[workspace]
+members = [
+  "crates/dagger-codegen",
+  "crates/dagger-sdk",
+  "crates/dagger-bootstrap",
+]
+
+[workspace.dependencies]
+dagger-codegen = { path = "crates/dagger-codegen", version = "^0.2.5" }
+dagger-bootstrap = { path = "crates/dagger-bootstrap", version = "^0.2.10" }
+dagger-sdk = { path = "crates/dagger-sdk", version = "^0.2.19" }
+
+eyre = "0.6.8"
+color-eyre = "0.6.2"
+serde = { version = "1.0.152", features = ["derive"] }
+serde_json = "1.0.93"
+tokio = { version = "1.25.0", features = ["full"] }
+tracing = { version = "0.1.37", features = ["log"] }
+tracing-subscriber = { version = "0.3.16", features = [
+  "tracing-log",
+  "tracing",
+] }
+thiserror = "1.0.40"
