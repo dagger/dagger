@@ -55,13 +55,31 @@ dagger completion bash > $(brew --prefix)/etc/bash_completion.d/dagger
 
 ## dagger run
 
-Executes the specified command in a Dagger session. `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be injected automatically.
+Executes the specified command in a Dagger session and displays live progress. `DAGGER_SESSION_PORT` and `DAGGER_SESSION_TOKEN` will be injected automatically.
+
+In the live progress output:
+
+* Parallel pipelines are represented by vertical columns (┃ for active, │ for inactive).
+* Operations within a pipeline are represented by block characters (█).
+* Sub-tasks of an operation are listed beneath it (┣).
+* Actively running operations blink until they finish (█▓▒░█▓▒░).
+* Each pipeline forks from its parent pipeline and show its name in bold after a caret (▼).
+* Dependencies across pipelines are shown as a column that forks beneath the output operation and connects to each input, with the name of the output in grey (`pull docker.io/library/node:16`).
+* Actively running operations are always shown at the bottom of the screen.
+* Failed operations are also always shown at the bottom of the screen.
 
 ### Usage
 
 ```shell
-dagger run [command]
+dagger run [--debug] [command]
 ```
+
+### Options
+
+| Option       | Description                  |
+| ------------ | -----------------------------|
+| `--debug`    | Display underlying API calls |
+
 
 ### Example
 
@@ -110,7 +128,6 @@ dagger query [--doc file] [--var string] [--var-json string] [query]
 | `--doc`      | Read query from file        |
 | `--var`      | Read query from string      |
 | `--var-json` | Read query from JSON string |
-| ---          | ---                         |
 
 ### Example
 
