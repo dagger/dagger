@@ -390,6 +390,10 @@ The following code listing creates a temporary MariaDB database service and bind
 
 The following code listing demonstrates how to invalidate the Dagger cache and thereby force execution of subsequent pipeline steps, by introducing a volatile time variable at a specific point in the Dagger pipeline.
 
+:::note
+This is a temporary workaround until cache invalidation support is officially added to Dagger.
+:::
+
 <Tabs groupId="language">
 <TabItem value="Go">
 
