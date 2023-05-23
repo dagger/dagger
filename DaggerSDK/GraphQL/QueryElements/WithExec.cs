@@ -2,6 +2,15 @@
 
 public class WithExec : GraphQLElement
 {
+    public WithExec(string[] args)
+    {
+        Name = "withExec";
+        if (args != null)
+        {
+            Params.Add("args", args);
+        }
+    }
+
     public WithExec(ArgList args, IEnumerable<GraphQLElement>? sub = null)
     {
         Name = "withExec";

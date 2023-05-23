@@ -26,4 +26,16 @@ public class BasicTests
         Console.WriteLine(q);
         Assert.That(q, Is.EqualTo(LaravelExample.RuntimeQuery.Replace("\r\n", "\n").Replace("    ", "  ")));
     }
+
+    [Test]
+    public void ContainerBuilder()
+    {
+        var builder = LaravelExample.ContainerBuilder;
+        var builderQuery = Serializer.Serialize(builder.GetQuery());
+
+        var compare = LaravelExample.RuntimeQueryElement;
+        var expectedResult = Serializer.Serialize(compare);
+
+        Assert.That(builderQuery, Is.EqualTo(expectedResult));
+    }
 }

@@ -1,4 +1,5 @@
-﻿using DaggerSDK.GraphQL.QueryElements;
+﻿using DaggerSDK;
+using DaggerSDK.GraphQL.QueryElements;
 
 namespace IntegrationTests.TestData;
 
@@ -63,4 +64,21 @@ public class LaravelExample
             })
         })
     });
+
+    public static ContainerBuilder ContainerBuilder = new ContainerBuilder
+    {
+        Platform = "linux/amd64",
+        BaseImage = "php:8.2-apache-buster",
+        Commands = new ContainerBuilder.CommandArgs[]
+        {
+            new("apt-get", "update"),
+            new("apt-get", "install", "--yes", "git-core"),
+            new("apt-get", "install", "--yes", "zip"),
+            new("apt-get", "install", "--yes", "curl"),
+            new("docker-php-ext-install", "pdo", "pdo_mysql", "mysqli"),
+            new("sh", "-c", "sed -ri -e 's!/var/www/html!/var/www/public!g' /etc/apache2/sites-available/*.conf"),
+            new("sh", "-c", "sed -ri -e 's!/var/www/!/var/www/public!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf"),
+            new("a2enmod", "rewrite"),
+        }
+    };
 }
