@@ -80,14 +80,14 @@ The next step is to create a Dagger pipeline to build a container image of the a
 <Tabs groupId="language">
 <TabItem value="Go">
 
-1. Create a new sub-directory named `ci`. Within the `ci` directory, install the Dagger SDK:
+1. In the application directory, install the Dagger SDK:
 
   ```shell
   go mod init main
   go get dagger.io/dagger@latest
   ```
 
-1. Within the `ci` directory, create a file named `main.go` and add the following code to it.
+1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
   ```go file=./snippets/aws-codebuild-codepipeline/main.go
   ```
@@ -211,21 +211,21 @@ The final step is to create an AWS CodePipeline to run the Dagger pipeline whene
 1. Click "Create pipeline".
 1. On the "Create new pipeline" sequence of pages, input the following details, adjusting them as required for your project:
   - In the "Pipeline settings" section:
-      - Pipeline name: `myapp-pipeline`
-      - Service role: `New service role`
+    - Pipeline name: `myapp-pipeline`
+    - Service role: `New service role`
   - In the "Source" section:
-      - Source provider: `AWS CodeCommit`
-      - Repository name: `myapp`
-      - Branch name: `main`
-      - Change detection options: `Amazon CloudWatch Events`
-      - Output artifact format: `CodePipeline default`
+    - Source provider: `AWS CodeCommit`
+    - Repository name: `myapp`
+    - Branch name: `main`
+    - Change detection options: `Amazon CloudWatch Events`
+    - Output artifact format: `CodePipeline default`
   - In the "Build" section:
-      - Build provider: `AWS CodeBuild`
-      - Region: Set value to your region
-      - Project name: `myapp-codebuild-project`
-      - Build type: `Single build`
+    - Build provider: `AWS CodeBuild`
+    - Region: Set value to your region
+    - Project name: `myapp-codebuild-project`
+    - Build type: `Single build`
   - In the "Deploy" section:
-      - Click the `Skip deploy stage` button
+    - Click the `Skip deploy stage` button
 1. On the "Review" page, review the inputs and click "Create pipeline".
 
 AWS CodePipeline creates a new pipeline.
