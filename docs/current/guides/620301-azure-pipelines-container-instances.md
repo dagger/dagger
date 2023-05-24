@@ -71,7 +71,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 <Tabs groupId="language">
 <TabItem value="Go">
 
-1. Create a new sub-directory named `ci`. Within the `ci` directory, install the Dagger SDK and the Azure SDK client libraries:
+1. In the application directory, install the Dagger SDK and the Azure SDK client libraries:
 
   ```shell
   go mod init main
@@ -81,7 +81,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
   go get github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerinstance/armcontainerinstance/v2
   ```
 
-1. Within the `ci` directory, create a file named `main.go` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
+1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.
 
   ```go file=./snippets/azure-pipelines-container-instances/main.go
   ```
