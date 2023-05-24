@@ -51,13 +51,20 @@ func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) 
 	return args.ID.ToSecret()
 }
 
+type SecretPlaintext string
+
+// This method ensures that the progrock vertex info does not display the plaintext.
+func (s SecretPlaintext) MarshalText() ([]byte, error) {
+	return []byte("***"), nil
+}
+
 type setSecretArgs struct {
 	Name      string
-	Plaintext string
+	Plaintext SecretPlaintext
 }
 
 func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecretArgs) (*core.Secret, error) {
-	secretID, err := s.secrets.AddSecret(ctx, args.Name, args.Plaintext)
+	secretID, err := s.secrets.AddSecret(ctx, args.Name, string(args.Plaintext))
 	if err != nil {
 		return nil, err
 	}
