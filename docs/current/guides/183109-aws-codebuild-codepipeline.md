@@ -45,30 +45,30 @@ The first step is to create an AWS CodeBuild project, as described below.
 1. Navigate to the "Build projects" page.
 1. Click "Create build project".
 1. On the "Create build project" page, input the following details, adjusting them as required for your project:
-  - In the "Project configuration" section:
-      - Project name: `myapp-codebuild-project`
-  - In the "Source" section:
-      - Source: `AWS CodeCommit`
-      - Source reference or Branch: `main`
-  - In the "Environment" section:
-      - Environment image: `Managed image`
-      - Operating system: `Amazon Linux 2`
-      - Runtime(s): `Standard`
-      - Image: `aws/codebuild/amazonlinux2-x86_64-standard:5.0` (or latest available for your architecture)
-      - Image version: `Always use the latest image for this runtime version`
-      - Environment type: `Linux`
-      - Privileged: Enabled
-      - Service role: `New service role`
-      - Environment variables:
-        - `REGISTRY_ADDRESS`: `docker.io` (or your container registry address)
-        - `REGISTRY_USERNAME`: Your registry username
-        - `REGISTRY_PASSWORD`: Your registry password
-  - In the "Buildspec" section:
-      - Build specifications: `Use a buildspec file`
-  - In the "Artifacts" section:
-      - Type: `No artifacts`
-  - In the "Logs" section:
-      - CloudWatch logs: `Enabled`
+    - In the "Project configuration" section:
+        - Project name: `myapp-codebuild-project`
+    - In the "Source" section:
+        - Source: `AWS CodeCommit`
+        - Source reference or Branch: `main`
+    - In the "Environment" section:
+        - Environment image: `Managed image`
+        - Operating system: `Amazon Linux 2`
+        - Runtime(s): `Standard`
+        - Image: `aws/codebuild/amazonlinux2-x86_64-standard:5.0` (or latest available for your architecture)
+        - Image version: `Always use the latest image for this runtime version`
+        - Environment type: `Linux`
+        - Privileged: Enabled
+        - Service role: `New service role`
+        - Environment variables:
+          - `REGISTRY_ADDRESS`: `docker.io` (or your container registry address)
+          - `REGISTRY_USERNAME`: Your registry username
+          - `REGISTRY_PASSWORD`: Your registry password
+    - In the "Buildspec" section:
+        - Build specifications: `Use a buildspec file`
+    - In the "Artifacts" section:
+        - Type: `No artifacts`
+    - In the "Logs" section:
+        - CloudWatch logs: `Enabled`
 1. Click "Create build project".
 
 AWS CodeBuild creates a new build project.
@@ -210,27 +210,27 @@ The final step is to create an AWS CodePipeline to run the Dagger pipeline whene
 1. Navigate to the "Pipelines" page.
 1. Click "Create pipeline".
 1. On the "Create new pipeline" sequence of pages, input the following details, adjusting them as required for your project:
-  - In the "Pipeline settings" section:
-    - Pipeline name: `myapp-pipeline`
-    - Service role: `New service role`
-  - In the "Source" section:
-    - Source provider: `AWS CodeCommit`
-    - Repository name: `myapp`
-    - Branch name: `main`
-    - Change detection options: `Amazon CloudWatch Events`
-    - Output artifact format: `CodePipeline default`
-  - In the "Build" section:
-    - Build provider: `AWS CodeBuild`
-    - Region: Set value to your region
-    - Project name: `myapp-codebuild-project`
-    - Build type: `Single build`
-  - In the "Deploy" section:
-    - Click the `Skip deploy stage` button
+    - In the "Pipeline settings" section:
+        - Pipeline name: `myapp-pipeline`
+        - Service role: `New service role`
+    - In the "Source" section:
+        - Source provider: `AWS CodeCommit`
+        - Repository name: `myapp`
+        - Branch name: `main`
+        - Change detection options: `Amazon CloudWatch Events`
+        - Output artifact format: `CodePipeline default`
+    - In the "Build" section:
+        - Build provider: `AWS CodeBuild`
+        - Region: Set value to your region
+        - Project name: `myapp-codebuild-project`
+        - Build type: `Single build`
+    - In the "Deploy" section:
+        - Click the `Skip deploy stage` button
 1. On the "Review" page, review the inputs and click "Create pipeline".
 
 AWS CodePipeline creates a new pipeline.
 
-:::note
+:::info
 Environment variables defined as part of the AWS CodeBuild project configuration are available to AWS CodePipeline as well.
 :::
 
@@ -266,13 +266,13 @@ Browse to `http://localhost:3000` to see the application running. If you deploye
 Hello from Dagger on AWS
 ```
 
-note about docker hub limits
+:::tip
+Pipelines that pull public images from Docker Hub may occasionally fail with the error "You have reached your pull rate limit. You may increase the limit by authenticating and upgrading...". This error occurs due to [Docker Hub's rate limits](https://www.docker.com/increase-rate-limits/). You can resolve this error by adding explicit Docker Hub authentication as the first step in your build specification file, or by copying public images to your own private registry and pulling from there instead. More information is available in this [Amazon blog post providing advice related to Docker Hub rate limits](https://aws.amazon.com/blogs/containers/advice-for-customers-dealing-with-docker-hub-rate-limits-and-a-coming-soon-announcement/).
+:::
 
 ## Conclusion
 
-This tutorial walked you through the process of creating a Dagger pipeline to continuously build and deploy a Node.js application on Azure Container Instances. It used the Dagger SDKs and explained key concepts, objects and methods available in the SDKs to construct a Dagger pipeline.
-
-Dagger executes your pipelines entirely as standard OCI containers. This means that pipelines can be tested and debugged locally, and that the same pipeline will run consistently on your local machine, a CI runner, a dedicated server, or any container hosting service. This portability is one of Dagger's key advantages, and this tutorial demonstrated it in action by using the same pipeline on the local host and with Azure Pipelines.
+This tutorial walked you through the process of creating a Dagger pipeline to continuously build and publish a Node.js application using AWS services such as AWS CodeBuild and AWS CodePipeline. It used the Dagger SDKs and explained key concepts, objects and methods available in the SDKs to construct a Dagger pipeline. It also demonstrated the process of integrating the Dagger pipeline with AWS CodePipeline to automatically monitor changes to your source repository and trigger new builds in response.
 
 Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
@@ -308,10 +308,9 @@ This tutorial assumes that you have an AWS CodeCommit repository with a Node.js 
   ```
 
 1. Log in to the [AWS console](https://console.aws.amazon.com/) and perform the following steps:
-
-- [Create a new AWS CodeCommit repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-create-repository.html).
-- [Configure SSH authentication](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-without-cli.html) for the AWS CodeCommit repository.
-- [Obtain the SSH clone URL](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-view-repository-details.html#how-to-view-repository-details-console) for the AWS CodeCommit repository.
+    - [Create a new AWS CodeCommit repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-create-repository.html).
+    - [Configure SSH authentication](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-without-cli.html) for the AWS CodeCommit repository.
+    - [Obtain the SSH clone URL](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-view-repository-details.html#how-to-view-repository-details-console) for the AWS CodeCommit repository.
 
 1. Add the AWS CodeCommit repository as a remote and push the application code to it. Replace the `SSH-URL` placeholder with the SSH clone URL for the repository.
 
