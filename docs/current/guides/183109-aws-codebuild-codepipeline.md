@@ -209,7 +209,7 @@ AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com
   </TabItem>
   </Tabs>
 
-    This build specification defines three steps, as below:
+  This build specification defines three steps, as below:
 
     - The first step installs the Dagger SDK on the CI runner.
     - The second step executes the Dagger pipeline.
@@ -275,7 +275,7 @@ git commit -m "Update index page"
 git push
 ```
 
-The commit triggers the AWS CodePipeline defined in Step 4. The AWS CodePipeline runs the various steps of the job, including the Dagger pipeline script. At the end of the process, the built container is published to the registry and a message similar to the one below appears in the console output:
+The commit triggers the AWS CodePipeline defined in Step 4. The AWS CodePipeline runs the various steps of the job, including the Dagger pipeline script. At the end of the process, the built container is published to the registry and a message similar to the one below appears in the AWS CodePipeline logs:
 
 ```shell
 Published image to: .../myapp@sha256...
