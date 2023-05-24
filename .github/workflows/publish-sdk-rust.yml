@@ -1,7 +1,6 @@
 name: "Publish Rust SDK"
 on:
   push:
-    branches: ["main"]
     tags: ["sdk/rust/v**"]
 jobs:
   publish:
