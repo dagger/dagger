@@ -72,6 +72,18 @@ The first step is to create an AWS CodeBuild project, as described below.
 1. Click "Create build project".
 
 AWS CodeBuild creates a new build project.
+fg
+The following images visually illustrate the AWS CodeBuild project configuration:
+
+![Create CodeBuild project - project](/img/current/guides/aws-codebuild-codepipeline/codebuild-project.png)
+
+![Create CodeBuild project - source](/img/current/guides/aws-codebuild-codepipeline/codebuild-source.png)
+
+![Create CodeBuild project - image](/img/current/guides/aws-codebuild-codepipeline/codebuild-image.png)
+
+![Create CodeBuild project - environment](/img/current/guides/aws-codebuild-codepipeline/codebuild-env.png)
+
+![Create CodeBuild project - buildspec](/img/current/guides/aws-codebuild-codepipeline/codebuild-spec.png)
 
 ## Step 2: Create the Dagger pipeline
 
@@ -197,6 +209,7 @@ In the repository, create a new file at `buildspec.yml` with the following conte
 </Tabs>
 
 This build specification defines three steps, as below:
+
 - The first step installs the Dagger SDK on the CI runner.
 - The second step executes the Dagger pipeline.
 - The third step displays a message with the date and time of build completion.
@@ -229,6 +242,10 @@ The final step is to create an AWS CodePipeline to run the Dagger pipeline whene
 1. On the "Review" page, review the inputs and click "Create pipeline".
 
 AWS CodePipeline creates a new pipeline.
+
+The following image visually illustrates the AWS CodePipeline configuration:
+
+![Create CodePipeline](/img/current/guides/aws-codebuild-codepipeline/codepipeline.png)
 
 :::info
 Environment variables defined as part of the AWS CodeBuild project configuration are available to AWS CodePipeline as well.
