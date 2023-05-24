@@ -249,7 +249,16 @@ func shim() int {
 		} else if !os.IsNotExist(err) {
 			panic(err)
 		}
-		return 0
+
+		code, err := os.ReadFile(exitCodePath)
+		if err != nil {
+			panic(err)
+		}
+		exitCode, err := strconv.Atoi(string(code))
+		if err != nil {
+			panic(err)
+		}
+		return exitCode
 	}
 
 	var secretsToScrub core.SecretToScrubInfo

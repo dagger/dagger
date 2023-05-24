@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"regexp"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +13,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -238,35 +237,20 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err != nil {
 			return
 		}
-		if err := proc.Wait(); err != nil {
+		var exitErr *bkpb.ExitError
+		if err := proc.Wait(); !errors.As(err, &exitErr) {
 			return
 		}
 
 		returnErr = &ExecError{
 			original: returnErr,
 			Cmd:      execOp.Exec.Meta.Args,
-			// FIXME: extracting the exit code from the error message is a
-			// quick hack.
-			ExitCode: parseExitCode(returnErr.Error()),
+			ExitCode: int(exitErr.ExitCode),
 			Stdout:   strings.TrimSpace(ctrOut.String()),
 			Stderr:   strings.TrimSpace(ctrErr.String()),
 		}
 	}
 	*inputErr = returnErr
-}
-
-func parseExitCode(msg string) int {
-	re := regexp.MustCompile(`exit code: (\d+)`)
-	matches := re.FindStringSubmatch(msg)
-
-	if len(matches) > 1 {
-		code, err := strconv.Atoi(matches[1])
-		if err == nil {
-			return code
-		}
-	}
-
-	return -1
 }
 
 type nopCloser struct {
