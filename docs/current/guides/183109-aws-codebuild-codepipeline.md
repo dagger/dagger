@@ -80,13 +80,14 @@ The next step is to create a Dagger pipeline to build a container image of the a
 <Tabs groupId="language">
 <TabItem value="Go">
 
-1. In the application directory, install the Dagger SDK:
+1. Create a new sub-directory named `ci`. Within the `ci` directory, install the Dagger SDK:
 
   ```shell
+  go mod init main
   go get dagger.io/dagger@latest
   ```
 
-1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
+1. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
   ```go file=./snippets/aws-codebuild-codepipeline/main.go
   ```
