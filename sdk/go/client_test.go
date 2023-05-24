@@ -197,8 +197,6 @@ func TestExecError(t *testing.T) {
 	defer c.Close()
 
 	t.Run("get output and exit code", func(t *testing.T) {
-		t.Parallel()
-
 		outMsg := "STDOUT HERE"
 		errMsg := "STDERR HERE"
 		args := []string{"sh", "-c", "cat /testout; cat /testerr >&2; exit 127"}
@@ -230,8 +228,6 @@ func TestExecError(t *testing.T) {
 	})
 
 	t.Run("no output", func(t *testing.T) {
-		t.Parallel()
-
 		_, err = c.
 			Container().
 			From("alpine:3.16.2").
@@ -247,8 +243,6 @@ func TestExecError(t *testing.T) {
 	})
 
 	t.Run("not an exec error", func(t *testing.T) {
-		t.Parallel()
-
 		_, err = c.
 			Container().
 			From("invalid!").
