@@ -262,13 +262,11 @@ docker run --rm -p 3000:3000 --name myapp IMAGE-ADDRESS
 
 Browse to `http://localhost:3000` to see the application running. If you deployed the example application with the modification above, you see the following output:
 
-```
+```shell
 Hello from Dagger on AWS
 ```
 
 note about docker hub limits
-
-
 
 ## Conclusion
 
@@ -311,9 +309,9 @@ This tutorial assumes that you have an AWS CodeCommit repository with a Node.js 
 
 1. Log in to the [AWS console](https://console.aws.amazon.com/) and perform the following steps:
 
-  - [Create a new AWS CodeCommit repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-create-repository.html).
-  - [Configure SSH authentication](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-without-cli.html) for the AWS CodeCommit repository.
-  - [Obtain the SSH clone URL](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-view-repository-details.html#how-to-view-repository-details-console) for the AWS CodeCommit repository.
+- [Create a new AWS CodeCommit repository](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-create-repository.html).
+- [Configure SSH authentication](https://docs.aws.amazon.com/codecommit/latest/userguide/setting-up-without-cli.html) for the AWS CodeCommit repository.
+- [Obtain the SSH clone URL](https://docs.aws.amazon.com/codecommit/latest/userguide/how-to-view-repository-details.html#how-to-view-repository-details-console) for the AWS CodeCommit repository.
 
 1. Add the AWS CodeCommit repository as a remote and push the application code to it. Replace the `SSH-URL` placeholder with the SSH clone URL for the repository.
 
