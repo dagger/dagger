@@ -117,16 +117,6 @@ defmodule Dagger.Directory do
   )
 
   (
-    @doc "load a project's metadata\n\n## Required Arguments\n\n* `config_path` -"
-    @spec load_project(t(), String.t()) :: Dagger.Project.t()
-    def load_project(%__MODULE__{} = directory, config_path) do
-      selection = select(directory.selection, "loadProject")
-      selection = arg(selection, "configPath", config_path)
-      %Dagger.Project{selection: selection, client: directory.client}
-    end
-  )
-
-  (
     @doc "Creates a named sub-pipeline\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
     @spec pipeline(t(), String.t(), keyword()) :: Dagger.Directory.t()
     def pipeline(%__MODULE__{} = directory, name, optional_args \\ []) do

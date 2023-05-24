@@ -153,12 +153,36 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Look up a project by name\n\n## Required Arguments\n\n* `name` -"
-    @spec project(t(), String.t()) :: Dagger.Project.t()
-    def project(%__MODULE__{} = query, name) do
+    @doc "Load a project from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec project(t(), keyword()) :: Dagger.Project.t()
+    def project(%__MODULE__{} = query, optional_args \\ []) do
       selection = select(query.selection, "project")
-      selection = arg(selection, "name", name)
+
+      selection =
+        if not is_nil(optional_args[:id]) do
+          arg(selection, "id", optional_args[:id])
+        else
+          selection
+        end
+
       %Dagger.Project{selection: selection, client: query.client}
+    end
+  )
+
+  (
+    @doc "Load a project command from ID.\n\n\n\n## Optional Arguments\n\n* `id` -"
+    @spec project_command(t(), keyword()) :: Dagger.ProjectCommand.t()
+    def project_command(%__MODULE__{} = query, optional_args \\ []) do
+      selection = select(query.selection, "projectCommand")
+
+      selection =
+        if not is_nil(optional_args[:id]) do
+          arg(selection, "id", optional_args[:id])
+        else
+          selection
+        end
+
+      %Dagger.ProjectCommand{selection: selection, client: query.client}
     end
   )
 

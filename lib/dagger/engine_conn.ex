@@ -3,7 +3,7 @@ defmodule Dagger.EngineConn do
 
   defstruct [:port, :token, :session_pid]
 
-  @dagger_cli_version "0.5.2"
+  @dagger_cli_version "0.5.3"
   @dagger_bin_prefix "dagger-"
   @dagger_default_cli_host "dl.dagger.io"
 

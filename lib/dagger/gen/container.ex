@@ -175,7 +175,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
+    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
     @spec export(t(), String.t(), keyword()) :: boolean()
     def export(%__MODULE__{} = container, path, optional_args \\ []) do
       selection = select(container.selection, "export")
@@ -184,6 +184,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:platform_variants]) do
           arg(selection, "platformVariants", optional_args[:platform_variants])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:forced_compression]) do
+          arg(selection, "forcedCompression", optional_args[:forced_compression])
         else
           selection
         end
@@ -339,7 +346,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image."
+    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the published image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
     @spec publish(t(), String.t(), keyword()) :: String.t()
     def publish(%__MODULE__{} = container, address, optional_args \\ []) do
       selection = select(container.selection, "publish")
@@ -348,6 +355,13 @@ defmodule Dagger.Container do
       selection =
         if not is_nil(optional_args[:platform_variants]) do
           arg(selection, "platformVariants", optional_args[:platform_variants])
+        else
+          selection
+        end
+
+      selection =
+        if not is_nil(optional_args[:forced_compression]) do
+          arg(selection, "forcedCompression", optional_args[:forced_compression])
         else
           selection
         end
@@ -379,6 +393,15 @@ defmodule Dagger.Container do
     @spec stdout(t()) :: String.t()
     def stdout(%__MODULE__{} = container) do
       selection = select(container.selection, "stdout")
+      execute(selection, container.client)
+    end
+  )
+
+  (
+    @doc "Forces evaluation of the pipeline in the engine.\n\nIt doesn't run the default command if no exec has been set."
+    @spec sync(t()) :: Dagger.Container.t()
+    def sync(%__MODULE__{} = container) do
+      selection = select(container.selection, "sync")
       execute(selection, container.client)
     end
   )
