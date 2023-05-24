@@ -229,14 +229,20 @@ describe("NodeJS SDK api", function () {
 
     const stdout = "STDOUT HERE"
     const stderr = "STDERR HERE"
-    const args = [
-      "sh",
-      "-c",
-      `echo ${stdout} >&1; echo ${stderr} >&2; exit 127`,
-    ]
+    const args = ["sh", "-c", "cat /testout >&1; cat /testerr >&2; exit 127"]
 
     await connect(async (client: Client) => {
-      const ctr = client.container().from("alpine:3.16.2").withExec(args)
+      const ctr = client
+        .container()
+        .from("alpine:3.16.2")
+        .withDirectory(
+          "/",
+          client
+            .directory()
+            .withNewFile("testout", stdout)
+            .withNewFile("testerr", stderr)
+        )
+        .withExec(args)
 
       try {
         await ctr.sync()
@@ -246,6 +252,10 @@ describe("NodeJS SDK api", function () {
           assert.strictEqual(e.exitCode, 127)
           assert.strictEqual(e.stdout, stdout)
           assert.strictEqual(e.stderr, stderr)
+          assert(e.toString().includes(stdout))
+          assert(e.toString().includes(stderr))
+          assert(!e.message.includes(stdout))
+          assert(!e.message.includes(stderr))
         } else {
           throw e
         }
