@@ -66,6 +66,12 @@ type ExecError struct {
 }
 
 func (e *ExecError) Error() string {
+	// As a default when just printing the error, include the stdout
+	// and stderr for visibility
+	return fmt.Sprintf("%s\nStdout:\n%s\nStderr:\n%s", e.Message(), e.Stdout, e.Stderr)
+}
+
+func (e *ExecError) Message() string {
 	return e.original.Error()
 }
 

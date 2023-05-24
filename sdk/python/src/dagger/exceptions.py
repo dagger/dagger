@@ -136,6 +136,12 @@ class ExecError(QueryError):
         error: QueryErrorValue = self.args[0]
         ext = error.extensions
         self.command: list[str] = ext["cmd"]
+        self.message = error.message
         self.exit_code: int = ext["exitCode"]
         self.stdout: str = ext["stdout"]
         self.stderr: str = ext["stderr"]
+
+    def __str__(self):
+        # As a default when just printing the error, include the stdout
+        # and stderr for visibility
+        return f"{self.message}\nStdout:\n{self.stdout}\nStderr:\n{self.stderr}"

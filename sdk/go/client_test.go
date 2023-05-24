@@ -3,7 +3,6 @@ package dagger
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"testing"
 
@@ -147,6 +146,10 @@ func TestErrorMessage(t *testing.T) {
 	_, err = c.Container().From("fake.invalid:latest").ID(ctx)
 	require.Error(t, err)
 	require.ErrorContains(t, err, errorHelpBlurb)
+
+	_, err = c.Container().From("alpine:3.16.2").WithExec([]string{"false"}).Sync(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, errorHelpBlurb)
 }
 
 func TestList(t *testing.T) {
@@ -198,16 +201,17 @@ func TestExecError(t *testing.T) {
 
 		outMsg := "STDOUT HERE"
 		errMsg := "STDERR HERE"
-
-		args := []string{"sh", "-c", fmt.Sprintf(
-			`echo %s >&1; echo %s >&2; exit 127`,
-			outMsg,
-			errMsg,
-		)}
+		args := []string{"sh", "-c", "cat /testout; cat /testerr >&2; exit 127"}
 
 		_, err = c.
 			Container().
 			From("alpine:3.16.2").
+			// don't put these in the command args so it stays out of the
+			// error message
+			WithDirectory("/", c.Directory().
+				WithNewFile("testout", outMsg).
+				WithNewFile("testerr", errMsg),
+			).
 			WithExec(args).
 			Sync(ctx)
 
@@ -218,6 +222,11 @@ func TestExecError(t *testing.T) {
 		require.Equal(t, args, exErr.Cmd)
 		require.Equal(t, outMsg, exErr.Stdout)
 		require.Equal(t, errMsg, exErr.Stderr)
+
+		require.Contains(t, exErr.Error(), outMsg)
+		require.Contains(t, exErr.Error(), errMsg)
+		require.NotContains(t, exErr.Message(), outMsg)
+		require.NotContains(t, exErr.Message(), errMsg)
 	})
 
 	t.Run("no output", func(t *testing.T) {
@@ -243,7 +252,7 @@ func TestExecError(t *testing.T) {
 		_, err = c.
 			Container().
 			From("invalid!").
-			WithExec([]string{"true"}).
+			WithExec([]string{"false"}).
 			Sync(ctx)
 
 		var exErr *ExecError
