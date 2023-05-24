@@ -99,7 +99,7 @@ The next step is to create a Dagger pipeline to build a container image of the a
     - It uses the client's `Host().Directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
     - It uses the client's `Container().From()` method to initialize a new container image from a base image. The additional `platform` argument to the `Container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
     - It uses the previous `Container` object's `WithDirectory()` method to mount the host directory into the container image at the `/src` mount point, and the `WithWorkdir()` method to set the working directory in the container image.
-    - It chains the `WithExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the container entrypoint to `npm start` using the `WithEntrypoint()` method.
+    - It chains the `WithExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `WithDefaultArgs()` method.
     - It uses the `WithRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
     - It invokes the `Publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
 
@@ -131,7 +131,7 @@ The next step is to create a Dagger pipeline to build a container image of the a
     - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
     - It uses the client's `container().from()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
     - It uses the previous `Container` object's `withDirectory()` method to mount the host directory into the container image at the `/src` mount point, and the `withWorkdir()` method to set the working directory in the container image.
-    - It chains the `withExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the container entrypoint to `npm start` using the `withEntrypoint()` method.
+    - It chains the `withExec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `withDefaultArgs()` method.
     - It uses the `withRegistryAuth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
     - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
 
@@ -157,10 +157,9 @@ The next step is to create a Dagger pipeline to build a container image of the a
     - It uses the client's `host().directory()` method to obtain a reference to the current directory on the host, excluding the `node_modules` and `ci` directories. This reference is stored in the `source` variable.
     - It uses the client's `container().from_()` method to initialize a new container image from a base image. The additional `platform` argument to the `container()` method instructs Dagger to build for a specific architecture. In this example, the base image is the `node:18` image and the architecture is `linux/amd64`. This method returns a `Container` representing an OCI-compatible container image.
     - It uses the previous `Container` object's `with_directory()` method to mount the host directory into the container image at the `/src` mount point, and the `with_workdir()` method to set the working directory in the container image.
-    - It chains the `with_exec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the container entrypoint to `npm start` using the `with_entrypoint()` method.
+    - It chains the `with_exec()` method again to install dependencies with `npm install`, build a production image of the application with `npm run build`, and set the default entrypoint argument to `npm start` using the `with_default_args()` method.
     - It uses the `with_registry_auth()` method to authenticate the Dagger pipeline against the registry using the credentials from the host environment (including the password set as a secret previously)
     - It invokes the `publish()` method to publish the container image to the registry. It also prints the SHA identifier of the published image.
-
 
 </TabItem>
 </Tabs>
@@ -169,10 +168,41 @@ The next step is to create a Dagger pipeline to build a container image of the a
 Most `Container` object methods return a revised `Container` object representing the new state of the container. This makes it easy to chain methods together. Dagger evaluates pipelines "lazily", so the chained operations are only executed when required - in this case, when the container is published. Learn more about [lazy evaluation in Dagger](../api/975146-concepts.mdx#lazy-evaluation).
 :::
 
-
 ## Step 3: Add the build specification file
 
+AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html) to execute the build. This build specification file defines the stages of the build, and the commands to be run in each stage.
+
+In the repository, create a new file at `buildspec.yml` with the following content:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-go.yml
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-nodejs.yml
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-python.yml
+```
+
+</TabItem>
+</Tabs>
+
+This build specification defines three steps, as below:
+- The first step installs the Dagger SDK on the CI runner.
+- The second step executes the Dagger pipeline.
+- The third step displays a message with the date and time of build completion.
+
 ## Step 4: Create an AWS CodePipeline for Dagger
+
+The final step is to create an AWS CodePipeline to run the Dagger pipeline whenever the source repository changes, as described below.
 
 1. Log in to the [AWS console](https://console.aws.amazon.com).
 1. Navigate to the "CodePipeline" section.
@@ -199,92 +229,45 @@ Most `Container` object methods return a revised `Container` object representing
 
 AWS CodePipeline creates a new pipeline.
 
-## Step 5: Test the Dagger pipeline
-
-
-
-
-
-## Step 4: Add the build specification file
-
-Configure credentials for the Docker Hub registry and the Azure SDK on the local host by executing the commands below, replacing the placeholders as follows:
-
-- Replace the `TENANT-ID`, `CLIENT-ID` and `CLIENT-SECRET` placeholders with the service principal credentials obtained at the end of Step 1.
-- Replace the `SUBSCRIPTION-ID` placeholder with your Azure subscription ID.
-- Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub username and password respectively.
-
-```shell
-export AZURE_TENANT_ID=TENANT-ID
-export AZURE_CLIENT_ID=CLIENT-ID
-export AZURE_CLIENT_SECRET=CLIENT-SECRET
-export AZURE_SUBSCRIPTION_ID=SUBSCRIPTION-ID
-export DOCKERHUB_USERNAME=USERNAME
-export DOCKERHUB_PASSWORD=PASSWORD
-```
-
-Once credentials are configured, test the Dagger pipeline by running the command below:
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```shell
-go run ci/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```shell
-node ci/index.mjs
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```shell
-python ci/main.py
-```
-
-</TabItem>
-</Tabs>
-
-Dagger performs the operations defined in the pipeline script, logging each operation to the console. At the end of the process, the built container is deployed to Azure Container Instances and a message similar to the one below appears in the console output:
-
-  ```shell
-  Deployment for image docker.io/.../my-app@sha256... now available at ...
-  ```
-
-Browse to the URL shown in the deployment message to see the running application.
-
-If you deployed the example application from [Appendix A](#appendix-a-create-an-azure-devops-repository-with-an-example-express-application), you should see a page similar to that shown below:
-
-![Result of running pipeline from local host](/img/current/guides/azure-pipelines-container-instances/local-deployment.png)
+:::note
+Environment variables defined as part of the AWS CodeBuild project configuration are available to AWS CodePipeline as well.
+:::
 
 ## Step 5: Test the Dagger pipeline
 
 Test the Dagger pipeline by committing a change to the repository.
 
-If you are using the example application described in [Appendix A](#appendix-a-create-an-azure-devops-repository-with-an-example-express-application), the following commands modify and commit a simple change to the application's index page:
+If you are using the example application described in [Appendix A](#appendix-a-create-an-aws-codecommit-repository-with-an-example-express-application), the following commands modify and commit a change to the application's index page:
 
 ```shell
 git pull
-sed -i 's/Dagger/Dagger on Azure/g' routes/index.js
-git add routes/index.js
+echo -e "export default function Hello() {\n  return <h1>Hello from Dagger on AWS</h1>;\n }" > src/pages/index.js
+git add src/pages/index.js
 git commit -m "Update welcome message"
 git push
 ```
 
-The commit triggers the Azure Pipeline defined in Step 5. The Azure Pipeline runs the various steps of the job, including the Dagger pipeline script.
-
-At the end of the process, a new version of the built container image is released to Docker Hub and deployed on Azure Container Instances. A message similar to the one below appears in the Azure Pipelines log:
+The commit triggers the AWS CodePipeline defined in Step 4. The AWS CodePipeline runs the various steps of the job, including the Dagger pipeline script. At the end of the process, the built container is published to the registry and a message similar to the one below appears in the console output:
 
 ```shell
-Deployment for image docker.io/.../my-app@sha256:... now available at ...
+Published image to: .../myapp@sha256...
 ```
 
-Browse to the URL shown in the deployment message to see the running application. If you deployed the example application with the additional modification above, you see a page similar to that shown below:
+Test the published image by executing the commands below (replace the `IMAGE-ADDRESS` placeholder with the address of the published image):
 
-![Result of running pipeline from Azure Pipelines](/img/current/guides/azure-pipelines-container-instances/azure-pipelines-deployment.png)
+```shell
+docker run --rm -p 3000:3000 --name myapp IMAGE-ADDRESS
+```
+
+Browse to `http://localhost:3000` to see the application running. If you deployed the example application with the modification above, you see the following output:
+
+```
+Hello from Dagger on AWS
+```
+
+note about docker hub limits
+
+
 
 ## Conclusion
 
@@ -294,7 +277,7 @@ Dagger executes your pipelines entirely as standard OCI containers. This means 
 
 Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https://pkg.go.dev/dagger.io/dagger), [Node.js](../sdk/nodejs/reference/modules.md) and [Python](https://dagger-io.readthedocs.org/) SDK References to learn more about Dagger.
 
-## Appendix A: Create an AWS CodeCommit repository with an example Express application
+## Appendix A: Create an AWS CodeCommit repository with an example Next.js application
 
 This tutorial assumes that you have an AWS CodeCommit repository with a Node.js Web application. If not, follow the steps below to create an AWS CodeCommit repository and commit an example Next.js application to it.
 
@@ -309,12 +292,6 @@ This tutorial assumes that you have an AWS CodeCommit repository with a Node.js 
 
   ```shell
   npx create-next-app --js --src-dir --eslint --no-tailwind --no-app --import-alias "@/*" .
-  ```
-
-1. Add a custom page to the application:
-
-  ```shell
-  echo -e "export default function Hello() {\n  return <h1>Hello from Dagger</h1>;\n }" > src/pages/hello.js
   ```
 
 1. Initialize a local Git repository for the application:
