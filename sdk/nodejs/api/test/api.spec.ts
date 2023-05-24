@@ -3,6 +3,7 @@ import { randomUUID } from "crypto"
 import fs from "fs"
 
 import {
+  ExecError,
   GraphQLRequestError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
@@ -18,20 +19,20 @@ const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
 describe("NodeJS SDK api", function () {
   it("Build correctly a query with one argument", function () {
-    const tree = new Client().container().from("alpine")
+    const tree = new Client().container().from("alpine:3.16.2")
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") } }`
+      `{ container { from (address: "alpine:3.16.2") } }`
     )
   })
 
   it("Build correctly a query with different args type", function () {
-    const tree = new Client().container().from("alpine")
+    const tree = new Client().container().from("alpine:3.16.2")
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") } }`
+      `{ container { from (address: "alpine:3.16.2") } }`
     )
 
     const tree2 = new Client().git("fake_url", { keepGitDir: true })
@@ -63,22 +64,22 @@ describe("NodeJS SDK api", function () {
   it("Build one query with multiple arguments", function () {
     const tree = new Client()
       .container()
-      .from("alpine")
+      .from("alpine:3.16.2")
       .withExec(["apk", "add", "curl"])
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"]) }} }`
     )
   })
 
   it("Build a query by splitting it", function () {
-    const image = new Client().container().from("alpine")
+    const image = new Client().container().from("alpine:3.16.2")
     const pkg = image.withExec(["echo", "foo bar"])
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg.queryTree)),
-      `{ container { from (address: "alpine") { withExec (args: ["echo","foo bar"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo bar"]) }} }`
     )
   })
 
@@ -89,7 +90,7 @@ describe("NodeJS SDK api", function () {
         .container({
           id: await client
             .container()
-            .from("alpine")
+            .from("alpine:3.16.2")
             .withExec(["apk", "add", "yarn"])
             .id(),
         })
@@ -107,7 +108,7 @@ describe("NodeJS SDK api", function () {
       const cacheVolume = client.cacheVolume("cache_key")
       const image = await client
         .container()
-        .from("alpine")
+        .from("alpine:3.16.2")
         .withExec(["apk", "add", "yarn"])
         .withMountedCache("/root/.cache", cacheVolume)
         .withExec(["echo", "foo bar"])
@@ -118,28 +119,28 @@ describe("NodeJS SDK api", function () {
   })
 
   it("Build a query with positionnal and optionals arguments", function () {
-    const image = new Client().container().from("alpine")
+    const image = new Client().container().from("alpine:3.16.2")
     const pkg = image.withExec(["apk", "add", "curl"], {
       experimentalPrivilegedNesting: true,
     })
 
     assert.strictEqual(
       querySanitizer(buildQuery(pkg.queryTree)),
-      `{ container { from (address: "alpine") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["apk","add","curl"],experimentalPrivilegedNesting: true) }} }`
     )
   })
 
   it("Test Field Immutability", async function () {
-    const image = new Client().container().from("alpine")
+    const image = new Client().container().from("alpine:3.16.2")
     const a = image.withExec(["echo", "hello", "world"])
     assert.strictEqual(
       querySanitizer(buildQuery(a.queryTree)),
-      `{ container { from (address: "alpine") { withExec (args: ["echo","hello","world"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","hello","world"]) }} }`
     )
     const b = image.withExec(["echo", "foo", "bar"])
     assert.strictEqual(
       querySanitizer(buildQuery(b.queryTree)),
-      `{ container { from (address: "alpine") { withExec (args: ["echo","foo","bar"]) }} }`
+      `{ container { from (address: "alpine:3.16.2") { withExec (args: ["echo","foo","bar"]) }} }`
     )
   })
 
@@ -148,7 +149,7 @@ describe("NodeJS SDK api", function () {
     await connect(async (client: Client) => {
       const image = client
         .container()
-        .from("alpine")
+        .from("alpine:3.16.2")
         .withExec(["echo", "hello", "world"])
 
       const a = await image.exitCode()
@@ -180,7 +181,7 @@ describe("NodeJS SDK api", function () {
 
       const copiedFile = await client
         .container()
-        .from("alpine")
+        .from("alpine:3.16.2")
         .withWorkdir("/")
         .withFile("/copied-file.txt", builder.file("/file.txt"))
         .withEntrypoint(["sh", "-c"])
@@ -223,6 +224,35 @@ describe("NodeJS SDK api", function () {
     assert.throws(() => queryFlatten(tree), TooManyNestedObjectsError)
   })
 
+  it("Return custom ExecError", async function () {
+    this.timeout(60000)
+
+    const stdout = "STDOUT HERE"
+    const stderr = "STDERR HERE"
+    const args = [
+      "sh",
+      "-c",
+      `echo ${stdout} >&1; echo ${stderr} >&2; exit 127`,
+    ]
+
+    await connect(async (client: Client) => {
+      const ctr = client.container().from("alpine:3.16.2").withExec(args)
+
+      try {
+        await ctr.sync()
+      } catch (e) {
+        if (e instanceof ExecError) {
+          assert(e.message.includes("did not complete successfully"))
+          assert.strictEqual(e.exitCode, 127)
+          assert.strictEqual(e.stdout, stdout)
+          assert.strictEqual(e.stderr, stderr)
+        } else {
+          throw e
+        }
+      }
+    })
+  })
+
   it("Support container sync", async function () {
     this.timeout(60000)
 
@@ -252,14 +282,14 @@ describe("NodeJS SDK api", function () {
 
     const tree = new Client()
       .container()
-      .from("alpine")
+      .from("alpine:3.16.2")
       .withWorkdir("/foo")
       .with(AddAFewMounts)
       .withExec(["blah"])
 
     assert.strictEqual(
       querySanitizer(buildQuery(tree.queryTree)),
-      `{ container { from (address: "alpine") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"foo"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",requestConfig:{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"bar"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",requestConfig:{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
+      `{ container { from (address: "alpine:3.16.2") { withWorkdir (path: "/foo") { withMountedDirectory (path: "/foo",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"foo"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",requestConfig:{headers:{Authorization:"Basic Og=="}}}}) { withMountedDirectory (path: "/bar",source: {"_queryTree":[{operation:"host"},{operation:"directory",args:{path:"bar"}}],clientHost:"127.0.0.1:8080",sessionToken:"",client:{url:"http://127.0.0.1:8080/query",requestConfig:{headers:{Authorization:"Basic Og=="}}}}) { withExec (args: ["blah"]) }}}}} }`
     )
   })
 
