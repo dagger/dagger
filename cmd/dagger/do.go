@@ -23,6 +23,7 @@ import (
 var (
 	projectURI string
 	configPath string
+	outputPath string
 )
 
 const (
@@ -33,6 +34,8 @@ const (
 func init() {
 	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
 	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
+	// TODO: should there be a default? or should we require this to be set?
+	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "TODO: doc")
 }
 
 var doCmd = &cobra.Command{
@@ -129,6 +132,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		return nil, fmt.Errorf("failed to get cmd description: %w", err)
 	}
 
+	projResultType, err := projCmd.ResultType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cmd result type: %w", err)
+	}
+
 	projFlags, err := projCmd.Flags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd flags: %w", err)
@@ -190,6 +198,58 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					newSelection := &ast.Field{}
 					curSelection.SelectionSet = ast.SelectionSet{newSelection}
 					curSelection = newSelection
+				} else {
+					if outputPath == "" {
+						return fmt.Errorf("output path not set, --output must be explictly provided for git:// projects that return files or directories")
+					}
+					outputPath, err = filepath.Abs(outputPath)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute path of output path: %w", err)
+					}
+					// TODO: enum or union
+					switch projResultType {
+					case "File":
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{
+								&ast.Argument{
+									Name: "path",
+									Value: &ast.Value{
+										Raw:  outputPath,
+										Kind: ast.StringValue,
+									},
+								},
+								&ast.Argument{
+									Name: "allowParentDirPath",
+									Value: &ast.Value{
+										Raw:  "true",
+										Kind: ast.BooleanValue,
+									},
+								},
+							},
+						}}
+					case "Directory":
+						outputStat, err := os.Stat(outputPath)
+						switch {
+						case os.IsNotExist(err):
+						case err == nil:
+							if !outputStat.IsDir() {
+								return fmt.Errorf("output path %q is not a directory but the command returns a directory", outputPath)
+							}
+						default:
+							return fmt.Errorf("failed to stat output directory: %w", err)
+						}
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{&ast.Argument{
+								Name: "path",
+								Value: &ast.Value{
+									Raw:  outputPath,
+									Kind: ast.StringValue,
+								},
+							}},
+						}}
+					}
 				}
 			}
 			var b bytes.Buffer
@@ -226,7 +286,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 				}
 			}
 			// TODO: better to print this after session closes so there's less overlap with progress output
-			fmt.Println(res)
+			cmd.Println(res)
 			return nil
 		},
 	}
@@ -321,6 +381,11 @@ func getProject(c *dagger.Client) (*dagger.Project, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config relative path: %w", err)
 		}
+
+		if outputPath == "" {
+			outputPath = projectAbsPath
+		}
+
 		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
 	case "git":
 		repo := url.Host + url.Path

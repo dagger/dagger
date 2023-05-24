@@ -1760,13 +1760,27 @@ func (r *File) Contents(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// FileExportOpts contains options for File.Export
+type FileExportOpts struct {
+	// If allowParentDirPath is true, the path argument can be a directory path, in which case
+	// the file will be created in that directory.
+	AllowParentDirPath bool
+}
+
 // Writes the file to a file path on the host.
-func (r *File) Export(ctx context.Context, path string) (bool, error) {
+func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) (bool, error) {
 	if r.export != nil {
 		return *r.export, nil
 	}
 	q := r.q.Select("export")
 	q = q.Arg("path", path)
+	// `allowParentDirPath` optional argument
+	for i := len(opts) - 1; i >= 0; i-- {
+		if !querybuilder.IsZeroValue(opts[i].AllowParentDirPath) {
+			q = q.Arg("allowParentDirPath", opts[i].AllowParentDirPath)
+			break
+		}
+	}
 
 	var response bool
 
@@ -2161,19 +2175,20 @@ type Project struct {
 func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
 	q := r.q.Select("commands")
 
-	q = q.Select("description id name")
+	q = q.Select("description id name resultType")
 
 	type commands struct {
 		Description string
 		Id          string
 		Name        string
+		ResultType  string
 	}
 
 	convert := func(fields []commands) []ProjectCommand {
 		out := []ProjectCommand{}
 
 		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
 		}
 
 		return out
@@ -2250,6 +2265,7 @@ type ProjectCommand struct {
 	description *string
 	id          *string
 	name        *string
+	resultType  *string
 }
 
 // Documentation for what this command does.
@@ -2337,23 +2353,37 @@ func (r *ProjectCommand) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// TODO: switch to actual type
+func (r *ProjectCommand) ResultType(ctx context.Context) (string, error) {
+	if r.resultType != nil {
+		return *r.resultType, nil
+	}
+	q := r.q.Select("resultType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // Subcommands, if any, that this command provides.
 func (r *ProjectCommand) Subcommands(ctx context.Context) ([]ProjectCommand, error) {
 	q := r.q.Select("subcommands")
 
-	q = q.Select("description id name")
+	q = q.Select("description id name resultType")
 
 	type subcommands struct {
 		Description string
 		Id          string
 		Name        string
+		ResultType  string
 	}
 
 	convert := func(fields []subcommands) []ProjectCommand {
 		out := []ProjectCommand{}
 
 		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
 		}
 
 		return out

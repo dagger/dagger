@@ -702,7 +702,13 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
 			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-			return ast.NonNullNamedType(result[0].String(), nil), nil
+			typeName := result[0].String()
+			if isInput {
+				// TODO: hack, update codegen with more helper methods?
+				// convert to accept an ID
+				typeName = typeName + "ID"
+			}
+			return ast.NonNullNamedType(typeName, nil), nil
 		}
 
 		if isInput {
@@ -710,6 +716,16 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		}
 		return ast.NonNullNamedType(t.Name(), nil), nil // TODO:(sipsma) doesn't handle anything from another package (besides the sdk)
 	case reflect.Pointer:
+		// TODO: hack, de-dupe with above block of code
+		if isInput {
+			marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
+			if t.Implements(marshaller) {
+				typ := reflect.New(t.Elem())
+				result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
+				typeName := result[0].String() + "ID"
+				return ast.NonNullNamedType(typeName, nil), nil
+			}
+		}
 		nonNullType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
 		if err != nil {
 			return nil, err
@@ -735,9 +751,9 @@ func convertResult(ctx context.Context, result any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		// NOTE: I don't think this works if you try to do a selection on the object, but
-		// that's fine for now since we don't support that yet with entrypoints
-		return map[string]any{"id": id}, nil
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
+		return id, nil
 	}
 
 	switch typ := reflect.TypeOf(result).Kind(); typ {
@@ -788,20 +804,11 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 	// check if desiredType implements querybuilder.GraphQLMarshaller, in which case it's a core type e.g. Container
 	marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 	if desiredType.Implements(marshaller) {
-		// For now, we can safely assume that this object was created by convertResult, so we
-		// can just grab the "id" field. In the future when we expand beyond entrypoints, this
-		// may need more generalization.
-		inputMap, ok := input.(map[string]any)
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
+		id, ok := input.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected input to be a map[string]any, got %+v", input)
-		}
-		idVal, ok := inputMap["id"]
-		if !ok {
-			return nil, fmt.Errorf("expected input to have an id field, got %+v", input)
-		}
-		id, ok := idVal.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected id to be a string, got %+v", idVal)
+			return nil, fmt.Errorf("expected id to be a string, got %T(%+v)", input, input)
 		}
 		if desiredType.Kind() != reflect.Ptr {
 			// just assuming it's always a pointer for now, not actually important

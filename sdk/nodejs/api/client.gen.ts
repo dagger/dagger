@@ -517,6 +517,14 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type FileExportOpts = {
+  /**
+   * If allowParentDirPath is true, the path argument can be a directory path, in which case
+   * the file will be created in that directory.
+   */
+  allowParentDirPath?: boolean
+}
+
 /**
  * A file identifier.
  */
@@ -2436,14 +2444,16 @@ export class File extends BaseClient {
   /**
    * Writes the file to a file path on the host.
    * @param path Location of the written directory (e.g., "output.txt").
+   * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case
+   * the file will be created in that directory.
    */
-  async export(path: string): Promise<boolean> {
+  async export(path: string, opts?: FileExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       this.client
@@ -3216,6 +3226,23 @@ export class ProjectCommand extends BaseClient {
         ...this._queryTree,
         {
           operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO: switch to actual type
+   */
+  async resultType(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "resultType",
         },
       ],
       this.client

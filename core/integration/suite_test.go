@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"testing"
 
 	"dagger.io/dagger"
@@ -227,4 +228,42 @@ func computeMD5FromReader(reader io.Reader) string {
 	h := md5.New()
 	io.Copy(h, reader)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func daggerCliPath(t *testing.T) string {
+	t.Helper()
+	cliPath := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	if cliPath == "" {
+		var err error
+		cliPath, err = exec.LookPath("dagger")
+		require.NoError(t, err)
+	}
+	if cliPath == "" {
+		t.Log("missing _EXPERIMENTAL_DAGGER_CLI_BIN")
+		t.FailNow()
+	}
+	return cliPath
+}
+
+type DaggerDoCmd struct {
+	Project    string
+	Config     string
+	OutputPath string
+	Target     string
+	Flags      map[string]string
+}
+
+func (c DaggerDoCmd) Run(t *testing.T) string {
+	t.Helper()
+	cmd := exec.Command(daggerCliPath(t), "do", "--project", c.Project, "--config", c.Config)
+	if c.OutputPath != "" {
+		cmd.Args = append(cmd.Args, "--output", c.OutputPath)
+	}
+	cmd.Args = append(cmd.Args, c.Target)
+	for k, v := range c.Flags {
+		cmd.Args = append(cmd.Args, "--"+k, v)
+	}
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(out))
+	return string(out)
 }

@@ -2007,13 +2007,21 @@ class File(Type):
         return _ctx.execute_sync(str)
 
     @typecheck
-    def export(self, path: str) -> bool:
+    def export(
+        self,
+        path: str,
+        allow_parent_dir_path: Optional[bool] = None,
+    ) -> bool:
         """Writes the file to a file path on the host.
 
         Parameters
         ----------
         path:
             Location of the written directory (e.g., "output.txt").
+        allow_parent_dir_path:
+            If allowParentDirPath is true, the path argument can be a
+            directory path, in which case
+            the file will be created in that directory.
 
         Returns
         -------
@@ -2029,6 +2037,7 @@ class File(Type):
         """
         _args = [
             Arg("path", path),
+            Arg("allowParentDirPath", allow_parent_dir_path, None),
         ]
         _ctx = self._select("export", _args)
         return _ctx.execute_sync(bool)
@@ -2659,6 +2668,28 @@ class ProjectCommand(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
+
+    @typecheck
+    def result_type(self) -> Optional[str]:
+        """TODO: switch to actual type
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("resultType", _args)
+        return _ctx.execute_sync(Optional[str])
 
     @typecheck
     def subcommands(self) -> "ProjectCommand":

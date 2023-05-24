@@ -38,6 +38,9 @@ type ProjectCommand {
   "Flags accepted by this command."
   flags: [ProjectCommandFlag!]
 
+  "TODO: switch to actual type"
+  resultType: String
+
   "Documentation for what this command does."
   description: String
 

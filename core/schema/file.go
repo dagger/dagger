@@ -79,11 +79,12 @@ func (s *fileSchema) size(ctx *router.Context, file *core.File, args any) (int64
 }
 
 type fileExportArgs struct {
-	Path string
+	Path               string
+	AllowParentDirPath bool
 }
 
 func (s *fileSchema) export(ctx *router.Context, parent *core.File, args fileExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+	err := parent.Export(ctx, s.host, args.Path, args.AllowParentDirPath, s.bkClient, s.solveOpts, s.solveCh)
 	if err != nil {
 		return false, err
 	}
