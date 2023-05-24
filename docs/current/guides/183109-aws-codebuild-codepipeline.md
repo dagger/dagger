@@ -49,7 +49,8 @@ The first step is to create an AWS CodeBuild project, as described below.
         - Project name: `myapp-codebuild-project`
     - In the "Source" section:
         - Source: `AWS CodeCommit`
-        - Source reference or Branch: `main`
+        - Reference type: `Branch`
+        - Branch: `main`
     - In the "Environment" section:
         - Environment image: `Managed image`
         - Operating system: `Amazon Linux 2`
@@ -60,7 +61,7 @@ The first step is to create an AWS CodeBuild project, as described below.
         - Privileged: Enabled
         - Service role: `New service role`
         - Environment variables:
-          - `REGISTRY_ADDRESS`: `docker.io` (or your container registry address)
+          - `REGISTRY_ADDRESS`: Your registry address (`docker.io` for Docker Hub)
           - `REGISTRY_USERNAME`: Your registry username
           - `REGISTRY_PASSWORD`: Your registry password
     - In the "Buildspec" section:
@@ -72,7 +73,7 @@ The first step is to create an AWS CodeBuild project, as described below.
 1. Click "Create build project".
 
 AWS CodeBuild creates a new build project.
-fg
+
 The following images visually illustrate the AWS CodeBuild project configuration:
 
 ![Create CodeBuild project - project](/img/current/guides/aws-codebuild-codepipeline/codebuild-project.png)
@@ -185,34 +186,43 @@ Most `Container` object methods return a revised `Container` object representing
 
 AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com/codebuild/latest/userguide/build-spec-ref.html) to execute the build. This build specification file defines the stages of the build, and the commands to be run in each stage.
 
-In the repository, create a new file at `buildspec.yml` with the following content:
+1. In the application directory, create a new file at `buildspec.yml` with the following content:
 
-<Tabs groupId="language">
-<TabItem value="Go">
+  <Tabs groupId="language">
+  <TabItem value="Go">
 
-```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-go.yml
-```
+  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-go.yml
+  ```
 
-</TabItem>
-<TabItem value="Node.js">
+  </TabItem>
+  <TabItem value="Node.js">
 
-```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-nodejs.yml
-```
+  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-nodejs.yml
+  ```
 
-</TabItem>
-<TabItem value="Python">
+  </TabItem>
+  <TabItem value="Python">
 
-```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-python.yml
-```
+  ```yaml file=./snippets/aws-codebuild-codepipeline/buildspec-python.yml
+  ```
 
-</TabItem>
-</Tabs>
+  </TabItem>
+  </Tabs>
 
-This build specification defines three steps, as below:
+    This build specification defines three steps, as below:
 
-- The first step installs the Dagger SDK on the CI runner.
-- The second step executes the Dagger pipeline.
-- The third step displays a message with the date and time of build completion.
+    - The first step installs the Dagger SDK on the CI runner.
+    - The second step executes the Dagger pipeline.
+    - The third step displays a message with the date and time of build completion.
+
+1. Commit the Dagger pipeline and build specification file to the repository:
+
+  ```shell
+  git add buildspec.yml
+  git add ci/*
+  git commit -a -m "Added Dagger pipeline and build specification"
+  git push
+  ```
 
 ## Step 4: Create an AWS CodePipeline for Dagger
 
@@ -261,7 +271,7 @@ If you are using the example application described in [Appendix A](#appendix-a-c
 git pull
 echo -e "export default function Hello() {\n  return <h1>Hello from Dagger on AWS</h1>;\n }" > src/pages/index.js
 git add src/pages/index.js
-git commit -m "Update welcome message"
+git commit -m "Update index page"
 git push
 ```
 
