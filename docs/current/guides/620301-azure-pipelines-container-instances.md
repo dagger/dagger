@@ -2,7 +2,7 @@
 slug: /620301/azure-pipelines-container-instances
 displayed_sidebar: "current"
 category: "guides"
-tags: ["nodejs", "go", "python", "azure-pipelines", "azure-container-instances"]
+tags: ["nodejs", "go", "python", "azure", "azure-pipelines", "azure-container-instances"]
 authors: ["Vikram Vaswani"]
 date: "2023-05-30"
 ---
