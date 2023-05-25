@@ -224,33 +224,52 @@ func parseKeyValue(env string) (string, string) {
 	return parts[0], v
 }
 
-// addEnv adds or updates an environment variable in 'env'.
-func addEnv(env []string, k, v string) []string {
+// AddEnv adds or updates an environment variable in 'env'.
+func AddEnv(env []string, name, value string) []string {
 	// Implementation from the dockerfile2llb project.
 	gotOne := false
 
 	for i, envVar := range env {
-		key, _ := parseKeyValue(envVar)
-		if shell.EqualEnvKeys(key, k) {
-			env[i] = fmt.Sprintf("%s=%s", k, v)
+		k, _ := parseKeyValue(envVar)
+		if shell.EqualEnvKeys(k, name) {
+			env[i] = fmt.Sprintf("%s=%s", name, value)
 			gotOne = true
 			break
 		}
 	}
 
 	if !gotOne {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
+		env = append(env, fmt.Sprintf("%s=%s", name, value))
 	}
 
 	return env
 }
 
+// LookupEnv returns the value of an environment variable.
+func LookupEnv(env []string, name string) (string, bool) {
+	for _, envVar := range env {
+		k, v := parseKeyValue(envVar)
+		if shell.EqualEnvKeys(k, name) {
+			return v, true
+		}
+	}
+	return "", false
+}
+
+// WalkEnv iterates over all environment variables with parsed
+// key and value, and original string.
+func WalkEnv(env []string, fn func(string, string, string)) {
+	for _, envVar := range env {
+		key, value := parseKeyValue(envVar)
+		fn(key, value, envVar)
+	}
+}
+
 // mergeEnv adds or updates environment variables from 'src' in 'dst'.
 func mergeEnv(dst, src []string) []string {
-	for _, e := range src {
-		k, v := parseKeyValue(e)
-		dst = addEnv(dst, k, v)
-	}
+	WalkEnv(src, func(k, v, _ string) {
+		dst = AddEnv(dst, k, v)
+	})
 	return dst
 }
 

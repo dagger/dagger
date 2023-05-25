@@ -921,7 +921,12 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_env_variable(self, name: str, value: str) -> "Container":
+    def with_env_variable(
+        self,
+        name: str,
+        value: str,
+        expand: Optional[bool] = None,
+    ) -> "Container":
         """Retrieves this container plus the given environment variable.
 
         Parameters
@@ -930,10 +935,15 @@ class Container(Type):
             The name of the environment variable (e.g., "HOST").
         value:
             The value of the environment variable. (e.g., "localhost").
+        expand:
+            Replace ${VAR} or $VAR in the value according to the current
+            environment
+            variables defined in the container (e.g., "/opt/bin:$PATH").
         """
         _args = [
             Arg("name", name),
             Arg("value", value),
+            Arg("expand", expand, None),
         ]
         _ctx = self._select("withEnvVariable", _args)
         return Container(_ctx)

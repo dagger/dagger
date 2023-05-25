@@ -2,13 +2,14 @@ package schema
 
 import (
 	"fmt"
+	"os"
 	"path"
-	"strings"
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
+	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -302,26 +303,23 @@ func (s *containerSchema) workdir(ctx *router.Context, parent *core.Container, a
 }
 
 type containerWithVariableArgs struct {
-	Name  string
-	Value string
+	Name   string
+	Value  string
+	Expand bool
 }
 
 func (s *containerSchema) withEnvVariable(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		// NB(vito): buildkit handles replacing properly when we do llb.AddEnv, but
-		// we want to replace it here anyway because someone might publish the image
-		// instead of running it. (there's a test covering this!)
-		newEnv := []string{}
-		prefix := args.Name + "="
-		for _, env := range cfg.Env {
-			if !strings.HasPrefix(env, prefix) {
-				newEnv = append(newEnv, env)
-			}
+		value := args.Value
+
+		if args.Expand {
+			value = os.Expand(value, func(k string) string {
+				v, _ := core.LookupEnv(cfg.Env, k)
+				return v
+			})
 		}
 
-		newEnv = append(newEnv, fmt.Sprintf("%s=%s", args.Name, args.Value))
-
-		cfg.Env = newEnv
+		cfg.Env = core.AddEnv(cfg.Env, args.Name, value)
 
 		return cfg
 	})
@@ -333,15 +331,15 @@ type containerWithoutVariableArgs struct {
 
 func (s *containerSchema) withoutEnvVariable(ctx *router.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		removedEnv := []string{}
-		prefix := args.Name + "="
-		for _, env := range cfg.Env {
-			if !strings.HasPrefix(env, prefix) {
-				removedEnv = append(removedEnv, env)
-			}
-		}
+		newEnv := []string{}
 
-		cfg.Env = removedEnv
+		core.WalkEnv(cfg.Env, func(k, _, env string) {
+			if !shell.EqualEnvKeys(k, args.Name) {
+				newEnv = append(newEnv, env)
+			}
+		})
+
+		cfg.Env = newEnv
 
 		return cfg
 	})
@@ -359,15 +357,10 @@ func (s *containerSchema) envVariables(ctx *router.Context, parent *core.Contain
 	}
 
 	vars := make([]EnvVariable, 0, len(cfg.Env))
-	for _, v := range cfg.Env {
-		name, value, _ := strings.Cut(v, "=")
-		e := EnvVariable{
-			Name:  name,
-			Value: value,
-		}
 
-		vars = append(vars, e)
-	}
+	core.WalkEnv(cfg.Env, func(k, v, _ string) {
+		vars = append(vars, EnvVariable{Name: k, Value: v})
+	})
 
 	return vars, nil
 }
@@ -382,11 +375,8 @@ func (s *containerSchema) envVariable(ctx *router.Context, parent *core.Containe
 		return nil, err
 	}
 
-	for _, env := range cfg.Env {
-		name, val, ok := strings.Cut(env, "=")
-		if ok && name == args.Name {
-			return &val, nil
-		}
+	if val, ok := core.LookupEnv(cfg.Env, args.Name); ok {
+		return &val, nil
 	}
 
 	return nil, nil

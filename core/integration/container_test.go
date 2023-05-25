@@ -1020,6 +1020,46 @@ func TestContainerEnvVariablesReplace(t *testing.T) {
 	require.Contains(t, res.Container.From.WithEnvVariable.WithExec.Stdout, "GOPATH=/gone\n")
 }
 
+func TestContainerWithEnvVariableExpand(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("add env var without expansion", func(t *testing.T) {
+		out, err := c.Container().
+			From("alpine:3.16.2").
+			WithEnvVariable("FOO", "foo:$PATH").
+			WithExec([]string{"printenv", "FOO"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "foo:$PATH\n", out)
+	})
+
+	t.Run("add env var with expansion", func(t *testing.T) {
+		out, err := c.Container().
+			From("alpine:3.16.2").
+			WithEnvVariable("USER_PATH", "/opt").
+			WithEnvVariable(
+				"PATH",
+				"${USER_PATH}/bin:$PATH",
+				dagger.ContainerWithEnvVariableOpts{
+					Expand: true,
+				},
+			).
+			WithExec([]string{"printenv", "PATH"}).
+			Stdout(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t,
+			"/opt/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n",
+			out,
+		)
+	})
+}
+
 func TestContainerLabel(t *testing.T) {
 	ctx := context.Background()
 	c, err := dagger.Connect(ctx)
