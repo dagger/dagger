@@ -34,11 +34,11 @@ defmodule Dagger.MixProject do
   defp package do
     %{
       name: "dagger_ex",
-      description: "https://dagger.io SDK for Elixir",
+      description: "Dagger SDK for Elixir",
       licenses: ["MIT"],
       links: %{
-        "GitHub" => "https://github.com/wingyplus/dagger_ex",
-        "Changelog" => "#{@source_url}/blob/v#{@version}/CHANGELOG.md"
+        "GitHub" => "https://github.com/dagger/dagger",
+        "Changelog" => "#{@source_url}/blob/sdk/elixir/v#{@version}/CHANGELOG.md"
       }
     }
   end
