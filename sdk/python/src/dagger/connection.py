@@ -1,3 +1,5 @@
+import warnings
+
 from dagger import Client, Config, SyncClient
 
 from .context import ResourceManager, SyncResourceManager
@@ -45,6 +47,13 @@ class Connection(ResourceManager, SyncResourceManager):
         return Client.from_session(session)
 
     def __enter__(self) -> SyncClient:
+        warnings.warn(
+            "The synchronous API is deprecated and will be removed in a future"
+            " release. See https://github.com/dagger/dagger/issues/5192"
+            " for more information.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         with self.get_sync_stack() as stack:
             conn = stack.enter_context(Engine(self.cfg))
             session = stack.enter_context(Session(conn, self.cfg))

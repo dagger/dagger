@@ -13,6 +13,11 @@ pytestmark = [
 ]
 
 
+def test_deprecation():
+    with pytest.warns(DeprecationWarning, match="issues/5192"), dagger.Connection():
+        ...
+
+
 def test_container_build():
     with dagger.Connection() as client:
         repo = client.git("https://github.com/dagger/dagger").tag("v0.3.0").tree()
