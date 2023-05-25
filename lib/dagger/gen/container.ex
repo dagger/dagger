@@ -476,12 +476,20 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\")."
-    @spec with_env_variable(t(), String.t(), String.t()) :: Dagger.Container.t()
-    def with_env_variable(%__MODULE__{} = container, name, value) do
+    @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\").\n\n## Optional Arguments\n\n* `expand` - Replace ${VAR} or $VAR in the value according to the current environment\nvariables defined in the container (e.g., \"/opt/bin:$PATH\")."
+    @spec with_env_variable(t(), String.t(), String.t(), keyword()) :: Dagger.Container.t()
+    def with_env_variable(%__MODULE__{} = container, name, value, optional_args \\ []) do
       selection = select(container.selection, "withEnvVariable")
       selection = arg(selection, "name", name)
       selection = arg(selection, "value", value)
+
+      selection =
+        if not is_nil(optional_args[:expand]) do
+          arg(selection, "expand", optional_args[:expand])
+        else
+          selection
+        end
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
