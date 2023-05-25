@@ -55,9 +55,37 @@ func setupDebugHandlers(addr string) error {
 	return nil
 }
 
+// logTraceMetrics logs information useful for debugging but too expensive for the
+// default debug log level.
+func logTraceMetrics(ctx context.Context) {
+	for range time.Tick(5 * time.Minute) {
+		l := bklog.G(ctx)
+
+		// This is the same implementation as runtime/debug.Stack(), but with all=true.
+		// It should be used with caution as each call results in a stop-the-world for
+		// the gc, could take a lot of memory, and has to do extra work to ensure
+		// the full stack is collected
+		buf := make([]byte, 1024)
+		for {
+			n := runtime.Stack(buf, true)
+			if n < len(buf) {
+				buf = buf[:n]
+				break
+			}
+			buf = make([]byte, 2*len(buf))
+		}
+		l = l.WithField("goroutine-stacks", string(buf))
+
+		l.Trace("engine trace metrics")
+	}
+}
+
 func logMetrics(ctx context.Context, engineStateRootDir string) {
 	for range time.Tick(60 * time.Second) {
 		l := bklog.G(ctx)
+
+		// goroutine stats
+		l = l.WithField("goroutine-count", runtime.NumGoroutine())
 
 		// system cpu stats
 		cpuStats, err := cpu.Get()
