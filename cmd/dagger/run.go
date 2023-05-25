@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -117,15 +119,17 @@ func run(ctx context.Context, args []string) error {
 
 			cmdline := strings.Join(subCmd.Args, " ")
 			cmdVtx := rec.Vertex("cmd", cmdline)
-			subCmd.Stdout = cmdVtx.Stdout()
+			subCmd.Stdout = io.MultiWriter(os.Stdout, cmdVtx.Stdout())
 			subCmd.Stderr = cmdVtx.Stderr()
 
 			cmdErr = subCmd.Run()
 			cmdVtx.Done(cmdErr)
 		} else {
-			subCmd.Stdout = os.Stdout
+			stdout := bytes.NewBuffer(nil)
+			subCmd.Stdout = stdout
 			subCmd.Stderr = os.Stderr
 			cmdErr = subCmd.Run()
+			fmt.Fprint(os.Stdout, stdout.String())
 		}
 
 		return cmdErr
