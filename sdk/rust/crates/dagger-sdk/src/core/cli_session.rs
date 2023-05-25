@@ -50,6 +50,12 @@ impl InnerCliSession {
             args.extend(["--project".into(), abs_path.to_string_lossy().to_string()])
         }
 
+        args.extend(["--label".into(), "dagger.io/sdk.name:rust".into()]);
+        args.extend([
+            "--label".into(),
+            format!("dagger.io/sdk.version:{}", env!("CARGO_PKG_VERSION")).into(),
+        ]);
+
         let proc = tokio::process::Command::new(
             cli_path
                 .to_str()
