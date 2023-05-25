@@ -3000,26 +3000,23 @@ func TestContainerExecError(t *testing.T) {
 	})
 
 	t.Run("truncates output past a maximum size", func(t *testing.T) {
-		// fill a byte buffer with a string that is twice the size of the max output
+		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
 		var stdoutBuf bytes.Buffer
-		for i := 0; i < 2*core.MaxExecErrorOutputBytes; i++ {
+		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
 			stdoutBuf.WriteByte('a')
 		}
 		stdoutStr := stdoutBuf.String()
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := 0; i < 2*core.MaxExecErrorOutputBytes; i++ {
+		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
 			stderrBuf.WriteByte('b')
 		}
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(
-			core.TruncationMessage,
-			core.MaxExecErrorOutputBytes,
-		)
+		truncMsg := fmt.Sprintf(core.TruncationMessage, 50)
 
 		_, err = c.Container().
 			From("alpine:3.16.2").
