@@ -25,7 +25,7 @@ This tutorial assumes that:
 - You have a Go, Node.js or Python development environment. If not, install [Go](https://go.dev/doc/install), [Python](https://www.python.org/downloads/) or [Node.js](https://nodejs.org/en/download/).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have an AWS account with appropriate privileges to create and manage AWS Lambda resources. If not, [register for an AWS account](https://aws.amazon.com/).
-- You have an existing AWS Lambda function with a publicly-accessible URL in Go, Node.js or Python, deployed as a ZIP archive. If not, follow the steps in Appendix A to [create an example AWS Lambda function](#).
+- You have an existing AWS Lambda function with a publicly-accessible URL in Go, Node.js or Python, deployed as a ZIP archive. If not, follow the steps in Appendix A to [create an example AWS Lambda function](#appendix-a-create-an-example-aws-lambda-function).
 
 ## Step 1: Create a Dagger pipeline
 
@@ -213,19 +213,19 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   <Tabs groupId="language">
   <TabItem value="Go">
 
-    Within that directory, run the following commands to create a new Go module and add dependencies:
+  Within that directory, run the following commands to create a new Go module and add dependencies:
 
     ```shell
     go mod init main
     go get github.com/aws/aws-lambda-go/lambda
     ```
 
-    Within the same directory, create a file named `lambda.go` and fill it with the following code:
+  Within the same directory, create a file named `lambda.go` and fill it with the following code:
 
     ```go file=./snippets/aws-lambda/lambda.go
     ```
 
-    Build the function:
+  Build the function:
 
     ```shell
     GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o lambda lambda.go
@@ -234,14 +234,14 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   </TabItem>
   <TabItem value="Node.js">
 
-    Within that directory, run the following commands to initialize a new Node.js project and add dependencies:
+  Within that directory, run the following commands to initialize a new Node.js project and add dependencies:
 
     ```shell
     npm init -y
     npm install node-fetch
     ```
 
-    Within the same directory, create a file named `lambda.js` and fill it with the following code:
+  Within the same directory, create a file named `lambda.js` and fill it with the following code:
 
     ```javascript file=./snippets/aws-lambda/lambda.js
     ```
@@ -249,14 +249,14 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   </TabItem>
   <TabItem value="Python">
 
-    Within that directory, run the following commands to install project dependencies and create a requirements file:
+  Within that directory, run the following commands to install project dependencies and create a requirements file:
 
     ```shell
     pip install --target ./packages requests
     pip freeze --path ./packages > requirements.txt
     ```
 
-    Within the same directory, create a file named `lambda.py` and fill it with the following code:
+  Within the same directory, create a file named `lambda.py` and fill it with the following code:
 
     ```python file=./snippets/aws-lambda/lambda.py
     ```
@@ -309,4 +309,4 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
 
   This sequence of commands creates a new AWS Lambda function named `myFunction` and creates a publicly-accessible URL endpoint. The public URL endpoint is listed in the output of the last command.
 
-1.  Browse to the public URL endpoint to test the AWS Lambda function. Confirm that it displays a JSON-encoded list of issues from the Dagger GitHub repository.
+1. Browse to the public URL endpoint to test the AWS Lambda function. Confirm that it displays a JSON-encoded list of issues from the Dagger GitHub repository.
