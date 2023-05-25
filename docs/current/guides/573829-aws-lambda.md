@@ -14,7 +14,7 @@ import TabItem from "@theme/TabItem";
 
 ## Introduction
 
-This tutorial teaches you how to create a local Dagger pipeline to update and deploy an existing AWS Lambda function.
+This tutorial teaches you how to create a local Dagger pipeline to update and deploy an existing AWS Lambda function using a ZIP archive.
 
 ## Requirements
 
@@ -29,7 +29,7 @@ This tutorial assumes that:
 
 ## Step 1: Create a Dagger pipeline
 
-The next step is to create a Dagger pipeline to build a ZIP archive of the function and deploy it to AWS Lambda.
+The first step is to create a Dagger pipeline to build a ZIP archive of the function and deploy it to AWS Lambda.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -37,7 +37,7 @@ The next step is to create a Dagger pipeline to build a ZIP archive of the funct
 1. In the function directory, install the Dagger SDK:
 
   ```shell
-  go get dagger.io/dagger@latest
+  go get dagger.io/dagger
   ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
@@ -194,7 +194,7 @@ This tutorial assumes that you have an AWS Lambda function written in Go, Node.j
 This section assumes that you have the AWS CLI and a GitHub personal access token. If not, [install the AWS CLI](https://aws.amazon.com/cli/), learn how to [configure the AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-configure.html) and learn how to [obtain a GitHub personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token).
 :::
 
-1. Create a service role for AWS Lambda executions.
+1. Create a service role for AWS Lambda executions:
 
   ```shell
   aws iam create-role --role-name my-lambda-role --assume-role-policy-document '{"Version": "2012-10-17","Statement": [{ "Effect": "Allow", "Principal": {"Service": "lambda.amazonaws.com"}, "Action": "sts:AssumeRole"}]}'
@@ -307,6 +307,6 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
   </TabItem>
   </Tabs>
 
-  This sequence of commands creates a new AWS Lambda function named `myFunction` and creates a publicly-accessible URL endpoint. The public URL endpoint is listed in the output of the last command.
+  This sequence of commands creates a ZIP deployment archive, deploys it as a new AWS Lambda function named `myFunction`, and creates a publicly-accessible URL endpoint. The public URL endpoint is listed in the output of the last command.
 
 1. Browse to the public URL endpoint to test the AWS Lambda function. Confirm that it displays a JSON-encoded list of issues from the Dagger GitHub repository.
