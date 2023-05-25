@@ -5,10 +5,12 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   alias Dagger.Codegen.Elixir.Module, as: Mod
 
   @required_mods %{
-    "ContainerID" => "Container",
     "CacheID" => "CacheVolume",
+    "ContainerID" => "Container",
     "DirectoryID" => "Directory",
     "FileID" => "File",
+    "ProjectCommandID" => "ProjectCommand",
+    "ProjectID" => "Project",
     "SecretID" => "Secret",
     "SocketID" => "Socket"
   }
