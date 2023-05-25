@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -125,11 +124,9 @@ func run(ctx context.Context, args []string) error {
 			cmdErr = subCmd.Run()
 			cmdVtx.Done(cmdErr)
 		} else {
-			stdout := bytes.NewBuffer(nil)
-			subCmd.Stdout = stdout
+			subCmd.Stdout = os.Stdout
 			subCmd.Stderr = os.Stderr
 			cmdErr = subCmd.Run()
-			fmt.Fprint(os.Stdout, stdout.String())
 		}
 
 		return cmdErr
