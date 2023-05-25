@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/graphql"
+	"github.com/iancoleman/strcase"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 )
@@ -130,7 +132,7 @@ func ToResolver[P any, A any, R any](f func(*Context, P, A) (R, error)) graphql.
 			p.Context = progrock.RecorderToContext(p.Context, recorder)
 		}
 
-		vtx, err := queryVertex(recorder, p)
+		vtx, err := queryVertex(recorder, p.Info.FieldName, p.Source, args)
 		if err != nil {
 			return nil, err
 		}
@@ -177,43 +179,58 @@ func ErrResolver(err error) graphql.FieldResolveFn {
 	})
 }
 
-func queryVertex(recorder *progrock.Recorder, params graphql.ResolveParams) (*progrock.VertexRecorder, error) {
-	dig, err := queryDigest(params)
+func queryVertex(recorder *progrock.Recorder, fieldName string, parent, args any) (*progrock.VertexRecorder, error) {
+	dig, err := queryDigest(fieldName, parent, args)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compute query digest: %w", err)
 	}
 
 	var inputs []digest.Digest
 
-	name := params.Info.FieldName
-	if len(params.Args) > 0 {
-		name += "("
-		args := []string{}
-		for name, val := range params.Args {
-			if dg, ok := val.(Digestible); ok {
-				d, err := dg.Digest()
-				if err != nil {
-					return nil, fmt.Errorf("failed to compute digest for param %q: %w", name, err)
-				}
-
-				inputs = append(inputs, d)
-
-				// display digest instead
-				val = d
-			}
-
-			jv, err := json.Marshal(val)
-			if err != nil {
-				return nil, fmt.Errorf("failed to marshal arg %s: %w", name, err)
-			}
-
-			args = append(args, fmt.Sprintf("%s: %s", name, jv))
-		}
-		name += strings.Join(args, ", ")
-		name += ")"
+	// Ensure we use any custom serialization defined on the args type when displaying this.
+	// E.g. secret plaintext fields have a custom serialization that scrubs the value.
+	argBytes, err := json.Marshal(args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal args: %w", err)
+	}
+	argMap := map[string]any{}
+	if err := json.Unmarshal(argBytes, &argMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal args: %w", err)
 	}
 
-	if edible, ok := params.Source.(Digestible); ok {
+	name := fieldName
+	argStrs := []string{}
+	for argName, val := range argMap {
+		argName = strcase.ToLowerCamel(argName)
+		// skip if val is zero value for its type
+		if val == nil || reflect.DeepEqual(val, reflect.Zero(reflect.TypeOf(val)).Interface()) {
+			continue
+		}
+
+		if dg, ok := val.(Digestible); ok {
+			d, err := dg.Digest()
+			if err != nil {
+				return nil, fmt.Errorf("failed to compute digest for param %q: %w", argName, err)
+			}
+
+			inputs = append(inputs, d)
+
+			// display digest instead
+			val = d
+		}
+
+		jv, err := json.Marshal(val)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal arg %s: %w", argName, err)
+		}
+
+		argStrs = append(argStrs, fmt.Sprintf("%s: %s", argName, jv))
+	}
+	if len(argStrs) > 0 {
+		name += "(" + strings.Join(argStrs, ", ") + ")"
+	}
+
+	if edible, ok := parent.(Digestible); ok {
 		id, err := edible.Digest()
 		if err != nil {
 			return nil, fmt.Errorf("failed to compute digest: %w", err)
@@ -230,17 +247,17 @@ func queryVertex(recorder *progrock.Recorder, params graphql.ResolveParams) (*pr
 	), nil
 }
 
-func queryDigest(params graphql.ResolveParams) (digest.Digest, error) {
+func queryDigest(fieldName string, parent, args any) (digest.Digest, error) {
 	type subset struct {
 		Source any
 		Field  string
-		Args   map[string]any
+		Args   any
 	}
 
 	payload, err := json.Marshal(subset{
-		Source: params.Source,
-		Field:  params.Info.FieldName,
-		Args:   params.Args,
+		Source: parent,
+		Field:  fieldName,
+		Args:   args,
 	})
 	if err != nil {
 		return "", err
