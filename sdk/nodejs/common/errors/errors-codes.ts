@@ -40,9 +40,14 @@ export const ERROR_CODES = {
   DockerImageRefValidationError: "D107",
 
   /**
-   * @link NotAwaitedRequestError
+   * {@link NotAwaitedRequestError}
    */
   NotAwaitedRequestError: "D108",
+
+  /**
+   * (@link ExecError}
+   */
+  ExecError: "D109",
 } as const
 
 type ErrorCodesType = typeof ERROR_CODES

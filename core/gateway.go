@@ -13,6 +13,7 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	bkpb "github.com/moby/buildkit/frontend/gateway/pb"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -236,12 +237,18 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err != nil {
 			return
 		}
-		if err := proc.Wait(); err != nil {
+		var exitErr *bkpb.ExitError
+		if err := proc.Wait(); !errors.As(err, &exitErr) {
 			return
 		}
-		stdout := strings.TrimSpace(ctrOut.String())
-		stderr := strings.TrimSpace(ctrErr.String())
-		returnErr = fmt.Errorf("%w\nStdout:\n%s\nStderr:\n%s", returnErr, stdout, stderr)
+
+		returnErr = &ExecError{
+			original: returnErr,
+			Cmd:      execOp.Exec.Meta.Args,
+			ExitCode: int(exitErr.ExitCode),
+			Stdout:   strings.TrimSpace(ctrOut.String()),
+			Stderr:   strings.TrimSpace(ctrErr.String()),
+		}
 	}
 	*inputErr = returnErr
 }

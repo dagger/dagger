@@ -6,6 +6,7 @@ import {
   TooManyNestedObjectsError,
   UnknownDaggerError,
   NotAwaitedRequestError,
+  ExecError,
 } from "../common/errors/index.js"
 import { QueryTree } from "./client.gen.js"
 
@@ -187,7 +188,19 @@ export async function compute<T>(
     )
   } catch (e: any) {
     if (e instanceof ClientError) {
-      throw new GraphQLRequestError("Error message", {
+      const msg = e.response.errors?.[0]?.message ?? `API Error`
+      const ext = e.response.errors?.[0]?.extensions
+
+      if (ext?._type === "EXEC_ERROR") {
+        throw new ExecError(msg, {
+          cmd: (ext.cmd as string[]) ?? [],
+          exitCode: (ext.exitCode as number) ?? -1,
+          stdout: (ext.stdout as string) ?? "",
+          stderr: (ext.stderr as string) ?? "",
+        })
+      }
+
+      throw new GraphQLRequestError(msg, {
         request: e.request,
         response: e.response,
         cause: e,
@@ -198,14 +211,14 @@ export async function compute<T>(
     if (e.errno === "ECONNREFUSED") {
       throw new NotAwaitedRequestError(
         "Encountered an error while requesting data via graphql through a synchronous call. Make sure the function called is awaited.",
-        { cause: e as Error }
+        { cause: e }
       )
     }
 
     // Just throw the unknown error
     throw new UnknownDaggerError(
       "Encountered an unknown error while requesting data via graphql",
-      { cause: e as Error }
+      { cause: e }
     )
   }
 
