@@ -1,8 +1,16 @@
+> **Warning** This SDK is experimental. Please do not use it for anything
+> mission-critical. Possible issues include:
+
+- Missing features
+- Stability issues
+- Performance issues
+- Lack of polish
+- Upcoming breaking changes
+- Incomplete or out-of-date documentation
+
 # Dagger
 
 [Dagger](dagger.io) SDK for Elixir.
-
-**CAUTION**: It's not ready for production. The library is not complete an may changes during development. Please use with caution.
 
 ## Installation
 
