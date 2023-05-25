@@ -13,9 +13,7 @@ publish = true
 
 [dependencies]
 dagger-codegen = { workspace = true, default-features = false }
-dagger-sdk = { workspace = true, default-features = false, features = [
-  "no-gen",
-] }
+dagger-sdk = { workspace = true, default-features = false }
 
 eyre = { workspace = true }
 color-eyre = { workspace = true }
