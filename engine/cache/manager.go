@@ -101,7 +101,7 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 			case <-m.startCloseCh:
 				return
 			}
-			importContext, cancel := context.WithTimeout(importParentCtx, time.Minute)
+			importContext, cancel := context.WithTimeout(importParentCtx, 10*time.Minute)
 			if err := m.Import(importContext); err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to import cache")
 			}
