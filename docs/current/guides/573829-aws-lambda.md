@@ -215,51 +215,51 @@ This section assumes that you have the AWS CLI and a GitHub personal access toke
 
   Within that directory, run the following commands to create a new Go module and add dependencies:
 
-    ```shell
-    go mod init main
-    go get github.com/aws/aws-lambda-go/lambda
-    ```
+  ```shell
+  go mod init main
+  go get github.com/aws/aws-lambda-go/lambda
+  ```
 
   Within the same directory, create a file named `lambda.go` and fill it with the following code:
 
-    ```go file=./snippets/aws-lambda/lambda.go
-    ```
+  ```go file=./snippets/aws-lambda/lambda.go
+  ```
 
   Build the function:
 
-    ```shell
-    GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o lambda lambda.go
-    ```
+  ```shell
+  GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o lambda lambda.go
+  ```
 
   </TabItem>
   <TabItem value="Node.js">
 
   Within that directory, run the following commands to initialize a new Node.js project and add dependencies:
 
-    ```shell
-    npm init -y
-    npm install node-fetch
-    ```
+  ```shell
+  npm init -y
+  npm install node-fetch
+  ```
 
   Within the same directory, create a file named `lambda.js` and fill it with the following code:
 
-    ```javascript file=./snippets/aws-lambda/lambda.js
-    ```
+  ```javascript file=./snippets/aws-lambda/lambda.js
+  ```
 
   </TabItem>
   <TabItem value="Python">
 
   Within that directory, run the following commands to install project dependencies and create a requirements file:
 
-    ```shell
-    pip install --target ./packages requests
-    pip freeze --path ./packages > requirements.txt
-    ```
+  ```shell
+  pip install --target ./packages requests
+  pip freeze --path ./packages > requirements.txt
+  ```
 
   Within the same directory, create a file named `lambda.py` and fill it with the following code:
 
-    ```python file=./snippets/aws-lambda/lambda.py
-    ```
+  ```python file=./snippets/aws-lambda/lambda.py
+  ```
 
   </TabItem>
   </Tabs>
