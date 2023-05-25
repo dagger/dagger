@@ -209,11 +209,11 @@ AWS CodeBuild relies on a [build specification file](https://docs.aws.amazon.com
   </TabItem>
   </Tabs>
 
-  This build specification defines three steps, as below:
+    This build specification defines three steps, as below:
 
-      - The first step installs the Dagger SDK on the CI runner.
-      - The second step executes the Dagger pipeline.
-      - The third step displays a message with the date and time of build completion.
+    - The first step installs the Dagger SDK on the CI runner.
+    - The second step executes the Dagger pipeline.
+    - The third step displays a message with the date and time of build completion.
 
 1. Commit the Dagger pipeline and build specification file to the repository:
 
