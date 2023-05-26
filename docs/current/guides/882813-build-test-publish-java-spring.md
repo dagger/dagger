@@ -17,8 +17,8 @@ import TabItem from "@theme/TabItem";
 Dagger SDKs are currently available for Go, Node.js and Python, but you can use them to create CI/CD pipelines for applications written in any programming language. This guide explains how to use Dagger to continuously build, test and publish a Java application using Spring. You will learn how to:
 
 - Create a Dagger pipeline to:
-  - Build a container image of your Spring application with all required dependencies
-  - Run unit tests for your Laravel application image
+  - Build your Spring application with all required dependencies
+  - Run unit tests for your Spring application
   - Publish the final application image to Docker Hub
 - Run the Dagger pipeline on the local host using the Dagger CLI
 - Run the Dagger pipeline on every repository commit using GitHub Actions
@@ -32,7 +32,7 @@ This guide assumes that:
 - You have Docker installed and running in your development environment. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
-- You have a GitHub account and the GitHub CLI. If not, [register for a GitHub account](https://github.com/signup) and [install the GitHub CLI](https://github.com/cli/cli#installation)
+- You have a GitHub account. If not, [register for a free GitHub account](https://github.com/signup).
 - You have a GitHub repository containing a Spring application. This repository should also be cloned locally in your development environment. If not, follow the steps in Appendix A to [create and populate a local and GitHub repository with a Spring sample application](#appendix-a-create-a-github-repository-with-an-example-spring-application).
 
 ## Step 1: Create the Dagger pipeline
@@ -145,7 +145,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
 </TabItem>
 </Tabs>
 
-## Step 2: Run the Dagger pipeline on the local host
+## Step 2: Test the Dagger pipeline on the local host
 
 Configure the registry credentials using environment variables on the local host. Replace the `USERNAME` and `PASSWORD` placeholders with your Docker Hub credentials.
 
@@ -224,10 +224,11 @@ This also means that it's very easy to move your Dagger pipeline from your local
   </Tabs>
 
   This workflow runs on every commit to the repository `main` branch. It consists of a single job with five steps, as below:
-    - The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
-    - The second step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) to authenticate to Docker Hub from the GitHub runner. This is necessary because [Docker rate-limits unauthenticated registry pulls](https://docs.docker.com/docker-hub/download-rate-limit/).
-    - The third and fourth steps download and install the required programming language and corresponding Dagger SDK on the GitHub runner.
-    - The final step executes the Dagger pipeline.
+    1. The first step uses the [Checkout action](https://github.com/marketplace/actions/checkout) to check out the latest source code from the `main` branch to the GitHub runner.
+    1. The second step uses the [Docker Login action](https://github.com/marketplace/actions/docker-login) to authenticate to Docker Hub from the GitHub runner. This is necessary because [Docker rate-limits unauthenticated registry pulls](https://docs.docker.com/docker-hub/download-rate-limit/).
+    1. The third step downloads and installs the required programming language on the GitHub runner.
+    1. The fourth step downloads and installs the Dagger SDK on the GitHub runner.
+    1. The final step executes the Dagger pipeline.
 
 The Docker Login action and the Dagger pipeline both expect to find Docker Hub credentials in the `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` variables. Create these variables as GitHub secrets as follows:
 
@@ -283,6 +284,10 @@ Use the [API Key Concepts](../api/975146-concepts.mdx) page and the [Go](https:/
 ## Appendix A: Create a GitHub repository with an example Spring application
 
 This tutorial assumes that you have a GitHub repository with a Spring application. If not, follow the steps below to create a GitHub repository and commit an example Express application to it.
+
+:::info
+This section assumes that you have the GitHub CLI. If not, [install the GitHub CLI](https://github.com/cli/cli#installation) before proceeding.
+:::
 
 1. Log in to GitHub using the GitHub CLI:
 
