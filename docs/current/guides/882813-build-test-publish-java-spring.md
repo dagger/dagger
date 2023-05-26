@@ -54,8 +54,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
   ```go file=./snippets/build-test-publish-java-spring/main.go
   ```
 
-    This Dagger pipeline performs a number of different operations:
-
+  This Dagger pipeline performs a number of different operations:
     - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
     - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cache_volume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
     - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
@@ -93,8 +92,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
     ```javascript file=./snippets/build-test-publish-java-spring/index.mjs
     ```
 
-    This Dagger pipeline performs a number of different operations:
-
+  This Dagger pipeline performs a number of different operations:
     - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `connect()`. This client provides an interface for executing commands against the Dagger engine.
     - It uses the client's `setSecret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cacheVolume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
     - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
@@ -104,7 +102,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
         - It chains multiple `withEnvVariable()` methods to configure the database service, and uses the `withExposedPort()` method to ensure that the service is available to clients.
-    -  For the Maven container:
+    - For the Maven container:
         - It uses the `withMountedDirectory()` and `withMountedCache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `withWorkdir()` method to set the working directory in the container.
         - It adds a service binding for the database service to the Maven container using the `withServiceBinding()` method and sets the JDBC URL for the application test suite as an environment using the `withEnvVariable()` method.
         - Finally, it uses the `withExec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
@@ -126,8 +124,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
   ```python file=./snippets/build-test-publish-java-spring/main.py
   ```
 
-    This Dagger pipeline performs a number of different operations:
-
+  This Dagger pipeline performs a number of different operations:
     - It imports the Dagger SDK and checks for Docker Hub registry credentials in the host environment. It also creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
     - It uses the client's `set_secret()` method to set the Docker Hub registry password as a secret for the Dagger pipeline and configures a Maven cache volume with the `cache_volume()` method. This cache volume is used to persist the state of the Maven cache between runs, thereby eliminating time spent on re-downloading Maven packages.
     - It uses the client's `host().directory()` method to obtain a reference to the source code directory on the host.
@@ -137,7 +134,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
         - An OpenJDK Eclipse Temurin container from the `eclipse-temurin:17-alpine` image, to create an optimized deployment package.
     - For the MariaDB database container:
         - It chains multiple `with_env_variable()` methods to configure the database service, and uses the `with_exposed_port()` method to ensure that the service is available to clients.
-    -  For the Maven container:
+    - For the Maven container:
         - It uses the `with_mounted_directory()` and `with_mounted_cache()` methods to mount the host directory and the cache volume into the Maven container at the `/src` and `/root/.m2` mount points, and the `with_workdir()` method to set the working directory in the container.
         - It adds a service binding for the database service to the Maven container using the `with_service_binding()` method and sets the JDBC URL for the application test suite as an environment using the `with_env_variable()` method.
         - Finally, it uses the `with_exec()` method to execute the `mvn -Dspring.profiles.active=mysql clean package` command, which builds, tests and creates a JAR package of the application.
