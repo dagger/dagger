@@ -2,7 +2,7 @@ defmodule Dagger.MixProject do
   use Mix.Project
 
   @version "0.2.0-dev"
-  @source_url "https://github.com/wingyplus/dagger_ex"
+  @source_url "https://github.com/dagger/dagger"
 
   def project do
     [
@@ -37,8 +37,8 @@ defmodule Dagger.MixProject do
       description: "Dagger SDK for Elixir",
       licenses: ["MIT"],
       links: %{
-        "GitHub" => "https://github.com/dagger/dagger",
-        "Changelog" => "#{@source_url}/blob/sdk/elixir/v#{@version}/CHANGELOG.md"
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/releases/tag/sdk%2Felixir%2Fv#{@version}"
       }
     }
   end
