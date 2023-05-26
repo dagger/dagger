@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"dagger.io/dagger"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -24,7 +25,7 @@ func main() {
 		Container().
 		From("alpine").
 		WithExec([]string{"apk", "add", "curl"}).
-		WithEnvVariable("CACHEBUSTER", time.Now().String()).
+		WithEnvVariable("CACHEBUSTER", uuid.New().String()).
 		WithExec([]string{"apk", "add", "zip"}).
 		Stdout(ctx)
 	if err != nil {

@@ -1,6 +1,6 @@
 import sys
 import anyio
-from datetime import datetime
+import uuid
 import dagger
 
 async def main():
@@ -15,7 +15,7 @@ async def main():
             container().
             from_("alpine").
             with_exec(["apk", "add", "curl"]).
-            with_env_variable("CACHEBUSTER", str(datetime.now())).
+            with_env_variable("CACHEBUSTER", str(uuid.uuid4())).
             with_exec(["apk", "add", "zip"]).
             stdout()
         )

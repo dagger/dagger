@@ -1,4 +1,5 @@
 import { connect } from "@dagger.io/dagger"
+import { v4 as uuidv4 } from 'uuid';
 
 // create Dagger client
 connect(async (client) => {
@@ -9,7 +10,7 @@ connect(async (client) => {
     container().
     from("alpine").
     withExec(["apk", "add", "curl"]).
-    withEnvVariable("CACHEBUSTER", Date.now().toString()).
+    withEnvVariable("CACHEBUSTER", uuidv4()).
     withExec(["apk", "add", "zip"]).
     stdout()
 
