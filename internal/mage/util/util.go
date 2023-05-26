@@ -39,6 +39,11 @@ func Repository(c *dagger.Client) *dagger.Directory {
 
 			// rust
 			"**/target",
+
+			// elixir
+			"**/deps",
+			"**/cover",
+			"**/_build",
 		},
 	})
 }
