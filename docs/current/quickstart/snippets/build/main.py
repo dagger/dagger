@@ -28,7 +28,7 @@ async def main():
         test = runner.with_exec(["npm", "test", "--", "--watchAll=false"])
 
         # build application
-        # writhe the build output to the host
+        # write the build output to the host
         build_dir = (
             test.with_exec(["npm", "run", "build"])
             .directory("./build")
