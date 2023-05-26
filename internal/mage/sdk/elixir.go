@@ -21,7 +21,7 @@ func (Elixir) Lint(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
+	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("test")
 
 	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
 		ctx,
@@ -55,7 +55,7 @@ func (Elixir) Test(ctx context.Context) error {
 	}
 	defer c.Close()
 
-	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
+	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("test")
 
 	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
 		ctx,
