@@ -1,10 +1,10 @@
 ---
-slug: /128409/build-test-publish-java-spring
+slug: /882813/build-test-publish-java-spring
 displayed_sidebar: "current"
 category: "guides"
 tags: ["java", "spring"]
 authors: ["Vikram Vaswani"]
-date: "2023-06-17"
+date: "2023-07-05"
 ---
 
 import Tabs from "@theme/Tabs";
@@ -33,7 +33,7 @@ This guide assumes that:
 - You have the Dagger CLI installed in your development environment. If not, [install the Dagger CLI](../cli/465058-install.md).
 - You have a Docker Hub account. If not, [register for a free Docker Hub account](https://hub.docker.com/signup).
 - You have a GitHub account and the GitHub CLI. If not, [register for a GitHub account](https://github.com/signup) and [install the GitHub CLI](https://github.com/cli/cli#installation)
-- You have a GitHub repository containing a Spring application. This repository should also be cloned locally in your development environment. If not, follow the steps in Appendix A to [create and populate a local and GitHub repository with a Spring sample application](#).
+- You have a GitHub repository containing a Spring application. This repository should also be cloned locally in your development environment. If not, follow the steps in Appendix A to [create and populate a local and GitHub repository with a Spring sample application](#appendix-a-create-a-github-repository-with-an-example-spring-application).
 
 ## Step 1: Create the Dagger pipeline
 
@@ -51,7 +51,7 @@ The first step is to create a Dagger pipeline to build and test a container imag
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.go` and add the following code to it.
 
-  ```go file=./snippets/build-test-publish-java-spring/index.mjs
+  ```go file=./snippets/build-test-publish-java-spring/main.go
   ```
 
     This Dagger pipeline performs a number of different operations:
@@ -232,7 +232,7 @@ This also means that it's very easy to move your Dagger pipeline from your local
     - The third and fourth steps download and install the required programming language and corresponding Dagger SDK on the GitHub runner.
     - The final step executes the Dagger pipeline.
 
-The Docker Login action and the Dagger pipeline both expect to find Docker Hub credentials in the `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` variables. Create these variables as GitHub Actions secrets as follows:
+The Docker Login action and the Dagger pipeline both expect to find Docker Hub credentials in the `DOCKERHUB_USERNAME` and `DOCKERHUB_PASSWORD` variables. Create these variables as GitHub secrets as follows:
 
 1. Navigate to the `Settings` -> `Secrets and variables` -> `Actions` page of the GitHub repository.
 1. Click `New repository secret` to create a new secret.
@@ -270,7 +270,7 @@ Test the container, replacing `IMAGE-ADDRESS` with the image address returned by
 
 ```shell
 docker run --rm --detach --net=host --name mariadb -e MYSQL_USER=user -e MYSQL_PASSWORD=password -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=db mariadb:10.11.2
-docker run --rm --net=host -e MYSQL_URL=jdbc:mysql://user:password@localhost/db docker.io/vikramatdagger/myapp@sha256:ae13eaf3b7d41c90f2c928b216ef82ea55692ee3d487f9195e4fbc145ce8e93e
+docker run --rm --net=host -e MYSQL_URL=jdbc:mysql://user:password@localhost/db IMAGE-ADDRESS
 ```
 
 Browse to host port 8080. If you are using the Spring Petclinic example application described in [Appendix A](#appendix-a-create-a-github-repository-with-an-example-spring-application), you see the page shown below:
