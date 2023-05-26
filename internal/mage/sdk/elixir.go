@@ -15,6 +15,36 @@ var _ SDK = Elixir{}
 type Elixir mg.Namespace
 
 func (Elixir) Lint(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("go").Pipeline("test")
+
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
+		ctx,
+		c.Pipeline("dev-engine"),
+		util.DevEngineOpts{Name: "sdk-elixir-test"},
+	)
+	if err != nil {
+		return err
+	}
+
+	cliBinPath := "/.dagger-cli"
+
+	_, err = elixirBase(c, "1.14.5", "25.3", "20230227").
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"mix", "format", "--check-formatted"}).
+		ExitCode(ctx)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
