@@ -38,13 +38,13 @@ func (Elixir) Test(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = elixirBase(c).
+	_, err = elixirBase(c, "1.14.5", "25.3", "20230227").
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "test"}).
-		Sync(ctx)
+		ExitCode(ctx)
 	if err != nil {
 		return err
 	}
@@ -62,14 +62,14 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 	return nil
 }
 
-func elixirBase(c *dagger.Client) *dagger.Container {
+func elixirBase(c *dagger.Client, elixirVersion, otpVersion, debianVersion string) *dagger.Container {
 	const appDir = "sdk/elixir"
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
 	mountPath := fmt.Sprintf("/%s", appDir)
 
 	return c.Container().
-		From("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim").
+		From(fmt.Sprintf("hexpm/elixir:%s-erlang-%s-debian-buster-%s-slim", elixirVersion, otpVersion, debianVersion)).
 		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src).
 		WithExec([]string{"mix", "local.hex", "--force"}).
