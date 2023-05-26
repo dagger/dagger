@@ -10,7 +10,6 @@ defmodule Dagger.Codegen.Compiler.Mutator do
   def mutate(type) do
     type
     |> make_private()
-    # |> rename_query_type()
     |> gen_module_name()
   end
 
@@ -29,13 +28,6 @@ defmodule Dagger.Codegen.Compiler.Mutator do
   #
   # Mutators
   #
-
-  # Rename Query type into Client type.
-  defp rename_query_type(%{"name" => "Query"} = type) do
-    %{type | "name" => "Client"}
-  end
-
-  defp rename_query_type(type), do: type
 
   # Attach module name into private.
   defp gen_module_name(%{"name" => name} = type) do

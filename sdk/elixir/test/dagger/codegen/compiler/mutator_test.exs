@@ -15,17 +15,5 @@ defmodule Dagger.Codegen.Compiler.MutatorTest do
 
       %{"private" => %{mod_name: Dagger.GitRef}} = Mutator.mutate(type)
     end
-
-    test "rename Query type into Client" do
-      type = %{
-        "name" => "Query",
-        "kind" => "OBJECT",
-        "inputFields" => nil,
-        "interfaces" => [],
-        "fields" => []
-      }
-
-      %{"name" => "Client", "private" => %{mod_name: Dagger.Client}} = Mutator.mutate(type)
-    end
   end
 end
