@@ -42,6 +42,11 @@ defmodule Mix.Tasks.Dagger.Ci.Test do
         Task.async(__MODULE__, :check_format, [base_image])
       ]
       |> Task.await_many(:timer.seconds(180))
+      |> case do
+        [{:error, _}, _] -> System.halt(1)
+        [_, {:error, _}] -> System.halt(1)
+        _ -> :ok
+      end
     end)
   end
 
@@ -49,14 +54,14 @@ defmodule Mix.Tasks.Dagger.Ci.Test do
     base_image
     |> Dagger.Container.pipeline("Test")
     |> Dagger.Container.with_exec(["mix", "test", "--color"])
-    |> Dagger.Container.stdout()
+    |> Dagger.Container.exit_code()
   end
 
   def check_format(base_image) do
     base_image
     |> Dagger.Container.pipeline("Check Format")
     |> Dagger.Container.with_exec(["mix", "format", "--check-formatted"])
-    |> Dagger.Container.stdout()
+    |> Dagger.Container.exit_code()
   end
 
   def with_session(fun, opts \\ []) when is_function(fun, 1) do
