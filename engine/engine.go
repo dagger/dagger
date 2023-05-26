@@ -578,7 +578,9 @@ func progrockForwarder(w progrock.Writer, rawOutput io.Writer) (string, progrock
 			xdg.CacheHome,
 			"dagger",
 		)
-		fmt.Fprintf(rawOutput, "WARNING: unable to create dagger runtime dir %s, falling back to %s: %v\n", parentDir, fallbackParentDir, err)
+		if rawOutput != nil {
+			fmt.Fprintf(rawOutput, "WARNING: unable to create dagger runtime dir %s, falling back to %s: %v\n", parentDir, fallbackParentDir, err)
+		}
 		if err := os.MkdirAll(fallbackParentDir, 0700); err != nil {
 			return "", nil, nil, err
 		}
