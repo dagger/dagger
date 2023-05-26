@@ -233,3 +233,9 @@ async def test_container_awaitable():
         # chaining
         out = await (await base.with_exec(["echo", "spam"])).stdout()
         assert out == "spam\n"
+
+
+async def test_deprecation_warning():
+    async with dagger.Connection() as client:
+        with pytest.warns(DeprecationWarning, match="with_exec"):
+            await client.container().from_("alpine:3.16.2").exec(["true"])
