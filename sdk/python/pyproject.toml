@@ -168,7 +168,7 @@ ignore = [
     # Type inferrance is ok in a lot of places.
     "ANN",
     # This rule doesn't know to ignore a subclass override
-    # so we get false positives for unused arguments. 
+    # so we get false positives for unused arguments.
     "ARG002",
     # Black can handle trailing commas automatically.
     "COM812",
@@ -188,10 +188,10 @@ ignore = [
     "RET504",
     # We don't use asserts as runtime validation guarantees.
     "S101",
-    # Don't guard types. Don't want to stringize them. 
+    # Don't guard types. Don't want to stringize them.
     "TCH",
     # Pandas
-    "PD", 
+    "PD",
 ]
 unfixable = [
     # Don't remove `print` statements, just warn.
@@ -213,19 +213,21 @@ extend-immutable-calls = ["typer.Option"]
     # Note: We could detect built-in shadowing like the reserved
     # keywords but these built-ins aren't being used in the generated
     # code so no need to bother.
-    "A", 
-    "D", 
+    "A",
+    "D",
+    # Too hard to properly wrap long lines in codegen.
+    "E501",
     # Too many arguments to function call.
     "PLR0913",
-    # `Optional` is preferred over `| None` because of how 
+    # `Optional` is preferred over `| None` because of how
     # beartype handles forward references.
     "UP007",
 ]
-# Ignore built-in shadowing in test mocks. 
+# Ignore built-in shadowing in test mocks.
 "./tests/api/test_inputs.py" = ["A", "ERA001"]
 "./tests/*.py" = [
     # Ignore security issues in tests.
-    "S", 
+    "S",
     # Magic value comparison doesn't apply to tests.
     "PLR2004",
     # Allow more than one statement in pytest.raises.
