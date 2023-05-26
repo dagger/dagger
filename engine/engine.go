@@ -94,7 +94,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		})
 	}
 
-	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter)
+	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter, startOpts.LogOutput)
 	if err != nil {
 		return fmt.Errorf("progress forwarding: %w", err)
 	}
@@ -567,16 +567,30 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	return &status
 }
 
-func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error, error) {
-	progSock := filepath.Join(
+func progrockForwarder(w progrock.Writer, rawOutput io.Writer) (string, progrock.Writer, func() error, error) {
+	parentDir := filepath.Join(
 		xdg.RuntimeDir,
 		"dagger",
-		fmt.Sprintf("progrock-%d.sock", time.Now().UnixNano()),
 	)
-
-	if err := os.MkdirAll(filepath.Dir(progSock), 0700); err != nil {
+	err := os.MkdirAll(parentDir, 0700)
+	if os.IsPermission(err) {
+		fallbackParentDir := filepath.Join(
+			xdg.CacheHome,
+			"dagger",
+		)
+		fmt.Fprintf(rawOutput, "WARNING: unable to create dagger runtime dir %s, falling back to %s: %v\n", parentDir, fallbackParentDir, err)
+		if err := os.MkdirAll(fallbackParentDir, 0700); err != nil {
+			return "", nil, nil, err
+		}
+		parentDir = fallbackParentDir
+	} else if err != nil {
 		return "", nil, nil, err
 	}
+
+	progSock := filepath.Join(
+		parentDir,
+		fmt.Sprintf("progrock-%d.sock", time.Now().UnixNano()),
+	)
 
 	l, err := net.Listen("unix", progSock)
 	if err != nil {
