@@ -182,8 +182,7 @@ type GetLayerUploadURLResponse struct {
 	Headers map[string]string
 }
 
-type GetCacheMountConfigRequest struct {
-}
+type GetCacheMountConfigRequest struct{}
 
 type GetCacheMountConfigResponse struct {
 	SyncedCacheMounts []SyncedCacheMountConfig
@@ -210,7 +209,7 @@ type GetCacheMountUploadURLResponse struct {
 
 type client struct {
 	httpClient *http.Client
-	host       string
+	baseURL    string
 }
 
 var _ Service = &client{}
@@ -225,10 +224,10 @@ func newClient(urlString string) (Service, error) {
 
 	switch u.Scheme {
 	case "tcp":
-		c.host = u.Host
+		c.baseURL = "http://" + u.Host
 		c.httpClient = &http.Client{}
 	case "unix":
-		c.host = "local"
+		c.baseURL = "http://local"
 		c.httpClient = &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -236,6 +235,9 @@ func newClient(urlString string) (Service, error) {
 				},
 			},
 		}
+	default:
+		c.baseURL = urlString
+		c.httpClient = &http.Client{}
 	}
 
 	return c, nil
@@ -252,7 +254,7 @@ func (c *client) GetConfig(ctx context.Context, req GetConfigRequest) (*Config, 
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/config", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/config", bodyR)
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +290,7 @@ func (c *client) UpdateCacheRecords(
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", "http://"+c.host+"/records", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/records", bodyR)
 	if err != nil {
 		return nil, err
 	}
@@ -324,7 +326,7 @@ func (c *client) UpdateCacheLayers(
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "POST", "http://"+c.host+"/layers", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/layers", bodyR)
 	if err != nil {
 		return err
 	}
@@ -344,7 +346,7 @@ func (c *client) UpdateCacheLayers(
 
 //nolint:dupl
 func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/import", nil)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/import", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +378,7 @@ func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadUR
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/layerDownloadURL", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/layerDownloadURL", bodyR)
 	if err != nil {
 		return nil, err
 	}
@@ -409,7 +411,7 @@ func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLReq
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/layerUploadURL", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/layerUploadURL", bodyR)
 	if err != nil {
 		return nil, err
 	}
@@ -442,7 +444,7 @@ func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfi
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/cacheMountConfig", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/cacheMountConfig", bodyR)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +477,7 @@ func (c *client) GetCacheMountUploadURL(ctx context.Context, req GetCacheMountUp
 		}
 	}()
 
-	httpReq, err := http.NewRequestWithContext(ctx, "GET", "http://"+c.host+"/cacheMountUploadURL", bodyR)
+	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/cacheMountUploadURL", bodyR)
 	if err != nil {
 		return nil, err
 	}
