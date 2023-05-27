@@ -14,6 +14,7 @@ var _ SDK = Elixir{}
 
 type Elixir mg.Namespace
 
+// Lint lints the Elixir SDK
 func (Elixir) Lint(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -48,6 +49,7 @@ func (Elixir) Lint(ctx context.Context) error {
 	return nil
 }
 
+// Test tests the Elixir SDK
 func (Elixir) Test(ctx context.Context) error {
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -81,13 +83,17 @@ func (Elixir) Test(ctx context.Context) error {
 	return nil
 }
 
+// Generate re-generates the SDK API
 func (Elixir) Generate(ctx context.Context) error {
 	return nil
 }
+
+// Publish publishes the Elixir SDK
 func (Elixir) Publish(ctx context.Context, tag string) error {
 	return nil
 }
 
+// Bump the Elixir SDK's Engine dependency
 func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 	return nil
 }
