@@ -4,10 +4,16 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/internal/mage/util"
 	"github.com/magefile/mage/mg"
+)
+
+const (
+	elixirSDKPath          = "sdk/elixir"
+	elixirSDKGeneratedPath = elixirSDKPath + "/lib/dagger/gen"
 )
 
 var _ SDK = Elixir{}
@@ -85,6 +91,45 @@ func (Elixir) Test(ctx context.Context) error {
 
 // Generate re-generates the SDK API
 func (Elixir) Generate(ctx context.Context) error {
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
+
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(
+		ctx,
+		c.Pipeline("dev-engine"),
+		util.DevEngineOpts{Name: "sdk-elixir-test"},
+	)
+	if err != nil {
+		return err
+	}
+
+	cliBinPath := "/.dagger-cli"
+
+	generated := elixirBase(c, "1.14.5", "25.3", "20230227").
+		WithServiceBinding("dagger-engine", devEngine).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
+		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"mix", "dagger.gen"})
+
+	if err := os.RemoveAll(elixirSDKGeneratedPath); err != nil {
+		return err
+	}
+
+	ok, err := generated.
+		Directory(strings.Replace(elixirSDKGeneratedPath, elixirSDKPath +"/", "", 1)).
+		Export(ctx, elixirSDKGeneratedPath)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("Cannot export generated code to `%s`", elixirSDKGeneratedPath)
+	}
 	return nil
 }
 
