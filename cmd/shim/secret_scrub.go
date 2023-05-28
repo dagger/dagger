@@ -32,18 +32,11 @@ func (w *SecretScrubWriter) Write(b []byte) (int, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	var written int
 	for _, secretBytes := range w.secrets {
 		b = bytes.ReplaceAll(b, secretBytes, scrubString)
 	}
 
-	n, err := w.w.Write(b)
-	if err != nil {
-		return -1, err
-	}
-	written += n
-
-	return written, nil
+	return w.w.Write(b)
 }
 
 // NewSecretScrubWriter replaces known secrets by "***".
