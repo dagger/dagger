@@ -280,26 +280,32 @@ func shim() int {
 	}
 	defer stdoutFile.Close()
 
-	envToScrub := os.Environ()
-	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
-	scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
-	if err != nil {
-		panic(err)
-	}
-	cmd.Stdout = scrubOutWriter
-
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
 
+	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
 	errWriter := io.MultiWriter(stderrFile, os.Stderr)
-	scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
-	if err != nil {
-		panic(err)
+
+	// Only initialize scrubbing logic if secrets are set:
+	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
+		cmd.Stdout = outWriter
+		cmd.Stderr = errWriter
+	} else {
+		envToScrub := os.Environ()
+		scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		if err != nil {
+			panic(err)
+		}
+		cmd.Stdout = scrubOutWriter
+		scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		if err != nil {
+			panic(err)
+		}
+		cmd.Stderr = scrubErrWriter
 	}
-	cmd.Stderr = scrubErrWriter
 
 	exitCode := 0
 	if err := runWithNesting(ctx, cmd); err != nil {
