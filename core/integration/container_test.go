@@ -2719,6 +2719,17 @@ func TestContainerExport(t *testing.T) {
 		require.Contains(t, entries, "manifest.json")
 	})
 
+	t.Run("to subdir", func(t *testing.T) {
+		ok, err := ctr.Export(ctx, "./foo/image.tar")
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		entries := tarEntries(t, filepath.Join(wd, "foo", "image.tar"))
+		require.Contains(t, entries, "oci-layout")
+		require.Contains(t, entries, "index.json")
+		require.Contains(t, entries, "manifest.json")
+	})
+
 	t.Run("to outer dir", func(t *testing.T) {
 		ok, err := ctr.Export(ctx, "../")
 		require.Error(t, err)
