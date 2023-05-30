@@ -14,6 +14,11 @@ import (
 const (
 	elixirSDKPath          = "sdk/elixir"
 	elixirSDKGeneratedPath = elixirSDKPath + "/lib/dagger/gen"
+
+	// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
+	elixirVersion = "1.14.5"
+	otpVersion    = "25.3"
+	debianVersion = "20230227"
 )
 
 var _ SDK = Elixir{}
@@ -41,7 +46,7 @@ func (Elixir) Lint(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = elixirBase(c, "1.14.5", "25.3", "20230227").
+	_, err = elixirBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -76,7 +81,7 @@ func (Elixir) Test(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	_, err = elixirBase(c, "1.14.5", "25.3", "20230227").
+	_, err = elixirBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -110,7 +115,7 @@ func (Elixir) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	generated := elixirBase(c, "1.14.5", "25.3", "20230227").
+	generated := elixirBase(c).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -122,7 +127,7 @@ func (Elixir) Generate(ctx context.Context) error {
 	}
 
 	ok, err := generated.
-		Directory(strings.Replace(elixirSDKGeneratedPath, elixirSDKPath +"/", "", 1)).
+		Directory(strings.Replace(elixirSDKGeneratedPath, elixirSDKPath+"/", "", 1)).
 		Export(ctx, elixirSDKGeneratedPath)
 	if err != nil {
 		return err
@@ -143,7 +148,7 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 	return nil
 }
 
-func elixirBase(c *dagger.Client, elixirVersion, otpVersion, debianVersion string) *dagger.Container {
+func elixirBase(c *dagger.Client) *dagger.Container {
 	const appDir = "sdk/elixir"
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
