@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
@@ -51,7 +52,11 @@ func Listen(cmd *cobra.Command, args []string) {
 		}
 		defer sessionL.Close()
 
-		srv := &http.Server{Handler: r}
+		srv := &http.Server{
+			Handler: r,
+			// Gosec G112: prevent slowloris attacks
+			ReadHeaderTimeout: 10 * time.Second,
+		}
 
 		go func() {
 			<-ctx.Done()
@@ -61,7 +66,7 @@ func Listen(cmd *cobra.Command, args []string) {
 
 		fmt.Fprintf(stderr, "==> server listening on http://%s/query\n", listenAddress)
 
-		return srv.Serve(sessionL) // nolint:gosec
+		return srv.Serve(sessionL)
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
