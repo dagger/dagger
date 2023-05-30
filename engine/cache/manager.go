@@ -42,6 +42,7 @@ type ManagerConfig struct {
 	Worker       worker.Worker
 	MountManager *mounts.MountManager
 	ServiceURL   string
+	Token        string
 	EngineID     string
 }
 
@@ -60,7 +61,7 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 	}
 	bklog.G(ctx).Debugf("using cache service at %s", managerConfig.ServiceURL)
 
-	serviceClient, err := newClient(managerConfig.ServiceURL)
+	serviceClient, err := newClient(managerConfig.ServiceURL, managerConfig.Token)
 	if err != nil {
 		return nil, err
 	}

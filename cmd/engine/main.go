@@ -302,7 +302,7 @@ func main() { //nolint:gocyclo
 			go logTraceMetrics(context.Background())
 		}
 
-		if err := os.MkdirAll(root, 0700); err != nil {
+		if err := os.MkdirAll(root, 0o700); err != nil {
 			return errors.Wrapf(err, "failed to create %s", root)
 		}
 
@@ -740,7 +740,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 		return nil, nil, err
 	}
 
-	historyDB, err := bbolt.Open(filepath.Join(cfg.Root, "history.db"), 0600, nil)
+	historyDB, err := bbolt.Open(filepath.Join(cfg.Root, "history.db"), 0o600, nil)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -751,12 +751,14 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	}
 
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
+	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
 	cacheManager, err := cache.NewManager(ctx, cache.ManagerConfig{
 		KeyStore:     cacheStorage,
 		ResultStore:  worker.NewCacheResultStorage(wc),
 		Worker:       w,
 		MountManager: mounts.NewMountManager("dagger-cache", w.CacheManager(), sessionManager),
 		ServiceURL:   cacheServiceURL,
+		Token:        cacheServiceToken,
 		EngineID:     w.Labels()[engine.EngineNameLabel],
 	})
 	if err != nil {
@@ -931,7 +933,7 @@ func runTraceController(p string, exp sdktrace.SpanExporter) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Chmod(p, 0666); err != nil {
+	if err := os.Chmod(p, 0o666); err != nil {
 		l.Close()
 		return err
 	}
@@ -980,8 +982,7 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (string, error) 
 	return cniConfigPath, nil
 }
 
-type noopCacheImporter struct {
-}
+type noopCacheImporter struct{}
 
 var _ remotecache.Importer = &noopCacheImporter{}
 

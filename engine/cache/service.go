@@ -210,11 +210,12 @@ type GetCacheMountUploadURLResponse struct {
 type client struct {
 	httpClient *http.Client
 	baseURL    string
+	token      string
 }
 
 var _ Service = &client{}
 
-func newClient(urlString string) (Service, error) {
+func newClient(urlString, token string) (Service, error) {
 	c := &client{}
 
 	u, err := url.Parse(urlString)
@@ -240,6 +241,7 @@ func newClient(urlString string) (Service, error) {
 		c.httpClient = &http.Client{}
 	}
 
+	c.token = token
 	return c, nil
 }
 
@@ -257,6 +259,9 @@ func (c *client) GetConfig(ctx context.Context, req GetConfigRequest) (*Config, 
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/config", bodyR)
 	if err != nil {
 		return nil, err
+	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -294,6 +299,9 @@ func (c *client) UpdateCacheRecords(
 	if err != nil {
 		return nil, err
 	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -330,6 +338,9 @@ func (c *client) UpdateCacheLayers(
 	if err != nil {
 		return err
 	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -349,6 +360,9 @@ func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, err
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/import", nil)
 	if err != nil {
 		return nil, err
+	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -381,6 +395,9 @@ func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadUR
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/layerDownloadURL", bodyR)
 	if err != nil {
 		return nil, err
+	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
@@ -415,6 +432,9 @@ func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLReq
 	if err != nil {
 		return nil, err
 	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -448,6 +468,9 @@ func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfi
 	if err != nil {
 		return nil, err
 	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	httpResp, err := c.httpClient.Do(httpReq)
@@ -480,6 +503,9 @@ func (c *client) GetCacheMountUploadURL(ctx context.Context, req GetCacheMountUp
 	httpReq, err := http.NewRequestWithContext(ctx, "GET", c.baseURL+"/cacheMountUploadURL", bodyR)
 	if err != nil {
 		return nil, err
+	}
+	if len(c.token) > 0 {
+		httpReq.SetBasicAuth(c.token, "")
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 
