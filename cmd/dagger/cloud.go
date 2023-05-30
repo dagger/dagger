@@ -13,6 +13,7 @@ func init() {
 	cloud := &CloudCLI{}
 
 	rootCmd.PersistentFlags().StringVar(&cloud.API, "api", "https://api.dagger.cloud", "Dagger Cloud API URL")
+	rootCmd.PersistentFlags().MarkHidden("api")
 
 	loginCmd := &cobra.Command{
 		Use:   "login",
