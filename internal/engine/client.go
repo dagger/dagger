@@ -107,6 +107,14 @@ func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, err
 		time.Sleep(retryPeriod)
 	}
 
+	if err != nil {
+		return nil, fmt.Errorf("buildkit failed to respond: %w", err)
+	}
+
+	if c == nil {
+		return nil, fmt.Errorf("buildkit failed to respond")
+	}
+
 	// FIXME Does output "failed to wait: signal: broken pipe"
 	defer c.Close()
 
