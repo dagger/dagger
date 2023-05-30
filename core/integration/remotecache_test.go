@@ -34,8 +34,7 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 		WithEnvVariable("ENGINE_ID", id).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities:      true,
-			ExperimentalPrivilegedNesting: true,
+			InsecureRootCapabilities: true,
 		})
 
 	endpoint, err = devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})

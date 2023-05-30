@@ -189,8 +189,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
 		WithExec(nil, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities:      true,
-			ExperimentalPrivilegedNesting: true,
+			InsecureRootCapabilities: true,
 		})
 
 	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
