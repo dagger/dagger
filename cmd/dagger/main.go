@@ -39,7 +39,6 @@ func init() {
 		queryCmd,
 		runCmd,
 		sessionCmd(),
-		cloudCmd,
 	)
 }
 
