@@ -81,7 +81,7 @@ Browse to host port 8080. Confirm that you see the React application's welcome p
 :::warning
 You may have noticed that the pipeline above is able to publish to the registry without requiring the user to enter any authentication credentials. This is only possible because the [ttl.sh](https://ttl.sh/) registry allows anonymous access. In reality, however, most popular registries require authentication before accepting images for publication.
 
-Dagger SDKs rely on your existing Docker credentials for registry authentication. This means that you must execute `docker login` against your selected container registry on the Dagger host before attempting to publish an image to that registry.
+Dagger SDKs rely on your existing Docker credentials for registry authentication. This means that you must either execute `docker login` on the Dagger host, or invoke the [`Container.withRegistryAuth()`](https://docs.dagger.io/api/reference/#Container-withRegistryAuth) API method in your Dagger pipeline, before attempting to publish an image to that registry.
 :::
 
 </QuickstartDoc>
