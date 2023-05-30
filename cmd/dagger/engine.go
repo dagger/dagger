@@ -17,8 +17,17 @@ import (
 	"github.com/vito/progrock"
 )
 
-var useTUI = isatty.IsTerminal(os.Stdout.Fd()) ||
-	isatty.IsTerminal(os.Stderr.Fd())
+var silent bool
+
+func init() {
+	rootCmd.PersistentFlags().BoolVarP(
+		&silent,
+		"silent",
+		"s",
+		!isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsTerminal(os.Stderr.Fd()),
+		"disable terminal UI and progress output",
+	)
+}
 
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
@@ -41,7 +50,7 @@ func withEngineAndTUI(
 		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	if !useTUI {
+	if silent {
 		if engineConf.LogOutput == nil {
 			engineConf.LogOutput = os.Stderr
 		}
