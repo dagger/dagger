@@ -17,14 +17,14 @@ func init() {
 
 	loginCmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate with Dagger Cloud",
+		Short: "Log in to Dagger Cloud",
 		RunE:  cloud.Login,
 	}
 	rootCmd.AddCommand(loginCmd)
 
 	logoutCmd := &cobra.Command{
 		Use:   "logout",
-		Short: "Log out of Dagger Cloud",
+		Short: "Log out from Dagger Cloud",
 		RunE:  cloud.Logout,
 	}
 	rootCmd.AddCommand(logoutCmd)
