@@ -100,7 +100,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	}
 	defer cleanup()
 
-	recorder := progrock.NewRecorder(progW, labels...)
+	recorder := progrock.NewRecorder(progW, progrock.WithLabels(labels...))
 	ctx = progrock.RecorderToContext(ctx, recorder)
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)

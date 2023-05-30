@@ -63,12 +63,13 @@ require (
 	github.com/google/go-github/v50 v50.2.0
 	github.com/jackpal/gateway v1.0.7
 	github.com/mackerelio/go-osstat v0.2.4
+	github.com/mattn/go-isatty v0.0.18
 	github.com/muesli/termenv v0.15.1
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.6
 	github.com/prometheus/procfs v0.9.0
-	github.com/vito/progrock v0.3.0
-	github.com/vito/vt100 v0.0.0-20230429034200-0ebbfae52df4
+	github.com/vito/progrock v0.4.1
+	github.com/vito/vt100 v0.1.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 )
 
@@ -156,7 +157,6 @@ require (
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
-	github.com/mattn/go-isatty v0.0.18 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.14 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect

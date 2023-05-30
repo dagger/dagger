@@ -74,7 +74,7 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 
 		// WithGroup stores an internal hierarchy of groups by name, so this will
 		// always return the same group ID throughout the session.
-		rec = rec.WithGroup(p.Name, labels...)
+		rec = rec.WithGroup(p.Name, progrock.WithLabels(labels...))
 	}
 
 	return rec
