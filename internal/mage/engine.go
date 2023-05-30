@@ -249,6 +249,8 @@ func (t Engine) TestRace(ctx context.Context) error {
 }
 
 func (t Engine) Dev(ctx context.Context) error {
+	mg.Deps(t.Build)
+
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
 		return err
