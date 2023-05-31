@@ -69,7 +69,7 @@ require (
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.7
 	github.com/prometheus/procfs v0.9.0
-	github.com/vito/progrock v0.5.0
+	github.com/vito/progrock v0.5.1
 	github.com/vito/vt100 v0.1.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 )

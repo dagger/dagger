@@ -564,7 +564,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {
-		progW, err := progrock.DialRPC(ctx, "unix:/.progrock.sock")
+		progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
 		if err != nil {
 			return fmt.Errorf("error connecting to progrock: %w", err)
 		}
