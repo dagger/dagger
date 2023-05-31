@@ -129,5 +129,5 @@ func main() {
 	}
 
 	// print ref
-	fmt.Println("Deployment for image", addr, "now available at", res.ContainerGroup.Properties.IPAddress.IP)
+	fmt.Println("Deployment for image", addr, "now available at", *res.ContainerGroup.Properties.IPAddress.IP)
 }
