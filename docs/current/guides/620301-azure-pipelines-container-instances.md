@@ -142,7 +142,7 @@ The next step is to create a Dagger pipeline to do the heavy lifting: build a co
 1. In the application directory, create a virtual environment and install the Dagger SDK and the Azure SDK client libraries:
 
   ```shell
-  pip install dagger-io azure-identity azure-mgmt-containerinstance
+  pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance
   ```
 
 1. Create a new sub-directory named `ci`. Within the `ci` directory, create a file named `main.py` and add the following code to it. Modify the region (`useast`) and resource group name (`my-group`) if you specified different values when creating the Azure resource group in Step 1.

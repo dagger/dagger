@@ -3,8 +3,8 @@ import sys
 from enum import Enum, auto
 
 import anyio
-from azure.identity import DefaultAzureCredential
-from azure.mgmt.containerinstance import ContainerInstanceManagementClient
+from azure.identity.aio import DefaultAzureCredential
+from azure.mgmt.containerinstance.aio import ContainerInstanceManagementClient
 import dagger
 
 # configure container group, name and location
@@ -66,42 +66,44 @@ async def main():
             Env.DOCKERHUB_PASSWORD.as_secret(dagger_client),
         ).publish(f"{Env.DOCKERHUB_USERNAME}/my-app")
 
-        print(f"Published at: {addr}")
+    print(f"Published at: {addr}")
 
-        # initialize Azure client
-        azure_client = ContainerInstanceManagementClient(
-            credential=DefaultAzureCredential(),
+    # define deployment request
+    container_group = {
+        "containers": [
+            {
+                "name": CONTAINER_NAME,
+                "image": addr,
+                "ports": [{"port": "3000"}],
+                "resources": {"requests": {"cpu": "1", "memoryInGB": "1.5"}},
+            }
+        ],
+        "ipAddress": {
+            "type": "Public",
+            "ports": [{"port": "3000", "protocol": "TCP"}],
+        },
+        "osType": "Linux",
+        "location": CONTAINER_GROUP_LOCATION,
+        "restartPolicy": "OnFailure",
+    }
+
+    # initialize Azure client
+    async with DefaultAzureCredential() as credential:
+        async with ContainerInstanceManagementClient(
+            credential=credential,
             subscription_id=Env.AZURE_SUBSCRIPTION_ID,
-        )
-
-        # define deployment request
-        container_group = {
-            "containers": [
-                {
-                    "name": CONTAINER_NAME,
-                    "image": addr,
-                    "ports": [{"port": "3000"}],
-                    "resources": {"requests": {"cpu": "1", "memoryInGB": "1.5"}},
-                }
-            ],
-            "ipAddress": {
-                "type": "Public",
-                "ports": [{"port": "3000", "protocol": "TCP"}],
-            },
-            "osType": "Linux",
-            "location": CONTAINER_GROUP_LOCATION,
-            "restartPolicy": "OnFailure",
-        }
-
-        # send request and wait until done
-        result = azure_client.container_groups.begin_create_or_update(
-            RESOURCE_GROUP_NAME,
-            CONTAINER_GROUP_NAME,
-            container_group,
-        ).result()
+        ) as azure_client:
+            # send request and wait until done
+            response = await azure_client.container_groups.begin_create_or_update(
+                RESOURCE_GROUP_NAME,
+                CONTAINER_GROUP_NAME,
+                container_group,
+            )
+            result = await response.result()
 
     print(
-        f"Deployment for image {addr} now available at http://{result.ip_address.ip}:{result.ip_address.ports[0].port}"
+        f"Deployment for image {addr} now available at "
+        f"http://{result.ip_address.ip}:{result.ip_address.ports[0].port}"
     )
 
 
