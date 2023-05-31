@@ -55,7 +55,7 @@ func NewFileSt(ctx context.Context, st llb.State, dir string, pipeline pipeline.
 // WithXXX method.
 func (file *File) Clone() *File {
 	cp := *file
-	cp.Pipeline = clone(cp.Pipeline)
+	cp.Pipeline = cloneSlice(cp.Pipeline)
 	cp.Services = cloneMap(cp.Services)
 	return &cp
 }

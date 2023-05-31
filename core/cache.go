@@ -20,7 +20,7 @@ func NewCache(keys ...string) *CacheVolume {
 
 func (cache *CacheVolume) Clone() *CacheVolume {
 	cp := *cache
-	cp.Keys = clone(cp.Keys)
+	cp.Keys = cloneSlice(cp.Keys)
 	return &cp
 }
 

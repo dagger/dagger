@@ -199,13 +199,16 @@ func parseUID(str string) (int, error) {
 	return int(uid), nil
 }
 
-func clone[T any](src []T) []T {
+func cloneSlice[T any](src []T) []T {
 	dst := make([]T, len(src))
 	copy(dst, src)
 	return dst
 }
 
 func cloneMap[K comparable, T any](src map[K]T) map[K]T {
+	if src == nil {
+		return src
+	}
 	dst := make(map[K]T, len(src))
 	for k, v := range src {
 		dst[k] = v
