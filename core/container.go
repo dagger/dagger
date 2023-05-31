@@ -1440,26 +1440,12 @@ func (container *Container) Publish(
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) (string, error) {
+	exportOpts := container.baseExportOpts(platformVariants, forcedCompression)
+	exportOpts.Type = bkclient.ExporterImage // always use image for publishing to registry
+	exportOpts.Attrs["name"] = ref
+	exportOpts.Attrs["push"] = strconv.FormatBool(true)
 	// NOTE: be careful to not overwrite any values from original solveOpts (i.e. with append).
-	solveOpts.Exports = []bkclient.ExportEntry{
-		{
-			Type: bkclient.ExporterImage,
-			Attrs: map[string]string{
-				"name": ref,
-				"push": strconv.FormatBool(true),
-			},
-		},
-	}
-
-	if forcedCompression != "" {
-		compressionStr := strings.ToLower(string(forcedCompression))
-		solveOpts.Exports[0].Attrs["compression"] = compressionStr
-		solveOpts.Exports[0].Attrs["force-compression"] = strconv.FormatBool(true)
-		if forcedCompression == CompressionEStarGZ {
-			// required for estargz
-			solveOpts.Exports[0].Attrs["oci-mediatypes"] = strconv.FormatBool(true)
-		}
-	}
+	solveOpts.Exports = []bkclient.ExportEntry{exportOpts}
 
 	ch, wg := mirrorCh(solveCh)
 	defer wg.Wait()
@@ -1520,27 +1506,45 @@ func (container *Container) Export(
 
 	defer out.Close()
 
-	exportOpts := bkclient.ExportEntry{
-		Type: bkclient.ExporterOCI,
-		Output: func(map[string]string) (io.WriteCloser, error) {
-			return out, nil
-		},
+	exportOpts := container.baseExportOpts(platformVariants, forcedCompression)
+	exportOpts.Output = func(map[string]string) (io.WriteCloser, error) {
+		return out, nil
 	}
-	if forcedCompression != "" {
-		compressionStr := strings.ToLower(string(forcedCompression))
-		exportOpts.Attrs = map[string]string{
-			"compression":       compressionStr,
-			"force-compression": strconv.FormatBool(true),
-		}
-		if forcedCompression == CompressionEStarGZ {
-			// required for estargz
-			exportOpts.Attrs["oci-mediatypes"] = strconv.FormatBool(true)
-		}
-	}
-
 	return host.Export(ctx, exportOpts, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 		return container.export(ctx, gw, platformVariants)
 	})
+}
+
+func (container *Container) baseExportOpts(
+	platformVariants []ContainerID,
+	forcedCompression ImageLayerCompression,
+) bkclient.ExportEntry {
+	exportOpts := bkclient.ExportEntry{
+		Attrs: make(map[string]string),
+	}
+
+	platformCount := len(platformVariants)
+	if container.FS != nil {
+		platformCount++
+	}
+	// The behavior here is enforcing the default behavior present before
+	// a change in containerd: https://github.com/dagger/dagger/pull/5223#issuecomment-1569286964
+	if platformCount > 1 || forcedCompression == CompressionEStarGZ {
+		// multiplatform images must use OCI mediatypes
+		exportOpts.Type = bkclient.ExporterOCI
+		exportOpts.Attrs["oci-mediatypes"] = strconv.FormatBool(true)
+	} else {
+		// single platform images currently default to Docker types, though tarballs
+		// still include an OCI index.json
+		exportOpts.Type = bkclient.ExporterDocker
+	}
+
+	if forcedCompression != "" {
+		exportOpts.Attrs["compression"] = strings.ToLower(string(forcedCompression))
+		exportOpts.Attrs["force-compression"] = strconv.FormatBool(true)
+	}
+
+	return exportOpts
 }
 
 const OCIStoreName = "dagger-oci"
