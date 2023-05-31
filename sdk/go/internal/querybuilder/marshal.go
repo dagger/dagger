@@ -1,11 +1,13 @@
 package querybuilder
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"reflect"
 	"strings"
 
+	gqlgen "github.com/99designs/gqlgen/graphql"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -62,13 +64,19 @@ func marshalValue(ctx context.Context, v reflect.Value) (string, error) {
 		return fmt.Sprintf("%d", v.Int()), nil
 	case reflect.String:
 		name := t.Name()
+		// escape strings following graphQL spec
+		// https://github.com/graphql/graphql-spec/blob/main/spec/Section%202%20--%20Language.md#string-value
+		var buf bytes.Buffer
+		gqlgen.MarshalString(v.String()).MarshalGQL(&buf)
+
 		// distinguish enum const values and customScalars from string type
 		// GraphQL complains if you try to put a string literal in place of an enum: FOO vs "FOO"
+		// Enums do not follow the unicode escape
 		_, found := customScalar[t.Name()]
 		if name != "string" && !found {
 			return fmt.Sprintf("%s", v.String()), nil //nolint:gosimple,staticcheck
 		}
-		return fmt.Sprintf("%q", v.String()), nil //nolint:gosimple,staticcheck
+		return buf.String(), nil //nolint:gosimple,staticcheck
 	case reflect.Pointer:
 		if v.IsNil() {
 			return "null", nil

@@ -35,6 +35,7 @@ contrib.go.opencensus.io/integrations/ocsql v0.1.4/go.mod h1:8DsSdjz3F+APR+0z0Wk
 contrib.go.opencensus.io/resource v0.1.1/go.mod h1:F361eGI91LCmW1I/Saf+rX0+OFcigGlFvXwEGEnkRLA=
 dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9/go.mod h1:H6x//7gZCb22OMCxBHrMx7a5I7Hp++hsVxbQ4BYO7hU=
 git.sr.ht/~sbinet/gg v0.3.1 h1:LNhjNn8DerC8f9DHLz6lS0YYul/b602DUxDgGkd/Aik=
+github.com/99designs/gqlgen v0.17.2 h1:yczvlwMsfcVu/JtejqfrLwXuSP0yZFhmcss3caEvHw8=
 github.com/99designs/gqlgen v0.17.2/go.mod h1:K5fzLKwtph+FFgh9j7nFbRUdBKvTcGnsta51fsMTn3o=
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1 h1:EKPd1INOIyr5hWOWhvpmQpY6tKjeG0hT1s3AMC/9fic=
 github.com/AdaLogics/go-fuzz-headers v0.0.0-20230106234847-43070de90fa1/go.mod h1:VzwV+t+dZ9j/H867F1M2ziD+yLHtB46oM35FxxMJ4d0=
