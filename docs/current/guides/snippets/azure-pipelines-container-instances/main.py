@@ -1,6 +1,6 @@
 import os
 import sys
-from enum import Enum, auto
+from enum import StrEnum, auto
 
 import anyio
 from azure.identity.aio import DefaultAzureCredential
@@ -14,7 +14,7 @@ CONTAINER_GROUP_LOCATION = "eastus"
 RESOURCE_GROUP_NAME = "my-group"
 
 
-class Env(str, Enum):
+class Env(StrEnum):
     """Required environment variables."""
 
     def _generate_next_value_(name, *_) -> str:
