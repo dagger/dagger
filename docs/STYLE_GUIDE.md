@@ -101,6 +101,7 @@ Each recipe requires only:
 ### Code listings
 
 Code listing can come from two sources:
+
 - Snippets used in an existing guide (usually stored in `./guides/snippets/GUIDE/FILE`)
 - Snippets created specifically for the cookbook (usually stored in `./cookbook/snippets/RECIPE/FILE`)
 
