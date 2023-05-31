@@ -51,7 +51,7 @@ func main() {
 	// mount source code directory into Node image
 	// install dependencies
 	// set entrypoint
-	c := node.WithDirectory("/src", source).
+	ctr := node.WithDirectory("/src", source).
 		WithWorkdir("/src").
 		WithExec([]string{"cp", "-R", ".", "/home/node"}).
 		WithWorkdir("/home/node").
@@ -60,7 +60,7 @@ func main() {
 
 	// publish image
 	dockerHubUsername := os.Getenv("DOCKERHUB_USERNAME")
-	addr, err := c.WithRegistryAuth("docker.io", dockerHubUsername, dockerHubPassword).
+	addr, err := ctr.WithRegistryAuth("docker.io", dockerHubUsername, dockerHubPassword).
 		Publish(ctx, fmt.Sprintf("%s/my-app", dockerHubUsername))
 	if err != nil {
 		panic(err)

@@ -32,7 +32,7 @@ connect(async (daggerClient) => {
   // mount cloned repository into Node image
   // install dependencies
   // set entrypoint
-  const c = node
+  const ctr = node
     .withDirectory("/src", source)
     .withWorkdir("/src")
     .withExec(["cp", "-R", ".", "/home/node"])
@@ -42,7 +42,7 @@ connect(async (daggerClient) => {
 
   // publish image
   const dockerHubUsername = process.env.DOCKERHUB_USERNAME;
-  const address = await c
+  const address = await ctr
     .withRegistryAuth("docker.io", dockerHubUsername, secret)
     .publish(`${dockerHubUsername}/my-app`);
 
