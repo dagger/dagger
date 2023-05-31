@@ -1,0 +1,12 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Installing Dagger SDK for Python"
+      - pip install dagger-io
+
+  build:
+    commands:
+      - echo "Running Dagger pipeline"
+      - python ci/main.py

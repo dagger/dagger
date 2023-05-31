@@ -1,0 +1,12 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Installing Dagger SDK for Node"
+      - npm install @dagger.io/dagger@latest
+
+  build:
+    commands:
+      - echo "Running Dagger pipeline"
+      - node ci/index.mjs
