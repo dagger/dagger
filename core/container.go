@@ -1509,6 +1509,10 @@ func (container *Container) Export(
 		return err
 	}
 
+	if err := os.MkdirAll(filepath.Dir(dest), 0o700); err != nil {
+		return err
+	}
+
 	out, err := os.Create(dest)
 	if err != nil {
 		return err
