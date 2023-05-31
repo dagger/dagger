@@ -9,6 +9,7 @@ replace cloud.google.com/go => cloud.google.com/go v0.100.2
 
 require (
 	dagger.io/dagger v0.4.1
+	github.com/99designs/gqlgen v0.17.2 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
@@ -25,7 +26,6 @@ require (
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
-	github.com/99designs/gqlgen v0.17.2
 	github.com/iancoleman/strcase v0.2.0
 	// https://github.com/moby/buildkit/commit/baffc1bda21be5dae54770fe828c03909b8547a6
 	github.com/moby/buildkit v0.11.0-rc3.0.20230529232739-baffc1bda21b
@@ -54,7 +54,7 @@ require (
 	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
 	golang.org/x/term v0.8.0
-	google.golang.org/grpc v1.54.0
+	google.golang.org/grpc v1.55.0
 	oss.terrastruct.com/d2 v0.4.0
 )
 
@@ -69,7 +69,7 @@ require (
 	github.com/nxadm/tail v1.4.8
 	github.com/opencontainers/runc v1.1.7
 	github.com/prometheus/procfs v0.9.0
-	github.com/vito/progrock v0.4.1
+	github.com/vito/progrock v0.5.0
 	github.com/vito/vt100 v0.1.1
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 )
