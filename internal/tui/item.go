@@ -405,6 +405,10 @@ func (g *Group) sort() {
 		ie := g.entries[i]
 		je := g.entries[j]
 		switch {
+		case g.isAncestor(ie, je):
+			return true
+		case g.isAncestor(je, ie):
+			return false
 		case ie.Started() == nil && je.Started() == nil:
 			// both pending
 			return false
@@ -421,6 +425,27 @@ func (g *Group) sort() {
 			return false
 		}
 	})
+}
+
+func (g *Group) isAncestor(i, j TreeEntry) bool {
+	if i == j {
+		return false
+	}
+
+	id := i.ID()
+
+	for _, d := range j.Inputs() {
+		if d == id {
+			return true
+		}
+
+		e, ok := g.entriesByID[string(d)]
+		if ok && g.isAncestor(i, e) {
+			return true
+		}
+	}
+
+	return false
 }
 
 type emptyGroup struct {
