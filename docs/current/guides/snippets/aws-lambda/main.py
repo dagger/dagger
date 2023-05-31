@@ -1,24 +1,26 @@
-import sys
-import os
 import json
+import os
+import sys
+
 import anyio
 import dagger
+
 
 async def main():
 
     # check for required variables in host environment
     for var in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION"]:
         if var not in os.environ:
-            raise EnvironmentError('"%s" environment variable must be set' % var)
+            raise EnvironmentError(f'"{var}" environment variable must be set')
 
     # initialize Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # set AWS credentials as client secrets
-        aws_access_key_id = client.set_secret("aws_access_key_id", os.environ.get("AWS_ACCESS_KEY_ID"))
-        aws_secret_access_key = client.set_secret("aws_secret_access_key", os.environ.get("AWS_SECRET_ACCESS_KEY"))
+        aws_access_key_id = client.set_secret("aws_access_key_id", os.environ["AWS_ACCESS_KEY_ID"])
+        aws_secret_access_key = client.set_secret("aws_secret_access_key", os.environ["AWS_SECRET_ACCESS_KEY"])
 
-        aws_region = os.environ.get("AWS_DEFAULT_REGION");
+        aws_region = os.environ["AWS_DEFAULT_REGION"]
 
         # get reference to function directory
         lambda_dir = client.host().directory(".", exclude=["ci", ".venv", "packages"])
@@ -64,6 +66,8 @@ async def main():
             .stdout()
         )
         data = json.loads(response)
-        print(f"Function updated at: {data['FunctionUrl']}")
+
+    print(f"Function updated at: {data['FunctionUrl']}")
+
 
 anyio.run(main)
