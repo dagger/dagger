@@ -486,7 +486,7 @@ func (container *Container) buildUncached(
 
 		// associate vertexes to the 'docker build' sub-pipeline
 		recordVertexes(subRecorder, def.ToPB())
-		overrideProgress(def, subPipeline)
+		def = overrideProgress(def, subPipeline)
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1327,7 +1327,7 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 
 		if pipelineOverride != nil {
 			recordVertexes(progrock.RecorderFromContext(ctx), def.ToPB())
-			overrideProgress(def, *pipelineOverride)
+			def = overrideProgress(def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
