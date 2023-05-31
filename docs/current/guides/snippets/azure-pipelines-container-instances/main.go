@@ -128,6 +128,10 @@ func main() {
 		panic(err)
 	}
 
-	// print ref
-	fmt.Println("Deployment for image", addr, "now available at", *res.ContainerGroup.Properties.IPAddress.IP)
+	fmt.Printf(
+		"Deployment for image %s now available at http://%s:%d\n",
+		addr,
+		*res.ContainerGroup.Properties.IPAddress.IP,
+		*res.ContainerGroup.Properties.IPAddress.Ports[0].Port,
+	)
 }

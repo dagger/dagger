@@ -11,7 +11,7 @@ steps:
     versionSpec: '3.10.11'
   displayName: 'Install Python'
 
-- script: pip install dagger-io azure-identity azure-mgmt-containerinstance
+- script: pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance
   displayName: 'Install Dagger and Azure SDKs'
 
 - script: python ci/main.py
