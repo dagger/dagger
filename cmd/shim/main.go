@@ -283,25 +283,23 @@ func shim() int {
 	}
 	defer stderrFile.Close()
 
+	envToScrub := os.Environ()
 	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
 	errWriter := io.MultiWriter(stderrFile, os.Stderr)
 
-	// Only initialize scrubbing logic if secrets are set:
 	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 		cmd.Stdout = outWriter
 		cmd.Stderr = errWriter
 	} else {
-		envToScrub := os.Environ()
-		scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			panic(err)
 		}
-		cmd.Stdout = scrubOutWriter
-		scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
 		if err != nil {
 			panic(err)
 		}
-		cmd.Stderr = scrubErrWriter
+		go io.Copy(outWriter, scrubOutReader)
 	}
 
 	exitCode := 0

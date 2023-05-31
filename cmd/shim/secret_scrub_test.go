@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	_ "embed"
 	"fmt"
+	"io/ioutil"
 	"testing"
 	"testing/fstest"
 
@@ -37,17 +39,17 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 
 	t.Run("scrub files and env", func(t *testing.T) {
 		var buf bytes.Buffer
+		buf.WriteString("I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file \nwith line feed.")
 		currentDirPath := "/"
-		w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
+		r, err := NewSecretScrubReader(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
 			Envs:  []string{"MY_SECRET_ID"},
 			Files: []string{"/mysecret", "/subdir/alsosecret"},
 		})
 		require.NoError(t, err)
-
-		_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself. As well as a subdir secret file \nwith line feed.")
+		out, err := ioutil.ReadAll(r)
 		require.NoError(t, err)
 		want := "I love to share *** to my close ones. But I keep *** to myself. As well as ***."
-		require.Equal(t, want, buf.String())
+		require.Equal(t, want, string(out))
 	})
 
 	t.Run("do not scrub empty env", func(t *testing.T) {
@@ -60,16 +62,17 @@ func TestSecretScrubWriterWrite(t *testing.T) {
 		}
 
 		var buf bytes.Buffer
-		w, err := NewSecretScrubWriter(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
+		buf.WriteString("I love to share my secret value to my close ones. But I keep my secret file to myself.")
+
+		r, err := NewSecretScrubReader(&buf, currentDirPath, fsys, env, core.SecretToScrubInfo{
 			Envs:  []string{"EMPTY_SECRET_ID"},
 			Files: []string{"/emptysecret"},
 		})
 		require.NoError(t, err)
-
-		_, err = fmt.Fprintf(w, "I love to share my secret value to my close ones. But I keep my secret file to myself.")
+		out, err := ioutil.ReadAll(r)
 		require.NoError(t, err)
 		want := "I love to share my secret value to my close ones. But I keep my secret file to myself."
-		require.Equal(t, want, buf.String())
+		require.Equal(t, want, string(out))
 	})
 
 }
@@ -169,42 +172,76 @@ func TestScrubSecretWrite(t *testing.T) {
 		"sshPublicKey",
 	}
 
-	out := new(bytes.Buffer)
-	w, err := NewSecretScrubWriter(out, "/", fstest.MapFS{}, env, core.SecretToScrubInfo{
+	secretToScrubInfo := core.SecretToScrubInfo{
 		Envs:  envNames,
 		Files: []string{},
-	})
-	require.NoError(t, err)
+	}
 
 	t.Run("multiline secret", func(t *testing.T) {
+		var buf bytes.Buffer
+		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+		require.NoError(t, err)
 		input := "aaa\n" + sshSecretKey + "\nbbb\nccc"
-		_, err := w.Write([]byte(input))
+		_, err = buf.WriteString(input)
 		require.NoError(t, err)
-		require.Equal(t, "aaa\n***\nbbb\nccc", out.String())
-		out.Reset()
+		out, err := ioutil.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, "aaa\n***\nbbb\nccc", string(out))
+		buf.Reset()
 
-		_, err = w.Write([]byte(sshSecretKey))
+		r, err = NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
-		require.Equal(t, "***", out.String())
-		out.Reset()
+		_, err = buf.WriteString(sshSecretKey)
+		require.NoError(t, err)
+		out, err = ioutil.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, "***", string(out))
 	})
-
 	t.Run("single line secret", func(t *testing.T) {
-		input := "aaa\nsecret1 value\nno secret\n"
-		_, err := w.Write([]byte(input))
+		var buf bytes.Buffer
+		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
-		require.Equal(t, "aaa\n***\nno secret\n", out.String())
-		out.Reset()
+
+		input := "aaa\nsecret1 value\nno secret\n"
+		_, err = buf.WriteString(input)
+		require.NoError(t, err)
+		out, err := ioutil.ReadAll(r)
+		require.NoError(t, err)
+		require.Equal(t, "aaa\n***\nno secret\n", string(out))
 	})
 
 	t.Run("multi write", func(t *testing.T) {
-		_, err := w.Write([]byte("secret1 value"))
+		var buf bytes.Buffer
+		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
 		require.NoError(t, err)
-		require.Equal(t, "***", out.String())
 
-		_, err = w.Write([]byte("\nsecret2"))
-		require.NoError(t, err)
-		require.Equal(t, "***\n***", out.String())
+		inputLines := []string{
+			"secret1 value",
+			"secret2",
+			"nonsecret",
+		}
+		outputLines := []string{
+			"***",
+			"***",
+			"nonsecret",
+		}
+
+		// Do multi write:
+		for _, s := range inputLines {
+			buf.WriteString(s)
+			buf.WriteRune('\n')
+		}
+
+		// Scan through SecretScrubReader and validate output:
+		scanner := bufio.NewScanner(r)
+		var i int
+		for scanner.Scan() {
+			out := scanner.Text()
+			expected := outputLines[i]
+			require.Equal(t, expected, out)
+			i++
+		}
+		require.Equal(t, len(outputLines), i)
 	})
 
 }

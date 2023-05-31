@@ -1,15 +1,15 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"io/fs"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/dagger/dagger/core"
+	"github.com/icholy/replace"
+	"golang.org/x/text/transform"
 )
 
 var (
@@ -17,32 +17,11 @@ var (
 	scrubString = []byte("***")
 )
 
-// SecretScrubWriter is a writer that will scrub secretValues before writing to the underlying writer.
-// It is safe to write to it concurrently.
-type SecretScrubWriter struct {
-	mu sync.Mutex
-	w  io.Writer
-
-	// secrets stores secrets as []byte to avoid overhead when matching them:
-	secrets [][]byte
+type SecretScrubReader struct {
+	io.Reader
 }
 
-// Write scrubs secret values from b and replace them with `***`.
-func (w *SecretScrubWriter) Write(b []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for _, secretBytes := range w.secrets {
-		b = bytes.ReplaceAll(b, secretBytes, scrubString)
-	}
-
-	return w.w.Write(b)
-}
-
-// NewSecretScrubWriter replaces known secrets by "***".
-// The value of the secrets referenced in secretsToScrub are loaded either
-// from env or from the fs accessed at currentDirPath.
-func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Writer, error) {
+func NewSecretScrubReader(r io.Reader, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Reader, error) {
 	secrets := loadSecretsToScrubFromEnv(env, secretsToScrub.Envs)
 
 	fileSecrets, err := loadSecretsToScrubFromFiles(currentDirPath, fsys, secretsToScrub.Files)
@@ -60,12 +39,18 @@ func NewSecretScrubWriter(w io.Writer, currentDirPath string, fsys fs.FS, env []
 		secretAsBytes = append(secretAsBytes, []byte(v))
 	}
 
-	secretScrubWriter := &SecretScrubWriter{
-		w:       w,
-		secrets: secretAsBytes,
+	replaceChain := make([]transform.Transformer, 0)
+	for _, s := range secretAsBytes {
+		replaceChain = append(
+			replaceChain,
+			replace.Bytes(s, scrubString),
+		)
+	}
+	secretScrubReader := &SecretScrubReader{
+		Reader: replace.Chain(r, replaceChain...),
 	}
 
-	return secretScrubWriter, nil
+	return secretScrubReader, nil
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.
