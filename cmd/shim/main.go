@@ -588,5 +588,8 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		// propagate inner error with higher priority
 		return cmdErr
 	}
-	return engineErr
+	if engineErr != nil {
+		return fmt.Errorf("engine: %w", engineErr)
+	}
+	return nil
 }
