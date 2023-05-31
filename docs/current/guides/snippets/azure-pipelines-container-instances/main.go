@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"log"
+	"os"
 
 	"dagger.io/dagger"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -111,7 +111,7 @@ func main() {
 						Protocol: to.Ptr(armcontainerinstance.ContainerGroupNetworkProtocolTCP),
 					}},
 			},
-			OSType: to.Ptr(armcontainerinstance.OperatingSystemTypesLinux),
+			OSType:        to.Ptr(armcontainerinstance.OperatingSystemTypesLinux),
 			RestartPolicy: to.Ptr(armcontainerinstance.ContainerGroupRestartPolicyOnFailure),
 		},
 		Location: to.Ptr(containerGroupLocation),
