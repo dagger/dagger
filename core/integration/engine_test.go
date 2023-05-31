@@ -104,6 +104,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 		})
 
 	clientCtr, err := engineClientContainer(ctx, c, devEngine)
+	require.NoError(t, err)
 	exitCode, err := clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
 			Contents: `{ defaultPlatform }`}). // arbitrary valid query
