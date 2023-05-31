@@ -100,7 +100,7 @@ func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, err
 	var err error
 
 	for retry := 0; retry < retryAttempts; retry++ {
-		c, err = bkclient.New(ctx, host)
+		c, err = bkclient.New(ctx, host, bkclient.WithFailFast())
 		if err == nil {
 			break
 		}

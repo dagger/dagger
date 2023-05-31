@@ -85,14 +85,13 @@ func TestClientWaitsForEngine(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	// engine should shutdown with exit code 0 when receiving SIGTERM
-	devEngine := devEngineContainer(c)
+	devEngine := devEngineContainer(c).WithoutExposedPort(1234, dagger.ContainerWithoutExposedPortOpts{Protocol: dagger.Tcp})
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 
 	require.NoError(t, err)
-	before, after, found := strings.Cut("set -e", entrypoint)
+	before, after, found := strings.Cut(entrypoint, "set -e")
 	require.True(t, found, "missing set -e in entrypoint")
-	entrypoint = before + "set -e\n" + "sleep 15\n" + after
+	entrypoint = before + "set -e \n" + "sleep 30\n" + after
 
 	devEngine = devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
@@ -108,7 +107,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 	exitCode, err := clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
 			Contents: `{ defaultPlatform }`}). // arbitrary valid query
-		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
+		WithExec([]string{"time", "dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).ExitCode(ctx)
 
