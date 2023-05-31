@@ -3767,7 +3767,11 @@ func TestContainerForceCompression(t *testing.T) {
 			var manifest ocispecs.Manifest
 			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
 			for _, layer := range manifest.Layers {
-				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
+				expectedMediaType := tc.expectedDockerMediaType
+				if tc.compression == dagger.Estargz {
+					expectedMediaType = tc.expectedOCIMediaType
+				}
+				require.EqualValues(t, expectedMediaType, layer.MediaType)
 			}
 		})
 	}
