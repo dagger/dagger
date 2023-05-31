@@ -88,14 +88,6 @@ func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client,
 
 // waitBuildkit waits for the buildkit daemon to be responsive.
 func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, error) {
-	c, err := bkclient.New(ctx, host)
-	if err != nil {
-		return nil, err
-	}
-
-	// FIXME Does output "failed to wait: signal: broken pipe"
-	defer c.Close()
-
 	// Try to connect every 100ms up to 1800 times (3 minutes total)
 	// NOTE: the long timeout accounts for startup time of the engine when
 	// it needs to synchronize cache state.
@@ -103,6 +95,28 @@ func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, err
 		retryPeriod   = 100 * time.Millisecond
 		retryAttempts = 1800
 	)
+
+	var c *bkclient.Client
+	var err error
+
+	for retry := 0; retry < retryAttempts; retry++ {
+		c, err = bkclient.New(ctx, host, bkclient.WithFailFast())
+		if err == nil {
+			break
+		}
+		time.Sleep(retryPeriod)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("buildkit failed to respond: %w", err)
+	}
+
+	if c == nil {
+		return nil, fmt.Errorf("buildkit failed to respond")
+	}
+
+	// FIXME Does output "failed to wait: signal: broken pipe"
+	defer c.Close()
 
 	var workerInfo []*bkclient.WorkerInfo
 	for retry := 0; retry < retryAttempts; retry++ {
