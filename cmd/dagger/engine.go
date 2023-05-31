@@ -18,13 +18,15 @@ import (
 )
 
 var silent bool
+var stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
+var stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(
 		&silent,
 		"silent",
 		"s",
-		!isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsTerminal(os.Stderr.Fd()),
+		!stdoutIsTTY && !stderrIsTTY,
 		"disable terminal UI and progress output",
 	)
 }
