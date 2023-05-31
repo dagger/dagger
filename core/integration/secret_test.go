@@ -2,11 +2,9 @@ package core
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	_ "embed"
 	"io"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -179,36 +177,27 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "***\n***\n***\n", stdout)
+	require.Equal(t, "***", stdout)
 }
 
-func TestBigWhitespaceSecretScrubbed(t *testing.T) {
+func TestBigSecretScrubbed(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
-
-	t.Log("cert size:", len(gzippedLoremBytes))
-
-	loremReader, err := gzip.NewReader(bytes.NewReader(gzippedLoremBytes))
+	secretKeyReader := bytes.NewReader(secretKeyBytes)
+	secretValue, err := io.ReadAll(secretKeyReader)
 	require.NoError(t, err)
 
-	secretValue, err := io.ReadAll(loremReader)
-	require.NoError(t, err)
-
-	s := c.SetSecret("aws_key", string(secretValue))
+	s := c.SetSecret("key", string(secretValue))
 
 	sec := c.Container().From("alpine:3.16.2").
-		WithSecretVariable("AWS_KEY", s).
-		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""})
+		WithSecretVariable("KEY", s).
+		WithExec([]string{"sh", "-c", "echo  -n \"$KEY\""})
 
 	stdout, err := sec.Stdout(ctx)
 	require.NoError(t, err)
-	paragraphCount := strings.Count(string(secretValue), "\n\n")
-	t.Log("pcount:", paragraphCount)
-	scrubbedText := strings.Repeat("*** \n\n", paragraphCount)
-	scrubbedText += "*** \n"
-	require.Equal(t, scrubbedText, stdout)
+	require.Equal(t, "***", stdout)
 }
 
 //nolint:typecheck
-//go:embed testdata/lorem.txt.gz
-var gzippedLoremBytes []byte
+//go:embed testdata/secretkey.txt
+var secretKeyBytes []byte
