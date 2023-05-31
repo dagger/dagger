@@ -241,7 +241,7 @@ type Group struct {
 
 func NewGroup(id, name string) *Group {
 	return &Group{
-		groupModel: &emptyGroup{}, // TODO remove
+		groupModel: &emptyGroup{},
 
 		id:          id,
 		name:        name,
@@ -302,7 +302,15 @@ func (g *Group) Open() tea.Cmd {
 	return openEditor(subDir)
 }
 
+const RootVertex = "<root>"
+
 func (g *Group) Add(e TreeEntry) {
+	if e.ID() == RootVertex {
+		g.name = e.Name()
+		g.groupModel = e
+		return
+	}
+
 	_, has := g.entriesByID[e.ID()]
 	if has {
 		return
