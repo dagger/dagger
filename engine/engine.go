@@ -72,7 +72,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 
 	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
-		return err
+		return fmt.Errorf("new client: %w", err)
 	}
 
 	if c.EngineName != "" && startOpts.LogOutput != nil {
@@ -105,12 +105,12 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
 	if err != nil {
-		return err
+		return fmt.Errorf("detect platform: %w", err)
 	}
 
 	startOpts.Workdir, err = NormalizeWorkdir(startOpts.Workdir)
 	if err != nil {
-		return err
+		return fmt.Errorf("normalize workdir: %w", err)
 	}
 
 	router := router.New(startOpts.SessionToken, recorder)
@@ -133,7 +133,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	ociStoreDir := filepath.Join(xdg.CacheHome, "dagger", "oci")
 	ociStore, err := local.NewStore(ociStoreDir)
 	if err != nil {
-		return err
+		return fmt.Errorf("new local oci store: %w", err)
 	}
 
 	solveOpts := bkclient.SolveOpt{
@@ -153,7 +153,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	// is a different feature which is configured in the engine daemon.
 	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
 	if err != nil {
-		return err
+		return fmt.Errorf("cache config from env: %w", err)
 	}
 	cacheConfigEnabled := cacheConfigType != ""
 	if cacheConfigEnabled {
@@ -174,7 +174,11 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		return handleSolveEvents(recorder, startOpts, solveCh)
+		err := handleSolveEvents(recorder, startOpts, solveCh)
+		if err != nil {
+			return fmt.Errorf("handle solve events: %w", err)
+		}
+		return nil
 	})
 
 	eg.Go(func() error {
@@ -223,7 +227,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			}
 			return nil, nil
 		}, solveCh)
-		return err
+		if err != nil {
+			return fmt.Errorf("build: %w", err)
+		}
+		return nil
 	})
 
 	err = eg.Wait()
@@ -344,7 +351,7 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 		eg.Go(func() error {
 			for ev := range ch {
 				if err := recorder.Record(bk2progrock(ev)); err != nil {
-					return err
+					return fmt.Errorf("record: %w", err)
 				}
 			}
 
@@ -352,7 +359,11 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 			recorder.Complete()
 
 			// close the recorder so the UI exits
-			return recorder.Close()
+			if err := recorder.Close(); err != nil {
+				return fmt.Errorf("close: %w", err)
+			}
+
+			return nil
 		})
 	}
 
