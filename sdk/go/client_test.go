@@ -225,6 +225,10 @@ func TestExecError(t *testing.T) {
 		require.Contains(t, exErr.Error(), errMsg)
 		require.NotContains(t, exErr.Message(), outMsg)
 		require.NotContains(t, exErr.Message(), errMsg)
+
+		if _, ok := err.(*ExecError); !ok {
+			t.Fatal("unable to cast error type, check potential wrapping")
+		}
 	})
 
 	t.Run("no output", func(t *testing.T) {

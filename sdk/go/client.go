@@ -145,6 +145,10 @@ type errorWrappedClient struct {
 func (c errorWrappedClient) MakeRequest(ctx context.Context, req *graphql.Request, resp *graphql.Response) error {
 	err := c.Client.MakeRequest(ctx, req, resp)
 	if err != nil {
+		// return custom error without wrapping to enable casting
+		if e := getCustomError(err); e != nil {
+			return e
+		}
 		return withErrorHelp(err)
 	}
 	return nil
