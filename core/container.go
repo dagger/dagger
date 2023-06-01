@@ -92,13 +92,19 @@ func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platfor
 // WithXXX method.
 func (container *Container) Clone() *Container {
 	cp := *container
-	cp.Mounts = clone(cp.Mounts)
-	cp.Secrets = clone(cp.Secrets)
-	cp.Sockets = clone(cp.Sockets)
-	cp.Ports = clone(cp.Ports)
+	cp.Config.ExposedPorts = cloneMap(cp.Config.ExposedPorts)
+	cp.Config.Env = cloneSlice(cp.Config.Env)
+	cp.Config.Entrypoint = cloneSlice(cp.Config.Entrypoint)
+	cp.Config.Cmd = cloneSlice(cp.Config.Cmd)
+	cp.Config.Volumes = cloneMap(cp.Config.Volumes)
+	cp.Config.Labels = cloneMap(cp.Config.Labels)
+	cp.Mounts = cloneSlice(cp.Mounts)
+	cp.Secrets = cloneSlice(cp.Secrets)
+	cp.Sockets = cloneSlice(cp.Sockets)
+	cp.Ports = cloneSlice(cp.Ports)
 	cp.Services = cloneMap(cp.Services)
-	cp.HostAliases = clone(cp.HostAliases)
-	cp.Pipeline = clone(cp.Pipeline)
+	cp.HostAliases = cloneSlice(cp.HostAliases)
+	cp.Pipeline = cloneSlice(cp.Pipeline)
 	return &cp
 }
 
@@ -486,7 +492,7 @@ func (container *Container) buildUncached(
 
 		// associate vertexes to the 'docker build' sub-pipeline
 		recordVertexes(subRecorder, def.ToPB())
-		overrideProgress(def, subPipeline)
+		def = overrideProgress(def, subPipeline)
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1327,7 +1333,7 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 
 		if pipelineOverride != nil {
 			recordVertexes(progrock.RecorderFromContext(ctx), def.ToPB())
-			overrideProgress(def, *pipelineOverride)
+			def = overrideProgress(def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
