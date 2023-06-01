@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/internal/tui"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -116,7 +117,7 @@ func run(ctx context.Context, args []string) error {
 			rec := progrock.RecorderFromContext(ctx)
 
 			cmdline := strings.Join(subCmd.Args, " ")
-			cmdVtx := rec.Vertex("cmd", cmdline)
+			cmdVtx := rec.Vertex(tui.RootVertex, cmdline)
 
 			if stdoutIsTTY {
 				subCmd.Stdout = cmdVtx.Stdout()

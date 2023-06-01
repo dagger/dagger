@@ -241,7 +241,7 @@ type Group struct {
 
 func NewGroup(id, name string) *Group {
 	return &Group{
-		groupModel: &emptyGroup{}, // TODO remove
+		groupModel: &emptyGroup{},
 
 		id:          id,
 		name:        name,
@@ -302,7 +302,15 @@ func (g *Group) Open() tea.Cmd {
 	return openEditor(subDir)
 }
 
+const RootVertex = "<root>"
+
 func (g *Group) Add(e TreeEntry) {
+	if e.ID() == RootVertex {
+		g.name = e.Name()
+		g.groupModel = e
+		return
+	}
+
 	_, has := g.entriesByID[e.ID()]
 	if has {
 		return
@@ -397,6 +405,10 @@ func (g *Group) sort() {
 		ie := g.entries[i]
 		je := g.entries[j]
 		switch {
+		case g.isAncestor(ie, je):
+			return true
+		case g.isAncestor(je, ie):
+			return false
 		case ie.Started() == nil && je.Started() == nil:
 			// both pending
 			return false
@@ -413,6 +425,27 @@ func (g *Group) sort() {
 			return false
 		}
 	})
+}
+
+func (g *Group) isAncestor(i, j TreeEntry) bool {
+	if i == j {
+		return false
+	}
+
+	id := i.ID()
+
+	for _, d := range j.Inputs() {
+		if d == id {
+			return true
+		}
+
+		e, ok := g.entriesByID[d]
+		if ok && g.isAncestor(i, e) {
+			return true
+		}
+	}
+
+	return false
 }
 
 type emptyGroup struct {

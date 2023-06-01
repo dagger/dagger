@@ -109,12 +109,14 @@ func interactiveTUI(
 		cbErr = fn(ctx, api)
 		return cbErr
 	})
+
+	tuiErr := <-tuiDone
+
 	if cbErr != nil {
 		// avoid unnecessary error wrapping
 		return cbErr
 	}
 
-	tuiErr := <-tuiDone
 	return errors.Join(tuiErr, engineErr)
 }
 

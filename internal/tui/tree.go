@@ -315,6 +315,12 @@ func (m *Tree) Follow() {
 		return
 	}
 
+	if m.root.Completed() != nil {
+		// go back to the root node on completion
+		m.currentOffset = 0
+		return
+	}
+
 	current := m.Current()
 	if current == nil {
 		return
