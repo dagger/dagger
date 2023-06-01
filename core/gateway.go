@@ -237,17 +237,25 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err != nil {
 			return
 		}
-		var exitErr *bkpb.ExitError
-		if err := proc.Wait(); !errors.As(err, &exitErr) {
+		if err := proc.Wait(); err != nil {
 			return
+		}
+
+		stdout := strings.TrimSpace(ctrOut.String())
+		stderr := strings.TrimSpace(ctrErr.String())
+
+		exitCode := -1
+		var exitErr *bkpb.ExitError
+		if errors.As(err, &exitErr) {
+			exitCode = int(exitErr.ExitCode)
 		}
 
 		returnErr = &ExecError{
 			original: returnErr,
 			Cmd:      execOp.Exec.Meta.Args,
-			ExitCode: int(exitErr.ExitCode),
-			Stdout:   strings.TrimSpace(ctrOut.String()),
-			Stderr:   strings.TrimSpace(ctrErr.String()),
+			ExitCode: exitCode,
+			Stdout:   stdout,
+			Stderr:   stderr,
 		}
 	}
 	*inputErr = returnErr
