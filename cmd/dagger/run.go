@@ -117,8 +117,18 @@ func run(ctx context.Context, args []string) error {
 
 			cmdline := strings.Join(subCmd.Args, " ")
 			cmdVtx := rec.Vertex("cmd", cmdline)
-			subCmd.Stdout = cmdVtx.Stdout()
-			subCmd.Stderr = cmdVtx.Stderr()
+
+			if stdoutIsTTY {
+				subCmd.Stdout = cmdVtx.Stdout()
+			} else {
+				subCmd.Stdout = os.Stdout
+			}
+
+			if stderrIsTTY {
+				subCmd.Stderr = cmdVtx.Stderr()
+			} else {
+				subCmd.Stderr = os.Stderr
+			}
 
 			cmdErr = subCmd.Run()
 			cmdVtx.Done(cmdErr)
