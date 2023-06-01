@@ -121,13 +121,13 @@ func (term *Vterm) View() string {
 
 			if f != lastFormat {
 				lastFormat = f
-				buf.Write([]byte(renderFormat(f)))
+				buf.WriteString(renderFormat(f))
 			}
 
-			buf.Write([]byte(string(r)))
+			buf.WriteString(string(r))
 		}
 
-		buf.Write([]byte(reset + "\n"))
+		buf.WriteString(reset + "\n")
 		lines++
 
 		if row > used {
@@ -136,7 +136,7 @@ func (term *Vterm) View() string {
 	}
 
 	for i := lines; i < term.Height; i++ {
-		buf.Write([]byte("\n"))
+		buf.WriteString("\n")
 	}
 
 	// discard final trailing linebreak
