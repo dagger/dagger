@@ -5,7 +5,7 @@ go 1.20
 require (
 	dagger.io/dagger v0.7.0
 	github.com/hexops/gotextdiff v1.0.3
-	github.com/magefile/mage v1.14.0
+	github.com/magefile/mage v1.15.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/mod v0.10.0
 	golang.org/x/sync v0.2.0
