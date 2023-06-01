@@ -439,7 +439,7 @@ func (g *Group) isAncestor(i, j TreeEntry) bool {
 			return true
 		}
 
-		e, ok := g.entriesByID[string(d)]
+		e, ok := g.entriesByID[d]
 		if ok && g.isAncestor(i, e) {
 			return true
 		}
