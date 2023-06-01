@@ -93,7 +93,7 @@ func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, err
 	// it needs to synchronize cache state.
 	const (
 		retryPeriod   = 100 * time.Millisecond
-		retryAttempts = 1800
+		retryAttempts = 6000
 	)
 
 	var c *bkclient.Client
