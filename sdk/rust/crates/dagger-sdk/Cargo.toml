@@ -52,5 +52,4 @@ tracing-test = "0.2.4"
 [features]
 
 default = ["gen"]
-no-gen = []
 gen = []
