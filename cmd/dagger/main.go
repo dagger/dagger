@@ -18,7 +18,7 @@ var (
 
 	cpuprofile string
 	pprofAddr  string
-	debugLogs  bool
+	debug      bool
 )
 
 func init() {
@@ -28,7 +28,7 @@ func init() {
 	logrus.StandardLogger().SetOutput(io.Discard)
 
 	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", ".", "The host workdir loaded into dagger")
-	rootCmd.PersistentFlags().BoolVar(&debugLogs, "debug", false, "show buildkit debug logs")
+	rootCmd.PersistentFlags().BoolVar(&debug, "debug", false, "Show more information for debugging")
 	rootCmd.PersistentFlags().StringVar(&cpuprofile, "cpuprofile", "", "collect CPU profile to path, and trace at path.trace")
 	rootCmd.PersistentFlags().StringVar(&pprofAddr, "pprof", "", "serve HTTP pprof at this address")
 
@@ -45,6 +45,10 @@ func init() {
 var rootCmd = &cobra.Command{
 	Use: "dagger",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		// if we got this far, CLI parsing worked just fine; no
+		// need to show usage for runtime errors
+		cmd.SilenceUsage = true
+
 		if cpuprofile != "" {
 			profF, err := os.Create(cpuprofile)
 			if err != nil {
