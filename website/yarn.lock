@@ -9873,10 +9873,10 @@ relateurl@^0.2.7:
   resolved "https://registry.npmjs.org/relateurl/-/relateurl-0.2.7.tgz"
   integrity sha1-VNvzd+UUQKypCkzSdGANP/LYiKk=
 
-remark-code-import@^1.1.1:
-  version "1.1.1"
-  resolved "https://registry.yarnpkg.com/remark-code-import/-/remark-code-import-1.1.1.tgz#87958b3b62604bfe365327ab1b5f89b0579541d3"
-  integrity sha512-qQfvI5ihBIzb7J+Zc+6ZisuJBbylQAXMktD4BC5hHlOmjFLLd9Y4HhTVcUnasF3fV/3MoeTX1GA3dmnWCzDlpA==
+remark-code-import@^1.2.0:
+  version "1.2.0"
+  resolved "https://registry.yarnpkg.com/remark-code-import/-/remark-code-import-1.2.0.tgz#2f879c05909eb5f7cf5a1236bab415010eec69dd"
+  integrity sha512-fgwLruqlZbVOIhCJFjY+JDwPZhA4/eK3InJzN8Ox8UDdtudpG212JwtRj6la+lAzJU7JmSEyewZSukVZdknt3Q==
   dependencies:
     strip-indent "^4.0.0"
     to-gatsby-remark-plugin "^0.1.0"
