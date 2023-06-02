@@ -3,7 +3,7 @@ module main
 go 1.19
 
 require (
-	dagger.io/dagger v0.4.5
+	dagger.io/dagger v0.7.1
 	github.com/aws/aws-sdk-go-v2/config v1.18.12
 	github.com/aws/aws-sdk-go-v2/service/cloudformation v1.26.2
 	github.com/aws/aws-sdk-go-v2/service/ecr v1.18.3
@@ -11,6 +11,7 @@ require (
 )
 
 require (
+	github.com/99designs/gqlgen v0.17.2 // indirect
 	github.com/Khan/genqlient v0.5.0 // indirect
 	github.com/Masterminds/semver/v3 v3.2.0 // indirect
 	github.com/adrg/xdg v0.4.0 // indirect

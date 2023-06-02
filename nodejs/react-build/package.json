@@ -43,6 +43,6 @@
   },
   "type": "module",
   "devDependencies": {
-    "@dagger.io/dagger": "^0.4.1"
+    "@dagger.io/dagger": "^0.6.1"
   }
 }
