@@ -194,7 +194,6 @@ func (t Python) Bump(ctx context.Context, version string) error {
 
 func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	var (
-		path   = "/root/.local/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		venv   = "/opt/venv"
 		appDir = "sdk/python"
 	)
@@ -207,14 +206,17 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 
 	base := c.Container().
 		From(fmt.Sprintf("python:%s-alpine", version)).
-		WithEnvVariable("PATH", path).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"}).
 		WithExec([]string{"pip", "install", "--user", "poetry==1.3.1", "poetry-dynamic-versioning"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
-		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:$PATH", venv), dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		}).
+		WithEnvVariable(
+			"PATH",
+			"$VIRTUAL_ENV/bin:/root/.local/bin:$PATH",
+			dagger.ContainerWithEnvVariableOpts{
+				Expand: true,
+			},
+		).
 		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false").
 		WithWorkdir(mountPath)
 
