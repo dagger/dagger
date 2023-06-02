@@ -80,3 +80,31 @@ Follow the steps below to create an API Playground embed:
     ```html
     <iframe class="embed" src="YOUR-EMBED-LINK"></iframe>
     ```
+
+## Cookbook recipes
+
+The Dagger Cookbook is a collection of code listings or "recipes" for common tasks. It is a thin layer of organization over code snippets sourced from external files.
+
+### Recipe categories
+
+The Cookbook is organized into categories, each of which has two or more recipes. New categories may be added at will; however, ideally a category should contain at least two recipes.
+
+### Recipes
+
+Each recipe requires only:
+
+- a level-3 heading, which must begin with a verb (required);
+- a one-sentence description of what the recipe does and additional notes for any placeholder replacements to be performed when using the recipe (required);
+- the code itself, which must be presented for each SDK (required);
+- a "learn more" link (optional).
+
+### Code listings
+
+Code listing can come from two sources:
+
+- Snippets used in an existing guide (usually stored in `./guides/snippets/GUIDE/FILE`)
+- Snippets created specifically for the cookbook (usually stored in `./cookbook/snippets/RECIPE/FILE`)
+
+Code listings must be presented for each language SDK unless not relevant/not technically feasible for that language (e.g. a recipe for "using a magefile" would only be relevant for Go).
+
+Code listings must be presented in a tabbed interface with the order of tabs set to `Go`, `Node.js` and `Python`.
