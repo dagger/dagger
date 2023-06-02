@@ -21,7 +21,7 @@
     "env-paths": "^3.0.0",
     "execa": "^7.1.1",
     "graphql": "^16.5.0",
-    "graphql-request": "^6.0.0",
+    "graphql-request": "^6.1.0",
     "graphql-tag": "^2.12.6",
     "node-color-log": "^10.0.2",
     "node-fetch": "^3.3.1",
