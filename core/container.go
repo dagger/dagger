@@ -1379,7 +1379,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	checked := make(chan error, 1)
 	go func() {
-		checked <- health.Check(ctx)
+		checked <- health.Check(svcCtx)
 	}()
 
 	exited := make(chan error, 1)

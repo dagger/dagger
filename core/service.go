@@ -3,15 +3,16 @@ package core
 import (
 	"context"
 	"fmt"
-	"io"
-	"os"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/opencontainers/go-digest"
+	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -56,14 +57,6 @@ func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 				bnd[id] = bnd[id].With(alias)
 			}
 		}
-	}
-}
-
-var debugHealthchecks bool
-
-func init() {
-	if os.Getenv("_DAGGER_DEBUG_HEALTHCHECKS") != "" {
-		debugHealthchecks = true
 	}
 }
 
@@ -164,7 +157,24 @@ func result(ctx context.Context, gw bkgw.Client, st marshalable) (*bkgw.Result, 
 	})
 }
 
-func (d *portHealthChecker) Check(ctx context.Context) error {
+func (d *portHealthChecker) Check(ctx context.Context) (err error) {
+	rec := progrock.RecorderFromContext(ctx)
+
+	args := []string{"check", d.host}
+	for _, port := range d.ports {
+		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
+	}
+
+	// show health-check logs in a --debug vertex
+	vtx := rec.Vertex(
+		digest.Digest(identity.NewID()),
+		strings.Join(args, " "),
+		progrock.Internal(),
+	)
+	defer func() {
+		vtx.Done(err)
+	}()
+
 	scratchRes, err := result(ctx, d.gw, llb.Scratch())
 	if err != nil {
 		return err
@@ -189,23 +199,11 @@ func (d *portHealthChecker) Check(ctx context.Context) error {
 
 	defer container.Release(cleanupCtx)
 
-	args := []string{"check", d.host}
-	for _, port := range d.ports {
-		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
-	}
-
-	var debugW io.WriteCloser
-	if debugHealthchecks {
-		debugW = os.Stderr
-	}
-
 	proc, err := container.Start(ctx, bkgw.StartRequest{
-		Args: args,
-		Env:  []string{"_DAGGER_INTERNAL_COMMAND="},
-		// FIXME(vito): it would be great to send these to the progress stream
-		// somehow instead
-		Stdout: debugW,
-		Stderr: debugW,
+		Args:   args,
+		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
+		Stdout: nopCloser{vtx.Stdout()},
+		Stderr: nopCloser{vtx.Stderr()},
 	})
 	if err != nil {
 		return err
