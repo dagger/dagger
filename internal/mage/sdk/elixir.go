@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"dagger.io/dagger"
@@ -12,8 +13,9 @@ import (
 )
 
 const (
-	elixirSDKPath          = "sdk/elixir"
-	elixirSDKGeneratedPath = elixirSDKPath + "/lib/dagger/gen"
+	elixirSDKPath            = "sdk/elixir"
+	elixirSDKGeneratedPath   = elixirSDKPath + "/lib/dagger/gen"
+	elixirSDKVersionFilePath = elixirSDKPath + "/lib/dagger/engine_conn.ex"
 
 	// https://hub.docker.com/r/hexpm/elixir/tags?page=1&name=debian-buster
 	elixirVersion = "1.14.5"
@@ -145,7 +147,19 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 
 // Bump the Elixir SDK's Engine dependency
 func (Elixir) Bump(ctx context.Context, engineVersion string) error {
-	return nil
+	contents, err := os.ReadFile(elixirSDKVersionFilePath)
+	if err != nil {
+		return err
+	}
+
+	newVersion := fmt.Sprintf(`@dagger_cli_version "%s"`, strings.TrimPrefix(engineVersion, "v"))
+
+	versionRe, err := regexp.Compile(`@dagger_cli_version "([0-9\.-a-zA-Z]+)"`)
+	if err != nil {
+		return err
+	}
+	newContents := versionRe.ReplaceAll(contents, []byte(newVersion))
+	return os.WriteFile(elixirSDKVersionFilePath, newContents, 0o600)
 }
 
 func elixirBase(c *dagger.Client) *dagger.Container {
