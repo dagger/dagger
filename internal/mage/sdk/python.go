@@ -212,7 +212,9 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithExec([]string{"pip", "install", "--user", "poetry==1.3.1", "poetry-dynamic-versioning"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
-		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:%s", venv, path)).
+		WithEnvVariable("PATH", fmt.Sprintf("%s/bin:$PATH", venv), dagger.ContainerWithEnvVariableOpts{
+			Expand: true,
+		}).
 		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false").
 		WithWorkdir(mountPath)
 
