@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-May.%2025%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-June.%202%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -176,7 +176,7 @@ steps:
 
 ## 🐹 Go SDK ⏱ `15mins`
 
-- [x] ⚠️ Ensure that all SDKs have the same Engine version
+- [ ] ⚠️ Ensure that all SDKs have the same Engine version
 
 > **Warning**
 >
@@ -336,7 +336,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 
 gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" --generate-notes --notes-start-tag "sdk/python/${PREVIOUS_PYTHON_SDK_VERSION:?must be set}" --draft
 ```
-- [x] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
+- [ ] Add this line to the top of the release notes (replace `$ENGINE_VERSION`
   with the value in `sdk/python/src/dagger/engine/_version.py`):
 
 ```
