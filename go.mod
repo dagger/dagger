@@ -49,7 +49,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.14.0
 	go.opentelemetry.io/otel/trace v1.14.0
 	go.opentelemetry.io/proto/otlp v0.19.0
-	golang.org/x/crypto v0.8.0
+	golang.org/x/crypto v0.9.0
 	golang.org/x/mod v0.9.0
 	golang.org/x/sync v0.2.0
 	golang.org/x/sys v0.8.0
@@ -256,7 +256,7 @@ require (
 	github.com/vbatts/tar-split v0.11.2 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.1
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/net v0.9.0
+	golang.org/x/net v0.10.0
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.7.0 // indirect
