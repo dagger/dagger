@@ -153,6 +153,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		version     = strings.TrimPrefix(tag, "sdk/elixir/v")
 		versionFile = "sdk/elixir/VERSION"
 		hexAPIKey   = os.Getenv("HEX_API_KEY")
+		dryRun      = os.Getenv("HEX_DRY_RUN")
 	)
 
 	if hexAPIKey == "" {
@@ -167,13 +168,18 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		os.WriteFile(versionFile, []byte("0.0.0\n"), 0o600)
 	}()
 
+	args := []string{"mix", "hex.publish", "--yes"}
+	if dryRun == "1" {
+		args = append(args, "--dry-run")
+	}
+
 	// TODO: copy LICENSE?
 
 	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
 
 	_, err = elixirBase(c).
 		WithEnvVariable("HEX_API_KEY", hexAPIKey).
-		WithExec([]string{"mix", "hex.publish", "--dry-run", "--yes"}).
+		WithExec(args).
 		Sync(ctx)
 	return err
 }
