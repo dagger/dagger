@@ -150,17 +150,22 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	defer c.Close()
 
 	var (
-		version   = strings.TrimPrefix(tag, "sdk/elixir/v")
-		hexAPIKey = os.Getenv("HEX_API_KEY")
+		version     = strings.TrimPrefix(tag, "sdk/elixir/v")
+		versionFile = "sdk/elixir/VERSION"
+		hexAPIKey   = os.Getenv("HEX_API_KEY")
 	)
 
 	if hexAPIKey == "" {
 		return errors.New("HEX_API_KEY environment variable must be set")
 	}
 
-	if err := os.WriteFile("sdk/elixir/VERSION", []byte(version), 0o600); err != nil {
+	if err := os.WriteFile(versionFile, []byte(version), 0o600); err != nil {
 		return err
 	}
+	defer func() {
+		// Ensure to not make version file dirty.
+		os.WriteFile(versionFile, []byte("0.0.0\n"), 0o600)
+	}()
 
 	// TODO: copy LICENSE?
 
