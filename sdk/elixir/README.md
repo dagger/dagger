@@ -46,7 +46,3 @@ $ _EXPERIMENT_DAGGER_CLI_BIN=dagger elixir ci.exs
 ```
 
 Where `ci.exs` contains Elixir script above.
-
-## Supporting me
-
-<a href="https://www.buymeacoffee.com/wingyplus" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
