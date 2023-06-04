@@ -1,7 +1,7 @@
 defmodule Dagger.MixProject do
   use Mix.Project
 
-  @version "0.2.0-dev"
+  @version File.read!("VERSION") |> String.trim()
   @source_url "https://github.com/dagger/dagger"
 
   def project do
