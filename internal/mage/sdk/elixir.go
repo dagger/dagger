@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -142,7 +143,34 @@ func (Elixir) Generate(ctx context.Context) error {
 
 // Publish publishes the Elixir SDK
 func (Elixir) Publish(ctx context.Context, tag string) error {
-	return nil
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var (
+		version   = strings.TrimPrefix(tag, "sdk/elixir/v")
+		hexAPIKey = os.Getenv("HEX_API_KEY")
+	)
+
+	if hexAPIKey == "" {
+		return errors.New("HEX_API_KEY environment variable must be set")
+	}
+
+	if err := os.WriteFile("sdk/elixir/VERSION", []byte(version), 0o600); err != nil {
+		return err
+	}
+
+	// TODO: copy LICENSE?
+
+	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
+
+	_, err = elixirBase(c).
+		WithEnvVariable("HEX_API_KEY", hexAPIKey).
+		WithExec([]string{"mix", "hex.publish", "--dry-run", "--yes"}).
+		Sync(ctx)
+	return err
 }
 
 // Bump the Elixir SDK's Engine dependency

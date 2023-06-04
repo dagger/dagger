@@ -19,7 +19,7 @@ Fetch from repository by:
 ```elixir
 def deps do
   [
-    {:dagger_ex, github: "wingyplus/dagger_ex"}
+    {:dagger, github: "dagger/dagger"}
   ]
 end
 ```
