@@ -1,14 +1,22 @@
 # Dagger Go SDK
 
-A client package for running [Dagger](https://dagger.io/) pipelines.
+The Dagger Go SDK contains everything you need to develop CI/CD pipelines in Go, and run them with the [Dagger Engine](https://dagger.io).
 
-> **NOTE**: the canonical version of this module is [`./sdk/go` in the
-> `dagger/dagger` repo][canonical-pkg].
->
-> The [`dagger/dagger-go-sdk`][replica-pkg] repo is a read-only replica; do not
-> edit it.
->
-> The canonical import for this package is `dagger.io/dagger`.
+This SDK contains:
 
-[canonical-pkg]: https://github.com/dagger/dagger/tree/main/sdk/go
-[replica-pkg]: https://github.com/dagger/dagger-go-sdk
+* A Go package: `dagger.io/dagger`
+* The [`dagger` CLI][cli]
+* [Examples][examples]
+* [Documentation][docs]
+
+
+## Contributing
+
+The Dagger Go SDK is open-source, and we welcome contributions. Its source code lives in the [Dagger Engine repository][source].
+
+> **NOTE**: please do NOT contribute to `github.com/dagger/dagger-go-sdk`: that is a read-only mirror which only exists to satisfy the requirements of the Go package management system. Instead, please visit the repository linked above.
+
+[cli]: https://docs.dagger.io/cli
+[examples]: https://github.com/dagger/examples/tree/main/go
+[docs]: https://docs.dagger.io/sdk/go
+[source]: https://github.com/dagger/dagger/tree/main/sdk/go
