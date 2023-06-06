@@ -82,7 +82,6 @@ export default function GuidesIndex() {
               url={x.frontMatter.slug}
               tags={x.frontMatter.tags}
               authors={x.frontMatter.authors}
-              timestamp={x.timestamp}
               pushTag={pushTag}
             />
           </li>
@@ -92,15 +91,12 @@ export default function GuidesIndex() {
   );
 }
 
-function GuideCard({title, url, tags, authors, timestamp, pushTag}) {
+function GuideCard({title, url, tags, authors, pushTag}) {
   const handleAuthors = () => {
     let authorsString = "";
     authors.forEach((x) => (authorsString += `, ${x}`));
     return `By ${authorsString.slice(1)}`;
   };
-
-  const dateOptions = {year: "numeric", month: "long", day: "numeric"};
-  const date = new Date(timestamp).toLocaleDateString("en-US", dateOptions);
 
   return (
     <div className={styles.guideCard}>
@@ -108,7 +104,6 @@ function GuideCard({title, url, tags, authors, timestamp, pushTag}) {
         <Link href={url}>
           <h3>{title}</h3>
         </Link>
-        {date && <time>{date}</time>}
         {authors && <h4 className={styles.author}>{handleAuthors()}</h4>}
       </div>
       <div className={styles.tags}>
