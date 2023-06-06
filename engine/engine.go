@@ -473,9 +473,6 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 			Name:   v.Name,
 			Cached: v.Cached,
 		}
-		if strings.Contains(v.Name, "[hide]") {
-			vtx.Internal = true
-		}
 		for _, input := range v.Inputs {
 			vtx.Inputs = append(vtx.Inputs, input.String())
 		}
