@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/vito/progrock"
 )
 
@@ -88,34 +86,4 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	}
 
 	return rec
-}
-
-func (g Path) ProgressGroup() *pb.ProgressGroup {
-	return &pb.ProgressGroup{
-		Id:   g.ID(),
-		Name: g.Name(),
-	}
-}
-
-func (g Path) LLBOpt() llb.ConstraintsOpt {
-	pg := g.ProgressGroup()
-	return llb.ProgressGroup(pg.Id, pg.Name, pg.Weak)
-}
-
-type CustomName struct {
-	Name     string `json:"name,omitempty"`
-	Pipeline Path   `json:"pipeline,omitempty"`
-	Internal bool   `json:"internal,omitempty"`
-}
-
-func (c CustomName) String() string {
-	enc, err := json.Marshal(c)
-	if err != nil {
-		return ""
-	}
-	return string(enc)
-}
-
-func (c CustomName) LLBOpt() llb.ConstraintsOpt {
-	return llb.WithCustomName(c.String())
 }

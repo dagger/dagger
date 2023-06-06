@@ -287,22 +287,6 @@ func (mnts ContainerMounts) With(newMnt ContainerMount) ContainerMounts {
 	return mntsCp
 }
 
-type PipelineMetaResolver struct {
-	Resolver llb.ImageMetaResolver
-	Pipeline pipeline.Path
-}
-
-func (r PipelineMetaResolver) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
-	// FIXME: `ResolveImageConfig` doesn't support progress groups. As a workaround, we inject
-	// the pipeline in the vertex name.
-	opt.LogName = pipeline.CustomName{
-		Name:     fmt.Sprintf("resolve image config for %s", ref),
-		Pipeline: r.Pipeline,
-	}.String()
-
-	return r.Resolver.ResolveImageConfig(ctx, ref, opt)
-}
-
 func (container *Container) From(ctx context.Context, gw bkgw.Client, addr string) (*Container, error) {
 	container = container.Clone()
 
@@ -310,11 +294,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	// `From` creates 2 vertices: fetching the image config and actually pulling the image.
 	// We create a sub-pipeline to encapsulate both.
-	pipelineName := fmt.Sprintf("from %s", addr)
-	p := container.Pipeline.Add(pipeline.Pipeline{
-		Name: pipelineName,
-	})
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
+	ctx, subRecorder := progrock.WithGroup(ctx, fmt.Sprintf("from %s", addr), progrock.Weak())
 
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
@@ -323,12 +303,7 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 
 	ref := reference.TagNameOnly(refName).String()
 
-	resolver := PipelineMetaResolver{
-		Resolver: gw,
-		Pipeline: p,
-	}
-
-	digest, cfgBytes, err := resolver.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	digest, cfgBytes, err := gw.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 	})
@@ -349,7 +324,6 @@ func (container *Container) From(ctx context.Context, gw bkgw.Client, addr strin
 	fsSt := llb.Image(
 		digested.String(),
 		llb.WithCustomNamef("pull %s", ref),
-		p.LLBOpt(),
 	)
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
@@ -428,11 +402,8 @@ func (container *Container) buildUncached(
 	// set image ref to empty string
 	container.ImageRef = ""
 
-	pipelineName := "docker build"
-	subPipeline := container.Pipeline.Add(pipeline.Pipeline{
-		Name: pipelineName,
-	})
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
+	// add a weak group for the docker build vertices
+	ctx, subRecorder := progrock.WithGroup(ctx, "docker build", progrock.Weak())
 
 	return WithServices(ctx, gw, container.Services, func() (*Container, error) {
 		platform := container.Platform
@@ -492,7 +463,6 @@ func (container *Container) buildUncached(
 
 		// associate vertexes to the 'docker build' sub-pipeline
 		recordVertexes(subRecorder, def.ToPB())
-		def = overrideProgress(def, subPipeline)
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1078,7 +1048,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		container.Pipeline.LLBOpt(),
 		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
 	}
 
@@ -1110,7 +1079,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, pipeline.CustomName{Name: "creating dagger metadata", Internal: true}.LLBOpt(), container.Pipeline.LLBOpt()),
+			llb.Scratch().File(meta, llb.WithCustomName("[internal] creating dagger metadata")),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1315,7 +1284,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	return container, nil
 }
 
-func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipelineOverride *pipeline.Path) error {
+func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error {
 	if container.FS == nil {
 		return nil
 	}
@@ -1329,11 +1298,6 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client, pipeli
 		def, err := st.Marshal(ctx, llb.Platform(container.Platform))
 		if err != nil {
 			return nil, err
-		}
-
-		if pipelineOverride != nil {
-			recordVertexes(progrock.RecorderFromContext(ctx), def.ToPB())
-			def = overrideProgress(def, *pipelineOverride)
 		}
 
 		return gw.Solve(ctx, bkgw.SolveRequest{
@@ -1362,17 +1326,11 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	// annotate the container as a service so they can be treated differently
 	// in the UI
-	pipelineName := fmt.Sprintf("service %s", container.Hostname)
-	pipeline := container.Pipeline.Add(pipeline.Pipeline{
-		Name: pipelineName,
-		Labels: []pipeline.Label{
-			{
-				Name:  pipeline.ServiceHostnameLabel,
-				Value: container.Hostname,
-			},
-		},
-	})
-	rec := progrock.RecorderFromContext(ctx).WithGroup(pipelineName)
+	rec := progrock.RecorderFromContext(ctx).
+		WithGroup(
+			fmt.Sprintf("service %s", container.Hostname),
+			progrock.Weak(),
+		)
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
@@ -1384,7 +1342,7 @@ func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service
 
 	exited := make(chan error, 1)
 	go func() {
-		exited <- container.Evaluate(svcCtx, gw, &pipeline)
+		exited <- container.Evaluate(svcCtx, gw)
 	}()
 
 	select {

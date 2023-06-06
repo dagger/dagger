@@ -273,31 +273,8 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
 
-		// Read `ch`; strip away custom names; re-write to `cleanCh`
-		cleanCh := make(chan *bkclient.SolveStatus)
 		eg.Go(func() error {
-			defer close(cleanCh)
-			for ev := range ch {
-				cleaned := *ev
-				cleaned.Vertexes = make([]*bkclient.Vertex, len(ev.Vertexes))
-				for i, v := range ev.Vertexes {
-					customName := pipeline.CustomName{}
-					if json.Unmarshal([]byte(v.Name), &customName) == nil {
-						cp := *v
-						cp.Name = customName.Name
-						cleaned.Vertexes[i] = &cp
-					} else {
-						cleaned.Vertexes[i] = v
-					}
-				}
-				cleanCh <- &cleaned
-			}
-			return nil
-		})
-
-		// Display from `cleanCh`
-		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, cleanCh)
+			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, ch)
 			for _, w := range warn {
 				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
 			}
@@ -473,6 +450,10 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 			Name:   v.Name,
 			Cached: v.Cached,
 		}
+		if strings.HasPrefix(v.Name, "[internal] ") {
+			vtx.Internal = true
+			vtx.Name = strings.TrimPrefix(v.Name, "[internal] ")
+		}
 		for _, input := range v.Inputs {
 			vtx.Inputs = append(vtx.Inputs, input.String())
 		}
@@ -490,16 +471,6 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 				vtx.Error = &msg
 			}
 		}
-
-		// clean up any shimmied CustomNames
-		// TODO(vito): remove this once we stop relying on ProgressGroup/CustomName
-		// JSON embedding for progress
-		var custom pipeline.CustomName
-		if json.Unmarshal([]byte(v.Name), &custom) == nil {
-			vtx.Name = custom.Name
-			vtx.Internal = custom.Internal
-		}
-
 		status.Vertexes = append(status.Vertexes, vtx)
 	}
 
