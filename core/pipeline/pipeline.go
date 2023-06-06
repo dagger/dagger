@@ -54,6 +54,8 @@ func (g Path) String() string {
 	return strings.Join(parts, " / ")
 }
 
+const ProgrockDescriptionLabel = "dagger.io/pipeline.description"
+
 // RecorderGroup converts the path to a Progrock recorder for the group.
 func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	if len(g) == 0 {
@@ -65,6 +67,14 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 
 	for _, p := range g {
 		var labels []*progrock.Label
+
+		if p.Description != "" {
+			labels = append(labels, &progrock.Label{
+				Name:  ProgrockDescriptionLabel,
+				Value: p.Description,
+			})
+		}
+
 		for _, l := range p.Labels {
 			labels = append(labels, &progrock.Label{
 				Name:  l.Name,

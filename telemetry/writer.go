@@ -168,12 +168,17 @@ func (t *writer) groupPath(group *progrock.Group) pipeline.Path {
 	self := pipeline.Pipeline{
 		Name: group.Name,
 	}
-	// TODO: description?
 	for _, l := range group.Labels {
-		self.Labels = append(self.Labels, pipeline.Label{
-			Name:  l.Name,
-			Value: l.Value,
-		})
+		if l.Name == pipeline.ProgrockDescriptionLabel {
+			// Progrock doesn't have a separate 'description' field, so we escort it
+			// through labels instead
+			self.Description = l.Value
+		} else {
+			self.Labels = append(self.Labels, pipeline.Label{
+				Name:  l.Name,
+				Value: l.Value,
+			})
+		}
 	}
 	path := pipeline.Path{}
 	if group.Parent != nil {
