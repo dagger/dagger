@@ -1,0 +1,15 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - go get dagger.io/dagger
+
+  build:
+    commands:
+      - echo "Running Dagger pipeline"
+      - go run ci/main.go
+
+  post_build:
+    commands:
+      - echo "Build completed on `date`"

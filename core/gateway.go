@@ -24,7 +24,7 @@ import (
 
 const (
 	// Exec errors will only include the last this number of bytes of output.
-	MaxExecErrorOutputBytes = 100 * 1024
+	MaxExecErrorOutputBytes = 30 * 1024
 
 	// TruncationMessage is the message that will be prepended to truncated output.
 	TruncationMessage = "[omitting %d bytes]..."
@@ -237,15 +237,28 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 		if err != nil {
 			return
 		}
-		var exitErr *bkpb.ExitError
-		if err := proc.Wait(); !errors.As(err, &exitErr) {
-			return
+
+		err = proc.Wait()
+
+		exitCode := -1 // -1 indicates failure to get exit code
+		if err != nil {
+			var exitErr *bkpb.ExitError
+			if errors.As(err, &exitErr) {
+				exitCode = int(exitErr.ExitCode)
+			} else {
+				// This can happen for example if debugging the failed exec
+				// takes longer than the timeout in this context, but since
+				// we know the exec op failed, try to return what we have
+				// at this point with the ExecError. The exit code will be -1
+				// and stdout/stderr output may not be complete.
+				returnErr = fmt.Errorf("[%w]: %w", err, returnErr)
+			}
 		}
 
 		returnErr = &ExecError{
 			original: returnErr,
 			Cmd:      execOp.Exec.Meta.Args,
-			ExitCode: int(exitErr.ExitCode),
+			ExitCode: exitCode,
 			Stdout:   strings.TrimSpace(ctrOut.String()),
 			Stderr:   strings.TrimSpace(ctrErr.String()),
 		}
