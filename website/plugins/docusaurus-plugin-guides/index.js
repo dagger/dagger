@@ -31,7 +31,6 @@ module.exports = async function guidesPlugin(context, options) {
           {
             path: guidePath,
             ...parsedMarkdown,
-            timestamp,
           },
         ];
       });
