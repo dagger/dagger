@@ -24,7 +24,7 @@ import (
 
 const (
 	// Exec errors will only include the last this number of bytes of output.
-	MaxExecErrorOutputBytes = 50 * 1024
+	MaxExecErrorOutputBytes = 30 * 1024
 
 	// TruncationMessage is the message that will be prepended to truncated output.
 	TruncationMessage = "[omitting %d bytes]..."
