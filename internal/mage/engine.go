@@ -198,17 +198,29 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	}
 
 	cgoEnabledEnv := "0"
-	args := []string{"go", "test", "-p", "16", "-v", "-count=1", "-timeout=15m"}
+	args := []string{
+		"gotestsum",
+		"--format", "testname",
+		"--no-color=false",
+		"--jsonfile=./tests.log",
+		"--",
+		// go test flags
+		"-parallel=16",
+		"-count=1",
+		"-timeout=15m",
+	}
 
 	if race {
 		args = append(args, "-race", "-timeout=1h")
 		cgoEnabledEnv = "1"
 	}
+
 	args = append(args, "./...")
 	cliBinPath := "/.dagger-cli"
 
 	utilDirPath := "/dagger-dev"
 	tests := util.GoBase(c).
+		WithExec([]string{"go", "install", "gotest.tools/gotestsum@v1.10.0"}).
 		WithMountedDirectory("/app", util.Repository(c)). // need all the source for extension tests
 		WithMountedDirectory(utilDirPath, testEngineUtils).
 		WithEnvVariable("_DAGGER_TESTS_ENGINE_TAR", filepath.Join(utilDirPath, "engine.tar")).
@@ -223,18 +235,15 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		tests = tests.WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv)
 	}
 
-	output, err := tests.
+	_, err = tests.
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
 		WithExec(args).
-		Stdout(ctx)
-	if err != nil {
-		return err
-	}
-	fmt.Println(output)
-	return nil
+		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"}).
+		Sync(ctx)
+	return err
 }
 
 // Test runs Engine tests
