@@ -17,10 +17,6 @@ var (
 	scrubString = []byte("***")
 )
 
-type SecretScrubReader struct {
-	io.Reader
-}
-
 func NewSecretScrubReader(r io.Reader, currentDirPath string, fsys fs.FS, env []string, secretsToScrub core.SecretToScrubInfo) (io.Reader, error) {
 	secrets := loadSecretsToScrubFromEnv(env, secretsToScrub.Envs)
 
@@ -46,11 +42,8 @@ func NewSecretScrubReader(r io.Reader, currentDirPath string, fsys fs.FS, env []
 			replace.Bytes(s, scrubString),
 		)
 	}
-	secretScrubReader := &SecretScrubReader{
-		Reader: replace.Chain(r, replaceChain...),
-	}
 
-	return secretScrubReader, nil
+	return replace.Chain(r, replaceChain...), nil
 }
 
 // loadSecretsToScrubFromEnv loads secrets value from env if they are in secretsToScrub.
