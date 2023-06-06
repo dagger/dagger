@@ -178,24 +178,20 @@ func TestScrubSecretWrite(t *testing.T) {
 	}
 
 	t.Run("multiline secret", func(t *testing.T) {
-		var buf bytes.Buffer
-		r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
-		require.NoError(t, err)
-		input := "aaa\n" + sshSecretKey + "\nbbb\nccc"
-		_, err = buf.WriteString(input)
-		require.NoError(t, err)
-		out, err := ioutil.ReadAll(r)
-		require.NoError(t, err)
-		require.Equal(t, "aaa\n***\nbbb\nccc", string(out))
-		buf.Reset()
-
-		r, err = NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
-		require.NoError(t, err)
-		_, err = buf.WriteString(sshSecretKey)
-		require.NoError(t, err)
-		out, err = ioutil.ReadAll(r)
-		require.NoError(t, err)
-		require.Equal(t, "***", string(out))
+		for input, expectedOutput := range map[string]string{
+			"aaa\n" + sshSecretKey + "\nbbb\nccc": "aaa\n***\nbbb\nccc",
+			"aaa" + sshSecretKey + "bbb\nccc":     "aaa***bbb\nccc",
+			sshSecretKey:                          "***",
+		} {
+			var buf bytes.Buffer
+			r, err := NewSecretScrubReader(&buf, "/", fstest.MapFS{}, env, secretToScrubInfo)
+			require.NoError(t, err)
+			_, err = buf.WriteString(input)
+			require.NoError(t, err)
+			out, err := ioutil.ReadAll(r)
+			require.NoError(t, err)
+			require.Equal(t, expectedOutput, string(out))
+		}
 	})
 	t.Run("single line secret", func(t *testing.T) {
 		var buf bytes.Buffer
