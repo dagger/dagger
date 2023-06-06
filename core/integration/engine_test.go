@@ -82,6 +82,8 @@ exit $?
 }
 
 func TestClientWaitsForEngine(t *testing.T) {
+	t.Parallel()
+
 	c, ctx := connect(t)
 	defer c.Close()
 

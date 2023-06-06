@@ -68,6 +68,8 @@ func TestPlatformEmulatedExecAndPush(t *testing.T) {
 }
 
 func TestPlatformCrossCompile(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
