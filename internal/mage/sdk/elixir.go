@@ -53,7 +53,7 @@ func (Elixir) Lint(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"mix", "format", "--check-formatted"}).
+		WithExec([]string{"mix", "lint"}).
 		ExitCode(ctx)
 	if err != nil {
 		return err
