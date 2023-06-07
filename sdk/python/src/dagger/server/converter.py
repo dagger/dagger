@@ -3,17 +3,10 @@ from dataclasses import fields
 
 from cattrs.gen import make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
-from strawberry.field import StrawberryField
+
+from ._util import has_resolver, is_strawberry_type
 
 converter = make_converter(omit_if_default=True)
-
-
-def is_strawberry_type(cls: type) -> bool:
-    return hasattr(cls, "_type_definition")
-
-
-def has_resolver(f) -> bool:
-    return isinstance(f, StrawberryField) and not f.is_basic_field
 
 
 def strawberry_unstructure(cls: type) -> Callable:
