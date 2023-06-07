@@ -1,0 +1,20 @@
+// Inspired by TSConfig bases: https://github.com/tsconfig/bases/blob/main/bases/recommended.json
+{
+  "include": ["./**/*"],
+  "exclude": ["./**/*.spec.ts", "./dist/**/*"],
+  "compilerOptions": {
+    "target": "ES6",
+    "strict": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "module": "ES2020",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "Node",
+    "declaration": true,
+    "declarationMap": true
+  },
+  "$schema": "https://json.schemastore.org/tsconfig",
+}

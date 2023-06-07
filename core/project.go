@@ -224,8 +224,10 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client) (string, error)
 
 	st := fsState.Run(
 		llb.Args([]string{entrypointPath, "-schema"}),
-		llb.AddMount("/src", projectDirState, llb.Readonly),
-		llb.ReadonlyRootFS(),
+		llb.AddMount("/src", projectDirState),
+		// NOTE: Fix the root write permission issues on typescript runtime.
+		// We should fix that later.
+		// llb.ReadonlyRootFS(),
 	)
 	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
 	outputDef, err := outputMnt.Marshal(ctx, llb.Platform(p.Platform))
@@ -259,6 +261,8 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, erro
 		runtimeFS, err = p.goRuntime(ctx, "/", gw, p.Platform)
 	case "python":
 		runtimeFS, err = p.pythonRuntime(ctx, "/", gw, p.Platform)
+	case "typescript":
+		runtimeFS, err = p.typescriptRuntime(ctx, "/", gw, p.Platform)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)
 	}
