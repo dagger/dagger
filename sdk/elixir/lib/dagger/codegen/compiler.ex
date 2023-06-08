@@ -18,8 +18,9 @@ defmodule Dagger.Codegen.Compiler do
     # TODO: We should have a rewrite phase to rewrite type, annotate module information, etc. before
     # rendering type into module.
     types
-    |> Enum.filter(&only_supported_kinds/1)
-    |> Enum.filter(&not_graphql_introspection_types/1)
+    |> Enum.filter(fn type ->
+      only_supported_kinds(type) and not_graphql_introspection_types(type)
+    end)
     |> Enum.map(&Mutator.mutate/1)
     |> Enum.map(&render/1)
   end
