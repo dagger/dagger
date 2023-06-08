@@ -167,6 +167,7 @@ func (t *writer) vertexOp(v *progrock.Vertex) OpPayload {
 func (t *writer) groupPath(group *progrock.Group) pipeline.Path {
 	self := pipeline.Pipeline{
 		Name: group.Name,
+		Weak: group.Weak,
 	}
 	for _, l := range group.Labels {
 		if l.Name == pipeline.ProgrockDescriptionLabel {

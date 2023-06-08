@@ -11,6 +11,7 @@ type Pipeline struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description,omitempty"`
 	Labels      []Label `json:"labels,omitempty"`
+	Weak        bool    `json:"weak,omitempty"`
 }
 
 type Path []Pipeline
@@ -80,9 +81,19 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 			})
 		}
 
+		opts := []progrock.GroupOpt{}
+
+		if len(labels) > 0 {
+			opts = append(opts, progrock.WithLabels(labels...))
+		}
+
+		if p.Weak {
+			opts = append(opts, progrock.Weak())
+		}
+
 		// WithGroup stores an internal hierarchy of groups by name, so this will
 		// always return the same group ID throughout the session.
-		rec = rec.WithGroup(p.Name, progrock.WithLabels(labels...))
+		rec = rec.WithGroup(p.Name, opts...)
 	}
 
 	return rec
