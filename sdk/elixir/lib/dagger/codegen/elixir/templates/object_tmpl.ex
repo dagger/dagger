@@ -184,10 +184,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
       quote do
         selection =
-          if not is_nil(optional_args[unquote(arg_name)]) do
-            arg(selection, unquote(name), optional_args[unquote(arg_name)])
-          else
+          if is_nil(optional_args[unquote(arg_name)]) do
             selection
+          else
+            arg(selection, unquote(name), optional_args[unquote(arg_name)])
           end
       end
     end

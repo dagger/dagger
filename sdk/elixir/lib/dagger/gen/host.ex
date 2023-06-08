@@ -13,17 +13,17 @@ defmodule Dagger.Host do
       selection = arg(selection, "path", path)
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
-          arg(selection, "exclude", optional_args[:exclude])
-        else
+        if is_nil(optional_args[:exclude]) do
           selection
+        else
+          arg(selection, "exclude", optional_args[:exclude])
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
-          arg(selection, "include", optional_args[:include])
-        else
+        if is_nil(optional_args[:include]) do
           selection
+        else
+          arg(selection, "include", optional_args[:include])
         end
 
       %Dagger.Directory{selection: selection, client: host.client}
@@ -58,17 +58,17 @@ defmodule Dagger.Host do
       selection = select(host.selection, "workdir")
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
-          arg(selection, "exclude", optional_args[:exclude])
-        else
+        if is_nil(optional_args[:exclude]) do
           selection
+        else
+          arg(selection, "exclude", optional_args[:exclude])
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
-          arg(selection, "include", optional_args[:include])
-        else
+        if is_nil(optional_args[:include]) do
           selection
+        else
+          arg(selection, "include", optional_args[:include])
         end
 
       %Dagger.Directory{selection: selection, client: host.client}

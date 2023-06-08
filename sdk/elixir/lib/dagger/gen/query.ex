@@ -22,17 +22,17 @@ defmodule Dagger.Query do
       selection = select(query.selection, "container")
 
       selection =
-        if not is_nil(optional_args[:id]) do
-          arg(selection, "id", optional_args[:id])
-        else
+        if is_nil(optional_args[:id]) do
           selection
+        else
+          arg(selection, "id", optional_args[:id])
         end
 
       selection =
-        if not is_nil(optional_args[:platform]) do
-          arg(selection, "platform", optional_args[:platform])
-        else
+        if is_nil(optional_args[:platform]) do
           selection
+        else
+          arg(selection, "platform", optional_args[:platform])
         end
 
       %Dagger.Container{selection: selection, client: query.client}
@@ -55,10 +55,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "directory")
 
       selection =
-        if not is_nil(optional_args[:id]) do
-          arg(selection, "id", optional_args[:id])
-        else
+        if is_nil(optional_args[:id]) do
           selection
+        else
+          arg(selection, "id", optional_args[:id])
         end
 
       %Dagger.Directory{selection: selection, client: query.client}
@@ -83,17 +83,17 @@ defmodule Dagger.Query do
       selection = arg(selection, "url", url)
 
       selection =
-        if not is_nil(optional_args[:keep_git_dir]) do
-          arg(selection, "keepGitDir", optional_args[:keep_git_dir])
-        else
+        if is_nil(optional_args[:keep_git_dir]) do
           selection
+        else
+          arg(selection, "keepGitDir", optional_args[:keep_git_dir])
         end
 
       selection =
-        if not is_nil(optional_args[:experimental_service_host]) do
-          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
-        else
+        if is_nil(optional_args[:experimental_service_host]) do
           selection
+        else
+          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
         end
 
       %Dagger.GitRepository{selection: selection, client: query.client}
@@ -117,10 +117,10 @@ defmodule Dagger.Query do
       selection = arg(selection, "url", url)
 
       selection =
-        if not is_nil(optional_args[:experimental_service_host]) do
-          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
-        else
+        if is_nil(optional_args[:experimental_service_host]) do
           selection
+        else
+          arg(selection, "experimentalServiceHost", optional_args[:experimental_service_host])
         end
 
       %Dagger.File{selection: selection, client: query.client}
@@ -135,17 +135,17 @@ defmodule Dagger.Query do
       selection = arg(selection, "name", name)
 
       selection =
-        if not is_nil(optional_args[:description]) do
-          arg(selection, "description", optional_args[:description])
-        else
+        if is_nil(optional_args[:description]) do
           selection
+        else
+          arg(selection, "description", optional_args[:description])
         end
 
       selection =
-        if not is_nil(optional_args[:labels]) do
-          arg(selection, "labels", optional_args[:labels])
-        else
+        if is_nil(optional_args[:labels]) do
           selection
+        else
+          arg(selection, "labels", optional_args[:labels])
         end
 
       %Dagger.Query{selection: selection, client: query.client}
@@ -159,10 +159,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "project")
 
       selection =
-        if not is_nil(optional_args[:id]) do
-          arg(selection, "id", optional_args[:id])
-        else
+        if is_nil(optional_args[:id]) do
           selection
+        else
+          arg(selection, "id", optional_args[:id])
         end
 
       %Dagger.Project{selection: selection, client: query.client}
@@ -176,10 +176,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "projectCommand")
 
       selection =
-        if not is_nil(optional_args[:id]) do
-          arg(selection, "id", optional_args[:id])
-        else
+        if is_nil(optional_args[:id]) do
           selection
+        else
+          arg(selection, "id", optional_args[:id])
         end
 
       %Dagger.ProjectCommand{selection: selection, client: query.client}
@@ -214,10 +214,10 @@ defmodule Dagger.Query do
       selection = select(query.selection, "socket")
 
       selection =
-        if not is_nil(optional_args[:id]) do
-          arg(selection, "id", optional_args[:id])
-        else
+        if is_nil(optional_args[:id]) do
           selection
+        else
+          arg(selection, "id", optional_args[:id])
         end
 
       %Dagger.Socket{selection: selection, client: query.client}

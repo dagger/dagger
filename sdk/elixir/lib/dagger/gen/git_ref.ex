@@ -21,17 +21,17 @@ defmodule Dagger.GitRef do
       selection = select(git_ref.selection, "tree")
 
       selection =
-        if not is_nil(optional_args[:ssh_known_hosts]) do
-          arg(selection, "sshKnownHosts", optional_args[:ssh_known_hosts])
-        else
+        if is_nil(optional_args[:ssh_known_hosts]) do
           selection
+        else
+          arg(selection, "sshKnownHosts", optional_args[:ssh_known_hosts])
         end
 
       selection =
-        if not is_nil(optional_args[:ssh_auth_socket]) do
-          arg(selection, "sshAuthSocket", optional_args[:ssh_auth_socket])
-        else
+        if is_nil(optional_args[:ssh_auth_socket]) do
           selection
+        else
+          arg(selection, "sshAuthSocket", optional_args[:ssh_auth_socket])
         end
 
       %Dagger.Directory{selection: selection, client: git_ref.client}
