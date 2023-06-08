@@ -3235,7 +3235,7 @@ export class ProjectCommand extends BaseClient {
   }
 
   /**
-   * TODO: switch to actual type
+   * The name of the type returned by this command.
    */
   async resultType(): Promise<string> {
     const response: Awaited<string> = await computeQuery(

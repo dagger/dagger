@@ -2667,7 +2667,7 @@ class ProjectCommand(Type):
 
     @typecheck
     def result_type(self) -> Optional[str]:
-        """TODO: switch to actual type
+        """The name of the type returned by this command.
 
         Returns
         -------

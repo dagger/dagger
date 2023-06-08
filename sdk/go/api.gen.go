@@ -2383,7 +2383,7 @@ func (r *ProjectCommand) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// TODO: switch to actual type
+// The name of the type returned by this command.
 func (r *ProjectCommand) ResultType(ctx context.Context) (string, error) {
 	if r.resultType != nil {
 		return *r.resultType, nil
