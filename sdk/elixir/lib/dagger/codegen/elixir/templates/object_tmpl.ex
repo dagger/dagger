@@ -14,6 +14,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       ) do
     defs = render_functions(Function.format_var_name(name), fields)
 
+    desc =
+      if desc == "" do
+        name
+      else
+        desc
+      end
+
     quote do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
