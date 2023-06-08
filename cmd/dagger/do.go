@@ -205,7 +205,6 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					if err != nil {
 						return fmt.Errorf("failed to get absolute path of output path: %w", err)
 					}
-					// TODO: enum or union
 					switch projResultType {
 					case "File":
 						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
