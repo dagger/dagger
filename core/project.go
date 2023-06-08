@@ -126,7 +126,7 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, pr
 		return nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolvers, err := p.getResolvers(ctx, gw, progSock)
+	resolvers, err := p.getResolvers(ctx, gw, r, progSock)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
@@ -291,7 +291,7 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, erro
 	return runtimeFS, nil
 }
 
-func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *Socket) (router.Resolvers, error) {
+func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket) (router.Resolvers, error) {
 	resolvers := make(router.Resolvers)
 	if p.Config.SDK == "" {
 		return nil, fmt.Errorf("sdk not set")
@@ -308,7 +308,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *So
 		objResolver := router.ObjectResolver{}
 		resolvers[def.Name] = objResolver
 		for _, field := range def.Fields {
-			objResolver[field.Name], err = p.getResolver(ctx, gw, progSock, field.Type)
+			objResolver[field.Name], err = p.getResolver(ctx, gw, r, progSock, field.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -317,7 +317,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *So
 	return resolvers, nil
 }
 
-func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Socket, outputType *ast.Type) (graphql.FieldResolveFn, error) {
+func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, outputType *ast.Type) (graphql.FieldResolveFn, error) {
 	runtimeFS, err := p.runtime(ctx, gw)
 	if err != nil {
 		return nil, err
@@ -398,30 +398,31 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Soc
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
-		return convertOutput(output, outputType)
+		return convertOutput(output, outputType, r)
 	}), nil
 }
 
-func convertOutput(output any, outputType *ast.Type) (any, error) {
+func convertOutput(output any, outputType *ast.Type, r *router.Router) (any, error) {
 	if outputType.Elem != nil {
 		outputType = outputType.Elem
 	}
-	// ID-able dagger objects are serialized as their ID string across the wire
-	// between the session and project container.
-	// TODO: need more maintainable way
-	switch outputType.Name() {
-	case "File":
+
+	for objectName, resolver := range r.Resolvers() {
+		if objectName != outputType.Name() {
+			continue
+		}
+		resolver, ok := resolver.(router.IDableObjectResolver)
+		if !ok {
+			continue
+		}
+
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
 		outputStr, ok := output.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected id string output for file")
+			return nil, fmt.Errorf("expected id string output for %s", objectName)
 		}
-		return FileID(outputStr).ToFile()
-	case "Directory":
-		outputStr, ok := output.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected id string output for directory")
-		}
-		return DirectoryID(outputStr).ToDirectory()
+		return resolver.FromID(outputStr)
 	}
 	return output, nil
 }

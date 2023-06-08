@@ -96,6 +96,18 @@ func (dir *Directory) ID() (DirectoryID, error) {
 	return encodeID[DirectoryID](dir)
 }
 
+func (dir *Directory) FromID(id string) error {
+	if dir == nil {
+		return fmt.Errorf("cannot unmarshal id into nil *Directory")
+	}
+	x, err := DirectoryID(id).ToDirectory()
+	if err != nil {
+		return err
+	}
+	*dir = *x
+	return nil
+}
+
 var _ router.Pipelineable = (*Directory)(nil)
 
 func (dir *Directory) PipelinePath() pipeline.Path {

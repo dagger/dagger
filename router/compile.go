@@ -10,12 +10,12 @@ func compile(s ExecutableSchema) (*graphql.Schema, error) {
 	typeResolvers := tools.ResolverMap{}
 	for name, resolver := range s.Resolvers() {
 		switch resolver := resolver.(type) {
-		case ObjectResolver:
+		case FieldResolvers:
 			obj := &tools.ObjectResolver{
 				Fields: tools.FieldResolveMap{},
 			}
 			typeResolvers[name] = obj
-			for fieldName, fn := range resolver {
+			for fieldName, fn := range resolver.Fields() {
 				obj.Fields[fieldName] = &tools.FieldResolve{
 					Resolve: fn,
 				}

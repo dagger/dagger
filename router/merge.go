@@ -38,24 +38,20 @@ func MergeExecutableSchemas(name string, schemas ...ExecutableSchema) (Executabl
 	for _, s := range schemas {
 		for name, resolver := range s.Resolvers() {
 			switch resolver := resolver.(type) {
-			case ObjectResolver:
-				var objResolver ObjectResolver
-				if r, ok := merged.Resolvers[name]; ok {
-					objResolver, ok = r.(ObjectResolver)
+			case FieldResolvers:
+				if existing, ok := merged.Resolvers[name]; ok {
+					existing, ok := existing.(FieldResolvers)
 					if !ok {
 						return nil, fmt.Errorf("conflict on type %q: %w", name, ErrMergeTypeConflict)
 					}
-				} else {
-					objResolver = ObjectResolver{}
-					merged.Resolvers[name] = objResolver
-				}
-
-				for fieldName, fn := range resolver {
-					if _, ok := objResolver[fieldName]; ok {
-						return nil, fmt.Errorf("conflict on type %q: %q: %w", name, fieldName, ErrMergeFieldConflict)
+					for fieldName, fn := range existing.Fields() {
+						if _, ok := resolver.Fields()[fieldName]; ok {
+							return nil, fmt.Errorf("conflict on type %q: %q: %w", name, fieldName, ErrMergeFieldConflict)
+						}
+						resolver.SetField(fieldName, fn)
 					}
-					objResolver[fieldName] = fn
 				}
+				merged.Resolvers[name] = resolver
 			case ScalarResolver:
 				if existing, ok := merged.Resolvers[name]; ok {
 					if _, ok := existing.(ScalarResolver); !ok {

@@ -89,6 +89,18 @@ func (file *File) ID() (FileID, error) {
 	return encodeID[FileID](file)
 }
 
+func (file *File) FromID(id string) error {
+	if file == nil {
+		return fmt.Errorf("cannot unmarshal id into nil *File")
+	}
+	x, err := FileID(id).ToFile()
+	if err != nil {
+		return err
+	}
+	*file = *x
+	return nil
+}
+
 var _ router.Pipelineable = (*File)(nil)
 
 func (file *File) PipelinePath() pipeline.Path {

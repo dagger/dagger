@@ -19,6 +19,7 @@ import (
 
 type Router struct {
 	schemas      map[string]ExecutableSchema
+	resolvers    Resolvers
 	sessionToken string
 
 	recorder *progrock.Recorder
@@ -103,6 +104,7 @@ func (r *Router) Add(schema ExecutableSchema) error {
 
 	// Atomic swap
 	r.s = s
+	r.resolvers = merged.Resolvers()
 	r.mergedSchemaString = merged.Schema()
 	r.h = handler.New(&handler.Config{
 		Schema: s,
@@ -131,6 +133,12 @@ func (r *Router) Get(name string) ExecutableSchema {
 	defer r.l.RUnlock()
 
 	return r.schemas[name]
+}
+
+func (r *Router) Resolvers() Resolvers {
+	r.l.Lock()
+	defer r.l.Unlock()
+	return r.resolvers
 }
 
 func (r *Router) MergedSchemas() string {

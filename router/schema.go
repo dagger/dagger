@@ -31,9 +31,53 @@ type Resolver interface {
 	_resolver()
 }
 
+type FieldResolvers interface {
+	Resolver
+	Fields() map[string]graphql.FieldResolveFn
+	SetField(string, graphql.FieldResolveFn)
+}
+
 type ObjectResolver map[string]graphql.FieldResolveFn
 
 func (ObjectResolver) _resolver() {}
+
+func (r ObjectResolver) Fields() map[string]graphql.FieldResolveFn {
+	return r
+}
+
+func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
+	r[name] = fn
+}
+
+// See https://go.googlesource.com/proposal/+/HEAD/design/43651-type-parameters.md#pointer-method-example
+// for what's going on here, need to constrain that the object has a FromID method *on its pointer type*
+type IDableObjectReceiver[T any] interface {
+	IDableObject
+	*T
+}
+
+type IDableObject interface {
+	FromID(string) error
+}
+
+type IDableObjectResolver interface {
+	FromID(id string) (IDableObject, error)
+	Resolver
+}
+
+func ToIDableObjectResolver[T any, PT IDableObjectReceiver[T]](r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver[T, PT]{r}
+}
+
+type idableObjectResolver[T any, PT IDableObjectReceiver[T]] struct {
+	ObjectResolver
+}
+
+func (r idableObjectResolver[T, PT]) FromID(id string) (IDableObject, error) {
+	t := PT(new(T))
+	err := t.FromID(id)
+	return t, err
+}
 
 type ScalarResolver struct {
 	Serialize    graphql.SerializeFn

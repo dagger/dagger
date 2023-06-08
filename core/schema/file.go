@@ -29,14 +29,14 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"file": router.ToResolver(s.file),
 		},
-		"File": router.ObjectResolver{
+		"File": router.ToIDableObjectResolver[core.File](router.ObjectResolver{
 			"id":             router.ToResolver(s.id),
 			"contents":       router.ToResolver(s.contents),
 			"secret":         router.ToResolver(s.secret),
 			"size":           router.ToResolver(s.size),
 			"export":         router.ToResolver(s.export),
 			"withTimestamps": router.ToResolver(s.withTimestamps),
-		},
+		}),
 	}
 }
 
