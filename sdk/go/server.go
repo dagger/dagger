@@ -69,7 +69,7 @@ func ServeCommands(entrypoints ...any) {
 		if err != nil {
 			writeErrorf(err)
 		}
-		types.fillParamNames(parsed, fileSet)
+		types.fillASTData(parsed, fileSet)
 	}
 
 	// if the schema is being requested, just return that
@@ -533,8 +533,10 @@ func (ts *goTypes) walkArgsAndReturns(fn *goFunc, state walkState) error {
 	return nil
 }
 
-// TODO: update name of method, does much more now
-func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
+// annotate all the types we found from reflection with data only available via the AST, such as
+// * Names of params (i.e. in func(foo string)), we can only get the name "foo" from the AST
+// * Doc strings
+func (ts *goTypes) fillASTData(parsed *goast.File, fileSet *token.FileSet) {
 	goast.Inspect(parsed, func(n goast.Node) bool {
 		if n == nil {
 			return false
@@ -542,9 +544,9 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
 		switch f := n.(type) {
 		case *goast.FuncDecl:
 			if f.Recv == nil {
-				ts.fillFuncParamNames(f, fileSet)
+				ts.fillFuncFromAST(f, fileSet)
 			} else {
-				ts.fillMethodParamNames(f)
+				ts.fillMethodFromAST(f)
 			}
 		case *goast.GenDecl:
 			// check if it's a struct we know about, if so, fill in the doc string
@@ -568,7 +570,7 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
 	})
 }
 
-func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) {
+func (ts *goTypes) fillMethodFromAST(decl *goast.FuncDecl) {
 	if len(decl.Recv.List) != 1 {
 		return
 	}
@@ -605,10 +607,8 @@ func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) {
 	}
 }
 
-func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileSet) {
+func (ts *goTypes) fillFuncFromAST(decl *goast.FuncDecl, fileSet *token.FileSet) {
 	// TODO: this probably doesn't work when funcs have duplicated names across packages
-
-	// TODO: rename this to indicate it also fills in the real func name and docs in addition to param names
 
 	// TODO: maybe change map of fnName->fn to be fnSourceLine->fn?
 	// Can't just check for func name because reflect/runtime give a weird name for it
@@ -701,12 +701,13 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-			typeName := result[0].String()
+			var typeName string
 			if isInput {
-				// TODO: hack, update codegen with more helper methods?
-				// convert to accept an ID
-				typeName = typeName + "ID"
+				result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
+				typeName = result[0].String()
+			} else {
+				result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
+				typeName = result[0].String()
 			}
 			return ast.NonNullNamedType(typeName, nil), nil
 		}
@@ -716,16 +717,6 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		}
 		return ast.NonNullNamedType(t.Name(), nil), nil // TODO:(sipsma) doesn't handle anything from another package (besides the sdk)
 	case reflect.Pointer:
-		// TODO: hack, de-dupe with above block of code
-		if isInput {
-			marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-			if t.Implements(marshaller) {
-				typ := reflect.New(t.Elem())
-				result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-				typeName := result[0].String() + "ID"
-				return ast.NonNullNamedType(typeName, nil), nil
-			}
-		}
 		nonNullType, err := goReflectTypeToGraphqlType(t.Elem(), isInput)
 		if err != nil {
 			return nil, err

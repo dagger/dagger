@@ -3087,8 +3087,8 @@ export class Project extends BaseClient {
   /**
    * A unique identifier for this project.
    */
-  async id(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
+  async id(): Promise<ProjectID> {
+    const response: Awaited<ProjectID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3203,8 +3203,8 @@ export class ProjectCommand extends BaseClient {
   /**
    * A unique identifier for this command.
    */
-  async id(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
+  async id(): Promise<ProjectCommandID> {
+    const response: Awaited<ProjectCommandID> = await computeQuery(
       [
         ...this._queryTree,
         {

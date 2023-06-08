@@ -2527,7 +2527,7 @@ class Project(Type):
         return ProjectCommand(_ctx)
 
     @typecheck
-    def id(self) -> str:
+    def id(self) -> ProjectID:
         """A unique identifier for this project.
 
         Note
@@ -2536,10 +2536,8 @@ class Project(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        ProjectID
+            A unique project identifier.
 
         Raises
         ------
@@ -2550,7 +2548,7 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return _ctx.execute_sync(str)
+        return _ctx.execute_sync(ProjectID)
 
     @typecheck
     def load(
@@ -2622,7 +2620,7 @@ class ProjectCommand(Type):
         return ProjectCommandFlag(_ctx)
 
     @typecheck
-    def id(self) -> str:
+    def id(self) -> ProjectCommandID:
         """A unique identifier for this command.
 
         Note
@@ -2631,10 +2629,8 @@ class ProjectCommand(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        ProjectCommandID
+            A unique project command identifier.
 
         Raises
         ------
@@ -2645,7 +2641,7 @@ class ProjectCommand(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return _ctx.execute_sync(str)
+        return _ctx.execute_sync(ProjectCommandID)
 
     @typecheck
     def name(self) -> str:

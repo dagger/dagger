@@ -81,6 +81,11 @@ func (r *CacheVolume) XXX_GraphQLType() string {
 	return "CacheVolume"
 }
 
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *CacheVolume) XXX_GraphQLIDType() string {
+	return "CacheID"
+}
+
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
 func (r *CacheVolume) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
@@ -488,6 +493,11 @@ func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *Container) XXX_GraphQLType() string {
 	return "Container"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Container) XXX_GraphQLIDType() string {
+	return "ContainerID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -1523,6 +1533,11 @@ func (r *Directory) XXX_GraphQLType() string {
 	return "Directory"
 }
 
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Directory) XXX_GraphQLIDType() string {
+	return "DirectoryID"
+}
+
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
 func (r *Directory) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
@@ -1804,6 +1819,11 @@ func (r *File) ID(ctx context.Context) (FileID, error) {
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *File) XXX_GraphQLType() string {
 	return "File"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *File) XXX_GraphQLIDType() string {
+	return "FileID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2167,7 +2187,7 @@ type Project struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	id   *string
+	id   *ProjectID
 	name *string
 }
 
@@ -2179,7 +2199,7 @@ func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
 
 	type commands struct {
 		Description string
-		Id          string
+		Id          ProjectCommandID
 		Name        string
 		ResultType  string
 	}
@@ -2206,13 +2226,13 @@ func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
 }
 
 // A unique identifier for this project.
-func (r *Project) ID(ctx context.Context) (string, error) {
+func (r *Project) ID(ctx context.Context) (ProjectID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.q.Select("id")
 
-	var response string
+	var response ProjectID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -2221,6 +2241,11 @@ func (r *Project) ID(ctx context.Context) (string, error) {
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *Project) XXX_GraphQLType() string {
 	return "Project"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Project) XXX_GraphQLIDType() string {
+	return "ProjectID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2263,7 +2288,7 @@ type ProjectCommand struct {
 	c graphql.Client
 
 	description *string
-	id          *string
+	id          *ProjectCommandID
 	name        *string
 	resultType  *string
 }
@@ -2314,13 +2339,13 @@ func (r *ProjectCommand) Flags(ctx context.Context) ([]ProjectCommandFlag, error
 }
 
 // A unique identifier for this command.
-func (r *ProjectCommand) ID(ctx context.Context) (string, error) {
+func (r *ProjectCommand) ID(ctx context.Context) (ProjectCommandID, error) {
 	if r.id != nil {
 		return *r.id, nil
 	}
 	q := r.q.Select("id")
 
-	var response string
+	var response ProjectCommandID
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -2329,6 +2354,11 @@ func (r *ProjectCommand) ID(ctx context.Context) (string, error) {
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *ProjectCommand) XXX_GraphQLType() string {
 	return "ProjectCommand"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *ProjectCommand) XXX_GraphQLIDType() string {
+	return "ProjectCommandID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
@@ -2374,7 +2404,7 @@ func (r *ProjectCommand) Subcommands(ctx context.Context) ([]ProjectCommand, err
 
 	type subcommands struct {
 		Description string
-		Id          string
+		Id          ProjectCommandID
 		Name        string
 		ResultType  string
 	}
@@ -2724,6 +2754,11 @@ func (r *Secret) XXX_GraphQLType() string {
 	return "Secret"
 }
 
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Secret) XXX_GraphQLIDType() string {
+	return "SecretID"
+}
+
 // XXX_GraphQLID is an internal function. It returns the underlying type ID
 func (r *Secret) XXX_GraphQLID(ctx context.Context) (string, error) {
 	id, err := r.ID(ctx)
@@ -2769,6 +2804,11 @@ func (r *Socket) ID(ctx context.Context) (SocketID, error) {
 // XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 func (r *Socket) XXX_GraphQLType() string {
 	return "Socket"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Socket) XXX_GraphQLIDType() string {
+	return "SocketID"
 }
 
 // XXX_GraphQLID is an internal function. It returns the underlying type ID

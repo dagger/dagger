@@ -34,8 +34,7 @@ const (
 func init() {
 	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
 	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
-	// TODO: should there be a default? or should we require this to be set?
-	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "TODO: doc")
+	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If not specified, those will be written to the project's root directory when using a project loaded from a local dir.")
 }
 
 var doCmd = &cobra.Command{
@@ -200,7 +199,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					curSelection = newSelection
 				} else {
 					if outputPath == "" {
-						return fmt.Errorf("output path not set, --output must be explictly provided for git:// projects that return files or directories")
+						return fmt.Errorf("output path not set, --output must be explicitly provided for git:// projects that return files or directories")
 					}
 					outputPath, err = filepath.Abs(outputPath)
 					if err != nil {

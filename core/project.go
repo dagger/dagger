@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"path"

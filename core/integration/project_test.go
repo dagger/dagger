@@ -17,7 +17,14 @@ import (
 func TestProjectHostExport(t *testing.T) {
 	t.Parallel()
 
-	projectDir := "../../" // needed so we pick up the go.mod in the root of our repo
+	// Project dir needs to be the root of this repo so we can pick up the go.mod there and thus
+	// the local go sdk code, which should be used rather than a previously released one
+	projectDir := "../../"
+	configDir := "./testdata/projects/go/basic"
+
+	// We have to write some tempfiles to the repo root dir to test the implicit output path.
+	// When running tests directly on a host (i.e. ./hack/dev go test ...), we want to do our
+	// best to clean those up. There is also a .gitignore entry for these files just in case.
 	prefix := ".testtmp" + identity.NewID()
 	projectDirPlusPrefix := filepath.Join(projectDir, prefix)
 	t.Cleanup(func() {
@@ -28,7 +35,6 @@ func TestProjectHostExport(t *testing.T) {
 			}
 		}
 	})
-	configDir := "./testdata/projects/go/basic"
 
 	t.Run("file export implicit output", func(t *testing.T) {
 		t.Parallel()
@@ -61,8 +67,7 @@ func TestProjectHostExport(t *testing.T) {
 
 	t.Run("file export explicit output", func(t *testing.T) {
 		t.Parallel()
-		tmpdir := t.TempDir()
-		outputPath := filepath.Join(tmpdir, "blahblah.txt")
+		outputPath := filepath.Join(t.TempDir(), "blahblah.txt")
 		DaggerDoCmd{
 			Project:    projectDir,
 			Config:     configDir,
@@ -74,29 +79,29 @@ func TestProjectHostExport(t *testing.T) {
 
 	t.Run("file export explicit output to parent dir", func(t *testing.T) {
 		t.Parallel()
-		tmpdir := t.TempDir()
+		outputPath := t.TempDir()
 		DaggerDoCmd{
 			Project:    projectDir,
 			Config:     configDir,
-			OutputPath: tmpdir,
+			OutputPath: outputPath,
 			Target:     "testFile",
 		}.Run(t)
-		require.FileExists(t, filepath.Join(tmpdir, "foo.txt"))
+		require.FileExists(t, filepath.Join(outputPath, "foo.txt"))
 	})
 
 	t.Run("dir export explicit output", func(t *testing.T) {
 		t.Parallel()
-		tmpdir := t.TempDir()
+		outputPath := t.TempDir()
 		DaggerDoCmd{
 			Project:    projectDir,
 			Config:     configDir,
-			OutputPath: tmpdir,
+			OutputPath: outputPath,
 			Target:     "testDir",
 		}.Run(t)
-		require.FileExists(t, filepath.Join(tmpdir, "subdir/subbar1.txt"))
-		require.FileExists(t, filepath.Join(tmpdir, "subdir/subbar2.txt"))
-		require.FileExists(t, filepath.Join(tmpdir, "bar1.txt"))
-		require.FileExists(t, filepath.Join(tmpdir, "bar2.txt"))
+		require.FileExists(t, filepath.Join(outputPath, "subdir/subbar1.txt"))
+		require.FileExists(t, filepath.Join(outputPath, "subdir/subbar2.txt"))
+		require.FileExists(t, filepath.Join(outputPath, "bar1.txt"))
+		require.FileExists(t, filepath.Join(outputPath, "bar2.txt"))
 	})
 }
 
@@ -113,7 +118,7 @@ func TestProjectHostExport(t *testing.T) {
 * Unnamed (inlined) structs. e.g. `type Foo struct { Bar struct { Baz string } }`
 * Circular types (i.e. structs that have fields that reference themselves, etc.)
 */
-func TestCodeToSchema(t *testing.T) {
+func TestProjectGoCodeToSchema(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
