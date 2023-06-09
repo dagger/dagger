@@ -29,7 +29,7 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"file": router.ToResolver(s.file),
 		},
-		"File": router.ToIDableObjectResolver[core.File](router.ObjectResolver{
+		"File": router.ToIDableObjectResolver(core.FileID.ToFile, router.ObjectResolver{
 			"id":             router.ToResolver(s.id),
 			"contents":       router.ToResolver(s.contents),
 			"secret":         router.ToResolver(s.secret),

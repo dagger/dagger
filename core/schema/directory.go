@@ -34,7 +34,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 		"Query": router.ObjectResolver{
 			"directory": router.ToResolver(s.directory),
 		},
-		"Directory": router.ToIDableObjectResolver[core.Directory](router.ObjectResolver{
+		"Directory": router.ToIDableObjectResolver(core.DirectoryID.ToDirectory, router.ObjectResolver{
 			"id":               router.ToResolver(s.id),
 			"pipeline":         router.ToResolver(s.pipeline),
 			"entries":          router.ToResolver(s.entries),
