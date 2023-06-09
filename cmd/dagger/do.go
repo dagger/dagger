@@ -113,6 +113,7 @@ var doCmd = &cobra.Command{
 	},
 }
 
+// nolint:gocyclo
 func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
@@ -120,7 +121,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd id: %w", err)
 	}
-	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: dagger.ProjectCommandID(projCmdID)})
+	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: projCmdID})
 
 	projCmdName, err := projCmd.Name(ctx)
 	if err != nil {
