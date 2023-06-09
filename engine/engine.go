@@ -21,7 +21,6 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	"github.com/dagger/dagger/telemetry"
@@ -46,7 +45,6 @@ type Config struct {
 	Workdir        string
 	LogOutput      io.Writer
 	JournalFile    string
-	JournalWriter  journal.Writer
 	ProgrockWriter progrock.Writer
 	DisableHostRW  bool
 	RunnerHost     string
@@ -61,8 +59,28 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		return fmt.Errorf("must specify runner host")
 	}
 
-	if startOpts.ProgrockWriter == nil {
-		startOpts.ProgrockWriter = progrock.Discard{}
+	progMultiW := progrock.MultiWriter{}
+
+	if startOpts.ProgrockWriter != nil {
+		progMultiW = append(progMultiW, startOpts.ProgrockWriter)
+	}
+
+	if startOpts.JournalFile != "" {
+		fw, err := newProgrockFileWriter(startOpts.JournalFile)
+		if err != nil {
+			return err
+		}
+
+		progMultiW = append(progMultiW, fw)
+	}
+
+	var cloudURL string
+	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
+		tw, url, ok := telemetry.NewWriter()
+		if ok {
+			cloudURL = url
+			progMultiW = append(progMultiW, tw)
+		}
 	}
 
 	remote, err := url.Parse(startOpts.RunnerHost)
@@ -94,17 +112,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		})
 	}
 
-	var cloudURL string
-	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
-		tw, url, ok := telemetry.NewWriter()
-		if ok {
-			cloudURL = url
-
-			startOpts.ProgrockWriter = progrock.MultiWriter{startOpts.ProgrockWriter, tw}
-		}
-	}
-
-	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter)
+	progSock, progW, cleanup, err := progrockForwarder(progMultiW)
 	if err != nil {
 		return fmt.Errorf("progress forwarding: %w", err)
 	}
@@ -279,53 +287,6 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
 			}
 			return err
-		})
-	}
-
-	// Write events to a journal file
-	if startOpts.JournalFile != "" {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		eg.Go(func() error {
-			f, err := os.Create(startOpts.JournalFile)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			enc := json.NewEncoder(f)
-			for ev := range ch {
-				entry := &journal.Entry{
-					Event: ev,
-					TS:    time.Now().UTC(),
-				}
-
-				if err := enc.Encode(entry); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-	}
-
-	if startOpts.JournalWriter != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		journalW := startOpts.JournalWriter
-		eg.Go(func() error {
-			for ev := range ch {
-				entry := &journal.Entry{
-					Event: ev,
-					TS:    time.Now().UTC(),
-				}
-
-				if err := journalW.WriteEntry(entry); err != nil {
-					return err
-				}
-			}
-
-			return journalW.Close()
 		})
 	}
 
@@ -519,4 +480,31 @@ func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error
 	}
 
 	return progSock, progW, l.Close, nil
+}
+
+type progrockFileWriter struct {
+	f   *os.File
+	enc *json.Encoder
+}
+
+func newProgrockFileWriter(filePath string) (progrock.Writer, error) {
+	f, err := os.Create(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	enc := json.NewEncoder(f)
+
+	return progrockFileWriter{
+		f:   f,
+		enc: enc,
+	}, nil
+}
+
+func (w progrockFileWriter) WriteStatus(ev *progrock.StatusUpdate) error {
+	return w.enc.Encode(ev)
+}
+
+func (w progrockFileWriter) Close() error {
+	return w.f.Close()
 }
