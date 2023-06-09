@@ -118,7 +118,7 @@ func logMetrics(ctx context.Context, engineStateRootDir string) {
 		memStats, err := memory.Get()
 		if err == nil {
 			l = withUnsignedIntField(l, "mem-total", memStats.Total)
-			l = withUnsignedIntField(l, "mem-free", memStats.Used)
+			l = withUnsignedIntField(l, "mem-free", memStats.Free)
 			l = withUnsignedIntField(l, "mem-available", memStats.Available)
 			l = withUnsignedIntField(l, "mem-buffers", memStats.Buffers)
 			l = withUnsignedIntField(l, "mem-cached", memStats.Cached)
