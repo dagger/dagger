@@ -12,13 +12,21 @@ import (
 	"github.com/google/uuid"
 )
 
+const (
+	flushInterval = 100 * time.Millisecond
+	queueSize     = 2048
+
+	pushURL = "https://api.dagger.cloud/events"
+)
+
 type Telemetry struct {
-	enable bool
+	enabled bool
+	closed  bool
 
 	runID string
 
-	url   string
-	token string
+	pushURL string
+	token   string
 
 	mu     sync.Mutex
 	queue  []*Event
@@ -26,51 +34,45 @@ type Telemetry struct {
 	doneCh chan struct{}
 }
 
-func New(printURLMessage bool) *Telemetry {
+func New() *Telemetry {
 	t := &Telemetry{
-		runID:  uuid.NewString(),
-		url:    pushURL,
-		stopCh: make(chan struct{}),
-		doneCh: make(chan struct{}),
+		runID:   uuid.NewString(),
+		pushURL: os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"),
+		token:   os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"),
+		stopCh:  make(chan struct{}),
+		doneCh:  make(chan struct{}),
 	}
-	if url := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"); url != "" {
-		t.url = url
+
+	if t.pushURL == "" {
+		t.pushURL = pushURL
 	}
-	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
-		t.token = token
-		t.enable = true
-		if printURLMessage {
-			fmt.Fprintf(os.Stderr, "Dagger Cloud URL: https://dagger.cloud/runs/%s\n\n", t.runID)
-		}
+
+	if t.token != "" {
+		// no token; don't send telemetry
+		t.enabled = true
+		go t.start()
 	}
-	go t.start()
+
 	return t
 }
 
-func (t *Telemetry) Disable() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.enable = false
+func (t *Telemetry) Enabled() bool {
+	return t.enabled
 }
 
-func (t *Telemetry) Enable() {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	t.enable = true
-}
-
-func (t *Telemetry) RunID() string {
-	return t.runID
-}
-
-func (t *Telemetry) SetRunID(id string) {
-	t.runID = id
+func (t *Telemetry) URL() string {
+	return "https://dagger.cloud/runs/" + t.runID
 }
 
 func (t *Telemetry) Push(p Payload, ts time.Time) {
-	if !t.enable {
+	if !t.enabled {
+		return
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.closed {
 		return
 	}
 
@@ -85,9 +87,7 @@ func (t *Telemetry) Push(p Payload, ts time.Time) {
 		ev.RunID = t.runID
 	}
 
-	t.mu.Lock()
 	t.queue = append(t.queue, ev)
-	t.mu.Unlock()
 }
 
 func (t *Telemetry) start() {
@@ -120,14 +120,14 @@ func (t *Telemetry) send() {
 	for _, ev := range queue {
 		err := enc.Encode(ev)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "err: %v\n", err)
+			fmt.Fprintln(os.Stderr, "telemetry: encode:", err)
 			continue
 		}
 	}
 
-	req, err := http.NewRequest(http.MethodPost, t.url, bytes.NewReader(payload.Bytes()))
+	req, err := http.NewRequest(http.MethodPost, t.pushURL, bytes.NewReader(payload.Bytes()))
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "err: %v\n", err)
+		fmt.Fprintln(os.Stderr, "telemetry: new request:", err)
 		return
 	}
 	if t.token != "" {
@@ -135,22 +135,29 @@ func (t *Telemetry) send() {
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "err: %v\n", err)
+		fmt.Fprintln(os.Stderr, "telemetry: do request:", err)
 		return
+	}
+	if resp.StatusCode != http.StatusCreated {
+		fmt.Fprintln(os.Stderr, "telemetry: unexpected response:", resp.Status)
 	}
 	defer resp.Body.Close()
 }
 
-func (t *Telemetry) Flush() {
+func (t *Telemetry) Close() {
+	if !t.enabled {
+		return
+	}
+
 	// Stop accepting new events
 	t.mu.Lock()
-	if !t.enable {
-		// prevent errors when trying to flush multiple times on the same
+	if t.closed {
+		// prevent errors when trying to close multiple times on the same
 		// telemetry instance
 		t.mu.Unlock()
 		return
 	}
-	t.enable = false
+	t.closed = true
 	t.mu.Unlock()
 
 	// Flush events in queue

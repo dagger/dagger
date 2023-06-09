@@ -76,10 +76,11 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 
 	var cloudURL string
 	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
-		tw, url, ok := telemetry.NewWriter()
-		if ok {
-			cloudURL = url
-			progMultiW = append(progMultiW, tw)
+		tel := telemetry.New()
+
+		if tel.Enabled() {
+			cloudURL = tel.URL()
+			progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 		}
 	}
 

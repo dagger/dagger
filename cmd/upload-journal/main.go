@@ -28,13 +28,17 @@ func main() {
 	}
 	journal := args[0]
 
-	t, url, ok := telemetry.NewWriter()
-	if !ok {
+	t := telemetry.New()
+
+	if !t.Enabled() {
 		fmt.Fprintln(os.Stderr, "telemetry token not configured")
 		os.Exit(1)
+		return
 	}
 
-	fmt.Println("Dagger Cloud url:", url)
+	w := telemetry.NewWriter(t)
+
+	fmt.Println("Dagger Cloud url:", t.URL())
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -49,8 +53,8 @@ func main() {
 		fmt.Fprintf(os.Stderr, "err: %v\n", err)
 		os.Exit(1)
 	}
-	err = processJournal(t, entries)
-	t.Close()
+	err = processJournal(w, entries)
+	w.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "err: %v\n", err)
 		os.Exit(1)
