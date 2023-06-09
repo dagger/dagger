@@ -30,6 +30,8 @@ func (s *safeBuffer) String() string {
 }
 
 func TestPipeline(t *testing.T) {
+	t.Skip("needs console output support in Progrock")
+
 	t.Parallel()
 
 	ctx := context.Background()
