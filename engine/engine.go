@@ -116,6 +116,14 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	recorder := progrock.NewRecorder(progW, progrock.WithLabels(labels...))
 	ctx = progrock.RecorderToContext(ctx, recorder)
 
+	defer func() {
+		// mark all groups completed
+		recorder.Complete()
+
+		// close the recorder so the UI exits
+		recorder.Close()
+	}()
+
 	// TODO: switch these to some sort of metadata callback so they can be
 	// displayed in the TUI too
 	if startOpts.LogOutput != nil {
@@ -287,14 +295,6 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 			if err := recorder.Record(bk2progrock(ev)); err != nil {
 				return fmt.Errorf("record: %w", err)
 			}
-		}
-
-		// mark all groups completed
-		recorder.Complete()
-
-		// close the recorder so the UI exits
-		if err := recorder.Close(); err != nil {
-			return fmt.Errorf("close: %w", err)
 		}
 
 		return nil
