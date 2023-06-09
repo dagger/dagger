@@ -86,6 +86,16 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 
 	for _, m := range ev.Memberships {
 		for _, vid := range m.Vertexes {
+			if len(t.memberships[vid]) > 0 {
+				// FIXME(vito): for now, we only let a vertex be a member of a single
+				// group. I spent a long time supporting many-to-many memberships, and
+				// intelligently tree-shaking in the frontend to only show vertices in
+				// their most relevant groups, but still haven't found a great heuristic.
+				// Limiting vertices to a single group allows us to fully switch to
+				// Progrock without having to figure all that out yet.
+				continue
+			}
+
 			t.memberships[vid] = append(t.memberships[vid], m.Group)
 
 			op, found := t.ops[vid]
@@ -101,6 +111,8 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 		op := t.vertexOp(v)
 		t.ops[v.Id] = op
 
+		// FIXME(vito): this will loop over at most one membership (see above
+		// comment).
 		for _, gid := range t.memberships[id] {
 			t.pushOp(ts, op, gid)
 		}
