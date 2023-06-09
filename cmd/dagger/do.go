@@ -387,9 +387,15 @@ func getProject(c *dagger.Client) (*dagger.Project, error) {
 		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
 	case "git":
 		repo := url.Host + url.Path
+		// TODO:(sipsma) just change ref to be a query param too?
 		ref := url.Fragment
 		if ref == "" {
 			ref = "main"
+		}
+
+		gitProtocol := url.Query().Get("protocol")
+		if gitProtocol != "" {
+			repo = gitProtocol + "://" + repo
 		}
 		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
 	}

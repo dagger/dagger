@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -246,24 +247,60 @@ func daggerCliPath(t *testing.T) string {
 }
 
 type DaggerDoCmd struct {
-	Project    string
-	Config     string
-	OutputPath string
-	Target     string
-	Flags      map[string]string
+	ProjectLocalPath string
+	TestGitProject   bool
+	Config           string
+	OutputPath       string
+	Target           string
+	Flags            map[string]string
 }
 
-func (c DaggerDoCmd) Run(t *testing.T) string {
+func (do DaggerDoCmd) Run(ctx context.Context, t *testing.T, c *dagger.Client) (*dagger.Container, error) {
 	t.Helper()
-	cmd := exec.Command(daggerCliPath(t), "do", "--project", c.Project, "--config", c.Config)
-	if c.OutputPath != "" {
-		cmd.Args = append(cmd.Args, "--output", c.OutputPath)
+	cliPath := daggerCliPath(t)
+	parentDir := filepath.Dir(cliPath)
+	baseName := filepath.Base(cliPath)
+	daggerCli := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+	cliBinPath := "/bin/dagger"
+
+	var err error
+	do.ProjectLocalPath, err = filepath.Abs(do.ProjectLocalPath)
+	require.NoError(t, err)
+
+	ctr := c.Container().From("alpine:3.16.2").
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		// TODO: this shouldn't be needed, dagger do should pick up existing nestedness
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
+
+	projectDir := c.Host().Directory(do.ProjectLocalPath, dagger.HostDirectoryOpts{
+		Exclude: []string{".git", "bin", "docs", "website"},
+	})
+	projectMntPath := "/src"
+	projectArg := projectMntPath
+	if do.TestGitProject {
+		gitSvc, _ := gitService(ctx, t, c, projectDir)
+		ctr = ctr.WithServiceBinding("git", gitSvc)
+
+		endpoint, err := gitSvc.Endpoint(ctx)
+		require.NoError(t, err)
+		projectArg = "git://" + endpoint + "/repo.git" + "?protocol=git#main"
+	} else {
+		ctr = ctr.
+			WithMountedDirectory(projectMntPath, projectDir).
+			WithWorkdir(projectMntPath)
 	}
-	cmd.Args = append(cmd.Args, c.Target)
-	for k, v := range c.Flags {
-		cmd.Args = append(cmd.Args, "--"+k, v)
+
+	args := []string{cliBinPath, "do", "--project", projectArg, "--config", do.Config}
+	if do.OutputPath != "" {
+		args = append(args, "--output", do.OutputPath)
 	}
-	out, err := cmd.CombinedOutput()
-	require.NoError(t, err, string(out))
-	return string(out)
+	args = append(args, do.Target)
+	for k, v := range do.Flags {
+		args = append(args, "--"+k, v)
+	}
+
+	return ctr.
+		WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		Sync(ctx)
 }
