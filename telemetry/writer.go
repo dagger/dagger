@@ -27,15 +27,11 @@ type writer struct {
 	url   string
 	token string
 
-	// pipelinePaths stores the mapping from group IDs to pipeline paths
-	pipelinePaths map[string]pipeline.Path
+	pipeliner *Pipeliner
 
-	// memberships stores the groups IDs that a vertex is a member of
-	memberships map[string][]string
-
-	// ops stores ops converted from vertexes so that they can be emitted with
-	// pipeline paths once their membership is known
-	ops map[string]OpPayload
+	// emittedMemberships keeps track of whether we've emitted an OpPayload for a
+	// vertex yet.
+	emittedMemberships map[vertexMembership]bool
 
 	mu     sync.Mutex
 	queue  []*Event
@@ -44,16 +40,22 @@ type writer struct {
 	closed bool
 }
 
+type vertexMembership struct {
+	vertexID string
+	groupID  string
+}
+
 func NewWriter() (progrock.Writer, string, bool) {
 	t := &writer{
-		runID:         uuid.NewString(),
-		url:           os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"),
-		token:         os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"),
-		pipelinePaths: map[string]pipeline.Path{},
-		memberships:   map[string][]string{},
-		ops:           map[string]OpPayload{},
-		stopCh:        make(chan struct{}),
-		doneCh:        make(chan struct{}),
+		runID: uuid.NewString(),
+		url:   os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_URL"),
+		token: os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"),
+
+		pipeliner:          NewPipeliner(),
+		emittedMemberships: map[vertexMembership]bool{},
+
+		stopCh: make(chan struct{}),
+		doneCh: make(chan struct{}),
 	}
 
 	if t.token == "" {
@@ -78,44 +80,21 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 		return nil
 	}
 
-	ts := time.Now().UTC()
-
-	for _, g := range ev.Groups {
-		t.pipelinePaths[g.Id] = t.groupPath(g)
+	if err := t.pipeliner.WriteStatus(ev); err != nil {
+		// should never happen
+		return err
 	}
+
+	ts := time.Now().UTC()
 
 	for _, m := range ev.Memberships {
 		for _, vid := range m.Vertexes {
-			if len(t.memberships[vid]) > 0 {
-				// FIXME(vito): for now, we only let a vertex be a member of a single
-				// group. I spent a long time supporting many-to-many memberships, and
-				// intelligently tree-shaking in the frontend to only show vertices in
-				// their most relevant groups, but still haven't found a great heuristic.
-				// Limiting vertices to a single group allows us to fully switch to
-				// Progrock without having to figure all that out yet.
-				continue
-			}
-
-			t.memberships[vid] = append(t.memberships[vid], m.Group)
-
-			op, found := t.ops[vid]
-			if found {
-				t.pushOp(ts, op, m.Group)
-			}
+			t.maybeEmitOp(ts, vid, false)
 		}
 	}
 
 	for _, v := range ev.Vertexes {
-		id := v.Id
-
-		op := t.vertexOp(v)
-		t.ops[v.Id] = op
-
-		// FIXME(vito): this will loop over at most one membership (see above
-		// comment).
-		for _, gid := range t.memberships[id] {
-			t.pushOp(ts, op, gid)
-		}
+		t.maybeEmitOp(ts, v.Id, true)
 	}
 
 	for _, l := range ev.Logs {
@@ -127,6 +106,41 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 	}
 
 	return nil
+}
+
+// maybeEmitOp emits a OpPayload for a vertex if either A) an OpPayload hasn't
+// been emitted yet because we saw the vertex before its membership, or B) the
+// vertex has been updated.
+func (t *writer) maybeEmitOp(ts time.Time, vid string, isUpdated bool) {
+	v, found := t.pipeliner.Vertex(vid)
+	if !found {
+		return
+	}
+
+	if len(v.Groups) == 0 {
+		// should be impossible, since the vertex is found and we've processed
+		// a membership for it
+		return
+	}
+
+	// TODO(vito): for now, we only let a vertex be a member of a single
+	// group. I spent a long time supporting many-to-many memberships, and
+	// intelligently tree-shaking in the frontend to only show vertices in
+	// their most relevant groups, but still haven't found a great heuristic.
+	// Limiting vertices to a single group allows us to fully switch to
+	// Progrock without having to figure all that out yet.
+	group := v.Groups[0]
+	pipeline := v.Pipelines[0]
+
+	key := vertexMembership{
+		vertexID: vid,
+		groupID:  group,
+	}
+
+	if !t.emittedMemberships[key] || isUpdated {
+		t.push(t.vertexOp(v.Vertex, pipeline), ts)
+		t.emittedMemberships[key] = true
+	}
 }
 
 func (t *writer) Close() error {
@@ -148,14 +162,13 @@ func (t *writer) Close() error {
 	return nil
 }
 
-func (t *writer) vertexOp(v *progrock.Vertex) OpPayload {
+func (t *writer) vertexOp(v *progrock.Vertex, pl pipeline.Path) OpPayload {
 	op := OpPayload{
 		OpID:     v.Id,
 		OpName:   v.Name,
 		Internal: v.Internal,
 
-		// pipeline is provided via pushOp when groups are known
-		// Pipeline: ,
+		Pipeline: pl,
 
 		Cached: v.Cached,
 		Error:  v.GetError(),
@@ -174,47 +187,6 @@ func (t *writer) vertexOp(v *progrock.Vertex) OpPayload {
 	}
 
 	return op
-}
-
-func (t *writer) groupPath(group *progrock.Group) pipeline.Path {
-	self := pipeline.Pipeline{
-		Name: group.Name,
-		Weak: group.Weak,
-	}
-	for _, l := range group.Labels {
-		if l.Name == pipeline.ProgrockDescriptionLabel {
-			// Progrock doesn't have a separate 'description' field, so we escort it
-			// through labels instead
-			self.Description = l.Value
-		} else {
-			self.Labels = append(self.Labels, pipeline.Label{
-				Name:  l.Name,
-				Value: l.Value,
-			})
-		}
-	}
-	path := pipeline.Path{}
-	if group.Parent != nil {
-		parentPath, found := t.pipelinePaths[group.GetParent()]
-		if found {
-			path = append(path, parentPath...)
-		}
-	}
-	path = append(path, self)
-	return path
-}
-
-func (t *writer) pushOp(ts time.Time, op OpPayload, gid string) bool {
-	pipeline, found := t.pipelinePaths[gid]
-	if !found {
-		return false
-	}
-
-	op.Pipeline = pipeline
-
-	t.push(op, ts)
-
-	return true
 }
 
 func (t *writer) push(p Payload, ts time.Time) {

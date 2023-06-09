@@ -77,6 +77,18 @@ func (t *Pipeliner) Close() error {
 	return nil
 }
 
+func (t *Pipeliner) Vertex(id string) (*PipelinedVertex, bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	v, found := t.vertices[id]
+	if !found {
+		return nil, false
+	}
+
+	return t.vertex(v), true
+}
+
 func (t *Pipeliner) Vertices() []*PipelinedVertex {
 	t.mu.Lock()
 	defer t.mu.Unlock()
