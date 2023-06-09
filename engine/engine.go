@@ -74,14 +74,12 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		progMultiW = append(progMultiW, fw)
 	}
 
-	var cloudURL string
-	if token := os.Getenv("_EXPERIMENTAL_DAGGER_CLOUD_TOKEN"); token != "" {
-		tel := telemetry.New()
+	tel := telemetry.New()
 
-		if tel.Enabled() {
-			cloudURL = tel.URL()
-			progMultiW = append(progMultiW, telemetry.NewWriter(tel))
-		}
+	var cloudURL string
+	if tel.Enabled() {
+		cloudURL = tel.URL()
+		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
 
 	remote, err := url.Parse(startOpts.RunnerHost)
@@ -92,10 +90,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
-	}
-
-	if c.EngineName != "" && startOpts.LogOutput != nil {
-		fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
 	}
 
 	// Load default labels asynchronously in the background.
@@ -122,9 +116,17 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	recorder := progrock.NewRecorder(progW, progrock.WithLabels(labels...))
 	ctx = progrock.RecorderToContext(ctx, recorder)
 
-	if cloudURL != "" {
-		vtx := recorder.Vertex("meta", "meta")
-		fmt.Fprintln(vtx.Stdout(), "Dagger Cloud URL:", cloudURL)
+	// TODO: switch these to some sort of metadata callback so they can be
+	// displayed in the TUI too
+	if startOpts.LogOutput != nil {
+		if c.EngineName != "" {
+			fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
+		}
+
+		// TODO: this should be displayed some other way
+		if cloudURL != "" {
+			fmt.Fprintln(startOpts.LogOutput, "Dagger Cloud URL:", cloudURL)
+		}
 	}
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
@@ -277,7 +279,31 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 	eg := &errgroup.Group{}
 	readers := []chan *bkclient.SolveStatus{}
 
+	ch := make(chan *bkclient.SolveStatus)
+	readers = append(readers, ch)
+
+	eg.Go(func() error {
+		for ev := range ch {
+			if err := recorder.Record(bk2progrock(ev)); err != nil {
+				return fmt.Errorf("record: %w", err)
+			}
+		}
+
+		// mark all groups completed
+		recorder.Complete()
+
+		// close the recorder so the UI exits
+		if err := recorder.Close(); err != nil {
+			return fmt.Errorf("close: %w", err)
+		}
+
+		return nil
+	})
+
 	// Print events to the console
+	//
+	// TODO(vito): once Progrock has a console output, turn this into an entry in
+	// the progrock.MultiWriter instead.
 	if startOpts.LogOutput != nil {
 		ch := make(chan *bkclient.SolveStatus)
 		readers = append(readers, ch)
@@ -291,30 +317,8 @@ func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh
 		})
 	}
 
-	if startOpts.ProgrockWriter != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		eg.Go(func() error {
-			for ev := range ch {
-				if err := recorder.Record(bk2progrock(ev)); err != nil {
-					return fmt.Errorf("record: %w", err)
-				}
-			}
-
-			// mark all groups completed
-			recorder.Complete()
-
-			// close the recorder so the UI exits
-			if err := recorder.Close(); err != nil {
-				return fmt.Errorf("close: %w", err)
-			}
-
-			return nil
-		})
-	}
-
 	eventsMultiReader(upstreamCh, readers...)
+
 	return eg.Wait()
 }
 
