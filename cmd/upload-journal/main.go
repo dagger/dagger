@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/telemetry"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/nxadm/tail"
+	"github.com/vito/progrock"
 )
 
 func main() {
@@ -28,7 +28,13 @@ func main() {
 	}
 	journal := args[0]
 
-	t := telemetry.New(true)
+	t, url, ok := telemetry.NewWriter()
+	if !ok {
+		fmt.Fprintln(os.Stderr, "telemetry token not configured")
+		os.Exit(1)
+	}
+
+	fmt.Println("Dagger Cloud url:", url)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -44,54 +50,17 @@ func main() {
 		os.Exit(1)
 	}
 	err = processJournal(t, entries)
-	t.Flush()
+	t.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "err: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func processJournal(t *telemetry.Telemetry, entries chan *JournalEntry) error {
-	for entry := range entries {
-		for _, v := range entry.Event.Vertexes {
-			id := v.Digest.String()
-
-			var custom pipeline.CustomName
-			if json.Unmarshal([]byte(v.Name), &custom) != nil {
-				custom.Name = v.Name
-				if pg := v.ProgressGroup.GetId(); pg != "" {
-					if err := json.Unmarshal([]byte(pg), &custom.Pipeline); err != nil {
-						return err
-					}
-				}
-			}
-
-			payload := telemetry.OpPayload{
-				OpID:     id,
-				OpName:   custom.Name,
-				Internal: custom.Internal,
-				Pipeline: custom.Pipeline,
-
-				Started:   v.Started,
-				Completed: v.Completed,
-				Cached:    v.Cached,
-				Error:     v.Error,
-			}
-
-			payload.Inputs = []string{}
-			for _, input := range v.Inputs {
-				payload.Inputs = append(payload.Inputs, input.String())
-			}
-
-			t.Push(payload, entry.TS)
-		}
-
-		for _, l := range entry.Event.Logs {
-			t.Push(telemetry.LogPayload{
-				OpID:   l.Vertex.String(),
-				Data:   string(l.Data),
-				Stream: l.Stream,
-			}, l.Timestamp)
+func processJournal(w progrock.Writer, updates chan *progrock.StatusUpdate) error {
+	for update := range updates {
+		if err := w.WriteStatus(update); err != nil {
+			return err
 		}
 	}
 
@@ -103,13 +72,13 @@ type JournalEntry struct {
 	TS    time.Time
 }
 
-func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *JournalEntry, error) {
+func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *progrock.StatusUpdate, error) {
 	f, err := tail.TailFile(journal, tail.Config{Follow: follow})
 	if err != nil {
 		return nil, err
 	}
 
-	ch := make(chan *JournalEntry)
+	ch := make(chan *progrock.StatusUpdate)
 
 	go func() {
 		if stopCh == nil {
@@ -131,7 +100,7 @@ func tailJournal(journal string, follow bool, stopCh chan struct{}) (chan *Journ
 				fmt.Fprintf(os.Stderr, "err: %v\n", err)
 				return
 			}
-			var entry JournalEntry
+			var entry progrock.StatusUpdate
 			if err := json.Unmarshal([]byte(line.Text), &entry); err != nil {
 				fmt.Fprintf(os.Stderr, "err: %v\n", err)
 				return
