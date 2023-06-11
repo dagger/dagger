@@ -136,35 +136,25 @@ type ContainerBuildOpts struct {
 // Initializes this container from a Dockerfile build.
 func (r *Container) Build(context *Directory, opts ...ContainerBuildOpts) *Container {
 	q := r.q.Select("build")
-	q = q.Arg("context", context)
-	// `dockerfile` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `dockerfile` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
-			break
 		}
-	}
-	// `buildArgs` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `buildArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
-			break
 		}
-	}
-	// `target` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `target` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
-			break
 		}
-	}
-	// `secrets` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
-			break
 		}
 	}
+	q = q.Arg("context", context)
 
 	return &Container{
 		q: q,
@@ -215,18 +205,14 @@ func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts)
 		return *r.endpoint, nil
 	}
 	q := r.q.Select("endpoint")
-	// `port` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `port` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Port) {
 			q = q.Arg("port", opts[i].Port)
-			break
 		}
-	}
-	// `scheme` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `scheme` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Scheme) {
 			q = q.Arg("scheme", opts[i].Scheme)
-			break
 		}
 	}
 
@@ -313,39 +299,26 @@ type ContainerExecOpts struct {
 // Deprecated: Replaced by WithExec.
 func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 	q := r.q.Select("exec")
-	// `args` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Args) {
 			q = q.Arg("args", opts[i].Args)
-			break
 		}
-	}
-	// `stdin` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
 			q = q.Arg("stdin", opts[i].Stdin)
-			break
 		}
-	}
-	// `redirectStdout` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `redirectStdout` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
 			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
-			break
 		}
-	}
-	// `redirectStderr` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `redirectStderr` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
-			break
 		}
-	}
-	// `experimentalPrivilegedNesting` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-			break
 		}
 	}
 
@@ -392,21 +365,17 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		return *r.export, nil
 	}
 	q := r.q.Select("export")
-	q = q.Arg("path", path)
-	// `platformVariants` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
 			q = q.Arg("platformVariants", opts[i].PlatformVariants)
-			break
 		}
-	}
-	// `forcedCompression` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
-			break
 		}
 	}
+	q = q.Arg("path", path)
 
 	var response bool
 
@@ -553,14 +522,13 @@ type ContainerImportOpts struct {
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
 	q := r.q.Select("import")
-	q = q.Arg("source", source)
-	// `tag` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `tag` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Tag) {
 			q = q.Arg("tag", opts[i].Tag)
-			break
 		}
 	}
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -635,21 +603,17 @@ type ContainerPipelineOpts struct {
 // Creates a named sub-pipeline
 func (r *Container) Pipeline(name string, opts ...ContainerPipelineOpts) *Container {
 	q := r.q.Select("pipeline")
-	q = q.Arg("name", name)
-	// `description` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
-			break
 		}
-	}
-	// `labels` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `labels` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Labels) {
 			q = q.Arg("labels", opts[i].Labels)
-			break
 		}
 	}
+	q = q.Arg("name", name)
 
 	return &Container{
 		q: q,
@@ -692,21 +656,17 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		return *r.publish, nil
 	}
 	q := r.q.Select("publish")
-	q = q.Arg("address", address)
-	// `platformVariants` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `platformVariants` optional argument
 		if !querybuilder.IsZeroValue(opts[i].PlatformVariants) {
 			q = q.Arg("platformVariants", opts[i].PlatformVariants)
-			break
 		}
-	}
-	// `forcedCompression` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `forcedCompression` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
-			break
 		}
 	}
+	q = q.Arg("address", address)
 
 	var response string
 
@@ -785,11 +745,10 @@ type ContainerWithDefaultArgsOpts struct {
 // Configures default arguments for future commands.
 func (r *Container) WithDefaultArgs(opts ...ContainerWithDefaultArgsOpts) *Container {
 	q := r.q.Select("withDefaultArgs")
-	// `args` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `args` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Args) {
 			q = q.Arg("args", opts[i].Args)
-			break
 		}
 	}
 
@@ -816,29 +775,22 @@ type ContainerWithDirectoryOpts struct {
 // Retrieves this container plus a directory written at the given path.
 func (r *Container) WithDirectory(path string, directory *Directory, opts ...ContainerWithDirectoryOpts) *Container {
 	q := r.q.Select("withDirectory")
-	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
-	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
 			q = q.Arg("exclude", opts[i].Exclude)
-			break
 		}
-	}
-	// `include` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
 		}
-	}
-	// `owner` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("directory", directory)
 
 	return &Container{
 		q: q,
@@ -867,15 +819,14 @@ type ContainerWithEnvVariableOpts struct {
 // Retrieves this container plus the given environment variable.
 func (r *Container) WithEnvVariable(name string, value string, opts ...ContainerWithEnvVariableOpts) *Container {
 	q := r.q.Select("withEnvVariable")
-	q = q.Arg("name", name)
-	q = q.Arg("value", value)
-	// `expand` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `expand` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Expand) {
 			q = q.Arg("expand", opts[i].Expand)
-			break
 		}
 	}
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
 
 	return &Container{
 		q: q,
@@ -908,49 +859,33 @@ type ContainerWithExecOpts struct {
 // Retrieves this container after executing the specified command inside it.
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.q.Select("withExec")
-	q = q.Arg("args", args)
-	// `skipEntrypoint` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
-			break
 		}
-	}
-	// `stdin` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `stdin` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Stdin) {
 			q = q.Arg("stdin", opts[i].Stdin)
-			break
 		}
-	}
-	// `redirectStdout` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `redirectStdout` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
 			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
-			break
 		}
-	}
-	// `redirectStderr` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `redirectStderr` optional argument
 		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
 			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
-			break
 		}
-	}
-	// `experimentalPrivilegedNesting` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalPrivilegedNesting` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
 			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-			break
 		}
-	}
-	// `insecureRootCapabilities` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `insecureRootCapabilities` optional argument
 		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
 			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-			break
 		}
 	}
+	q = q.Arg("args", args)
 
 	return &Container{
 		q: q,
@@ -975,21 +910,17 @@ type ContainerWithExposedPortOpts struct {
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOpts) *Container {
 	q := r.q.Select("withExposedPort")
-	q = q.Arg("port", port)
-	// `protocol` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `protocol` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
 			q = q.Arg("protocol", opts[i].Protocol)
-			break
 		}
-	}
-	// `description` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
-			break
 		}
 	}
+	q = q.Arg("port", port)
 
 	return &Container{
 		q: q,
@@ -1027,22 +958,18 @@ type ContainerWithFileOpts struct {
 // Retrieves this container plus the contents of the given file copied to the given path.
 func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFileOpts) *Container {
 	q := r.q.Select("withFile")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `permissions` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-			break
 		}
-	}
-	// `owner` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -1083,29 +1010,22 @@ type ContainerWithMountedCacheOpts struct {
 // Retrieves this container plus a cache volume mounted at the given path.
 func (r *Container) WithMountedCache(path string, cache *CacheVolume, opts ...ContainerWithMountedCacheOpts) *Container {
 	q := r.q.Select("withMountedCache")
-	q = q.Arg("path", path)
-	q = q.Arg("cache", cache)
-	// `source` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `source` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Source) {
 			q = q.Arg("source", opts[i].Source)
-			break
 		}
-	}
-	// `sharing` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `sharing` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Sharing) {
 			q = q.Arg("sharing", opts[i].Sharing)
-			break
 		}
-	}
-	// `owner` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("cache", cache)
 
 	return &Container{
 		q: q,
@@ -1126,15 +1046,14 @@ type ContainerWithMountedDirectoryOpts struct {
 // Retrieves this container plus a directory mounted at the given path.
 func (r *Container) WithMountedDirectory(path string, source *Directory, opts ...ContainerWithMountedDirectoryOpts) *Container {
 	q := r.q.Select("withMountedDirectory")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `owner` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -1155,15 +1074,14 @@ type ContainerWithMountedFileOpts struct {
 // Retrieves this container plus a file mounted at the given path.
 func (r *Container) WithMountedFile(path string, source *File, opts ...ContainerWithMountedFileOpts) *Container {
 	q := r.q.Select("withMountedFile")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `owner` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -1184,15 +1102,14 @@ type ContainerWithMountedSecretOpts struct {
 // Retrieves this container plus a secret mounted into a file at the given path.
 func (r *Container) WithMountedSecret(path string, source *Secret, opts ...ContainerWithMountedSecretOpts) *Container {
 	q := r.q.Select("withMountedSecret")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `owner` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -1230,28 +1147,21 @@ type ContainerWithNewFileOpts struct {
 // Retrieves this container plus a new file written at the given path.
 func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *Container {
 	q := r.q.Select("withNewFile")
-	q = q.Arg("path", path)
-	// `contents` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `contents` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Contents) {
 			q = q.Arg("contents", opts[i].Contents)
-			break
 		}
-	}
-	// `permissions` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-			break
 		}
-	}
-	// `owner` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
 
 	return &Container{
 		q: q,
@@ -1329,15 +1239,14 @@ type ContainerWithUnixSocketOpts struct {
 // Retrieves this container plus a socket forwarded to the given Unix socket path.
 func (r *Container) WithUnixSocket(path string, source *Socket, opts ...ContainerWithUnixSocketOpts) *Container {
 	q := r.q.Select("withUnixSocket")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `owner` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `owner` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Owner) {
 			q = q.Arg("owner", opts[i].Owner)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Container{
 		q: q,
@@ -1389,14 +1298,13 @@ type ContainerWithoutExposedPortOpts struct {
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposedPortOpts) *Container {
 	q := r.q.Select("withoutExposedPort")
-	q = q.Arg("port", port)
-	// `protocol` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `protocol` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Protocol) {
 			q = q.Arg("protocol", opts[i].Protocol)
-			break
 		}
 	}
+	q = q.Arg("port", port)
 
 	return &Container{
 		q: q,
@@ -1518,39 +1426,26 @@ type DirectoryDockerBuildOpts struct {
 // Builds a new Docker container from this directory.
 func (r *Directory) DockerBuild(opts ...DirectoryDockerBuildOpts) *Container {
 	q := r.q.Select("dockerBuild")
-	// `dockerfile` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `dockerfile` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Dockerfile) {
 			q = q.Arg("dockerfile", opts[i].Dockerfile)
-			break
 		}
-	}
-	// `platform` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
-			break
 		}
-	}
-	// `buildArgs` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `buildArgs` optional argument
 		if !querybuilder.IsZeroValue(opts[i].BuildArgs) {
 			q = q.Arg("buildArgs", opts[i].BuildArgs)
-			break
 		}
-	}
-	// `target` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `target` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Target) {
 			q = q.Arg("target", opts[i].Target)
-			break
 		}
-	}
-	// `secrets` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `secrets` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Secrets) {
 			q = q.Arg("secrets", opts[i].Secrets)
-			break
 		}
 	}
 
@@ -1569,11 +1464,10 @@ type DirectoryEntriesOpts struct {
 // Returns a list of files and directories at the given path.
 func (r *Directory) Entries(ctx context.Context, opts ...DirectoryEntriesOpts) ([]string, error) {
 	q := r.q.Select("entries")
-	// `path` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `path` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Path) {
 			q = q.Arg("path", opts[i].Path)
-			break
 		}
 	}
 
@@ -1646,21 +1540,17 @@ type DirectoryPipelineOpts struct {
 // Creates a named sub-pipeline
 func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Directory {
 	q := r.q.Select("pipeline")
-	q = q.Arg("name", name)
-	// `description` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
-			break
 		}
-	}
-	// `labels` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `labels` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Labels) {
 			q = q.Arg("labels", opts[i].Labels)
-			break
 		}
 	}
+	q = q.Arg("name", name)
 
 	return &Directory{
 		q: q,
@@ -1679,22 +1569,18 @@ type DirectoryWithDirectoryOpts struct {
 // Retrieves this directory plus a directory written at the given path.
 func (r *Directory) WithDirectory(path string, directory *Directory, opts ...DirectoryWithDirectoryOpts) *Directory {
 	q := r.q.Select("withDirectory")
-	q = q.Arg("path", path)
-	q = q.Arg("directory", directory)
-	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
 			q = q.Arg("exclude", opts[i].Exclude)
-			break
 		}
-	}
-	// `include` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("directory", directory)
 
 	return &Directory{
 		q: q,
@@ -1713,15 +1599,14 @@ type DirectoryWithFileOpts struct {
 // Retrieves this directory plus the contents of the given file copied to the given path.
 func (r *Directory) WithFile(path string, source *File, opts ...DirectoryWithFileOpts) *Directory {
 	q := r.q.Select("withFile")
-	q = q.Arg("path", path)
-	q = q.Arg("source", source)
-	// `permissions` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("source", source)
 
 	return &Directory{
 		q: q,
@@ -1740,14 +1625,13 @@ type DirectoryWithNewDirectoryOpts struct {
 // Retrieves this directory plus a new directory created at the given path.
 func (r *Directory) WithNewDirectory(path string, opts ...DirectoryWithNewDirectoryOpts) *Directory {
 	q := r.q.Select("withNewDirectory")
-	q = q.Arg("path", path)
-	// `permissions` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-			break
 		}
 	}
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -1766,15 +1650,14 @@ type DirectoryWithNewFileOpts struct {
 // Retrieves this directory plus a new file written at the given path.
 func (r *Directory) WithNewFile(path string, contents string, opts ...DirectoryWithNewFileOpts) *Directory {
 	q := r.q.Select("withNewFile")
-	q = q.Arg("path", path)
-	q = q.Arg("contents", contents)
-	// `permissions` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `permissions` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Permissions) {
 			q = q.Arg("permissions", opts[i].Permissions)
-			break
 		}
 	}
+	q = q.Arg("path", path)
+	q = q.Arg("contents", contents)
 
 	return &Directory{
 		q: q,
@@ -1982,18 +1865,14 @@ type GitRefTreeOpts struct {
 // The filesystem tree at this ref.
 func (r *GitRef) Tree(opts ...GitRefTreeOpts) *Directory {
 	q := r.q.Select("tree")
-	// `sshKnownHosts` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `sshKnownHosts` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHKnownHosts) {
 			q = q.Arg("sshKnownHosts", opts[i].SSHKnownHosts)
-			break
 		}
-	}
-	// `sshAuthSocket` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `sshAuthSocket` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SSHAuthSocket) {
 			q = q.Arg("sshAuthSocket", opts[i].SSHAuthSocket)
-			break
 		}
 	}
 
@@ -2079,21 +1958,17 @@ type HostDirectoryOpts struct {
 // Accesses a directory on the host.
 func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	q := r.q.Select("directory")
-	q = q.Arg("path", path)
-	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
 			q = q.Arg("exclude", opts[i].Exclude)
-			break
 		}
-	}
-	// `include` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
 		}
 	}
+	q = q.Arg("path", path)
 
 	return &Directory{
 		q: q,
@@ -2136,18 +2011,14 @@ type HostWorkdirOpts struct {
 // Deprecated: Use Directory with path set to '.' instead.
 func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
 	q := r.q.Select("workdir")
-	// `exclude` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `exclude` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Exclude) {
 			q = q.Arg("exclude", opts[i].Exclude)
-			break
 		}
-	}
-	// `include` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `include` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Include) {
 			q = q.Arg("include", opts[i].Include)
-			break
 		}
 	}
 
@@ -2556,18 +2427,14 @@ type ContainerOpts struct {
 // Platform defaults to that of the builder's host.
 func (r *Client) Container(opts ...ContainerOpts) *Container {
 	q := r.q.Select("container")
-	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
-			break
 		}
-	}
-	// `platform` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `platform` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Platform) {
 			q = q.Arg("platform", opts[i].Platform)
-			break
 		}
 	}
 
@@ -2595,11 +2462,10 @@ type DirectoryOpts struct {
 // Load a directory by ID. No argument produces an empty directory.
 func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	q := r.q.Select("directory")
-	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
-			break
 		}
 	}
 
@@ -2631,21 +2497,17 @@ type GitOpts struct {
 // Queries a git repository.
 func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q := r.q.Select("git")
-	q = q.Arg("url", url)
-	// `keepGitDir` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
-			break
 		}
-	}
-	// `experimentalServiceHost` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
 			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
-			break
 		}
 	}
+	q = q.Arg("url", url)
 
 	return &GitRepository{
 		q: q,
@@ -2672,14 +2534,13 @@ type HTTPOpts struct {
 // Returns a file containing an http remote url content.
 func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	q := r.q.Select("http")
-	q = q.Arg("url", url)
-	// `experimentalServiceHost` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `experimentalServiceHost` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
 			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
-			break
 		}
 	}
+	q = q.Arg("url", url)
 
 	return &File{
 		q: q,
@@ -2698,21 +2559,17 @@ type PipelineOpts struct {
 // Creates a named sub-pipeline.
 func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q := r.q.Select("pipeline")
-	q = q.Arg("name", name)
-	// `description` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
-			break
 		}
-	}
-	// `labels` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
+		// `labels` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Labels) {
 			q = q.Arg("labels", opts[i].Labels)
-			break
 		}
 	}
+	q = q.Arg("name", name)
 
 	return &Client{
 		q: q,
@@ -2728,11 +2585,10 @@ type ProjectOpts struct {
 // Load a project from ID.
 func (r *Client) Project(opts ...ProjectOpts) *Project {
 	q := r.q.Select("project")
-	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
-			break
 		}
 	}
 
@@ -2750,11 +2606,10 @@ type ProjectCommandOpts struct {
 // Load a project command from ID.
 func (r *Client) ProjectCommand(opts ...ProjectCommandOpts) *ProjectCommand {
 	q := r.q.Select("projectCommand")
-	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
-			break
 		}
 	}
 
@@ -2795,11 +2650,10 @@ type SocketOpts struct {
 // Loads a socket by its ID.
 func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	q := r.q.Select("socket")
-	// `id` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ID) {
 			q = q.Arg("id", opts[i].ID)
-			break
 		}
 	}
 
