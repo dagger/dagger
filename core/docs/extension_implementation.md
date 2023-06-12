@@ -56,9 +56,11 @@ When a resolver from an extension needs to be invoked:
 The runtime is expected to:
 
 1. Read `/inputs/dagger.json`
+   - If any of the types in the input are an "ID-able" dagger object (e.g. `File`, `Directory`, `Container`, etc.), then they will be be serialized as their ID string here and should be converted into the actual object when passed to the user code.
 1. Use the `resolver` value to determine which code to execute
 1. Execute that code, receive the result
 1. JSON encode the result and write it to `/outputs/dagger.json`
+   - If any of the types in the output are an "ID-able" dagger object (e.g. `File`, `Directory`, `Container`, etc.), then they should be serialized as their ID string here.
 1. Exit 0 if successful. If an error occurs during any of the above steps, error details may be written to either stdout or stderr (which results in them appearing in the progress output) and the process must exit with non-zero code.
 
 ### 4. Return: Dagger Session <- Runtime
@@ -129,6 +131,7 @@ All arguments on every command in the hierarchy are coallesced together as flags
 Command hierarchies are helpful for organization, but they also enable common work and configuration to be down in parent commands and then passed down to subcommands, including leafs.
 * This is just the graphql resolver model. More background and examples of the general idea are available in most graphql framework docs, e.g. [these Apollo docs](https://www.apollographql.com/docs/apollo-server/data/resolvers/#example)
 * Parent commands pass information to subcommands by returning "structs" (or similar concept), which are then made available to the subcommands. More details in the Type restrictions section of Requirements below. 
+* Importantly, every execution of parent commands are cached individually, so any expensive work that runs as part of them can be cached even if the execution of the subcommands is not cached.
 
 ## Requirements
 These are the requirements as of the writing of this doc. Many of the restrictions will be lifted in very near future along with the addition of new requirements.
@@ -140,7 +143,10 @@ Arguments can only be strings.
 There must be one and only one return value.
 * In e.g. Go, there is also an `error` return value, but that does not become part of the graphql schema.
 
-For leaf commands, the type of the return must be string.
+For leaf commands, the currently supported return types are:
+* `String`
+* `dagger.File`
+* `dagger.Directory`
 
 For parent commands, the return type must be a json serializable "struct" (or equivalent in the SDK's language).
 * If a field in the struct is a Dagger type (e.g. `File`, `Directory`, `Container`) it should be serialized as the ID string of that type.
@@ -163,6 +169,7 @@ An already connected dagger client should be available to the command.
 ### Forbidden Arg Names
 A few names are reserved and can't be used as args:
 * `help` (would overlap with the `--help` flag)
+* `output` (would overlap with the `--output` flag)
 
 If a user writes code with one of those names as args, an error should be returned.
 
