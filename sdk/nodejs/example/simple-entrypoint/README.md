@@ -4,8 +4,9 @@
 
 ## Usage
 
-Since we cannot copy our local dagger library into the container that executes the command, for testing purpose we are copying `server.ts`
-to the source file.
+Since we cannot install our local dagger library into the container that executes the command, for testing purpose we are copying local `nodejs` sdk by adding local `@dagger.io/dagger` into package dependencies.
+
+For example `npm install ./node.js`
 
 :bulb: Note that final users will simply import the function from `@dagger.io/dagger`.
 
@@ -37,7 +38,7 @@ $ dagger do
 dagger do foo --help
 ┣─╮                                                                                                                                          
 │ ▼ host.directory /Users/tomchauveau/Documents/DAGGER/dagger/sdk/nodejs/tmp                                                                 
-█ [43.7s] dagger do foo --help
+█ [43.7s] dagger do foo --name foo --age bar
 ┃ Loading+installing project...                                                                                                              
 ┃ Running command "foo"...                                                                                                                   
 ┃                                                                                                                                            
@@ -54,8 +55,8 @@ dagger do foo --help
 
 ## To do
 
-- [ ] Handle command execution
+- [x] Handle command execution
 - [ ] Make errors more understandable
 - [ ] Improve generator system to use a public library
-- [ ] Find a way to import local library for integration tests
+- [x] Find a way to import local library for integration tests
 - [ ] Add tests
