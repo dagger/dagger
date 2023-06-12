@@ -291,21 +291,17 @@ func shim() int {
 		cmd.Stderr = errWriter
 	} else {
 		envToScrub := os.Environ()
-		stdoutPipe, err := cmd.StdoutPipe()
-		if err != nil {
-			panic(err)
-		}
-		scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		outR, outW := io.Pipe()
+		cmd.Stdout = outW
+		scrubOutReader, err := NewSecretScrubReader(outR, currentDirPath, shimFS, envToScrub, secretsToScrub)
 		if err != nil {
 			panic(err)
 		}
 		go io.Copy(outWriter, scrubOutReader)
 
-		stderrPipe, err := cmd.StderrPipe()
-		if err != nil {
-			panic(err)
-		}
-		scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		errR, errW := io.Pipe()
+		cmd.Stderr = errW
+		scrubErrReader, err := NewSecretScrubReader(errR, currentDirPath, shimFS, envToScrub, secretsToScrub)
 		if err != nil {
 			panic(err)
 		}
