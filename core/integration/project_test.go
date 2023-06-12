@@ -2,6 +2,7 @@ package core
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -9,9 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-/* TODO:
-* Fix namespacing of projects, very easy to overlap with core api (e.g. command named File)
- */
 func TestProjectHostExport(t *testing.T) {
 	t.Parallel()
 	// Project dir needs to be the root of this repo so we can pick up the go.mod there and thus
@@ -141,6 +139,38 @@ func TestProjectHostExport(t *testing.T) {
 				_, err = result.File(filepath.Join(outputDir, "/bar2.txt")).Contents(ctx)
 				require.NoError(t, err)
 			})
+		})
+	}
+}
+
+func TestProjectDirImported(t *testing.T) {
+	t.Parallel()
+	projectDir := "../../"
+	configDir := "core/integration/testdata/projects/go/basic"
+	for _, testGitProject := range []bool{false, true} {
+		testGitProject := testGitProject
+		testName := "local project"
+		if testGitProject {
+			testName = "git project"
+		}
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+			c, ctx := connect(t)
+			defer c.Close()
+			result, err := DaggerDoCmd{
+				ProjectLocalPath: projectDir,
+				TestGitProject:   testGitProject,
+				Config:           configDir,
+				Target:           "testImportedProjectDir",
+			}.Run(ctx, t, c)
+			require.NoError(t, err)
+			output, err := result.Stderr(ctx)
+			require.NoError(t, err)
+			outputLines := strings.Split(output, "\n")
+			require.Contains(t, outputLines, "README.md")
+			require.Contains(t, outputLines, configDir)
+			require.Contains(t, outputLines, configDir+"/dagger.json")
+			require.Contains(t, outputLines, configDir+"/main.go")
 		})
 	}
 }

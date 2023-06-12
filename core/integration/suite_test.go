@@ -291,7 +291,7 @@ func (do DaggerDoCmd) Run(ctx context.Context, t *testing.T, c *dagger.Client) (
 			WithWorkdir(projectMntPath)
 	}
 
-	args := []string{cliBinPath, "do", "--project", projectArg, "--config", do.Config}
+	args := []string{cliBinPath, "--silent", "do", "--project", projectArg, "--config", do.Config}
 	if do.OutputPath != "" {
 		args = append(args, "--output", do.OutputPath)
 	}

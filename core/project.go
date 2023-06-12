@@ -234,6 +234,7 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, r *router.Route
 	st := fsState.Run(
 		llb.Args([]string{entrypointPath, "-schema"}),
 		llb.AddMount("/src", projectDirState, llb.Readonly),
+		llb.Dir("/src"),
 		llb.ReadonlyRootFS(),
 	)
 	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
@@ -357,6 +358,7 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
+			llb.Dir("/src"),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 			llb.AddSSHSocket(
 				llb.SSHID(sid.LLBID()),

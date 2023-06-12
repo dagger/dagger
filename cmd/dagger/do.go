@@ -55,8 +55,10 @@ var doCmd = &cobra.Command{
 		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
+			if !silent {
+				cmd.SetOut(vtx.Stdout())
+				cmd.SetErr(vtx.Stderr())
+			}
 			defer func() { vtx.Done(err) }()
 
 			cmd.Println("Loading+installing project...")
@@ -199,7 +201,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					curSelection.SelectionSet = ast.SelectionSet{newSelection}
 					curSelection = newSelection
 				} else {
-					if outputPath == "" {
+					if outputPath == "" && returnTypeCanUseOutputFlag(projResultType) {
 						return fmt.Errorf("output path not set, --output must be explicitly provided for git:// projects that return files or directories")
 					}
 					outputPath, err = filepath.Abs(outputPath)
@@ -413,6 +415,18 @@ func getSubcommandName(cmd *cobra.Command) string {
 	// if command name is "a:b:c", we return just "c" here
 	nameSplit := strings.Split(getCommandName(cmd), commandSeparator)
 	return nameSplit[len(nameSplit)-1]
+}
+
+func returnTypeCanUseOutputFlag(returnType string) bool {
+	for _, t := range []string{
+		"File",
+		"Directory",
+	} {
+		if returnType == t {
+			return true
+		}
+	}
+	return false
 }
 
 // certain pieces of metadata about cobra commands are difficult or impossible to set
