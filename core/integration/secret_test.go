@@ -174,13 +174,14 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	stdout, err := c.Container().From("alpine:3.16.2").
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
-		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
+		WithExec([]string{"sh", "-c", "echo -n \"$AWS_KEY\""}).
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "***", stdout)
 }
 
 func TestBigSecretScrubbed(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 	secretKeyReader := bytes.NewReader(secretKeyBytes)
