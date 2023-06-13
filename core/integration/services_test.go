@@ -203,15 +203,25 @@ func TestContainerPortLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, res.Container.ExposedPorts, 3)
-	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
-	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[0].Protocol)
-	require.Equal(t, "eight thousand tcp", *res.Container.ExposedPorts[0].Description)
-	require.Equal(t, 8000, res.Container.ExposedPorts[1].Port)
-	require.Equal(t, dagger.Udp, res.Container.ExposedPorts[1].Protocol)
-	require.Equal(t, "eight thousand udp", *res.Container.ExposedPorts[1].Description)
-	require.Equal(t, 5432, res.Container.ExposedPorts[2].Port)
-	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[2].Protocol)
-	require.Nil(t, res.Container.ExposedPorts[2].Description)
+
+	ports := map[string]*string{}
+	for _, p := range res.Container.ExposedPorts {
+		ports[fmt.Sprintf("%d/%s", p.Port, p.Protocol)] = p.Description
+	}
+
+	desc, ok := ports["8000/TCP"]
+	require.True(t, ok)
+	require.NotNil(t, desc)
+	require.Equal(t, "eight thousand tcp", *desc)
+
+	desc, ok = ports["8000/UDP"]
+	require.True(t, ok)
+	require.NotNil(t, desc)
+	require.Equal(t, "eight thousand udp", *desc)
+
+	desc, ok = ports["5432/TCP"]
+	require.True(t, ok)
+	require.Nil(t, desc)
 
 	withoutTCP := withPorts.WithoutExposedPort(8000)
 	cid, err = withoutTCP.ID(ctx)
@@ -223,12 +233,20 @@ func TestContainerPortLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, res.Container.ExposedPorts, 2)
-	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
-	require.Equal(t, dagger.Udp, res.Container.ExposedPorts[0].Protocol)
-	require.Equal(t, "eight thousand udp", *res.Container.ExposedPorts[0].Description)
-	require.Equal(t, 5432, res.Container.ExposedPorts[1].Port)
-	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[1].Protocol)
-	require.Nil(t, res.Container.ExposedPorts[1].Description)
+
+	ports = map[string]*string{}
+	for _, p := range res.Container.ExposedPorts {
+		ports[fmt.Sprintf("%d/%s", p.Port, p.Protocol)] = p.Description
+	}
+
+	desc, ok = ports["8000/UDP"]
+	require.True(t, ok)
+	require.NotNil(t, desc)
+	require.Equal(t, "eight thousand udp", *desc)
+
+	desc, ok = ports["5432/TCP"]
+	require.True(t, ok)
+	require.Nil(t, desc)
 
 	withoutUDP := withPorts.WithoutExposedPort(8000, dagger.ContainerWithoutExposedPortOpts{
 		Protocol: dagger.Udp,
@@ -242,12 +260,21 @@ func TestContainerPortLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Len(t, res.Container.ExposedPorts, 2)
-	require.Equal(t, 8000, res.Container.ExposedPorts[0].Port)
-	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[0].Protocol)
-	require.Equal(t, "eight thousand tcp", *res.Container.ExposedPorts[0].Description)
-	require.Equal(t, 5432, res.Container.ExposedPorts[1].Port)
-	require.Equal(t, dagger.Tcp, res.Container.ExposedPorts[1].Protocol)
-	require.Nil(t, res.Container.ExposedPorts[1].Description)
+
+	ports = map[string]*string{}
+	for _, p := range res.Container.ExposedPorts {
+		ports[fmt.Sprintf("%d/%s", p.Port, p.Protocol)] = p.Description
+	}
+
+	desc, ok = ports["8000/TCP"]
+	require.True(t, ok)
+	require.NotNil(t, desc)
+	require.NotNil(t, desc)
+	require.Equal(t, "eight thousand tcp", *desc)
+
+	desc, ok = ports["5432/TCP"]
+	require.True(t, ok)
+	require.Nil(t, desc)
 }
 
 func TestContainerPortOCIConfig(t *testing.T) {

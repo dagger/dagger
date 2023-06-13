@@ -3858,6 +3858,7 @@ EXPOSE 8080
 		},
 	)
 	require.NoError(t, err)
+	require.Len(t, res.Container.ExposedPorts, 2)
 
 	// random order since ImageConfig.ExposedPorts is a map
 	for _, p := range res.Container.ExposedPorts {
