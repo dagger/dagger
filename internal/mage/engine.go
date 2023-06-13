@@ -59,7 +59,7 @@ func (t Engine) Lint(ctx context.Context) error {
 	repo := util.RepositoryGoCodeOnly(c)
 
 	_, err = c.Container().
-		From("golangci/golangci-lint:v1.51").
+		From("golangci/golangci-lint:v1.51-alpine").
 		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
