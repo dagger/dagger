@@ -29,6 +29,13 @@ const (
 	outputFile      = "/dagger.json"
 )
 
+type ProjectSDK string
+
+const (
+	ProjectSDKGo     ProjectSDK = "go"
+	ProjectSDKPython ProjectSDK = "python"
+)
+
 type ProjectID string
 
 func (id ProjectID) String() string {
@@ -275,10 +282,10 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, r *router.Route
 func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, error) {
 	var runtimeFS *Directory
 	var err error
-	switch p.Config.SDK {
-	case "go":
+	switch ProjectSDK(p.Config.SDK) {
+	case ProjectSDKGo:
 		runtimeFS, err = p.goRuntime(ctx, "/", gw, p.Platform)
-	case "python":
+	case ProjectSDKPython:
 		runtimeFS, err = p.pythonRuntime(ctx, "/", gw, p.Platform)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)

@@ -31,10 +31,7 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 }
 
 func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Container) (*dagger.Container, error) {
-	cliPath := daggerCliPath(t)
-	parentDir := filepath.Dir(cliPath)
-	baseName := filepath.Base(cliPath)
-	daggerCli := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
 	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})

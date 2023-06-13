@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,21 +20,18 @@ import (
 )
 
 var (
-	projectURI string
-	configPath string
 	outputPath string
 )
 
 const (
-	projectURIDefault = "."
-	commandSeparator  = ":"
+	commandSeparator = ":"
 )
 
 func init() {
-	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
-	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
 	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
 }
+
+// project flags (--project, --config) for do command are setup in project.go
 
 var doCmd = &cobra.Command{
 	Use:                "do",
@@ -71,10 +67,16 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
 
-			proj, err := getProject(c)
+			projCfg, err := getProjectConfig()
 			if err != nil {
-				return fmt.Errorf("failed to get project schema: %w", err)
+				return fmt.Errorf("failed to get project config: %w", err)
 			}
+			if projCfg.local != nil && outputPath == "" {
+				// default to outputting to the project root dir
+				outputPath = projCfg.local.rootPath
+			}
+
+			proj := projCfg.load(c)
 			projCmds, err := proj.Commands(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get project commands: %w", err)
@@ -353,56 +355,6 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	})
 
 	return returnCmds, nil
-}
-
-func getProject(c *dagger.Client) (*dagger.Project, error) {
-	projectURI, configPath := projectURI, configPath
-	if projectURI == "" || projectURI == projectURIDefault {
-		// it's unset or default value, use env if present
-		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
-			projectURI = v
-		}
-	}
-
-	url, err := url.Parse(projectURI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config path: %w", err)
-	}
-	switch url.Scheme {
-	case "": // local path
-		projectAbsPath, err := filepath.Abs(projectURI)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get project absolute path: %w", err)
-		}
-		configAbsPath, err := filepath.Abs(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config absolute path: %w", err)
-		}
-		configRelPath, err := filepath.Rel(projectAbsPath, configAbsPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config relative path: %w", err)
-		}
-
-		if outputPath == "" {
-			outputPath = projectAbsPath
-		}
-
-		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
-	case "git":
-		repo := url.Host + url.Path
-		// TODO:(sipsma) just change ref to be a query param too?
-		ref := url.Fragment
-		if ref == "" {
-			ref = "main"
-		}
-
-		gitProtocol := url.Query().Get("protocol")
-		if gitProtocol != "" {
-			repo = gitProtocol + "://" + repo
-		}
-		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
-	}
-	return nil, fmt.Errorf("unsupported scheme %s", url.Scheme)
 }
 
 func getCommandName(cmd *cobra.Command) string {

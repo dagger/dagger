@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -246,61 +247,176 @@ func daggerCliPath(t *testing.T) string {
 	return cliPath
 }
 
-type DaggerDoCmd struct {
-	ProjectLocalPath string
-	TestGitProject   bool
-	Config           string
-	OutputPath       string
-	Target           string
-	Flags            map[string]string
-}
-
-func (do DaggerDoCmd) Run(ctx context.Context, t *testing.T, c *dagger.Client) (*dagger.Container, error) {
+func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
 	t.Helper()
 	cliPath := daggerCliPath(t)
 	parentDir := filepath.Dir(cliPath)
 	baseName := filepath.Base(cliPath)
-	daggerCli := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
-	cliBinPath := "/bin/dagger"
+	return c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+}
 
-	var err error
-	do.ProjectLocalPath, err = filepath.Abs(do.ProjectLocalPath)
-	require.NoError(t, err)
+func lastNLines(str string, n int) string {
+	lines := strings.Split(strings.TrimSpace(str), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
 
+const testCLIBinPath = "/bin/dagger"
+
+func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
+	t.Helper()
 	ctr := c.Container().From("alpine:3.16.2").
-		WithMountedFile(cliBinPath, daggerCli).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		// TODO: this shouldn't be needed, dagger do should pick up existing nestedness
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		// TODO: this shouldn't be needed, dagger cli should pick up existing nestedness
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
 
-	projectDir := c.Host().Directory(do.ProjectLocalPath, dagger.HostDirectoryOpts{
+	return &DaggerCLIContainer{
+		Container: ctr,
+		ctx:       ctx,
+		t:         t,
+		c:         c,
+	}
+}
+
+type DaggerCLIContainer struct {
+	*dagger.Container
+	ctx context.Context
+	t   *testing.T
+	c   *dagger.Client
+
+	// common
+	ProjectArg string
+	ConfigArg  string
+
+	// "do" specific
+	OutputArg string
+	TargetArg string
+	UserArgs  map[string]string
+
+	// "project init" specific
+	SDKArg  string
+	NameArg string
+}
+
+func (ctr DaggerCLIContainer) WithLoadedProject(
+	localProjectPath string,
+	convertToGitProject bool,
+) *DaggerCLIContainer {
+	ctr.t.Helper()
+	localProjectPath, err := filepath.Abs(localProjectPath)
+	require.NoError(ctr.t, err)
+
+	projectDir := ctr.c.Host().Directory(localProjectPath, dagger.HostDirectoryOpts{
 		Exclude: []string{".git", "bin", "docs", "website"},
 	})
 	projectMntPath := "/src"
 	projectArg := projectMntPath
-	if do.TestGitProject {
-		gitSvc, _ := gitService(ctx, t, c, projectDir)
-		ctr = ctr.WithServiceBinding("git", gitSvc)
 
-		endpoint, err := gitSvc.Endpoint(ctx)
-		require.NoError(t, err)
+	baseCtr := ctr.Container
+	if convertToGitProject {
+		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, projectDir)
+		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
+
+		endpoint, err := gitSvc.Endpoint(ctr.ctx)
+		require.NoError(ctr.t, err)
 		projectArg = "git://" + endpoint + "/repo.git" + "?protocol=git#main"
 	} else {
-		ctr = ctr.
+		baseCtr = baseCtr.
 			WithMountedDirectory(projectMntPath, projectDir).
 			WithWorkdir(projectMntPath)
 	}
 
-	args := []string{cliBinPath, "--silent", "do", "--project", projectArg, "--config", do.Config}
-	if do.OutputPath != "" {
-		args = append(args, "--output", do.OutputPath)
+	ctr.Container = baseCtr
+	ctr.ProjectArg = projectArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithProjectArg(projectArg string) *DaggerCLIContainer {
+	ctr.ProjectArg = projectArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithConfigArg(configArg string) *DaggerCLIContainer {
+	ctr.ConfigArg = configArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithOutputArg(outputArg string) *DaggerCLIContainer {
+	ctr.OutputArg = outputArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithTarget(target string) *DaggerCLIContainer {
+	ctr.TargetArg = target
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithUserArg(key, value string) *DaggerCLIContainer {
+	if ctr.UserArgs == nil {
+		ctr.UserArgs = map[string]string{}
 	}
-	args = append(args, do.Target)
-	for k, v := range do.Flags {
+	ctr.UserArgs[key] = value
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithSDKArg(sdk string) *DaggerCLIContainer {
+	ctr.SDKArg = sdk
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
+	ctr.NameArg = name
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "do"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	if ctr.ConfigArg != "" {
+		args = append(args, "--config", ctr.ConfigArg)
+	}
+	if ctr.OutputArg != "" {
+		args = append(args, "--output", ctr.OutputArg)
+	}
+	args = append(args, ctr.TargetArg)
+	for k, v := range ctr.UserArgs {
 		args = append(args, "--"+k, v)
 	}
+	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
 
-	return ctr.
-		WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
-		Sync(ctx)
+func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "project"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	if ctr.ConfigArg != "" {
+		args = append(args, "--config", ctr.ConfigArg)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "project", "init"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	if ctr.ConfigArg != "" {
+		args = append(args, "--config", ctr.ConfigArg)
+	}
+	if ctr.SDKArg != "" {
+		args = append(args, "--sdk", ctr.SDKArg)
+	}
+	if ctr.NameArg != "" {
+		args = append(args, "--name", ctr.NameArg)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
 }
