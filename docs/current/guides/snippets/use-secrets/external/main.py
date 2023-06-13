@@ -9,10 +9,10 @@ import dagger
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get secret from Google Cloud Secret Manager
-        secretPlaintext = await gcp_get_secret_plaintext("PROJECT-ID", "SECRET-ID")
+        secret_plaintext = await gcp_get_secret_plaintext("PROJECT-ID", "SECRET-ID")
 
         # read secret from host variable
-        secret = client.set_secret("ghApiToken", secretPlaintext)
+        secret = client.set_secret("ghApiToken", secret_plaintext)
 
         # use secret in container environment
         out = await (
@@ -41,8 +41,8 @@ async def gcp_get_secret_plaintext(project_id, secret_id):
 
     # retrieve secret
     response = await client.access_secret_version(request={"name": secret_uri})
-    secret_plaintext = response.payload.data.decode("UTF-8")
-    return secret_plaintext
+
+    return response.payload.data.decode("UTF-8")
 
 
 anyio.run(main)

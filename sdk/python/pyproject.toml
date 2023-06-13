@@ -97,7 +97,7 @@ cwd = "docs"
 [tool.poe.tasks.lint]
 sequence = [
     "ruff check ${target}",
-    "black --check ${target}",
+    "black --preview --check ${target}",
 ]
 default_item_type = "cmd"
 
@@ -108,21 +108,18 @@ multiple = true
 default = "."
 
 [tool.poe.tasks.lint-docs]
-# TODO: There's lots of errors in the docs so we're disabling this for now.
-# ref = "lint ${DOCS_SNIPPETS}"
-sequence = [
-    "ruff check -e ${DOCS_SNIPPETS}",
-    "black --check ${DOCS_SNIPPETS}",
-]
-default_item_type = "cmd"
+ref = "lint ${DOCS_SNIPPETS}"
 
 [tool.poe.tasks.lint-all]
-ref = "lint . ${DOCS_SNIPPETS}"
+sequence = [
+    "lint",
+    "lint-docs",
+]
 
 [tool.poe.tasks.fmt]
 sequence = [
     "ruff --fix-only -e ${target}",
-    "black ${target}",
+    "black --preview ${target}",
 ]
 default_item_type = "cmd"
 
@@ -130,13 +127,22 @@ default_item_type = "cmd"
 name = "target"
 positional = true
 multiple = true
-default = ". ${DOCS_SNIPPETS}"
+default = "."
+
+[tool.poe.tasks.fmt-docs]
+ref = "fmt ${DOCS_SNIPPETS}"
+
+[tool.poe.tasks.fmt-all]
+sequence = [
+    "fmt",
+    "fmt-docs",
+]
 
 [tool.poe.tasks.generate]
 sequence = [
     "python -m dagger generate --output ${GEN_PATH}/gen.py",
     "python -m dagger generate --output ${GEN_PATH}/gen_sync.py --sync",
-    "black ${GEN_PATH}/gen*.py",
+    "black --preview ${GEN_PATH}/gen*.py",
 ]
 default_item_type = "cmd"
 
@@ -218,8 +224,6 @@ known-first-party = ["dagger"]
 extend-immutable-calls = ["typer.Option"]
 
 [tool.ruff.per-file-ignores]
-# Docs and examples can have `print` statements.
-"../../docs/current/**/*.py" = ["T201"]
 "./examples/*" = ["T201"]
 "./src/dagger/api/gen*.py" = [
     # Not much control over field names and docs coming from the API.

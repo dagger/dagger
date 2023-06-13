@@ -54,7 +54,7 @@ func (t Python) Lint(ctx context.Context) error {
 				fmt.Sprintf("/%s", path),
 				util.Repository(c).Directory(path),
 				dagger.ContainerWithDirectoryOpts{
-					Include: []string{"**/*.py"},
+					Include: []string{"**/*.py", ".ruff.toml"},
 				},
 			).
 			WithExec([]string{"poe", "lint-docs"}).

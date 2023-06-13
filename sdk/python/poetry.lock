@@ -1150,13 +1150,13 @@ test = ["pytest"]
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.184.0"
+version = "0.184.1"
 description = "A library for creating GraphQL APIs"
 optional = true
 python-versions = ">=3.7,<4.0"
 files = [
-    {file = "strawberry_graphql-0.184.0-py3-none-any.whl", hash = "sha256:29795af275a33e923ef88e20bd58136eb63b95bc358a7f8e7ec208e8959f70c7"},
-    {file = "strawberry_graphql-0.184.0.tar.gz", hash = "sha256:169a13d115736b679fcfa8e36b7c5bfabaa552e2cabc5be4f8080fff99fc0a7e"},
+    {file = "strawberry_graphql-0.184.1-py3-none-any.whl", hash = "sha256:a0232fad8a65ef45ebba915da347d4cb04fb457f0ff9af5c5fd9502851f30330"},
+    {file = "strawberry_graphql-0.184.1.tar.gz", hash = "sha256:d7bddabe48a177dc1b35ee808bb2496b5c2b403a492cd1ee945db94468d5d6c1"},
 ]
 
 [package.dependencies]
@@ -1169,9 +1169,9 @@ aiohttp = ["aiohttp (>=3.7.4.post0,<4.0.0)"]
 asgi = ["python-multipart (>=0.0.5,<0.0.7)", "starlette (>=0.18.0)"]
 chalice = ["chalice (>=1.22,<2.0)"]
 channels = ["asgiref (>=3.2,<4.0)", "channels (>=3.0.5)"]
-cli = ["click (>=7.0,<9.0)", "libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "rich (>=12.0.0)"]
+cli = ["libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "rich (>=12.0.0)", "typer (>=0.7.0)"]
 debug = ["libcst (>=0.4.7)", "rich (>=12.0.0)"]
-debug-server = ["click (>=7.0,<9.0)", "libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "python-multipart (>=0.0.5,<0.0.7)", "rich (>=12.0.0)", "starlette (>=0.18.0)", "uvicorn (>=0.11.6,<0.22.0)"]
+debug-server = ["libcst (>=0.4.7)", "pygments (>=2.3,<3.0)", "python-multipart (>=0.0.5,<0.0.7)", "rich (>=12.0.0)", "starlette (>=0.18.0)", "typer (>=0.7.0)", "uvicorn (>=0.11.6,<0.22.0)"]
 django = ["Django (>=3.2)", "asgiref (>=3.2,<4.0)"]
 fastapi = ["fastapi (>=0.65.2)", "python-multipart (>=0.0.5,<0.0.7)"]
 flask = ["flask (>=1.1)"]

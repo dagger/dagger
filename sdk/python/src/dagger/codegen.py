@@ -459,15 +459,13 @@ class _ObjectField:
             msg = f'Method "{self.name}" is deprecated: {deprecated}'.replace(
                 '"', '\\"'
             )
-            yield textwrap.dedent(
-                f"""\
+            yield textwrap.dedent(f"""\
                 warnings.warn(
                     "{msg}",
                     DeprecationWarning,
                     stacklevel=4,
                 )\
-                """
-            )
+                """)
 
         if not self.args:
             yield "_args: list[Arg] = []"

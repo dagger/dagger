@@ -53,10 +53,13 @@ async def _temporary_cli_server(monkeypatch: pytest.MonkeyPatch):
 
         with Path(cli_bin).open("rb") as f:
             if downloader.archive_name.endswith(".zip"):
-                with zipfile.ZipFile(archive, mode="w") as zar, zar.open(
-                    "dagger.exe",
-                    mode="w",
-                ) as zf:
+                with (
+                    zipfile.ZipFile(archive, mode="w") as zar,
+                    zar.open(
+                        "dagger.exe",
+                        mode="w",
+                    ) as zf,
+                ):
                     shutil.copyfileobj(f, zf)
             else:
                 with tarfile.open(fileobj=archive, mode="w:gz") as tar:

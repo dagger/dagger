@@ -10,12 +10,12 @@ import dagger
 async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get secret from Vault
-        secretPlaintext = await get_vault_secret(
+        secret_plaintext = await get_vault_secret(
             "MOUNT-PATH", "SECRET-ID", "SECRET-KEY"
         )
 
         # load secret into Dagger
-        secret = client.set_secret("ghApiToken", secretPlaintext)
+        secret = client.set_secret("ghApiToken", secret_plaintext)
 
         # use secret in container environment
         out = await (
@@ -40,7 +40,8 @@ async def get_vault_secret(mount_path, secret_id, secret_key):
     # check for required variables in host environment
     for var in ["VAULT_ADDRESS", "VAULT_NAMESPACE", "VAULT_ROLE_ID", "VAULT_SECRET_ID"]:
         if var not in os.environ:
-            raise OSError('"%s" environment variable must be set' % var)
+            msg = f"{var} environment variable must be set"
+            raise OSError(msg)
 
     # create Vault client
     client = hvac.Client(

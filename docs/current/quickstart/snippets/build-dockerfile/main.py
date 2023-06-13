@@ -16,7 +16,7 @@ async def main():
         # build using Dockerfile
         # publish the resulting container to a registry
         image_ref = await context_dir.docker_build().publish(
-            f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}"
+            f"ttl.sh/hello-dagger-{random.randrange(10 ** 8)}"
         )
 
     print(f"Published image to: {image_ref}")

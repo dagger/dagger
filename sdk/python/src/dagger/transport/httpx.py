@@ -103,7 +103,7 @@ class _HTTPXTransport:
             raise TransportServerError(str(e), e.response.status_code) from e
 
         raise TransportProtocolError(
-            f"Server did not return a GraphQL result: " f"{reason}: " f"{response.text}"
+            f"Server did not return a GraphQL result: {reason}: {response.text}"
         )
 
 

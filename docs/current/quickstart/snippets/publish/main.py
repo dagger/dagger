@@ -47,7 +47,7 @@ async def main():
             client.container()
             .from_("nginx:1.23-alpine")
             .with_directory("/usr/share/nginx/html", client.host().directory("./build"))
-            .publish(f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}")
+            .publish(f"ttl.sh/hello-dagger-{random.randrange(10 ** 8)}")
         )
 
     print(f"Published image to: {image_ref}")

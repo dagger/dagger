@@ -133,7 +133,12 @@ def build_memcached(container: dagger.Container) -> dagger.Container:
             [
                 "sh",
                 "-c",
-                "apk add --no-network --virtual .memcached-rundeps $( scanelf --needed --nobanner --format '%n#p' --recursive /usr/local | tr ',' '\n' | sort -u | awk 'system(\"[ -e /usr/local/lib/\" $1 \" ]\") == 0 { next } { print \"so:\" $1 }')",
+                (
+                    "apk add --no-network --virtual .memcached-rundeps $( scanelf"
+                    " --needed --nobanner --format '%n#p' --recursive /usr/local | tr"
+                    " ',' '\n' | sort -u | awk 'system(\"[ -e /usr/local/lib/\" $1 \""
+                    ' ]") == 0 { next } { print "so:" $1 }\')'
+                ),
             ]
         )
         .with_exec(["apk", "del", "--no-network", ".build-deps"])

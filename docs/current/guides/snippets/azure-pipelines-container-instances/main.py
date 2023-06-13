@@ -18,11 +18,11 @@ RESOURCE_GROUP_NAME = "my-group"
 class Env(StrEnum):
     """Required environment variables."""
 
-    def _generate_next_value_(name, *_) -> str:
-        if name not in os.environ:
-            msg = f"Environment variable must be set: {name}"
+    def _generate_next_value_(self, *_) -> str:
+        if self not in os.environ:
+            msg = f"Environment variable must be set: {self}"
             raise OSError(msg)
-        return os.environ[name]
+        return os.environ[self]
 
     DOCKERHUB_USERNAME = auto()
     DOCKERHUB_PASSWORD = auto()
