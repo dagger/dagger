@@ -51,9 +51,9 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	startOpts := engine.Config{
 		Workdir:      workdir,
-		LogOutput:    os.Stderr,
 		RunnerHost:   internalengine.RunnerHost(),
 		SessionToken: sessionToken.String(),
 		JournalFile:  os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),

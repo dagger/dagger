@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -31,7 +30,6 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
@@ -42,14 +40,15 @@ import (
 )
 
 type Config struct {
-	Workdir        string
-	LogOutput      io.Writer
-	JournalFile    string
-	ProgrockWriter progrock.Writer
-	DisableHostRW  bool
-	RunnerHost     string
-	SessionToken   string
-	UserAgent      string
+	Workdir            string
+	JournalFile        string
+	ProgrockWriter     progrock.Writer
+	DisableHostRW      bool
+	RunnerHost         string
+	SessionToken       string
+	UserAgent          string
+	EngineNameCallback func(string)
+	CloudURLCallback   func(string)
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -124,17 +123,12 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		recorder.Close()
 	}()
 
-	// TODO: switch these to some sort of metadata callback so they can be
-	// displayed in the TUI too
-	if startOpts.LogOutput != nil {
-		if c.EngineName != "" {
-			fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
-		}
+	if startOpts.EngineNameCallback != nil && c.EngineName != "" {
+		startOpts.EngineNameCallback(c.EngineName)
+	}
 
-		// TODO: this should be displayed some other way
-		if cloudURL != "" {
-			fmt.Fprintln(startOpts.LogOutput, "Dagger Cloud URL:", cloudURL)
-		}
+	if startOpts.CloudURLCallback != nil && cloudURL != "" {
+		startOpts.CloudURLCallback(cloudURL)
 	}
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
@@ -208,9 +202,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		err := handleSolveEvents(recorder, startOpts, solveCh)
-		if err != nil {
-			return fmt.Errorf("handle solve events: %w", err)
+		for ev := range solveCh {
+			if err := recorder.Record(bk2progrock(ev)); err != nil {
+				return fmt.Errorf("record: %w", err)
+			}
 		}
 		return nil
 	})
@@ -281,57 +276,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	}
 
 	return nil
-}
-
-func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh chan *bkclient.SolveStatus) error {
-	eg := &errgroup.Group{}
-	readers := []chan *bkclient.SolveStatus{}
-
-	ch := make(chan *bkclient.SolveStatus)
-	readers = append(readers, ch)
-
-	eg.Go(func() error {
-		for ev := range ch {
-			if err := recorder.Record(bk2progrock(ev)); err != nil {
-				return fmt.Errorf("record: %w", err)
-			}
-		}
-
-		return nil
-	})
-
-	// Print events to the console
-	//
-	// TODO(vito): once Progrock has a console output, turn this into an entry in
-	// the progrock.MultiWriter instead.
-	if startOpts.LogOutput != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, ch)
-			for _, w := range warn {
-				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
-			}
-			return err
-		})
-	}
-
-	eventsMultiReader(upstreamCh, readers...)
-
-	return eg.Wait()
-}
-
-func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.SolveStatus) {
-	for ev := range ch {
-		for _, r := range readers {
-			r <- ev
-		}
-	}
-
-	for _, w := range readers {
-		close(w)
-	}
 }
 
 func NormalizeWorkdir(workdir string) (string, error) {
