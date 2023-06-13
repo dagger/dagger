@@ -385,6 +385,9 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 
 // Retrieves the list of exposed ports.
 //
+// This includes ports already exposed by the image, even if not
+// explicitly added with dagger.
+//
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
 func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	q := r.q.Select("exposedPorts")

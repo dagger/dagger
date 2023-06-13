@@ -947,6 +947,9 @@ export class Container extends BaseClient {
   /**
    * Retrieves the list of exposed ports.
    *
+   * This includes ports already exposed by the image, even if not
+   * explicitly added with dagger.
+   *
    * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {

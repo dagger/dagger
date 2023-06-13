@@ -3794,14 +3794,11 @@ func TestContainerBuildMergesWithParent(t *testing.T) {
 	c, ctx := connect(t)
 
 	// Create a builder container
-	builderCtr := c.Directory().WithNewFile(
-		"Dockerfile",
-		`
-FROM node:alpine
-
+	builderCtr := c.Directory().WithNewFile("Dockerfile",
+		`FROM alpine:3.16.2
 ENV FOO=BAR
 LABEL "com.example.test-should-replace"="foo"
-RUN node --version
+EXPOSE 8080
 `,
 	)
 
@@ -3811,7 +3808,9 @@ RUN node --version
 		WithEnvVariable("FOO", "BAZ").
 		WithLabel("com.example.test-should-exist", "test").
 		WithLabel("com.example.test-should-replace", "bar").
-		WithExposedPort(5000).
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{
+			Description: "five thousand",
+		}).
 		Build(builderCtr)
 
 	envShouldExist, err := testCtr.EnvVariable(ctx, "BOOL")
@@ -3830,12 +3829,50 @@ RUN node --version
 	require.NoError(t, err)
 	require.Equal(t, "foo", labelShouldBeReplaced)
 
-	ports, err := testCtr.ExposedPorts(ctx)
+	// FIXME: Pretty clunky to work with lists of objects from the SDK
+	// so test the exposed ports with a query string for now.
+	cid, err := testCtr.ID(ctx)
 	require.NoError(t, err)
 
-	port, err := ports[0].Port(ctx)
+	res := struct {
+		Container struct {
+			ExposedPorts []core.ContainerPort
+		}
+	}{}
+
+	err = testutil.Query(`
+        query Test($id: ContainerID!) {
+            container(id: $id) {
+                exposedPorts {
+                    port
+                    protocol
+                    description
+                }
+            }
+        }`,
+		&res,
+		&testutil.QueryOptions{
+			Variables: map[string]interface{}{
+				"id": cid,
+			},
+		},
+	)
 	require.NoError(t, err)
-	require.Equal(t, 5000, port)
+	require.Len(t, res.Container.ExposedPorts, 2)
+
+	// random order since ImageConfig.ExposedPorts is a map
+	for _, p := range res.Container.ExposedPorts {
+		require.Equal(t, core.NetworkProtocolTCP, p.Protocol)
+		switch p.Port {
+		case 8080:
+			require.Nil(t, p.Description)
+		case 5000:
+			require.NotNil(t, p.Description)
+			require.Equal(t, "five thousand", *p.Description)
+		default:
+			t.Fatalf("unexpected port %d", p.Port)
+		}
+	}
 }
 
 func TestContainerFromMergesWithParent(t *testing.T) {

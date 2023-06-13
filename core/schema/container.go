@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/core"
@@ -805,13 +807,36 @@ func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Contain
 		return nil, ErrServicesDisabled
 	}
 
-	exposedPorts := []ExposedPort{}
+	// get descriptions from `Container.Ports` (not in the OCI spec)
+	ports := make(map[string]ExposedPort, len(parent.Ports))
 	for _, p := range parent.Ports {
-		exposedPorts = append(exposedPorts, ExposedPort{
+		ociPort := fmt.Sprintf("%d/%s", p.Port, p.Protocol.Network())
+		ports[ociPort] = ExposedPort{
 			Port:        p.Port,
 			Protocol:    string(p.Protocol),
 			Description: p.Description,
-		})
+		}
+	}
+
+	exposedPorts := []ExposedPort{}
+	for ociPort := range parent.Config.ExposedPorts {
+		p, exists := ports[ociPort]
+		if !exists {
+			// ignore errors when parsing from OCI
+			port, proto, ok := strings.Cut(ociPort, "/")
+			if !ok {
+				continue
+			}
+			portNr, err := strconv.Atoi(port)
+			if err != nil {
+				continue
+			}
+			p = ExposedPort{
+				Port:     portNr,
+				Protocol: strings.ToUpper(proto),
+			}
+		}
+		exposedPorts = append(exposedPorts, p)
 	}
 
 	return exposedPorts, nil
