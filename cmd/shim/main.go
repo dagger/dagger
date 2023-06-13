@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ const (
 var (
 	stdoutPath = metaMountPath + "/stdout"
 	stderrPath = metaMountPath + "/stderr"
+	pipeWg     sync.WaitGroup
 )
 
 /*
@@ -290,22 +292,36 @@ func shim() int {
 		cmd.Stdout = outWriter
 		cmd.Stderr = errWriter
 	} else {
+		// Get pipes for command's stdout and stderr and process output
+		// through secret scrub reader in multiple goroutines:
 		envToScrub := os.Environ()
-		outR, outW := io.Pipe()
-		cmd.Stdout = outW
-		scrubOutReader, err := NewSecretScrubReader(outR, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			panic(err)
 		}
-		go io.Copy(outWriter, scrubOutReader)
+		scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		if err != nil {
+			panic(err)
+		}
+		pipeWg.Add(1)
+		go func() {
+			defer pipeWg.Done()
+			io.Copy(outWriter, scrubOutReader)
+		}()
 
-		errR, errW := io.Pipe()
-		cmd.Stderr = errW
-		scrubErrReader, err := NewSecretScrubReader(errR, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		stderrPipe, err := cmd.StderrPipe()
 		if err != nil {
 			panic(err)
 		}
-		go io.Copy(errWriter, scrubErrReader)
+		scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		if err != nil {
+			panic(err)
+		}
+		pipeWg.Add(1)
+		go func() {
+			defer pipeWg.Done()
+			io.Copy(errWriter, scrubErrReader)
+		}()
 	}
 
 	exitCode := 0
@@ -544,7 +560,17 @@ func internalEnv(name string) (string, bool) {
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
 		// no nesting; run as normal
-		return cmd.Run()
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+
+		// Wait for stdout and stderr copy goroutines to finish:
+		pipeWg.Wait()
+
+		if err := cmd.Wait(); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// setup a session and associated env vars for the container
