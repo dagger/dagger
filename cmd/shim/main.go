@@ -612,6 +612,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		if cmdErr != nil {
 			return cmdErr
 		}
+		pipeWg.Wait()
 		cmdErr = cmd.Wait()
 		if cmdErr != nil {
 			return cmdErr
