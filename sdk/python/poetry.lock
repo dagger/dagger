@@ -873,7 +873,7 @@ test = ["Pygments (>=2.0)", "anyio", "coverage", "docutils (>=0.12)", "pytest (>
 name = "python-dateutil"
 version = "2.8.2"
 description = "Extensions to the standard Python datetime module"
-optional = true
+optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
 files = [
     {file = "python-dateutil-2.8.2.tar.gz", hash = "sha256:0123cacc1627ae19ddf3c27a5de5bd67ee4586fbdd6440d9748f8abb483d3e86"},
@@ -963,7 +963,7 @@ files = [
 name = "six"
 version = "1.16.0"
 description = "Python 2 and 3 compatibility utilities"
-optional = true
+optional = false
 python-versions = ">=2.7, !=3.0.*, !=3.1.*, !=3.2.*"
 files = [
     {file = "six-1.16.0-py2.py3-none-any.whl", hash = "sha256:8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"},
@@ -1150,19 +1150,19 @@ test = ["pytest"]
 
 [[package]]
 name = "strawberry-graphql"
-version = "0.184.1"
+version = "0.185.0"
 description = "A library for creating GraphQL APIs"
-optional = true
+optional = false
 python-versions = ">=3.7,<4.0"
 files = [
-    {file = "strawberry_graphql-0.184.1-py3-none-any.whl", hash = "sha256:a0232fad8a65ef45ebba915da347d4cb04fb457f0ff9af5c5fd9502851f30330"},
-    {file = "strawberry_graphql-0.184.1.tar.gz", hash = "sha256:d7bddabe48a177dc1b35ee808bb2496b5c2b403a492cd1ee945db94468d5d6c1"},
+    {file = "strawberry_graphql-0.185.0-py3-none-any.whl", hash = "sha256:d4f8d1c24980365b5a83538189e99a9b14077e844c55754942bd756e82bf685e"},
+    {file = "strawberry_graphql-0.185.0.tar.gz", hash = "sha256:87c6b0f40a6b90e50fb7c35c385e798e7ed377250226ba9e4c45a4a1f4b29369"},
 ]
 
 [package.dependencies]
 graphql-core = ">=3.2.0,<3.3.0"
 python-dateutil = ">=2.7.0,<3.0.0"
-typing_extensions = ">=4.0.0,<5.0.0"
+typing_extensions = ">=4.1.0"
 
 [package.extras]
 aiohttp = ["aiohttp (>=3.7.4.post0,<4.0.0)"]
@@ -1331,10 +1331,7 @@ files = [
 idna = ">=2.0"
 multidict = ">=4.0"
 
-[extras]
-server = ["strawberry-graphql"]
-
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "298ddf3c072bcceb481730d67cff889ff7889b3e9bde1c8557160efad4cd9030"
+content-hash = "d6a954a60a3a585558a1c42885c6d8ea7749da3a1407abdb30b70855803be657"

@@ -1,5 +1,7 @@
+import inspect
 import logging
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
@@ -9,9 +11,9 @@ from cattrs.preconf.json import JsonConverter
 from strawberry import Schema
 from strawberry.utils.await_maybe import await_maybe
 
-from dagger.api.gen import Client
-
-from .converter import converter as json_converter
+from ._context import Context
+from ._converter import converter as json_converter
+from ._converter import register_dagger_type_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -41,31 +43,46 @@ class Server:
         inputs = self._read_inputs()
         logger.debug("inputs = %s", inputs)
 
-        # Resolvers can chose to be implemented in async,
-        # e.g., running multiple client calls concurrently.
-        result = anyio.run(self._call_resolver, inputs)
-        logger.debug("result = %s", result)
+        output = anyio.run(self._call_resolver, inputs)
 
-        self._write_output(result)
+        logger.debug("output = %s", output)
+        self._write_output(output)
 
     def _read_inputs(self) -> Inputs:
         return self.converter.loads(inputs_path.read_text(), Inputs)
 
-    async def _call_resolver(self, inputs: Inputs):
+    def _write_output(self, out: str) -> None:
+        outputs_path.write_text(out)
+
+    async def _call_resolver(self, inputs: Inputs) -> str:
         type_name, field_name = inputs.resolver.split(".", 2)
         field = self.schema.get_field_for_type(field_name, type_name)
         if field is None:
             # FIXME: use proper error class
             msg = f"Can't find field `{field_name}` for type `{type_name}`"
             raise ValueError(msg)
+
         resolver: Callable = self.schema.schema_converter.from_resolver(field)
+
+        # origin is the parent type of the resolver/field.
         origin = cast(Callable, field.origin)
-        parent = origin(**inputs.parent) if inputs.parent else origin()
 
-        # Avoid a circular importissue.
-        import dagger
+        async with Context() as context:
+            register_dagger_type_hooks(self.converter, context)
 
-        async with dagger.Connection() as client:
+            # inputs.parent is a dict of the parent type's fields.
+            if inputs.parent is None:
+                parent = origin()
+            elif inspect.isclass(origin):
+                parent = await anyio.to_thread.run_sync(
+                    self.converter.structure,
+                    inputs.parent,
+                    origin,
+                )
+            else:
+                # TODO: When is origin not a class?
+                parent = origin(**inputs.parent)
+
             # Mock GraphQLResolveInfo that Strawberry wraps around in Info
             # so we can access some data in the decorated resolvers.
             #
@@ -78,19 +95,17 @@ class Server:
                 field_name=field.name,
                 return_type=field.type,
                 parent_type=field.origin,
-                context=Context(client),
+                context=context,
             )
-            return await await_maybe(resolver(parent, info=info, **inputs.args))
 
-    def _write_output(self, o) -> None:
-        output = self.converter.dumps(o, ensure_ascii=False)
-        logger.debug("output = %s", output)
-        outputs_path.write_text(output)
+            result = await await_maybe(resolver(parent, info=info, **inputs.args))
 
-
-@attrs.define
-class Context:
-    client: Client
+            # cattrs is a sync library but we may need to use an
+            # async function hook to convert the result so use to_thread
+            # to coordinate this because from sync we can call from_thread.run.
+            return await anyio.to_thread.run_sync(
+                partial(self.converter.dumps, result, ensure_ascii=False),
+            )
 
 
 @attrs.define

@@ -1,6 +1,5 @@
 """Command line interface for the dagger extension runtime."""
 import logging
-import sys
 from importlib import import_module
 from typing import Annotated
 
@@ -26,8 +25,6 @@ def main(
 ):
     """Entrypoint for a dagger extension."""
     # Add current directory to path so that the main module can be imported.
-    sys.path.insert(0, ".")
-
     try:
         server = get_server()
     except SchemaValidationError as e:

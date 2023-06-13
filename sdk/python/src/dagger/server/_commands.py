@@ -66,7 +66,7 @@ def commands(cls: type):
 
     # don't turn non-resolver class attributes into a command
     # (default from strawberry is to use a getattr resolver)
-    for name, type_hint in cls.__annotations__.items():
+    for name, type_hint in get_type_hints(cls, include_extras=True).items():
         if not isinstance(getattr(cls, name, None), StrawberryField):
             cls.__annotations__[name] = strawberry.Private[type_hint]
 
@@ -143,7 +143,7 @@ def command(  # noqa: C901
         async def strawberry_resolver(*args, **kwargs) -> type | str:
             info = cast(Info[Context, Any], kwargs.pop("info"))
             if param_name := resolver_requested_client:
-                kwargs[param_name] = info.context.client
+                kwargs[param_name] = await info.context.get_client()
             bound = signature.bind(*args, **kwargs)
             return await await_maybe(f(*bound.args, **bound.kwargs))
 

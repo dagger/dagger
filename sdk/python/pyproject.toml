@@ -52,10 +52,10 @@ platformdirs = ">=2.6.2"
 typing_extensions = ">=4.4.0"
 rich = ">=12.6.0"
 typer = {version = ">=0.6.1", extras = ["all"]}
-strawberry-graphql = {version = ">=0.133.5", optional = true}
+strawberry-graphql = {version = ">=0.133.5"}
 
-[tool.poetry.extras]
-server = ["strawberry-graphql"]
+[tool.poetry.group.test]
+optional = true
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.2.0"

@@ -1,1 +1,1 @@
--e ../../sdk/python[server]
+../../sdk/python

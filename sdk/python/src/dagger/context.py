@@ -1,5 +1,8 @@
+# TODO: Rename this file managers.py
 import contextlib
 import typing
+
+from typing_extensions import Self
 
 
 class ResourceManager(contextlib.AbstractAsyncContextManager):
@@ -13,7 +16,11 @@ class ResourceManager(contextlib.AbstractAsyncContextManager):
             yield stack
             self.stack = stack.pop_all()
 
-    async def __aexit__(self, *exc_details) -> None:
+    # For type checker as inherited method isn't typed.
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *_) -> None:
         await self.stack.aclose()
 
 
@@ -28,5 +35,5 @@ class SyncResourceManager(contextlib.AbstractContextManager):
             yield stack
             self.sync_stack = stack.pop_all()
 
-    def __exit__(self, *exc_details) -> None:
+    def __exit__(self, *_) -> None:
         self.sync_stack.close()
