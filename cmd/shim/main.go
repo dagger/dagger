@@ -608,8 +608,15 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	var cmdErr error
 	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		go http.Serve(l, r) //nolint:gosec
-		cmdErr = cmd.Run()
-		return cmdErr
+		cmdErr = cmd.Start()
+		if cmdErr != nil {
+			return cmdErr
+		}
+		cmdErr = cmd.Wait()
+		if cmdErr != nil {
+			return cmdErr
+		}
+		return nil
 	})
 	if cmdErr != nil {
 		// propagate inner error with higher priority
