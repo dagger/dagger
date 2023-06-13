@@ -1,9 +1,9 @@
 import sys
 
 import anyio
-import dagger
 from google.cloud import run_v2
 
+import dagger
 
 GCR_SERVICE_URL = "projects/PROJECT/locations/us-central1/services/myapp"
 GCR_PUBLISH_ADDRESS = "gcr.io/PROJECT/myapp"

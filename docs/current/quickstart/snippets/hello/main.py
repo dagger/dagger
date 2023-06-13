@@ -1,6 +1,7 @@
 import sys
 
 import anyio
+
 import dagger
 
 
@@ -18,7 +19,6 @@ async def main():
         # execute
         version = await python.stdout()
 
-    # print output
     print(f"Hello from Dagger and {version}")
 
 

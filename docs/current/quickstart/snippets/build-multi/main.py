@@ -2,7 +2,9 @@ import random
 import sys
 
 import anyio
+
 import dagger
+
 
 async def main():
     config = dagger.Config(log_output=sys.stdout)
@@ -15,9 +17,7 @@ async def main():
             client.container()
             .from_("node:16-slim")
             .with_directory(
-                "/src",
-                client.host().directory("."),
-                exclude=["node_modules/", "ci/"]
+                "/src", client.host().directory("."), exclude=["node_modules/", "ci/"]
             )
         )
 

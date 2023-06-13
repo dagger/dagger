@@ -5,6 +5,7 @@ from enum import StrEnum, auto
 import anyio
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.containerinstance.aio import ContainerInstanceManagementClient
+
 import dagger
 
 # configure container group, name and location
@@ -41,10 +42,8 @@ async def main():
         source = dagger_client.host().directory(".", exclude=["node_modules", "ci"])
 
         # get Node image
-        node = (
-            dagger_client
-            .container(platform=dagger.Platform("linux/amd64"))
-            .from_("node:18")
+        node = dagger_client.container(platform=dagger.Platform("linux/amd64")).from_(
+            "node:18"
         )
 
         # mount source code directory into Node image

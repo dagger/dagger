@@ -1,8 +1,8 @@
 import sys
 
 import anyio
-import dagger
 
+import dagger
 
 NPROC = "1"
 GNU_ARCH = "arm64"

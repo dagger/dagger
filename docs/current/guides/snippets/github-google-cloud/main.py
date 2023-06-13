@@ -1,35 +1,30 @@
 import sys
 
 import anyio
-import dagger
 from google.cloud import run_v2
+
+import dagger
 
 GCR_SERVICE_URL = "projects/PROJECT/locations/us-central1/services/myapp"
 GCR_PUBLISH_ADDRESS = "gcr.io/PROJECT/myapp"
+
 
 async def main():
     # initialize Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get reference to the project directory
-        source = (
-            client
-            .host()
-            .directory(".", exclude=["node_modules", "ci"])
-        )
+        source = client.host().directory(".", exclude=["node_modules", "ci"])
 
         # get Node image
-        node = (
-            client
-            .container(platform=dagger.Platform("linux/amd64"))
-            .from_("node:16")
+        node = client.container(platform=dagger.Platform("linux/amd64")).from_(
+            "node:16"
         )
 
         # mount source code directory into Node image
         # install dependencies
         # set entrypoint
         c = (
-            node
-            .with_directory("/src", source)
+            node.with_directory("/src", source)
             .with_workdir("/src")
             .with_exec(["cp", "-R", ".", "/home/node"])
             .with_workdir("/home/node")
@@ -72,5 +67,6 @@ async def main():
         response = await gcr_operation.result()
 
     print(f"Deployment for image {addr} now available at {response.uri}.")
+
 
 anyio.run(main)

@@ -2,7 +2,7 @@
 """
 GraphQL client transport using HTTPX.
 
-FIXME: remove this file when gql releases a version with httpx support.
+TODO: remove this file when gql releases a version with httpx support.
     It was added in https://github.com/graphql-python/gql/pull/370
 """
 import io

@@ -93,7 +93,7 @@ class CLISession(SyncResourceManager):
         raise SessionError(msg)
 
     def _get_conn(self, proc: subprocess.Popen) -> ConnectParams:
-        # FIXME: implement engine session timeout (self.cfg.engine_timeout?)
+        # TODO: implement engine session timeout (self.cfg.engine_timeout?)
         conn = proc.stdout.readline()
 
         # Check if subprocess exited with an error

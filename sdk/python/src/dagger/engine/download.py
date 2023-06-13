@@ -240,7 +240,7 @@ class Downloader:
 
     @contextlib.contextmanager
     def _extract_from_zip(self, reader: StreamReader) -> Iterator[IO[bytes]]:
-        # FIXME: extract from stream instead of loading archive into memory
+        # TODO: extract from stream instead of loading archive into memory
         with zipfile.ZipFile(reader.getbuffer()) as zar:
             try:
                 with zar.open("dagger.exe") as file:
