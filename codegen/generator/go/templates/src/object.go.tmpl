@@ -54,16 +54,22 @@ type {{ $field | FieldOptionsStructName }} struct {
     {{- end }}
 	q := r.q.Select("{{ $field.Name }}")
 
+	{{- if $field.Args.HasOptionals }}
+	for i := len(opts) - 1; i >= 0; i-- {
 	{{- range $arg := $field.Args }}
 	{{- if $arg.TypeRef.IsOptional }}
 	// `{{ $arg.Name }}` optional argument
-	for i := len(opts) - 1; i >= 0; i-- {
-		if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
-			q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
-			break
-		}
+	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
+		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
 	}
-	{{- else }}
+	{{- end }}
+	{{- end }}
+	}
+	{{- end }}
+
+
+	{{- range $arg := $field.Args }}
+	{{- if not $arg.TypeRef.IsOptional }}
 	q = q.Arg("{{ $arg.Name }}", {{ $arg.Name }})
 	{{- end }}
 	{{- end }}
