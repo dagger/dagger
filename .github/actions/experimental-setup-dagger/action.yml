@@ -11,7 +11,7 @@ runs:
       shell: bash
       env:
         CGO_ENABLED: "0"
-    - run: echo "DAGGER_PROJECT=${{ github.repositoryUrl }}#${{ github.sha }}" >> $GITHUB_ENV
+    - run: echo "DAGGER_PROJECT=${{ github.repositoryUrl }}#${{ github.ref }}" >> $GITHUB_ENV
       shell: bash
     # This proves we are not reliant on the checkout
     - run: rm -rf * .git
