@@ -1,10 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	_ "embed"
+	"io"
 	"testing"
 
 	"dagger.io/dagger"
+
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 )
@@ -163,15 +167,38 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	secretValue := "very\nsecret\ntext"
+	secretValue := "very\nsecret\ntext\n"
 
 	s := c.SetSecret("aws_key", secretValue)
 
 	stdout, err := c.Container().From("alpine:3.16.2").
 		WithSecretVariable("AWS_KEY", s).
-		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\""}).
-		WithExec([]string{"sh", "-c", "echo  -n \"$AWS_KEY\""}).
+		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
+		WithExec([]string{"sh", "-c", "echo -n \"$AWS_KEY\""}).
 		Stdout(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "***\n***\n***", stdout)
+	require.Equal(t, "***", stdout)
 }
+
+func TestBigSecretScrubbed(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+	defer c.Close()
+	secretKeyReader := bytes.NewReader(secretKeyBytes)
+	secretValue, err := io.ReadAll(secretKeyReader)
+	require.NoError(t, err)
+
+	s := c.SetSecret("key", string(secretValue))
+
+	sec := c.Container().From("alpine:3.16.2").
+		WithSecretVariable("KEY", s).
+		WithExec([]string{"sh", "-c", "echo  -n \"$KEY\""})
+
+	stdout, err := sec.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "***", stdout)
+}
+
+//nolint:typecheck
+//go:embed testdata/secretkey.txt
+var secretKeyBytes []byte

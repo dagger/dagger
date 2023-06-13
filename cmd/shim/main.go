@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -38,6 +39,7 @@ const (
 var (
 	stdoutPath = metaMountPath + "/stdout"
 	stderrPath = metaMountPath + "/stderr"
+	pipeWg     sync.WaitGroup
 )
 
 /*
@@ -286,22 +288,40 @@ func shim() int {
 	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
 	errWriter := io.MultiWriter(stderrFile, os.Stderr)
 
-	// Only initialize scrubbing logic if secrets are set:
 	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 		cmd.Stdout = outWriter
 		cmd.Stderr = errWriter
 	} else {
+		// Get pipes for command's stdout and stderr and process output
+		// through secret scrub reader in multiple goroutines:
 		envToScrub := os.Environ()
-		scrubOutWriter, err := NewSecretScrubWriter(outWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		stdoutPipe, err := cmd.StdoutPipe()
 		if err != nil {
 			panic(err)
 		}
-		cmd.Stdout = scrubOutWriter
-		scrubErrWriter, err := NewSecretScrubWriter(errWriter, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		scrubOutReader, err := NewSecretScrubReader(stdoutPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
 		if err != nil {
 			panic(err)
 		}
-		cmd.Stderr = scrubErrWriter
+		pipeWg.Add(1)
+		go func() {
+			defer pipeWg.Done()
+			io.Copy(outWriter, scrubOutReader)
+		}()
+
+		stderrPipe, err := cmd.StderrPipe()
+		if err != nil {
+			panic(err)
+		}
+		scrubErrReader, err := NewSecretScrubReader(stderrPipe, currentDirPath, shimFS, envToScrub, secretsToScrub)
+		if err != nil {
+			panic(err)
+		}
+		pipeWg.Add(1)
+		go func() {
+			defer pipeWg.Done()
+			io.Copy(errWriter, scrubErrReader)
+		}()
 	}
 
 	exitCode := 0
@@ -540,7 +560,17 @@ func internalEnv(name string) (string, bool) {
 func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if _, found := internalEnv("_DAGGER_ENABLE_NESTING"); !found {
 		// no nesting; run as normal
-		return cmd.Run()
+		if err := cmd.Start(); err != nil {
+			return err
+		}
+
+		// Wait for stdout and stderr copy goroutines to finish:
+		pipeWg.Wait()
+
+		if err := cmd.Wait(); err != nil {
+			return err
+		}
+		return nil
 	}
 
 	// setup a session and associated env vars for the container
@@ -578,8 +608,16 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	var cmdErr error
 	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
 		go http.Serve(l, r) //nolint:gosec
-		cmdErr = cmd.Run()
-		return cmdErr
+		cmdErr = cmd.Start()
+		if cmdErr != nil {
+			return cmdErr
+		}
+		pipeWg.Wait()
+		cmdErr = cmd.Wait()
+		if cmdErr != nil {
+			return cmdErr
+		}
+		return nil
 	})
 	if cmdErr != nil {
 		// propagate inner error with higher priority
