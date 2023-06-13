@@ -16,7 +16,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3 // indirect
 	github.com/charmbracelet/bubbles v0.16.1
 	github.com/charmbracelet/bubbletea v0.24.1
-	github.com/containerd/containerd v1.7.1
+	github.com/containerd/containerd v1.7.2
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
 	github.com/containerd/stargz-snapshotter v0.14.3
 	github.com/containernetworking/cni v1.1.2
@@ -27,8 +27,8 @@ require (
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.2.0
-	// https://github.com/moby/buildkit/commit/40c5efa4ae8ad0ffa9c293884ca8f600d5f89478
-	github.com/moby/buildkit v0.11.0-rc3.0.20230607083454-40c5efa4ae8a
+	// https://github.com/moby/buildkit/commit/8a28fe6bc051989cc1a5c2312a73d8da17d8a435
+	github.com/moby/buildkit v0.11.0-rc3.0.20230608232644-8a28fe6bc051
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/opencontainers/runtime-spec v1.1.0-rc.2
