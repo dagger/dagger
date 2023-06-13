@@ -3265,8 +3265,7 @@ func TestContainerInsecureRootCapabilitesWithService(t *testing.T) {
 			Sharing: dagger.Private,
 		}).
 		WithMountedCache("/tmp", c.CacheVolume("share-tmp")).
-		WithoutExposedPort(2376).
-		WithExposedPort(2375). // not needed, just to be explicit
+		WithExposedPort(2375).
 		WithExec([]string{
 			"dockerd",
 			"--host=tcp://0.0.0.0:2375",
@@ -3860,14 +3859,14 @@ EXPOSE 8080
 	)
 	require.NoError(t, err)
 
-	// Random order due to updating container.Ports from
-	// ImageConfig.ExposedPorts which is a map.
+	// random order since ImageConfig.ExposedPorts is a map
 	for _, p := range res.Container.ExposedPorts {
 		require.Equal(t, core.NetworkProtocolTCP, p.Protocol)
 		switch p.Port {
 		case 8080:
 			require.Nil(t, p.Description)
 		case 5000:
+			require.NotNil(t, p.Description)
 			require.Equal(t, "five thousand", *p.Description)
 		default:
 			t.Fatalf("unexpected port %d", p.Port)
