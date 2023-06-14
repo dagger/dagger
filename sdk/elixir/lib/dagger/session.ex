@@ -1,11 +1,20 @@
 defmodule Dagger.Session do
   @moduledoc false
 
+  @sdk_version Mix.Project.config() |> Keyword.fetch!(:version)
+
   def start(bin, engine_conn_pid, opts) do
     workdir = opts[:workdir] || File.cwd!()
     logger = logger_from(opts[:log_output])
 
-    args = ["--workdir", Path.expand(workdir)]
+    args = [
+      "--workdir",
+      Path.expand(workdir),
+      "--label",
+      "dagger.io/sdk.name:elixir",
+      "--label",
+      "dagger.io/sdk.version:#{@sdk_version}"
+    ]
 
     port =
       Port.open({:spawn_executable, bin}, [
