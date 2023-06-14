@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
@@ -18,11 +20,11 @@ import (
 
 var (
 	projectURI   string
-	configPath   string
 	projectFlags = pflag.NewFlagSet("project", pflag.ContinueOnError)
 
 	sdk         string
 	projectName string
+	projectRoot string
 )
 
 const (
@@ -30,8 +32,7 @@ const (
 )
 
 func init() {
-	projectFlags.StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
-	projectFlags.StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
+	projectFlags.StringVarP(&projectURI, "project", "p", projectURIDefault, "Path to dagger.json config file for the project or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
 	projectCmd.PersistentFlags().AddFlagSet(projectFlags)
 	doCmd.PersistentFlags().AddFlagSet(projectFlags)
 
@@ -39,6 +40,7 @@ func init() {
 	projectInitCmd.MarkFlagRequired("sdk")
 	projectInitCmd.PersistentFlags().StringVar(&projectName, "name", "", "Name of the new project")
 	projectInitCmd.MarkFlagRequired("name")
+	projectInitCmd.PersistentFlags().StringVarP(&projectRoot, "root", "", "", "Root directory that should be loaded for the full project context. Defaults to the parent directory containing dagger.json.")
 
 	projectCmd.AddCommand(projectInitCmd)
 }
@@ -48,7 +50,7 @@ var projectCmd = &cobra.Command{
 	Hidden: true, // for now, remove once we're ready for primetime
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		proj, err := getProjectConfig()
+		proj, err := getProject()
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
@@ -91,16 +93,16 @@ var projectInitCmd = &cobra.Command{
 	Use:    "init",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		proj, err := getProjectConfig()
+		proj, err := getProject()
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
 		if proj.git != nil {
 			return fmt.Errorf("project init is not supported for git projects")
 		}
-		fullConfigPath := filepath.Join(proj.local.rootPath, proj.local.configPath)
-		if _, err := os.Stat(fullConfigPath); err == nil {
-			return fmt.Errorf("project init config path already exists: %s", fullConfigPath)
+
+		if _, err := os.Stat(proj.local.path); err == nil {
+			return fmt.Errorf("project init config path already exists: %s", proj.local.path)
 		}
 		switch core.ProjectSDK(sdk) {
 		case core.ProjectSDKGo, core.ProjectSDKPython:
@@ -110,33 +112,30 @@ var projectInitCmd = &cobra.Command{
 		cfg := &core.ProjectConfig{
 			Name: projectName,
 			SDK:  sdk,
+			Root: projectRoot,
 		}
 		cfgBytes, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal project config: %w", err)
 		}
-		if err := os.MkdirAll(filepath.Dir(fullConfigPath), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(proj.local.path), 0755); err != nil {
 			return fmt.Errorf("failed to create project config directory: %w", err)
 		}
 		// nolint:gosec
-		if err := os.WriteFile(fullConfigPath, cfgBytes, 0644); err != nil {
+		if err := os.WriteFile(proj.local.path, cfgBytes, 0644); err != nil {
 			return fmt.Errorf("failed to write project config: %w", err)
 		}
 		return nil
 	},
 }
 
-func getProjectConfig() (*project, error) {
-	projectURI, configPath := projectURI, configPath
+func getProject() (*project, error) {
+	projectURI := projectURI
 	if projectURI == "" || projectURI == projectURIDefault {
 		// it's unset or default value, use env if present
 		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
 			projectURI = v
 		}
-	}
-
-	if filepath.Base(configPath) != "dagger.json" {
-		configPath = filepath.Join(configPath, "dagger.json")
 	}
 
 	url, err := url.Parse(projectURI)
@@ -145,37 +144,40 @@ func getProjectConfig() (*project, error) {
 	}
 	switch url.Scheme {
 	case "", "local": // local path
-		projectAbsPath, err := filepath.Abs(projectURI)
+		projPath, err := filepath.Abs(url.Host + url.Path)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get project absolute path: %w", err)
 		}
-		configAbsPath, err := filepath.Abs(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config absolute path: %w", err)
+
+		if filepath.Base(projPath) != "dagger.json" {
+			projPath = filepath.Join(projPath, "dagger.json")
 		}
-		configRelPath, err := filepath.Rel(projectAbsPath, configAbsPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config relative path: %w", err)
-		}
+
 		return &project{local: &localProject{
-			configPath: configRelPath,
-			rootPath:   projectAbsPath,
+			path: projPath,
 		}}, nil
 	case "git":
 		repo := url.Host + url.Path
-		// TODO:(sipsma) just change ref to be a query param too?
-		ref := url.Fragment
-		if ref == "" {
-			ref = "main"
+
+		subpath := url.Query().Get("subpath")
+		if path.Base(subpath) != "dagger.json" {
+			subpath = path.Join(subpath, "dagger.json")
 		}
+
+		gitRef := url.Query().Get("ref")
+		if gitRef == "" {
+			gitRef = "main"
+		}
+
 		gitProtocol := url.Query().Get("protocol")
 		if gitProtocol != "" {
 			repo = gitProtocol + "://" + repo
 		}
+
 		p := &gitProject{
-			configPath: configPath,
-			repo:       repo,
-			ref:        ref,
+			subpath: subpath,
+			repo:    repo,
+			ref:     gitRef,
 		}
 		return &project{git: p}, nil
 	default:
@@ -189,24 +191,23 @@ type project struct {
 	git   *gitProject
 }
 
-func (p project) load(c *dagger.Client) *dagger.Project {
+func (p project) load(ctx context.Context, c *dagger.Client) (*dagger.Project, error) {
 	switch {
 	case p.local != nil:
 		return p.local.load(c)
 	case p.git != nil:
-		return p.git.load(c)
+		return p.git.load(ctx, c)
 	default:
 		panic("invalid project")
 	}
 }
 
 type localProject struct {
-	configPath string
-	rootPath   string
+	path string
 }
 
 func (p localProject) config() (*core.ProjectConfig, error) {
-	configBytes, err := os.ReadFile(filepath.Join(p.rootPath, p.configPath))
+	configBytes, err := os.ReadFile(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read local config file: %w", err)
 	}
@@ -217,22 +218,37 @@ func (p localProject) config() (*core.ProjectConfig, error) {
 	return &cfg, nil
 }
 
-func (p localProject) load(c *dagger.Client) *dagger.Project {
-	return c.Project().Load(c.Host().Directory(p.rootPath), p.configPath)
+func (p localProject) load(c *dagger.Client) (*dagger.Project, error) {
+	rootDir, err := p.rootDir()
+	if err != nil {
+		return nil, err
+	}
+	subdirRelPath, err := filepath.Rel(rootDir, p.path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
+	}
+	if strings.HasPrefix(subdirRelPath, "..") {
+		return nil, fmt.Errorf("project config path %q is not under project root %q", p.path, rootDir)
+	}
+	return c.Project().Load(c.Host().Directory(rootDir), subdirRelPath), nil
+}
+
+func (p localProject) rootDir() (string, error) {
+	cfg, err := p.config()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(filepath.Join(filepath.Dir(p.path), cfg.Root)), nil
 }
 
 type gitProject struct {
-	configPath string
-	repo       string
-	ref        string
-}
-
-func (p gitProject) load(c *dagger.Client) *dagger.Project {
-	return c.Project().Load(p.dir(c), p.configPath)
+	subpath string
+	repo    string
+	ref     string
 }
 
 func (p gitProject) config(ctx context.Context, c *dagger.Client) (*core.ProjectConfig, error) {
-	configStr, err := p.dir(c).File(p.configPath).Contents(ctx)
+	configStr, err := c.Git(p.repo).Branch(p.ref).Tree().File(p.subpath).Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read git config file: %w", err)
 	}
@@ -243,6 +259,18 @@ func (p gitProject) config(ctx context.Context, c *dagger.Client) (*core.Project
 	return &cfg, nil
 }
 
-func (p gitProject) dir(c *dagger.Client) *dagger.Directory {
-	return c.Git(p.repo).Branch(p.ref).Tree()
+func (p gitProject) load(ctx context.Context, c *dagger.Client) (*dagger.Project, error) {
+	cfg, err := p.config(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	rootPath := filepath.Clean(filepath.Join(filepath.Dir(p.subpath), cfg.Root))
+	subdirRelPath, err := filepath.Rel(rootPath, p.subpath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subdir relative path: %w", err)
+	}
+	if strings.HasPrefix(subdirRelPath, "..") {
+		return nil, fmt.Errorf("project config path %q is not under project root %q", p.subpath, rootPath)
+	}
+	return c.Project().Load(c.Git(p.repo).Branch(p.ref).Tree().Directory(rootPath), subdirRelPath), nil
 }

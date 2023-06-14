@@ -67,17 +67,24 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
 
-			projCfg, err := getProjectConfig()
+			proj, err := getProject()
 			if err != nil {
 				return fmt.Errorf("failed to get project config: %w", err)
 			}
-			if projCfg.local != nil && outputPath == "" {
+			if proj.local != nil && outputPath == "" {
 				// default to outputting to the project root dir
-				outputPath = projCfg.local.rootPath
+				rootDir, err := proj.local.rootDir()
+				if err != nil {
+					return fmt.Errorf("failed to get project root dir: %w", err)
+				}
+				outputPath = rootDir
 			}
 
-			proj := projCfg.load(c)
-			projCmds, err := proj.Commands(ctx)
+			loadedProj, err := proj.load(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to load project: %w", err)
+			}
+			projCmds, err := loadedProj.Commands(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get project commands: %w", err)
 			}

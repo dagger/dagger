@@ -289,44 +289,46 @@ type DaggerCLIContainer struct {
 
 	// common
 	ProjectArg string
-	ConfigArg  string
 
-	// "do" specific
+	// "do"
 	OutputArg string
 	TargetArg string
 	UserArgs  map[string]string
 
-	// "project init" specific
+	// "project init"
 	SDKArg  string
 	NameArg string
+	RootArg string
 }
 
+const cliContainerRepoMntPath = "/src"
+
 func (ctr DaggerCLIContainer) WithLoadedProject(
-	localProjectPath string,
+	projectPath string,
 	convertToGitProject bool,
 ) *DaggerCLIContainer {
 	ctr.t.Helper()
-	localProjectPath, err := filepath.Abs(localProjectPath)
+	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(ctr.t, err)
 
-	projectDir := ctr.c.Host().Directory(localProjectPath, dagger.HostDirectoryOpts{
+	thisRepoDir := ctr.c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
 		Exclude: []string{".git", "bin", "docs", "website"},
 	})
-	projectMntPath := "/src"
-	projectArg := projectMntPath
+	projectArg := filepath.Join(cliContainerRepoMntPath, projectPath)
 
 	baseCtr := ctr.Container
 	if convertToGitProject {
-		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, projectDir)
+		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
 		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
 
 		endpoint, err := gitSvc.Endpoint(ctr.ctx)
 		require.NoError(ctr.t, err)
-		projectArg = "git://" + endpoint + "/repo.git" + "?protocol=git#main"
+		projectArg = "git://" + endpoint + "/repo.git" + "?ref=main&protocol=git"
+		if projectPath != "" {
+			projectArg += "&subpath=" + projectPath
+		}
 	} else {
-		baseCtr = baseCtr.
-			WithMountedDirectory(projectMntPath, projectDir).
-			WithWorkdir(projectMntPath)
+		baseCtr = baseCtr.WithMountedDirectory(cliContainerRepoMntPath, thisRepoDir)
 	}
 
 	ctr.Container = baseCtr
@@ -336,11 +338,6 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 
 func (ctr DaggerCLIContainer) WithProjectArg(projectArg string) *DaggerCLIContainer {
 	ctr.ProjectArg = projectArg
-	return &ctr
-}
-
-func (ctr DaggerCLIContainer) WithConfigArg(configArg string) *DaggerCLIContainer {
-	ctr.ConfigArg = configArg
 	return &ctr
 }
 
@@ -377,9 +374,6 @@ func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
-	if ctr.ConfigArg != "" {
-		args = append(args, "--config", ctr.ConfigArg)
-	}
 	if ctr.OutputArg != "" {
 		args = append(args, "--output", ctr.OutputArg)
 	}
@@ -396,9 +390,6 @@ func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
-	if ctr.ConfigArg != "" {
-		args = append(args, "--config", ctr.ConfigArg)
-	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
@@ -408,14 +399,14 @@ func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
-	if ctr.ConfigArg != "" {
-		args = append(args, "--config", ctr.ConfigArg)
-	}
 	if ctr.SDKArg != "" {
 		args = append(args, "--sdk", ctr.SDKArg)
 	}
 	if ctr.NameArg != "" {
 		args = append(args, "--name", ctr.NameArg)
+	}
+	if ctr.RootArg != "" {
+		args = append(args, "--root", ctr.RootArg)
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr

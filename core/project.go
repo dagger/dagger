@@ -84,6 +84,7 @@ type Project struct {
 }
 
 type ProjectConfig struct {
+	Root string `json:"root"`
 	Name string `json:"name"`
 	SDK  string `json:"sdk,omitempty"`
 }

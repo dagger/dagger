@@ -1,4 +1,5 @@
 {
   "name": "ci",
-  "sdk": "go"
+  "sdk": "go",
+  "root": ".."
 }
