@@ -1,12 +1,12 @@
 import sys
 
 import anyio
+
 import dagger
 
-async def main():
 
+async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-    
         out = await (
             client.container()
             .from_("alpine:latest")
@@ -16,5 +16,6 @@ async def main():
         )
 
     print(out)
+
 
 anyio.run(main)

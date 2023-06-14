@@ -5,6 +5,7 @@ from enum import StrEnum, auto
 import anyio
 from azure.identity.aio import DefaultAzureCredential
 from azure.mgmt.containerinstance.aio import ContainerInstanceManagementClient
+
 import dagger
 
 # configure container group, name and location
@@ -17,11 +18,11 @@ RESOURCE_GROUP_NAME = "my-group"
 class Env(StrEnum):
     """Required environment variables."""
 
-    def _generate_next_value_(name, *_) -> str:
-        if name not in os.environ:
-            msg = f"Environment variable must be set: {name}"
+    def _generate_next_value_(self, *_) -> str:
+        if self not in os.environ:
+            msg = f"Environment variable must be set: {self}"
             raise OSError(msg)
-        return os.environ[name]
+        return os.environ[self]
 
     DOCKERHUB_USERNAME = auto()
     DOCKERHUB_PASSWORD = auto()
@@ -41,10 +42,8 @@ async def main():
         source = dagger_client.host().directory(".", exclude=["node_modules", "ci"])
 
         # get Node image
-        node = (
-            dagger_client
-            .container(platform=dagger.Platform("linux/amd64"))
-            .from_("node:18")
+        node = dagger_client.container(platform=dagger.Platform("linux/amd64")).from_(
+            "node:18"
         )
 
         # mount source code directory into Node image

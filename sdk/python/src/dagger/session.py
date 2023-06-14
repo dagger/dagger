@@ -69,7 +69,7 @@ class Session(ResourceManager, SyncResourceManager):
         client = self.make_graphql_client(transport)
 
         async with self.get_stack() as stack:
-            # FIXME: handle cancellation, retries and timeout (self.cfg.timeout)
+            # TODO: handle cancellation, retries and timeout (self.cfg.timeout)
             with self._handle_connection():
                 session = await stack.enter_async_context(client)
 
@@ -80,7 +80,7 @@ class Session(ResourceManager, SyncResourceManager):
         client = self.make_graphql_client(transport)
 
         with self.get_sync_stack() as stack, self._handle_connection():
-            # FIXME: handle cancellation, retries and timeout (self.cfg.timeout)
+            # TODO: handle cancellation, retries and timeout (self.cfg.timeout)
             session = stack.enter_context(client)
 
         return session

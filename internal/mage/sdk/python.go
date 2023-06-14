@@ -43,19 +43,22 @@ func (t Python) Lint(ctx context.Context) error {
 	eg.Go(func() error {
 		_, err = base.
 			WithExec([]string{"poe", "lint"}).
-			ExitCode(gctx)
+			Sync(gctx)
 		return err
 	})
 
 	eg.Go(func() error {
-		path := "docs/current/sdk/python/snippets"
-		workdir := util.Repository(c)
-		snippets := c.Directory().
-			WithDirectory("/", workdir.Directory(path))
+		path := "docs/current"
 		_, err = base.
-			WithMountedDirectory(fmt.Sprintf("/%s", path), snippets).
+			WithDirectory(
+				fmt.Sprintf("/%s", path),
+				util.Repository(c).Directory(path),
+				dagger.ContainerWithDirectoryOpts{
+					Include: []string{"**/*.py", ".ruff.toml"},
+				},
+			).
 			WithExec([]string{"poe", "lint-docs"}).
-			ExitCode(gctx)
+			Sync(gctx)
 		return err
 	})
 
@@ -96,7 +99,7 @@ func (t Python) Test(ctx context.Context) error {
 				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 				WithExec([]string{"poe", "test", "--exitfirst"}).
-				ExitCode(gctx)
+				Sync(gctx)
 			return err
 		})
 	}
@@ -176,7 +179,7 @@ func (t Python) Publish(ctx context.Context, tag string) error {
 	_, err = build.
 		WithEnvVariable(fmt.Sprintf("POETRY_PYPI_TOKEN_%s", strings.ToUpper(repo)), token).
 		WithExec(args).
-		ExitCode(ctx)
+		Sync(ctx)
 
 	return err
 }
@@ -204,10 +207,14 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 	// relative paths in ruff (for docs linting).
 	mountPath := fmt.Sprintf("/%s", appDir)
 
-	base := c.Container().
+	return c.Container().
 		From(fmt.Sprintf("python:%s-alpine", version)).
 		WithExec([]string{"apk", "add", "-U", "--no-cache", "gcc", "musl-dev", "libffi-dev"}).
-		WithExec([]string{"pip", "install", "--user", "poetry==1.3.1", "poetry-dynamic-versioning"}).
+		WithMountedCache("/root/.cache/pip", c.CacheVolume("pip_cache")).
+		WithMountedCache("/root/.cache/poetry", c.CacheVolume("poetry_cache")).
+		WithExec([]string{"pip", "install", "--user", "poetry==1.5.1", "poetry-dynamic-versioning==0.23.0"}).
+		// Don't really need a venv here but keeps the SDK's deps isolated
+		// from poetry and system's packages.
 		WithExec([]string{"python", "-m", "venv", venv}).
 		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(
@@ -218,28 +225,12 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 			},
 		).
 		WithEnvVariable("POETRY_VIRTUALENVS_CREATE", "false").
-		WithWorkdir(mountPath)
-
-	// FIXME: Use single `poetry.lock` directly with `poetry install --no-root`
-	// 	when able: https://github.com/python-poetry/poetry/issues/1301
-	reqFile := fmt.Sprintf("%s/requirements.txt", mountPath)
-	requirements := base.
-		WithMountedDirectory(mountPath, src).
-		WithExec([]string{
-			"poetry", "export",
-			"--with", "test,lint,dev",
-			"--without-hashes",
-			"-o", "requirements.txt",
-		}).
-		File(reqFile)
-
-	deps := base.
-		WithRootfs(base.Rootfs().WithFile(reqFile, requirements)).
-		WithExec([]string{"pip", "install", "-r", "requirements.txt"})
-
-	deps = deps.
-		WithRootfs(deps.Rootfs().WithDirectory(mountPath, src)).
-		WithExec([]string{"poetry", "install", "--without", "docs"})
-
-	return deps
+		WithWorkdir(mountPath).
+		WithFile(fmt.Sprintf("%s/poetry.lock", mountPath), src.File("poetry.lock")).
+		// FIXME: Only use `poetry.lock` when able:
+		// https://github.com/python-poetry/poetry/issues/1301
+		WithFile(fmt.Sprintf("%s/pyproject.toml", mountPath), src.File("pyproject.toml")).
+		WithExec([]string{"poetry", "install", "--no-root"}).
+		WithDirectory(mountPath, src).
+		WithExec([]string{"poetry", "install", "--only-root"})
 }

@@ -112,7 +112,7 @@ class Context:
     """Remaining type names that haven't been defined yet."""
 
 
-# FIXME: break into class
+# TODO: break into class
 @joiner
 def generate(  # noqa: C901
     schema: GraphQLSchema,
@@ -199,7 +199,7 @@ def generate(  # noqa: C901
     yield "]"
 
 
-# FIXME: these typeguards should be contributed upstream
+# TODO: these typeguards should be contributed upstream
 #        https://github.com/graphql-python/graphql-core/issues/183
 
 
@@ -275,7 +275,7 @@ def format_output_type(t: GraphQLOutputType) -> str:
     # when building the query return shouldn't be None
     # even if optional to not break the chain while
     # we're only building the query
-    # FIXME: detect this when returning the scalar
+    # TODO: detect this when returning the scalar
     #        since it affects the result
     if is_wrapping_type(t):
         return format_output_type(t.of_type)
@@ -401,7 +401,7 @@ class _ObjectField:
         self.type = format_output_type(field.type).replace("Query", "Client")
         self.convert_id = False
 
-        # FIXME: We don't have a simple way to convert any ID to its
+        # TODO: We don't have a simple way to convert any ID to its
         # corresponding object (in codegen) so for now just return the
         # current instance. Currently, `sync` is the only field where
         # the error is what we care about but more could be added later.
@@ -459,15 +459,13 @@ class _ObjectField:
             msg = f'Method "{self.name}" is deprecated: {deprecated}'.replace(
                 '"', '\\"'
             )
-            yield textwrap.dedent(
-                f"""\
+            yield textwrap.dedent(f"""\
                 warnings.warn(
                     "{msg}",
                     DeprecationWarning,
                     stacklevel=4,
                 )\
-                """
-            )
+                """)
 
         if not self.args:
             yield "_args: list[Arg] = []"

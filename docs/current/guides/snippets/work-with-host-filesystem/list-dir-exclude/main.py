@@ -2,7 +2,9 @@ import sys
 import tempfile
 
 import anyio
+
 import dagger
+
 
 async def main(workdir: anyio.Path):
     for i, file in enumerate(["foo.txt", "bar.txt", "baz.rar"]):
@@ -14,6 +16,7 @@ async def main(workdir: anyio.Path):
         entries = await client.host().directory(".", exclude=["*.txt"]).entries()
 
     print(entries)
+
 
 with tempfile.TemporaryDirectory() as workdir:
     anyio.run(main, anyio.Path(workdir))

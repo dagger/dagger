@@ -2,7 +2,9 @@ import random
 import sys
 
 import anyio
+
 import dagger
+
 
 async def main():
     config = dagger.Config(log_output=sys.stdout)
@@ -15,9 +17,7 @@ async def main():
             client.container()
             .from_("node:16-slim")
             .with_directory(
-                "/src",
-                client.host().directory("."),
-                exclude=["node_modules/", "ci/"]
+                "/src", client.host().directory("."), exclude=["node_modules/", "ci/"]
             )
         )
 
@@ -40,7 +40,7 @@ async def main():
             client.container()
             .from_("nginx:1.23-alpine")
             .with_directory("/usr/share/nginx/html", build_dir)
-            .publish(f"ttl.sh/hello-dagger-{random.randint(0, 10000000)}")
+            .publish(f"ttl.sh/hello-dagger-{random.randrange(10 ** 8)}")
         )
 
     print(f"Published image to: {image_ref}")

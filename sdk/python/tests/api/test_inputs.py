@@ -81,7 +81,7 @@ def test_str(client: Client):
         client.container().with_env_variable("SPAM", 144)
 
 
-# FIXME: There's flakiness in this test
+# TODO: There's flakiness in this test
 # def test_list_str(client: Client):
 #     with pytest.raises(TypeError):
 #         client.container().with_exec(["echo", 123])
@@ -120,7 +120,7 @@ async def test_await(client: Client):
     client.directory(await client.directory().id())
 
 
-# FIXME: warning is not being ignored here and leaked to next async test
+# TODO: warning is not being ignored here and leaked to next async test
 # -> RuntimeWarning: coroutine 'Directory.id' was never awaited
 # @pytest.mark.filterwarnings("ignore:coroutine")
 # @pytest.mark.anyio

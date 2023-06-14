@@ -1,6 +1,6 @@
 # Dagger Python SDK
 
-[![PyPI Version](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/dagger-io/) 
+[![PyPI Version](https://img.shields.io/pypi/v/dagger-io)](https://pypi.org/project/dagger-io/)
 [![Conda Version](https://img.shields.io/conda/vn/conda-forge/dagger-io.svg)](https://anaconda.org/conda-forge/dagger-io)
 [![Supported Python Versions](https://img.shields.io/pypi/pyversions/dagger-io.svg)](https://pypi.org/project/dagger-io/)
 [![License](https://img.shields.io/pypi/l/dagger-io.svg)](https://pypi.python.org/pypi/dagger-io)
@@ -112,11 +112,11 @@ The following commands are available:
 - `poe fmt`: Re-format code following common styling conventions.
 - `poe lint`: Check for linting violations.
 - `poe generate`: Regenerate API client after changes to the codegen.
-- `poe docs`: Build reference docs locally.
+- `poe docs`: Build reference docs locally (needs `poetry install --with docs`).
 
 ### Engine changes
 
-Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet. 
+Testing and regenerating the client may fail if there’s changes in the engine code that haven’t been released yet.
 
 The simplest way to run those commands locally with the most updated engine version is to build it using [Dagger’s CI pipelines](https://github.com/dagger/dagger/blob/main/internal/mage/sdk/python.go) :
 

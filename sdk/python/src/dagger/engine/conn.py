@@ -52,11 +52,11 @@ class Engine(SyncResourceManager):
 
     async def __aenter__(self) -> ConnectParams:
         self.is_async = True
-        # FIXME: Create proper async provisioning later.
+        # TODO: Create proper async provisioning later.
         # This is just to support sync faster.
         return await anyio.to_thread.run_sync(self.start)
 
     async def __aexit__(self, *exc_details) -> None:
-        # FIXME: Create proper async provisioning later.
+        # TODO: Create proper async provisioning later.
         # This is just to support sync faster.
         await anyio.to_thread.run_sync(self.__exit__, *exc_details)

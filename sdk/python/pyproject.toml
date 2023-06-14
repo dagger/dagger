@@ -23,7 +23,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: Apache Software License",
-    # FIXME: just waiting on windows tests for this
+    # TODO: just waiting on windows tests for this
     # "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
@@ -43,7 +43,7 @@ anyio = ">=3.6.2"
 attrs = ">=22.1.0"
 cattrs = ">=22.2.0"
 graphql-core = ">=3.2.3"
-# FIXME: replace next two lines with the following when gql version 3.5.0 is released
+# TODO: replace next two lines with the following when gql version 3.5.0 is released
 # gql = {version = ">=3.5.0", extras = ["httpx"]}
 gql = ">=3.4.0"
 httpx = ">=0.23.1"
@@ -72,6 +72,9 @@ ruff = ">=0.0.218"
 [tool.poetry.group.dev.dependencies]
 poethepoet = ">=0.16.4"
 
+[tool.poetry.group.docs]
+optional = true
+
 [tool.poetry.group.docs.dependencies]
 sphinx = ">=5.3.0"
 sphinx-rtd-theme = "^1.1.1"
@@ -80,7 +83,7 @@ sphinx-rtd-theme = "^1.1.1"
 GEN_PATH = "./src/dagger/api"
 
 [tool.poe.env.DOCS_SNIPPETS]
-default = "../../docs/current/sdk/python/snippets"
+default = "../../docs/current"
 
 [tool.poe.tasks]
 test = "pytest"
@@ -93,8 +96,8 @@ cwd = "docs"
 
 [tool.poe.tasks.lint]
 sequence = [
-    "ruff ${target}",
-    "black --check ${target}",
+    "ruff check ${target}",
+    "black --preview --check ${target}",
 ]
 default_item_type = "cmd"
 
@@ -108,12 +111,15 @@ default = "."
 ref = "lint ${DOCS_SNIPPETS}"
 
 [tool.poe.tasks.lint-all]
-ref = "lint . ${DOCS_SNIPPETS}"
+sequence = [
+    "lint",
+    "lint-docs",
+]
 
 [tool.poe.tasks.fmt]
 sequence = [
     "ruff --fix-only -e ${target}",
-    "black ${target}",
+    "black --preview ${target}",
 ]
 default_item_type = "cmd"
 
@@ -121,13 +127,22 @@ default_item_type = "cmd"
 name = "target"
 positional = true
 multiple = true
-default = ". ${DOCS_SNIPPETS}"
+default = "."
+
+[tool.poe.tasks.fmt-docs]
+ref = "fmt ${DOCS_SNIPPETS}"
+
+[tool.poe.tasks.fmt-all]
+sequence = [
+    "fmt",
+    "fmt-docs",
+]
 
 [tool.poe.tasks.generate]
 sequence = [
     "python -m dagger generate --output ${GEN_PATH}/gen.py",
     "python -m dagger generate --output ${GEN_PATH}/gen_sync.py --sync",
-    "black ${GEN_PATH}/gen*.py",
+    "black --preview ${GEN_PATH}/gen*.py",
 ]
 default_item_type = "cmd"
 
@@ -172,7 +187,7 @@ ignore = [
     "ARG002",
     # Black can handle trailing commas automatically.
     "COM812",
-    # FIXME: prefix everything internal with an underscore and document
+    # TODO: prefix everything internal with an underscore and document
     # what's left (public).
     "D1",
     # Imperative mood only makes sense in functions, not classes.
@@ -190,6 +205,10 @@ ignore = [
     "S101",
     # Don't guard types. Don't want to stringize them.
     "TCH",
+    # Don't require author and link in TODO comments.
+    "TD002",
+    "TD003",
+    "FIX002",
     # Pandas
     "PD",
 ]
@@ -205,8 +224,6 @@ known-first-party = ["dagger"]
 extend-immutable-calls = ["typer.Option"]
 
 [tool.ruff.per-file-ignores]
-# Docs and examples can have `print` statements.
-"../../docs/current/sdk/python/*.py" = ["T201"]
 "./examples/*" = ["T201"]
 "./src/dagger/api/gen*.py" = [
     # Not much control over field names and docs coming from the API.
@@ -236,8 +253,7 @@ extend-immutable-calls = ["typer.Option"]
 # Allow some patterns to redefine imports in __init__.
 "__init__.py" = ["F401", "F403", "PLC0414"]
 # Typer uses boolean parameters for the CLI. Let it.
-"./src/dagger/cli.py" = ["FBT"]
-"./src/dagger/server/cli.py" = ["FBT"]
+"./src/**/cli.py" = ["FBT"]
 
 [tool.ruff.pydocstyle]
 convention = "numpy"

@@ -2,6 +2,7 @@ import os
 import sys
 
 import anyio
+
 import dagger
 
 
@@ -21,9 +22,8 @@ async def main():
         source = client.host().directory(".", exclude=["node_modules", "ci"])
 
         # use a node:18-slim container
-        node = (
-            client.container(platform=dagger.Platform("linux/amd64"))
-            .from_("node:18-slim")
+        node = client.container(platform=dagger.Platform("linux/amd64")).from_(
+            "node:18-slim"
         )
 
         # mount the project directory
@@ -33,8 +33,7 @@ async def main():
         # build application
         # set default arguments
         app = (
-            node
-            .with_directory("/src", source)
+            node.with_directory("/src", source)
             .with_workdir("/src")
             .with_exec(["npm", "install"])
             .with_exec(["npm", "run", "build"])
@@ -45,11 +44,9 @@ async def main():
         # at registry path [registry-username]/myapp
         # print image address
         username = os.environ["REGISTRY_USERNAME"]
-        address = await (
-            app
-            .with_registry_auth(os.environ["REGISTRY_ADDRESS"], username, secret)
-            .publish(f"{username}/myapp")
-        )
+        address = await app.with_registry_auth(
+            os.environ["REGISTRY_ADDRESS"], username, secret
+        ).publish(f"{username}/myapp")
 
     print(f"Published image to: {address}")
 

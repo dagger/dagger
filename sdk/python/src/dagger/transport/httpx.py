@@ -2,7 +2,7 @@
 """
 GraphQL client transport using HTTPX.
 
-FIXME: remove this file when gql releases a version with httpx support.
+TODO: remove this file when gql releases a version with httpx support.
     It was added in https://github.com/graphql-python/gql/pull/370
 """
 import io
@@ -103,7 +103,7 @@ class _HTTPXTransport:
             raise TransportServerError(str(e), e.response.status_code) from e
 
         raise TransportProtocolError(
-            f"Server did not return a GraphQL result: " f"{reason}: " f"{response.text}"
+            f"Server did not return a GraphQL result: {reason}: {response.text}"
         )
 
 
