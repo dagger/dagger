@@ -1788,14 +1788,13 @@ func (r *File) Export(ctx context.Context, path string, opts ...FileExportOpts) 
 		return *r.export, nil
 	}
 	q := r.q.Select("export")
-	q = q.Arg("path", path)
-	// `allowParentDirPath` optional argument
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `allowParentDirPath` optional argument
 		if !querybuilder.IsZeroValue(opts[i].AllowParentDirPath) {
 			q = q.Arg("allowParentDirPath", opts[i].AllowParentDirPath)
-			break
 		}
 	}
+	q = q.Arg("path", path)
 
 	var response bool
 
