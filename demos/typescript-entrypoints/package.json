@@ -1,0 +1,16 @@
+{
+  "name": "typescript-entrypoints",
+  "version": "1.0.0",
+  "main": "main.mts",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --loader ts-node/esm ./main.mts"
+  },
+  "dependencies": {
+    "@dagger.io/dagger": "../../sdk/nodejs",
+    "@types/node": "^20.2.5",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.4"
+  }
+}
