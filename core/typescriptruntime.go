@@ -3,11 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"path/filepath"
+
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"path/filepath"
 )
 
 func (p *Project) typescriptRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*Directory, error) {
@@ -16,8 +17,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, subpath string, gw bkgw
 		return nil, err
 	}
 
-	workdir := "/src"
-	appdir := filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)
+	appdir := filepath.Join("/src", filepath.Dir(p.ConfigPath), subpath)
 	entrypoint := fmt.Sprintf(`#!/bin/sh
 set -exu
 cd %q
