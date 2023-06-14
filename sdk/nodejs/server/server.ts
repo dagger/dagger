@@ -8,7 +8,8 @@ import { EntrypointMetadata } from "./entrypointMetadata.js"
 import { serializeSignature, serializeSymbol } from "./serialization.js"
 import { listFiles, writeFile, readFile } from "./utils.js"
 
-export type Entrypoint = (client: Client, ...args: string[]) => string
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Entrypoint = (client: Client, ...args: string[]) => any
 
 export type Resolver = {
   name: string

@@ -56,7 +56,8 @@ dagger do foo --help
 ## To do
 
 - [x] Handle command execution
-- [ ] Make errors more understandable
-- [ ] Improve generator system to use a public library
+- [x] Make errors more understandable
+- [x] Improve generator system to use a public library
 - [x] Find a way to import local library for integration tests
 - [ ] Add tests
+- [ ] Handle class

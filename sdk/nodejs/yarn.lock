@@ -1309,6 +1309,11 @@ micromatch@^4.0.4:
     braces "^3.0.2"
     picomatch "^2.3.1"
 
+micromustache@^8.0.3:
+  version "8.0.3"
+  resolved "https://registry.yarnpkg.com/micromustache/-/micromustache-8.0.3.tgz#0a80eebc3bf4f800784e621d3774e2bbd4d09e5a"
+  integrity sha512-SXjrEPuYNtWq0reR9LR2nHdzdQx/3re9HPcDGjm00L7hi2RsH5KMRBhYEBvPdyQC51RW/2TznjwX/sQLPPyHNw==
+
 mime-db@1.52.0:
   version "1.52.0"
   resolved "https://registry.yarnpkg.com/mime-db/-/mime-db-1.52.0.tgz#bbabcdc02859f4987301c856e3387ce5ec43bf70"
