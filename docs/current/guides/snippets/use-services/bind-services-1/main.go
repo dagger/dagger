@@ -24,8 +24,8 @@ func main() {
 		From("python").
 		WithDirectory("/srv", client.Directory().WithNewFile("index.html", "Hello, world!")).
 		WithWorkdir("/srv").
-		WithExec([]string{"python", "-m", "http.server", "8080"}).
-		WithExposedPort(8080)
+		WithExposedPort(8080).
+		Service([]string{"python", "-m", "http.server", "8080"})
 
 	// create client container with service binding
 	// access HTTP service and print result
