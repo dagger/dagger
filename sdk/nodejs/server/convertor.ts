@@ -79,7 +79,7 @@ const renderFuncs: RenderFuncs = {
  * @param entrypoints Functions to convert into GQL Schema
  * @returns string formatted as GraphQL schema
  */
-export function entrypoinsMetadatatoGQLSchema(
+export function entrypointsMetadatatoGQLSchema(
   entrypoints: EntrypointMetadata[]
 ): string {
   return renderFn(
