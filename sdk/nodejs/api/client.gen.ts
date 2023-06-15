@@ -2777,6 +2777,24 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Accesses a file on the host.
+   * @param path Location of the file to retrieve (e.g., "README.md").
+   */
+  file(path: string): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "file",
+          args: { path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Accesses a Unix socket on the host.
    * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
    */
