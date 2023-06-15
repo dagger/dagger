@@ -53,6 +53,7 @@ type Config struct {
 
 type StartCallback func(context.Context, *router.Router) error
 
+// nolint: gocyclo
 func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if startOpts.RunnerHost == "" {
 		return fmt.Errorf("must specify runner host")

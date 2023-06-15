@@ -71,16 +71,16 @@ func withEngineAndTUI(
 			}
 
 			return inlineTUI(ctx, engineConf, fn)
-		} else {
-			engineConf.ProgrockWriter = console.NewWriter(os.Stderr, console.ShowInternal(debug))
+		}
 
-			engineConf.EngineNameCallback = func(name string) {
-				fmt.Fprintln(os.Stderr, "Connected to engine", name)
-			}
+		engineConf.ProgrockWriter = console.NewWriter(os.Stderr, console.ShowInternal(debug))
 
-			engineConf.CloudURLCallback = func(cloudURL string) {
-				fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
-			}
+		engineConf.EngineNameCallback = func(name string) {
+			fmt.Fprintln(os.Stderr, "Connected to engine", name)
+		}
+
+		engineConf.CloudURLCallback = func(cloudURL string) {
+			fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
 		}
 	}
 
