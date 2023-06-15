@@ -53,10 +53,10 @@
   flex-wrap: wrap;
   padding: 1rem 1rem;
   min-height: 50px;
-  gap: 10px;
-}
+ }
 
 .filterTags {
+  margin: 5px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -65,6 +65,8 @@
 
 .filterInput {
   border: none;
+  width: 100%;
+  padding: 10px;
 
   &:focus,
   &:focus-visible {
