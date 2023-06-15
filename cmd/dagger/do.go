@@ -34,7 +34,7 @@ const (
 func init() {
 	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
 	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
-	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If not specified, those will be written to the project's root directory when using a project loaded from a local dir.")
+	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
 }
 
 var doCmd = &cobra.Command{
