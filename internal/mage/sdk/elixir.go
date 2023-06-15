@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -142,7 +143,45 @@ func (Elixir) Generate(ctx context.Context) error {
 
 // Publish publishes the Elixir SDK
 func (Elixir) Publish(ctx context.Context, tag string) error {
-	return nil
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	var (
+		version     = strings.TrimPrefix(tag, "sdk/elixir/v")
+		versionFile = "sdk/elixir/VERSION"
+		hexAPIKey   = os.Getenv("HEX_API_KEY")
+		dryRun      = os.Getenv("HEX_DRY_RUN")
+	)
+
+	if hexAPIKey == "" {
+		return errors.New("HEX_API_KEY environment variable must be set")
+	}
+
+	if err := os.WriteFile(versionFile, []byte(version), 0o600); err != nil {
+		return err
+	}
+	defer func() {
+		// Ensure to not make version file dirty.
+		os.WriteFile(versionFile, []byte("0.0.0\n"), 0o600)
+	}()
+
+	args := []string{"mix", "hex.publish", "--yes"}
+	if dryRun == "1" {
+		args = append(args, "--dry-run")
+	}
+
+	// TODO: copy LICENSE?
+
+	c = c.Pipeline("sdk").Pipeline("elixir").Pipeline("generate")
+
+	_, err = elixirBase(c).
+		WithEnvVariable("HEX_API_KEY", hexAPIKey).
+		WithExec(args).
+		Sync(ctx)
+	return err
 }
 
 // Bump the Elixir SDK's Engine dependency

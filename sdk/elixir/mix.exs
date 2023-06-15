@@ -1,12 +1,12 @@
 defmodule Dagger.MixProject do
   use Mix.Project
 
-  @version "0.2.0-dev"
+  @version File.read!("VERSION") |> String.trim()
   @source_url "https://github.com/dagger/dagger"
 
   def project do
     [
-      app: :dagger_ex,
+      app: :dagger,
       version: @version,
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
@@ -33,9 +33,9 @@ defmodule Dagger.MixProject do
 
   defp package do
     %{
-      name: "dagger_ex",
+      name: "dagger",
       description: "Dagger SDK for Elixir",
-      licenses: ["MIT"],
+      licenses: ["Apache-2.0"],
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "#{@source_url}/releases/tag/sdk%2Felixir%2Fv#{@version}"

@@ -1,8 +1,8 @@
-# Getting Started with `dagger_ex`
+# Getting Started with `dagger`
 
 ```elixir
 Mix.install([
-  {:dagger_ex, path: "."}
+  {:dagger, path: "."}
 ])
 ```
 

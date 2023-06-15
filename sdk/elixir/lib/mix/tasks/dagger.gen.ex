@@ -4,7 +4,7 @@ defmodule Mix.Tasks.Dagger.Gen do
   use Mix.Task
 
   def run(_) do
-    Application.ensure_all_started(:dagger_ex)
+    Application.ensure_all_started(:dagger)
 
     File.rm_rf!("lib/dagger/gen.ex")
 

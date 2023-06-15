@@ -26,7 +26,7 @@ base_image =
   |> Dagger.Query.pipeline("Prepare")
   |> Dagger.Query.container()
   |> Dagger.Container.from(elixir_image)
-  |> Dagger.Container.with_mounted_directory("/dagger_ex", repo)
+  |> Dagger.Container.with_mounted_directory("/dagger", repo)
 ```
 
 After:
@@ -42,7 +42,7 @@ base_image =
   |> Dagger.Query.pipeline("Prepare")
   |> Dagger.Query.container()
   |> Dagger.Container.from(elixir_image)
-  |> Dagger.Container.with_mounted_directory("/dagger_ex", repo)
+  |> Dagger.Container.with_mounted_directory("/dagger", repo)
 ```
 
 ## 0.1.1

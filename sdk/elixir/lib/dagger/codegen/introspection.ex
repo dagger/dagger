@@ -2,7 +2,7 @@ defmodule Dagger.Codegen.Introspection do
   @moduledoc false
 
   @introspection_query_path Path.join([
-                              Application.app_dir(:dagger_ex),
+                              Application.app_dir(:dagger),
                               "priv",
                               "introspection.graphql"
                             ])
