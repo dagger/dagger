@@ -142,7 +142,7 @@ function GuideFilter({allTags, selectedTags, onCloseClick, pushTag}) {
       className={styles.filterWrapper}
       onMouseLeave={() => setFiltering(false)}>
       <div className={styles.filter}>
-        <div className={styles.filterTags}>
+        {(selectedTags.length > 0 && <div className={styles.filterTags}>
           {selectedTags.map((x, i) => (
             <Tag
               key={i}
@@ -151,7 +151,7 @@ function GuideFilter({allTags, selectedTags, onCloseClick, pushTag}) {
               onCloseClick={() => onCloseClick(x)}
             />
           ))}
-        </div>
+        </div>)}
         <input
           onClick={() => setFiltering(true)}
           className={styles.filterInput}
