@@ -3455,6 +3455,24 @@ export class Client extends BaseClient {
   }
 
   /**
+   * @param version SDK's version
+   */
+  async checkVersionCompatibility(version: string): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "checkVersionCompatibility",
+          args: { version },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
    * Loads a container from ID.
    *
    * Null ID returns an empty container (scratch).

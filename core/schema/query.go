@@ -1,8 +1,10 @@
 package schema
 
 import (
+	"github.com/blang/semver"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 )
 
@@ -48,4 +50,26 @@ func (s *querySchema) pipeline(ctx *router.Context, parent *core.Query, args pip
 		Labels:      args.Labels,
 	})
 	return parent, nil
+}
+
+type checkVersionCompatibilityArgs struct {
+	Version string
+}
+
+func (s *querySchema) checkVersionCompatibility(_ *router.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
+	engineVersion, err := semver.Parse(engine.Version)
+	if err != nil {
+		return false, err
+	}
+
+	sdkVersion, err := semver.Parse(args.Version)
+	if err != nil {
+		return false, err
+	}
+
+	if engineVersion.Major != sdkVersion.Major || engineVersion.Minor != sdkVersion.Minor {
+		return false, nil
+	}
+
+	return true, nil
 }

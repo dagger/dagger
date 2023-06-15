@@ -8,6 +8,11 @@ type Query {
     "Pipeline labels."
     labels: [PipelineLabel!]
   ): Query!
+
+  checkVersionCompatibility(
+    "SDK's version"
+    version: String!
+  ): Boolean!
 }
 
 """

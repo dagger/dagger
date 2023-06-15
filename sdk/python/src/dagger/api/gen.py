@@ -2792,6 +2792,31 @@ class Client(Root):
         return CacheVolume(_ctx)
 
     @typecheck
+    async def check_version_compatibility(self, version: str) -> bool:
+        """Parameters
+        ----------
+        version:
+            SDK's version
+
+        Returns
+        -------
+        bool
+            The `Boolean` scalar type represents `true` or `false`.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("version", version),
+        ]
+        _ctx = self._select("checkVersionCompatibility", _args)
+        return await _ctx.execute(bool)
+
+    @typecheck
     def container(
         self,
         *,
