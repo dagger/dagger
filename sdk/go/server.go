@@ -69,7 +69,7 @@ func ServeCommands(entrypoints ...any) {
 		if err != nil {
 			writeErrorf(err)
 		}
-		types.fillParamNames(parsed, fileSet)
+		types.fillASTData(parsed, fileSet)
 	}
 
 	// if the schema is being requested, just return that
@@ -533,8 +533,10 @@ func (ts *goTypes) walkArgsAndReturns(fn *goFunc, state walkState) error {
 	return nil
 }
 
-// TODO: update name of method, does much more now
-func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
+// annotate all the types we found from reflection with data only available via the AST, such as
+// * Names of params (i.e. in func(foo string)), we can only get the name "foo" from the AST
+// * Doc strings
+func (ts *goTypes) fillASTData(parsed *goast.File, fileSet *token.FileSet) {
 	goast.Inspect(parsed, func(n goast.Node) bool {
 		if n == nil {
 			return false
@@ -542,9 +544,9 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
 		switch f := n.(type) {
 		case *goast.FuncDecl:
 			if f.Recv == nil {
-				ts.fillFuncParamNames(f, fileSet)
+				ts.fillFuncFromAST(f, fileSet)
 			} else {
-				ts.fillMethodParamNames(f)
+				ts.fillMethodFromAST(f)
 			}
 		case *goast.GenDecl:
 			// check if it's a struct we know about, if so, fill in the doc string
@@ -568,7 +570,7 @@ func (ts *goTypes) fillParamNames(parsed *goast.File, fileSet *token.FileSet) {
 	})
 }
 
-func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) {
+func (ts *goTypes) fillMethodFromAST(decl *goast.FuncDecl) {
 	if len(decl.Recv.List) != 1 {
 		return
 	}
@@ -605,10 +607,8 @@ func (ts *goTypes) fillMethodParamNames(decl *goast.FuncDecl) {
 	}
 }
 
-func (ts *goTypes) fillFuncParamNames(decl *goast.FuncDecl, fileSet *token.FileSet) {
+func (ts *goTypes) fillFuncFromAST(decl *goast.FuncDecl, fileSet *token.FileSet) {
 	// TODO: this probably doesn't work when funcs have duplicated names across packages
-
-	// TODO: rename this to indicate it also fills in the real func name and docs in addition to param names
 
 	// TODO: maybe change map of fnName->fn to be fnSourceLine->fn?
 	// Can't just check for func name because reflect/runtime give a weird name for it
@@ -701,8 +701,15 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 		if t.Implements(marshaller) {
 			typ := reflect.New(t)
-			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-			return ast.NonNullNamedType(result[0].String(), nil), nil
+			var typeName string
+			if isInput {
+				result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
+				typeName = result[0].String()
+			} else {
+				result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
+				typeName = result[0].String()
+			}
+			return ast.NonNullNamedType(typeName, nil), nil
 		}
 
 		if isInput {
@@ -735,9 +742,9 @@ func convertResult(ctx context.Context, result any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		// NOTE: I don't think this works if you try to do a selection on the object, but
-		// that's fine for now since we don't support that yet with entrypoints
-		return map[string]any{"id": id}, nil
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
+		return id, nil
 	}
 
 	switch typ := reflect.TypeOf(result).Kind(); typ {
@@ -788,20 +795,11 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 	// check if desiredType implements querybuilder.GraphQLMarshaller, in which case it's a core type e.g. Container
 	marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
 	if desiredType.Implements(marshaller) {
-		// For now, we can safely assume that this object was created by convertResult, so we
-		// can just grab the "id" field. In the future when we expand beyond entrypoints, this
-		// may need more generalization.
-		inputMap, ok := input.(map[string]any)
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
+		id, ok := input.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected input to be a map[string]any, got %+v", input)
-		}
-		idVal, ok := inputMap["id"]
-		if !ok {
-			return nil, fmt.Errorf("expected input to have an id field, got %+v", input)
-		}
-		id, ok := idVal.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected id to be a string, got %+v", idVal)
+			return nil, fmt.Errorf("expected id to be a string, got %T(%+v)", input, input)
 		}
 		if desiredType.Kind() != reflect.Ptr {
 			// just assuming it's always a pointer for now, not actually important

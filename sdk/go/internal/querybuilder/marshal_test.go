@@ -107,6 +107,9 @@ type customMarshaller struct {
 func (m *customMarshaller) XXX_GraphQLType() string { return "idTest" }
 
 // nolint
+func (m *customMarshaller) XXX_GraphQLIDType() string { return "idTypeTest" }
+
+// nolint
 func (m *customMarshaller) XXX_GraphQLID(context.Context) (string, error) {
 	m.count++
 	return m.v, nil

@@ -8,13 +8,12 @@ import (
 
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql"
-	"github.com/dagger/graphql/language/ast"
-	"github.com/dagger/graphql/language/parser"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
-	gqlparserast "github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/ast"
+	"github.com/vektah/gqlparser/v2/parser"
 )
 
 const (
@@ -122,12 +121,12 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, pr
 		return nil, fmt.Errorf("failed to unmarshal project config: %w", err)
 	}
 
-	p.Schema, err = p.getSchema(ctx, gw)
+	p.Schema, err = p.getSchema(ctx, gw, r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolvers, err := p.getResolvers(ctx, gw, progSock)
+	resolvers, err := p.getResolvers(ctx, gw, r, progSock)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
@@ -142,19 +141,28 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, pr
 }
 
 func (p *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
-	schema, err := gqlparser.LoadSchema(&gqlparserast.Source{
-		Input: p.Schema,
-	})
+	schema, err := parser.ParseSchema(&ast.Source{Input: p.Schema})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse schema: %w", err)
 	}
 
-	commands := make([]ProjectCommand, 0, len(schema.Query.Fields))
-	for _, field := range schema.Query.Fields {
+	schemaTypes := make(map[string]*ast.Definition)
+	for _, def := range schema.Definitions {
+		schemaTypes[def.Name] = def
+	}
+
+	queryExtDef := schema.Extensions.ForName("Query")
+	if queryExtDef == nil {
+		return nil, fmt.Errorf("schema is missing Query extension")
+	}
+	fields := queryExtDef.Fields
+
+	commands := make([]ProjectCommand, 0, len(fields))
+	for _, field := range fields {
 		if field.Name == "__schema" || field.Name == "__type" {
 			continue
 		}
-		cmd, err := p.schemaToCommand(field, schema)
+		cmd, err := p.schemaToCommand(field, schemaTypes)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert schema to command: %w", err)
 		}
@@ -173,7 +181,7 @@ func (p *Project) normalizeConfigPath(configPath string) string {
 	return path.Join(configPath, "dagger.json")
 }
 
-func (p *Project) schemaToCommand(field *gqlparserast.FieldDefinition, schema *gqlparserast.Schema) (*ProjectCommand, error) {
+func (p *Project) schemaToCommand(field *ast.FieldDefinition, schemaTypes map[string]*ast.Definition) (*ProjectCommand, error) {
 	cmd := ProjectCommand{
 		Name:        field.Name,
 		Description: field.Description,
@@ -193,10 +201,11 @@ func (p *Project) schemaToCommand(field *gqlparserast.FieldDefinition, schema *g
 	if returnType.Elem != nil {
 		returnType = returnType.Elem
 	}
-	returnObj, ok := schema.Types[returnType.Name()]
+	cmd.ResultType = returnType.Name()
+	returnObj, ok := schemaTypes[returnType.Name()]
 	if ok {
 		for _, subfield := range returnObj.Fields {
-			subcmd, err := p.schemaToCommand(subfield, schema)
+			subcmd, err := p.schemaToCommand(subfield, schemaTypes)
 			if err != nil {
 				return nil, err
 			}
@@ -206,7 +215,7 @@ func (p *Project) schemaToCommand(field *gqlparserast.FieldDefinition, schema *g
 	return &cmd, nil
 }
 
-func (p *Project) getSchema(ctx context.Context, gw bkgw.Client) (string, error) {
+func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, r *router.Router) (string, error) {
 	runtimeFS, err := p.runtime(ctx, gw)
 	if err != nil {
 		return "", fmt.Errorf("failed to get runtime filesystem: %w", err)
@@ -225,6 +234,7 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client) (string, error)
 	st := fsState.Run(
 		llb.Args([]string{entrypointPath, "-schema"}),
 		llb.AddMount("/src", projectDirState, llb.Readonly),
+		llb.Dir("/src"),
 		llb.ReadonlyRootFS(),
 	)
 	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
@@ -248,7 +258,18 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("failed to read schema: %w", err)
 	}
-	return string(outputBytes), nil
+	newSchema := string(outputBytes)
+
+	// validate it against the existing schema early
+	currentSchema := r.MergedSchemas()
+	_, err = gqlparser.LoadSchema(
+		&ast.Source{Input: currentSchema, BuiltIn: true},
+		&ast.Source{Input: newSchema},
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse schema: %w", err)
+	}
+	return newSchema, nil
 }
 
 func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, error) {
@@ -271,35 +292,24 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, erro
 	return runtimeFS, nil
 }
 
-func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *Socket) (router.Resolvers, error) {
+func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket) (router.Resolvers, error) {
 	resolvers := make(router.Resolvers)
 	if p.Config.SDK == "" {
 		return nil, fmt.Errorf("sdk not set")
 	}
 
-	doc, err := parser.Parse(parser.ParseParams{Source: p.Schema})
+	doc, err := parser.ParseSchema(&ast.Source{Input: p.Schema})
 	if err != nil {
 		return nil, err
 	}
-	for _, def := range doc.Definitions {
-		var obj *ast.ObjectDefinition
-
-		if def, ok := def.(*ast.ObjectDefinition); ok {
-			obj = def
-		}
-
-		if def, ok := def.(*ast.TypeExtensionDefinition); ok {
-			obj = def.Definition
-		}
-
-		if obj == nil {
+	for _, def := range append(doc.Definitions, doc.Extensions...) {
+		if def.Kind != ast.Object {
 			continue
 		}
-
 		objResolver := router.ObjectResolver{}
-		resolvers[obj.Name.Value] = objResolver
-		for _, field := range obj.Fields {
-			objResolver[field.Name.Value], err = p.getResolver(ctx, gw, progSock)
+		resolvers[def.Name] = objResolver
+		for _, field := range def.Fields {
+			objResolver[field.Name], err = p.getResolver(ctx, gw, r, progSock, field.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -308,7 +318,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, progSock *So
 	return resolvers, nil
 }
 
-func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Socket) (graphql.FieldResolveFn, error) {
+func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, outputType *ast.Type) (graphql.FieldResolveFn, error) {
 	runtimeFS, err := p.runtime(ctx, gw)
 	if err != nil {
 		return nil, err
@@ -319,7 +329,8 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Soc
 		name := fmt.Sprintf("%+v", pathArray)
 
 		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveParams.Info.ParentType.Name(), ctx.ResolveParams.Info.FieldName)
-		inputMap := map[string]interface{}{
+
+		inputMap := map[string]any{
 			"resolver": resolverName,
 			"args":     args,
 			"parent":   parent,
@@ -347,6 +358,7 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Soc
 
 		st := fsState.Run(
 			llb.Args([]string{entrypointPath}),
+			llb.Dir("/src"),
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 			llb.AddSSHSocket(
 				llb.SSHID(sid.LLBID()),
@@ -388,28 +400,54 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, progSock *Soc
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal output: %w", err)
 		}
-		return output, nil
+		return convertOutput(output, outputType, r)
 	}), nil
 }
 
+func convertOutput(output any, outputType *ast.Type, r *router.Router) (any, error) {
+	if outputType.Elem != nil {
+		outputType = outputType.Elem
+	}
+
+	for objectName, resolver := range r.Resolvers() {
+		if objectName != outputType.Name() {
+			continue
+		}
+		resolver, ok := resolver.(router.IDableObjectResolver)
+		if !ok {
+			continue
+		}
+
+		// ID-able dagger objects are serialized as their ID string across the wire
+		// between the session and project container.
+		outputStr, ok := output.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected id string output for %s", objectName)
+		}
+		return resolver.FromID(outputStr)
+	}
+	return output, nil
+}
+
 type ProjectCommand struct {
-	Name        string
-	Flags       []ProjectCommandFlag
-	Description string
-	Subcommands []ProjectCommand
+	Name        string               `json:"name"`
+	Flags       []ProjectCommandFlag `json:"flags"`
+	ResultType  string               `json:"resultType"`
+	Description string               `json:"description"`
+	Subcommands []ProjectCommand     `json:"subcommands"`
 }
 
 type ProjectCommandFlag struct {
-	Name        string
-	Description string
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func NewProjectCommand(id ProjectCommandID) (*ProjectCommand, error) {
-	project, err := id.ToProjectCommand()
+	projectCmd, err := id.ToProjectCommand()
 	if err != nil {
 		return nil, err
 	}
-	return project, nil
+	return projectCmd, nil
 }
 
 func (p *ProjectCommand) ID() (ProjectCommandID, error) {

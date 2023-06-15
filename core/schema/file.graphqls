@@ -28,6 +28,12 @@ type File {
     Location of the written directory (e.g., "output.txt").
     """
     path: String!
+
+    """
+    If allowParentDirPath is true, the path argument can be a directory path, in which case
+    the file will be created in that directory.
+    """
+    allowParentDirPath: Boolean
   ): Boolean!
 
   """

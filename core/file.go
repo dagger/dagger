@@ -222,6 +222,7 @@ func (file *File) Export(
 	ctx context.Context,
 	host *Host,
 	dest string,
+	allowParentDirPath bool,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
@@ -233,7 +234,10 @@ func (file *File) Export(
 
 	if stat, err := os.Stat(dest); err == nil {
 		if stat.IsDir() {
-			return fmt.Errorf("destination %q is a directory; must be a file path", dest)
+			if !allowParentDirPath {
+				return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
+			}
+			dest = filepath.Join(dest, filepath.Base(file.File))
 		}
 	}
 

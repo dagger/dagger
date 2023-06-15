@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"dagger.io/dagger"
@@ -227,4 +229,78 @@ func computeMD5FromReader(reader io.Reader) string {
 	h := md5.New()
 	io.Copy(h, reader)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func daggerCliPath(t *testing.T) string {
+	t.Helper()
+	cliPath := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	if cliPath == "" {
+		var err error
+		cliPath, err = exec.LookPath("dagger")
+		require.NoError(t, err)
+	}
+	if cliPath == "" {
+		t.Log("missing _EXPERIMENTAL_DAGGER_CLI_BIN")
+		t.FailNow()
+	}
+	return cliPath
+}
+
+type DaggerDoCmd struct {
+	ProjectLocalPath string
+	TestGitProject   bool
+	Config           string
+	OutputPath       string
+	Target           string
+	Flags            map[string]string
+}
+
+func (do DaggerDoCmd) Run(ctx context.Context, t *testing.T, c *dagger.Client) (*dagger.Container, error) {
+	t.Helper()
+	cliPath := daggerCliPath(t)
+	parentDir := filepath.Dir(cliPath)
+	baseName := filepath.Base(cliPath)
+	daggerCli := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+	cliBinPath := "/bin/dagger"
+
+	var err error
+	do.ProjectLocalPath, err = filepath.Abs(do.ProjectLocalPath)
+	require.NoError(t, err)
+
+	ctr := c.Container().From("alpine:3.16.2").
+		WithMountedFile(cliBinPath, daggerCli).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		// TODO: this shouldn't be needed, dagger do should pick up existing nestedness
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
+
+	projectDir := c.Host().Directory(do.ProjectLocalPath, dagger.HostDirectoryOpts{
+		Exclude: []string{".git", "bin", "docs", "website"},
+	})
+	projectMntPath := "/src"
+	projectArg := projectMntPath
+	if do.TestGitProject {
+		gitSvc, _ := gitService(ctx, t, c, projectDir)
+		ctr = ctr.WithServiceBinding("git", gitSvc)
+
+		endpoint, err := gitSvc.Endpoint(ctx)
+		require.NoError(t, err)
+		projectArg = "git://" + endpoint + "/repo.git" + "?protocol=git#main"
+	} else {
+		ctr = ctr.
+			WithMountedDirectory(projectMntPath, projectDir).
+			WithWorkdir(projectMntPath)
+	}
+
+	args := []string{cliBinPath, "--silent", "do", "--project", projectArg, "--config", do.Config}
+	if do.OutputPath != "" {
+		args = append(args, "--output", do.OutputPath)
+	}
+	args = append(args, do.Target)
+	for k, v := range do.Flags {
+		args = append(args, "--"+k, v)
+	}
+
+	return ctr.
+		WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true}).
+		Sync(ctx)
 }

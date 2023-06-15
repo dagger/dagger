@@ -211,16 +211,3 @@ type Directory {
     timestamp: Int!
   ): Directory!
 }
-
-"Key value object that represents a build argument."
-input BuildArg {
-  """
-  The build argument name.
-  """
-  name: String!
-
-  """
-  The build argument value.
-  """
-  value: String!
-}

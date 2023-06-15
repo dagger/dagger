@@ -517,6 +517,14 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type FileExportOpts = {
+  /**
+   * If allowParentDirPath is true, the path argument can be a directory path, in which case
+   * the file will be created in that directory.
+   */
+  allowParentDirPath?: boolean
+}
+
 /**
  * A file identifier.
  */
@@ -2436,14 +2444,16 @@ export class File extends BaseClient {
   /**
    * Writes the file to a file path on the host.
    * @param path Location of the written directory (e.g., "output.txt").
+   * @param opts.allowParentDirPath If allowParentDirPath is true, the path argument can be a directory path, in which case
+   * the file will be created in that directory.
    */
-  async export(path: string): Promise<boolean> {
+  async export(path: string, opts?: FileExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "export",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       this.client
@@ -3095,8 +3105,8 @@ export class Project extends BaseClient {
   /**
    * A unique identifier for this project.
    */
-  async id(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
+  async id(): Promise<ProjectID> {
+    const response: Awaited<ProjectID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3211,8 +3221,8 @@ export class ProjectCommand extends BaseClient {
   /**
    * A unique identifier for this command.
    */
-  async id(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
+  async id(): Promise<ProjectCommandID> {
+    const response: Awaited<ProjectCommandID> = await computeQuery(
       [
         ...this._queryTree,
         {
@@ -3234,6 +3244,23 @@ export class ProjectCommand extends BaseClient {
         ...this._queryTree,
         {
           operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the type returned by this command.
+   */
+  async resultType(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "resultType",
         },
       ],
       this.client

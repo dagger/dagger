@@ -19,13 +19,18 @@ import (
 
 type Router struct {
 	schemas      map[string]ExecutableSchema
+	resolvers    Resolvers
 	sessionToken string
 
 	recorder *progrock.Recorder
 
 	s *graphql.Schema
-	h *handler.Handler
-	l sync.RWMutex
+	// mergedSchemaString is the merged schemas in SDL format, useful
+	// for projects who need their dynamic schemas validated against
+	// the router's current schema
+	mergedSchemaString string
+	h                  *handler.Handler
+	l                  sync.RWMutex
 }
 
 func New(sessionToken string, recorder *progrock.Recorder) *Router {
@@ -99,6 +104,8 @@ func (r *Router) Add(schema ExecutableSchema) error {
 
 	// Atomic swap
 	r.s = s
+	r.resolvers = merged.Resolvers()
+	r.mergedSchemaString = merged.Schema()
 	r.h = handler.New(&handler.Config{
 		Schema: s,
 	})
@@ -126,6 +133,19 @@ func (r *Router) Get(name string) ExecutableSchema {
 	defer r.l.RUnlock()
 
 	return r.schemas[name]
+}
+
+func (r *Router) Resolvers() Resolvers {
+	r.l.Lock()
+	defer r.l.Unlock()
+	return r.resolvers
+}
+
+func (r *Router) MergedSchemas() string {
+	r.l.RLock()
+	defer r.l.RUnlock()
+
+	return r.mergedSchemaString
 }
 
 func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {

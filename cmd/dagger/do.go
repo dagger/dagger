@@ -23,6 +23,7 @@ import (
 var (
 	projectURI string
 	configPath string
+	outputPath string
 )
 
 const (
@@ -33,6 +34,7 @@ const (
 func init() {
 	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
 	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
+	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
 }
 
 var doCmd = &cobra.Command{
@@ -53,8 +55,10 @@ var doCmd = &cobra.Command{
 		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
+			if !silent {
+				cmd.SetOut(vtx.Stdout())
+				cmd.SetErr(vtx.Stderr())
+			}
 			defer func() { vtx.Done(err) }()
 
 			cmd.Println("Loading+installing project...")
@@ -111,6 +115,7 @@ var doCmd = &cobra.Command{
 	},
 }
 
+// nolint:gocyclo
 func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
@@ -118,7 +123,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd id: %w", err)
 	}
-	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: dagger.ProjectCommandID(projCmdID)})
+	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: projCmdID})
 
 	projCmdName, err := projCmd.Name(ctx)
 	if err != nil {
@@ -127,6 +132,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	description, err := projCmd.Description(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd description: %w", err)
+	}
+
+	projResultType, err := projCmd.ResultType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cmd result type: %w", err)
 	}
 
 	projFlags, err := projCmd.Flags(ctx)
@@ -190,6 +200,57 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					newSelection := &ast.Field{}
 					curSelection.SelectionSet = ast.SelectionSet{newSelection}
 					curSelection = newSelection
+				} else {
+					if outputPath == "" && returnTypeCanUseOutputFlag(projResultType) {
+						return fmt.Errorf("output path not set, --output must be explicitly provided for git:// projects that return files or directories")
+					}
+					outputPath, err = filepath.Abs(outputPath)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute path of output path: %w", err)
+					}
+					switch projResultType {
+					case "File":
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{
+								&ast.Argument{
+									Name: "path",
+									Value: &ast.Value{
+										Raw:  outputPath,
+										Kind: ast.StringValue,
+									},
+								},
+								&ast.Argument{
+									Name: "allowParentDirPath",
+									Value: &ast.Value{
+										Raw:  "true",
+										Kind: ast.BooleanValue,
+									},
+								},
+							},
+						}}
+					case "Directory":
+						outputStat, err := os.Stat(outputPath)
+						switch {
+						case os.IsNotExist(err):
+						case err == nil:
+							if !outputStat.IsDir() {
+								return fmt.Errorf("output path %q is not a directory but the command returns a directory", outputPath)
+							}
+						default:
+							return fmt.Errorf("failed to stat output directory: %w", err)
+						}
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{&ast.Argument{
+								Name: "path",
+								Value: &ast.Value{
+									Raw:  outputPath,
+									Kind: ast.StringValue,
+								},
+							}},
+						}}
+					}
 				}
 			}
 			var b bytes.Buffer
@@ -226,7 +287,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 				}
 			}
 			// TODO: better to print this after session closes so there's less overlap with progress output
-			fmt.Println(res)
+			cmd.Println(res)
 			return nil
 		},
 	}
@@ -321,12 +382,23 @@ func getProject(c *dagger.Client) (*dagger.Project, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get config relative path: %w", err)
 		}
+
+		if outputPath == "" {
+			outputPath = projectAbsPath
+		}
+
 		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
 	case "git":
 		repo := url.Host + url.Path
+		// TODO:(sipsma) just change ref to be a query param too?
 		ref := url.Fragment
 		if ref == "" {
 			ref = "main"
+		}
+
+		gitProtocol := url.Query().Get("protocol")
+		if gitProtocol != "" {
+			repo = gitProtocol + "://" + repo
 		}
 		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
 	}
@@ -343,6 +415,18 @@ func getSubcommandName(cmd *cobra.Command) string {
 	// if command name is "a:b:c", we return just "c" here
 	nameSplit := strings.Split(getCommandName(cmd), commandSeparator)
 	return nameSplit[len(nameSplit)-1]
+}
+
+func returnTypeCanUseOutputFlag(returnType string) bool {
+	for _, t := range []string{
+		"File",
+		"Directory",
+	} {
+		if returnType == t {
+			return true
+		}
+	}
+	return false
 }
 
 // certain pieces of metadata about cobra commands are difficult or impossible to set
