@@ -65,9 +65,6 @@ type Container struct {
 	// Image reference
 	ImageRef string `json:"image_ref,omitempty"`
 
-	// Hostname is the computed hostname for the container.
-	Hostname string `json:"hostname,omitempty"`
-
 	// Ports to expose from the container.
 	Ports []ContainerPort `json:"ports,omitempty"`
 
@@ -1025,16 +1022,8 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 	return container, nil
 }
 
-func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSock *Socket, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
-	container = container.Clone()
-
+func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
 	cfg := container.Config
-	mounts := container.Mounts
-	platform := container.Platform
-	if platform.OS == "" {
-		platform = defaultPlatform
-	}
-
 	args := opts.Args
 
 	if len(args) == 0 {
@@ -1048,6 +1037,24 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 
 	if len(args) == 0 {
 		return nil, errors.New("no command has been set")
+	}
+
+	return args, nil
+}
+
+func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSock *Socket, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+	container = container.Clone()
+
+	cfg := container.Config
+	mounts := container.Mounts
+	platform := container.Platform
+	if platform.OS == "" {
+		platform = defaultPlatform
+	}
+
+	args, err := container.command(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var namef string
@@ -1240,24 +1247,6 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	// first, build without a hostname
-	execStNoHostname := fsSt.Run(runOpts...)
-
-	// next, marshal it to compute a deterministic hostname
-	execDefNoHostname, err := execStNoHostname.Root().Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-	// compute a *stable* digest so that hostnames don't change across sessions
-	digest, err := stableDigest(execDefNoHostname.ToPB())
-	if err != nil {
-		return nil, fmt.Errorf("stable digest: %w", err)
-	}
-	hostname := hostHash(digest)
-	container.Hostname = hostname
-
-	// finally, build with the hostname set
-	runOpts = append(runOpts, llb.Hostname(hostname))
 	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
@@ -1329,58 +1318,6 @@ func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client, progSo
 	}
 
 	return strconv.Atoi(content)
-}
-
-func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
-	if container.Hostname == "" {
-		return nil, ErrContainerNoExec
-	}
-
-	health := newHealth(gw, container.Hostname, container.Ports)
-
-	// annotate the container as a service so they can be treated differently
-	// in the UI
-	rec := progrock.RecorderFromContext(ctx).
-		WithGroup(
-			fmt.Sprintf("service %s", container.Hostname),
-			progrock.Weak(),
-		)
-
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.RecorderToContext(svcCtx, rec)
-
-	checked := make(chan error, 1)
-	go func() {
-		checked <- health.Check(svcCtx)
-	}()
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- container.Evaluate(svcCtx, gw)
-	}()
-
-	select {
-	case err := <-checked:
-		if err != nil {
-			stop()
-			return nil, fmt.Errorf("health check errored: %w", err)
-		}
-
-		_ = stop // leave it running
-
-		return &Service{
-			Container: container,
-			Detach:    stop,
-		}, nil
-	case err := <-exited:
-		stop() // interrupt healthcheck
-
-		if err != nil {
-			return nil, fmt.Errorf("exited: %w", err)
-		}
-
-		return nil, fmt.Errorf("service exited before healthcheck")
-	}
 }
 
 func (container *Container) MetaFileContents(ctx context.Context, gw bkgw.Client, progSock *Socket, filePath string) (string, error) {
@@ -1635,36 +1572,6 @@ func (container *Container) importUncached(
 	return container, nil
 }
 
-func (container *Container) HostnameOrErr() (string, error) {
-	if container.Hostname == "" {
-		return "", ErrContainerNoExec
-	}
-
-	return container.Hostname, nil
-}
-
-func (container *Container) Endpoint(port int, scheme string) (string, error) {
-	if port == 0 {
-		if len(container.Ports) == 0 {
-			return "", fmt.Errorf("no ports exposed")
-		}
-
-		port = container.Ports[0].Port
-	}
-
-	host, err := container.HostnameOrErr()
-	if err != nil {
-		return "", err
-	}
-
-	endpoint := fmt.Sprintf("%s:%d", host, port)
-	if scheme != "" {
-		endpoint = scheme + "://" + endpoint
-	}
-
-	return endpoint, nil
-}
-
 func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
 	container = container.Clone()
 
@@ -1712,7 +1619,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
 	svcID, err := svc.ID()
@@ -1725,14 +1632,14 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 	})
 
 	if alias != "" {
-		hn, err := svc.HostnameOrErr()
+		hostname, err := svc.Hostname()
 		if err != nil {
 			return nil, fmt.Errorf("get hostname: %w", err)
 		}
 
 		container.HostAliases = append(container.HostAliases, HostAlias{
 			Alias:  alias,
-			Target: hn,
+			Target: hostname,
 		})
 	}
 

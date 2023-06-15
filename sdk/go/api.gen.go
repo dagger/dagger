@@ -35,6 +35,9 @@ type ProjectID string
 // A unique identifier for a secret.
 type SecretID string
 
+// A unique service identifier.
+type ServiceID string
+
 // A content-addressed socket identifier.
 type SocketID string
 
@@ -100,11 +103,9 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	endpoint    *string
 	envVariable *string
 	exitCode    *int
 	export      *bool
-	hostname    *string
 	id          *ContainerID
 	imageRef    *string
 	label       *string
@@ -191,43 +192,6 @@ func (r *Container) Directory(path string) *Directory {
 		q: q,
 		c: r.c,
 	}
-}
-
-// ContainerEndpointOpts contains options for Container.Endpoint
-type ContainerEndpointOpts struct {
-	// The exposed port number for the endpoint
-	Port int
-	// Return a URL with the given scheme, eg. http for http://
-	Scheme string
-}
-
-// Retrieves an endpoint that clients can use to reach this container.
-//
-// If no port is specified, the first exposed port is used. If none exist an error is returned.
-//
-// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Endpoint(ctx context.Context, opts ...ContainerEndpointOpts) (string, error) {
-	if r.endpoint != nil {
-		return *r.endpoint, nil
-	}
-	q := r.q.Select("endpoint")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `port` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Port) {
-			q = q.Arg("port", opts[i].Port)
-		}
-		// `scheme` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Scheme) {
-			q = q.Arg("scheme", opts[i].Scheme)
-		}
-	}
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // Retrieves entrypoint to be prepended to the arguments of all commands.
@@ -473,21 +437,6 @@ func (r *Container) FS() *Directory {
 	}
 }
 
-// Retrieves a hostname which can be used by clients to reach this container.
-//
-// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) Hostname(ctx context.Context) (string, error) {
-	if r.hostname != nil {
-		return *r.hostname, nil
-	}
-	q := r.q.Select("hostname")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // A unique identifier for this container.
 func (r *Container) ID(ctx context.Context) (ContainerID, error) {
 	if r.id != nil {
@@ -711,6 +660,65 @@ func (r *Container) Rootfs() *Directory {
 	q := r.q.Select("rootfs")
 
 	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerServiceOpts contains options for Container.Service
+type ContainerServiceOpts struct {
+	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+	SkipEntrypoint bool
+	// Content to write to the command's standard input before closing (e.g., "Hello world").
+	Stdin string
+	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+	RedirectStdout string
+	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+	RedirectStderr string
+	// Provides dagger access to the executed command.
+	//
+	// Do not use this option unless you trust the command being executed.
+	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+	ExperimentalPrivilegedNesting bool
+	// Execute the command with all root capabilities. This is similar to running a command
+	// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+	// does not provide any security guarantees when using this option. It should only be used
+	// when absolutely necessary and only with trusted commands.
+	InsecureRootCapabilities bool
+}
+
+// Retrieves a service that will run the specified command in the container.
+func (r *Container) Service(args []string, opts ...ContainerServiceOpts) *Service {
+	q := r.q.Select("service")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `skipEntrypoint` optional argument
+		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
+			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
+		}
+		// `stdin` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Stdin) {
+			q = q.Arg("stdin", opts[i].Stdin)
+		}
+		// `redirectStdout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
+			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
+		}
+		// `redirectStderr` optional argument
+		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
+			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
+		}
+		// `experimentalPrivilegedNesting` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
+			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
+		}
+		// `insecureRootCapabilities` optional argument
+		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
+			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
+		}
+	}
+	q = q.Arg("args", args)
+
+	return &Service{
 		q: q,
 		c: r.c,
 	}
@@ -1258,7 +1266,7 @@ func (r *Container) WithSecretVariable(name string, secret *Secret) *Container {
 // The service dependency will also convey to any files or directories produced by the container.
 //
 // Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-func (r *Container) WithServiceBinding(alias string, service *Container) *Container {
+func (r *Container) WithServiceBinding(alias string, service *Service) *Container {
 	q := r.q.Select("withServiceBinding")
 	q = q.Arg("alias", alias)
 	q = q.Arg("service", service)
@@ -2616,7 +2624,7 @@ type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
 	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost *Service
 }
 
 // Queries a git repository.
@@ -2653,7 +2661,7 @@ func (r *Client) Host() *Host {
 // HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
-	ExperimentalServiceHost *Container
+	ExperimentalServiceHost *Service
 }
 
 // Returns a file containing an http remote url content.
@@ -2755,6 +2763,17 @@ func (r *Client) Secret(id SecretID) *Secret {
 	}
 }
 
+// Loads a service from ID.
+func (r *Client) Service(id ServiceID) *Service {
+	q := r.q.Select("service")
+	q = q.Arg("id", id)
+
+	return &Service{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Sets a secret given a user defined name to its plaintext and returns the secret.
 // The plaintext value is limited to a size of 128000 bytes.
 func (r *Client) SetSecret(name string, plaintext string) *Secret {
@@ -2841,6 +2860,99 @@ func (r *Secret) Plaintext(ctx context.Context) (string, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+type Service struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	endpoint *string
+	hostname *string
+	id       *ServiceID
+}
+
+// ServiceEndpointOpts contains options for Service.Endpoint
+type ServiceEndpointOpts struct {
+	// The exposed port number for the endpoint
+	Port int
+	// Return a URL with the given scheme, eg. http for http://
+	Scheme string
+}
+
+// Retrieves an endpoint that clients can use to reach this container.
+//
+// If no port is specified, the first exposed port is used. If none exist an error is returned.
+//
+// If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Service) Endpoint(ctx context.Context, opts ...ServiceEndpointOpts) (string, error) {
+	if r.endpoint != nil {
+		return *r.endpoint, nil
+	}
+	q := r.q.Select("endpoint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `port` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Port) {
+			q = q.Arg("port", opts[i].Port)
+		}
+		// `scheme` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Scheme) {
+			q = q.Arg("scheme", opts[i].Scheme)
+		}
+	}
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Retrieves a hostname which can be used by clients to reach this container.
+//
+// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+func (r *Service) Hostname(ctx context.Context) (string, error) {
+	if r.hostname != nil {
+		return *r.hostname, nil
+	}
+	q := r.q.Select("hostname")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A unique identifier for this service.
+func (r *Service) ID(ctx context.Context) (ServiceID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response ServiceID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Service) XXX_GraphQLType() string {
+	return "Service"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Service) XXX_GraphQLIDType() string {
+	return "ServiceID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Service) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
 }
 
 type Socket struct {

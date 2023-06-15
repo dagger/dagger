@@ -128,6 +128,16 @@ type ref struct {
 	gw *GatewayClient
 }
 
+type WrappedRef interface {
+	Unwrap() bkgw.Reference
+}
+
+var _ WrappedRef = (*ref)(nil)
+
+func (r *ref) Unwrap() bkgw.Reference {
+	return r.Reference
+}
+
 func (r *ref) ReadFile(ctx context.Context, req bkgw.ReadRequest) (_ []byte, rerr error) {
 	defer wrapSolveError(&rerr, r.gw.Client)
 	return r.Reference.ReadFile(ctx, req)

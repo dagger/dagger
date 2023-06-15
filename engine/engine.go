@@ -209,6 +209,8 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		return core.RecordBuildkitStatus(recorder, solveCh)
 	})
 
+	core.InitServices(progSock)
+
 	eg.Go(func() error {
 		_, err := c.BuildkitClient.Build(groupCtx, solveOpts, "", func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
 			// Secret store is a circular dependency, since it needs to resolve

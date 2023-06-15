@@ -94,8 +94,6 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withExposedPort":      router.ToResolver(s.withExposedPort),
 			"withoutExposedPort":   router.ToResolver(s.withoutExposedPort),
 			"exposedPorts":         router.ToResolver(s.exposedPorts),
-			"hostname":             router.ToResolver(s.hostname),
-			"endpoint":             router.ToResolver(s.endpoint),
 			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
 			"withFocus":            router.ToResolver(s.withFocus),
 			"withoutFocus":         router.ToResolver(s.withoutFocus),
@@ -713,53 +711,17 @@ func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, 
 	return parent.ImageRefOrErr(ctx, s.gw)
 }
 
-func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	if !s.servicesEnabled {
-		return "", ErrServicesDisabled
-	}
-
-	parent, err := s.withDefaultExec(ctx, parent)
-	if err != nil {
-		return "", err
-	}
-
-	return parent.HostnameOrErr()
-}
-
-type containerEndpointArgs struct {
-	Port   int
-	Scheme string
-}
-
-func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	if !s.servicesEnabled {
-		return "", ErrServicesDisabled
-	}
-
-	parent, err := s.withDefaultExec(ctx, parent)
-	if err != nil {
-		return "", err
-	}
-
-	return parent.Endpoint(args.Port, args.Scheme)
-}
-
-type containerWithServiceDependencyArgs struct {
-	Service core.ContainerID
+type containerWithServiceBindingArgs struct {
+	Service core.ServiceID
 	Alias   string
 }
 
-func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
+func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
 	if !s.servicesEnabled {
 		return nil, ErrServicesDisabled
 	}
 
-	svc, err := args.Service.ToContainer()
-	if err != nil {
-		return nil, err
-	}
-
-	svc, err = s.withDefaultExec(ctx, svc)
+	svc, err := args.Service.ToService()
 	if err != nil {
 		return nil, err
 	}

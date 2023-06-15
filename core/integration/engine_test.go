@@ -30,11 +30,11 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
-func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Container) (*dagger.Container, error) {
+func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		return nil, err
 	}
@@ -88,17 +88,17 @@ func TestClientWaitsForEngine(t *testing.T) {
 	require.True(t, found, "missing set -e in entrypoint")
 	entrypoint = before + "set -e \n" + "sleep 30\n" + after
 
-	devEngine = devEngine.
+	devEngineSvc := devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents:    entrypoint,
 			Permissions: 0700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		WithExec(nil, dagger.ContainerWithExecOpts{
+		Service(nil, dagger.ContainerServiceOpts{
 			InsecureRootCapabilities: true,
 		})
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
 	_, err = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
@@ -115,13 +115,13 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	defer c.Close()
 
 	engineName := "my-special-engine"
-	devEngine := devEngineContainer(c).
+	devEngineSvc := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
-		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
+		Service([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerServiceOpts{
 			InsecureRootCapabilities: true,
 		})
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
 
 	out, err := clientCtr.

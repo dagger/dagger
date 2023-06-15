@@ -1,0 +1,87 @@
+extend type Query {
+  """
+  Loads a service from ID.
+  """
+  service(id: ServiceID!): Service!
+}
+
+"A unique service identifier."
+scalar ServiceID
+
+type Service {
+  "A unique identifier for this service."
+  id: ServiceID!
+
+  """
+  Retrieves a hostname which can be used by clients to reach this container.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+  """
+  hostname: String!
+
+  """
+  Retrieves an endpoint that clients can use to reach this container.
+
+  If no port is specified, the first exposed port is used. If none exist an error is returned.
+
+  If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+
+  Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+  """
+  endpoint(
+    "The exposed port number for the endpoint"
+    port: Int
+    "Return a URL with the given scheme, eg. http for http://"
+    scheme: String
+  ): String!
+}
+
+extend type Container {
+  """
+  Retrieves a service that will run the specified command in the container.
+  """
+  service(
+    """
+    Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+
+    If empty, the container's default command is used.
+    """
+    args: [String!]!
+
+    """
+    If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+    """
+    skipEntrypoint: Boolean
+
+    """
+    Content to write to the command's standard input before closing (e.g., "Hello world").
+    """
+    stdin: String
+
+    """
+    Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+    """
+    redirectStdout: String
+
+    """
+    Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+    """
+    redirectStderr: String
+
+    """
+    Provides dagger access to the executed command.
+
+    Do not use this option unless you trust the command being executed.
+    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+    """
+    experimentalPrivilegedNesting: Boolean
+
+    """
+    Execute the command with all root capabilities. This is similar to running a command
+    with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+    does not provide any security guarantees when using this option. It should only be used
+    when absolutely necessary and only with trusted commands.
+    """
+    insecureRootCapabilities: Boolean
+  ): Service!
+}

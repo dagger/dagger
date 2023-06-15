@@ -115,18 +115,6 @@ export type ContainerBuildOpts = {
   secrets?: Secret[]
 }
 
-export type ContainerEndpointOpts = {
-  /**
-   * The exposed port number for the endpoint
-   */
-  port?: number
-
-  /**
-   * Return a URL with the given scheme, eg. http for http://
-   */
-  scheme?: string
-}
-
 export type ContainerExecOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
@@ -222,6 +210,44 @@ export type ContainerPublishOpts = {
    * registries without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerServiceOpts = {
+  /**
+   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   */
+  skipEntrypoint?: boolean
+
+  /**
+   * Content to write to the command's standard input before closing (e.g., "Hello world").
+   */
+  stdin?: string
+
+  /**
+   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+   */
+  redirectStdout?: string
+
+  /**
+   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   */
+  redirectStderr?: string
+
+  /**
+   * Provides dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   */
+  experimentalPrivilegedNesting?: boolean
+
+  /**
+   * Execute the command with all root capabilities. This is similar to running a command
+   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+   * does not provide any security guarantees when using this option. It should only be used
+   * when absolutely necessary and only with trusted commands.
+   */
+  insecureRootCapabilities?: boolean
 }
 
 export type ContainerWithDefaultArgsOpts = {
@@ -655,14 +681,14 @@ export type ClientGitOpts = {
   /**
    * A service which must be started before the repo is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientPipelineOpts = {
@@ -693,6 +719,23 @@ export type ClientSocketOpts = {
  * A unique identifier for a secret.
  */
 export type SecretID = string & { __SecretID: never }
+
+export type ServiceEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
+}
+
+/**
+ * A unique service identifier.
+ */
+export type ServiceID = string & { __ServiceID: never }
 
 /**
  * A content-addressed socket identifier.
@@ -791,32 +834,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Retrieves an endpoint that clients can use to reach this container.
-   *
-   * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   *
-   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   * @param opts.port The exposed port number for the endpoint
-   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
-   */
-  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "endpoint",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -1029,25 +1046,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves a hostname which can be used by clients to reach this container.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   */
-  async hostname(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
@@ -1236,6 +1234,38 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "rootfs",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves a service that will run the specified command in the container.
+   * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
+   *
+   * If empty, the container's default command is used.
+   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
+   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
+   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
+   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
+   * @param opts.experimentalPrivilegedNesting Provides dagger access to the executed command.
+   *
+   * Do not use this option unless you trust the command being executed.
+   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
+   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command
+   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
+   * does not provide any security guarantees when using this option. It should only be used
+   * when absolutely necessary and only with trusted commands.
+   */
+  service(args: string[], opts?: ContainerServiceOpts): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
+          args: { args, ...opts },
         },
       ],
       host: this.clientHost,
@@ -1792,7 +1822,7 @@ export class Container extends BaseClient {
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withServiceBinding(alias: string, service: Container): Container {
+  withServiceBinding(alias: string, service: Service): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -3315,6 +3345,23 @@ export default class Client extends BaseClient {
   }
 
   /**
+   * Loads a service from ID.
+   */
+  service(id: ServiceID): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Sets a secret given a user defined name to its plaintext and returns the secret.
    * The plaintext value is limited to a size of 128000 bytes.
    * @param name The user defined name for this secret
@@ -3397,6 +3444,95 @@ export class Secret extends BaseClient {
     )
 
     return response
+  }
+}
+
+export class Service extends BaseClient {
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ServiceEndpointOpts): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   */
+  async hostname(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A unique identifier for this service.
+   */
+  async id(): Promise<ServiceID> {
+    const response: Awaited<ServiceID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Chain objects together
+   * @example
+   * ```ts
+   *	function AddAFewMounts(c) {
+   *			return c
+   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
+   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
+   *	}
+   *
+   * connect(async (client) => {
+   *		const tree = await client
+   *			.container()
+   *			.from("alpine")
+   *			.withWorkdir("/foo")
+   *			.with(AddAFewMounts)
+   *			.withExec(["ls", "-lh"])
+   *			.stdout()
+   * })
+   *```
+   */
+  with(arg: (param: Service) => Service) {
+    return arg(this)
   }
 }
 

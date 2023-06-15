@@ -34,8 +34,8 @@ func (s *httpSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL                     string            `json:"url"`
-	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
+	URL                     string          `json:"url"`
+	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {

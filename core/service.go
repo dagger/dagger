@@ -2,26 +2,542 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
+	"github.com/pkg/errors"
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
 
 type Service struct {
-	Container *Container
-	Detach    func()
+	// SessionID is the ID of the session that created this service.
+	SessionID string `json:"sid"`
+
+	// Container is the container that this service is running in.
+	Container *Container `json:"container"`
+
+	// Exec is the service command to run in the container.
+	Exec ContainerExecOpts `json:"exec"`
 }
 
-type ServiceBindings map[ContainerID]AliasSet
+func NewService(sid string, ctr *Container, opts ContainerExecOpts) (*Service, error) {
+	return &Service{
+		SessionID: sid,
+		Container: ctr,
+		Exec:      opts,
+	}, nil
+}
+
+type ServiceID string
+
+func (id ServiceID) String() string {
+	return string(id)
+}
+
+// ServiceID is digestible so that smaller hashes can be displayed in
+// --debug vertex names.
+var _ router.Digestible = ServiceID("")
+
+func (id ServiceID) Digest() (digest.Digest, error) {
+	return digest.FromString(id.String()), nil
+}
+
+func (id ServiceID) ToService() (*Service, error) {
+	var service Service
+
+	if id == "" {
+		// scratch
+		return &service, nil
+	}
+
+	if err := decodeID(&service, id); err != nil {
+		return nil, err
+	}
+
+	return &service, nil
+}
+
+// ID marshals the service into a content-addressed ID.
+func (svc *Service) ID() (ServiceID, error) {
+	return encodeID[ServiceID](svc)
+}
+
+var _ router.Pipelineable = (*Service)(nil)
+
+// PipelinePath returns the service's pipeline path.
+func (svc *Service) PipelinePath() pipeline.Path {
+	return svc.Container.Pipeline
+}
+
+// Service is digestible so that it can be recorded as an output of the
+// --debug vertex that created it.
+var _ router.Digestible = (*Service)(nil)
+
+// Digest returns the service's content hash.
+func (svc *Service) Digest() (digest.Digest, error) {
+	return stableDigest(svc)
+}
+
+func (svc *Service) Hostname() (string, error) {
+	dig, err := svc.Digest()
+	if err != nil {
+		return "", err
+	}
+	return hostHash(dig), nil
+}
+
+func (svc *Service) Endpoint(port int, scheme string) (string, error) {
+	if port == 0 {
+		if len(svc.Container.Ports) == 0 {
+			return "", fmt.Errorf("no ports exposed")
+		}
+
+		port = svc.Container.Ports[0].Port
+	}
+
+	host, err := svc.Hostname()
+	if err != nil {
+		return "", err
+	}
+
+	endpoint := fmt.Sprintf("%s:%d", host, port)
+	if scheme != "" {
+		endpoint = scheme + "://" + endpoint
+	}
+
+	return endpoint, nil
+}
+
+func solveRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
+	res, err := gw.Solve(ctx, bkgw.SolveRequest{
+		Definition: def,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if wr, ok := res.Ref.(WrappedRef); ok {
+		return wr.Unwrap(), nil
+	}
+
+	return res.Ref, nil
+}
+
+func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket) (running *RunningService, err error) {
+	ctr := svc.Container
+	opts := svc.Exec
+
+	detach, err := StartServices(ctx, gw, ctr.Services)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		if err != nil {
+			detach()
+		}
+	}()
+
+	fsRef, err := solveRef(ctx, gw, ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+
+	mounts := []bkgw.Mount{
+		{
+			Dest:      "/",
+			MountType: pb.MountType_BIND,
+			Ref:       fsRef,
+		},
+	}
+
+	if opts.ExperimentalPrivilegedNesting {
+		sid, err := progSock.ID()
+		if err != nil {
+			return nil, err
+		}
+
+		mounts = append(mounts, bkgw.Mount{
+			Dest:      "/.progrock.sock",
+			MountType: pb.MountType_SSH,
+			SSHOpt: &pb.SSHOpt{
+				ID: sid.LLBID(),
+			},
+		})
+	}
+
+	pbPlatform := pb.PlatformFromSpec(ctr.Platform)
+
+	args, err := ctr.command(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := ctr.Config
+
+	env := []string{}
+
+	for _, e := range cfg.Env {
+		// strip out any env that are meant for internal use only, to prevent
+		// manually setting them
+		switch {
+		case strings.HasPrefix(e, "_DAGGER_ENABLE_NESTING="):
+		case strings.HasPrefix(e, DebugFailedExecEnv+"="):
+		default:
+			env = append(env, e)
+		}
+	}
+
+	secretsToScrub := SecretToScrubInfo{}
+	for i, secret := range ctr.Secrets {
+		switch {
+		case secret.EnvName != "":
+			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
+			env = append(env, secret.EnvName+"=TODO") // XXX(vito): set the plaintext value
+		case secret.MountPath != "":
+			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+			opt := &pb.SecretOpt{}
+			if secret.Owner != nil {
+				opt.Uid = uint32(secret.Owner.UID)
+				opt.Gid = uint32(secret.Owner.UID)
+				opt.Mode = 0o400 // preserve default
+			}
+			mounts = append(mounts, bkgw.Mount{
+				Dest:      secret.MountPath,
+				MountType: pb.MountType_SECRET,
+				SecretOpt: opt,
+			})
+		default:
+			return nil, fmt.Errorf("malformed secret config at index %d", i)
+		}
+	}
+
+	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
+		// we sort to avoid non-deterministic order that would break caching
+		sort.Strings(secretsToScrub.Envs)
+		sort.Strings(secretsToScrub.Files)
+
+		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
+		if err != nil {
+			return nil, fmt.Errorf("scrub secrets json: %w", err)
+		}
+		env = append(env, "_DAGGER_SCRUB_SECRETS="+string(secretsToScrubJSON))
+	}
+
+	for _, socket := range ctr.Sockets {
+		if socket.UnixPath == "" {
+			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
+		}
+
+		opt := &pb.SSHOpt{
+			ID: socket.Socket.LLBID(),
+		}
+
+		if socket.Owner != nil {
+			opt.Uid = uint32(socket.Owner.UID)
+			opt.Gid = uint32(socket.Owner.UID)
+			opt.Mode = 0o600 // preserve default
+		}
+
+		mounts = append(mounts, bkgw.Mount{
+			Dest:      socket.UnixPath,
+			MountType: pb.MountType_SSH,
+			SSHOpt:    opt,
+		})
+	}
+
+	for _, mnt := range ctr.Mounts {
+		mount := bkgw.Mount{
+			Dest:      mnt.Target,
+			MountType: pb.MountType_BIND,
+		}
+
+		if mnt.Source != nil {
+			srcRef, err := solveRef(ctx, gw, mnt.Source)
+			if err != nil {
+				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
+			}
+
+			mount.Ref = srcRef
+		}
+
+		if mnt.SourcePath != "" {
+			mount.Selector = mnt.SourcePath
+		}
+
+		if mnt.CacheID != "" {
+			mount.MountType = pb.MountType_CACHE
+			mount.CacheOpt = &pb.CacheOpt{
+				ID: mnt.CacheID,
+			}
+
+			switch mnt.CacheSharingMode {
+			case "shared":
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+			case "private":
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+			case "locked":
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+			default:
+				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+			}
+		}
+
+		if mnt.Tmpfs {
+			mount.MountType = pb.MountType_TMPFS
+		}
+
+		mounts = append(mounts, mount)
+	}
+
+	if opts.ExperimentalPrivilegedNesting {
+		env = append(env, "_DAGGER_ENABLE_NESTING=")
+	}
+
+	if opts.RedirectStdout != "" {
+		env = append(env, "_DAGGER_REDIRECT_STDOUT="+opts.RedirectStdout)
+	}
+
+	if opts.RedirectStderr != "" {
+		env = append(env, "_DAGGER_REDIRECT_STDERR="+opts.RedirectStderr)
+	}
+
+	for _, alias := range ctr.HostAliases {
+		env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias.Alias+"="+alias.Target)
+	}
+
+	var stdin io.ReadCloser
+	if opts.Stdin != "" {
+		stdin = io.NopCloser(strings.NewReader(opts.Stdin))
+	}
+
+	var securityMode pb.SecurityMode
+	if opts.InsecureRootCapabilities {
+		securityMode = pb.SecurityMode_INSECURE
+	}
+
+	rec := progrock.RecorderFromContext(ctx)
+
+	dig, err := svc.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	host, err := svc.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
+
+	gc, err := gw.NewContainer(ctx, bkgw.NewContainerRequest{
+		Mounts:   mounts,
+		Hostname: host,
+		Platform: &pbPlatform,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	proc, err := gc.Start(ctx, bkgw.StartRequest{
+		Args:         args,
+		Env:          env,
+		User:         cfg.User,
+		Cwd:          cfg.WorkingDir,
+		Tty:          false,
+		Stdin:        stdin,
+		Stdout:       nopCloser{vtx.Stdout()},
+		Stderr:       nopCloser{vtx.Stderr()},
+		SecurityMode: securityMode,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	go func() {
+		// Keep dependent services running so long as the service is running.
+		_ = proc.Wait()
+		detach()
+	}()
+
+	return &RunningService{
+		Service:   svc,
+		Hostname:  host,
+		Container: gc,
+		Process:   proc,
+	}, nil
+}
+
+type RunningService struct {
+	Service   *Service
+	Hostname  string
+	Container bkgw.Container
+	Process   bkgw.ContainerProcess
+}
+
+type Services struct {
+	progSock *Socket
+	starting map[string]*sync.WaitGroup
+	running  map[string]*RunningService
+	bindings map[string]int
+	l        sync.Mutex
+}
+
+// AllServices is a pesky global variable storing the state of all running
+// services.
+var AllServices *Services
+
+func InitServices(progSockPath string) {
+	AllServices = &Services{
+		progSock: NewHostSocket(progSockPath),
+		starting: map[string]*sync.WaitGroup{},
+		running:  map[string]*RunningService{},
+		bindings: map[string]int{},
+	}
+}
+
+func (ss *Services) Start(ctx context.Context, gw bkgw.Client, svc *Service) (*RunningService, error) {
+	host, err := svc.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	ss.l.Lock()
+	starting, isStarting := ss.starting[host]
+	running, isRunning := ss.running[host]
+	switch {
+	case !isStarting && !isRunning:
+		// not starting or running; start it
+		starting = new(sync.WaitGroup)
+		starting.Add(1)
+		defer starting.Done()
+		ss.starting[host] = starting
+	case isRunning:
+		// already running; increment binding count and return
+		ss.bindings[host]++
+		ss.l.Unlock()
+		return running, nil
+	case isStarting:
+		// already starting; wait for the attempt to finish and check if it
+		// succeeded
+		ss.l.Unlock()
+		starting.Wait()
+		ss.l.Lock()
+		running, didStart := ss.running[host]
+		if didStart {
+			// starting succeeded as normal; return the isntance
+			ss.l.Unlock()
+			return running, nil
+		}
+		// starting didn't work; give it another go (this might just error again)
+	}
+	ss.l.Unlock()
+
+	health := newHealth(gw, host, svc.Container.Ports)
+
+	rec := progrock.RecorderFromContext(ctx).
+		WithGroup(
+			fmt.Sprintf("service %s", host),
+			progrock.Weak(),
+		)
+
+	svcCtx, stop := context.WithCancel(context.Background())
+	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+
+	running, err = svc.Start(svcCtx, gw, ss.progSock)
+	if err != nil {
+		stop()
+		return nil, err
+	}
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- health.Check(svcCtx)
+	}()
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- running.Process.Wait()
+	}()
+
+	select {
+	case err := <-checked:
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
+		ss.l.Lock()
+		delete(ss.starting, host)
+		ss.running[host] = running
+		ss.bindings[host] = 1
+		ss.l.Unlock()
+
+		_ = stop // leave it running
+
+		return running, nil
+	case err := <-exited:
+		stop() // interrupt healthcheck
+
+		ss.l.Lock()
+		delete(ss.starting, host)
+		ss.l.Unlock()
+
+		if err != nil {
+			return nil, fmt.Errorf("exited: %w", err)
+		}
+
+		return nil, fmt.Errorf("service exited before healthcheck")
+	}
+}
+
+func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+
+	running, found := ss.running[svc.Hostname]
+	if !found {
+		// not even running; ignore
+		return nil
+	}
+
+	ss.bindings[svc.Hostname]--
+
+	if ss.bindings[svc.Hostname] > 0 {
+		// detached, but other instances still active
+		return nil
+	}
+
+	// TODO: graceful shutdown?
+	if err := running.Process.Signal(ctx, syscall.SIGKILL); err != nil {
+		return err
+	}
+
+	if err := running.Container.Release(ctx); err != nil {
+		return err
+	}
+
+	delete(ss.bindings, svc.Hostname)
+	delete(ss.running, svc.Hostname)
+
+	return nil
+}
+
+type ServiceBindings map[ServiceID]AliasSet
 
 type AliasSet []string
 
@@ -75,33 +591,45 @@ func (p NetworkProtocol) Network() string {
 	return strings.ToLower(string(p))
 }
 
-// WithServices runs the given function with the given services started,
-// detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
-	var zero T
-
+func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings) (_ func(), err error) {
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
 	eg := new(errgroup.Group)
-	started := make(chan *Service, len(svcs))
+	started := make(chan *RunningService, len(bindings))
 
-	for svcID, aliases := range svcs {
-		svc, err := svcID.ToContainer()
+	detach := func() {
+		go func() {
+			<-time.After(10 * time.Second)
+
+			for svc := range started {
+				AllServices.Detach(ctx, svc)
+			}
+		}()
+	}
+
+	defer func() {
 		if err != nil {
-			return zero, err
+			detach()
+		}
+	}()
+
+	for svcID, aliases := range bindings {
+		svc, err := svcID.ToService()
+		if err != nil {
+			return nil, err
 		}
 
-		host, err := svc.HostnameOrErr()
+		host, err := svc.Hostname()
 		if err != nil {
-			return zero, err
+			return nil, err
 		}
 
 		aliases := aliases
 		eg.Go(func() error {
-			svc, err := svc.Start(ctx, gw)
+			running, err := AllServices.Start(ctx, gw, svc)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
 			}
-			started <- svc
+			started <- running
 			return nil
 		})
 	}
@@ -110,20 +638,23 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindin
 
 	close(started)
 
-	defer func() {
-		go func() {
-			<-time.After(10 * time.Second)
-
-			for svc := range started {
-				svc.Detach()
-			}
-		}()
-	}()
-
-	// wait for all services to start
 	if startErr != nil {
-		return zero, startErr
+		return nil, startErr
 	}
+
+	return detach, nil
+}
+
+// WithServices runs the given function with the given services started,
+// detaching from each of them after the function completes.
+func WithServices[T any](ctx context.Context, gw bkgw.Client, bindings ServiceBindings, fn func() (T, error)) (T, error) {
+	var zero T
+
+	detach, err := StartServices(ctx, gw, bindings)
+	if err != nil {
+		return zero, err
+	}
+	defer detach()
 
 	return fn()
 }
