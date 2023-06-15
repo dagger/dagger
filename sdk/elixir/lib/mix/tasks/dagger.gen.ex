@@ -16,8 +16,9 @@ defmodule Mix.Tasks.Dagger.Gen do
 
     File.mkdir_p!(dir)
 
-    Dagger.Codegen.Generator.generate()
-    |> Enum.map(&write_file!(&1, dir))
+    _ =
+      Dagger.Codegen.Generator.generate()
+      |> Enum.map(&write_file!(&1, dir))
 
     Mix.shell().info("Formatting code")
 

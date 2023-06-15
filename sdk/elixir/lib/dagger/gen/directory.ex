@@ -32,38 +32,38 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "dockerBuild")
 
       selection =
-        if not is_nil(optional_args[:dockerfile]) do
+        if is_nil(optional_args[:dockerfile]) do
+          selection
+        else
           arg(selection, "dockerfile", optional_args[:dockerfile])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:platform]) do
+        if is_nil(optional_args[:platform]) do
+          selection
+        else
           arg(selection, "platform", optional_args[:platform])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:build_args]) do
+        if is_nil(optional_args[:build_args]) do
+          selection
+        else
           arg(selection, "buildArgs", optional_args[:build_args])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:target]) do
+        if is_nil(optional_args[:target]) do
+          selection
+        else
           arg(selection, "target", optional_args[:target])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:secrets]) do
-          arg(selection, "secrets", optional_args[:secrets])
-        else
+        if is_nil(optional_args[:secrets]) do
           selection
+        else
+          arg(selection, "secrets", optional_args[:secrets])
         end
 
       %Dagger.Container{selection: selection, client: directory.client}
@@ -77,10 +77,10 @@ defmodule Dagger.Directory do
       selection = select(directory.selection, "entries")
 
       selection =
-        if not is_nil(optional_args[:path]) do
-          arg(selection, "path", optional_args[:path])
-        else
+        if is_nil(optional_args[:path]) do
           selection
+        else
+          arg(selection, "path", optional_args[:path])
         end
 
       execute(selection, directory.client)
@@ -124,17 +124,17 @@ defmodule Dagger.Directory do
       selection = arg(selection, "name", name)
 
       selection =
-        if not is_nil(optional_args[:description]) do
-          arg(selection, "description", optional_args[:description])
-        else
+        if is_nil(optional_args[:description]) do
           selection
+        else
+          arg(selection, "description", optional_args[:description])
         end
 
       selection =
-        if not is_nil(optional_args[:labels]) do
-          arg(selection, "labels", optional_args[:labels])
-        else
+        if is_nil(optional_args[:labels]) do
           selection
+        else
+          arg(selection, "labels", optional_args[:labels])
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}
@@ -150,17 +150,17 @@ defmodule Dagger.Directory do
       selection = arg(selection, "directory", Dagger.DirectoryID.get_id(directory))
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
-          arg(selection, "exclude", optional_args[:exclude])
-        else
+        if is_nil(optional_args[:exclude]) do
           selection
+        else
+          arg(selection, "exclude", optional_args[:exclude])
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
-          arg(selection, "include", optional_args[:include])
-        else
+        if is_nil(optional_args[:include]) do
           selection
+        else
+          arg(selection, "include", optional_args[:include])
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}
@@ -176,10 +176,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "source", Dagger.FileID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:permissions]) do
-          arg(selection, "permissions", optional_args[:permissions])
-        else
+        if is_nil(optional_args[:permissions]) do
           selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}
@@ -194,10 +194,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "path", path)
 
       selection =
-        if not is_nil(optional_args[:permissions]) do
-          arg(selection, "permissions", optional_args[:permissions])
-        else
+        if is_nil(optional_args[:permissions]) do
           selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}
@@ -213,10 +213,10 @@ defmodule Dagger.Directory do
       selection = arg(selection, "contents", contents)
 
       selection =
-        if not is_nil(optional_args[:permissions]) do
-          arg(selection, "permissions", optional_args[:permissions])
-        else
+        if is_nil(optional_args[:permissions]) do
           selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}

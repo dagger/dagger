@@ -14,6 +14,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       ) do
     defs = render_functions(Function.format_var_name(name), fields)
 
+    desc =
+      if desc == "" do
+        name
+      else
+        desc
+      end
+
     quote do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
@@ -184,10 +191,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
       quote do
         selection =
-          if not is_nil(optional_args[unquote(arg_name)]) do
-            arg(selection, unquote(name), optional_args[unquote(arg_name)])
-          else
+          if is_nil(optional_args[unquote(arg_name)]) do
             selection
+          else
+            arg(selection, unquote(name), optional_args[unquote(arg_name)])
           end
       end
     end

@@ -12,7 +12,8 @@ defmodule Dagger.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
-      docs: docs()
+      docs: docs(),
+      aliases: aliases()
     ]
   end
 
@@ -27,7 +28,14 @@ defmodule Dagger.MixProject do
       {:req, "~> 0.3"},
       {:absinthe_client, "~> 0.1"},
       {:nimble_options, "~> 1.0"},
-      {:ex_doc, "~> 0.27", only: :dev, runtime: false}
+      {:ex_doc, "~> 0.27", only: :dev, runtime: false},
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+    ]
+  end
+
+  defp aliases do
+    [
+      lint: ["format --check-formatted", "credo"]
     ]
   end
 
