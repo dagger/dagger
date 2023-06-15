@@ -2298,6 +2298,21 @@ class Host(Type):
         return HostVariable(_ctx)
 
     @typecheck
+    def file(self, path: str) -> File:
+        """Accesses a file on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve (e.g., "README.md").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    @typecheck
     def unix_socket(self, path: str) -> "Socket":
         """Accesses a Unix socket on the host.
 

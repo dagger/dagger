@@ -1990,6 +1990,17 @@ func (r *Host) EnvVariable(name string) *HostVariable {
 	}
 }
 
+// Accesses a file on the host.
+func (r *Host) File(path string) *File {
+	q := r.q.Select("file")
+	q = q.Arg("path", path)
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Accesses a Unix socket on the host.
 func (r *Host) UnixSocket(path string) *Socket {
 	q := r.q.Select("unixSocket")

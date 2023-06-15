@@ -113,6 +113,71 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	return NewDirectory(ctx, defPB, "", p, platform, nil), nil
 }
 
+func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platform specs.Platform) (*File, error) {
+	if host.DisableRW {
+		return nil, ErrHostRWDisabled
+	}
+
+	var absPath string
+	var err error
+	if filepath.IsAbs(path) {
+		absPath = path
+	} else {
+		absPath = filepath.Join(host.Workdir, path)
+
+		if !strings.HasPrefix(absPath, host.Workdir) {
+			return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", path)
+		}
+	}
+
+	// Create a sub-pipeline to group llb.Local instructions
+	pipelineName := fmt.Sprintf("host.file %s", absPath)
+	filePipeline := p.Add(pipeline.Pipeline{
+		Name: pipelineName,
+	})
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
+
+	localID := fmt.Sprintf("host:%s", absPath)
+
+	localOpts := []llb.LocalOption{
+		// Inject Pipeline
+		filePipeline.LLBOpt(),
+
+		// Custom name
+		llb.WithCustomNamef("upload %s", absPath),
+
+		// synchronize concurrent filesyncs for the same path
+		llb.SharedKeyHint(localID),
+
+		// make the LLB stable so we can test invariants like:
+		//
+		//   workdir == directory(".")
+		llb.LocalUniqueID(localID),
+	}
+
+	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
+	// which makes it unable to reused, which in turn creates cache invalidations
+	// TODO: this should be optional, the above issue can also be avoided w/ readonly
+	// mount when possible
+	st := llb.Scratch().File(
+		llb.Copy(llb.Local(filepath.Dir(path), localOpts...), filepath.Base(path), "/file"),
+		filePipeline.LLBOpt(),
+		llb.WithCustomNamef("copy %s", absPath),
+	)
+
+	def, err := st.Marshal(ctx, llb.Platform(platform))
+	if err != nil {
+		return nil, err
+	}
+
+	defPB := def.ToPB()
+
+	// associate vertexes to the 'host.file' sub-pipeline
+	recordVertexes(subRecorder, defPB)
+
+	return NewFile(ctx, defPB, "/file", p, platform, nil), nil
+}
+
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled

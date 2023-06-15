@@ -31,6 +31,7 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 		"Host": router.ObjectResolver{
 			"workdir":     router.ToResolver(s.workdir),
 			"directory":   router.ToResolver(s.directory),
+			"file":        router.ToResolver(s.file),
 			"envVariable": router.ToResolver(s.envVariable),
 			"unixSocket":  router.ToResolver(s.socket),
 		},
@@ -87,4 +88,12 @@ type hostSocketArgs struct {
 
 func (s *hostSchema) socket(ctx *router.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
 	return s.host.Socket(ctx, args.Path)
+}
+
+type hostFileArgs struct {
+	Path string
+}
+
+func (s *hostSchema) file(ctx *router.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
+	return s.host.File(ctx, args.Path, parent.PipelinePath(), s.platform)
 }

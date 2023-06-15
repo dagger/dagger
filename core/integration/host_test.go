@@ -238,6 +238,32 @@ func TestHostDirectoryExcludeInclude(t *testing.T) {
 	})
 }
 
+func TestHostFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "a.txt"), []byte("1"), 0600))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "subdir"), 0755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "d.txt"), []byte("hello world"), 0600))
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("get simple file", func(t *testing.T) {
+		content, err := c.Host().File(filepath.Join(dir, "a.txt")).Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "1", content)
+	})
+
+	t.Run("get nested file", func(t *testing.T) {
+		content, err := c.Host().File(filepath.Join(dir, "subdir", "d.txt")).Contents(ctx)
+
+		require.NoError(t, err)
+		require.Equal(t, "hello world", content)
+	})
+}
+
 func TestHostVariable(t *testing.T) {
 	t.Parallel()
 
