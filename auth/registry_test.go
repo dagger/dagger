@@ -16,6 +16,7 @@ const (
 )
 
 func TestParseAuthAddress(t *testing.T) {
+	t.Parallel()
 	type TestCase struct {
 		InputAddress string
 		Expected     string
@@ -113,6 +114,7 @@ func TestParseAuthAddress(t *testing.T) {
 }
 
 func TestRegistryAuthProvider(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	cfg := configfile.ConfigFile{}
 	registry := NewRegistryAuthProvider(&cfg)
