@@ -330,13 +330,13 @@ func (m *Tree) Follow() {
 		return
 	}
 
-	oldest := findOldestIncompleteEntry(m.root)
+	oldest := m.findOldestIncompleteEntry(m.root)
 	if oldest != -1 {
 		m.currentOffset = oldest
 	}
 }
 
-func findOldestIncompleteEntry(entry TreeEntry) int {
+func (m *Tree) findOldestIncompleteEntry(entry TreeEntry) int {
 	var oldestIncompleteEntry TreeEntry
 	oldestStartedTime := time.Time{}
 
@@ -367,17 +367,23 @@ func findOldestIncompleteEntry(entry TreeEntry) int {
 
 	search(entry)
 
-	return indexOf(entry, oldestIncompleteEntry)
+	if oldestIncompleteEntry == nil {
+		return -1
+	}
+
+	return m.indexOf(0, entry, oldestIncompleteEntry)
 }
 
-func indexOf(entry TreeEntry, needle TreeEntry) int {
+func (m *Tree) indexOf(offset int, entry TreeEntry, needle TreeEntry) int {
 	if entry == needle {
-		return 0
+		return offset
 	}
-	for i, child := range entry.Entries() {
-		if found := indexOf(child, needle); found >= 0 {
-			return i + 1 + found
+	offset++
+	for _, child := range entry.Entries() {
+		if found := m.indexOf(offset, child, needle); found != -1 {
+			return found
 		}
+		offset += m.height(child)
 	}
 	return -1
 }
