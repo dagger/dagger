@@ -125,17 +125,11 @@ func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platfo
 
 	// Create a sub-pipeline to group llb.Local instructions
 	pipelineName := fmt.Sprintf("host.file %s", absPath)
-	filePipeline := p.Add(pipeline.Pipeline{
-		Name: pipelineName,
-	})
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 
 	localID := fmt.Sprintf("host:%s", absPath)
 
 	localOpts := []llb.LocalOption{
-		// Inject Pipeline
-		filePipeline.LLBOpt(),
-
 		// Custom name
 		llb.WithCustomNamef("upload %s", absPath),
 
@@ -154,7 +148,6 @@ func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platfo
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(filepath.Dir(path), localOpts...), filepath.Base(path), "/file"),
-		filePipeline.LLBOpt(),
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
