@@ -29,6 +29,8 @@ func (c *Context) Client() *Client {
 	return c.client
 }
 
+// EXPERIMENTAL: ServeCommands is not intended for production use yet.
+//
 //nolint:gocyclo
 func ServeCommands(entrypoints ...any) {
 	ctx := context.Background()
