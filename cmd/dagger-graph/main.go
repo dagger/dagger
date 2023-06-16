@@ -1,15 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
 
-	bkclient "github.com/moby/buildkit/client"
+	"github.com/dagger/dagger/telemetry"
+	"github.com/vito/progrock"
 
 	"oss.terrastruct.com/d2/d2graph"
 	"oss.terrastruct.com/d2/d2layouts/d2dagrelayout"
@@ -28,9 +30,8 @@ func main() {
 		input  = os.Args[1]
 		output = os.Args[2]
 	)
-	ch := loadEvents(input)
-	vertices := mergeVertices(ch)
-	graph := generateGraph(vertices)
+	pl := loadEvents(input)
+	graph := generateGraph(pl.Vertices())
 	svg, err := renderSVG(graph)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
@@ -42,62 +43,37 @@ func main() {
 	}
 }
 
-func loadEvents(journal string) chan *bkclient.SolveStatus {
+func loadEvents(journal string) *telemetry.Pipeliner {
 	f, err := os.Open(journal)
 	if err != nil {
 		panic(err)
 	}
 
-	s := bufio.NewScanner(f)
-	s.Split(bufio.ScanLines)
+	defer f.Close()
 
-	ch := make(chan *bkclient.SolveStatus)
-	go func() {
-		defer close(ch)
-		for s.Scan() {
-			entry := struct {
-				Event *bkclient.SolveStatus
-				TS    string
-			}{}
+	pl := telemetry.NewPipeliner()
 
-			if err := json.Unmarshal(s.Bytes(), &entry); err != nil {
-				panic(err)
+	dec := json.NewDecoder(f)
+
+	for {
+		var update progrock.StatusUpdate
+		if err := dec.Decode(&update); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
 			}
 
-			ch <- entry.Event
+			panic(err)
 		}
-	}()
 
-	return ch
-}
-
-func mergeVertices(ch chan *bkclient.SolveStatus) []*bkclient.Vertex {
-	vertexByID := map[string]*bkclient.Vertex{}
-	vertices := []*bkclient.Vertex{}
-	for msg := range ch {
-		if msg == nil {
-			return vertices
-		}
-		for _, v := range msg.Vertexes {
-			vertex := vertexByID[v.Digest.String()]
-			if vertex == nil {
-				vertex = v
-				vertexByID[v.Digest.String()] = v
-				vertices = append(vertices, v)
-			}
-			if vertex.Started == nil && v.Started != nil {
-				vertex.Started = v.Started
-			}
-			vertex.Name = v.Name
-			vertex.Completed = v.Completed
-			vertex.Cached = v.Cached
+		if err := pl.WriteStatus(&update); err != nil {
+			panic(err)
 		}
 	}
 
-	return vertices
+	return pl
 }
 
-func generateGraph(vertices []*bkclient.Vertex) string {
+func generateGraph(vertices []*telemetry.PipelinedVertex) string {
 	s := strings.Builder{}
 
 	vertexToGraphID := map[string]string{}

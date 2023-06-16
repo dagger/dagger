@@ -127,7 +127,7 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 }
 
 func (s *containerSchema) sync(ctx *router.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx.Context, s.gw, nil)
+	err := parent.Evaluate(ctx.Context, s.gw)
 	if err != nil {
 		return "", err
 	}

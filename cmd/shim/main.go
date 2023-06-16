@@ -597,8 +597,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		}
 
 		engineConf.ProgrockWriter = progW
-	} else {
-		engineConf.LogOutput = os.Stderr
 	}
 
 	// pass dagger session along to command

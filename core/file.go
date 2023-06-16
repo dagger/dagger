@@ -192,10 +192,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	t := time.Unix(int64(unix), 0)
 
-	stamped := llb.Scratch().File(
-		llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)),
-		file.Pipeline.LLBOpt(),
-	)
+	stamped := llb.Scratch().File(llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)))
 
 	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
 	if err != nil {
@@ -254,7 +251,7 @@ func (file *File) Export(
 				return nil, err
 			}
 
-			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt())
+			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename))
 
 			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
 			if err != nil {

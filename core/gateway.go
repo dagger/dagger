@@ -325,15 +325,10 @@ func recordVertexes(recorder *progrock.Recorder, def *pb.Definition) {
 	for dgst, meta := range def.Metadata {
 		_ = meta
 		if meta.ProgressGroup != nil {
-			if meta.ProgressGroup.Id != "" && meta.ProgressGroup.Id[0] == '[' {
-				// Dagger progress group with pipeline.Path embedded
-				// TODO(vito): remove this when we fully switch off of ProgressGroup
-				dgsts = append(dgsts, dgst)
-			} else {
-				// Regular progress group, i.e. from Dockerfile; record it as a
-				// subgroup.
-				recorder.WithGroup(meta.ProgressGroup.Name).Join(dgst)
-			}
+			// Regular progress group, i.e. from Dockerfile; record it as a subgroup,
+			// with 'weak' annotation so it's distinct from user-configured
+			// pipelines.
+			recorder.WithGroup(meta.ProgressGroup.Name, progrock.Weak()).Join(dgst)
 		} else {
 			dgsts = append(dgsts, dgst)
 		}

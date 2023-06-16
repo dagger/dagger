@@ -18,6 +18,7 @@ import (
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock/console"
 )
 
 var sessionLabels pipeline.Labels
@@ -51,13 +52,14 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+
 	startOpts := engine.Config{
-		Workdir:      workdir,
-		LogOutput:    os.Stderr,
-		RunnerHost:   internalengine.RunnerHost(),
-		SessionToken: sessionToken.String(),
-		JournalFile:  os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
-		UserAgent:    labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
+		Workdir:        workdir,
+		RunnerHost:     internalengine.RunnerHost(),
+		ProgrockWriter: console.NewWriter(os.Stderr),
+		SessionToken:   sessionToken.String(),
+		JournalFile:    os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL"),
+		UserAgent:      labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),
 	}
 
 	signalCh := make(chan os.Signal, 1)

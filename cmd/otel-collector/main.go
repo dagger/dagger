@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,8 +8,9 @@ import (
 	"strings"
 	"time"
 
-	bkclient "github.com/moby/buildkit/client"
+	"github.com/dagger/dagger/telemetry"
 	"github.com/spf13/cobra"
+	"github.com/vito/progrock"
 )
 
 func main() {
@@ -43,7 +43,7 @@ var cmd = &cobra.Command{
 		}
 
 		ch := loadEvents(args[0])
-		vertices := mergeVertices(ch)
+		vertices := completedVertices(ch)
 		trace := NewTraceExporter(name, vertices, tags)
 
 		now := time.Now()
@@ -66,67 +66,45 @@ var cmd = &cobra.Command{
 	},
 }
 
-func mergeVertices(ch chan *bkclient.SolveStatus) []Vertex {
-	seenVertices := map[string]*bkclient.Vertex{}
-	vertices := []*bkclient.Vertex{}
-	for msg := range ch {
-		if msg == nil {
-			break
-		}
-		for _, v := range msg.Vertexes {
-			if v.Completed == nil {
-				continue
-			}
-			if _, ok := seenVertices[v.Digest.String()]; ok {
-				continue
-			}
-
-			seenVertices[v.Digest.String()] = v
-			vertices = append(vertices, v)
-		}
-	}
-
+func completedVertices(pl *telemetry.Pipeliner) VertexList {
 	list := VertexList{}
-	for _, v := range vertices {
+	for _, v := range pl.Vertices() {
+		if v.Completed == nil {
+			continue
+		}
+
 		list = append(list, Vertex{v})
 	}
 
 	return list
 }
 
-func loadEvents(journal string) chan *bkclient.SolveStatus {
+func loadEvents(journal string) *telemetry.Pipeliner {
+	pl := telemetry.NewPipeliner()
+
 	f, err := os.Open(journal)
 	if err != nil {
 		panic(err)
 	}
 
-	s := bufio.NewScanner(f)
-	s.Split(bufio.ScanLines)
-
 	decoder := json.NewDecoder(f)
 
-	ch := make(chan *bkclient.SolveStatus)
-	go func() {
-		defer close(ch)
-		for {
-			entry := struct {
-				Event *bkclient.SolveStatus
-				TS    string
-			}{}
-
-			err := decoder.Decode(&entry)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				panic(err)
-			}
-
-			ch <- entry.Event
+	for {
+		var entry progrock.StatusUpdate
+		err := decoder.Decode(&entry)
+		if err == io.EOF {
+			break
 		}
-	}()
+		if err != nil {
+			panic(err)
+		}
 
-	return ch
+		if err := pl.WriteStatus(&entry); err != nil {
+			panic(err)
+		}
+	}
+
+	return pl
 }
 
 func parseTags(tags []string) (map[string]string, error) {

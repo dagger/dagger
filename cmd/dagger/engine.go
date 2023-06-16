@@ -15,19 +15,31 @@ import (
 	"github.com/dagger/dagger/router"
 	"github.com/mattn/go-isatty"
 	"github.com/vito/progrock"
+	"github.com/vito/progrock/console"
 )
 
 var silent bool
+
+var progress string
 var stdoutIsTTY = isatty.IsTerminal(os.Stdout.Fd())
 var stderrIsTTY = isatty.IsTerminal(os.Stderr.Fd())
+
+var autoTTY = stdoutIsTTY || stderrIsTTY
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(
 		&silent,
 		"silent",
 		"s",
-		!stdoutIsTTY && !stderrIsTTY,
+		false,
 		"disable terminal UI and progress output",
+	)
+
+	rootCmd.PersistentFlags().StringVar(
+		&progress,
+		"progress",
+		"auto",
+		"progress output format (auto, plain, tty)",
 	)
 }
 
@@ -52,19 +64,27 @@ func withEngineAndTUI(
 		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	if silent {
-		if engineConf.LogOutput == nil {
-			engineConf.LogOutput = os.Stderr
+	if !silent {
+		if progress == "auto" && autoTTY || progress == "tty" {
+			if interactive {
+				return interactiveTUI(ctx, engineConf, fn)
+			}
+
+			return inlineTUI(ctx, engineConf, fn)
 		}
 
-		return engine.Start(ctx, engineConf, fn)
+		engineConf.ProgrockWriter = console.NewWriter(os.Stderr, console.ShowInternal(debug))
+
+		engineConf.EngineNameCallback = func(name string) {
+			fmt.Fprintln(os.Stderr, "Connected to engine", name)
+		}
+
+		engineConf.CloudURLCallback = func(cloudURL string) {
+			fmt.Fprintln(os.Stderr, "Dagger Cloud URL:", cloudURL)
+		}
 	}
 
-	if interactive {
-		return interactiveTUI(ctx, engineConf, fn)
-	}
-
-	return inlineTUI(ctx, engineConf, fn)
+	return engine.Start(ctx, engineConf, fn)
 }
 
 func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
@@ -140,8 +160,24 @@ func inlineTUI(
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
 
-	stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
+	program, stop := progrock.DefaultUI().RenderLoop(quit, tape, os.Stderr, true)
 	defer stop()
+
+	engineConf.CloudURLCallback = func(cloudURL string) {
+		program.Send(progrock.StatusInfoMsg{
+			Name:  "Cloud URL",
+			Value: cloudURL,
+			Order: 1,
+		})
+	}
+
+	engineConf.EngineNameCallback = func(name string) {
+		program.Send(progrock.StatusInfoMsg{
+			Name:  "Engine",
+			Value: name,
+			Order: 2,
+		})
+	}
 
 	var cbErr error
 	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
