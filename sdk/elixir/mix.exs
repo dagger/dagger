@@ -47,7 +47,17 @@ defmodule Dagger.MixProject do
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "#{@source_url}/releases/tag/sdk%2Felixir%2Fv#{@version}"
-      }
+      },
+      files: [
+        "lib",
+        "priv",
+        ".formatter.exs",
+        "mix.exs",
+        "README*",
+        "LICENSE*",
+        "CHANGELOG*",
+        "VERSION"
+      ]
     }
   end
 
