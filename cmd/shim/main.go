@@ -76,6 +76,12 @@ func internalCommand() int {
 	args := os.Args[2:]
 
 	switch cmd {
+	case "ip":
+		if err := ip(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	case "check":
 		if err := check(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -424,6 +430,21 @@ func setupBundle() int {
 		}
 	}
 
+	// collect service IPs first so they can be used for service aliases below
+	serviceIPs := map[string]string{}
+	for _, env := range spec.Process.Env {
+		if strings.HasPrefix(env, "_DAGGER_SERVICES=") {
+			_, val, _ := strings.Cut(env, "=")
+			pairs := strings.Split(val, ";")
+			for _, pair := range pairs {
+				host, ip, ok := strings.Cut(pair, ":")
+				if ok {
+					serviceIPs[host] = ip
+				}
+			}
+		}
+	}
+
 	keepEnv := []string{}
 	for _, env := range spec.Process.Env {
 		switch {
@@ -438,11 +459,19 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
+		case strings.HasPrefix(env, "_DAGGER_SERVICES="):
+			// NB: don't keep this env var, it's only for the bundling step
+			// keepEnv = append(keepEnv, env)
+
+			if err := appendServiceHosts(hostsFilePath, env); err != nil {
+				fmt.Fprintln(os.Stderr, "append service hosts:", err)
+				return 1
+			}
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			if err := appendHostAlias(hostsFilePath, env); err != nil {
+			if err := appendHostAlias(hostsFilePath, env, serviceIPs); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
@@ -513,15 +542,15 @@ func setupBundle() int {
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
 
-func appendHostAlias(hostsFilePath string, env string) error {
+func appendHostAlias(hostsFilePath string, env string, serviceIPs map[string]string) error {
 	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
 	if !ok {
 		return fmt.Errorf("malformed host alias: %s", env)
 	}
 
-	ips, err := net.LookupIP(target)
-	if err != nil {
-		return err
+	ip, found := serviceIPs[target]
+	if !found {
+		return fmt.Errorf("service %s not found in _DAGGER_SERVICES", target)
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
@@ -529,8 +558,28 @@ func appendHostAlias(hostsFilePath string, env string) error {
 		return err
 	}
 
-	for _, ip := range ips {
-		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+	if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
+		return err
+	}
+
+	return hostsFile.Close()
+}
+
+func appendServiceHosts(hostsFilePath string, env string) error {
+	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
+	if err != nil {
+		return err
+	}
+
+	_, val, _ := strings.Cut(env, "=")
+	pairs := strings.Split(val, ";")
+	for _, pair := range pairs {
+		host, ip, ok := strings.Cut(pair, ":")
+		if !ok {
+			return fmt.Errorf("malformed host:ip pair: %q", pair)
+		}
+
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, host); err != nil {
 			return err
 		}
 	}

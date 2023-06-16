@@ -53,11 +53,7 @@ type containerStartArgs struct {
 }
 
 func (s *serviceSchema) containerService(ctx *router.Context, parent *core.Container, args containerStartArgs) (*core.Service, error) {
-	return core.NewService(
-		s.gw.BuildOpts().SessionID,
-		parent,
-		args.ContainerExecOpts,
-	)
+	return core.NewService(parent, args.ContainerExecOpts)
 }
 
 func (s *serviceSchema) id(ctx *router.Context, parent *core.Service, args any) (core.ServiceID, error) {

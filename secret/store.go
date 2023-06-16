@@ -3,6 +3,8 @@ package secret
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core"
@@ -58,6 +60,22 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
+
+	if strings.HasPrefix(idOrName, core.ServicesSecretPrefix) {
+		hosts := strings.Split(strings.TrimPrefix(idOrName, core.ServicesSecretPrefix), ",")
+
+		pairs := make([]string, len(hosts))
+		for _, host := range hosts {
+			svc, found := core.AllServices.Service(host)
+			if !found {
+				return nil, fmt.Errorf("could not find IP for host %q", host)
+			}
+
+			pairs = append(pairs, fmt.Sprintf("%s:%s", host, svc.IP))
+		}
+
+		return []byte(strings.Join(pairs, ";")), nil
+	}
 
 	var name string
 	if secret, err := core.SecretID(idOrName).ToSecret(); err == nil {

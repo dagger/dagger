@@ -1085,6 +1085,30 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		)
 	}
 
+	if len(container.Services) > 0 {
+		hosts := []string{}
+		for id := range container.Services {
+			svc, err := id.ToService()
+			if err != nil {
+				return nil, err
+			}
+
+			host, err := svc.Hostname()
+			if err != nil {
+				return nil, err
+			}
+
+			hosts = append(hosts, host)
+		}
+
+		sort.Strings(hosts)
+
+		runOpts = append(runOpts,
+			llb.AddSecret("_DAGGER_SERVICES",
+				llb.SecretID(ServicesSecretPrefix+strings.Join(hosts, ",")),
+				llb.SecretAsEnv(true)))
+	}
+
 	// because the shim might run as non-root, we need to make a world-writable
 	// directory first and then make it the base of the /dagger mount point.
 	//

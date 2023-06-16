@@ -1,10 +1,12 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -23,10 +25,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type Service struct {
-	// SessionID is the ID of the session that created this service.
-	SessionID string `json:"sid"`
+// ServicesSecretPrefix is the prefix for the secret used to populate a
+// container's /etc/hosts with services at runtime, without busting the cache.
+const ServicesSecretPrefix = "services:"
 
+type Service struct {
 	// Container is the container that this service is running in.
 	Container *Container `json:"container"`
 
@@ -34,9 +37,8 @@ type Service struct {
 	Exec ContainerExecOpts `json:"exec"`
 }
 
-func NewService(sid string, ctr *Container, opts ContainerExecOpts) (*Service, error) {
+func NewService(ctr *Container, opts ContainerExecOpts) (*Service, error) {
 	return &Service{
-		SessionID: sid,
 		Container: ctr,
 		Exec:      opts,
 	}, nil
@@ -141,14 +143,14 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	ctr := svc.Container
 	opts := svc.Exec
 
-	detach, err := StartServices(ctx, gw, ctr.Services)
+	detachDeps, runningDeps, err := StartServices(ctx, gw, ctr.Services)
 	if err != nil {
 		return nil, err
 	}
 
 	defer func() {
 		if err != nil {
-			detach()
+			detachDeps()
 		}
 	}()
 
@@ -344,13 +346,46 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
+	var extraHosts []*pb.HostIP
+	for _, svc := range runningDeps {
+		extraHosts = append(extraHosts, &pb.HostIP{
+			Host: svc.Hostname,
+			IP:   svc.IP.String(),
+		})
+	}
+
 	gc, err := gw.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts:   mounts,
-		Hostname: host,
-		Platform: &pbPlatform,
+		Mounts: mounts,
+		// NB(vito): we don't actually need to set a hostname, since client
+		// containers are given a static host -> IP mapping.
+		//
+		// we could set it anyway, but I don't want to until all the DNS infra is
+		// ripped out, just to make sure nothing ever relies on it.
+		// Hostname: host,
+		Platform:   &pbPlatform,
+		ExtraHosts: extraHosts,
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	ipBuf := new(bytes.Buffer)
+	ipProc, err := gc.Start(ctx, bkgw.StartRequest{
+		Args:   []string{"ip"},
+		Env:    []string{"_DAGGER_INTERNAL_COMMAND=1"},
+		Stdout: nopCloser{ipBuf},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := ipProc.Wait(); err != nil {
+		return nil, fmt.Errorf("get ip: %w", err)
+	}
+
+	ipStr := strings.TrimSpace(ipBuf.String())
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return nil, fmt.Errorf("parse ip %q: %w", ipStr, err)
 	}
 
 	proc, err := gc.Start(ctx, bkgw.StartRequest{
@@ -371,11 +406,12 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	go func() {
 		// Keep dependent services running so long as the service is running.
 		_ = proc.Wait()
-		detach()
+		detachDeps()
 	}()
 
 	return &RunningService{
 		Service:   svc,
+		IP:        ip,
 		Hostname:  host,
 		Container: gc,
 		Process:   proc,
@@ -385,6 +421,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 type RunningService struct {
 	Service   *Service
 	Hostname  string
+	IP        net.IP
 	Container bkgw.Container
 	Process   bkgw.ContainerProcess
 }
@@ -408,6 +445,14 @@ func InitServices(progSockPath string) {
 		running:  map[string]*RunningService{},
 		bindings: map[string]int{},
 	}
+}
+
+func (ss *Services) Service(host string) (*RunningService, bool) {
+	ss.l.Lock()
+	defer ss.l.Unlock()
+
+	svc, ok := ss.running[host]
+	return svc, ok
 }
 
 func (ss *Services) Start(ctx context.Context, gw bkgw.Client, svc *Service) (*RunningService, error) {
@@ -591,16 +636,13 @@ func (p NetworkProtocol) Network() string {
 	return strings.ToLower(string(p))
 }
 
-func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings) (_ func(), err error) {
-	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
-	eg := new(errgroup.Group)
-	started := make(chan *RunningService, len(bindings))
-
+func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings) (_ func(), _ []*RunningService, err error) {
+	running := make([]*RunningService, len(bindings))
 	detach := func() {
 		go func() {
 			<-time.After(10 * time.Second)
 
-			for svc := range started {
+			for _, svc := range running {
 				AllServices.Detach(ctx, svc)
 			}
 		}()
@@ -612,15 +654,19 @@ func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings
 		}
 	}()
 
+	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
+	eg := new(errgroup.Group)
+
+	started := make(chan *RunningService, len(bindings))
 	for svcID, aliases := range bindings {
 		svc, err := svcID.ToService()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		host, err := svc.Hostname()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		aliases := aliases
@@ -639,10 +685,14 @@ func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings
 	close(started)
 
 	if startErr != nil {
-		return nil, startErr
+		return nil, nil, startErr
 	}
 
-	return detach, nil
+	for svc := range started {
+		running = append(running, svc)
+	}
+
+	return detach, running, nil
 }
 
 // WithServices runs the given function with the given services started,
@@ -650,7 +700,7 @@ func StartServices(ctx context.Context, gw bkgw.Client, bindings ServiceBindings
 func WithServices[T any](ctx context.Context, gw bkgw.Client, bindings ServiceBindings, fn func() (T, error)) (T, error) {
 	var zero T
 
-	detach, err := StartServices(ctx, gw, bindings)
+	detach, _, err := StartServices(ctx, gw, bindings)
 	if err != nil {
 		return zero, err
 	}
