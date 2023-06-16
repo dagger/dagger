@@ -34,8 +34,7 @@ func (s *httpSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type httpArgs struct {
-	URL                     string          `json:"url"`
-	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
+	URL string `json:"url"`
 }
 
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
@@ -47,11 +46,5 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
 	filename := digest.FromString(args.URL).Encoded()
 	st := llb.HTTP(args.URL, llb.Filename(filename))
-
-	svcs := core.ServiceBindings{}
-	if args.ExperimentalServiceHost != nil {
-		svcs[*args.ExperimentalServiceHost] = nil
-	}
-
-	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, svcs)
+	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, nil)
 }

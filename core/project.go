@@ -235,7 +235,7 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, progSock *Socke
 	if err != nil {
 		return "", fmt.Errorf("failed to exec schema command: %w", err)
 	}
-	schemaFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, schemaPath))
+	schemaFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, schemaPath), false)
 	if err != nil {
 		return "", fmt.Errorf("failed to get schema file: %w", err)
 	}
@@ -328,7 +328,7 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 			return "", fmt.Errorf("failed to exec resolver: %w", err)
 		}
 
-		outputFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, outputFile))
+		outputFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, outputFile), false)
 		if err != nil {
 			return "", fmt.Errorf("failed to get resolver output file: %w", err)
 		}

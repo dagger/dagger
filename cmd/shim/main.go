@@ -76,12 +76,6 @@ func internalCommand() int {
 	args := os.Args[2:]
 
 	switch cmd {
-	case "ip":
-		if err := ip(args); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			return 1
-		}
-		return 0
 	case "check":
 		if err := check(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -96,10 +90,15 @@ func internalCommand() int {
 
 func check(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: check <host> port/tcp [port/udp ...]")
+		return fmt.Errorf("usage: check port/tcp [port/udp ...]")
 	}
 
-	host, ports := args[0], args[1:]
+	host, err := ipExchange()
+	if err != nil {
+		return fmt.Errorf("exchange IPs: %w", err)
+	}
+
+	ports := args
 
 	for _, port := range ports {
 		port, network, ok := strings.Cut(port, "/")
@@ -109,14 +108,14 @@ func check(args []string) error {
 
 		pollAddr := net.JoinHostPort(host, port)
 
-		fmt.Println("polling for port", pollAddr)
+		fmt.Fprintln(os.Stderr, "polling for port", pollAddr)
 
 		reached, err := pollForPort(network, pollAddr)
 		if err != nil {
 			return fmt.Errorf("poll %s: %w", pollAddr, err)
 		}
 
-		fmt.Println("port is up at", reached)
+		fmt.Fprintln(os.Stderr, "port is up at", reached)
 	}
 
 	return nil
@@ -161,6 +160,14 @@ func shim() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
 		return 1
+	}
+
+	checkerAddr, found := internalEnv("_DAGGER_CHECKER_ADDR")
+	if found {
+		if err := reportIP(checkerAddr); err != nil {
+			fmt.Fprintln(os.Stderr, "report container IP:", err)
+			return 1
+		}
 	}
 
 	name := os.Args[1]
@@ -392,9 +399,16 @@ func setupBundle() int {
 			break
 		}
 	}
-	// We're running an internal shim command, i.e. a service health check
+
 	for _, env := range spec.Process.Env {
+		// We're running an internal shim command, i.e. a service health check
 		if strings.HasPrefix(env, "_DAGGER_INTERNAL_COMMAND=") {
+			isDaggerExec = true
+			break
+		}
+		// We're running a service, which needs to report its IP to the health
+		// checker as part of the IP exchange dance
+		if strings.HasPrefix(env, "_DAGGER_CHECKER_ADDR=") {
 			isDaggerExec = true
 			break
 		}
@@ -550,7 +564,7 @@ func appendHostAlias(hostsFilePath string, env string, serviceIPs map[string]str
 
 	ip, found := serviceIPs[target]
 	if !found {
-		return fmt.Errorf("service %s not found in _DAGGER_SERVICES", target)
+		return fmt.Errorf("service %s not found in _DAGGER_SERVICES: %v", target, serviceIPs)
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)

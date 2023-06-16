@@ -538,18 +538,20 @@ func (s *containerSchema) withoutLabel(ctx *router.Context, parent *core.Contain
 
 type containerDirectoryArgs struct {
 	Path string
+	Lazy bool
 }
 
 func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+	return parent.Directory(ctx, s.gw, args.Path, args.Lazy)
 }
 
 type containerFileArgs struct {
 	Path string
+	Lazy bool
 }
 
 func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+	return parent.File(ctx, s.gw, args.Path, args.Lazy)
 }
 
 func absPath(workDir string, containerPath string) string {

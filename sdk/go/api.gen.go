@@ -181,11 +181,23 @@ func (r *Container) DefaultArgs(ctx context.Context) ([]string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// ContainerDirectoryOpts contains options for Container.Directory
+type ContainerDirectoryOpts struct {
+	// Skip checking that the directory exists.
+	Lazy bool
+}
+
 // Retrieves a directory at the given path.
 //
 // Mounts are included.
-func (r *Container) Directory(path string) *Directory {
+func (r *Container) Directory(path string, opts ...ContainerDirectoryOpts) *Directory {
 	q := r.q.Select("directory")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `lazy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Lazy) {
+			q = q.Arg("lazy", opts[i].Lazy)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &Directory{
@@ -401,11 +413,23 @@ func (r *Container) ExposedPorts(ctx context.Context) ([]Port, error) {
 	return convert(response), nil
 }
 
+// ContainerFileOpts contains options for Container.File
+type ContainerFileOpts struct {
+	// Skip checking that the file exists.
+	Lazy bool
+}
+
 // Retrieves a file at the given path.
 //
 // Mounts are included.
-func (r *Container) File(path string) *File {
+func (r *Container) File(path string, opts ...ContainerFileOpts) *File {
 	q := r.q.Select("file")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `lazy` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Lazy) {
+			q = q.Arg("lazy", opts[i].Lazy)
+		}
+	}
 	q = q.Arg("path", path)
 
 	return &File{
@@ -2623,8 +2647,6 @@ func (r *Client) File(id FileID) *File {
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
-	// A service which must be started before the repo is fetched.
-	ExperimentalServiceHost *Service
 }
 
 // Queries a git repository.
@@ -2634,10 +2656,6 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 		// `keepGitDir` optional argument
 		if !querybuilder.IsZeroValue(opts[i].KeepGitDir) {
 			q = q.Arg("keepGitDir", opts[i].KeepGitDir)
-		}
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
 		}
 	}
 	q = q.Arg("url", url)
@@ -2658,21 +2676,9 @@ func (r *Client) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for Client.HTTP
-type HTTPOpts struct {
-	// A service which must be started before the URL is fetched.
-	ExperimentalServiceHost *Service
-}
-
 // Returns a file containing an http remote url content.
-func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
+func (r *Client) HTTP(url string) *File {
 	q := r.q.Select("http")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `experimentalServiceHost` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalServiceHost) {
-			q = q.Arg("experimentalServiceHost", opts[i].ExperimentalServiceHost)
-		}
-	}
 	q = q.Arg("url", url)
 
 	return &File{

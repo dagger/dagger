@@ -115,6 +115,13 @@ export type ContainerBuildOpts = {
   secrets?: Secret[]
 }
 
+export type ContainerDirectoryOpts = {
+  /**
+   * Skip checking that the directory exists.
+   */
+  lazy?: boolean
+}
+
 export type ContainerExecOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
@@ -166,6 +173,13 @@ export type ContainerExportOpts = {
    * for older runtimes without OCI support.
    */
   mediaTypes?: ImageMediaTypes
+}
+
+export type ContainerFileOpts = {
+  /**
+   * Skip checking that the file exists.
+   */
+  lazy?: boolean
 }
 
 export type ContainerImportOpts = {
@@ -677,18 +691,6 @@ export type ClientGitOpts = {
    * Set to true to keep .git directory.
    */
   keepGitDir?: boolean
-
-  /**
-   * A service which must be started before the repo is fetched.
-   */
-  experimentalServiceHost?: Service
-}
-
-export type ClientHttpOpts = {
-  /**
-   * A service which must be started before the URL is fetched.
-   */
-  experimentalServiceHost?: Service
 }
 
 export type ClientPipelineOpts = {
@@ -821,14 +823,15 @@ export class Container extends BaseClient {
    *
    * Mounts are included.
    * @param path The path of the directory to retrieve (e.g., "./src").
+   * @param opts.lazy Skip checking that the directory exists.
    */
-  directory(path: string): Directory {
+  directory(path: string, opts?: ContainerDirectoryOpts): Directory {
     return new Directory({
       queryTree: [
         ...this._queryTree,
         {
           operation: "directory",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       host: this.clientHost,
@@ -993,14 +996,15 @@ export class Container extends BaseClient {
    *
    * Mounts are included.
    * @param path The path of the file to retrieve (e.g., "./README.md").
+   * @param opts.lazy Skip checking that the file exists.
    */
-  file(path: string): File {
+  file(path: string, opts?: ContainerFileOpts): File {
     return new File({
       queryTree: [
         ...this._queryTree,
         {
           operation: "file",
-          args: { path },
+          args: { path, ...opts },
         },
       ],
       host: this.clientHost,
@@ -3222,7 +3226,6 @@ export default class Client extends BaseClient {
    * Can be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}
    * Suffix ".git" is optional.
    * @param opts.keepGitDir Set to true to keep .git directory.
-   * @param opts.experimentalServiceHost A service which must be started before the repo is fetched.
    */
   git(url: string, opts?: ClientGitOpts): GitRepository {
     return new GitRepository({
@@ -3257,15 +3260,14 @@ export default class Client extends BaseClient {
   /**
    * Returns a file containing an http remote url content.
    * @param url HTTP url to get the content from (e.g., "https://docs.dagger.io").
-   * @param opts.experimentalServiceHost A service which must be started before the URL is fetched.
    */
-  http(url: string, opts?: ClientHttpOpts): File {
+  http(url: string): File {
     return new File({
       queryTree: [
         ...this._queryTree,
         {
           operation: "http",
-          args: { url, ...opts },
+          args: { url },
         },
       ],
       host: this.clientHost,
@@ -3508,31 +3510,6 @@ export class Service extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Service) => Service) {
-    return arg(this)
   }
 }
 
