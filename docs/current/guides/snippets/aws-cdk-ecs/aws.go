@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -117,20 +118,20 @@ func (c *AWSClient) cdkDeployStack(ctx context.Context, client *dagger.Client, s
 		cdkCommand = append(cdkCommand, "--parameters", fmt.Sprintf("%s=%s", k, v))
 	}
 
-	exitCode, err := client.Container().From("samalba/aws-cdk:2.65.0").
+	_, err := client.Container().From("samalba/aws-cdk:2.65.0").
 		WithEnvVariable("AWS_REGION", c.region).
 		WithEnvVariable("AWS_DEFAULT_REGION", c.region).
 		WithDirectory("/opt/app", cdkCode).
 		WithDirectory("/root/.aws", awsConfig).
 		WithExec(cdkCommand).
-		ExitCode(ctx)
+		Sync(ctx)
 
-	if err != nil {
+    if err != nil {
+        var exErr *dagger.ExecError
+        if errors.As(err, &exErr) {
+            return nil, fmt.Errorf("cdk deploy exited with code %d", exErr.ExitCode)
+        }
 		return nil, err
-	}
-
-	if exitCode != 0 {
-		return nil, fmt.Errorf("cdk deploy exited with code %d", exitCode)
 	}
 
 	outputs, err := c.GetCfnStackOutputs(ctx, stackName)
