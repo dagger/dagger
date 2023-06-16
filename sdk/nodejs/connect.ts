@@ -42,7 +42,7 @@ export async function connect(
   cb: CallbackFct,
   config: ConnectOpts = {}
 ): Promise<void> {
-  let client
+  let client: Client
   let close: null | (() => void) = null
 
   // Prefer DAGGER_SESSION_PORT if set
@@ -66,6 +66,9 @@ export async function connect(
     client = await engineConn.Connect(config)
     close = () => engineConn.Close()
   }
+
+  // Error shall be throw if versions are not compatible
+  await client.checkVersionCompatibility(CLI_VERSION)
 
   await cb(client).finally(async () => {
     if (close) {

@@ -1,6 +1,9 @@
 package schema
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/blang/semver"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
@@ -25,7 +28,8 @@ func (s *querySchema) Schema() string {
 func (s *querySchema) Resolvers() router.Resolvers {
 	return router.Resolvers{
 		"Query": router.ObjectResolver{
-			"pipeline": router.ToResolver(s.pipeline),
+			"pipeline":                  router.ToResolver(s.pipeline),
+			"checkVersionCompatibility": router.ToResolver(s.checkVersionCompatibility),
 		},
 	}
 }
@@ -57,7 +61,12 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(_ *router.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
-	engineVersion, err := semver.Parse(engine.Version)
+	// Skip development version
+	if strings.Contains(engine.Version, "devel") {
+		return true, nil
+	}
+
+	apiVersion, err := semver.Parse(engine.Version)
 	if err != nil {
 		return false, err
 	}
@@ -67,8 +76,20 @@ func (s *querySchema) checkVersionCompatibility(_ *router.Context, _ *core.Query
 		return false, err
 	}
 
-	if engineVersion.Major != sdkVersion.Major || engineVersion.Minor != sdkVersion.Minor {
-		return false, nil
+	// If the API is a major  or minor version newer, fails
+	if apiVersion.Major > sdkVersion.Major {
+		return false, fmt.Errorf("API version is not compatible with the SDK, please update your SDK version")
+	}
+
+	// If API is older, fails
+	if apiVersion.LT(sdkVersion) {
+		return false, fmt.Errorf("API version is older than the SDK, please update your CLI")
+	}
+
+	// If the API is a minor version newer, warn
+	if apiVersion.Minor > sdkVersion.Minor {
+		// TODO display a warning using progrock
+		fmt.Println("Warning: API and SDK versions mismatch")
 	}
 
 	return true, nil

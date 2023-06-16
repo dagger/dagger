@@ -72,11 +72,19 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	}
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
-	return &Client{
+	c := &Client{
 		c:    gql,
 		conn: conn,
 		q:    querybuilder.Query(),
-	}, nil
+	}
+
+	// Call version compatibility, if versions are not compatible, an error
+	// shall be returned
+	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
+		return nil, err
+	}
+
+	return c, nil
 }
 
 // Close the engine connection
