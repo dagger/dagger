@@ -14,7 +14,7 @@ type Pipeline struct {
 	Weak        bool    `json:"weak,omitempty"`
 }
 
-type Path []Pipeline
+type Path []*Pipeline
 
 func (g Path) Copy() Path {
 	copy := make(Path, 0, len(g))
@@ -26,7 +26,7 @@ func (g Path) Add(pipeline Pipeline) Path {
 	// make a copy of path, don't modify in-place
 	newPath := g.Copy()
 	// add the sub-pipeline
-	newPath = append(newPath, pipeline)
+	newPath = append(newPath, &pipeline)
 	return newPath
 }
 

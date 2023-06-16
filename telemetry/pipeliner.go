@@ -137,9 +137,9 @@ func (t *Pipeliner) groupPath(group *progrock.Group) pipeline.Path {
 	if group.Parent != nil {
 		parentPath, found := t.pipelinePaths[group.GetParent()]
 		if found {
-			path = append(path, parentPath...)
+			path = parentPath.Copy()
 		}
 	}
-	path = append(path, self)
+	path = path.Add(self)
 	return path
 }
