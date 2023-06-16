@@ -26,7 +26,7 @@ func (s *serviceSchema) Resolvers() router.Resolvers {
 			"service": router.ToResolver(s.service),
 		},
 		"Container": router.ObjectResolver{
-			"start": router.ToResolver(s.start),
+			"service": router.ToResolver(s.containerService),
 		},
 		"Service": router.ObjectResolver{
 			"id":       router.ToResolver(s.id),
@@ -52,8 +52,7 @@ type containerStartArgs struct {
 	core.ContainerExecOpts
 }
 
-// TODO: rename to asService, move start to service??
-func (s *serviceSchema) start(ctx *router.Context, parent *core.Container, args containerStartArgs) (*core.Service, error) {
+func (s *serviceSchema) containerService(ctx *router.Context, parent *core.Container, args containerStartArgs) (*core.Service, error) {
 	return core.NewService(
 		s.gw.BuildOpts().SessionID,
 		parent,
