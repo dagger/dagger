@@ -1,7 +1,3 @@
-# Example
-
-:warning: This directory shall not be push to main, it's just an example for the PR.
-
 ## Usage
 
 Since we cannot install our local dagger library into the container that executes the command, for testing purpose we are copying local `nodejs` sdk by adding local `@dagger.io/dagger` into package dependencies.
