@@ -46,5 +46,4 @@ async def test():
     print("All tasks have finished")
 
 
-if __name__ == "__main__":
-    anyio.run(test)
+anyio.run(test)

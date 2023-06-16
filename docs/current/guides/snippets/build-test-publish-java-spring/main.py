@@ -10,13 +10,14 @@ async def main():
     # check for Docker Hub registry credentials in host environment
     for var in ["DOCKERHUB_USERNAME", "DOCKERHUB_PASSWORD"]:
         if var not in os.environ:
-            raise OSError('"%s" environment variable must be set' % var)
+            msg = f"{var} environment variable must be set"
+            raise OSError(msg)
 
     # initialize Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-        username = os.environ.get("DOCKERHUB_USERNAME")
+        username = os.environ["DOCKERHUB_USERNAME"]
         # set registry password as secret for Dagger pipeline
-        password = client.set_secret("password", os.environ.get("DOCKERHUB_PASSWORD"))
+        password = client.set_secret("password", os.environ["DOCKERHUB_PASSWORD"])
 
         # create a cache volume for Maven downloads
         maven_cache = client.cache_volume("maven-cache")
@@ -54,7 +55,8 @@ async def main():
         build = (
             app.with_service_binding("db", mariadb)
             .with_env_variable(
-                "MYSQL_URL", "jdbc:mysql://petclinic:petclinic@db/petclinic"
+                "MYSQL_URL",
+                "jdbc:mysql://petclinic:petclinic@db/petclinic",
             )
             .with_exec(["mvn", "-Dspring.profiles.active=mysql", "clean", "package"])
         )

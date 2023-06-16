@@ -18,10 +18,12 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # set AWS credentials as client secrets
         aws_access_key_id = client.set_secret(
-            "aws_access_key_id", os.environ["AWS_ACCESS_KEY_ID"]
+            "aws_access_key_id",
+            os.environ["AWS_ACCESS_KEY_ID"],
         )
         aws_secret_access_key = client.set_secret(
-            "aws_secret_access_key", os.environ["AWS_SECRET_ACCESS_KEY"]
+            "aws_secret_access_key",
+            os.environ["AWS_SECRET_ACCESS_KEY"],
         )
 
         aws_region = os.environ["AWS_DEFAULT_REGION"]
