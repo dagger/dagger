@@ -169,7 +169,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	}()
 
 	args := []string{"mix", "hex.publish", "--yes"}
-	if dryRun == "1" {
+	if dryRun == "1" || dryRun == "true" {
 		args = append(args, "--dry-run")
 	}
 
