@@ -48,7 +48,7 @@ func New() *Telemetry {
 	}
 
 	if t.token != "" {
-		// no token; don't send telemetry
+		// only send telemetry if a token was configured
 		t.enabled = true
 		go t.start()
 	}
