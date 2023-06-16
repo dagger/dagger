@@ -15,11 +15,19 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Writes the file to a file path on the host.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"output.txt\")."
-    @spec export(t(), String.t()) :: boolean()
-    def export(%__MODULE__{} = file, path) do
+    @doc "Writes the file to a file path on the host.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"output.txt\").\n\n## Optional Arguments\n\n* `allow_parent_dir_path` - If allowParentDirPath is true, the path argument can be a directory path, in which case\nthe file will be created in that directory."
+    @spec export(t(), String.t(), keyword()) :: boolean()
+    def export(%__MODULE__{} = file, path, optional_args \\ []) do
       selection = select(file.selection, "export")
       selection = arg(selection, "path", path)
+
+      selection =
+        if is_nil(optional_args[:allow_parent_dir_path]) do
+          selection
+        else
+          arg(selection, "allowParentDirPath", optional_args[:allow_parent_dir_path])
+        end
+
       execute(selection, file.client)
     end
   )

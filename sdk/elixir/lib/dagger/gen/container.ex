@@ -200,7 +200,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of exposed ports.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    @doc "Retrieves the list of exposed ports.\n\nThis includes ports already exposed by the image, even if not\nexplicitly added with dagger.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     @spec exposed_ports(t()) :: [Dagger.Port.t()]
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
