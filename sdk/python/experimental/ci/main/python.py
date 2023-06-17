@@ -1,3 +1,4 @@
+import dagger
 from dagger.server import command, commands
 
 from ._base import Base
@@ -10,5 +11,9 @@ class Python(Base):
         return "python lint"
 
     @command
-    async def test(self) -> str:
-        return "python test"
+    async def test(self, client: dagger.Client) -> dagger.File:
+        return (
+            client.directory()
+            .with_file("README2.md", client.host().directory("/src").file("README.md"))
+            .file("README2.md")
+        )

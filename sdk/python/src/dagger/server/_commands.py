@@ -1,5 +1,6 @@
 import functools
 import inspect
+import types
 from collections.abc import Callable
 from inspect import Parameter, getdoc
 from types import ModuleType
@@ -14,10 +15,10 @@ from typing import (
 
 import strawberry
 from strawberry.field import StrawberryField
-from strawberry.tools import create_type
 from strawberry.types import Info
 from strawberry.utils.await_maybe import await_maybe
 
+from dagger.api.base import Type
 from dagger.api.gen import Client
 
 from ._exceptions import SchemaValidationError
@@ -31,9 +32,50 @@ def get_schema(module: ModuleType):
 
 
 def get_root(module: ModuleType) -> type | None:
+    """The root type is the group of all the top level command functions."""
     if fields := get_commands(module):
-        return create_type("Query", fields)
+        return create_type("Query", fields, extend=True)
     return None
+
+
+_dummy_types = {}
+
+
+def get_dummy_type(cls: type) -> type:
+    """Extend an existing type just to get a reference in Strawberry.
+
+    Otherwise it fails validation. We can't use an empty type because
+    that's invalid GraphQL, thus Strawberry doesn't allow it also.
+    """
+    name = cls.__name__
+    if name not in _dummy_types:
+        # TODO: this is a hack. When we support full extensions this
+        # could show up in the API unless we make sure to ignore
+        # field names starting with an underscore.
+        @strawberry.field(name="_dummy")
+        def field() -> str:
+            ...
+
+        _dummy_types[name] = create_type(cls.__name__, [field], extend=True)
+    return _dummy_types[name]
+
+
+def create_type(name: str, fields: list[StrawberryField], extend=False) -> type:
+    """Create a strawberry type dynamically."""
+    namespace = {}
+    annotations = {}
+
+    for field in fields:
+        namespace[field.python_name] = field
+        annotations[field.python_name] = field.type
+
+    namespace["__annotations__"] = annotations  # type: ignore
+
+    cls = types.new_class(name, (), {}, lambda ns: ns.update(namespace))
+
+    # TODO: Strawberry has a create_type function just like this, but without
+    # the `extend` parameter. Submit an upstream PR or issue to add it.
+    return strawberry.type(cls, extend=extend)
 
 
 def get_commands(module: ModuleType):
@@ -139,6 +181,10 @@ def command(  # noqa: C901
             Parameter("info", Parameter.POSITIONAL_OR_KEYWORD, default=None),
         )
 
+        return_type = signature.return_annotation
+        if issubclass(return_type, Type):
+            return_type = get_dummy_type(return_type)
+
         # Make a resolver tailored for strawberry.
         async def strawberry_resolver(*args, **kwargs) -> type | str:
             info = cast(Info[Context, Any], kwargs.pop("info"))
@@ -150,6 +196,7 @@ def command(  # noqa: C901
         functools.update_wrapper(strawberry_resolver, f)
         strawberry_resolver.__signature__ = signature.replace(
             parameters=strawberry_params,
+            return_annotation=return_type,
         )
 
         field = strawberry.field(
