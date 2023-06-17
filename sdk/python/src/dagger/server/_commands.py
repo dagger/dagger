@@ -18,17 +18,25 @@ from strawberry.field import StrawberryField
 from strawberry.types import Info
 from strawberry.utils.await_maybe import await_maybe
 
-from dagger.api.base import Type
+from dagger.api.base import Type as DaggerType
 from dagger.api.gen import Client
 
 from ._exceptions import SchemaValidationError
 from ._server import Context
 from ._util import has_resolver
 
+_dummy_types = {}
+
 
 def get_schema(module: ModuleType):
-    root = get_root(module)
-    return strawberry.Schema(query=root) if root else None
+    if not (root := get_root(module)):
+        return None
+    schema = strawberry.Schema(query=root)
+    # Remove dummy types that were added to satisfy Strawberry. These
+    # should only come from dagger types that already exist in the schema.
+    for type_ in _dummy_types:
+        del schema._schema.type_map[type_]
+    return schema
 
 
 def get_root(module: ModuleType) -> type | None:
@@ -36,9 +44,6 @@ def get_root(module: ModuleType) -> type | None:
     if fields := get_commands(module):
         return create_type("Query", fields, extend=True)
     return None
-
-
-_dummy_types = {}
 
 
 def get_dummy_type(cls: type) -> type:
@@ -49,14 +54,12 @@ def get_dummy_type(cls: type) -> type:
     """
     name = cls.__name__
     if name not in _dummy_types:
-        # TODO: this is a hack. When we support full extensions this
-        # could show up in the API unless we make sure to ignore
-        # field names starting with an underscore.
-        @strawberry.field(name="_dummy")
-        def field() -> str:
+
+        @strawberry.field
+        def dummy() -> str:
             ...
 
-        _dummy_types[name] = create_type(cls.__name__, [field], extend=True)
+        _dummy_types[name] = create_type(cls.__name__, [dummy])
     return _dummy_types[name]
 
 
@@ -182,7 +185,9 @@ def command(  # noqa: C901
         )
 
         return_type = signature.return_annotation
-        if issubclass(return_type, Type):
+        if issubclass(return_type, DaggerType):
+            # Dagger types already exist in the API but we need to have
+            # them in the strawberry schema for validation.
             return_type = get_dummy_type(return_type)
 
         # Make a resolver tailored for strawberry.
