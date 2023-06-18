@@ -138,6 +138,7 @@ func solveRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Ref
 	return res.Ref, nil
 }
 
+// goling: nocyclo
 func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket) (running *RunningService, err error) {
 	ctr := svc.Container
 	opts := svc.Exec

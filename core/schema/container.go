@@ -197,13 +197,6 @@ func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, 
 	return parent.WithExec(ctx, s.gw, progSock, s.baseSchema.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Container) (*core.Container, error) {
-	if parent.Meta == nil {
-		return s.withExec(ctx, parent, containerExecArgs{})
-	}
-	return parent, nil
-}
-
 func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
 	progSock := &core.Socket{HostPath: s.progSock}
 	return parent.ExitCode(ctx, s.gw, progSock)
