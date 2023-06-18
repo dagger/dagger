@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -370,7 +371,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	for i, svc := range runningDeps {
 		extraHosts[i] = &pb.HostIP{
 			Host: svc.Hostname,
-			IP:   svc.IP,
+			IP:   svc.IP.String(),
 		}
 	}
 
@@ -456,7 +457,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 type RunningService struct {
 	Service   *Service
 	Hostname  string
-	IP        string
+	IP        net.IP
 	Container bkgw.Container
 	Process   bkgw.ContainerProcess
 }
@@ -849,11 +850,15 @@ func (d *portHealthChecker) CheckerAddr(ctx context.Context) (string, error) {
 	}
 }
 
-func (d *portHealthChecker) ServiceIP(ctx context.Context) (string, error) {
+func (d *portHealthChecker) ServiceIP(ctx context.Context) (net.IP, error) {
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return nil, ctx.Err()
 	case <-d.hasServiceIP:
-		return d.serviceIP, nil
+		ip := net.ParseIP(d.serviceIP)
+		if ip == nil {
+			return nil, fmt.Errorf("invalid IP %q", d.serviceIP)
+		}
+		return ip, nil
 	}
 }
