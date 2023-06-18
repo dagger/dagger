@@ -186,7 +186,6 @@ func (t Engine) test(ctx context.Context, race bool) error {
 	devEngine = devEngine.
 		WithServiceBinding("registry", registrySvc).
 		WithServiceBinding("privateregistry", privateRegistry(c)).
-		WithServiceBinding("gitsshtest", privateRegistry(c)).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-test-state")).
 		WithExec(nil, dagger.ContainerWithExecOpts{

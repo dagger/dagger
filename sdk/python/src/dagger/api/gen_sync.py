@@ -210,11 +210,7 @@ class Container(Type):
         return _ctx.execute_sync(Optional[list[str]])
 
     @typecheck
-    def directory(
-        self,
-        path: str,
-        lazy: Optional[bool] = None,
-    ) -> "Directory":
+    def directory(self, path: str) -> "Directory":
         """Retrieves a directory at the given path.
 
         Mounts are included.
@@ -223,12 +219,9 @@ class Container(Type):
         ----------
         path:
             The path of the directory to retrieve (e.g., "./src").
-        lazy:
-            Skip checking that the directory exists.
         """
         _args = [
             Arg("path", path),
-            Arg("lazy", lazy, None),
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
@@ -451,11 +444,7 @@ class Container(Type):
         return _ctx.execute_sync(list[Port])
 
     @typecheck
-    def file(
-        self,
-        path: str,
-        lazy: Optional[bool] = None,
-    ) -> "File":
+    def file(self, path: str) -> "File":
         """Retrieves a file at the given path.
 
         Mounts are included.
@@ -464,12 +453,9 @@ class Container(Type):
         ----------
         path:
             The path of the file to retrieve (e.g., "./README.md").
-        lazy:
-            Skip checking that the file exists.
         """
         _args = [
             Arg("path", path),
-            Arg("lazy", lazy, None),
         ]
         _ctx = self._select("file", _args)
         return File(_ctx)
@@ -3027,6 +3013,7 @@ class Client(Root):
         self,
         url: str,
         keep_git_dir: Optional[bool] = None,
+        experimental_service_host: Optional["Service"] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -3039,10 +3026,13 @@ class Client(Root):
             Suffix ".git" is optional.
         keep_git_dir:
             Set to true to keep .git directory.
+        experimental_service_host:
+            A service which must be started before the repo is fetched.
         """
         _args = [
             Arg("url", url),
             Arg("keepGitDir", keep_git_dir, None),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
@@ -3055,16 +3045,23 @@ class Client(Root):
         return Host(_ctx)
 
     @typecheck
-    def http(self, url: str) -> File:
+    def http(
+        self,
+        url: str,
+        experimental_service_host: Optional["Service"] = None,
+    ) -> File:
         """Returns a file containing an http remote url content.
 
         Parameters
         ----------
         url:
             HTTP url to get the content from (e.g., "https://docs.dagger.io").
+        experimental_service_host:
+            A service which must be started before the URL is fetched.
         """
         _args = [
             Arg("url", url),
+            Arg("experimentalServiceHost", experimental_service_host, None),
         ]
         _ctx = self._select("http", _args)
         return File(_ctx)

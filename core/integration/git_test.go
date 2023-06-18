@@ -65,8 +65,6 @@ func TestGit(t *testing.T) {
 }
 
 func TestGitSSHAuthSock(t *testing.T) {
-	t.Skip("this is hard to test now that Git can't reach services")
-
 	t.Parallel()
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
@@ -164,8 +162,7 @@ sleep infinity
 	require.NoError(t, err)
 
 	repoURL := fmt.Sprintf("ssh://root@%s:%d/root/repo", sshHost, sshPort)
-	// XXX(vito):, dagger.GitOpts{ExperimentalServiceHost: sshSvc}).
-	entries, err := c.Git(repoURL).
+	entries, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: sshSvc}).
 		Branch("main").
 		Tree(dagger.GitRefTreeOpts{
 			SSHKnownHosts: fmt.Sprintf("[%s]:%d %s", sshHost, sshPort, strings.TrimSpace(hostPubKey)),

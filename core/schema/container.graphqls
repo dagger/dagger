@@ -102,11 +102,6 @@ type Container {
     The path of the directory to retrieve (e.g., "./src").
     """
     path: String!
-
-    """
-    Skip checking that the directory exists.
-    """
-    lazy: Boolean
   ): Directory!
 
   """
@@ -119,11 +114,6 @@ type Container {
     The path of the file to retrieve (e.g., "./README.md").
     """
     path: String!
-
-    """
-    Skip checking that the file exists.
-    """
-    lazy: Boolean
   ): File!
 
   "Retrieves the user to be set for all commands."

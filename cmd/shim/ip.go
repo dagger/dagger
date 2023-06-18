@@ -2,9 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net"
-	"strings"
 )
 
 func ip(args []string) error {
@@ -52,57 +50,4 @@ func containerIP() (net.IP, error) {
 	}
 
 	return nil, fmt.Errorf("could not determine container IP (must be in %s)", cidr)
-}
-
-func ipExchange() (string, error) {
-	ip, err := containerIP()
-	if err != nil {
-		return "", err
-	}
-
-	l, err := net.Listen("tcp", ip.String()+":0")
-	if err != nil {
-		return "", err
-	}
-
-	// print checker's IP so we can pass it to the service for collecting the
-	// service IP
-	fmt.Println(l.Addr())
-
-	conn, err := l.Accept()
-	if err != nil {
-		return "", err
-	}
-
-	svcIPPayload, err := io.ReadAll(conn)
-	if err != nil {
-		return "", err
-	}
-
-	svcIP := strings.TrimSpace(string(svcIPPayload))
-
-	// print service IP; this is read by the outer health check process and
-	// stored for passing to clients
-	fmt.Println(svcIP)
-
-	return svcIP, nil
-}
-
-func reportIP(addr string) error {
-	ip, err := containerIP()
-	if err != nil {
-		return fmt.Errorf("get container IP: %w", err)
-	}
-
-	conn, err := net.Dial("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("dial: %w", err)
-	}
-
-	_, err = fmt.Fprintln(conn, ip.String())
-	if err != nil {
-		return fmt.Errorf("write: %w", err)
-	}
-
-	return conn.Close()
 }

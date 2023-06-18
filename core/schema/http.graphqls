@@ -6,6 +6,9 @@ extend type Query {
     """
     HTTP url to get the content from (e.g., "https://docs.dagger.io").
     """
-    url: String!
+    url: String!,
+
+    "A service which must be started before the URL is fetched."
+    experimentalServiceHost: ServiceID
   ): File!
 }
