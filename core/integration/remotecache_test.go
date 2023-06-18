@@ -72,14 +72,14 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
+			Contents: `{
+				container {
+					from(address: "alpine:3.17") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
 			}`}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
@@ -98,14 +98,14 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
+			Contents: `{
+				container {
+					from(address: "alpine:3.17") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
 			}`}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
@@ -157,14 +157,14 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
+				Contents: `{
+						container {
+							from(address: "alpine:3.17") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
 					}`}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
@@ -183,14 +183,14 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
+				Contents: `{
+						container {
+							from(address: "alpine:3.17") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
 					}`}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
