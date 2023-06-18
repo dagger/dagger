@@ -1120,20 +1120,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 				llb.SecretAsEnv(true)))
 	}
 
-	// because the shim might run as non-root, we need to make a world-writable
-	// directory first and then make it the base of the /dagger mount point.
-	//
-	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(metaSourcePath, 0o777)
-	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(metaSourcePath, "stdin"), 0o600, []byte(opts.Stdin))
-	}
+	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
-		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName("[internal] creating dagger metadata")),
-			llb.SourcePath(metaSourcePath)))
+		llb.AddMount(metaMountDestPath, metaSt, llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
