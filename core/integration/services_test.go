@@ -1194,6 +1194,9 @@ cd /root
 git config --global user.email "root@localhost"
 git config --global user.name "Test User"
 
+# prevent error from adding local repo if .gitignored files are present
+git config --global advice.addIgnoredFile false
+
 mkdir srv
 
 cd repo
