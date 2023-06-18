@@ -365,12 +365,12 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	var extraHosts []*pb.HostIP
-	for _, svc := range runningDeps {
-		extraHosts = append(extraHosts, &pb.HostIP{
+	extraHosts := make([]*pb.HostIP, len(runningDeps))
+	for i, svc := range runningDeps {
+		extraHosts[i] = &pb.HostIP{
 			Host: svc.Hostname,
 			IP:   svc.IP,
-		})
+		}
 	}
 
 	health := newHealth(gw, svc.Container.Ports)
