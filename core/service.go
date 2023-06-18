@@ -209,7 +209,6 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	cfg := ctr.Config
 
 	env := []string{}
-
 	for _, e := range cfg.Env {
 		// strip out any env that are meant for internal use only, to prevent
 		// manually setting them
@@ -221,22 +220,30 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 		}
 	}
 
+	secretEnv := []*pb.SecretEnv{}
 	secretsToScrub := SecretToScrubInfo{}
-	for i, secret := range ctr.Secrets {
+	for i, ctrSecret := range ctr.Secrets {
 		switch {
-		case secret.EnvName != "":
-			secretsToScrub.Envs = append(secretsToScrub.Envs, secret.EnvName)
-			env = append(env, secret.EnvName+"=TODO") // XXX(vito): set the plaintext value
-		case secret.MountPath != "":
-			secretsToScrub.Files = append(secretsToScrub.Files, secret.MountPath)
+		case ctrSecret.EnvName != "":
+			secretsToScrub.Envs = append(secretsToScrub.Envs, ctrSecret.EnvName)
+			secret, err := ctrSecret.Secret.ToSecret()
+			if err != nil {
+				return nil, err
+			}
+			secretEnv = append(secretEnv, &pb.SecretEnv{
+				ID:   secret.Name,
+				Name: ctrSecret.EnvName,
+			})
+		case ctrSecret.MountPath != "":
+			secretsToScrub.Files = append(secretsToScrub.Files, ctrSecret.MountPath)
 			opt := &pb.SecretOpt{}
-			if secret.Owner != nil {
-				opt.Uid = uint32(secret.Owner.UID)
-				opt.Gid = uint32(secret.Owner.UID)
+			if ctrSecret.Owner != nil {
+				opt.Uid = uint32(ctrSecret.Owner.UID)
+				opt.Gid = uint32(ctrSecret.Owner.UID)
 				opt.Mode = 0o400 // preserve default
 			}
 			mounts = append(mounts, bkgw.Mount{
-				Dest:      secret.MountPath,
+				Dest:      ctrSecret.MountPath,
 				MountType: pb.MountType_SECRET,
 				SecretOpt: opt,
 			})
@@ -398,6 +405,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         args,
 		Env:          env,
+		SecretEnv:    secretEnv,
 		User:         cfg.User,
 		Cwd:          cfg.WorkingDir,
 		Tty:          false,
