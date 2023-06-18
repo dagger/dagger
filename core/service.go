@@ -312,11 +312,11 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 			}
 
 			switch mnt.CacheSharingMode {
-			case "shared":
+			case CacheSharingModeShared:
 				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case "private":
+			case CacheSharingModePrivate:
 				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case "locked":
+			case CacheSharingModeLocked:
 				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
 			default:
 				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)

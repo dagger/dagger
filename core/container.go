@@ -251,7 +251,7 @@ type ContainerMount struct {
 	CacheID string `json:"cache_id,omitempty"`
 
 	// How to share the cache across concurrent runs.
-	CacheSharingMode string `json:"cache_sharing,omitempty"`
+	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
@@ -567,25 +567,15 @@ func (container *Container) WithMountedFile(ctx context.Context, gw bkgw.Client,
 	return container.withMounted(ctx, gw, target, file.LLB, file.File, file.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, gw bkgw.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, gw bkgw.Client, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
 
-	cacheSharingMode := ""
-	switch concurrency {
-	case CacheSharingModePrivate:
-		cacheSharingMode = "private"
-	case CacheSharingModeLocked:
-		cacheSharingMode = "locked"
-	default:
-		cacheSharingMode = "shared"
-	}
-
 	mount := ContainerMount{
 		Target:           target,
 		CacheID:          cache.Sum(),
-		CacheSharingMode: cacheSharingMode,
+		CacheSharingMode: sharingMode,
 	}
 
 	if source != nil {
@@ -1258,11 +1248,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		if mnt.CacheID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
-			case "shared":
+			case CacheSharingModeShared:
 				sharingMode = llb.CacheMountShared
-			case "private":
+			case CacheSharingModePrivate:
 				sharingMode = llb.CacheMountPrivate
-			case "locked":
+			case CacheSharingModeLocked:
 				sharingMode = llb.CacheMountLocked
 			default:
 				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)

@@ -3,6 +3,8 @@ package core
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
+	"strings"
 
 	"github.com/pkg/errors"
 )
@@ -64,6 +66,14 @@ const (
 	CacheSharingModePrivate CacheSharingMode = "PRIVATE"
 	CacheSharingModeLocked  CacheSharingMode = "LOCKED"
 )
+
+// CacheSharingMode marshals to its lowercased value.
+//
+// NB: as far as I can recall this is purely for ~*aesthetic*~. GraphQL consts
+// are so shouty!
+func (mode CacheSharingMode) MarshalJSON() ([]byte, error) {
+	return json.Marshal(strings.ToLower(string(mode)))
+}
 
 func (cache *CacheVolume) WithKey(key string) *CacheVolume {
 	cache = cache.Clone()
