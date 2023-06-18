@@ -572,6 +572,10 @@ func (container *Container) WithMountedCache(ctx context.Context, gw bkgw.Client
 
 	target = absPath(container.Config.WorkingDir, target)
 
+	if sharingMode == "" {
+		sharingMode = CacheSharingModeShared
+	}
+
 	mount := ContainerMount{
 		Target:           target,
 		CacheID:          cache.Sum(),
