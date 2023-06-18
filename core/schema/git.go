@@ -119,6 +119,32 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 	if args.SSHAuthSocket != "" {
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
+
+	hosts := llb.ExtraHosts{}
+	if parent.Repository.ServiceHost != nil {
+		svc, err := parent.Repository.ServiceHost.ToService()
+		if err != nil {
+			return nil, err
+		}
+
+		running, err := core.AllServices.Start(ctx, s.gw, svc)
+		if err != nil {
+			return nil, err
+		}
+
+		host, err := svc.Hostname()
+		if err != nil {
+			return nil, err
+		}
+
+		hosts = append(hosts, llb.HostIP{
+			Host: host,
+			IP:   running.IP,
+		})
+
+		opts = append(opts, hosts)
+	}
+
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
