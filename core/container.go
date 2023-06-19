@@ -1857,7 +1857,7 @@ func hostHash(val digest.Digest) string {
 	if err != nil {
 		panic(err)
 	}
-	return b32(xxh3.Hash(b))
+	return strings.ToLower(b32(xxh3.Hash(b)))
 }
 
 func b32(n uint64) string {
