@@ -29,31 +29,32 @@ defmodule Dagger.Internal.Engine.Downloader do
   defp extract_cli(cli_host, cli_version, bin_path) do
     req = Req.new(url: cli_archive_url(cli_host, cli_version))
 
-    with {:ok, raw_response} <- Req.get(req, raw: true) do
-      calculated_checksum =
-        :crypto.hash(:sha256, raw_response.body) |> Base.encode16(case: :lower)
+    with {:ok, raw_response} <- Req.get(req, raw: true),
+         :ok <- verify_checksum(raw_response, cli_host, cli_version) do
+      {_, decoded_response} = Req.Steps.decode_body({req, raw_response})
 
-      case expected_checksum(cli_host, cli_version) do
-        {:ok, expected_checksum} ->
-          cond do
-            calculated_checksum != expected_checksum ->
-              {:error,
-               "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
+      {_, dagger_bin} =
+        Enum.find(decoded_response.body, fn {filename, _bin} ->
+          filename == dagger_bin_in_archive(os())
+        end)
 
-            true ->
-              {_, decoded_response} = Req.Steps.decode_body({req, raw_response})
+      File.write(bin_path, dagger_bin)
+    end
+  end
 
-              {_, dagger_bin} =
-                Enum.find(decoded_response.body, fn {filename, _bin} ->
-                  filename == dagger_bin_in_archive(os())
-                end)
+  defp verify_checksum(raw_response, cli_host, cli_version) do
+    calculated_checksum = :crypto.hash(:sha256, raw_response.body) |> Base.encode16(case: :lower)
 
-              File.write(bin_path, dagger_bin)
-          end
+    case expected_checksum(cli_host, cli_version) do
+      {:ok, expected_checksum} ->
+        if(calculated_checksum != expected_checksum) do
+          {:error, "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
+        else
+          :ok
+        end
 
-        error ->
-          error
-      end
+      error ->
+        error
     end
   end
 
@@ -67,12 +68,10 @@ defmodule Dagger.Internal.Engine.Downloader do
         if to_string(key) == archive_name, do: value
       end)
 
-    cond do
-      expected_value == nil ->
-        {:error, "expected value find error"}
-
-      true ->
-        {:ok, expected_value}
+    if expected_value == nil do
+      {:error, "expected value find error"}
+    else
+      {:ok, expected_value}
     end
   end
 
@@ -86,12 +85,10 @@ defmodule Dagger.Internal.Engine.Downloader do
           |> Enum.map(fn list ->
             list_count = Enum.count(list)
 
-            cond do
-              list_count != 2 ->
-                raise "invalid checksum line: #{list_count}"
-
-              true ->
-                %{"#{Enum.at(list, 1)}": Enum.at(list, 0)}
+            if list_count != 2 do
+              raise "invalid checksum line: #{list_count}"
+            else
+              %{"#{Enum.at(list, 1)}": Enum.at(list, 0)}
             end
           end)
           |> Enum.concat()
