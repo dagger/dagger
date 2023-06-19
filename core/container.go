@@ -1097,27 +1097,11 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	}
 
 	if len(container.Services) > 0 {
-		hosts := []string{}
-		for id := range container.Services {
-			svc, err := id.ToService()
-			if err != nil {
-				return nil, err
-			}
-
-			host, err := svc.Hostname()
-			if err != nil {
-				return nil, err
-			}
-
-			hosts = append(hosts, host)
+		o, err := container.Services.RunOpt()
+		if err != nil {
+			return nil, err
 		}
-
-		sort.Strings(hosts)
-
-		runOpts = append(runOpts,
-			llb.AddSecret("_DAGGER_SERVICES",
-				llb.SecretID(ServicesSecretPrefix+strings.Join(hosts, ",")),
-				llb.SecretAsEnv(true)))
+		runOpts = append(runOpts, o)
 	}
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)

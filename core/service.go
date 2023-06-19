@@ -591,6 +591,29 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 
 type ServiceBindings map[ServiceID]AliasSet
 
+func (bindings ServiceBindings) RunOpt() (llb.RunOption, error) {
+	hosts := []string{}
+	for id := range bindings {
+		svc, err := id.ToService()
+		if err != nil {
+			return nil, err
+		}
+
+		host, err := svc.Hostname()
+		if err != nil {
+			return nil, err
+		}
+
+		hosts = append(hosts, host)
+	}
+
+	sort.Strings(hosts)
+
+	return llb.AddSecret("_DAGGER_SERVICES",
+		llb.SecretID(ServicesSecretPrefix+strings.Join(hosts, ",")),
+		llb.SecretAsEnv(true)), nil
+}
+
 type AliasSet []string
 
 func (set AliasSet) String() string {
