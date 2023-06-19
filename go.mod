@@ -19,7 +19,7 @@ require (
 	github.com/containerd/containerd v1.7.2
 	github.com/containerd/fuse-overlayfs-snapshotter v1.0.2
 	github.com/containerd/stargz-snapshotter v0.14.3
-	github.com/containernetworking/cni v1.1.2
+	github.com/containernetworking/cni v1.1.2 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0
 	github.com/dagger/graphql v0.0.0-20230601100125-137fc3a90735
 	github.com/dagger/graphql-go-tools v0.0.0-20230418214324-32c52f390881
@@ -264,4 +264,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230618050111-46c7a2e53218
+replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230619145505-65140a79ce5e
