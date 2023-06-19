@@ -57,7 +57,7 @@ defmodule Dagger.Internal.Engine.Downloader do
     end
   end
 
-  def expected_checksum(cli_host, cli_version) do
+  defp expected_checksum(cli_host, cli_version) do
     archive_name = default_cli_archive_name(os(), arch(), cli_version)
 
     {:ok, checksum_map} = checksum_map(cli_host, cli_version)
