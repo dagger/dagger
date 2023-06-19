@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -93,12 +94,7 @@ func check(args []string) error {
 		return fmt.Errorf("usage: check port/tcp [port/udp ...]")
 	}
 
-	host, err := ipExchange()
-	if err != nil {
-		return fmt.Errorf("exchange IPs: %w", err)
-	}
-
-	ports := args
+	host, ports := args[0], args[1:]
 
 	for _, port := range ports {
 		port, network, ok := strings.Cut(port, "/")
@@ -160,14 +156,6 @@ func shim() int {
 	if len(os.Args) < 2 {
 		fmt.Fprintf(os.Stderr, "usage: %s <path> [<args>]\n", os.Args[0])
 		return 1
-	}
-
-	checkerAddr, found := internalEnv("_DAGGER_CHECKER_ADDR")
-	if found {
-		if err := reportIP(checkerAddr); err != nil {
-			fmt.Fprintln(os.Stderr, "report container IP:", err)
-			return 1
-		}
 	}
 
 	name := os.Args[1]
@@ -437,26 +425,45 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	var hostsFilePath string
-	for _, mnt := range spec.Mounts {
-		if mnt.Destination == "/etc/hosts" {
-			hostsFilePath = mnt.Source
+	// collect service IPs first so they can be used for service aliases below
+	var searchDomain string
+	for _, env := range spec.Process.Env {
+		if strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN=") {
+			_, val, _ := strings.Cut(env, "=")
+			searchDomain = val
 		}
 	}
 
-	// collect service IPs first so they can be used for service aliases below
-	serviceIPs := map[string]string{}
-	for _, env := range spec.Process.Env {
-		if strings.HasPrefix(env, "_DAGGER_SERVICES=") {
-			_, val, _ := strings.Cut(env, "=")
-			pairs := strings.Split(val, ";")
-			for _, pair := range pairs {
-				host, ip, ok := strings.Cut(pair, ":")
-				if ok {
-					serviceIPs[host] = ip
-				}
-			}
+	log.Println("!!! SEARCH DOMAIN", searchDomain)
+	if searchDomain == "" {
+		for _, env := range spec.Process.Env {
+			log.Println("!!! NO SEARCH DOMAIN", env)
 		}
+	}
+	log.Println("!!! BUNDLE DIR", bundleDir)
+
+	var hostsFilePath string
+	var resolvFilePath string
+	for _, mnt := range spec.Mounts {
+		if mnt.Destination == "/etc/hosts" {
+			hostsFilePath = mnt.Source
+			log.Println("!!! HOST FILE PATH", hostsFilePath)
+		}
+		if mnt.Destination == "/etc/resolv.conf" {
+			resolvFilePath = mnt.Source
+		}
+	}
+
+	if resolvFilePath != "" {
+		log.Println("!!! RESOLV FILE PATH", resolvFilePath)
+		cat := exec.Command("cat", resolvFilePath)
+		cat.Stdout = os.Stdout
+		cat.Stderr = os.Stderr
+		if err := cat.Run(); err != nil {
+			panic(err)
+		}
+	} else {
+		log.Println("!!! NO RESOLV FILE PATH")
 	}
 
 	keepEnv := []string{}
@@ -473,19 +480,14 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-		case strings.HasPrefix(env, "_DAGGER_SERVICES="):
+		case strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN="):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
-
-			if err := appendServiceHosts(hostsFilePath, env); err != nil {
-				fmt.Fprintln(os.Stderr, "append service hosts:", err)
-				return 1
-			}
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			if err := appendHostAlias(hostsFilePath, env, serviceIPs); err != nil {
+			if err := appendHostAlias(hostsFilePath, env, searchDomain); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
@@ -556,15 +558,19 @@ func setupBundle() int {
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
 
-func appendHostAlias(hostsFilePath string, env string, serviceIPs map[string]string) error {
+func appendHostAlias(hostsFilePath string, env string, searchDomain string) error {
 	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
 	if !ok {
 		return fmt.Errorf("malformed host alias: %s", env)
 	}
 
-	ip, found := serviceIPs[target]
-	if !found {
-		return fmt.Errorf("service %s not found in _DAGGER_SERVICES: %v", target, serviceIPs)
+	if searchDomain != "" {
+		target += "." + searchDomain
+	}
+
+	ip, err := net.LookupIP(target)
+	if err != nil {
+		return err
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
@@ -574,28 +580,6 @@ func appendHostAlias(hostsFilePath string, env string, serviceIPs map[string]str
 
 	if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
 		return err
-	}
-
-	return hostsFile.Close()
-}
-
-func appendServiceHosts(hostsFilePath string, env string) error {
-	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
-	if err != nil {
-		return err
-	}
-
-	_, val, _ := strings.Cut(env, "=")
-	pairs := strings.Split(val, ";")
-	for _, pair := range pairs {
-		host, ip, ok := strings.Cut(pair, ":")
-		if !ok {
-			return fmt.Errorf("malformed host:ip pair: %q", pair)
-		}
-
-		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, host); err != nil {
-			return err
-		}
 	}
 
 	return hostsFile.Close()

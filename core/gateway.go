@@ -238,11 +238,12 @@ func wrapSolveError(inputErr *error, gw bkgw.Client) {
 			Args: execOp.Exec.Meta.Args,
 			// the magic env var is interpreted by the shim, telling it to just output
 			// the stdout/stderr contents rather than actually execute anything.
-			Env:    append(execOp.Exec.Meta.Env, DebugFailedExecEnv+"=1"),
-			User:   execOp.Exec.Meta.User,
-			Cwd:    execOp.Exec.Meta.Cwd,
-			Stdout: &nopCloser{ctrOut},
-			Stderr: &nopCloser{ctrErr},
+			Env:       append(execOp.Exec.Meta.Env, DebugFailedExecEnv+"=1"),
+			User:      execOp.Exec.Meta.User,
+			Cwd:       execOp.Exec.Meta.Cwd,
+			SecretEnv: execOp.Exec.Secretenv,
+			Stdout:    &nopCloser{ctrOut},
+			Stderr:    &nopCloser{ctrErr},
 		})
 		if err != nil {
 			return

@@ -1096,13 +1096,10 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		)
 	}
 
-	if len(container.Services) > 0 {
-		o, err := container.Services.RunOpt()
-		if err != nil {
-			return nil, err
-		}
-		runOpts = append(runOpts, o)
-	}
+	runOpts = append(runOpts, llb.AddSecret(
+		"_DAGGER_SEARCH_DOMAIN",
+		llb.SecretID(ServicesSearchDomainSecret),
+		llb.SecretAsEnv(true)))
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
@@ -1841,7 +1838,12 @@ func hostHash(val digest.Digest) string {
 	if err != nil {
 		panic(err)
 	}
+
 	return strings.ToLower(b32(xxh3.Hash(b)))
+}
+
+func hostHashStr(val string) string {
+	return strings.ToLower(b32(xxh3.HashString(val)))
 }
 
 func b32(n uint64) string {

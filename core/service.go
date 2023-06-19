@@ -1,12 +1,10 @@
 package core
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -25,9 +23,15 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ServicesSecretPrefix is the prefix for the secret used to populate a
-// container's /etc/hosts with services at runtime, without busting the cache.
-const ServicesSecretPrefix = "services:"
+// ServicesSearchDomainSecret is the name of a special secret
+// that fetches the DNS search domain for the current session.
+const ServicesSearchDomainSecret = "internal:services-search-domain"
+
+// SessionDomain returns the DNS search domain for the given
+// gateway session.
+func SessionDomain(gw bkgw.Client) string {
+	return hostHashStr(gw.BuildOpts().SessionID)
+}
 
 type Service struct {
 	// Container is the container that this service is running in.
@@ -144,7 +148,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	ctr := svc.Container
 	opts := svc.Exec
 
-	detachDeps, runningDeps, err := StartServices(ctx, gw, ctr.Services)
+	detachDeps, _, err := StartServices(ctx, gw, ctr.Services)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +214,13 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	cfg := ctr.Config
 
-	env := []string{}
+	// search domain for reaching other services
+	searchDomain := SessionDomain(gw)
+
+	env := []string{
+		"_DAGGER_SEARCH_DOMAIN=" + searchDomain,
+	}
+
 	for _, e := range cfg.Env {
 		// strip out any env that are meant for internal use only, to prevent
 		// manually setting them
@@ -367,26 +377,16 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	extraHosts := make([]*pb.HostIP, len(runningDeps))
-	for i, svc := range runningDeps {
-		extraHosts[i] = &pb.HostIP{
-			Host: svc.Hostname,
-			IP:   svc.IP.String(),
-		}
-	}
+	// set a hostname qualified by the current session ID
+	fullHost := host + "." + searchDomain
+	log.Println("!!! SERVICE FULL HOST", fullHost)
 
-	health := newHealth(gw, svc.Container.Ports)
+	health := newHealth(gw, fullHost, svc.Container.Ports)
 
 	gc, err := gw.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts: mounts,
-		// NB(vito): we don't actually need to set a hostname, since client
-		// containers are given a static host -> IP mapping.
-		//
-		// we could set it anyway, but I don't want to until all the DNS infra is
-		// ripped out, just to make sure nothing ever relies on it.
-		// Hostname:   host,
-		Platform:   &pbPlatform,
-		ExtraHosts: extraHosts,
+		Mounts:   mounts,
+		Hostname: fullHost,
+		Platform: &pbPlatform,
 	})
 	if err != nil {
 		return nil, err
@@ -396,13 +396,6 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	go func() {
 		checked <- health.Check(ctx)
 	}()
-
-	checkerAddr, err := health.CheckerAddr(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	env = append(env, "_DAGGER_CHECKER_ADDR="+checkerAddr)
 
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         args,
@@ -433,14 +426,8 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 			return nil, fmt.Errorf("health check errored: %w", err)
 		}
 
-		ip, err := health.ServiceIP(ctx)
-		if err != nil {
-			return nil, err
-		}
-
 		return &RunningService{
 			Service:   svc,
-			IP:        ip,
 			Hostname:  host,
 			Container: gc,
 			Process:   svcProc,
@@ -457,7 +444,6 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 type RunningService struct {
 	Service   *Service
 	Hostname  string
-	IP        net.IP
 	Container bkgw.Container
 	Process   bkgw.ContainerProcess
 }
@@ -591,29 +577,6 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 
 type ServiceBindings map[ServiceID]AliasSet
 
-func (bindings ServiceBindings) RunOpt() (llb.RunOption, error) {
-	hosts := []string{}
-	for id := range bindings {
-		svc, err := id.ToService()
-		if err != nil {
-			return nil, err
-		}
-
-		host, err := svc.Hostname()
-		if err != nil {
-			return nil, err
-		}
-
-		hosts = append(hosts, host)
-	}
-
-	sort.Strings(hosts)
-
-	return llb.AddSecret("_DAGGER_SERVICES",
-		llb.SecretID(ServicesSecretPrefix+strings.Join(hosts, ",")),
-		llb.SecretAsEnv(true)), nil
-}
-
 type AliasSet []string
 
 func (set AliasSet) String() string {
@@ -741,21 +704,15 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, bindings ServiceBi
 
 type portHealthChecker struct {
 	gw    bkgw.Client
+	host  string
 	ports []ContainerPort
-
-	checkerAddr    string
-	hasCheckerAddr chan struct{}
-
-	serviceIP    string
-	hasServiceIP chan struct{}
 }
 
-func newHealth(gw bkgw.Client, ports []ContainerPort) *portHealthChecker {
+func newHealth(gw bkgw.Client, host string, ports []ContainerPort) *portHealthChecker {
 	return &portHealthChecker{
-		gw:             gw,
-		ports:          ports,
-		hasCheckerAddr: make(chan struct{}),
-		hasServiceIP:   make(chan struct{}),
+		gw:    gw,
+		host:  host,
+		ports: ports,
 	}
 }
 
@@ -777,7 +734,7 @@ func result(ctx context.Context, gw bkgw.Client, st marshalable) (*bkgw.Result, 
 func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 
-	args := []string{"check"}
+	args := []string{"check", d.host}
 	for _, port := range d.ports {
 		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
 	}
@@ -816,24 +773,10 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 
 	defer container.Release(cleanupCtx)
 
-	outR, outW := io.Pipe()
-	go func() {
-		scan := bufio.NewScanner(outR)
-		for scan.Scan() {
-			if d.checkerAddr == "" {
-				d.checkerAddr = scan.Text()
-				close(d.hasCheckerAddr)
-			} else if d.serviceIP == "" {
-				d.serviceIP = scan.Text()
-				close(d.hasServiceIP)
-			}
-		}
-	}()
-
 	proc, err := container.Start(ctx, bkgw.StartRequest{
 		Args:   args,
 		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
-		Stdout: nopCloser{outW},
+		Stdout: nopCloser{vtx.Stdout()},
 		Stderr: nopCloser{vtx.Stderr()},
 	})
 	if err != nil {
@@ -861,27 +804,5 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 		<-exited
 
 		return ctx.Err()
-	}
-}
-
-func (d *portHealthChecker) CheckerAddr(ctx context.Context) (string, error) {
-	select {
-	case <-ctx.Done():
-		return "", ctx.Err()
-	case <-d.hasCheckerAddr:
-		return d.checkerAddr, nil
-	}
-}
-
-func (d *portHealthChecker) ServiceIP(ctx context.Context) (net.IP, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case <-d.hasServiceIP:
-		ip := net.ParseIP(d.serviceIP)
-		if ip == nil {
-			return nil, fmt.Errorf("invalid IP %q", d.serviceIP)
-		}
-		return ip, nil
 	}
 }

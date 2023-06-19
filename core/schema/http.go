@@ -41,35 +41,12 @@ type httpArgs struct {
 func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
 	pipeline := parent.PipelinePath()
 
-	hosts := llb.ExtraHosts{}
-	if args.ExperimentalServiceHost != nil {
-		svc, err := args.ExperimentalServiceHost.ToService()
-		if err != nil {
-			return nil, err
-		}
-
-		running, err := core.AllServices.Start(ctx, s.gw, svc)
-		if err != nil {
-			return nil, err
-		}
-
-		host, err := svc.Hostname()
-		if err != nil {
-			return nil, err
-		}
-
-		hosts = append(hosts, llb.HostIP{
-			Host: host,
-			IP:   running.IP,
-		})
-	}
-
 	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags
 	// and http checksums using an id based on this name, so setting it to the URL maximizes our chances
 	// of following more optimized cache codepaths.
 	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
 	filename := digest.FromString(args.URL).Encoded()
-	st := llb.HTTP(args.URL, llb.Filename(filename), hosts)
+	st := llb.HTTP(args.URL, llb.Filename(filename))
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
