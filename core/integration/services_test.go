@@ -1236,7 +1236,7 @@ mkdir srv
 cd repo
 	git init
 	git branch -m main
-	git add *
+	git add * || true
 	git commit -m "init"
 cd ..
 
