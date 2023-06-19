@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -52,6 +53,14 @@ type Config struct {
 	UserAgent          string
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
+
+	// ExtraSearchDomains specifies additional DNS search domains, typically from a
+	// parent session.
+	//
+	// TODO(vito): make sure to respect this in Exec, not just HTTP and Git. Exec
+	// doesn't have an LLB API, instead we use a hacky secret value and have the
+	// shim inject it into resolv.conf. Maybe do an upstream change instead?
+	ExtraSearchDomains []string
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -145,8 +154,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		return fmt.Errorf("normalize workdir: %w", err)
 	}
 
+	log.Println("!!! ENGINE DOMAINS", startOpts.ExtraSearchDomains)
+
 	router := router.New(startOpts.SessionToken, recorder)
-	secretStore := secret.NewStore()
+	secretStore := secret.NewStore(startOpts.ExtraSearchDomains)
 
 	socketProviders := SocketProvider{
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
@@ -222,19 +233,20 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 
 			gwClient := core.NewGatewayClient(gw, cacheConfigType, cacheConfigAttrs)
 			coreAPI, err := schema.New(schema.InitializeArgs{
-				Router:         router,
-				Workdir:        startOpts.Workdir,
-				Gateway:        gwClient,
-				BKClient:       c.BuildkitClient,
-				SolveOpts:      solveOpts,
-				SolveCh:        solveCh,
-				Platform:       *platform,
-				DisableHostRW:  startOpts.DisableHostRW,
-				Auth:           registryAuth,
-				EnableServices: os.Getenv(engine.ServicesDNSEnvName) != "0",
-				Secrets:        secretStore,
-				OCIStore:       ociStore,
-				ProgrockSocket: progSock,
+				Router:             router,
+				Workdir:            startOpts.Workdir,
+				Gateway:            gwClient,
+				BKClient:           c.BuildkitClient,
+				SolveOpts:          solveOpts,
+				SolveCh:            solveCh,
+				Platform:           *platform,
+				DisableHostRW:      startOpts.DisableHostRW,
+				Auth:               registryAuth,
+				EnableServices:     os.Getenv(engine.ServicesDNSEnvName) != "0",
+				Secrets:            secretStore,
+				OCIStore:           ociStore,
+				ProgrockSocket:     progSock,
+				ExtraSearchDomains: startOpts.ExtraSearchDomains,
 			})
 			if err != nil {
 				return nil, err

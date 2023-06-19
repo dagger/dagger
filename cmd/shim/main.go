@@ -479,8 +479,8 @@ func setupBundle() int {
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
 		case strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN="):
-			// NB: don't keep this env var, it's only for the bundling step
-			// keepEnv = append(keepEnv, env)
+			// keep this env var; it is propagated to nested Dagger
+			keepEnv = append(keepEnv, env)
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -651,6 +651,13 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	engineConf := engine.Config{
 		SessionToken: sessionToken.String(),
 		RunnerHost:   "unix:///.runner.sock",
+	}
+
+	if searchDomains, found := os.LookupEnv("_DAGGER_SEARCH_DOMAIN"); found {
+		// NB: don't use internalEnv; we keep it around to propagate to the command
+		//
+		// TODO: maybe not?
+		engineConf.ExtraSearchDomains = strings.Fields(searchDomains)
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {

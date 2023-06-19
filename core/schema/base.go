@@ -12,18 +12,19 @@ import (
 )
 
 type InitializeArgs struct {
-	Router         *router.Router
-	Workdir        string
-	Gateway        *core.GatewayClient
-	BKClient       *bkclient.Client
-	SolveOpts      bkclient.SolveOpt
-	SolveCh        chan *bkclient.SolveStatus
-	OCIStore       content.Store
-	Platform       specs.Platform
-	DisableHostRW  bool
-	Auth           *auth.RegistryAuthProvider
-	Secrets        *secret.Store
-	ProgrockSocket string
+	Router             *router.Router
+	Workdir            string
+	Gateway            *core.GatewayClient
+	BKClient           *bkclient.Client
+	SolveOpts          bkclient.SolveOpt
+	SolveCh            chan *bkclient.SolveStatus
+	OCIStore           content.Store
+	Platform           specs.Platform
+	DisableHostRW      bool
+	Auth               *auth.RegistryAuthProvider
+	Secrets            *secret.Store
+	ProgrockSocket     string
+	ExtraSearchDomains []string
 
 	// TODO(vito): remove when stable
 	EnableServices bool
@@ -31,19 +32,19 @@ type InitializeArgs struct {
 
 func New(params InitializeArgs) (router.ExecutableSchema, error) {
 	base := &baseSchema{
-		router:    params.Router,
-		gw:        params.Gateway,
-		bkClient:  params.BKClient,
-		solveOpts: params.SolveOpts,
-		solveCh:   params.SolveCh,
-		platform:  params.Platform,
-		auth:      params.Auth,
-		secrets:   params.Secrets,
+		router:             params.Router,
+		gw:                 params.Gateway,
+		bkClient:           params.BKClient,
+		solveOpts:          params.SolveOpts,
+		solveCh:            params.SolveCh,
+		platform:           params.Platform,
+		auth:               params.Auth,
+		secrets:            params.Secrets,
+		progSock:           params.ProgrockSocket,
+		extraSearchDomains: params.ExtraSearchDomains,
 
 		// TODO(vito): remove when stable
 		servicesEnabled: params.EnableServices,
-
-		progSock: params.ProgrockSocket,
 	}
 	host := core.NewHost(params.Workdir, params.DisableHostRW)
 	return router.MergeExecutableSchemas("core",
@@ -78,4 +79,11 @@ type baseSchema struct {
 
 	// path to Progrock forwarding socket
 	progSock string
+
+	// search domains to use for DNS resolution
+	extraSearchDomains []string
+}
+
+func (s *baseSchema) searchDomains() []string {
+	return append([]string{core.ServicesDomain()}, s.extraSearchDomains...)
 }

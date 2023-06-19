@@ -237,7 +237,12 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 		}
 	}
 
-	secretEnv := []*pb.SecretEnv{}
+	secretEnv := []*pb.SecretEnv{
+		{
+			ID:   ServicesSearchDomainSecret,
+			Name: "_DAGGER_SEARCH_DOMAIN", // TODO const
+		},
+	}
 	secretsToScrub := SecretToScrubInfo{}
 	for i, ctrSecret := range ctr.Secrets {
 		switch {

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -66,6 +67,11 @@ func withEngineAndTUI(
 
 	if engineConf.JournalFile == "" {
 		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
+	}
+
+	if engineConf.ExtraSearchDomains == nil {
+		// TODO(vito): _EXPERIMENTAL; must be in sync with shim
+		engineConf.ExtraSearchDomains = strings.Fields(os.Getenv("_DAGGER_SEARCH_DOMAIN"))
 	}
 
 	if !silent {
