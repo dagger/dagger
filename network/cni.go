@@ -65,6 +65,16 @@ func cniConfig(name, subnet string) ([]byte, error) {
 			map[string]any{
 				"type": "firewall",
 			},
+			map[string]any{
+				"type":       "dnsname",
+				"domainName": name + ".local",
+				"pidfile":    pidfilePath(name),
+				"hosts":      hostsPath(name),
+				"lockfile":   lockfilePath(name),
+				"capabilities": map[string]any{
+					"aliases": true,
+				},
+			},
 		},
 	})
 }

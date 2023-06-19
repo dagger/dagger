@@ -200,7 +200,7 @@ func devEngineContainer(c *dagger.Client, arch string, opts ...DevEngineOpts) *d
 			// for Buildkit
 			"git", "openssh", "pigz", "xz",
 			// for CNI
-			"iptables", "ip6tables",
+			"iptables", "ip6tables", "dnsmasq",
 		}).
 		WithFile("/usr/local/bin/runc", runcBin(c, arch), dagger.ContainerWithFileOpts{
 			Permissions: 0o700,
@@ -250,7 +250,21 @@ func cniPlugins(c *dagger.Client, arch string) *dagger.Directory {
 			"./bridge", "./firewall", // required by dagger network stack
 			"./loopback", "./host-local", // implicitly required (container fails without them)
 		}).
+		WithFile("/opt/cni/bin/dnsname", dnsnameBinary(c, arch)).
 		Directory("/opt/cni/bin")
+}
+
+func dnsnameBinary(c *dagger.Client, arch string) *dagger.File {
+	return goBase(c).
+		WithEnvVariable("GOOS", "linux").
+		WithEnvVariable("GOARCH", arch).
+		WithExec([]string{
+			"go", "build",
+			"-o", "./bin/dnsname",
+			"-ldflags", "-s -w",
+			"/app/cmd/dnsname",
+		}).
+		File("./bin/dnsname")
 }
 
 func buildctlBin(c *dagger.Client, arch string) *dagger.File {
