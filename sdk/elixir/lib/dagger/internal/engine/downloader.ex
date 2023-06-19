@@ -26,20 +26,89 @@ defmodule Dagger.Internal.Engine.Downloader do
     end
   end
 
-  # TODO: checksum.
   defp extract_cli(cli_host, cli_version, bin_path) do
-    with {:ok, response} <- Req.get(cli_archive_url(cli_host, cli_version)) do
-      {_, dagger_bin} =
-        Enum.find(response.body, fn {filename, _bin} ->
-          filename == dagger_bin_in_archive(os())
-        end)
+    req = Req.new(url: cli_archive_url(cli_host, cli_version))
 
-      File.write(bin_path, dagger_bin)
+    with {:ok, raw_response} <- Req.get(req, raw: true) do
+      calculated_checksum =
+        :crypto.hash(:sha256, raw_response.body) |> Base.encode16(case: :lower)
+
+      case expected_checksum(cli_host, cli_version) do
+        {:ok, expected_checksum} ->
+          cond do
+            calculated_checksum != expected_checksum ->
+              {:error,
+               "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
+
+            true ->
+              {_, decoded_response} = Req.Steps.decode_body({req, raw_response})
+
+              {_, dagger_bin} =
+                Enum.find(decoded_response.body, fn {filename, _bin} ->
+                  filename == dagger_bin_in_archive(os())
+                end)
+
+              File.write(bin_path, dagger_bin)
+          end
+
+        error ->
+          error
+      end
+    end
+  end
+
+  def expected_checksum(cli_host, cli_version) do
+    archive_name = default_cli_archive_name(os(), arch(), cli_version)
+
+    {:ok, checksum_map} = checksum_map(cli_host, cli_version)
+
+    expected_value =
+      Enum.find_value(checksum_map, fn {key, value} ->
+        if to_string(key) == archive_name, do: value
+      end)
+
+    cond do
+      expected_value == nil ->
+        {:error, "expected value find error"}
+
+      true ->
+        {:ok, expected_value}
+    end
+  end
+
+  defp checksum_map(cli_host, cli_version) do
+    try do
+      with {:ok, response} <- Req.get(checksum_url(cli_host, cli_version)) do
+        checksum_map =
+          response.body
+          |> String.split("\n", trim: true)
+          |> Stream.map(&String.split/1)
+          |> Enum.map(fn list ->
+            list_count = Enum.count(list)
+
+            cond do
+              list_count != 2 ->
+                raise "invalid checksum line: #{list_count}"
+
+              true ->
+                %{"#{Enum.at(list, 1)}": Enum.at(list, 0)}
+            end
+          end)
+          |> Enum.concat()
+
+        {:ok, checksum_map}
+      end
+    rescue
+      reason in RuntimeError -> {:error, reason}
     end
   end
 
   defp dagger_bin_in_archive(:windows), do: ~c"dagger.exe"
   defp dagger_bin_in_archive(_), do: ~c"dagger"
+
+  defp checksum_url(cli_host, cli_version) do
+    "https://#{cli_host}/dagger/releases/#{cli_version}/checksums.txt"
+  end
 
   defp cli_archive_url(cli_host, cli_version) do
     archive_name = default_cli_archive_name(os(), arch(), cli_version)
