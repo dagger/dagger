@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -436,8 +435,6 @@ func setupBundle() int {
 		}
 	}
 
-	log.Println("!!! SEARCH DOMAINS", searchDomains)
-
 	var hostsFilePath string
 	for i, mnt := range spec.Mounts {
 		switch mnt.Destination {
@@ -450,14 +447,12 @@ func setupBundle() int {
 
 			newResolvPath := filepath.Join(bundleDir, "resolv.conf")
 
-			log.Println("!!! UPDATING RESOLV FILE PATH", mnt.Source, newResolvPath)
-
 			newResolv, err := os.Create(newResolvPath)
 			if err != nil {
 				panic(err)
 			}
 
-			if err := replaceSearch(io.MultiWriter(newResolv, os.Stderr), mnt.Source, searchDomains); err != nil {
+			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
 				panic(err)
 			}
 
@@ -578,7 +573,6 @@ func appendHostAlias(hostsFilePath string, env string, searchDomains []string) e
 
 		var err error
 		ips, err = net.LookupIP(qualified)
-		log.Println("!!! LOOKUP", qualified, ips)
 		if err == nil {
 			errs = nil // ignore prior failures
 			break

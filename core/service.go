@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -385,7 +384,6 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	// set a hostname qualified by the current session ID
 	fullHost := host + "." + searchDomain
-	log.Println("!!! SERVICE FULL HOST", fullHost)
 
 	health := newHealth(gw, fullHost, svc.Container.Ports)
 

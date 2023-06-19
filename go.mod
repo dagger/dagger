@@ -264,4 +264,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230619215640-f5303ca0cc88
+replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230619221809-ee00c80336fd
