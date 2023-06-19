@@ -57,7 +57,7 @@ class Server:
         type_name, field_name = inputs.resolver.split(".", 2)
         field = self.schema.get_field_for_type(field_name, type_name)
         if field is None:
-            # FIXME: use proper error class
+            # TODO: use proper error class
             msg = f"Can't find field `{field_name}` for type `{type_name}`"
             raise ValueError(msg)
 

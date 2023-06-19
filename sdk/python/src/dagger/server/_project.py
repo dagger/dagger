@@ -21,7 +21,7 @@ from strawberry.utils.await_maybe import await_maybe
 from dagger.api.base import Type as DaggerType
 from dagger.api.gen import Client
 
-from ._exceptions import BadParameter, SchemaValidationError
+from ._exceptions import BadParameterError, SchemaValidationError
 from ._util import has_resolver
 
 _dummy_types = {}
@@ -34,11 +34,11 @@ def get_schema(module: types.ModuleType):
     # Remove dummy types that were added to satisfy Strawberry. These
     # should only come from API types that already exist in the schema.
     for type_ in _dummy_types:
-        # HACK: schema._schema is the generated lower level GraphQL schema.
+        # schema._schema is the generated lower level GraphQL schema.
         # It's not exposed publicly but it's stable. There's no other
         # hook into strawberry to skip validation on an unknown type.
         # The alternative is to remove from the printed schema with a regex.
-        del schema._schema.type_map[type_]
+        del schema._schema.type_map[type_]  # noqa: SLF001
     return schema
 
 
@@ -51,7 +51,11 @@ def get_root(module: types.ModuleType) -> type | None:
 
 # TODO: Strawberry has a create_type function just like this, but without
 # the `extend` parameter. Submit an upstream PR or issue to add it.
-def create_type(name: str, fields: list[StrawberryField], extend=False) -> type:
+def create_type(
+    name: str,
+    fields: list[StrawberryField],
+    extend=False,  # noqa: FBT002
+) -> type:
     """Create a strawberry type dynamically."""
     namespace = {}
     annotations = {}
@@ -60,7 +64,7 @@ def create_type(name: str, fields: list[StrawberryField], extend=False) -> type:
         namespace[field.python_name] = field
         annotations[field.python_name] = field.type
 
-    namespace["__annotations__"] = annotations  # type: ignore
+    namespace["__annotations__"] = annotations
 
     cls = types.new_class(name, (), {}, lambda ns: ns.update(namespace))
 
@@ -172,13 +176,13 @@ def command(func: Callable[..., Any] | None = None, *, name: str | None = None):
                     f"Parameter '{param.name}' has a default value "
                     "which is not supported yet."
                 )
-                raise BadParameter(msg, param)
+                raise BadParameterError(msg, param)
 
             # TODO: Allow using reserved names by transforming them
             # between strawberry and dagger.
             if param.name in ("root", "info"):
                 msg = f"Parameter name '{param.name}' is reserved."
-                raise BadParameter(msg, param)
+                raise BadParameterError(msg, param)
 
             # Use type_hints instead of param.annotation to get
             # resolved forward references.

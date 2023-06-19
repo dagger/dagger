@@ -11,7 +11,7 @@ class SchemaValidationError(ServerError):
     ...
 
 
-class BadParameter(SchemaValidationError):
+class BadParameterError(SchemaValidationError):
     def __init__(self, message: str, parameter: inspect.Parameter):
         super().__init__(message)
         self.parameter = parameter

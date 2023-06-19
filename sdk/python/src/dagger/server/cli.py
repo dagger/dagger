@@ -43,8 +43,8 @@ def main(
 
 def get_server(module_name: str = "main") -> Server:
     """Get the server instance from the main module."""
-    # FIXME: Temporarily always on debug during experimental phase.
-    # Pass --debug flag from CLI to runtime?
+    # TODO: Temporarily always on debug during experimental phase.
+    # Support user configuration in a `pyproject.toml`.
     debug = True
 
     try:
