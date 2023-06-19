@@ -1,4 +1,3 @@
-import inspect
 import logging
 from collections.abc import Callable
 from functools import partial
@@ -7,8 +6,8 @@ from typing import Any, cast
 
 import anyio
 import attrs
+import strawberry
 from cattrs.preconf.json import JsonConverter
-from strawberry import Schema
 from strawberry.utils.await_maybe import await_maybe
 
 from ._context import Context
@@ -31,7 +30,7 @@ class Inputs:
 
 @attrs.define
 class Server:
-    schema: Schema
+    schema: strawberry.Schema
     converter: JsonConverter = json_converter
     debug: bool = False
 
@@ -62,7 +61,7 @@ class Server:
             msg = f"Can't find field `{field_name}` for type `{type_name}`"
             raise ValueError(msg)
 
-        resolver: Callable = self.schema.schema_converter.from_resolver(field)
+        resolver = self.schema.schema_converter.from_resolver(field)
 
         # origin is the parent type of the resolver/field.
         origin = cast(Callable, field.origin)
@@ -73,15 +72,12 @@ class Server:
             # inputs.parent is a dict of the parent type's fields.
             if inputs.parent is None:
                 parent = origin()
-            elif inspect.isclass(origin):
+            else:
                 parent = await anyio.to_thread.run_sync(
                     self.converter.structure,
                     inputs.parent,
                     origin,
                 )
-            else:
-                # TODO: When is origin not a class?
-                parent = origin(**inputs.parent)
 
             # Mock GraphQLResolveInfo that Strawberry wraps around in Info
             # so we can access some data in the decorated resolvers.

@@ -2,18 +2,18 @@ import functools
 import inspect
 import types
 from collections.abc import Callable
-from inspect import Parameter, getdoc
-from types import ModuleType
+from dataclasses import dataclass
 from typing import (
     Annotated,
     Any,
-    cast,
     get_args,
     get_origin,
     get_type_hints,
 )
 
 import strawberry
+from strawberry.extensions import FieldExtension
+from strawberry.extensions.field_extension import AsyncExtensionResolver
 from strawberry.field import StrawberryField
 from strawberry.types import Info
 from strawberry.utils.await_maybe import await_maybe
@@ -21,29 +21,63 @@ from strawberry.utils.await_maybe import await_maybe
 from dagger.api.base import Type as DaggerType
 from dagger.api.gen import Client
 
-from ._exceptions import SchemaValidationError
-from ._server import Context
+from ._exceptions import BadParameter, SchemaValidationError
 from ._util import has_resolver
 
 _dummy_types = {}
 
 
-def get_schema(module: ModuleType):
+def get_schema(module: types.ModuleType):
     if not (root := get_root(module)):
         return None
     schema = strawberry.Schema(query=root)
     # Remove dummy types that were added to satisfy Strawberry. These
-    # should only come from dagger types that already exist in the schema.
+    # should only come from API types that already exist in the schema.
     for type_ in _dummy_types:
+        # HACK: schema._schema is the generated lower level GraphQL schema.
+        # It's not exposed publicly but it's stable. There's no other
+        # hook into strawberry to skip validation on an unknown type.
+        # The alternative is to remove from the printed schema with a regex.
         del schema._schema.type_map[type_]
     return schema
 
 
-def get_root(module: ModuleType) -> type | None:
+def get_root(module: types.ModuleType) -> type | None:
     """The root type is the group of all the top level command functions."""
     if fields := get_commands(module):
         return create_type("Query", fields, extend=True)
     return None
+
+
+# TODO: Strawberry has a create_type function just like this, but without
+# the `extend` parameter. Submit an upstream PR or issue to add it.
+def create_type(name: str, fields: list[StrawberryField], extend=False) -> type:
+    """Create a strawberry type dynamically."""
+    namespace = {}
+    annotations = {}
+
+    for field in fields:
+        namespace[field.python_name] = field
+        annotations[field.python_name] = field.type
+
+    namespace["__annotations__"] = annotations  # type: ignore
+
+    cls = types.new_class(name, (), {}, lambda ns: ns.update(namespace))
+
+    return strawberry.type(cls, extend=extend)
+
+
+def convert_to_strawberry(type_: Any) -> Any:
+    """Convert types from user code into Strawberry compatible types."""
+    if inspect.isclass(type_) and issubclass(type_, DaggerType):
+        # Dagger types already exist in the API but we need to have
+        # them in the strawberry schema for validation.
+        return get_dummy_type(type_)
+
+    # TODO: default to str because that's the only type that's supported
+    # in the API at the moment. Will need to structure/unstructure inside
+    # the adapter resolver.
+    return type_
 
 
 def get_dummy_type(cls: type) -> type:
@@ -63,25 +97,7 @@ def get_dummy_type(cls: type) -> type:
     return _dummy_types[name]
 
 
-def create_type(name: str, fields: list[StrawberryField], extend=False) -> type:
-    """Create a strawberry type dynamically."""
-    namespace = {}
-    annotations = {}
-
-    for field in fields:
-        namespace[field.python_name] = field
-        annotations[field.python_name] = field.type
-
-    namespace["__annotations__"] = annotations  # type: ignore
-
-    cls = types.new_class(name, (), {}, lambda ns: ns.update(namespace))
-
-    # TODO: Strawberry has a create_type function just like this, but without
-    # the `extend` parameter. Submit an upstream PR or issue to add it.
-    return strawberry.type(cls, extend=extend)
-
-
-def get_commands(module: ModuleType):
+def get_commands(module: types.ModuleType):
     """Get top-level @command functions in module."""
     return [attr for _, attr in inspect.getmembers(module, has_resolver)]
 
@@ -122,9 +138,7 @@ def commands(cls: type):
     return strawberry.type(cls)
 
 
-def command(  # noqa: C901
-    func: Callable[..., Any] | None = None, *, name: str | None = None
-):
+def command(func: Callable[..., Any] | None = None, *, name: str | None = None):
     '''Function decorator for registering a command in the CLI.
 
     Example:
@@ -142,77 +156,96 @@ def command(  # noqa: C901
     '''
 
     def decorator(f: Callable[..., Any]):
-        # replace Annotated[T, "description"] argument type hints
-        # with Annotated[T, argument(description="description")]
-        # TODO: do this when looping over the function's parameters below.
-        type_hints = get_type_hints(f, include_extras=True)
-        for arg_name, type_hint in type_hints.items():
-            if get_origin(type_hint) is Annotated:
-                arg_type, annotation, *_ = get_args(type_hint)
-                if isinstance(annotation, str):
-                    arg = argument(description=annotation)
-                    type_hints[arg_name] = Annotated[arg_type, arg]
-        f.__annotations__ = type_hints
-
+        # We could subclass StrawberryResolver and take advantage of its
+        # processing logic, but it's better to have as little knowledge of
+        # Strawberry internals as possible. We'll just wrap the user's
+        # function into something that Strawberry can use without issues.
         signature = inspect.signature(f)
-
-        strawberry_params = []
-        # TODO: Abstract this using converter callbacks.
-        resolver_requested_client = None
-        # TODO: Allow using reserved names by transforming them
-        # between strawberry and dagger.
-        reserved_params = ("info", "root")
+        type_hints = get_type_hints(f, include_extras=True)
+        new_params = []
+        extensions = []
 
         for param in signature.parameters.values():
-            if param.name in reserved_params:
+            # TODO: Support default values in schema.
+            if param.default is not inspect.Parameter.empty:
+                msg = (
+                    f"Parameter '{param.name}' has a default value "
+                    "which is not supported yet."
+                )
+                raise BadParameter(msg, param)
+
+            # TODO: Allow using reserved names by transforming them
+            # between strawberry and dagger.
+            if param.name in ("root", "info"):
                 msg = f"Parameter name '{param.name}' is reserved."
-                raise ValueError(msg)
-            if param.annotation is Client:
-                resolver_requested_client = param.name
-            else:
-                # TODO: Support default values in schema.
-                if param.default is not Parameter.empty:
-                    msg = (
-                        f"Parameter '{param.name}' has a default value "
-                        "which isn't yet supported."
-                    )
-                    raise ValueError(msg)
-                strawberry_params.append(param)
+                raise BadParameter(msg, param)
 
-        # Always add info to get the client in the resolver.
-        strawberry_params.append(
-            Parameter("info", Parameter.POSITIONAL_OR_KEYWORD, default=None),
+            # Use type_hints instead of param.annotation to get
+            # resolved forward references.
+            annotation = type_hints.get(param.name)
+
+            # Exclude the internal client argument from the GraphQL schema.
+            if annotation is Client:
+                extensions.append(ClientExtension(param.name))
+                continue
+
+            # Convenience to replace Annotated[T, "description"] argument type hints
+            # with Annotated[T, argument(description="description")].
+            if get_origin(annotation) is Annotated:
+                match get_args(annotation):
+                    case (arg_type, arg_meta) if isinstance(arg_meta, str):
+                        annotation = Annotated[arg_type, argument(description=arg_meta)]
+
+            new_params.append(
+                param.replace(
+                    annotation=convert_to_strawberry(annotation),
+                ),
+            )
+
+        # Create a new function to change the signature without modifying
+        # the original. At the same time we can simplify sync/async resolvers
+        # by always exposing to Strawberry an async one. This way we don't
+        # have to duplicate sync and async logic in field extensions.
+        async def adapter(*args, **kwargs):
+            return await await_maybe(f(*args, **kwargs))
+
+        adapter.__signature__ = signature.replace(
+            parameters=new_params,
+            return_annotation=convert_to_strawberry(
+                # type_hints has resolved forward references, unlike
+                # signature.return_annotation.
+                type_hints.get("return"),
+            ),
         )
 
-        return_type = signature.return_annotation
-        if issubclass(return_type, DaggerType):
-            # Dagger types already exist in the API but we need to have
-            # them in the strawberry schema for validation.
-            return_type = get_dummy_type(return_type)
+        # Update annotations from new signature.
+        adapter.__annotations__ = get_type_hints(adapter, include_extras=True)
 
-        # Make a resolver tailored for strawberry.
-        async def strawberry_resolver(*args, **kwargs) -> type | str:
-            info = cast(Info[Context, Any], kwargs.pop("info"))
-            if param_name := resolver_requested_client:
-                kwargs[param_name] = await info.context.get_client()
-            bound = signature.bind(*args, **kwargs)
-            return await await_maybe(f(*bound.args, **bound.kwargs))
-
-        functools.update_wrapper(strawberry_resolver, f)
-        strawberry_resolver.__signature__ = signature.replace(
-            parameters=strawberry_params,
-            return_annotation=return_type,
-        )
-
-        field = strawberry.field(
-            resolver=strawberry_resolver,
+        return strawberry.field(
+            resolver=functools.update_wrapper(adapter, f),
             name=name,
-            description=getdoc(f),
+            description=inspect.getdoc(f),
+            extensions=extensions or None,
         )
-
-        return cast(StrawberryField, field)
 
     return decorator(func) if func else decorator
+
+
+@dataclass
+class ClientExtension(FieldExtension):
+    """Extension to inject the dagger client into a command resolver."""
+
+    name: str
+
+    async def resolve_async(
+        self,
+        next_: AsyncExtensionResolver,
+        source: Any,
+        info: Info,
+        **kwargs: Any,
+    ) -> Any:
+        kwargs[self.name] = await info.context.get_client()
+        return await next_(source, info, **kwargs)
 
 
 def argument(description: str | None = None, *, name: str | None = None):
