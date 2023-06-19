@@ -241,7 +241,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancel(context.Background())
 		defer cancelNetworking()
-		cniConfigPath, err := setupNetwork(networkContext,
+		netConf, err := setupNetwork(networkContext,
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
 		)
@@ -250,7 +250,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
+		if err := setDaggerDefaults(&cfg, netConf); err != nil {
 			return err
 		}
 
@@ -959,32 +959,46 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 	return &tracev1.ExportTraceServiceResponse{}, nil
 }
 
-func setupNetwork(ctx context.Context, netName, netCIDR string) (string, error) {
+type networkConfig struct {
+	NetName       string
+	NetCIDR       string
+	Bridge        net.IP
+	CNIConfigPath string
+}
+
+func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
 	if os.Getenv(servicesDNSEnvName) == "0" {
-		return "", nil
+		return nil, nil
 	}
 
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("bridge from cidr: %w", err)
+		return nil, fmt.Errorf("bridge from cidr: %w", err)
 	}
 
+	// NB: this is needed for the Dagger shim worker at the moment for host alias
+	// resolution
 	err = network.InstallResolvconf(netName, bridge.String())
 	if err != nil {
-		return "", fmt.Errorf("install resolv.conf: %w", err)
+		return nil, fmt.Errorf("install resolv.conf: %w", err)
 	}
 
 	err = network.InstallDnsmasq(ctx, netName)
 	if err != nil {
-		return "", fmt.Errorf("install dnsmasq: %w", err)
+		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
 	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("install cni: %w", err)
+		return nil, fmt.Errorf("install cni: %w", err)
 	}
 
-	return cniConfigPath, nil
+	return &networkConfig{
+		NetName:       netName,
+		NetCIDR:       netCIDR,
+		Bridge:        bridge,
+		CNIConfigPath: cniConfigPath,
+	}, nil
 }
 
 type noopCacheImporter struct{}
