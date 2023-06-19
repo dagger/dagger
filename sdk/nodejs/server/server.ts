@@ -3,7 +3,7 @@ import ts from "typescript"
 import Client from "../api/client.gen.js"
 import { UnknownDaggerError } from "../common/errors/UnknownDaggerError.js"
 import { connect } from "../connect.js"
-import { entrypoinsMetadatatoGQLSchema } from "./convertor.js"
+import { entrypointsMetadatatoGQLSchema } from "./convertor.js"
 import { EntrypointMetadata } from "./entrypointMetadata.js"
 import { serializeSignature, serializeSymbol } from "./serialization.js"
 import { listFiles, writeFile, readFile } from "./utils.js"
@@ -84,7 +84,7 @@ export async function getSchema(...entrypoints: Entrypoint[]): Promise<void> {
     }
   }
 
-  const gqlSchema = entrypoinsMetadatatoGQLSchema(metadatas)
+  const gqlSchema = entrypointsMetadatatoGQLSchema(metadatas)
   await writeFile(gqlSchema, "/outputs/schema.graphql")
 }
 
@@ -101,6 +101,25 @@ function parseResolver(input: string): Resolver {
   }
 }
 
+/**
+ * serveCommands allow Dagger to execute code-first function using dagger do.
+ *
+ * Forwarded functions MUST take as first parameter a Dagger client.
+ *
+ * @example
+ * ```
+ *  import Client, { serveCommands } from "@dagger.io/dagger"
+ *
+ *  serveCommands(hello)
+ *
+ *  function hello(_: Client, name: string): string {
+ *    return `Hello ${ name }`
+ *  }
+ * ```
+ *
+ * @param entrypoints functions to transform into GraphQL query
+ * @warning EXPERIMENTAL, this feature is not production ready
+ */
 export async function serveCommands(
   ...entrypoints: Entrypoint[]
 ): Promise<void> {

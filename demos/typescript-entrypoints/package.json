@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "start": "node --loader ts-node/esm ./main.mts"
+    "start": "node --loader ts-node/esm ./index.mts"
   },
   "dependencies": {
     "@dagger.io/dagger": "../../sdk/nodejs",
