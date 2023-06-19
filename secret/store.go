@@ -57,7 +57,7 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 // In all other cases, a SecretID is expected.
 func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
 	if idOrName == core.ServicesSearchDomainSecret {
-		return []byte(core.SessionDomain(store.gw)), nil
+		return []byte(core.ServicesDomain()), nil
 	}
 
 	var name string

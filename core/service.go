@@ -27,10 +27,16 @@ import (
 // that fetches the DNS search domain for the current session.
 const ServicesSearchDomainSecret = "internal:services-search-domain"
 
-// SessionDomain returns the DNS search domain for the given
-// gateway session.
-func SessionDomain(gw bkgw.Client) string {
-	return hostHashStr(gw.BuildOpts().SessionID)
+var servicesDomain string
+var servicesDomainOnce = &sync.Once{}
+
+// ServicesDomain is a session-global domain suffix appended to every service's
+// hostname. It is randomly generated on the first call.
+func ServicesDomain() string {
+	servicesDomainOnce.Do(func() {
+		servicesDomain = hostHashStr(identity.NewID())
+	})
+	return servicesDomain
 }
 
 type Service struct {
@@ -215,7 +221,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	cfg := ctr.Config
 
 	// search domain for reaching other services
-	searchDomain := SessionDomain(gw)
+	searchDomain := ServicesDomain()
 
 	env := []string{
 		"_DAGGER_SEARCH_DOMAIN=" + searchDomain,

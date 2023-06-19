@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -426,44 +428,45 @@ func setupBundle() int {
 	}
 
 	// collect service IPs first so they can be used for service aliases below
-	var searchDomain string
+	var searchDomains []string
 	for _, env := range spec.Process.Env {
 		if strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN=") {
 			_, val, _ := strings.Cut(env, "=")
-			searchDomain = val
+			searchDomains = strings.Fields(val)
 		}
 	}
 
-	log.Println("!!! SEARCH DOMAIN", searchDomain)
-	if searchDomain == "" {
-		for _, env := range spec.Process.Env {
-			log.Println("!!! NO SEARCH DOMAIN", env)
-		}
-	}
-	log.Println("!!! BUNDLE DIR", bundleDir)
+	log.Println("!!! SEARCH DOMAINS", searchDomains)
 
 	var hostsFilePath string
-	var resolvFilePath string
-	for _, mnt := range spec.Mounts {
-		if mnt.Destination == "/etc/hosts" {
+	for i, mnt := range spec.Mounts {
+		switch mnt.Destination {
+		case "/etc/hosts":
 			hostsFilePath = mnt.Source
-			log.Println("!!! HOST FILE PATH", hostsFilePath)
-		}
-		if mnt.Destination == "/etc/resolv.conf" {
-			resolvFilePath = mnt.Source
-		}
-	}
+		case "/etc/resolv.conf":
+			if len(searchDomains) == 0 {
+				break
+			}
 
-	if resolvFilePath != "" {
-		log.Println("!!! RESOLV FILE PATH", resolvFilePath)
-		cat := exec.Command("cat", resolvFilePath)
-		cat.Stdout = os.Stdout
-		cat.Stderr = os.Stderr
-		if err := cat.Run(); err != nil {
-			panic(err)
+			newResolvPath := filepath.Join(bundleDir, "resolv.conf")
+
+			log.Println("!!! UPDATING RESOLV FILE PATH", mnt.Source, newResolvPath)
+
+			newResolv, err := os.Create(newResolvPath)
+			if err != nil {
+				panic(err)
+			}
+
+			if err := replaceSearch(io.MultiWriter(newResolv, os.Stderr), mnt.Source, searchDomains); err != nil {
+				panic(err)
+			}
+
+			if err := newResolv.Close(); err != nil {
+				panic(err)
+			}
+
+			spec.Mounts[i].Source = newResolvPath
 		}
-	} else {
-		log.Println("!!! NO RESOLV FILE PATH")
 	}
 
 	keepEnv := []string{}
@@ -487,7 +490,7 @@ func setupBundle() int {
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			if err := appendHostAlias(hostsFilePath, env, searchDomain); err != nil {
+			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
@@ -558,19 +561,33 @@ func setupBundle() int {
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
 
-func appendHostAlias(hostsFilePath string, env string, searchDomain string) error {
+func appendHostAlias(hostsFilePath string, env string, searchDomains []string) error {
 	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
 	if !ok {
 		return fmt.Errorf("malformed host alias: %s", env)
 	}
 
-	if searchDomain != "" {
-		target += "." + searchDomain
-	}
+	var ips []net.IP
+	var errs error
+	for _, domain := range append([]string{""}, searchDomains...) {
+		qualified := target
 
-	ip, err := net.LookupIP(target)
-	if err != nil {
-		return err
+		if domain != "" {
+			qualified += "." + domain
+		}
+
+		var err error
+		ips, err = net.LookupIP(qualified)
+		log.Println("!!! LOOKUP", qualified, ips)
+		if err == nil {
+			errs = nil // ignore prior failures
+			break
+		}
+
+		errs = errors.Join(errs, err)
+	}
+	if errs != nil {
+		return errs
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
@@ -578,8 +595,10 @@ func appendHostAlias(hostsFilePath string, env string, searchDomain string) erro
 		return err
 	}
 
-	if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
-		return err
+	for _, ip := range ips {
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
+			return err
+		}
 	}
 
 	return hostsFile.Close()
@@ -674,5 +693,36 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if engineErr != nil {
 		return fmt.Errorf("engine: %w", engineErr)
 	}
+	return nil
+}
+
+func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {
+	src, err := os.Open(resolv)
+	if err != nil {
+		return nil
+	}
+	defer src.Close()
+
+	srcScan := bufio.NewScanner(src)
+
+	var replaced bool
+	for srcScan.Scan() {
+		if !strings.HasPrefix(srcScan.Text(), "search") {
+			fmt.Fprintln(dst, srcScan.Text())
+			continue
+		}
+
+		oldDomains := strings.Fields(srcScan.Text())[1:]
+
+		newDomains := append([]string{}, searchDomains...)
+		newDomains = append(newDomains, oldDomains...)
+		fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
+		replaced = true
+	}
+
+	if !replaced {
+		fmt.Fprintln(dst, "search", strings.Join(searchDomains, " "))
+	}
+
 	return nil
 }
