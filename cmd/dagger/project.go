@@ -47,10 +47,12 @@ func init() {
 
 var projectCmd = &cobra.Command{
 	Use:    "project",
+	Short:  "Manage dagger projects",
+	Long:   "Manage dagger projects. By default, print the configuration of the specified project in json format.",
 	Hidden: true, // for now, remove once we're ready for primetime
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		proj, err := getProject()
+		proj, err := getProjectFlagConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
@@ -62,14 +64,13 @@ var projectCmd = &cobra.Command{
 				return fmt.Errorf("failed to get local project config: %w", err)
 			}
 		case proj.git != nil:
+			// we need to read the git repo, which currently requires an engine+client
 			err = withEngineAndTUI(ctx, engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
-				opts := []dagger.ClientOpt{
-					dagger.WithConn(router.EngineConn(r)),
-				}
-				c, err := dagger.Connect(ctx, opts...)
+				c, err := dagger.Connect(ctx, dagger.WithConn(router.EngineConn(r)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to dagger: %w", err)
 				}
+				defer c.Close()
 				cfg, err = proj.git.config(ctx, c)
 				if err != nil {
 					return fmt.Errorf("failed to get git project config: %w", err)
@@ -91,9 +92,10 @@ var projectCmd = &cobra.Command{
 
 var projectInitCmd = &cobra.Command{
 	Use:    "init",
+	Short:  "Initialize a new dagger project in a local directory.",
 	Hidden: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		proj, err := getProject()
+		proj, err := getProjectFlagConfig()
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
@@ -129,7 +131,7 @@ var projectInitCmd = &cobra.Command{
 	},
 }
 
-func getProject() (*project, error) {
+func getProjectFlagConfig() (*projectFlagConfig, error) {
 	projectURI := projectURI
 	if projectURI == "" || projectURI == projectURIDefault {
 		// it's unset or default value, use env if present
@@ -153,12 +155,13 @@ func getProject() (*project, error) {
 			projPath = filepath.Join(projPath, "dagger.json")
 		}
 
-		return &project{local: &localProject{
+		return &projectFlagConfig{local: &localProject{
 			path: projPath,
 		}}, nil
 	case "git":
 		repo := url.Host + url.Path
 
+		// options for git projects are set via query params
 		subpath := url.Query().Get("subpath")
 		if path.Base(subpath) != "dagger.json" {
 			subpath = path.Join(subpath, "dagger.json")
@@ -179,19 +182,20 @@ func getProject() (*project, error) {
 			repo:    repo,
 			ref:     gitRef,
 		}
-		return &project{git: p}, nil
+		return &projectFlagConfig{git: p}, nil
 	default:
 		return nil, fmt.Errorf("unsupported project URI scheme: %s", url.Scheme)
 	}
 }
 
-type project struct {
+// projectFlagConfig holds the project settings provided by the user via flags (or defaults if not set)
+type projectFlagConfig struct {
 	// only one of these will be set
 	local *localProject
 	git   *gitProject
 }
 
-func (p project) load(ctx context.Context, c *dagger.Client) (*dagger.Project, error) {
+func (p projectFlagConfig) load(ctx context.Context, c *dagger.Client) (*dagger.Project, error) {
 	switch {
 	case p.local != nil:
 		return p.local.load(c)

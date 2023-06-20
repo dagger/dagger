@@ -249,10 +249,7 @@ func daggerCliPath(t *testing.T) string {
 
 func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
 	t.Helper()
-	cliPath := daggerCliPath(t)
-	parentDir := filepath.Dir(cliPath)
-	baseName := filepath.Base(cliPath)
-	return c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+	return c.Host().File(daggerCliPath(t))
 }
 
 func lastNLines(str string, n int) string {

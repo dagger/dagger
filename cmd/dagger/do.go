@@ -31,7 +31,7 @@ func init() {
 	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
 }
 
-// project flags (--project, --config) for do command are setup in project.go
+// project flags (--project) for do command are setup in project.go
 
 var doCmd = &cobra.Command{
 	Use:                "do",
@@ -67,7 +67,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
 
-			proj, err := getProject()
+			proj, err := getProjectFlagConfig()
 			if err != nil {
 				return fmt.Errorf("failed to get project config: %w", err)
 			}
