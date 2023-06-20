@@ -12,6 +12,7 @@ func main() {
 		TestFile,
 		TestDir,
 		TestImportedProjectDir,
+		Level1,
 	)
 }
 
@@ -41,4 +42,33 @@ func TestImportedProjectDir(ctx dagger.Context) (string, error) {
 		return nil
 	})
 	return output, err
+}
+
+func Level1(ctx dagger.Context) (Level1Targets, error) {
+	return Level1Targets{}, nil
+}
+
+type Level1Targets struct {
+}
+
+func (l Level1Targets) Level2(ctx dagger.Context) (Level2Targets, error) {
+	return Level2Targets{}, nil
+}
+
+type Level2Targets struct {
+}
+
+func (l Level2Targets) Level3(ctx dagger.Context) (Level3Targets, error) {
+	return Level3Targets{}, nil
+}
+
+type Level3Targets struct {
+}
+
+func (l Level3Targets) Foo(ctx dagger.Context) (string, error) {
+	return "hello from foo", nil
+}
+
+func (l Level3Targets) Bar(ctx dagger.Context) (string, error) {
+	return "hello from bar", nil
 }
