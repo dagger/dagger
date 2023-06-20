@@ -124,15 +124,14 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
 
-	domains := s.searchDomains()
-	if len(svcs) > 0 || len(domains) > 1 {
+	if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
 		// NB: only configure search domains if we're directly using a service, or
 		// if we're nested beneath another search domain.
 		//
 		// we have to be a bit selective here to avoid breaking Dockerfile builds
-		// from Git sources that use a Buildkit frontend (# syntax = ...) that
-		// doesn't have the source.git.searchdomains API cap yet.
-		opts = append(opts, llb.SearchDomains(domains))
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap yet.
+		opts = append(opts, llb.WithNetwork(core.DaggerNetwork))
 	}
 
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)

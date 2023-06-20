@@ -46,14 +46,26 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 	// of following more optimized cache codepaths.
 	// Do a hash encode to prevent conflicts with use of `/` in the URL while also not hitting max filename limits
 	filename := digest.FromString(args.URL).Encoded()
-	st := llb.HTTP(args.URL,
-		llb.Filename(filename),
-		llb.SearchDomains(s.searchDomains()))
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
 		svcs[*args.ExperimentalServiceHost] = nil
 	}
 
+	opts := []llb.HTTPOption{
+		llb.Filename(filename),
+	}
+
+	if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
+		// NB: only configure search domains if we're directly using a service, or
+		// if we're nested beneath another search domain.
+		//
+		// we have to be a bit selective here to avoid breaking Dockerfile builds
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap yet.
+		opts = append(opts, llb.WithNetwork(core.DaggerNetwork))
+	}
+
+	st := llb.HTTP(args.URL, opts...)
 	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, svcs)
 }

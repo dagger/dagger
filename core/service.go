@@ -26,6 +26,10 @@ import (
 // that fetches the DNS search domain for the current session.
 const ServicesSearchDomainSecret = "internal:services-search-domain"
 
+// DaggerNetwork is the ID of the network used for the Buildkit networks
+// session attachable.
+const DaggerNetwork = "dagger"
+
 var servicesDomain string
 var servicesDomainOnce = &sync.Once{}
 

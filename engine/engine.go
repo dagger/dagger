@@ -28,6 +28,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
+	"github.com/moby/buildkit/session/networks"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/entitlements"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -181,6 +182,21 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			registryAuth,
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
+			networks.NewAttachable(func(id string) *networks.NetworkConfig {
+				switch id {
+				case core.DaggerNetwork:
+					return &networks.NetworkConfig{
+						Dns: &networks.DNSConfig{
+							SearchDomains: append(
+								[]string{core.ServicesDomain()},
+								startOpts.ExtraSearchDomains...,
+							),
+						},
+					}
+				default:
+					return nil
+				}
+			}),
 		},
 		AllowedEntitlements: allowedEntitlements,
 		OCIStores: map[string]content.Store{

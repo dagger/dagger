@@ -83,7 +83,3 @@ type baseSchema struct {
 	// search domains to use for DNS resolution
 	extraSearchDomains []string
 }
-
-func (s *baseSchema) searchDomains() []string {
-	return append([]string{core.ServicesDomain()}, s.extraSearchDomains...)
-}
