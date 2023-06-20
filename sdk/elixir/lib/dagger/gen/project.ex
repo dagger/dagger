@@ -16,7 +16,7 @@ defmodule Dagger.Project do
 
   (
     @doc "A unique identifier for this project."
-    @spec id(t()) :: String.t()
+    @spec id(t()) :: Dagger.Project.t()
     def id(%__MODULE__{} = project) do
       selection = select(project.selection, "id")
       execute(selection, project.client)

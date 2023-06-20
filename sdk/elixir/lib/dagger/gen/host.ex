@@ -41,6 +41,16 @@ defmodule Dagger.Host do
   )
 
   (
+    @doc "Accesses a file on the host.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
+    @spec file(t(), String.t()) :: Dagger.File.t()
+    def file(%__MODULE__{} = host, path) do
+      selection = select(host.selection, "file")
+      selection = arg(selection, "path", path)
+      %Dagger.File{selection: selection, client: host.client}
+    end
+  )
+
+  (
     @doc "Accesses a Unix socket on the host.\n\n## Required Arguments\n\n* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\")."
     @spec unix_socket(t(), String.t()) :: Dagger.Socket.t()
     def unix_socket(%__MODULE__{} = host, path) do

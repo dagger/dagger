@@ -25,7 +25,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "A unique identifier for this command."
-    @spec id(t()) :: String.t()
+    @spec id(t()) :: Dagger.ProjectCommand.t()
     def id(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "id")
       execute(selection, project_command.client)
@@ -37,6 +37,15 @@ defmodule Dagger.ProjectCommand do
     @spec name(t()) :: String.t()
     def name(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "name")
+      execute(selection, project_command.client)
+    end
+  )
+
+  (
+    @doc "The name of the type returned by this command."
+    @spec result_type(t()) :: String.t()
+    def result_type(%__MODULE__{} = project_command) do
+      selection = select(project_command.selection, "resultType")
       execute(selection, project_command.client)
     end
   )
