@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"log"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
@@ -110,9 +108,7 @@ type gitTreeArgs struct {
 }
 
 func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
-	domains := s.searchDomains()
-	log.Println("!!! GIT TREE DOMAINS", domains)
-	opts := []llb.GitOption{llb.SearchDomains(domains)}
+	opts := []llb.GitOption{}
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
@@ -126,6 +122,7 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
+		opts = append(opts, llb.SearchDomains(s.searchDomains()))
 	}
 
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)

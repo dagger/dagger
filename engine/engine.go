@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/url"
 	"os"
@@ -153,8 +152,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if err != nil {
 		return fmt.Errorf("normalize workdir: %w", err)
 	}
-
-	log.Println("!!! ENGINE DOMAINS", startOpts.ExtraSearchDomains)
 
 	router := router.New(startOpts.SessionToken, recorder)
 	secretStore := secret.NewStore(startOpts.ExtraSearchDomains)
