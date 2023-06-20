@@ -35,7 +35,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, pipelineNamePrefix string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -58,7 +58,7 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	}
 
 	// Create a sub-pipeline to group llb.Local instructions
-	pipelineName := fmt.Sprintf("host.directory %s", absPath)
+	pipelineName := fmt.Sprintf("%s %s", pipelineNamePrefix, absPath)
 	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 
 	localID := fmt.Sprintf("host:%s", absPath)
@@ -107,61 +107,13 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 }
 
 func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platform specs.Platform) (*File, error) {
-	if host.DisableRW {
-		return nil, ErrHostRWDisabled
-	}
-
-	var absPath string
-	var err error
-	if filepath.IsAbs(path) {
-		absPath = path
-	} else {
-		absPath = filepath.Join(host.Workdir, path)
-
-		if !strings.HasPrefix(absPath, host.Workdir) {
-			return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", path)
-		}
-	}
-
-	// Create a sub-pipeline to group llb.Local instructions
-	pipelineName := fmt.Sprintf("host.file %s", absPath)
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
-
-	localID := fmt.Sprintf("host:%s", absPath)
-
-	localOpts := []llb.LocalOption{
-		// Custom name
-		llb.WithCustomNamef("upload %s", absPath),
-
-		// synchronize concurrent filesyncs for the same path
-		llb.SharedKeyHint(localID),
-
-		// make the LLB stable so we can test invariants like:
-		//
-		//   workdir == directory(".")
-		llb.LocalUniqueID(localID),
-	}
-
-	// copy to scratch to avoid making buildkit's snapshot of the local dir immutable,
-	// which makes it unable to reused, which in turn creates cache invalidations
-	// TODO: this should be optional, the above issue can also be avoided w/ readonly
-	// mount when possible
-	st := llb.Scratch().File(
-		llb.Copy(llb.Local(filepath.Dir(path), localOpts...), filepath.Base(path), "/file"),
-		llb.WithCustomNamef("copy %s", absPath),
-	)
-
-	def, err := st.Marshal(ctx, llb.Platform(platform))
+	parentDir, err := host.Directory(ctx, filepath.Dir(path), p, "host.file", platform, CopyFilter{
+		Include: []string{filepath.Base(path)},
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	defPB := def.ToPB()
-
-	// associate vertexes to the 'host.file' sub-pipeline
-	recordVertexes(subRecorder, defPB)
-
-	return NewFile(ctx, defPB, "/file", p, platform, nil), nil
+	return parentDir.File(ctx, filepath.Base(path))
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
