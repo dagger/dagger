@@ -24,4 +24,4 @@ def test_dir(client: dagger.Client, prefix: str) -> dagger.Directory:
 
 @command
 def test_imported_project_dir() -> str:
-    return "\n".join(str(p.absolute()) for p in Path().glob("**/*"))
+    return "\n".join(str(p) for p in Path().glob("**/*"))

@@ -317,6 +317,7 @@ func TestProjectDirImported(t *testing.T) {
 			expectedMainFile: "main.py",
 		},
 	} {
+		tc := tc
 		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", tc.sdk)
 
 		for _, testGitProject := range []bool{false, true} {

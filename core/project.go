@@ -244,6 +244,7 @@ func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, r *router.Route
 		llb.AddMount("/src", projectDirState, llb.Readonly),
 		llb.Dir("/src"),
 		llb.ReadonlyRootFS(),
+		llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
 	)
 	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
 	outputDef, err := outputMnt.Marshal(ctx, llb.Platform(p.Platform))
@@ -378,8 +379,9 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
 		)
 
-		if p.Config.SDK == "go" {
-			st.AddMount("/src", wdState, llb.Readonly) // TODO: not actually needed here, just makes go server code easier at moment
+		switch p.Config.SDK {
+		case "go", "python":
+			st.AddMount("/src", wdState, llb.Readonly)
 		}
 
 		outputMnt := st.AddMount(outputMountPath, llb.Scratch())

@@ -16,32 +16,28 @@ func (p *Project) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Cli
 	if err != nil {
 		return nil, err
 	}
+
 	workdir := "/src"
-	appdir := filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)
-	entrypoint := fmt.Sprintf(`#!/bin/sh
-set -exu
-cd %q
-exec python -m dagger.server "$@"
-`,
-		appdir)
+
+	pipCache := llb.AddMount(
+		"/root/.cache/pip",
+		llb.Scratch(),
+		llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
+	)
 
 	return NewDirectorySt(ctx,
-		llb.Merge([]llb.State{
-			llb.Image("python:3.11-alpine", llb.WithMetaResolver(gw)).
-				Run(llb.Shlex(`apk add --no-cache file git openssh-client`)).Root(),
-			llb.Scratch().
-				File(llb.Copy(contextState, p.Directory.Dir, "/src")),
-		}).
+		llb.Image("python:3.11-alpine", llb.WithMetaResolver(gw)).
+			Run(llb.Shlex(`apk add --no-cache git openssh-client`)).Root().
+			Run(llb.Shlex("pip install shiv"), pipCache).Root().
 			Run(
-				llb.Shlex("python -m pip install -r requirements.txt"),
-				llb.Dir(appdir),
-				llb.AddMount(
-					"/root/.cache/pip",
-					llb.Scratch(),
-					llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
-				),
-			).
-			File(llb.Mkfile("/entrypoint", 0755, []byte(entrypoint))),
+				llb.Shlex(fmt.Sprintf(
+					"shiv -e dagger.server.cli:app -o /entrypoint %s --root /tmp/.shiv --reproducible",
+					filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)),
+				)),
+				llb.AddMount(workdir, contextState, llb.SourcePath(p.Directory.Dir)),
+				llb.Dir(workdir),
+				pipCache,
+			).Root(),
 		"",
 		pipeline.Path{},
 		platform,

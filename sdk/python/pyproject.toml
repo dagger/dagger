@@ -177,6 +177,7 @@ target-version = ["py310", "py311"]
 
 [tool.ruff]
 src = ["src", "tests"]
+exclude = ["experimental/*/pyproject.toml"]
 target-version = "py310"
 select = ["ALL"]
 ignore = [
