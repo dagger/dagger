@@ -2,8 +2,4 @@
 defmodule Dagger.ContainerID do
   @moduledoc "A unique container identifier. Null designates an empty container (scratch)."
   @type t() :: String.t()
-  @doc "Get ID from `container`."
-  def get_id(%Dagger.Container{} = container) do
-    container |> Dagger.Container.id()
-  end
 end

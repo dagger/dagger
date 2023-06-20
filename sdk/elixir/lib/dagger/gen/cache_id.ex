@@ -2,8 +2,4 @@
 defmodule Dagger.CacheID do
   @moduledoc "A global cache volume identifier."
   @type t() :: String.t()
-  @doc "Get ID from `cache_volume`."
-  def get_id(%Dagger.CacheVolume{} = cache_volume) do
-    cache_volume |> Dagger.CacheVolume.id()
-  end
 end

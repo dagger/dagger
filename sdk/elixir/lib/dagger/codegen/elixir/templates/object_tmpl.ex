@@ -4,6 +4,17 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   alias Dagger.Codegen.Elixir.Function
   alias Dagger.Codegen.Elixir.Module, as: Mod
 
+  @id_modules [
+    "CacheID",
+    "ContainerID",
+    "DirectoryID",
+    "FileID",
+    "ProjectCommandID",
+    "ProjectID",
+    "SecretID",
+    "SocketID"
+  ]
+
   def render(
         %{
           "name" => name,
@@ -153,26 +164,19 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   defp render_required_args(args) do
     for arg <- args,
         arg["type"]["kind"] == "NON_NULL" do
-      name = Function.format_var_name(fun_arg_name(arg))
+      name = arg |> fun_arg_name() |> Function.format_var_name()
 
       case arg do
         %{"type" => %{"ofType" => %{"name" => type_name}}}
-        when type_name in [
-               "ContainerID",
-               "CacheID",
-               "DirectoryID",
-               "FileID",
-               "SecretID",
-               "SocketID"
-             ] ->
-          id_mod = Module.concat([Dagger, Mod.format_name(type_name)])
+        when type_name in @id_modules ->
+          mod = Module.concat([Dagger, Mod.format_name(Mod.id_module_to_module(type_name))])
 
           quote do
             selection =
               arg(
                 selection,
                 unquote(arg["name"]),
-                unquote(id_mod).get_id(unquote(to_macro_var(name)))
+                unquote(mod).id(unquote(to_macro_var(name)))
               )
           end
 
@@ -312,6 +316,11 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
         unquote(to_macro_var(:optional_args)) \\ []
       end
     ]
+  end
+
+  defp fun_arg_name(%{"name" => "id", "type" => %{"ofType" => %{"name" => id_mod}}})
+       when id_mod in @id_modules do
+    Function.id_module_to_var_name(id_mod)
   end
 
   defp fun_arg_name(%{"name" => name}) do

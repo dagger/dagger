@@ -10,7 +10,7 @@ defmodule Dagger.Directory do
     @spec diff(t(), Dagger.Directory.t()) :: Dagger.Directory.t()
     def diff(%__MODULE__{} = directory, other) do
       selection = select(directory.selection, "diff")
-      selection = arg(selection, "other", Dagger.DirectoryID.get_id(other))
+      selection = arg(selection, "other", Dagger.Directory.id(other))
       %Dagger.Directory{selection: selection, client: directory.client}
     end
   )
@@ -147,7 +147,7 @@ defmodule Dagger.Directory do
     def with_directory(%__MODULE__{} = directory, path, directory, optional_args \\ []) do
       selection = select(directory.selection, "withDirectory")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "directory", Dagger.DirectoryID.get_id(directory))
+      selection = arg(selection, "directory", Dagger.Directory.id(directory))
 
       selection =
         if is_nil(optional_args[:exclude]) do
@@ -173,7 +173,7 @@ defmodule Dagger.Directory do
     def with_file(%__MODULE__{} = directory, path, source, optional_args \\ []) do
       selection = select(directory.selection, "withFile")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.FileID.get_id(source))
+      selection = arg(selection, "source", Dagger.File.id(source))
 
       selection =
         if is_nil(optional_args[:permissions]) do

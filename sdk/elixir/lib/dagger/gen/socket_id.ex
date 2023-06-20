@@ -2,8 +2,4 @@
 defmodule Dagger.SocketID do
   @moduledoc "A content-addressed socket identifier."
   @type t() :: String.t()
-  @doc "Get ID from `socket`."
-  def get_id(%Dagger.Socket{} = socket) do
-    socket |> Dagger.Socket.id()
-  end
 end

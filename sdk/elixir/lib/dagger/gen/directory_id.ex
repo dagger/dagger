@@ -2,8 +2,4 @@
 defmodule Dagger.DirectoryID do
   @moduledoc "A content-addressed directory identifier."
   @type t() :: String.t()
-  @doc "Get ID from `directory`."
-  def get_id(%Dagger.Directory{} = directory) do
-    directory |> Dagger.Directory.id()
-  end
 end
