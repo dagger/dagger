@@ -81,7 +81,7 @@ defmodule Dagger.Internal.Engine.Downloader do
         checksum_map =
           response.body
           |> String.split("\n", trim: true)
-          |> Stream.map(&String.split/1)
+          |> Enum.map(&String.split/1)
           |> Enum.map(fn list ->
             list_count = Enum.count(list)
 
