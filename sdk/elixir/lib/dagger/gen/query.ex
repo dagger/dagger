@@ -197,7 +197,7 @@ defmodule Dagger.Query do
   )
 
   (
-    @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret"
+    @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\nThe plaintext value is limited to a size of 128000 bytes.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret"
     @spec set_secret(t(), String.t(), String.t()) :: Dagger.Secret.t()
     def set_secret(%__MODULE__{} = query, name, plaintext) do
       selection = select(query.selection, "setSecret")
