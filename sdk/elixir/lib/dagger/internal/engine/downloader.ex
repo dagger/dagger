@@ -29,12 +29,12 @@ defmodule Dagger.Internal.Engine.Downloader do
   defp extract_cli(cli_host, cli_version, bin_path) do
     req = Req.new(url: cli_archive_url(cli_host, cli_version))
 
-    with {:ok, raw_response} <- Req.get(req, raw: true),
-         :ok <- verify_checksum(raw_response, cli_host, cli_version) do
-      {_, decoded_response} = Req.Steps.decode_body({req, raw_response})
+    with {:ok, response} <- Req.get(req, raw: true),
+         :ok <- verify_checksum(response, cli_host, cli_version) do
+      {_, %{body: files}} = Req.Steps.decode_body({req, response})
 
       {_, dagger_bin} =
-        Enum.find(decoded_response.body, fn {filename, _bin} ->
+        Enum.find(files, fn {filename, _bin} ->
           filename == dagger_bin_in_archive(os())
         end)
 
@@ -42,12 +42,12 @@ defmodule Dagger.Internal.Engine.Downloader do
     end
   end
 
-  defp verify_checksum(raw_response, cli_host, cli_version) do
-    calculated_checksum = :crypto.hash(:sha256, raw_response.body) |> Base.encode16(case: :lower)
+  defp verify_checksum(response, cli_host, cli_version) do
+    calculated_checksum = :crypto.hash(:sha256, response.body) |> Base.encode16(case: :lower)
 
     case expected_checksum(cli_host, cli_version) do
       {:ok, expected_checksum} ->
-        if(calculated_checksum != expected_checksum) do
+        unless :crypto.hash_equals(calculated_checksum, expected_checksum) do
           {:error, "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
         else
           :ok
@@ -68,7 +68,7 @@ defmodule Dagger.Internal.Engine.Downloader do
         if to_string(key) == archive_name, do: value
       end)
 
-    if expected_value == nil do
+    if is_nil(expected_value) do
       {:error, "expected value find error"}
     else
       {:ok, expected_value}
@@ -82,16 +82,14 @@ defmodule Dagger.Internal.Engine.Downloader do
           response.body
           |> String.split("\n", trim: true)
           |> Enum.map(&String.split/1)
-          |> Enum.map(fn list ->
-            list_count = Enum.count(list)
+          |> Enum.map(fn
+            [hash, file] ->
+              {file, hash}
 
-            if list_count != 2 do
-              raise "invalid checksum line: #{list_count}"
-            else
-              %{"#{Enum.at(list, 1)}": Enum.at(list, 0)}
-            end
+            list ->
+              raise "Invalid checksum line: #{length(list)}"
           end)
-          |> Enum.concat()
+          |> Enum.into(%{})
 
         {:ok, checksum_map}
       end
