@@ -10,10 +10,7 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # create Redis service container
         redis_srv = (
-            client.container()
-            .from_("redis")
-            .with_exposed_port(6379)
-            .service([])
+            client.container().from_("redis").with_exposed_port(6379).service([])
         )
 
         # create Redis client container
