@@ -56,7 +56,7 @@ func NewManager(ctx context.Context, managerConfig ManagerConfig) (Manager, erro
 		httpClient:    &http.Client{},
 	}
 
-	if managerConfig.ServiceURL == "" {
+	if managerConfig.Token == "" {
 		return defaultCacheManager{m.localCache}, nil
 	}
 	bklog.G(ctx).Debugf("using cache service at %s", managerConfig.ServiceURL)

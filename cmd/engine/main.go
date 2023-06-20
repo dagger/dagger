@@ -76,7 +76,8 @@ import (
 )
 
 const (
-	autoMode = "auto"
+	autoMode              = "auto"
+	daggerCacheServiceURL = "https://api.dagger.cloud/magicache"
 )
 
 func init() {
@@ -752,6 +753,10 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
+
+	if cacheServiceURL == "" {
+		cacheServiceURL = daggerCacheServiceURL
+	}
 	cacheManager, err := cache.NewManager(ctx, cache.ManagerConfig{
 		KeyStore:     cacheStorage,
 		ResultStore:  worker.NewCacheResultStorage(wc),
