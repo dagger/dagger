@@ -47,10 +47,10 @@ defmodule Dagger.Internal.Engine.Downloader do
 
     case expected_checksum(cli_host, cli_version) do
       {:ok, expected_checksum} ->
-        unless :crypto.hash_equals(calculated_checksum, expected_checksum) do
-          {:error, "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
-        else
+        if :crypto.hash_equals(calculated_checksum, expected_checksum) do
           :ok
+        else
+          {:error, "checksum mismatch: expected #{expected_checksum}, got #{calculated_checksum}"}
         end
 
       error ->
