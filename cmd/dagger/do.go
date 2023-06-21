@@ -12,6 +12,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/router"
+	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -160,13 +161,10 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	isLeafCmd := len(projSubcommands) == 0
 
 	var parentCmd *cobra.Command
-	var cmdName string
-	if len(cmdStack) == 0 {
-		cmdName = projCmdName
-	} else {
+	if len(cmdStack) > 0 {
 		parentCmd = cmdStack[len(cmdStack)-1]
-		cmdName = getCommandName(parentCmd) + commandSeparator + projCmdName
 	}
+	cmdName := getCommandName(parentCmd, projCmdName)
 
 	// make a copy of cmdStack
 	cmdStack = append([]*cobra.Command{}, cmdStack...)
@@ -186,7 +184,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 			curSelection := topSelection
 			for i, cmd := range cmdStack {
 				cmdName := getSubcommandName(cmd)
-				curSelection.Name = cmdName
+				curSelection.Name = strcase.ToLowerCamel(cmdName)
 				for _, flagName := range commandAnnotations(cmd.Annotations).getCommandSpecificFlags() {
 					// skip help flag
 					// TODO: doc that users can't name an args help
@@ -284,7 +282,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 			var res string
 			resSelection := resMap
 			for i, cmd := range cmdStack {
-				next := resSelection[getSubcommandName(cmd)]
+				next := resSelection[strcase.ToLowerCamel(getSubcommandName(cmd))]
 				switch next := next.(type) {
 				case map[string]any:
 					resSelection = next
@@ -329,12 +327,12 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	}
 
 	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
-		cmd.Printf("\nCommand %s - %s\n", getCommandName(cmd), description)
+		cmd.Printf("\nCommand %s - %s\n", cmdName, description)
 
 		cmd.Printf("\nAvailable Subcommands:\n")
 		maxNameLen := 0
 		for _, subcmd := range returnCmds[1:] {
-			nameLen := len(getCommandName(subcmd))
+			nameLen := len(getCommandName(subcmd, ""))
 			if nameLen > maxNameLen {
 				maxNameLen = nameLen
 			}
@@ -342,7 +340,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		// we want to ensure the doc strings line up so they are readable
 		spacing := strings.Repeat(" ", maxNameLen+2)
 		for _, subcmd := range returnCmds[1:] {
-			cmd.Printf("  %s%s%s\n", getCommandName(subcmd), spacing[len(getCommandName(subcmd)):], subcmd.Short)
+			cmd.Printf("  %s%s%s\n", getCommandName(subcmd, ""), spacing[len(getCommandName(subcmd, "")):], subcmd.Short)
 		}
 
 		fmt.Printf("\nFlags:\n")
@@ -366,15 +364,21 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	return returnCmds, nil
 }
 
-func getCommandName(cmd *cobra.Command) string {
-	// name is like "dagger do a:b:c", we return just "a:b:c" here
-	nameSplit := strings.Split(cmd.Name(), " ")
-	return nameSplit[len(nameSplit)-1]
+func getCommandName(parentCmd *cobra.Command, newCommandName string) string {
+	if parentCmd == nil {
+		return strcase.ToKebab(newCommandName)
+	}
+	// parentCmd name is like "dagger do a:b:c", we just want "a:b:c"
+	nameSplit := strings.Split(parentCmd.Name(), " ")
+	if newCommandName == "" {
+		return nameSplit[len(nameSplit)-1]
+	}
+	return nameSplit[len(nameSplit)-1] + commandSeparator + strcase.ToKebab(newCommandName)
 }
 
 func getSubcommandName(cmd *cobra.Command) string {
 	// if command name is "a:b:c", we return just "c" here
-	nameSplit := strings.Split(getCommandName(cmd), commandSeparator)
+	nameSplit := strings.Split(getCommandName(cmd, ""), commandSeparator)
 	return nameSplit[len(nameSplit)-1]
 }
 

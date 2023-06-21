@@ -183,12 +183,13 @@ func TestProjectCommandHierarchy(t *testing.T) {
 		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", sdk)
 
 		t.Run(projectDir, func(t *testing.T) {
+			t.Parallel()
 			c, ctx := connect(t)
 			defer c.Close()
 
 			output, err := CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
-				WithTarget("level1:level2:level3:foo").
+				WithTarget("level-1:level-2:level-3:foo").
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
@@ -197,7 +198,7 @@ func TestProjectCommandHierarchy(t *testing.T) {
 
 			output, err = CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
-				WithTarget("level1:level2:level3:bar").
+				WithTarget("level-1:level-2:level-3:bar").
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
@@ -231,7 +232,7 @@ func TestProjectHostExport(t *testing.T) {
 					defer c.Close()
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testFile").
+						WithTarget("test-file").
 						WithUserArg("prefix", prefix).
 						CallDo().
 						Sync(ctx)
@@ -250,7 +251,7 @@ func TestProjectHostExport(t *testing.T) {
 					defer c.Close()
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testDir").
+						WithTarget("test-dir").
 						WithUserArg("prefix", prefix).
 						CallDo().
 						Sync(ctx)
@@ -277,7 +278,7 @@ func TestProjectHostExport(t *testing.T) {
 					outputPath := "/var/blahblah.txt"
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testFile").
+						WithTarget("test-file").
 						WithOutputArg(outputPath).
 						CallDo().
 						Sync(ctx)
@@ -294,7 +295,7 @@ func TestProjectHostExport(t *testing.T) {
 					outputDir := "/var"
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testFile").
+						WithTarget("test-file").
 						WithOutputArg(outputDir).
 						CallDo().
 						Sync(ctx)
@@ -311,7 +312,7 @@ func TestProjectHostExport(t *testing.T) {
 					outputDir := "/var"
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testDir").
+						WithTarget("test-dir").
 						WithOutputArg(outputDir).
 						CallDo().
 						Sync(ctx)
@@ -364,7 +365,7 @@ func TestProjectDirImported(t *testing.T) {
 				defer c.Close()
 				output, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testImportedProjectDir").
+					WithTarget("test-imported-project-dir").
 					CallDo().
 					Stderr(ctx)
 				require.NoError(t, err)
@@ -392,6 +393,7 @@ func TestProjectDirImported(t *testing.T) {
 * Circular types (i.e. structs that have fields that reference themselves, etc.)
 */
 func TestProjectGoCodeToSchema(t *testing.T) {
+	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
 
