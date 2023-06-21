@@ -178,28 +178,33 @@ func TestProjectCmdInit(t *testing.T) {
 
 func TestProjectCommandHierarchy(t *testing.T) {
 	t.Parallel()
-	projectDir := "core/integration/testdata/projects/go/basic"
 
-	c, ctx := connect(t)
-	defer c.Close()
+	for _, sdk := range []string{"go", "python"} {
+		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", sdk)
 
-	output, err := CLITestContainer(ctx, t, c).
-		WithLoadedProject(projectDir, false).
-		WithTarget("level1:level2:level3:foo").
-		CallDo().
-		Stderr(ctx)
-	require.NoError(t, err)
-	outputLines := strings.Split(output, "\n")
-	require.Contains(t, outputLines, "hello from foo")
+		t.Run(projectDir, func(t *testing.T) {
+			c, ctx := connect(t)
+			defer c.Close()
 
-	output, err = CLITestContainer(ctx, t, c).
-		WithLoadedProject(projectDir, false).
-		WithTarget("level1:level2:level3:bar").
-		CallDo().
-		Stderr(ctx)
-	require.NoError(t, err)
-	outputLines = strings.Split(output, "\n")
-	require.Contains(t, outputLines, "hello from bar")
+			output, err := CLITestContainer(ctx, t, c).
+				WithLoadedProject(projectDir, false).
+				WithTarget("level1:level2:level3:foo").
+				CallDo().
+				Stderr(ctx)
+			require.NoError(t, err)
+			outputLines := strings.Split(output, "\n")
+			require.Contains(t, outputLines, "hello from foo")
+
+			output, err = CLITestContainer(ctx, t, c).
+				WithLoadedProject(projectDir, false).
+				WithTarget("level1:level2:level3:bar").
+				CallDo().
+				Stderr(ctx)
+			require.NoError(t, err)
+			outputLines = strings.Split(output, "\n")
+			require.Contains(t, outputLines, "hello from bar")
+		})
+	}
 }
 
 func TestProjectHostExport(t *testing.T) {

@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import dagger
-from dagger.server import command
+from dagger.server import command, commands
 
 
 @command
@@ -25,3 +25,33 @@ def test_dir(client: dagger.Client, prefix: str) -> dagger.Directory:
 @command
 def test_imported_project_dir() -> str:
     return "\n".join(str(p) for p in Path().glob("**/*"))
+
+
+@commands
+class Level3:
+    @command
+    def foo(self) -> str:
+        return "hello from foo"
+
+    @command
+    def bar(self) -> str:
+        return "hello from bar"
+
+
+@commands
+class Level2:
+    @command
+    def level3(self) -> Level3:
+        return Level3()
+
+
+@commands
+class Level1:
+    @command
+    def level2(self) -> Level2:
+        return Level2()
+
+
+@command
+def level1() -> Level1:
+    return Level1()
