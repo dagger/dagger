@@ -27,6 +27,11 @@ def test_imported_project_dir() -> str:
     return "\n".join(str(p) for p in Path().glob("**/*"))
 
 
+@command
+def test_export_local_dir(client: dagger.Client) -> dagger.Directory:
+    return client.host().directory("./core/integration/testdata/projects/python/basic")
+
+
 @commands
 class Level3:
     @command

@@ -15,3 +15,16 @@ func (e EngineTargets) Lint(ctx dagger.Context) (string, error) {
 		Stdout(ctx)
 	return out, err
 }
+
+func (e EngineTargets) Cli(ctx dagger.Context) (*dagger.Directory, error) {
+	bin := ctx.Client().Container().
+		From("golang:1.20-alpine").
+		WithEnvVariable("CGO_ENABLED", "0").
+		WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
+		WithMountedCache("/root/.cache/go-build", ctx.Client().CacheVolume("go-build")).
+		WithMountedDirectory("/app", e.SrcDir).
+		WithWorkdir("/app").
+		WithExec([]string{"go", "build", "-o", "./bin/dagger", "./cmd/dagger"}).
+		File("./bin/dagger")
+	return ctx.Client().Directory().WithFile("bin/dagger", bin), nil
+}

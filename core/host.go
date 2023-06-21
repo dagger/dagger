@@ -35,7 +35,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, pipelineNamePrefix string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string, p pipeline.Path, pipelineNamePrefix string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -70,10 +70,9 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 		// synchronize concurrent filesyncs for the same path
 		llb.SharedKeyHint(localID),
 
-		// make the LLB stable so we can test invariants like:
-		//
-		//   workdir == directory(".")
-		llb.LocalUniqueID(localID),
+		// sync this dir from this session specifically, even if this ends up passed
+		// to a different session (e.g. a project container)
+		llb.SessionID(gw.BuildOpts().SessionID),
 	}
 
 	if len(filter.Exclude) > 0 {
@@ -103,11 +102,19 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	// associate vertexes to the 'host.directory' sub-pipeline
 	recordVertexes(subRecorder, defPB)
 
+	_, err = gw.Solve(ctx, bkgw.SolveRequest{
+		Definition: defPB,
+		Evaluate:   true, // do the sync now, not lazily
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sync %s: %w", absPath, err)
+	}
+
 	return NewDirectory(ctx, defPB, "", p, platform, nil), nil
 }
 
-func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platform specs.Platform) (*File, error) {
-	parentDir, err := host.Directory(ctx, filepath.Dir(path), p, "host.file", platform, CopyFilter{
+func (host *Host) File(ctx context.Context, gw bkgw.Client, path string, p pipeline.Path, platform specs.Platform) (*File, error) {
+	parentDir, err := host.Directory(ctx, gw, filepath.Dir(path), p, "host.file", platform, CopyFilter{
 		Include: []string{filepath.Base(path)},
 	})
 	if err != nil {

@@ -12,6 +12,7 @@ func main() {
 		TestFile,
 		TestDir,
 		TestImportedProjectDir,
+		TestExportLocalDir,
 		Level1,
 	)
 }
@@ -42,6 +43,10 @@ func TestImportedProjectDir(ctx dagger.Context) (string, error) {
 		return nil
 	})
 	return output, err
+}
+
+func TestExportLocalDir(ctx dagger.Context) (*dagger.Directory, error) {
+	return ctx.Client().Host().Directory("./core/integration/testdata/projects/go/basic"), nil
 }
 
 func Level1(ctx dagger.Context) (Level1Targets, error) {
