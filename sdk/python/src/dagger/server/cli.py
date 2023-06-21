@@ -9,7 +9,7 @@ from strawberry import Schema
 
 from dagger.log import configure_logging
 
-from . import _project as project
+from . import _commands as commands
 from ._exceptions import SchemaValidationError
 from ._server import Server
 
@@ -63,7 +63,7 @@ def get_server(module_name: str = "main") -> Server:
     if (schema := getattr(module, "schema", None)) and isinstance(schema, Schema):
         return Server(schema=schema, debug=debug)
 
-    if schema := project.get_schema(module):
+    if schema := commands.get_schema(module):
         return Server(schema=schema, debug=debug)
 
     msg = f'No importable commands were found in module "{module_name}".'
