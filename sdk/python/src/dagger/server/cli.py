@@ -1,13 +1,17 @@
+"""Command line interface for the dagger extension runtime."""
 import logging
-import sys
+from importlib import import_module
 from typing import Annotated
 
-import anyio
 import typer
+from click import ClickException
+from strawberry import Schema
 
 from dagger.log import configure_logging
 
-from . import Server
+from . import _commands as commands
+from ._exceptions import SchemaValidationError
+from ._server import Server
 
 app = typer.Typer()
 
@@ -20,17 +24,13 @@ def main(
     ] = False
 ):
     """Entrypoint for a dagger extension."""
-    sys.path.insert(0, ".")
-
+    # Add current directory to path so that the main module can be imported.
     try:
-        from main import server
-    except ImportError as e:
-        msg = "No “server: dagger.Server” found in “main” module."
-        raise typer.BadParameter(msg) from e
-
-    if not isinstance(server, Server):
-        msg = "The “server” must be an instance of “dagger.Server”"
-        raise typer.BadParameter(msg)
+        server = get_server()
+    except SchemaValidationError as e:
+        # TODO: ClickException just prints the message in a bordered box
+        # with title "Error". For some errors we may want a bit more detail.
+        raise ClickException(str(e)) from e
 
     configure_logging(logging.DEBUG if server.debug else logging.INFO)
 
@@ -38,4 +38,33 @@ def main(
         server.export_schema()
         raise typer.Exit
 
-    anyio.run(server.execute)
+    server.execute()
+
+
+def get_server(module_name: str = "main") -> Server:
+    """Get the server instance from the main module."""
+    # TODO: Temporarily always on debug during experimental phase.
+    # Support user configuration in a `pyproject.toml`.
+    debug = True
+
+    try:
+        module = import_module(module_name)
+    except ModuleNotFoundError as e:
+        msg = (
+            f'The "{module_name}" module could not be found. '
+            f'Did you create a "{module_name}.py" file in the root of your project?'
+        )
+        raise ClickException(msg) from e
+
+    # These add compatibility for full strawberry control.
+    if (server := getattr(module, "server", None)) and isinstance(server, Server):
+        return server
+
+    if (schema := getattr(module, "schema", None)) and isinstance(schema, Schema):
+        return Server(schema=schema, debug=debug)
+
+    if schema := commands.get_schema(module):
+        return Server(schema=schema, debug=debug)
+
+    msg = f'No importable commands were found in module "{module_name}".'
+    raise ClickException(msg)

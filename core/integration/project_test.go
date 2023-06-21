@@ -2,6 +2,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,7 +35,13 @@ func TestProjectCmd(t *testing.T) {
 			expectedName: "codetoschema",
 			expectedRoot: "../../../../../../",
 		},
-		// TODO: add python+ts projects once those are under testdata too
+		{
+			projectPath:  "core/integration/testdata/projects/python/basic",
+			expectedSDK:  "python",
+			expectedName: "basic",
+			expectedRoot: "../../../../../../",
+		},
+		// TODO: add ts projects once those are under testdata too
 	} {
 		tc := tc
 		for _, testGitProject := range []bool{false, true} {
@@ -171,149 +178,172 @@ func TestProjectCmdInit(t *testing.T) {
 
 func TestProjectHostExport(t *testing.T) {
 	t.Parallel()
-	projectDir := "core/integration/testdata/projects/go/basic"
 
 	prefix := identity.NewID()
 
-	for _, testGitProject := range []bool{false, true} {
-		testGitProject := testGitProject
-		testName := "local project"
-		if testGitProject {
-			testName = "git project"
+	for _, sdk := range []string{"go", "python"} {
+		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", sdk)
+
+		for _, testGitProject := range []bool{false, true} {
+			testGitProject := testGitProject
+			testName := "local project"
+			if testGitProject {
+				testName = "git project"
+			}
+			testName += "/" + projectDir
+			t.Run(testName, func(t *testing.T) {
+				t.Parallel()
+
+				t.Run("file export implicit output", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testFile").
+						WithUserArg("prefix", prefix).
+						CallDo().
+						Sync(ctx)
+					if testGitProject {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+						_, err := ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"foo.txt")).Contents(ctx)
+						require.NoError(t, err)
+					}
+				})
+
+				t.Run("dir export implicit output", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testDir").
+						WithUserArg("prefix", prefix).
+						CallDo().
+						Sync(ctx)
+					if testGitProject {
+						require.Error(t, err)
+					} else {
+						require.NoError(t, err)
+						_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"subdir/subbar1.txt")).Contents(ctx)
+						require.NoError(t, err)
+						_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"subdir/subbar2.txt")).Contents(ctx)
+						require.NoError(t, err)
+						_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"bar1.txt")).Contents(ctx)
+						require.NoError(t, err)
+						_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"bar2.txt")).Contents(ctx)
+						require.NoError(t, err)
+					}
+				})
+
+				t.Run("file export explicit output", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+
+					outputPath := "/var/blahblah.txt"
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testFile").
+						WithOutputArg(outputPath).
+						CallDo().
+						Sync(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(outputPath).Contents(ctx)
+					require.NoError(t, err)
+				})
+
+				t.Run("file export explicit output to parent dir", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+
+					outputDir := "/var"
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testFile").
+						WithOutputArg(outputDir).
+						CallDo().
+						Sync(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, "foo.txt")).Contents(ctx)
+					require.NoError(t, err)
+				})
+
+				t.Run("dir export explicit output", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+
+					outputDir := "/var"
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testDir").
+						WithOutputArg(outputDir).
+						CallDo().
+						Sync(ctx)
+					require.NoError(t, err)
+
+					_, err = ctr.File(filepath.Join(outputDir, "/subdir/subbar1.txt")).Contents(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, "/subdir/subbar2.txt")).Contents(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, "/bar1.txt")).Contents(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, "/bar2.txt")).Contents(ctx)
+					require.NoError(t, err)
+				})
+			})
 		}
-		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
-
-			t.Run("file export implicit output", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
-				defer c.Close()
-				ctr, err := CLITestContainer(ctx, t, c).
-					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testFile").
-					WithUserArg("prefix", prefix).
-					CallDo().
-					Sync(ctx)
-				if testGitProject {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-					_, err := ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"foo.txt")).Contents(ctx)
-					require.NoError(t, err)
-				}
-			})
-
-			t.Run("dir export implicit output", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
-				defer c.Close()
-				ctr, err := CLITestContainer(ctx, t, c).
-					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testDir").
-					WithUserArg("prefix", prefix).
-					CallDo().
-					Sync(ctx)
-				if testGitProject {
-					require.Error(t, err)
-				} else {
-					require.NoError(t, err)
-					_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"subdir/subbar1.txt")).Contents(ctx)
-					require.NoError(t, err)
-					_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"subdir/subbar2.txt")).Contents(ctx)
-					require.NoError(t, err)
-					_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"bar1.txt")).Contents(ctx)
-					require.NoError(t, err)
-					_, err = ctr.File(filepath.Join(cliContainerRepoMntPath, prefix+"bar2.txt")).Contents(ctx)
-					require.NoError(t, err)
-				}
-			})
-
-			t.Run("file export explicit output", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
-				defer c.Close()
-
-				outputPath := "/var/blahblah.txt"
-				ctr, err := CLITestContainer(ctx, t, c).
-					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testFile").
-					WithOutputArg(outputPath).
-					CallDo().
-					Sync(ctx)
-				require.NoError(t, err)
-				_, err = ctr.File(outputPath).Contents(ctx)
-				require.NoError(t, err)
-			})
-
-			t.Run("file export explicit output to parent dir", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
-				defer c.Close()
-
-				outputDir := "/var"
-				ctr, err := CLITestContainer(ctx, t, c).
-					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testFile").
-					WithOutputArg(outputDir).
-					CallDo().
-					Sync(ctx)
-				require.NoError(t, err)
-				_, err = ctr.File(filepath.Join(outputDir, "foo.txt")).Contents(ctx)
-				require.NoError(t, err)
-			})
-
-			t.Run("dir export explicit output", func(t *testing.T) {
-				t.Parallel()
-				c, ctx := connect(t)
-				defer c.Close()
-
-				outputDir := "/var"
-				ctr, err := CLITestContainer(ctx, t, c).
-					WithLoadedProject(projectDir, testGitProject).
-					WithTarget("testDir").
-					WithOutputArg(outputDir).
-					CallDo().
-					Sync(ctx)
-				require.NoError(t, err)
-
-				_, err = ctr.File(filepath.Join(outputDir, "/subdir/subbar1.txt")).Contents(ctx)
-				require.NoError(t, err)
-				_, err = ctr.File(filepath.Join(outputDir, "/subdir/subbar2.txt")).Contents(ctx)
-				require.NoError(t, err)
-				_, err = ctr.File(filepath.Join(outputDir, "/bar1.txt")).Contents(ctx)
-				require.NoError(t, err)
-				_, err = ctr.File(filepath.Join(outputDir, "/bar2.txt")).Contents(ctx)
-				require.NoError(t, err)
-			})
-		})
 	}
 }
 
 func TestProjectDirImported(t *testing.T) {
 	t.Parallel()
-	projectDir := "core/integration/testdata/projects/go/basic"
-	for _, testGitProject := range []bool{false, true} {
-		testGitProject := testGitProject
-		testName := "local project"
-		if testGitProject {
-			testName = "git project"
+
+	type testCase struct {
+		sdk              string
+		expectedMainFile string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk:              "go",
+			expectedMainFile: "main.go",
+		},
+		{
+			sdk:              "python",
+			expectedMainFile: "main.py",
+		},
+	} {
+		tc := tc
+		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", tc.sdk)
+
+		for _, testGitProject := range []bool{false, true} {
+			testGitProject := testGitProject
+			testName := "local project"
+			if testGitProject {
+				testName = "git project"
+			}
+			testName += "/" + projectDir
+			t.Run(testName, func(t *testing.T) {
+				t.Parallel()
+				c, ctx := connect(t)
+				defer c.Close()
+				output, err := CLITestContainer(ctx, t, c).
+					WithLoadedProject(projectDir, testGitProject).
+					WithTarget("testImportedProjectDir").
+					CallDo().
+					Stderr(ctx)
+				require.NoError(t, err)
+				outputLines := strings.Split(output, "\n")
+				require.Contains(t, outputLines, "README.md")
+				require.Contains(t, outputLines, projectDir)
+				require.Contains(t, outputLines, projectDir+"/dagger.json")
+				require.Contains(t, outputLines, projectDir+"/"+tc.expectedMainFile)
+			})
 		}
-		t.Run(testName, func(t *testing.T) {
-			t.Parallel()
-			c, ctx := connect(t)
-			defer c.Close()
-			output, err := CLITestContainer(ctx, t, c).
-				WithLoadedProject(projectDir, testGitProject).
-				WithTarget("testImportedProjectDir").
-				CallDo().
-				Stderr(ctx)
-			require.NoError(t, err)
-			outputLines := strings.Split(output, "\n")
-			require.Contains(t, outputLines, "README.md")
-			require.Contains(t, outputLines, projectDir)
-			require.Contains(t, outputLines, projectDir+"/dagger.json")
-			require.Contains(t, outputLines, projectDir+"/main.go")
-		})
 	}
 }
 

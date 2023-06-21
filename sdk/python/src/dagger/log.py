@@ -21,6 +21,10 @@ def configure_logging(level: int | str = logging.INFO):
                 "handlers": ["console"],
                 "level": level,
             },
+            "dagger.transport": {
+                "level": "WARNING",
+                "propagate": False,
+            },
         },
     }
     logging.config.dictConfig(config)
