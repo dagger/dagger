@@ -111,6 +111,7 @@ defmodule Dagger.Container do
     @spec env_variables(t()) :: [Dagger.EnvVariable.t()]
     def env_variables(%__MODULE__{} = container) do
       selection = select(container.selection, "envVariables")
+      selection = select(selection, "name value")
       execute(selection, container.client)
     end
   )
@@ -204,6 +205,7 @@ defmodule Dagger.Container do
     @spec exposed_ports(t()) :: [Dagger.Port.t()]
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
+      selection = select(selection, "description port protocol")
       execute(selection, container.client)
     end
   )
@@ -298,6 +300,7 @@ defmodule Dagger.Container do
     @spec labels(t()) :: [Dagger.Label.t()]
     def labels(%__MODULE__{} = container) do
       selection = select(container.selection, "labels")
+      selection = select(selection, "name value")
       execute(selection, container.client)
     end
   )

@@ -29,6 +29,15 @@ defmodule Dagger.QueryBuilder.SelectionTest do
              "query{core{image(ref:\"alpine\"){foo:file(path:\"/etc/alpine-release\")}}}"
   end
 
+  test "select multi fields" do
+    root =
+      Selection.query()
+      |> Selection.select("core")
+      |> Selection.select("name value")
+
+    assert Selection.build(root) == "query{core{name value}}"
+  end
+
   test "args" do
     root =
       Selection.query()

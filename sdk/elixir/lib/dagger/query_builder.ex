@@ -79,10 +79,23 @@ defmodule Dagger.QueryBuilder do
 
       {:ok, %{status: 200, body: %{"data" => data}}} ->
         # TODO: returns {:ok, response}.
-        get_in(data, Selection.path(selection))
+        select_data(data, Selection.path(selection) |> Enum.reverse())
 
       otherwise ->
         otherwise
+    end
+  end
+
+  defp select_data(data, [leaf | path]) do
+    case leaf |> String.split() do
+      children when is_list(children) ->
+        case get_in(data, Enum.reverse(path)) do
+          data when is_list(data) -> Enum.map(data, &Map.take(&1, children))
+          data when is_map(data) -> Map.take(data, children)
+        end
+
+      children when is_binary(children) ->
+        get_in(data, Enum.reverse([children | path]))
     end
   end
 
