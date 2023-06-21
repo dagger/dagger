@@ -15,13 +15,16 @@ import (
 type GraphQLMarshaller interface {
 	// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
 	XXX_GraphQLType() string
+	// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+	XXX_GraphQLIDType() string
 	// XXX_GraphqlID is an internal function. It returns the underlying type ID
 	XXX_GraphQLID(ctx context.Context) (string, error)
 }
 
 const (
-	GraphQLMarshallerType = "XXX_GraphQLType"
-	GraphQLMarshallerID   = "XXX_GraphQLID"
+	GraphQLMarshallerType   = "XXX_GraphQLType"
+	GraphQLMarshallerIDType = "XXX_GraphQLIDType"
+	GraphQLMarshallerID     = "XXX_GraphQLID"
 )
 
 var (

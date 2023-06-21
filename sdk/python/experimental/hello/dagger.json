@@ -1,4 +1,5 @@
 {
   "name": "hello",
-  "sdk": "python"
+  "sdk": "python",
+  "root": "../.."
 }

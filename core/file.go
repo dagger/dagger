@@ -192,10 +192,7 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 
 	t := time.Unix(int64(unix), 0)
 
-	stamped := llb.Scratch().File(
-		llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)),
-		file.Pipeline.LLBOpt(),
-	)
+	stamped := llb.Scratch().File(llb.Copy(st, file.File, ".", llb.WithCreatedTime(t)))
 
 	def, err := stamped.Marshal(ctx, llb.Platform(file.Platform))
 	if err != nil {
@@ -222,6 +219,7 @@ func (file *File) Export(
 	ctx context.Context,
 	host *Host,
 	dest string,
+	allowParentDirPath bool,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
@@ -233,7 +231,10 @@ func (file *File) Export(
 
 	if stat, err := os.Stat(dest); err == nil {
 		if stat.IsDir() {
-			return fmt.Errorf("destination %q is a directory; must be a file path", dest)
+			if !allowParentDirPath {
+				return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
+			}
+			dest = filepath.Join(dest, filepath.Base(file.File))
 		}
 	}
 
@@ -250,7 +251,7 @@ func (file *File) Export(
 				return nil, err
 			}
 
-			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename), file.Pipeline.LLBOpt())
+			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename))
 
 			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
 			if err != nil {

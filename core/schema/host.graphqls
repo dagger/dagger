@@ -42,6 +42,16 @@ type Host {
   ): Directory!
 
   """
+  Accesses a file on the host.
+  """
+  file(
+    """
+    Location of the file to retrieve (e.g., "README.md").
+    """
+    path: String!
+  ): File!
+
+  """
   Accesses an environment variable on the host.
   """
   envVariable(

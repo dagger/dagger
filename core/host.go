@@ -35,7 +35,7 @@ type CopyFilter struct {
 	Include []string
 }
 
-func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, platform specs.Platform, filter CopyFilter) (*Directory, error) {
+func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path, pipelineNamePrefix string, platform specs.Platform, filter CopyFilter) (*Directory, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}
@@ -58,18 +58,12 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	}
 
 	// Create a sub-pipeline to group llb.Local instructions
-	pipelineName := fmt.Sprintf("host.directory %s", absPath)
-	directoryPipeline := p.Add(pipeline.Pipeline{
-		Name: pipelineName,
-	})
-	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName)
+	pipelineName := fmt.Sprintf("%s %s", pipelineNamePrefix, absPath)
+	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 
 	localID := fmt.Sprintf("host:%s", absPath)
 
 	localOpts := []llb.LocalOption{
-		// Inject Pipelin
-		directoryPipeline.LLBOpt(),
-
 		// Custom name
 		llb.WithCustomNamef("upload %s", absPath),
 
@@ -96,7 +90,6 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
-		directoryPipeline.LLBOpt(),
 		llb.WithCustomNamef("copy %s", absPath),
 	)
 
@@ -111,6 +104,16 @@ func (host *Host) Directory(ctx context.Context, dirPath string, p pipeline.Path
 	recordVertexes(subRecorder, defPB)
 
 	return NewDirectory(ctx, defPB, "", p, platform, nil), nil
+}
+
+func (host *Host) File(ctx context.Context, path string, p pipeline.Path, platform specs.Platform) (*File, error) {
+	parentDir, err := host.Directory(ctx, filepath.Dir(path), p, "host.file", platform, CopyFilter{
+		Include: []string{filepath.Base(path)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return parentDir.File(ctx, filepath.Base(path))
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

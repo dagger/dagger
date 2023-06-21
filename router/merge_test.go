@@ -7,6 +7,7 @@ import (
 )
 
 func TestMergeObjects(t *testing.T) {
+	t.Parallel()
 	merged, err := MergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
@@ -52,6 +53,7 @@ func TestMergeObjects(t *testing.T) {
 }
 
 func TestMergeFieldExtend(t *testing.T) {
+	t.Parallel()
 	merged, err := MergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
@@ -89,6 +91,7 @@ func TestMergeFieldExtend(t *testing.T) {
 }
 
 func TestMergeFieldConflict(t *testing.T) {
+	t.Parallel()
 	_, err := MergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
@@ -147,6 +150,7 @@ func TestMergeTypeConflict(t *testing.T) {
 }
 
 func TestMergeScalars(t *testing.T) {
+	t.Parallel()
 	merged, err := MergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
@@ -176,6 +180,7 @@ func TestMergeScalars(t *testing.T) {
 }
 
 func TestMergeScalarConflict(t *testing.T) {
+	t.Parallel()
 	_, err := MergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `scalar TypeA`,

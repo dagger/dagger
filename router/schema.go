@@ -31,9 +31,41 @@ type Resolver interface {
 	_resolver()
 }
 
+type FieldResolvers interface {
+	Resolver
+	Fields() map[string]graphql.FieldResolveFn
+	SetField(string, graphql.FieldResolveFn)
+}
+
 type ObjectResolver map[string]graphql.FieldResolveFn
 
 func (ObjectResolver) _resolver() {}
+
+func (r ObjectResolver) Fields() map[string]graphql.FieldResolveFn {
+	return r
+}
+
+func (r ObjectResolver) SetField(name string, fn graphql.FieldResolveFn) {
+	r[name] = fn
+}
+
+type IDableObjectResolver interface {
+	FromID(id string) (any, error)
+	Resolver
+}
+
+func ToIDableObjectResolver[I ~string, T any](idToObject func(I) (*T, error), r ObjectResolver) IDableObjectResolver {
+	return idableObjectResolver[I, T]{idToObject, r}
+}
+
+type idableObjectResolver[I ~string, T any] struct {
+	idToObject func(I) (*T, error)
+	ObjectResolver
+}
+
+func (r idableObjectResolver[I, T]) FromID(id string) (any, error) {
+	return r.idToObject(I(id))
+}
 
 type ScalarResolver struct {
 	Serialize    graphql.SerializeFn

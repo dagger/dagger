@@ -1,21 +1,20 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
-	bkclient "github.com/moby/buildkit/client"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type WrappedVertex struct {
-	v *bkclient.Vertex
+	v *telemetry.PipelinedVertex
 }
 
 func (w WrappedVertex) ID() string {
-	return w.v.Digest.String()
+	return w.v.Id
 }
 
 func (w WrappedVertex) FullName() string {
@@ -28,61 +27,36 @@ func (w WrappedVertex) FullName() string {
 }
 
 func (w WrappedVertex) Name() string {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		return custom.Name
-	}
 	return w.v.Name
 }
 
 func (w WrappedVertex) Pipeline() pipeline.Path {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		if len(custom.Pipeline) > 0 {
-			return custom.Pipeline
-		}
+	if len(w.v.Pipelines) == 0 {
+		return pipeline.Path{}
 	}
-
-	pg := w.v.ProgressGroup.GetId()
-	if pg != "" {
-		var pipeline pipeline.Path
-		if json.Unmarshal([]byte(pg), &pipeline) == nil {
-			return pipeline
-		}
-	}
-	return pipeline.Path{}
+	return w.v.Pipelines[0]
 }
 
 func (w WrappedVertex) Internal() bool {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		if custom.Internal {
-			return true
-		}
-	}
-	return false
+	return w.v.Internal
 }
 
 func (w WrappedVertex) Inputs() []string {
-	inputs := make([]string, 0, len(w.v.Inputs))
-	for _, i := range w.v.Inputs {
-		inputs = append(inputs, i.String())
-	}
-	return inputs
+	return w.v.Inputs
 }
 
 func (w WrappedVertex) Started() time.Time {
 	if w.v.Started == nil {
 		return time.Time{}
 	}
-	return *w.v.Started
+	return w.v.Started.AsTime()
 }
 
 func (w WrappedVertex) Completed() time.Time {
 	if w.v.Completed == nil {
 		return time.Time{}
 	}
-	return *w.v.Completed
+	return w.v.Completed.AsTime()
 }
 
 func (w WrappedVertex) Duration() time.Duration {

@@ -13,17 +13,17 @@ defmodule Dagger.Host do
       selection = arg(selection, "path", path)
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
-          arg(selection, "exclude", optional_args[:exclude])
-        else
+        if is_nil(optional_args[:exclude]) do
           selection
+        else
+          arg(selection, "exclude", optional_args[:exclude])
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
-          arg(selection, "include", optional_args[:include])
-        else
+        if is_nil(optional_args[:include]) do
           selection
+        else
+          arg(selection, "include", optional_args[:include])
         end
 
       %Dagger.Directory{selection: selection, client: host.client}
@@ -37,6 +37,16 @@ defmodule Dagger.Host do
       selection = select(host.selection, "envVariable")
       selection = arg(selection, "name", name)
       execute(selection, host.client)
+    end
+  )
+
+  (
+    @doc "Accesses a file on the host.\n\n## Required Arguments\n\n* `path` - Location of the file to retrieve (e.g., \"README.md\")."
+    @spec file(t(), String.t()) :: Dagger.File.t()
+    def file(%__MODULE__{} = host, path) do
+      selection = select(host.selection, "file")
+      selection = arg(selection, "path", path)
+      %Dagger.File{selection: selection, client: host.client}
     end
   )
 
@@ -58,17 +68,17 @@ defmodule Dagger.Host do
       selection = select(host.selection, "workdir")
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
-          arg(selection, "exclude", optional_args[:exclude])
-        else
+        if is_nil(optional_args[:exclude]) do
           selection
+        else
+          arg(selection, "exclude", optional_args[:exclude])
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
-          arg(selection, "include", optional_args[:include])
-        else
+        if is_nil(optional_args[:include]) do
           selection
+        else
+          arg(selection, "include", optional_args[:include])
         end
 
       %Dagger.Directory{selection: selection, client: host.client}

@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -227,4 +230,181 @@ func computeMD5FromReader(reader io.Reader) string {
 	h := md5.New()
 	io.Copy(h, reader)
 	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+func daggerCliPath(t *testing.T) string {
+	t.Helper()
+	cliPath := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
+	if cliPath == "" {
+		var err error
+		cliPath, err = exec.LookPath("dagger")
+		require.NoError(t, err)
+	}
+	if cliPath == "" {
+		t.Log("missing _EXPERIMENTAL_DAGGER_CLI_BIN")
+		t.FailNow()
+	}
+	return cliPath
+}
+
+func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
+	t.Helper()
+	return c.Host().File(daggerCliPath(t))
+}
+
+func lastNLines(str string, n int) string {
+	lines := strings.Split(strings.TrimSpace(str), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+const testCLIBinPath = "/bin/dagger"
+
+func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
+	t.Helper()
+	ctr := c.Container().From("alpine:3.16.2").
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
+		// TODO: this shouldn't be needed, dagger cli should pick up existing nestedness
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
+
+	return &DaggerCLIContainer{
+		Container: ctr,
+		ctx:       ctx,
+		t:         t,
+		c:         c,
+	}
+}
+
+type DaggerCLIContainer struct {
+	*dagger.Container
+	ctx context.Context
+	t   *testing.T
+	c   *dagger.Client
+
+	// common
+	ProjectArg string
+
+	// "do"
+	OutputArg string
+	TargetArg string
+	UserArgs  map[string]string
+
+	// "project init"
+	SDKArg  string
+	NameArg string
+	RootArg string
+}
+
+const cliContainerRepoMntPath = "/src"
+
+func (ctr DaggerCLIContainer) WithLoadedProject(
+	projectPath string,
+	convertToGitProject bool,
+) *DaggerCLIContainer {
+	ctr.t.Helper()
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(ctr.t, err)
+
+	thisRepoDir := ctr.c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Exclude: []string{".git", "bin", "docs", "website"},
+	})
+	projectArg := filepath.Join(cliContainerRepoMntPath, projectPath)
+
+	baseCtr := ctr.Container
+	if convertToGitProject {
+		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
+		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
+
+		endpoint, err := gitSvc.Endpoint(ctr.ctx)
+		require.NoError(ctr.t, err)
+		projectArg = "git://" + endpoint + "/repo.git" + "?ref=main&protocol=git"
+		if projectPath != "" {
+			projectArg += "&subpath=" + projectPath
+		}
+	} else {
+		baseCtr = baseCtr.WithMountedDirectory(cliContainerRepoMntPath, thisRepoDir)
+	}
+
+	ctr.Container = baseCtr
+	ctr.ProjectArg = projectArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithProjectArg(projectArg string) *DaggerCLIContainer {
+	ctr.ProjectArg = projectArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithOutputArg(outputArg string) *DaggerCLIContainer {
+	ctr.OutputArg = outputArg
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithTarget(target string) *DaggerCLIContainer {
+	ctr.TargetArg = target
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithUserArg(key, value string) *DaggerCLIContainer {
+	if ctr.UserArgs == nil {
+		ctr.UserArgs = map[string]string{}
+	}
+	ctr.UserArgs[key] = value
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithSDKArg(sdk string) *DaggerCLIContainer {
+	ctr.SDKArg = sdk
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
+	ctr.NameArg = name
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "do"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	if ctr.OutputArg != "" {
+		args = append(args, "--output", ctr.OutputArg)
+	}
+	args = append(args, ctr.TargetArg)
+	for k, v := range ctr.UserArgs {
+		args = append(args, "--"+k, v)
+	}
+	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "project"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
+	args := []string{testCLIBinPath, "--silent", "project", "init"}
+	if ctr.ProjectArg != "" {
+		args = append(args, "--project", ctr.ProjectArg)
+	}
+	if ctr.SDKArg != "" {
+		args = append(args, "--sdk", ctr.SDKArg)
+	}
+	if ctr.NameArg != "" {
+		args = append(args, "--name", ctr.NameArg)
+	}
+	if ctr.RootArg != "" {
+		args = append(args, "--root", ctr.RootArg)
+	}
+	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return &ctr
 }

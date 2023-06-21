@@ -1,71 +1,49 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"strings"
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
-	bkclient "github.com/moby/buildkit/client"
+	"github.com/dagger/dagger/telemetry"
 )
 
 type Vertex struct {
-	v *bkclient.Vertex
+	v *telemetry.PipelinedVertex
 }
 
 func (w Vertex) ID() string {
-	return w.v.Digest.String()
+	return w.v.Id
 }
 
 func (w Vertex) Name() string {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		return custom.Name
-	}
 	return w.v.Name
 }
 
 func (w Vertex) Pipeline() pipeline.Path {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		if len(custom.Pipeline) > 0 {
-			return custom.Pipeline
-		}
+	if len(w.v.Pipelines) == 0 {
+		return pipeline.Path{}
 	}
-
-	pg := w.v.ProgressGroup.GetId()
-	if pg != "" {
-		var pipeline pipeline.Path
-		if json.Unmarshal([]byte(pg), &pipeline) == nil {
-			return pipeline
-		}
-	}
-	return pipeline.Path{}
+	return w.v.Pipelines[0]
 }
 
 func (w Vertex) Internal() bool {
-	var custom pipeline.CustomName
-	if json.Unmarshal([]byte(w.v.Name), &custom) == nil {
-		if custom.Internal {
-			return true
-		}
-	}
-	return false
+	return w.v.Internal
 }
 
 func (w Vertex) Started() time.Time {
 	if w.v.Started == nil {
 		return time.Time{}
 	}
-	return *w.v.Started
+	return w.v.Started.AsTime()
 }
 
 func (w Vertex) Completed() time.Time {
 	if w.v.Completed == nil {
 		return time.Time{}
 	}
-	return *w.v.Completed
+	return w.v.Completed.AsTime()
 }
 
 func (w Vertex) Duration() time.Duration {
@@ -77,18 +55,14 @@ func (w Vertex) Cached() bool {
 }
 
 func (w Vertex) Error() error {
-	if w.v.Error == "" {
+	if w.v.Error == nil {
 		return nil
 	}
-	return errors.New(w.v.Error)
+	return errors.New(*w.v.Error)
 }
 
 func (w Vertex) Inputs() []string {
-	inputs := make([]string, 0, len(w.v.Inputs))
-	for _, i := range w.v.Inputs {
-		inputs = append(inputs, i.String())
-	}
-	return inputs
+	return w.v.Inputs
 }
 
 type VertexList []Vertex

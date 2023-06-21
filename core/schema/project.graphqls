@@ -15,7 +15,7 @@ scalar ProjectCommandID
 "A collection of Dagger resources that can be queried and invoked."
 type Project {
   "A unique identifier for this project."
-  id: String!
+  id: ProjectID!
 
   "Initialize this project from the given directory and config path"
   load(source: DirectoryID!, configPath: String!): Project!
@@ -30,13 +30,16 @@ type Project {
 "A command defined in a project that can be invoked from the CLI."
 type ProjectCommand {
   "A unique identifier for this command."
-  id: String!
+  id: ProjectCommandID!
 
   "The name of the command."
   name: String!
 
   "Flags accepted by this command."
   flags: [ProjectCommandFlag!]
+
+  "The name of the type returned by this command."
+  resultType: String
 
   "Documentation for what this command does."
   description: String

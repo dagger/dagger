@@ -2007,13 +2007,21 @@ class File(Type):
         return _ctx.execute_sync(str)
 
     @typecheck
-    def export(self, path: str) -> bool:
+    def export(
+        self,
+        path: str,
+        allow_parent_dir_path: Optional[bool] = None,
+    ) -> bool:
         """Writes the file to a file path on the host.
 
         Parameters
         ----------
         path:
             Location of the written directory (e.g., "output.txt").
+        allow_parent_dir_path:
+            If allowParentDirPath is true, the path argument can be a
+            directory path, in which case
+            the file will be created in that directory.
 
         Returns
         -------
@@ -2029,6 +2037,7 @@ class File(Type):
         """
         _args = [
             Arg("path", path),
+            Arg("allowParentDirPath", allow_parent_dir_path, None),
         ]
         _ctx = self._select("export", _args)
         return _ctx.execute_sync(bool)
@@ -2298,6 +2307,21 @@ class Host(Type):
         return HostVariable(_ctx)
 
     @typecheck
+    def file(self, path: str) -> File:
+        """Accesses a file on the host.
+
+        Parameters
+        ----------
+        path:
+            Location of the file to retrieve (e.g., "README.md").
+        """
+        _args = [
+            Arg("path", path),
+        ]
+        _ctx = self._select("file", _args)
+        return File(_ctx)
+
+    @typecheck
     def unix_socket(self, path: str) -> "Socket":
         """Accesses a Unix socket on the host.
 
@@ -2518,7 +2542,7 @@ class Project(Type):
         return ProjectCommand(_ctx)
 
     @typecheck
-    def id(self) -> str:
+    def id(self) -> ProjectID:
         """A unique identifier for this project.
 
         Note
@@ -2527,10 +2551,8 @@ class Project(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        ProjectID
+            A unique project identifier.
 
         Raises
         ------
@@ -2541,7 +2563,7 @@ class Project(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return _ctx.execute_sync(str)
+        return _ctx.execute_sync(ProjectID)
 
     @typecheck
     def load(
@@ -2613,7 +2635,7 @@ class ProjectCommand(Type):
         return ProjectCommandFlag(_ctx)
 
     @typecheck
-    def id(self) -> str:
+    def id(self) -> ProjectCommandID:
         """A unique identifier for this command.
 
         Note
@@ -2622,10 +2644,8 @@ class ProjectCommand(Type):
 
         Returns
         -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
+        ProjectCommandID
+            A unique project command identifier.
 
         Raises
         ------
@@ -2636,7 +2656,7 @@ class ProjectCommand(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
-        return _ctx.execute_sync(str)
+        return _ctx.execute_sync(ProjectCommandID)
 
     @typecheck
     def name(self) -> str:
@@ -2659,6 +2679,28 @@ class ProjectCommand(Type):
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
+
+    @typecheck
+    def result_type(self) -> Optional[str]:
+        """The name of the type returned by this command.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("resultType", _args)
+        return _ctx.execute_sync(Optional[str])
 
     @typecheck
     def subcommands(self) -> "ProjectCommand":

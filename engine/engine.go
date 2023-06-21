@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/url"
 	"os"
@@ -21,7 +20,6 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/internal/engine/journal"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/dagger/secret"
 	"github.com/dagger/dagger/telemetry"
@@ -32,7 +30,6 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/progress/progressui"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/tonistiigi/fsutil"
@@ -43,26 +40,46 @@ import (
 )
 
 type Config struct {
-	Workdir        string
-	LogOutput      io.Writer
-	JournalFile    string
-	JournalWriter  journal.Writer
-	ProgrockWriter progrock.Writer
-	DisableHostRW  bool
-	RunnerHost     string
-	SessionToken   string
-	UserAgent      string
+	Workdir            string
+	JournalFile        string
+	ProgrockWriter     progrock.Writer
+	DisableHostRW      bool
+	RunnerHost         string
+	SessionToken       string
+	UserAgent          string
+	EngineNameCallback func(string)
+	CloudURLCallback   func(string)
 }
 
 type StartCallback func(context.Context, *router.Router) error
 
+// nolint: gocyclo
 func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	if startOpts.RunnerHost == "" {
 		return fmt.Errorf("must specify runner host")
 	}
 
-	if startOpts.ProgrockWriter == nil {
-		startOpts.ProgrockWriter = progrock.Discard{}
+	progMultiW := progrock.MultiWriter{}
+
+	if startOpts.ProgrockWriter != nil {
+		progMultiW = append(progMultiW, startOpts.ProgrockWriter)
+	}
+
+	if startOpts.JournalFile != "" {
+		fw, err := newProgrockFileWriter(startOpts.JournalFile)
+		if err != nil {
+			return err
+		}
+
+		progMultiW = append(progMultiW, fw)
+	}
+
+	tel := telemetry.New()
+
+	var cloudURL string
+	if tel.Enabled() {
+		cloudURL = tel.URL()
+		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
 
 	remote, err := url.Parse(startOpts.RunnerHost)
@@ -73,10 +90,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	c, err := engine.NewClient(ctx, remote, startOpts.UserAgent)
 	if err != nil {
 		return fmt.Errorf("new client: %w", err)
-	}
-
-	if c.EngineName != "" && startOpts.LogOutput != nil {
-		fmt.Fprintln(startOpts.LogOutput, "Connected to engine", c.EngineName)
 	}
 
 	// Load default labels asynchronously in the background.
@@ -94,7 +107,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		})
 	}
 
-	progSock, progW, cleanup, err := progrockForwarder(startOpts.ProgrockWriter)
+	progSock, progW, cleanup, err := progrockForwarder(progMultiW)
 	if err != nil {
 		return fmt.Errorf("progress forwarding: %w", err)
 	}
@@ -102,6 +115,22 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 
 	recorder := progrock.NewRecorder(progW, progrock.WithLabels(labels...))
 	ctx = progrock.RecorderToContext(ctx, recorder)
+
+	defer func() {
+		// mark all groups completed
+		recorder.Complete()
+
+		// close the recorder so the UI exits
+		recorder.Close()
+	}()
+
+	if startOpts.EngineNameCallback != nil && c.EngineName != "" {
+		startOpts.EngineNameCallback(c.EngineName)
+	}
+
+	if startOpts.CloudURLCallback != nil && cloudURL != "" {
+		startOpts.CloudURLCallback(cloudURL)
+	}
 
 	platform, err := detectPlatform(ctx, c.BuildkitClient)
 	if err != nil {
@@ -174,9 +203,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		err := handleSolveEvents(recorder, startOpts, solveCh)
-		if err != nil {
-			return fmt.Errorf("handle solve events: %w", err)
+		for ev := range solveCh {
+			if err := recorder.Record(bk2progrock(ev)); err != nil {
+				return fmt.Errorf("record: %w", err)
+			}
 		}
 		return nil
 	})
@@ -244,192 +274,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			return ctx.Err()
 		}
 		return err
-	}
-
-	return nil
-}
-
-func handleSolveEvents(recorder *progrock.Recorder, startOpts Config, upstreamCh chan *bkclient.SolveStatus) error {
-	eg := &errgroup.Group{}
-	readers := []chan *bkclient.SolveStatus{}
-
-	// (Optionally) Upload Telemetry
-	telemetryCh := make(chan *bkclient.SolveStatus)
-	readers = append(readers, telemetryCh)
-	eg.Go(func() error {
-		return uploadTelemetry(telemetryCh)
-	})
-
-	// Print events to the console
-	if startOpts.LogOutput != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		// Read `ch`; strip away custom names; re-write to `cleanCh`
-		cleanCh := make(chan *bkclient.SolveStatus)
-		eg.Go(func() error {
-			defer close(cleanCh)
-			for ev := range ch {
-				cleaned := *ev
-				cleaned.Vertexes = make([]*bkclient.Vertex, len(ev.Vertexes))
-				for i, v := range ev.Vertexes {
-					customName := pipeline.CustomName{}
-					if json.Unmarshal([]byte(v.Name), &customName) == nil {
-						cp := *v
-						cp.Name = customName.Name
-						cleaned.Vertexes[i] = &cp
-					} else {
-						cleaned.Vertexes[i] = v
-					}
-				}
-				cleanCh <- &cleaned
-			}
-			return nil
-		})
-
-		// Display from `cleanCh`
-		eg.Go(func() error {
-			warn, err := progressui.DisplaySolveStatus(context.TODO(), nil, startOpts.LogOutput, cleanCh)
-			for _, w := range warn {
-				fmt.Fprintf(startOpts.LogOutput, "=> %s\n", w.Short)
-			}
-			return err
-		})
-	}
-
-	// Write events to a journal file
-	if startOpts.JournalFile != "" {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		eg.Go(func() error {
-			f, err := os.Create(startOpts.JournalFile)
-			if err != nil {
-				return err
-			}
-			defer f.Close()
-			enc := json.NewEncoder(f)
-			for ev := range ch {
-				entry := &journal.Entry{
-					Event: ev,
-					TS:    time.Now().UTC(),
-				}
-
-				if err := enc.Encode(entry); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
-	}
-
-	if startOpts.JournalWriter != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		journalW := startOpts.JournalWriter
-		eg.Go(func() error {
-			for ev := range ch {
-				entry := &journal.Entry{
-					Event: ev,
-					TS:    time.Now().UTC(),
-				}
-
-				if err := journalW.WriteEntry(entry); err != nil {
-					return err
-				}
-			}
-
-			return journalW.Close()
-		})
-	}
-
-	if startOpts.ProgrockWriter != nil {
-		ch := make(chan *bkclient.SolveStatus)
-		readers = append(readers, ch)
-
-		eg.Go(func() error {
-			for ev := range ch {
-				if err := recorder.Record(bk2progrock(ev)); err != nil {
-					return fmt.Errorf("record: %w", err)
-				}
-			}
-
-			// mark all groups completed
-			recorder.Complete()
-
-			// close the recorder so the UI exits
-			if err := recorder.Close(); err != nil {
-				return fmt.Errorf("close: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	eventsMultiReader(upstreamCh, readers...)
-	return eg.Wait()
-}
-
-func eventsMultiReader(ch chan *bkclient.SolveStatus, readers ...chan *bkclient.SolveStatus) {
-	for ev := range ch {
-		for _, r := range readers {
-			r <- ev
-		}
-	}
-
-	for _, w := range readers {
-		close(w)
-	}
-}
-
-func uploadTelemetry(ch chan *bkclient.SolveStatus) error {
-	t := telemetry.New(true)
-	defer t.Flush()
-
-	for ev := range ch {
-		ts := time.Now().UTC()
-
-		for _, v := range ev.Vertexes {
-			id := v.Digest.String()
-
-			var custom pipeline.CustomName
-			if json.Unmarshal([]byte(v.Name), &custom) != nil {
-				custom.Name = v.Name
-				if pg := v.ProgressGroup.GetId(); pg != "" {
-					if err := json.Unmarshal([]byte(pg), &custom.Pipeline); err != nil {
-						return err
-					}
-				}
-			}
-
-			payload := telemetry.OpPayload{
-				OpID:     id,
-				OpName:   custom.Name,
-				Internal: custom.Internal,
-				Pipeline: custom.Pipeline,
-
-				Started:   v.Started,
-				Completed: v.Completed,
-				Cached:    v.Cached,
-				Error:     v.Error,
-			}
-
-			payload.Inputs = []string{}
-			for _, input := range v.Inputs {
-				payload.Inputs = append(payload.Inputs, input.String())
-			}
-
-			t.Push(payload, ts)
-		}
-
-		for _, l := range ev.Logs {
-			t.Push(telemetry.LogPayload{
-				OpID:   l.Vertex.String(),
-				Data:   string(l.Data),
-				Stream: l.Stream,
-			}, l.Timestamp)
-		}
 	}
 
 	return nil
@@ -517,8 +361,9 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 			Name:   v.Name,
 			Cached: v.Cached,
 		}
-		if strings.Contains(v.Name, "[hide]") {
+		if strings.HasPrefix(v.Name, "[internal] ") {
 			vtx.Internal = true
+			vtx.Name = strings.TrimPrefix(v.Name, "[internal] ")
 		}
 		for _, input := range v.Inputs {
 			vtx.Inputs = append(vtx.Inputs, input.String())
@@ -537,16 +382,6 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 				vtx.Error = &msg
 			}
 		}
-
-		// clean up any shimmied CustomNames
-		// TODO(vito): remove this once we stop relying on ProgressGroup/CustomName
-		// JSON embedding for progress
-		var custom pipeline.CustomName
-		if json.Unmarshal([]byte(v.Name), &custom) == nil {
-			vtx.Name = custom.Name
-			vtx.Internal = custom.Internal
-		}
-
 		status.Vertexes = append(status.Vertexes, vtx)
 	}
 
@@ -595,4 +430,31 @@ func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error
 	}
 
 	return progSock, progW, l.Close, nil
+}
+
+type progrockFileWriter struct {
+	f   *os.File
+	enc *json.Encoder
+}
+
+func newProgrockFileWriter(filePath string) (progrock.Writer, error) {
+	f, err := os.Create(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	enc := json.NewEncoder(f)
+
+	return progrockFileWriter{
+		f:   f,
+		enc: enc,
+	}, nil
+}
+
+func (w progrockFileWriter) WriteStatus(ev *progrock.StatusUpdate) error {
+	return w.enc.Encode(ev)
+}
+
+func (w progrockFileWriter) Close() error {
+	return w.f.Close()
 }

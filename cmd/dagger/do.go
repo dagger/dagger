@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,19 +20,18 @@ import (
 )
 
 var (
-	projectURI string
-	configPath string
+	outputPath string
 )
 
 const (
-	projectURIDefault = "."
-	commandSeparator  = ":"
+	commandSeparator = ":"
 )
 
 func init() {
-	doCmd.PersistentFlags().StringVarP(&projectURI, "project", "p", projectURIDefault, "Location of the project root, either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger#branchname\").")
-	doCmd.PersistentFlags().StringVarP(&configPath, "config", "c", "./dagger.json", "Path to dagger.json config file for the project, or a parent directory containing that file, relative to the project's root directory.")
+	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
 }
+
+// project flags (--project) for do command are setup in project.go
 
 var doCmd = &cobra.Command{
 	Use:                "do",
@@ -53,8 +51,10 @@ var doCmd = &cobra.Command{
 		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
-			cmd.SetOut(vtx.Stdout())
-			cmd.SetErr(vtx.Stderr())
+			if !silent {
+				cmd.SetOut(vtx.Stdout())
+				cmd.SetErr(vtx.Stderr())
+			}
 			defer func() { vtx.Done(err) }()
 
 			cmd.Println("Loading+installing project...")
@@ -67,11 +67,24 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
 
-			proj, err := getProject(c)
+			proj, err := getProjectFlagConfig()
 			if err != nil {
-				return fmt.Errorf("failed to get project schema: %w", err)
+				return fmt.Errorf("failed to get project config: %w", err)
 			}
-			projCmds, err := proj.Commands(ctx)
+			if proj.local != nil && outputPath == "" {
+				// default to outputting to the project root dir
+				rootDir, err := proj.local.rootDir()
+				if err != nil {
+					return fmt.Errorf("failed to get project root dir: %w", err)
+				}
+				outputPath = rootDir
+			}
+
+			loadedProj, err := proj.load(ctx, c)
+			if err != nil {
+				return fmt.Errorf("failed to load project: %w", err)
+			}
+			projCmds, err := loadedProj.Commands(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get project commands: %w", err)
 			}
@@ -111,6 +124,7 @@ var doCmd = &cobra.Command{
 	},
 }
 
+// nolint:gocyclo
 func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
@@ -118,7 +132,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd id: %w", err)
 	}
-	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: dagger.ProjectCommandID(projCmdID)})
+	projCmd = *c.ProjectCommand(dagger.ProjectCommandOpts{ID: projCmdID})
 
 	projCmdName, err := projCmd.Name(ctx)
 	if err != nil {
@@ -127,6 +141,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	description, err := projCmd.Description(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd description: %w", err)
+	}
+
+	projResultType, err := projCmd.ResultType(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cmd result type: %w", err)
 	}
 
 	projFlags, err := projCmd.Flags(ctx)
@@ -149,6 +168,8 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		cmdName = getCommandName(parentCmd) + commandSeparator + projCmdName
 	}
 
+	// make a copy of cmdStack
+	cmdStack = append([]*cobra.Command{}, cmdStack...)
 	subcmd := &cobra.Command{
 		Use:         cmdName,
 		Short:       description,
@@ -190,6 +211,57 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					newSelection := &ast.Field{}
 					curSelection.SelectionSet = ast.SelectionSet{newSelection}
 					curSelection = newSelection
+				} else {
+					if outputPath == "" && returnTypeCanUseOutputFlag(projResultType) {
+						return fmt.Errorf("output path not set, --output must be explicitly provided for git:// projects that return files or directories")
+					}
+					outputPath, err = filepath.Abs(outputPath)
+					if err != nil {
+						return fmt.Errorf("failed to get absolute path of output path: %w", err)
+					}
+					switch projResultType {
+					case "File":
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{
+								&ast.Argument{
+									Name: "path",
+									Value: &ast.Value{
+										Raw:  outputPath,
+										Kind: ast.StringValue,
+									},
+								},
+								&ast.Argument{
+									Name: "allowParentDirPath",
+									Value: &ast.Value{
+										Raw:  "true",
+										Kind: ast.BooleanValue,
+									},
+								},
+							},
+						}}
+					case "Directory":
+						outputStat, err := os.Stat(outputPath)
+						switch {
+						case os.IsNotExist(err):
+						case err == nil:
+							if !outputStat.IsDir() {
+								return fmt.Errorf("output path %q is not a directory but the command returns a directory", outputPath)
+							}
+						default:
+							return fmt.Errorf("failed to stat output directory: %w", err)
+						}
+						curSelection.SelectionSet = ast.SelectionSet{&ast.Field{
+							Name: "export",
+							Arguments: ast.ArgumentList{&ast.Argument{
+								Name: "path",
+								Value: &ast.Value{
+									Raw:  outputPath,
+									Kind: ast.StringValue,
+								},
+							}},
+						}}
+					}
 				}
 			}
 			var b bytes.Buffer
@@ -226,10 +298,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 				}
 			}
 			// TODO: better to print this after session closes so there's less overlap with progress output
-			fmt.Println(res)
+			cmd.Println(res)
 			return nil
 		},
 	}
+	cmdStack = append(cmdStack, subcmd)
 
 	if parentCmd != nil {
 		subcmd.Flags().AddFlagSet(parentCmd.Flags())
@@ -247,7 +320,6 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
 	returnCmds := []*cobra.Command{subcmd}
-	cmdStack = append(cmdStack, subcmd)
 	for _, subProjCmd := range projSubcommands {
 		subCmds, err := addCmd(ctx, cmdStack, subProjCmd, c, r)
 		if err != nil {
@@ -294,45 +366,6 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 	return returnCmds, nil
 }
 
-func getProject(c *dagger.Client) (*dagger.Project, error) {
-	projectURI, configPath := projectURI, configPath
-	if projectURI == "" || projectURI == projectURIDefault {
-		// it's unset or default value, use env if present
-		if v, ok := os.LookupEnv("DAGGER_PROJECT"); ok {
-			projectURI = v
-		}
-	}
-
-	url, err := url.Parse(projectURI)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse config path: %w", err)
-	}
-	switch url.Scheme {
-	case "": // local path
-		projectAbsPath, err := filepath.Abs(projectURI)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get project absolute path: %w", err)
-		}
-		configAbsPath, err := filepath.Abs(configPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config absolute path: %w", err)
-		}
-		configRelPath, err := filepath.Rel(projectAbsPath, configAbsPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get config relative path: %w", err)
-		}
-		return c.Project().Load(c.Host().Directory(projectAbsPath), configRelPath), nil
-	case "git":
-		repo := url.Host + url.Path
-		ref := url.Fragment
-		if ref == "" {
-			ref = "main"
-		}
-		return c.Project().Load(c.Git(repo).Branch(ref).Tree(), configPath), nil
-	}
-	return nil, fmt.Errorf("unsupported scheme %s", url.Scheme)
-}
-
 func getCommandName(cmd *cobra.Command) string {
 	// name is like "dagger do a:b:c", we return just "a:b:c" here
 	nameSplit := strings.Split(cmd.Name(), " ")
@@ -343,6 +376,18 @@ func getSubcommandName(cmd *cobra.Command) string {
 	// if command name is "a:b:c", we return just "c" here
 	nameSplit := strings.Split(getCommandName(cmd), commandSeparator)
 	return nameSplit[len(nameSplit)-1]
+}
+
+func returnTypeCanUseOutputFlag(returnType string) bool {
+	for _, t := range []string{
+		"File",
+		"Directory",
+	} {
+		if returnType == t {
+			return true
+		}
+	}
+	return false
 }
 
 // certain pieces of metadata about cobra commands are difficult or impossible to set

@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,14 +30,8 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
-func engineClientContainer(ctx context.Context, c *dagger.Client, devEngine *dagger.Container) (*dagger.Container, error) {
-	cliPath := os.Getenv("_EXPERIMENTAL_DAGGER_CLI_BIN")
-	if cliPath == "" {
-		return nil, fmt.Errorf("missing _EXPERIMENTAL_DAGGER_CLI_BIN")
-	}
-	parentDir := filepath.Dir(cliPath)
-	baseName := filepath.Base(cliPath)
-	daggerCli := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{baseName}}).File(baseName)
+func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Container) (*dagger.Container, error) {
+	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
 	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
@@ -105,7 +98,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 			InsecureRootCapabilities: true,
 		})
 
-	clientCtr, err := engineClientContainer(ctx, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
 	exitCode, err := clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
@@ -129,7 +122,7 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 			InsecureRootCapabilities: true,
 		})
 
-	clientCtr, err := engineClientContainer(ctx, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
 
 	out, err := clientCtr.

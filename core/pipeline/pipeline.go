@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/solver/pb"
 	"github.com/vito/progrock"
 )
 
@@ -13,9 +11,10 @@ type Pipeline struct {
 	Name        string  `json:"name"`
 	Description string  `json:"description,omitempty"`
 	Labels      []Label `json:"labels,omitempty"`
+	Weak        bool    `json:"weak,omitempty"`
 }
 
-type Path []Pipeline
+type Path []*Pipeline
 
 func (g Path) Copy() Path {
 	copy := make(Path, 0, len(g))
@@ -27,7 +26,7 @@ func (g Path) Add(pipeline Pipeline) Path {
 	// make a copy of path, don't modify in-place
 	newPath := g.Copy()
 	// add the sub-pipeline
-	newPath = append(newPath, pipeline)
+	newPath = append(newPath, &pipeline)
 	return newPath
 }
 
@@ -54,6 +53,8 @@ func (g Path) String() string {
 	return strings.Join(parts, " / ")
 }
 
+const ProgrockDescriptionLabel = "dagger.io/pipeline.description"
+
 // RecorderGroup converts the path to a Progrock recorder for the group.
 func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 	if len(g) == 0 {
@@ -65,6 +66,14 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 
 	for _, p := range g {
 		var labels []*progrock.Label
+
+		if p.Description != "" {
+			labels = append(labels, &progrock.Label{
+				Name:  ProgrockDescriptionLabel,
+				Value: p.Description,
+			})
+		}
+
 		for _, l := range p.Labels {
 			labels = append(labels, &progrock.Label{
 				Name:  l.Name,
@@ -72,40 +81,20 @@ func (g Path) RecorderGroup(rec *progrock.Recorder) *progrock.Recorder {
 			})
 		}
 
+		opts := []progrock.GroupOpt{}
+
+		if len(labels) > 0 {
+			opts = append(opts, progrock.WithLabels(labels...))
+		}
+
+		if p.Weak {
+			opts = append(opts, progrock.Weak())
+		}
+
 		// WithGroup stores an internal hierarchy of groups by name, so this will
 		// always return the same group ID throughout the session.
-		rec = rec.WithGroup(p.Name, progrock.WithLabels(labels...))
+		rec = rec.WithGroup(p.Name, opts...)
 	}
 
 	return rec
-}
-
-func (g Path) ProgressGroup() *pb.ProgressGroup {
-	return &pb.ProgressGroup{
-		Id:   g.ID(),
-		Name: g.Name(),
-	}
-}
-
-func (g Path) LLBOpt() llb.ConstraintsOpt {
-	pg := g.ProgressGroup()
-	return llb.ProgressGroup(pg.Id, pg.Name, pg.Weak)
-}
-
-type CustomName struct {
-	Name     string `json:"name,omitempty"`
-	Pipeline Path   `json:"pipeline,omitempty"`
-	Internal bool   `json:"internal,omitempty"`
-}
-
-func (c CustomName) String() string {
-	enc, err := json.Marshal(c)
-	if err != nil {
-		return ""
-	}
-	return string(enc)
-}
-
-func (c CustomName) LLBOpt() llb.ConstraintsOpt {
-	return llb.WithCustomName(c.String())
 }

@@ -26,7 +26,7 @@ func init() {
 		}
 	}
 
-	tel = telemetry.New(false)
+	tel = telemetry.New()
 
 	logrus.AddHook(&cloudHook{})
 }

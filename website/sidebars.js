@@ -152,6 +152,11 @@ module.exports = {
       type: "doc",
       id: "current/contributing",
     },
+    {
+      type: "link",
+      label: "Releases 🔗",
+      href: "https://github.com/dagger/dagger/releases",
+    },
   ],
   quickstart: [
     {

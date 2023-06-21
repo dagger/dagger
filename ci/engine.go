@@ -8,7 +8,7 @@ func (e EngineTargets) Lint(ctx dagger.Context) (string, error) {
 	c := ctx.Client().Pipeline("engine").Pipeline("lint")
 
 	out, err := c.Container().
-		From("golangci/golangci-lint:v1.51").
+		From("golangci/golangci-lint:v1.51-alpine").
 		WithMountedDirectory("/app", e.SrcDir).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).

@@ -13,31 +13,31 @@ defmodule Dagger.Container do
       selection = arg(selection, "context", Dagger.DirectoryID.get_id(context))
 
       selection =
-        if not is_nil(optional_args[:dockerfile]) do
+        if is_nil(optional_args[:dockerfile]) do
+          selection
+        else
           arg(selection, "dockerfile", optional_args[:dockerfile])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:build_args]) do
+        if is_nil(optional_args[:build_args]) do
+          selection
+        else
           arg(selection, "buildArgs", optional_args[:build_args])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:target]) do
+        if is_nil(optional_args[:target]) do
+          selection
+        else
           arg(selection, "target", optional_args[:target])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:secrets]) do
-          arg(selection, "secrets", optional_args[:secrets])
-        else
+        if is_nil(optional_args[:secrets]) do
           selection
+        else
+          arg(selection, "secrets", optional_args[:secrets])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -70,17 +70,17 @@ defmodule Dagger.Container do
       selection = select(container.selection, "endpoint")
 
       selection =
-        if not is_nil(optional_args[:port]) do
-          arg(selection, "port", optional_args[:port])
-        else
+        if is_nil(optional_args[:port]) do
           selection
+        else
+          arg(selection, "port", optional_args[:port])
         end
 
       selection =
-        if not is_nil(optional_args[:scheme]) do
-          arg(selection, "scheme", optional_args[:scheme])
-        else
+        if is_nil(optional_args[:scheme]) do
           selection
+        else
+          arg(selection, "scheme", optional_args[:scheme])
         end
 
       execute(selection, container.client)
@@ -123,42 +123,42 @@ defmodule Dagger.Container do
       selection = select(container.selection, "exec")
 
       selection =
-        if not is_nil(optional_args[:args]) do
+        if is_nil(optional_args[:args]) do
+          selection
+        else
           arg(selection, "args", optional_args[:args])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:stdin]) do
+        if is_nil(optional_args[:stdin]) do
+          selection
+        else
           arg(selection, "stdin", optional_args[:stdin])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:redirect_stdout]) do
+        if is_nil(optional_args[:redirect_stdout]) do
+          selection
+        else
           arg(selection, "redirectStdout", optional_args[:redirect_stdout])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:redirect_stderr]) do
+        if is_nil(optional_args[:redirect_stderr]) do
+          selection
+        else
           arg(selection, "redirectStderr", optional_args[:redirect_stderr])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:experimental_privileged_nesting]) do
+        if is_nil(optional_args[:experimental_privileged_nesting]) do
+          selection
+        else
           arg(
             selection,
             "experimentalPrivilegedNesting",
             optional_args[:experimental_privileged_nesting]
           )
-        else
-          selection
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -182,17 +182,17 @@ defmodule Dagger.Container do
       selection = arg(selection, "path", path)
 
       selection =
-        if not is_nil(optional_args[:platform_variants]) do
-          arg(selection, "platformVariants", optional_args[:platform_variants])
-        else
+        if is_nil(optional_args[:platform_variants]) do
           selection
+        else
+          arg(selection, "platformVariants", optional_args[:platform_variants])
         end
 
       selection =
-        if not is_nil(optional_args[:forced_compression]) do
-          arg(selection, "forcedCompression", optional_args[:forced_compression])
-        else
+        if is_nil(optional_args[:forced_compression]) do
           selection
+        else
+          arg(selection, "forcedCompression", optional_args[:forced_compression])
         end
 
       execute(selection, container.client)
@@ -200,7 +200,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves the list of exposed ports.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
+    @doc "Retrieves the list of exposed ports.\n\nThis includes ports already exposed by the image, even if not\nexplicitly added with dagger.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
     @spec exposed_ports(t()) :: [Dagger.Port.t()]
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
@@ -273,10 +273,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.FileID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:tag]) do
-          arg(selection, "tag", optional_args[:tag])
-        else
+        if is_nil(optional_args[:tag]) do
           selection
+        else
+          arg(selection, "tag", optional_args[:tag])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -319,17 +319,17 @@ defmodule Dagger.Container do
       selection = arg(selection, "name", name)
 
       selection =
-        if not is_nil(optional_args[:description]) do
-          arg(selection, "description", optional_args[:description])
-        else
+        if is_nil(optional_args[:description]) do
           selection
+        else
+          arg(selection, "description", optional_args[:description])
         end
 
       selection =
-        if not is_nil(optional_args[:labels]) do
-          arg(selection, "labels", optional_args[:labels])
-        else
+        if is_nil(optional_args[:labels]) do
           selection
+        else
+          arg(selection, "labels", optional_args[:labels])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -353,17 +353,17 @@ defmodule Dagger.Container do
       selection = arg(selection, "address", address)
 
       selection =
-        if not is_nil(optional_args[:platform_variants]) do
-          arg(selection, "platformVariants", optional_args[:platform_variants])
-        else
+        if is_nil(optional_args[:platform_variants]) do
           selection
+        else
+          arg(selection, "platformVariants", optional_args[:platform_variants])
         end
 
       selection =
-        if not is_nil(optional_args[:forced_compression]) do
-          arg(selection, "forcedCompression", optional_args[:forced_compression])
-        else
+        if is_nil(optional_args[:forced_compression]) do
           selection
+        else
+          arg(selection, "forcedCompression", optional_args[:forced_compression])
         end
 
       execute(selection, container.client)
@@ -422,10 +422,10 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withDefaultArgs")
 
       selection =
-        if not is_nil(optional_args[:args]) do
-          arg(selection, "args", optional_args[:args])
-        else
+        if is_nil(optional_args[:args]) do
           selection
+        else
+          arg(selection, "args", optional_args[:args])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -441,24 +441,24 @@ defmodule Dagger.Container do
       selection = arg(selection, "directory", Dagger.DirectoryID.get_id(directory))
 
       selection =
-        if not is_nil(optional_args[:exclude]) do
+        if is_nil(optional_args[:exclude]) do
+          selection
+        else
           arg(selection, "exclude", optional_args[:exclude])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:include]) do
+        if is_nil(optional_args[:include]) do
+          selection
+        else
           arg(selection, "include", optional_args[:include])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -484,10 +484,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "value", value)
 
       selection =
-        if not is_nil(optional_args[:expand]) do
-          arg(selection, "expand", optional_args[:expand])
-        else
+        if is_nil(optional_args[:expand]) do
           selection
+        else
+          arg(selection, "expand", optional_args[:expand])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -502,49 +502,49 @@ defmodule Dagger.Container do
       selection = arg(selection, "args", args)
 
       selection =
-        if not is_nil(optional_args[:skip_entrypoint]) do
+        if is_nil(optional_args[:skip_entrypoint]) do
+          selection
+        else
           arg(selection, "skipEntrypoint", optional_args[:skip_entrypoint])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:stdin]) do
+        if is_nil(optional_args[:stdin]) do
+          selection
+        else
           arg(selection, "stdin", optional_args[:stdin])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:redirect_stdout]) do
+        if is_nil(optional_args[:redirect_stdout]) do
+          selection
+        else
           arg(selection, "redirectStdout", optional_args[:redirect_stdout])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:redirect_stderr]) do
+        if is_nil(optional_args[:redirect_stderr]) do
+          selection
+        else
           arg(selection, "redirectStderr", optional_args[:redirect_stderr])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:experimental_privileged_nesting]) do
+        if is_nil(optional_args[:experimental_privileged_nesting]) do
+          selection
+        else
           arg(
             selection,
             "experimentalPrivilegedNesting",
             optional_args[:experimental_privileged_nesting]
           )
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:insecure_root_capabilities]) do
-          arg(selection, "insecureRootCapabilities", optional_args[:insecure_root_capabilities])
-        else
+        if is_nil(optional_args[:insecure_root_capabilities]) do
           selection
+        else
+          arg(selection, "insecureRootCapabilities", optional_args[:insecure_root_capabilities])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -559,17 +559,17 @@ defmodule Dagger.Container do
       selection = arg(selection, "port", port)
 
       selection =
-        if not is_nil(optional_args[:protocol]) do
-          arg(selection, "protocol", optional_args[:protocol])
-        else
+        if is_nil(optional_args[:protocol]) do
           selection
+        else
+          arg(selection, "protocol", optional_args[:protocol])
         end
 
       selection =
-        if not is_nil(optional_args[:description]) do
-          arg(selection, "description", optional_args[:description])
-        else
+        if is_nil(optional_args[:description]) do
           selection
+        else
+          arg(selection, "description", optional_args[:description])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -596,17 +596,17 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.FileID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:permissions]) do
-          arg(selection, "permissions", optional_args[:permissions])
-        else
+        if is_nil(optional_args[:permissions]) do
           selection
+        else
+          arg(selection, "permissions", optional_args[:permissions])
         end
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -633,24 +633,24 @@ defmodule Dagger.Container do
       selection = arg(selection, "cache", Dagger.CacheID.get_id(cache))
 
       selection =
-        if not is_nil(optional_args[:source]) do
+        if is_nil(optional_args[:source]) do
+          selection
+        else
           arg(selection, "source", optional_args[:source])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:sharing]) do
+        if is_nil(optional_args[:sharing]) do
+          selection
+        else
           arg(selection, "sharing", optional_args[:sharing])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -667,10 +667,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.DirectoryID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -686,10 +686,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.FileID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -706,10 +706,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.SecretID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -734,24 +734,24 @@ defmodule Dagger.Container do
       selection = arg(selection, "path", path)
 
       selection =
-        if not is_nil(optional_args[:contents]) do
+        if is_nil(optional_args[:contents]) do
+          selection
+        else
           arg(selection, "contents", optional_args[:contents])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:permissions]) do
+        if is_nil(optional_args[:permissions]) do
+          selection
+        else
           arg(selection, "permissions", optional_args[:permissions])
-        else
-          selection
         end
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -812,10 +812,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "source", Dagger.SocketID.get_id(source))
 
       selection =
-        if not is_nil(optional_args[:owner]) do
-          arg(selection, "owner", optional_args[:owner])
-        else
+        if is_nil(optional_args[:owner]) do
           selection
+        else
+          arg(selection, "owner", optional_args[:owner])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -860,10 +860,10 @@ defmodule Dagger.Container do
       selection = arg(selection, "port", port)
 
       selection =
-        if not is_nil(optional_args[:protocol]) do
-          arg(selection, "protocol", optional_args[:protocol])
-        else
+        if is_nil(optional_args[:protocol]) do
           selection
+        else
+          arg(selection, "protocol", optional_args[:protocol])
         end
 
       %Dagger.Container{selection: selection, client: container.client}
