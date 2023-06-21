@@ -1096,10 +1096,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		)
 	}
 
-	runOpts = append(runOpts, llb.AddSecret(
-		"_DAGGER_SEARCH_DOMAIN",
-		llb.SecretID(ServicesSearchDomainSecret),
-		llb.SecretAsEnv(true)))
+	runOpts = append(runOpts, llb.WithNetworkConfig(DaggerNetwork))
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 

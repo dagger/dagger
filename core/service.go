@@ -22,10 +22,6 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ServicesSearchDomainSecret is the name of a special secret
-// that fetches the DNS search domain for the current session.
-const ServicesSearchDomainSecret = "internal:services-search-domain"
-
 // DaggerNetwork is the ID of the network used for the Buildkit networks
 // session attachable.
 const DaggerNetwork = "dagger"
@@ -37,7 +33,7 @@ var servicesDomainOnce = &sync.Once{}
 // hostname. It is randomly generated on the first call.
 func ServicesDomain() string {
 	servicesDomainOnce.Do(func() {
-		servicesDomain = hostHashStr(identity.NewID())
+		servicesDomain = hostHashStr(identity.NewID()) + ".dagger.local"
 	})
 	return servicesDomain
 }
@@ -223,12 +219,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	cfg := ctr.Config
 
-	// search domain for reaching other services
-	searchDomain := ServicesDomain()
-
-	env := []string{
-		"_DAGGER_SEARCH_DOMAIN=" + searchDomain,
-	}
+	env := []string{}
 
 	for _, e := range cfg.Env {
 		// strip out any env that are meant for internal use only, to prevent
@@ -241,12 +232,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 		}
 	}
 
-	secretEnv := []*pb.SecretEnv{
-		{
-			ID:   ServicesSearchDomainSecret,
-			Name: "_DAGGER_SEARCH_DOMAIN", // TODO const
-		},
-	}
+	secretEnv := []*pb.SecretEnv{}
 	secretsToScrub := SecretToScrubInfo{}
 	for i, ctrSecret := range ctr.Secrets {
 		switch {
@@ -391,15 +377,15 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	// set a hostname qualified by the current session ID
-	fullHost := host + "." + searchDomain
+	fullHost := host + "." + ServicesDomain()
 
 	health := newHealth(gw, fullHost, svc.Container.Ports)
 
 	gc, err := gw.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts:   mounts,
-		Hostname: fullHost,
-		Platform: &pbPlatform,
+		Mounts:          mounts,
+		Hostname:        fullHost,
+		Platform:        &pbPlatform,
+		NetworkConfigID: DaggerNetwork,
 	})
 	if err != nil {
 		return nil, err

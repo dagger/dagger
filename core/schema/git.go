@@ -131,7 +131,7 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		// we have to be a bit selective here to avoid breaking Dockerfile builds
 		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
 		// networks API cap yet.
-		opts = append(opts, llb.WithNetwork(core.DaggerNetwork))
+		opts = append(opts, llb.WithNetworkConfig(core.DaggerNetwork))
 	}
 
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)

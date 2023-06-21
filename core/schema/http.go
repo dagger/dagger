@@ -63,7 +63,7 @@ func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs
 		// we have to be a bit selective here to avoid breaking Dockerfile builds
 		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
 		// networks API cap yet.
-		opts = append(opts, llb.WithNetwork(core.DaggerNetwork))
+		opts = append(opts, llb.WithNetworkConfig(core.DaggerNetwork))
 	}
 
 	st := llb.HTTP(args.URL, opts...)

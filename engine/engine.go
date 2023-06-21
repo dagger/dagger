@@ -155,7 +155,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	}
 
 	router := router.New(startOpts.SessionToken, recorder)
-	secretStore := secret.NewStore(startOpts.ExtraSearchDomains)
+	secretStore := secret.NewStore()
 
 	socketProviders := SocketProvider{
 		EnableHostNetworkAccess: !startOpts.DisableHostRW,
@@ -182,10 +182,10 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 			registryAuth,
 			secretsprovider.NewSecretProvider(secretStore),
 			socketProviders,
-			networks.NewAttachable(func(id string) *networks.NetworkConfig {
+			networks.NewConfigProvider(func(id string) *networks.Config {
 				switch id {
 				case core.DaggerNetwork:
-					return &networks.NetworkConfig{
+					return &networks.Config{
 						Dns: &networks.DNSConfig{
 							SearchDomains: append(
 								[]string{core.ServicesDomain()},

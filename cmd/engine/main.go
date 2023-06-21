@@ -37,7 +37,7 @@ import (
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/control"
-	"github.com/moby/buildkit/executor/oci"
+	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
 	"github.com/moby/buildkit/frontend/gateway"
@@ -909,10 +909,10 @@ func getBuildkitVersion() client.BuildkitVersion {
 	}
 }
 
-func getDNSConfig(cfg *config.DNSConfig) *oci.DNSConfig {
-	var dns *oci.DNSConfig
+func getDNSConfig(cfg *config.DNSConfig) *executor.DNSConfig {
+	var dns *executor.DNSConfig
 	if cfg != nil {
-		dns = &oci.DNSConfig{
+		dns = &executor.DNSConfig{
 			Nameservers:   cfg.Nameservers,
 			Options:       cfg.Options,
 			SearchDomains: cfg.SearchDomains,

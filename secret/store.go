@@ -3,7 +3,6 @@ package secret
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 
 	"github.com/dagger/dagger/core"
@@ -14,10 +13,9 @@ import (
 // ErrNotFound indicates a secret can not be found.
 var ErrNotFound = errors.New("secret not found")
 
-func NewStore(extraSearchDomains []string) *Store {
+func NewStore() *Store {
 	return &Store{
-		extraSearchDomains: extraSearchDomains,
-		secrets:            map[string]string{},
+		secrets: map[string]string{},
 	}
 }
 
@@ -25,10 +23,6 @@ var _ secrets.SecretStore = &Store{}
 
 type Store struct {
 	gw bkgw.Client
-
-	// XXX(vito): this is awful lol, we should add SearchDomains to upstream
-	// buildkit instead
-	extraSearchDomains []string
 
 	mu      sync.Mutex
 	secrets map[string]string
@@ -62,13 +56,6 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 //
 // In all other cases, a SecretID is expected.
 func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
-	if idOrName == core.ServicesSearchDomainSecret {
-		return []byte(strings.Join(append(
-			[]string{core.ServicesDomain()},
-			store.extraSearchDomains...,
-		), " ")), nil
-	}
-
 	var name string
 	if secret, err := core.SecretID(idOrName).ToSecret(); err == nil {
 		if secret.IsOldFormat() {

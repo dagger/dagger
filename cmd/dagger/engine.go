@@ -70,8 +70,7 @@ func withEngineAndTUI(
 	}
 
 	if engineConf.ExtraSearchDomains == nil {
-		// TODO(vito): _EXPERIMENTAL; must be in sync with shim
-		engineConf.ExtraSearchDomains = strings.Fields(os.Getenv("_DAGGER_SEARCH_DOMAIN"))
+		engineConf.ExtraSearchDomains = strings.Fields(os.Getenv("_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN"))
 	}
 
 	if !silent {

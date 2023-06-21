@@ -1941,8 +1941,8 @@ github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc/go.mod h1:ZjcWmF
 github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17pCcGlemwknint6hfoeCVQrEMVwxRLRjXpq+BU=
 github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae/go.mod h1:DD4vA1DwXk04H54A1oHXtwZmA0grkVMdPxx/VGLCah0=
 github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f/go.mod h1:DD4vA1DwXk04H54A1oHXtwZmA0grkVMdPxx/VGLCah0=
-github.com/vito/buildkit v0.10.1-0.20230620195901-f7ed19f7ce66 h1:/zD1sJy2yZYznzDrMLdxXf05QHPPzgLH8Yft2PO2fiI=
-github.com/vito/buildkit v0.10.1-0.20230620195901-f7ed19f7ce66/go.mod h1:6Y1HYDrxg3sY5gBY2FVaEvQpswBj3g/ck7aKYCjOkk0=
+github.com/vito/buildkit v0.10.1-0.20230621183425-780901296258 h1:tDpr0iNho10j0p2MgjH5eS5hFVR9jceC7pOx/gwgZSM=
+github.com/vito/buildkit v0.10.1-0.20230621183425-780901296258/go.mod h1:6Y1HYDrxg3sY5gBY2FVaEvQpswBj3g/ck7aKYCjOkk0=
 github.com/vito/progrock v0.7.1-0.20230628234355-c8ce2c2e3c24 h1:E6NeGFp8/YGYHnWtwzP5lrphxXLmoKsoAvdwuIkUTOk=
 github.com/vito/progrock v0.7.1-0.20230628234355-c8ce2c2e3c24/go.mod h1:YjiMvY2X47zc9H5je8w4V59cTSrV2d0vQPwJOB5TLH8=
 github.com/vito/vt100 v0.1.2 h1:gRhKJ/shHTRfMHg+Wc5ExHJzV6HHZqyQIAL52x4EUmA=

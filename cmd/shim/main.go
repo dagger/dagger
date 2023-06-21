@@ -426,41 +426,27 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	// collect service IPs first so they can be used for service aliases below
-	var searchDomains []string
-	for _, env := range spec.Process.Env {
-		if strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN=") {
-			_, val, _ := strings.Cut(env, "=")
-			searchDomains = strings.Fields(val)
-		}
-	}
-
 	var hostsFilePath string
-	for i, mnt := range spec.Mounts {
+	var searchDomains []string
+	for _, mnt := range spec.Mounts {
 		switch mnt.Destination {
 		case "/etc/hosts":
 			hostsFilePath = mnt.Source
 		case "/etc/resolv.conf":
-			if len(searchDomains) == 0 {
-				break
-			}
+			// collect search domains; we need them this early so that we can use
+			// them for resolving service aliases
 
-			newResolvPath := filepath.Join(bundleDir, "resolv.conf")
-
-			newResolv, err := os.Create(newResolvPath)
+			var err error
+			searchDomains, err = collectSearchDomains(mnt.Source)
 			if err != nil {
-				panic(err)
+				fmt.Fprintln(os.Stderr, "collect search domains:", err)
+				return 1
 			}
 
-			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
-				panic(err)
-			}
-
-			if err := newResolv.Close(); err != nil {
-				panic(err)
-			}
-
-			spec.Mounts[i].Source = newResolvPath
+			// propagate search domains to the child
+			spec.Process.Env = append(spec.Process.Env,
+				"_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN="+strings.Join(searchDomains, " "),
+			)
 		}
 	}
 
@@ -478,9 +464,6 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-		case strings.HasPrefix(env, "_DAGGER_SEARCH_DOMAIN="):
-			// keep this env var; it is propagated to nested Dagger
-			keepEnv = append(keepEnv, env)
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -653,10 +636,10 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:   "unix:///.runner.sock",
 	}
 
-	if searchDomains, found := os.LookupEnv("_DAGGER_SEARCH_DOMAIN"); found {
-		// NB: don't use internalEnv; we keep it around to propagate to the command
-		//
-		// TODO: maybe not?
+	if searchDomains, found := os.LookupEnv("_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN"); found {
+		// NB: don't use internalEnv since it unsets the env var. we keep it around
+		// to propagate to the command, to support running 'dagger do' in dagger,
+		// though this is primarily motivated by tests
 		engineConf.ExtraSearchDomains = strings.Fields(searchDomains)
 	}
 
@@ -697,33 +680,28 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	return nil
 }
 
-func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {
+func collectSearchDomains(resolv string) ([]string, error) {
 	src, err := os.Open(resolv)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	defer src.Close()
 
 	srcScan := bufio.NewScanner(src)
 
-	var replaced bool
+	daggerDomains := []string{}
 	for srcScan.Scan() {
 		if !strings.HasPrefix(srcScan.Text(), "search") {
-			fmt.Fprintln(dst, srcScan.Text())
 			continue
 		}
 
-		oldDomains := strings.Fields(srcScan.Text())[1:]
-
-		newDomains := append([]string{}, searchDomains...)
-		newDomains = append(newDomains, oldDomains...)
-		fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
-		replaced = true
+		domains := strings.Fields(srcScan.Text())[1:]
+		for _, domain := range domains {
+			if strings.HasSuffix(domain, ".dagger.local") {
+				daggerDomains = append(daggerDomains, domain)
+			}
+		}
 	}
 
-	if !replaced {
-		fmt.Fprintln(dst, "search", strings.Join(searchDomains, " "))
-	}
-
-	return nil
+	return daggerDomains, nil
 }
