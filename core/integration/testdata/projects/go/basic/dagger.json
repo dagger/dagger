@@ -1,4 +1,5 @@
 {
-  "name": "todo",
-  "sdk": "go"
+  "name": "basic",
+  "sdk": "go",
+  "root": "../../../../../../"
 }
