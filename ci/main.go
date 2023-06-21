@@ -10,8 +10,12 @@ func main() {
 
 // Dagger CI targets
 func CI(ctx dagger.Context, repo, branch string) (CITargets, error) {
+	srcDir := ctx.Client().Host().Directory(".")
+	if repo != "" {
+		srcDir = ctx.Client().Git(repo).Branch(branch).Tree()
+	}
 	return CITargets{
-		SrcDir: ctx.Client().Git(repo).Branch(branch).Tree(),
+		SrcDir: srcDir,
 	}, nil
 }
 

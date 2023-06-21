@@ -212,8 +212,22 @@ func TestProjectHostExport(t *testing.T) {
 
 	prefix := identity.NewID()
 
-	for _, sdk := range []string{"go", "python"} {
-		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", sdk)
+	type testCase struct {
+		sdk              string
+		expectedMainFile string
+	}
+	for _, tc := range []testCase{
+		{
+			sdk:              "go",
+			expectedMainFile: "main.go",
+		},
+		{
+			sdk:              "python",
+			expectedMainFile: "main.py",
+		},
+	} {
+		tc := tc
+		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", tc.sdk)
 
 		for _, testGitProject := range []bool{false, true} {
 			testGitProject := testGitProject
@@ -324,6 +338,24 @@ func TestProjectHostExport(t *testing.T) {
 					_, err = ctr.File(filepath.Join(outputDir, "/bar1.txt")).Contents(ctx)
 					require.NoError(t, err)
 					_, err = ctr.File(filepath.Join(outputDir, "/bar2.txt")).Contents(ctx)
+					require.NoError(t, err)
+				})
+
+				t.Run("export from container host", func(t *testing.T) {
+					t.Parallel()
+					c, ctx := connect(t)
+					defer c.Close()
+					outputDir := "/var"
+					ctr, err := CLITestContainer(ctx, t, c).
+						WithLoadedProject(projectDir, testGitProject).
+						WithTarget("testExportLocalDir").
+						WithOutputArg(outputDir).
+						CallDo().
+						Sync(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, tc.expectedMainFile)).Contents(ctx)
+					require.NoError(t, err)
+					_, err = ctr.File(filepath.Join(outputDir, "dagger.json")).Contents(ctx)
 					require.NoError(t, err)
 				})
 			})
