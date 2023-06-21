@@ -168,6 +168,8 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		cmdName = getCommandName(parentCmd) + commandSeparator + projCmdName
 	}
 
+	// make a copy of cmdStack
+	cmdStack = append([]*cobra.Command{}, cmdStack...)
 	subcmd := &cobra.Command{
 		Use:         cmdName,
 		Short:       description,
@@ -300,6 +302,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 			return nil
 		},
 	}
+	cmdStack = append(cmdStack, subcmd)
 
 	if parentCmd != nil {
 		subcmd.Flags().AddFlagSet(parentCmd.Flags())
@@ -317,7 +320,6 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
 	returnCmds := []*cobra.Command{subcmd}
-	cmdStack = append(cmdStack, subcmd)
 	for _, subProjCmd := range projSubcommands {
 		subCmds, err := addCmd(ctx, cmdStack, subProjCmd, c, r)
 		if err != nil {
