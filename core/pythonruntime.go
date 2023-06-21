@@ -31,7 +31,7 @@ func (p *Project) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Cli
 			Run(llb.Shlex("pip install shiv"), pipCache).Root().
 			Run(
 				llb.Shlex(fmt.Sprintf(
-					"shiv -e dagger.server.cli:app -o /entrypoint %s --root /tmp/.shiv --reproducible",
+					"shiv -e dagger.server.cli:app -o /entrypoint %s --root /tmp/.shiv",
 					filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)),
 				)),
 				llb.AddMount(workdir, contextState, llb.SourcePath(p.Directory.Dir)),
