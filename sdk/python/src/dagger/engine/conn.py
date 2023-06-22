@@ -35,9 +35,7 @@ class Engine(SyncResourceManager):
             raise ProvisionError(msg) from e
 
     def from_cli(self) -> ConnectParams:
-        cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN")
-        if not cli_bin:
-            cli_bin = Downloader().get()
+        cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN") or Downloader().get()
         cli_session = CLISession(self.cfg, cli_bin)
         cli_session.is_async = self.is_async
         with self.get_sync_stack() as stack:

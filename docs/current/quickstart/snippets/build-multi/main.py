@@ -17,7 +17,9 @@ async def main():
             client.container()
             .from_("node:16-slim")
             .with_directory(
-                "/src", client.host().directory("."), exclude=["node_modules/", "ci/"]
+                "/src",
+                client.host().directory("."),
+                exclude=["node_modules/", "ci/"],
             )
         )
 

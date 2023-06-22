@@ -23,5 +23,4 @@ async def test():
     print(f"Hello from Dagger and {version}")
 
 
-if __name__ == "__main__":
-    anyio.run(test)
+anyio.run(test)

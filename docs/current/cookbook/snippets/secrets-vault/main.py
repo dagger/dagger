@@ -11,7 +11,9 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # get secret from Vault
         secret_plaintext = await get_vault_secret(
-            "MOUNT-PATH", "SECRET-ID", "SECRET-KEY"
+            "MOUNT-PATH",
+            "SECRET-ID",
+            "SECRET-KEY",
         )
 
         # load secret into Dagger
@@ -45,7 +47,8 @@ async def get_vault_secret(mount_path, secret_id, secret_key):
 
     # create Vault client
     client = hvac.Client(
-        url=os.environ.get("VAULT_ADDRESS"), namespace=os.environ.get("VAULT_NAMESPACE")
+        url=os.environ.get("VAULT_ADDRESS"),
+        namespace=os.environ.get("VAULT_NAMESPACE"),
     )
 
     # log in to Vault
@@ -57,7 +60,9 @@ async def get_vault_secret(mount_path, secret_id, secret_key):
 
     # read and return secret
     read_response = client.secrets.kv.read_secret_version(
-        path=secret_id, mount_point=mount_path, raise_on_deleted_version=True
+        path=secret_id,
+        mount_point=mount_path,
+        raise_on_deleted_version=True,
     )
     return read_response["data"]["data"][secret_key]
 

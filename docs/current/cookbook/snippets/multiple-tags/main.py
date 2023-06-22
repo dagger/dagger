@@ -18,13 +18,11 @@ async def main():
         msg = "DOCKERHUB_PASSWORD environment variable must be set"
         raise OSError(msg)
 
-    username = os.environ.get("DOCKERHUB_USERNAME")
-    password = os.environ.get("DOCKERHUB_PASSWORD")
+    username = os.environ["DOCKERHUB_USERNAME"]
+    password = os.environ["DOCKERHUB_PASSWORD"]
 
     # create Dagger client
-    async with dagger.Connection(
-        dagger.Config(log_output=sys.stderr, workdir=".")
-    ) as client:
+    async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
         # set secret as string value
         secret = client.set_secret("password", password)
 
@@ -35,6 +33,7 @@ async def main():
             addr = await container.with_registry_auth(
                 "docker.io", username, secret
             ).publish(f"{username}/my-alpine:{tag}")
+
             print(f"Published at: {addr}")
 
 
