@@ -2,8 +2,4 @@
 defmodule Dagger.ProjectID do
   @moduledoc "A unique project identifier."
   @type t() :: String.t()
-  @doc "Get ID from `project`."
-  def get_id(%Dagger.Project{} = project) do
-    project |> Dagger.Project.id()
-  end
 end

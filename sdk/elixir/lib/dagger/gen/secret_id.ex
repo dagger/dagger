@@ -2,8 +2,4 @@
 defmodule Dagger.SecretID do
   @moduledoc "A unique identifier for a secret."
   @type t() :: String.t()
-  @doc "Get ID from `secret`."
-  def get_id(%Dagger.Secret{} = secret) do
-    secret |> Dagger.Secret.id()
-  end
 end

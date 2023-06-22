@@ -2,8 +2,4 @@
 defmodule Dagger.FileID do
   @moduledoc "A file identifier."
   @type t() :: String.t()
-  @doc "Get ID from `file`."
-  def get_id(%Dagger.File{} = file) do
-    file |> Dagger.File.id()
-  end
 end
