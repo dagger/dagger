@@ -1,6 +1,6 @@
+from dataclasses import dataclass, field
 from typing import Any
 
-import attrs
 import cattrs
 import graphql
 from gql.transport.exceptions import TransportQueryError
@@ -54,7 +54,7 @@ class InvalidQueryError(ClientError):
     """Misuse of the query builder."""
 
 
-@attrs.define
+@dataclass
 class QueryErrorLocation:
     """Error location returned by the API."""
 
@@ -62,14 +62,14 @@ class QueryErrorLocation:
     column: int
 
 
-@attrs.define
+@dataclass
 class QueryErrorValue:
     """Error value returned by the API."""
 
     message: str
     locations: list[QueryErrorLocation]
     path: list[str]
-    extensions: dict[str, Any] = attrs.Factory(dict)
+    extensions: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.message

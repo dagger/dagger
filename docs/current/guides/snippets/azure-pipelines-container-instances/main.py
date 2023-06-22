@@ -87,18 +87,17 @@ async def main():
     }
 
     # initialize Azure client
-    async with DefaultAzureCredential() as credential:
-        async with ContainerInstanceManagementClient(
-            credential=credential,
-            subscription_id=Env.AZURE_SUBSCRIPTION_ID,
-        ) as azure_client:
-            # send request and wait until done
-            response = await azure_client.container_groups.begin_create_or_update(
-                RESOURCE_GROUP_NAME,
-                CONTAINER_GROUP_NAME,
-                container_group,
-            )
-            result = await response.result()
+    async with DefaultAzureCredential() as credential, ContainerInstanceManagementClient(
+        credential=credential,
+        subscription_id=Env.AZURE_SUBSCRIPTION_ID,
+    ) as azure_client:
+        # send request and wait until done
+        response = await azure_client.container_groups.begin_create_or_update(
+            RESOURCE_GROUP_NAME,
+            CONTAINER_GROUP_NAME,
+            container_group,
+        )
+        result = await response.result()
 
     print(
         f"Deployment for image {addr} now available at "

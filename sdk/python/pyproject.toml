@@ -40,7 +40,6 @@ packages = [
 [tool.poetry.dependencies]
 python = "^3.10"
 anyio = ">=3.6.2"
-attrs = ">=22.1.0"
 cattrs = ">=22.2.0"
 graphql-core = ">=3.2.3"
 # TODO: replace next two lines with the following when gql version 3.5.0 is released
@@ -50,12 +49,12 @@ httpx = ">=0.23.1"
 beartype = ">=0.11.0"
 platformdirs = ">=2.6.2"
 typing_extensions = ">=4.4.0"
-rich = ">=12.6.0"
-typer = {version = ">=0.6.1", extras = ["all"]}
-strawberry-graphql = {version = ">=0.133.5", optional = true}
+typer = {version = ">=0.6.1", extras = ["all"], optional = true}
+strawberry-graphql = {version = ">=0.187.0", optional = true}
 
 [tool.poetry.extras]
-server = ["strawberry-graphql"]
+cli = ["typer"]
+server = ["strawberry-graphql", "typer"]
 
 [tool.poetry.group.test.dependencies]
 pytest = ">=7.2.0"

@@ -230,7 +230,7 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		// FIXME: Only use `poetry.lock` when able:
 		// https://github.com/python-poetry/poetry/issues/1301
 		WithFile(fmt.Sprintf("%s/pyproject.toml", mountPath), src.File("pyproject.toml")).
-		WithExec([]string{"poetry", "install", "--no-root"}).
+		WithExec([]string{"poetry", "install", "-E", "cli", "--no-root"}).
 		WithDirectory(mountPath, src).
-		WithExec([]string{"poetry", "install", "--only-root"})
+		WithExec([]string{"poetry", "install", "-E", "cli", "--only-root"})
 }

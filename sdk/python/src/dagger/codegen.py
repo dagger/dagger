@@ -5,6 +5,7 @@ import re
 import textwrap
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import partial
@@ -23,7 +24,6 @@ from typing import (
     cast,
 )
 
-import attrs
 from graphql import (
     GraphQLArgument,
     GraphQLEnumType,
@@ -98,17 +98,17 @@ def joiner(func: Callable[T_ParamSpec, Iterator[str]]) -> Callable[T_ParamSpec, 
     return wrapper
 
 
-@attrs.define
+@dataclass
 class Context:
     """Shared state during execution."""
 
     sync: bool = False
     """Sync or async client."""
 
-    id_map: IDMap = attrs.Factory(dict)
+    id_map: IDMap = field(default_factory=dict)
     """Map to convert ids (custom scalars) to corresponding types."""
 
-    remaining: set[str] = attrs.Factory(set)
+    remaining: set[str] = field(default_factory=set)
     """Remaining type names that haven't been defined yet."""
 
 
@@ -125,9 +125,8 @@ def generate(  # noqa: C901
 
         import warnings
         from collections.abc import Sequence
+        from dataclasses import dataclass
         from typing import Optional
-
-        import attrs
 
         from dagger.api.base import Arg, Enum, Input, Root, Scalar, Type, typecheck
         """,
@@ -564,7 +563,7 @@ class Predicate(Protocol):
         ...
 
 
-@attrs.define
+@dataclass
 class Handler(ABC, Generic[_H]):
     ctx: Context
     """Generation execution context."""
@@ -588,7 +587,7 @@ class Handler(ABC, Generic[_H]):
             yield from wrap(doc(t.description))
 
 
-@attrs.define
+@dataclass
 class Scalar(Handler[GraphQLScalarType]):
     predicate: ClassVar[Predicate] = staticmethod(is_custom_scalar_type)
 
@@ -599,7 +598,7 @@ class Scalar(Handler[GraphQLScalarType]):
         return super().render_body(t) or "..."
 
 
-@attrs.define
+@dataclass
 class Enum(Handler[GraphQLEnumType]):
     predicate: ClassVar[Predicate] = staticmethod(is_enum_type)
 
@@ -657,7 +656,7 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
     predicate: ClassVar[Predicate] = staticmethod(is_input_object_type)
 
     def render_head(self, t: GraphQLInputObjectType) -> str:
-        return f"@attrs.define\nclass {t.name}(Input):"
+        return f"@dataclass\nclass {t.name}(Input):"
 
     def fields(self, t: GraphQLInputObjectType) -> Iterator[_InputField]:
         return (

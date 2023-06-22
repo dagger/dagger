@@ -1,11 +1,11 @@
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any, cast
 
 import anyio
-import attrs
 import strawberry
 from cattrs.preconf.json import JsonConverter
 from strawberry.utils.await_maybe import await_maybe
@@ -21,14 +21,14 @@ outputs_path = Path("/outputs/dagger.json")
 schema_path = Path("/outputs/schema.graphql")
 
 
-@attrs.define
+@dataclass
 class Inputs:
     resolver: str
     args: dict[str, Any]
     parent: dict[str, Any] | None
 
 
-@attrs.define
+@dataclass
 class Server:
     schema: strawberry.Schema
     converter: JsonConverter = json_converter
@@ -104,7 +104,7 @@ class Server:
             )
 
 
-@attrs.define
+@dataclass
 class ResolveInfo:
     field_name: str
     return_type: Any

@@ -1,11 +1,11 @@
 import typing
+from dataclasses import dataclass, field
 from os import PathLike
 
-import attrs
 import httpx
 
 
-@attrs.define
+@dataclass
 class Config:
     """Options for connecting to the Dagger engine.
 
@@ -32,19 +32,17 @@ class Config:
     execute_timeout: int | float | None = None
 
 
-@attrs.define
+@dataclass(kw_only=True)
 class ConnectParams:
     """Options for making a session connection. For internal use only."""
 
-    port: int = attrs.field(converter=int)
+    port: int
     session_token: str
+    url: httpx.URL = field(init=False)
 
-    @port.validator
-    def _check_port(self, _, value):
-        if value < 1:
-            msg = f"Invalid port value: {value}"
+    def __post_init__(self):
+        self.port = int(self.port)
+        if self.port < 1:
+            msg = f"Invalid port value: {self.port}"
             raise ValueError(msg)
-
-    @property
-    def url(self):
-        return httpx.URL(f"http://127.0.0.1:{self.port}/query")
+        self.url = httpx.URL(f"http://127.0.0.1:{self.port}/query")
