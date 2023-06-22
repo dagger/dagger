@@ -1,0 +1,5 @@
+{
+  "name": "example",
+  "sdk": "typescript",
+  "root": "../../"
+}
