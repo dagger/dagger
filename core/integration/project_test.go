@@ -349,7 +349,7 @@ func TestProjectHostExport(t *testing.T) {
 					outputDir := "/var"
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
-						WithTarget("testExportLocalDir").
+						WithTarget("test-export-local-dir").
 						WithOutputArg(outputDir).
 						CallDo().
 						Sync(ctx)
