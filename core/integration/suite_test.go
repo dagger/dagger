@@ -366,6 +366,11 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 	return &ctr
 }
 
+func (ctr DaggerCLIContainer) WithRootArg(name string) *DaggerCLIContainer {
+	ctr.RootArg = name
+	return &ctr
+}
+
 func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
 	args := []string{testCLIBinPath, "do"}
 	if ctr.ProjectArg != "" {
@@ -378,8 +383,7 @@ func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
 	for k, v := range ctr.UserArgs {
 		args = append(args, "--"+k, v)
 	}
-	ctr.Container = ctr.Container.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
-	return &ctr
+	return ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 }
 
 func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
@@ -387,8 +391,7 @@ func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
-	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
-	return &ctr
+	return ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 }
 
 func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
@@ -405,6 +408,25 @@ func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
 	if ctr.RootArg != "" {
 		args = append(args, "--root", ctr.RootArg)
 	}
-	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+	return ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
+}
+
+func (ctr DaggerCLIContainer) WithExec(args []string, opts ...dagger.ContainerWithExecOpts) *DaggerCLIContainer {
+	ctr.Container = ctr.Container.WithExec(args, opts...)
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithMountedDirectory(path string, source *dagger.Directory, opts ...dagger.ContainerWithMountedDirectoryOpts) *DaggerCLIContainer {
+	ctr.Container = ctr.Container.WithMountedDirectory(path, source, opts...)
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithMountedFile(path string, source *dagger.File, opts ...dagger.ContainerWithMountedFileOpts) *DaggerCLIContainer {
+	ctr.Container = ctr.Container.WithMountedFile(path, source, opts...)
+	return &ctr
+}
+
+func (ctr DaggerCLIContainer) WithWorkdir(path string) *DaggerCLIContainer {
+	ctr.Container = ctr.Container.WithWorkdir(path)
 	return &ctr
 }

@@ -84,21 +84,21 @@ func TestProjectCmdInit(t *testing.T) {
 	for _, tc := range []testCase{
 		{
 			testName:    "explicit project dir/go",
-			projectPath: "/var/testproject/subdir",
+			projectPath: "/testproject/subdir1/subdir2",
 			sdk:         "go",
 			name:        identity.NewID(),
 			root:        "../",
 		},
 		{
 			testName:    "explicit project dir/python",
-			projectPath: "/var/testproject/subdir",
+			projectPath: "/testproject/subdir1/subdir2",
 			sdk:         "python",
 			name:        identity.NewID(),
 			root:        "../..",
 		},
 		{
 			testName:    "explicit project file",
-			projectPath: "/var/testproject/subdir/dagger.json",
+			projectPath: "/testproject/subdir1/subdir2/dagger.json",
 			sdk:         "python",
 			name:        identity.NewID(),
 		},
@@ -108,15 +108,14 @@ func TestProjectCmdInit(t *testing.T) {
 			name:     identity.NewID(),
 		},
 		{
-			testName:    "implicit project with root",
-			projectPath: "/var/testproject",
-			sdk:         "python",
-			name:        identity.NewID(),
-			root:        "..",
+			testName: "implicit project with root",
+			sdk:      "python",
+			name:     identity.NewID(),
+			root:     "..",
 		},
 		{
 			testName:             "invalid sdk",
-			projectPath:          "/var/testproject",
+			projectPath:          "/testproject",
 			sdk:                  "c++--",
 			name:                 identity.NewID(),
 			expectedErrorMessage: "unsupported project SDK",
@@ -134,10 +133,26 @@ func TestProjectCmdInit(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 			defer c.Close()
-			ctr := CLITestContainer(ctx, t, c).
+
+			ctr := CLITestContainer(ctx, t, c)
+
+			var projectRootPath string
+			if tc.projectPath == "" {
+				implicitProjectAbsPath := "/1/2/3/4"
+				projectRootPath = filepath.Join(implicitProjectAbsPath, tc.root)
+				ctr = ctr.WithWorkdir(implicitProjectAbsPath)
+			} else if filepath.Base(tc.projectPath) == "dagger.json" {
+				projectRootPath = filepath.Join(filepath.Dir(tc.projectPath), tc.root)
+			} else {
+				projectRootPath = filepath.Join(tc.projectPath, tc.root)
+			}
+
+			ctr = ctr.
+				WithMountedDirectory(projectRootPath, c.Host().Directory("./testdata/projects/go/inittemplate/")).
 				WithProjectArg(tc.projectPath).
 				WithSDKArg(tc.sdk).
 				WithNameArg(tc.name).
+				WithRootArg(tc.root).
 				CallProjectInit()
 
 			if tc.expectedErrorMessage != "" {
@@ -159,6 +174,40 @@ func TestProjectCmdInit(t *testing.T) {
 			require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
 			require.Equal(t, tc.sdk, cfg.SDK)
 			require.Equal(t, tc.name, cfg.Name)
+			require.Equal(t, tc.root, cfg.Root)
+
+			switch tc.sdk {
+			// TODO: rest of sdks
+			case "go":
+				goSDKPath, err := filepath.Abs("../../sdk/go")
+				require.NoError(t, err)
+				goModPath, err := filepath.Abs("../../go.mod")
+				require.NoError(t, err)
+				goSumPath, err := filepath.Abs("../../go.sum")
+				require.NoError(t, err)
+				ctr = ctr.
+					WithMountedDirectory(filepath.Join(projectRootPath, "sdk/go"), c.Host().Directory(goSDKPath)).
+					WithMountedFile(filepath.Join(projectRootPath, "go.mod"), c.Host().File(goModPath)).
+					WithMountedFile(filepath.Join(projectRootPath, "go.sum"), c.Host().File(goSumPath))
+				_, err = ctr.
+					WithTarget("say-hello").
+					WithUserArg("to", "me").
+					CallDo().
+					Sync(ctx)
+				require.NoError(t, err)
+				_, err = ctr.
+					WithTarget("build").
+					WithUserArg("pkg-path", "./cmd/foo").
+					CallDo().
+					Sync(ctx)
+				require.NoError(t, err)
+				_, err = ctr.
+					WithTarget("test").
+					WithUserArg("pkg-path", "./cmd/foo").
+					CallDo().
+					Sync(ctx)
+				require.NoError(t, err)
+			}
 		})
 	}
 

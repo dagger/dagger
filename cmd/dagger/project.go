@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -25,6 +26,10 @@ var (
 	sdk         string
 	projectName string
 	projectRoot string
+	noTemplate  bool
+
+	//go:embed templates/go/main.go
+	goProjectTemplate string
 )
 
 const (
@@ -41,6 +46,7 @@ func init() {
 	projectInitCmd.PersistentFlags().StringVar(&projectName, "name", "", "Name of the new project")
 	projectInitCmd.MarkFlagRequired("name")
 	projectInitCmd.PersistentFlags().StringVarP(&projectRoot, "root", "", "", "Root directory that should be loaded for the full project context. Defaults to the parent directory containing dagger.json.")
+	projectInitCmd.PersistentFlags().BoolVar(&noTemplate, "no-template", false, "If set, skip creating a template command implementation and instead only create dagger.json")
 
 	projectCmd.AddCommand(projectInitCmd)
 }
@@ -106,8 +112,13 @@ var projectInitCmd = &cobra.Command{
 		if _, err := os.Stat(proj.local.path); err == nil {
 			return fmt.Errorf("project init config path already exists: %s", proj.local.path)
 		}
+		var template string
+		var templateFileName string
 		switch core.ProjectSDK(sdk) {
-		case core.ProjectSDKGo, core.ProjectSDKPython:
+		case core.ProjectSDKGo:
+			template = goProjectTemplate
+			templateFileName = "main.go"
+		case core.ProjectSDKPython:
 		default:
 			return fmt.Errorf("unsupported project SDK: %s", sdk)
 		}
@@ -126,6 +137,12 @@ var projectInitCmd = &cobra.Command{
 		// nolint:gosec
 		if err := os.WriteFile(proj.local.path, cfgBytes, 0644); err != nil {
 			return fmt.Errorf("failed to write project config: %w", err)
+		}
+		if template != "" && !noTemplate {
+			// nolint:gosec
+			if err := os.WriteFile(filepath.Join(filepath.Dir(proj.local.path), templateFileName), []byte(template), 0644); err != nil {
+				return fmt.Errorf("failed to write project template: %w", err)
+			}
 		}
 		return nil
 	},
@@ -234,6 +251,7 @@ func (p localProject) load(c *dagger.Client) (*dagger.Project, error) {
 	if strings.HasPrefix(subdirRelPath, "..") {
 		return nil, fmt.Errorf("project config path %q is not under project root %q", p.path, rootDir)
 	}
+
 	return c.Project().Load(c.Host().Directory(rootDir), subdirRelPath), nil
 }
 
