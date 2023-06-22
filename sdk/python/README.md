@@ -111,7 +111,7 @@ The following commands are available:
 - `poe test`: Run tests.
 - `poe fmt`: Re-format code following common styling conventions.
 - `poe lint`: Check for linting violations.
-- `poe generate`: Regenerate API client after changes to the codegen.
+- `poe generate`: Regenerate API client after changes to the codegen (needs `poetry install -E cli`).
 - `poe docs`: Build reference docs locally (needs `poetry install --with docs`).
 
 ### Engine changes

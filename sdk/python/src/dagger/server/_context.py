@@ -10,9 +10,6 @@ class Context(ResourceManager):
         self.config = config
         self._client: Client | None = None
 
-    def __attrs_pre_init__(self):
-        super().__init__()
-
     async def get_client(self) -> Client:
         """Get a dagger client, initiating connection only when requested."""
         if not self._client:

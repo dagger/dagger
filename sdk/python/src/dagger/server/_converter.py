@@ -6,11 +6,12 @@ import anyio
 from cattrs import Converter
 from cattrs.gen import make_dict_structure_fn, make_dict_unstructure_fn, override
 from cattrs.preconf.json import make_converter
+from strawberry.type import has_object_definition
 
 from dagger.api.base import IDType, Scalar, Type
 
 from ._context import Context
-from ._util import has_resolver, is_strawberry_type
+from ._util import has_resolver
 
 T = TypeVar("T")
 
@@ -97,11 +98,11 @@ def register_dagger_type_hooks(conv: Converter, ctx: Context):
 
 
 converter.register_structure_hook_factory(
-    is_strawberry_type,
+    has_object_definition,
     strawberry_structure_hook,
 )
 
 converter.register_unstructure_hook_factory(
-    is_strawberry_type,
+    has_object_definition,
     strawberry_unstructure_hook,
 )

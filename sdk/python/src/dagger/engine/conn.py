@@ -28,7 +28,7 @@ class Engine(SyncResourceManager):
             msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
             raise ProvisionError(msg)
         try:
-            return ConnectParams(port, token)
+            return ConnectParams(port=int(port), session_token=token)
         except ValueError as e:
             # only port is validated
             msg = f"Invalid DAGGER_SESSION_PORT: {port}"

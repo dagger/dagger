@@ -1,12 +1,9 @@
+import json
 import logging
 import subprocess
 import time
 from importlib import metadata
-from json.decoder import JSONDecodeError
 from pathlib import Path
-
-import cattrs
-from cattrs.preconf.json import JsonConverter
 
 import dagger
 from dagger.config import ConnectParams
@@ -33,7 +30,6 @@ class CLISession(SyncResourceManager):
         super().__init__()
         self.cfg = cfg
         self.path = path
-        self.converter = JsonConverter()
         # no constructor param intentional
         self.is_async = True
 
@@ -94,6 +90,7 @@ class CLISession(SyncResourceManager):
 
     def _get_conn(self, proc: subprocess.Popen) -> ConnectParams:
         # TODO: implement engine session timeout (self.cfg.engine_timeout?)
+        assert proc.stdout
         conn = proc.stdout.readline()
 
         # Check if subprocess exited with an error
@@ -117,7 +114,7 @@ class CLISession(SyncResourceManager):
             raise SessionError(msg)
 
         try:
-            return self.converter.loads(conn, ConnectParams)
-        except (JSONDecodeError, cattrs.BaseValidationError) as e:
+            return ConnectParams(**json.loads(conn))
+        except (ValueError, TypeError) as e:
             msg = f"Invalid connection params: {conn}"
             raise SessionError(msg) from e

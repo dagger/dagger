@@ -5,10 +5,10 @@ import logging
 import typing
 from collections import deque
 from collections.abc import Callable, Sequence
+from dataclasses import MISSING, asdict, dataclass, field, is_dataclass, replace
 from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
 
 import anyio
-import attrs
 import cattrs
 import graphql
 import httpx
@@ -40,7 +40,7 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 
-@attrs.define
+@dataclass
 class Field:
     type_name: str
     name: str
@@ -52,13 +52,13 @@ class Field:
         return field
 
 
-@attrs.define
+@dataclass
 class Context:
     session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
-    selections: deque[Field] = attrs.field(factory=deque)
-    converter: cattrs.Converter = attrs.field(
-        factory=functools.partial(make_converter, detailed_validation=False)
+    selections: deque[Field] = field(default_factory=deque)
+    converter: cattrs.Converter = field(
+        default_factory=functools.partial(make_converter, detailed_validation=False)
     )
 
     def select(
@@ -72,7 +72,7 @@ class Context:
         selections = self.selections.copy()
         selections.append(field)
 
-        return attrs.evolve(self, selections=selections)
+        return replace(self, selections=selections)
 
     def build(self) -> DSLSelectable:
         if not self.selections:
@@ -217,15 +217,19 @@ class Context:
 class Arg(typing.NamedTuple):
     name: str  # GraphQL name
     value: Any
-    default: Any = attrs.NOTHING
+    default: Any = MISSING
 
 
 class Scalar(str):
     """Custom scalar."""
 
+    __slots__ = ()
+
 
 class Enum(str, enum.Enum):
     """Custom enumeration."""
+
+    __slots__ = ()
 
     def __str__(self) -> str:
         return str(self.value)
@@ -243,7 +247,7 @@ class Input(Object):
     """Input object type."""
 
 
-InputType = Annotated[Input, Is[lambda o: attrs.has(o)]]
+InputType = Annotated[Input, Is[lambda o: is_dataclass(o)]]
 InputTypeSeq = Annotated[Sequence[InputType], ~IsInstance[str]]
 
 InputHint = TypeHint(InputType)
@@ -252,13 +256,13 @@ InputSeqHint = TypeHint(InputTypeSeq)
 
 def as_input_arg(val):
     if InputHint.is_bearable(val):
-        return attrs.asdict(val)
+        return asdict(val)
     if InputSeqHint.is_bearable(val):
-        return [attrs.asdict(v) for v in val]
+        return [asdict(v) for v in val]
     return val
 
 
-@attrs.define
+@dataclass
 class Type(Object):
     """Object type."""
 
