@@ -15,7 +15,7 @@ import httpx
 from beartype import beartype
 from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
-from beartype.vale import Is, IsInstance
+from beartype.vale import Is, IsInstance, IsSubclass
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession, SyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
@@ -123,6 +123,25 @@ class Context:
             result = self.session.execute(query)
         return self.get_value(result, return_type) if return_type else None
 
+    def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T | None:
+        if value is not None:
+            value = self.structure_response(value, return_type)
+        if value is None and not TypeHint(return_type).is_bearable(None):
+            msg = (
+                "Required field got a null response. Check if parent fields are valid."
+            )
+            raise InvalidQueryError(msg)
+        return value
+
+    def structure_response(
+        self, response: dict[str, Any], return_type: type[T]
+    ) -> T | None:
+        for f in self.selections:
+            response = response[f.name]
+            if response is None:
+                return None
+        return self.converter.structure(response, return_type)
+
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
 
@@ -196,23 +215,6 @@ class Context:
                 raise error from e
             raise
 
-    def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T:
-        if value is not None:
-            value = self.structure_response(value, return_type)
-        if value is None and not TypeHint(return_type).is_bearable(None):
-            msg = (
-                "Required field got a null response. Check if parent fields are valid."
-            )
-            raise InvalidQueryError(msg)
-        return value
-
-    def structure_response(self, response: dict[str, Any], return_type: type[T]) -> T:
-        for f in self.selections:
-            response = response[f.name]
-            if response is None:
-                return None
-        return self.converter.structure(response, return_type)
-
 
 class Arg(typing.NamedTuple):
     name: str  # GraphQL name
@@ -238,9 +240,9 @@ class Enum(str, enum.Enum):
 class Object:
     """Base for object types."""
 
-    @property
-    def graphql_name(self) -> str:
-        return self.__class__.__name__
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return cls.__name__
 
 
 class Input(Object):
@@ -262,11 +264,11 @@ def as_input_arg(val):
     return val
 
 
-@dataclass
 class Type(Object):
     """Object type."""
 
-    _ctx: Context
+    def __init__(self, ctx: Context) -> None:
+        self._ctx = ctx
 
     def _select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
         _args = {
@@ -274,7 +276,10 @@ class Type(Object):
             for arg in args
             if arg.value is not arg.default
         }
-        return self._ctx.select(self.graphql_name, field_name, _args)
+        return self._ctx.select(self._graphql_name(), field_name, _args)
+
+    def _root_select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
+        return Root._from_context(self._ctx)._select(field_name, args)  # noqa: SLF001
 
     def with_(self, cb: Callable[[Self], Self]) -> Self:
         """
@@ -303,8 +308,34 @@ class Type(Object):
         return cb(self)
 
 
+@typing.runtime_checkable
+class FromIDType(typing.Protocol):
+    @classmethod
+    def _id_type(cls) -> Scalar:
+        ...
+
+    @classmethod
+    def _from_id_query_field(cls) -> str:
+        ...
+
+
+IDTypeSubclass = Annotated[FromIDType, IsSubclass[Type, FromIDType]]
+IDTypeSubclassHint = TypeHint(IDTypeSubclass)
+
+
+def is_id_type_subclass(v: type) -> TypeGuard[type[IDTypeSubclass]]:
+    return IDTypeSubclassHint.is_bearable(v)
+
+
+_Type = TypeVar("_Type", bound=Type)
+
+
 class Root(Type):
     """Top level query object type (a.k.a. Query)."""
+
+    @classmethod
+    def _graphql_name(cls) -> str:
+        return "Query"
 
     @classmethod
     def from_session(cls, session: AsyncClientSession):
@@ -315,9 +346,22 @@ class Root(Type):
         ctx = Context(session, ds)
         return cls(ctx)
 
-    @property
-    def graphql_name(self) -> str:
-        return "Query"
+    @classmethod
+    def _from_context(cls, ctx: Context):
+        return cls(replace(ctx, selections=deque()))
+
+    def _get_object_instance(self, id_: str | Scalar, cls: type[_Type]) -> _Type:
+        if not is_id_type_subclass(cls):
+            msg = f"Unsupported type '{cls.__name__}'"
+            raise TypeError(msg)
+
+        if type(id_) is not cls._id_type() and not isinstance(id_, str):
+            msg = f"Expected id type '{cls._id_type()}', got '{type(id_)}'"
+            raise TypeError(msg)
+
+        assert issubclass(cls, Type)
+        ctx = self._select(cls._from_id_query_field(), [Arg("id", id_)])
+        return cls(ctx)
 
 
 @typing.runtime_checkable

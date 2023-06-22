@@ -46,6 +46,7 @@ from graphql import (
     Undefined,
     get_named_type,
     is_leaf_type,
+    is_required_argument,
 )
 from graphql.pyutils import camel_to_snake
 
@@ -66,7 +67,9 @@ T_ParamSpec = ParamSpec("T_ParamSpec")
 
 IDName: TypeAlias = str
 TypeName: TypeAlias = str
+QueryFieldName: TypeAlias = str
 IDMap: TypeAlias = dict[IDName, TypeName]
+IDQueryMap: TypeAlias = dict[IDName, QueryFieldName]
 
 
 class Scalars(enum.Enum):
@@ -102,11 +105,14 @@ def joiner(func: Callable[T_ParamSpec, Iterator[str]]) -> Callable[T_ParamSpec, 
 class Context:
     """Shared state during execution."""
 
-    sync: bool = False
+    sync: bool
     """Sync or async client."""
 
-    id_map: IDMap = field(default_factory=dict)
+    id_map: IDMap
     """Map to convert ids (custom scalars) to corresponding types."""
+
+    id_query_map: IDQueryMap
+    """Map to convert types to ids."""
 
     remaining: set[str] = field(default_factory=set)
     """Remaining type names that haven't been defined yet."""
@@ -132,8 +138,48 @@ def generate(  # noqa: C901
         """,
     )
 
+    # Collect object types for all id return types.
+    # Used to replace custom scalars by objects in inputs.
+    id_map: IDMap = {}
+    for type_name, t in schema.type_map.items():
+        if not is_object_type(t):
+            continue
+        fields: dict[str, GraphQLField] = t.fields
+        for field_name, f in fields.items():
+            if field_name == "id":
+                field_type = get_named_type(f.type)
+                id_map[field_type.name] = type_name
+
+    query_type = cast(GraphQLObjectType, schema.type_map["Query"])
+    query_fields: dict[str, GraphQLField] = query_type.fields
+
+    # Collect fields under Query that receive an id argument and return
+    # an object type that also has an id field that returns the same
+    # id type as the Query field argument.
+    #
+    # Example:
+    #   `Query.directory(id: DirectoryID): Directory` matches
+    #   `Directory.id(): DirectoryID`
+    #
+    # Used to create a classmethod that returns a Directory instance
+    # from a DirectoryID by telling us which field to query for.
+    id_query_map: IDQueryMap = {}
+    for field_name, f in query_fields.items():
+        field_type = get_named_type(f.type)
+        id_arg = f.args.get("id")
+        # Ignore fields that have required arguments other than id.
+        if not id_arg or any(
+            is_required_argument(arg)
+            for arg_name, arg in f.args.items()
+            if arg_name != "id"
+        ):
+            continue
+        id_type = get_named_type(id_arg.type)
+        if id_map.get(id_type.name) == field_type.name:
+            id_query_map[id_type.name] = field_name
+
     # shared state between all handler instances
-    ctx = Context(sync)
+    ctx = Context(sync=sync, id_map=id_map, id_query_map=id_query_map)
 
     handlers: tuple[Handler, ...] = (
         Scalar(ctx),
@@ -142,55 +188,39 @@ def generate(  # noqa: C901
         Object(ctx),
     )
 
-    # collect object types for all id return types
-    # used to replace custom scalars by objects in inputs
-    for name, t in schema.type_map.items():
-        if is_wrapping_type(t):
-            t = t.of_type  # noqa: PLW2901
-        if not is_object_type(t):
-            continue
-        fields: dict[str, GraphQLField] = t.fields
-        for field_name, f in fields.items():
-            if field_name != "id":
-                continue
-            field_type = f.type
-            if is_wrapping_type(field_type):
-                field_type = field_type.of_type
-            ctx.id_map[field_type.name] = name
-
-    def sort_key(t: GraphQLNamedType) -> tuple[int, str]:
+    def _sort_key(t: GraphQLNamedType) -> tuple[int, str]:
         for i, handler in enumerate(handlers):
             if handler.predicate(t):
                 return i, t.name
         return -1, t.name
 
-    def group_key(t: GraphQLNamedType) -> Handler | None:
+    def _group_key(t: GraphQLNamedType) -> Handler | None:
         for handler in handlers:
             if handler.predicate(t):
                 return handler
         return None
 
-    def type_name(t: GraphQLNamedType) -> str:
+    def _type_name(t: GraphQLNamedType) -> str:
         if t.name.startswith("_") or (
             is_scalar_type(t) and not is_custom_scalar_type(t)
         ):
             return ""
         return t.name.replace("Query", "Client")
 
-    all_types = sorted(schema.type_map.values(), key=sort_key)
-    remaining = {type_name(t) for t in all_types}
+    all_types = sorted(schema.type_map.values(), key=_sort_key)
+    remaining = {_type_name(t) for t in all_types}
     ctx.remaining = {n for n in remaining if n}
 
     defined = []
-    for handler, types in groupby(all_types, group_key):
+    for handler, types in groupby(all_types, _group_key):
         for t in types:
-            name = type_name(t)
-            if not handler or not name:
-                ctx.remaining.discard(name)
+            type_name = _type_name(t)
+            if not handler or not type_name:
+                ctx.remaining.discard(type_name)
                 continue
             yield handler.render(t)
-            defined.append(name)
-            ctx.remaining.discard(name)
+            defined.append(type_name)
+            ctx.remaining.discard(type_name)
 
     yield ""
     yield "__all__ = ["
@@ -398,17 +428,14 @@ class _ObjectField:
         self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
         self.type = format_output_type(field.type).replace("Query", "Client")
+        self.parent_name = get_named_type(parent).name
         self.convert_id = False
 
-        # TODO: We don't have a simple way to convert any ID to its
-        # corresponding object (in codegen) so for now just return the
-        # current instance. Currently, `sync` is the only field where
-        # the error is what we care about but more could be added later.
+        # Currently, `sync` is the only field where the error is all we
+        # care about but more could be added later.
         # To avoid wasting a result, we return the ID which is a leaf value
         # and triggers execution, but then convert to object in the SDK to
-        # allow continued chaining. For this, we're assuming the returned
-        # ID represents the exact same object but if that changes, we'll
-        # need to adjust.
+        # allow continued chaining.
         if (
             name != "id"
             and self.is_leaf
@@ -416,9 +443,11 @@ class _ObjectField:
             and self.named_type.name in ctx.id_map
         ):
             converted = ctx.id_map[self.named_type.name]
-            if get_named_type(parent).name == converted:
+            if self.parent_name == converted:
                 self.type = converted
                 self.convert_id = True
+
+        self.id_query_field = self.ctx.id_query_map.get(self.named_type.name)
 
     @joiner
     def __str__(self) -> Iterator[str]:
@@ -437,6 +466,21 @@ class _ObjectField:
                 "def __await__(self):",
                 indent("return self.sync().__await__()"),
             )
+
+        if self.name == "id":
+            yield from (
+                "",
+                "@classmethod",
+                "def _id_type(cls) -> type[Scalar]:",
+                indent(f"return {self.type}"),
+            )
+            if self.id_query_field:
+                yield from (
+                    "",
+                    "@classmethod",
+                    "def _from_id_query_field(cls):",
+                    indent(f'return "{self.id_query_field}"'),
+                )
 
     def func_signature(self) -> str:
         params = ", ".join(chain(("self",), (a.as_param() for a in self.args)))
@@ -478,8 +522,13 @@ class _ObjectField:
         if self.is_leaf:
             exec_ = "_ctx.execute_sync" if self.ctx.sync else "await _ctx.execute"
             if self.convert_id:
-                yield f"{exec_}()"
-                yield "return self"
+                if _field := self.id_query_field:
+                    yield f"_id = {exec_}({self.named_type.name})"
+                    yield f'_ctx = self._root_select("{_field}", [Arg("id", _id)])'
+                    yield f"return {self.type}(_ctx)"
+                else:
+                    yield f"{exec_}()"
+                    yield "return self"
             else:
                 yield f"return {exec_}({self.type})"
         else:
