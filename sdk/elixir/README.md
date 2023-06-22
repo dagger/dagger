@@ -19,7 +19,7 @@ Fetch from repository by:
 ```elixir
 def deps do
   [
-    {:dagger, github: "dagger/dagger"}
+    {:dagger, github: "dagger/dagger", sparse: "sdk/elixir"}
   ]
 end
 ```
@@ -29,6 +29,7 @@ end
 Let's write a code below into a script:
 
 ```elixir
+# ci.exs
 client = Dagger.connect!()
 
 client
@@ -42,7 +43,7 @@ client
 Then running with:
 
 ```shell
-$ _EXPERIMENT_DAGGER_CLI_BIN=dagger elixir ci.exs
+$ elixir ci.exs
 ```
 
 Where `ci.exs` contains Elixir script above.
