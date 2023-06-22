@@ -39,6 +39,10 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+const (
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+)
+
 type Config struct {
 	Workdir            string
 	JournalFile        string
@@ -327,7 +331,7 @@ func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
 }
 
 func cacheConfigFromEnv() (string, map[string]string, error) {
-	envVal, ok := os.LookupEnv(engine.CacheConfigEnvName)
+	envVal, ok := os.LookupEnv(cacheConfigEnvName)
 	if !ok {
 		return "", nil, nil
 	}
