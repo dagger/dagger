@@ -4,7 +4,7 @@ import Client from "../api/client.gen.js"
 import { UnknownDaggerError } from "../common/errors/UnknownDaggerError.js"
 import { connect } from "../connect.js"
 import { entrypointsMetadatatoGQLSchema } from "./convertor.js"
-import { EntrypointMetadata } from "./entrypointMetadata.js"
+import { Arg, EntrypointMetadata } from "./entrypointMetadata.js"
 import { serializeSignature, serializeSymbol } from "./serialization.js"
 import { listFiles, writeFile, readFile } from "./utils.js"
 
@@ -26,7 +26,9 @@ export type Input = {
   resolver: string
 }
 
-export async function getSchema(...entrypoints: Entrypoint[]): Promise<void> {
+export async function getMetadata(
+  ...entrypoints: Entrypoint[]
+): Promise<EntrypointMetadata[]> {
   const metadatas: EntrypointMetadata[] = []
   const files = await listFiles()
 
@@ -84,8 +86,7 @@ export async function getSchema(...entrypoints: Entrypoint[]): Promise<void> {
     }
   }
 
-  const gqlSchema = entrypointsMetadatatoGQLSchema(metadatas)
-  await writeFile(gqlSchema, "/outputs/schema.graphql")
+  return metadatas
 }
 
 // parseResolver assumes that resolver has the format <Query.<function>>
@@ -99,6 +100,27 @@ function parseResolver(input: string): Resolver {
     namespace: "",
     name: member[1],
   }
+}
+
+/**
+ * Order arguments sent to the function in the right order.
+ *
+ * @param argsMetadata Metadata of the function arguments.
+ * @param args input arguments.
+ * @returns arguments values in a array sorted in the right order.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function orderAguments(argsMetadata: Arg[], args: { [key: string]: any }) {
+  const keys = Object.keys(args)
+
+  return argsMetadata.slice(1).map(({ name }) => {
+    const key = keys.find((k) => k === name)
+    if (!key) {
+      return undefined
+    }
+
+    return args[key]
+  })
 }
 
 /**
@@ -123,9 +145,11 @@ function parseResolver(input: string): Resolver {
 export async function serveCommands(
   ...entrypoints: Entrypoint[]
 ): Promise<void> {
-  console.log("args:", process.argv)
   if (process.argv.length === 3 && process.argv[2] === "-schema") {
-    await getSchema(...entrypoints)
+    const metadata = await getMetadata(...entrypoints)
+    const gqlSchema = entrypointsMetadatatoGQLSchema(metadata)
+    await writeFile(gqlSchema, "/outputs/schema.graphql")
+
     return
   }
 
@@ -140,10 +164,11 @@ export async function serveCommands(
     throw new UnknownDaggerError("function to call not found", {})
   }
 
-  await connect(async (client) => {
-    const result = await fct.call(fct, client, ...Object.values(input.args))
+  const fctMetadata = (await getMetadata(fct))[0]
+  const args = orderAguments(fctMetadata.args, input.args)
 
-    console.log(result)
+  await connect(async (client) => {
+    const result = await fct.call(fct, client, ...args)
     const output = JSON.stringify(result, null, 2)
     await writeFile(output, "/outputs/dagger.json")
   })
