@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   engine:
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -29,6 +29,7 @@ jobs:
       - run: ./hack/make engine:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -39,7 +40,7 @@ jobs:
           path: /tmp/journal.log
 
   docs:
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -48,6 +49,7 @@ jobs:
       - run: ./hack/make docs:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -59,7 +61,7 @@ jobs:
 
   sdk-go:
     name: "sdk / go"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -68,6 +70,7 @@ jobs:
       - run: ./hack/make sdk:go:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -79,7 +82,7 @@ jobs:
 
   sdk-python:
     name: "sdk / python"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -88,6 +91,7 @@ jobs:
       - run: ./hack/make sdk:python:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -99,7 +103,7 @@ jobs:
 
   sdk-nodejs:
     name: "sdk / nodejs"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -108,6 +112,7 @@ jobs:
       - run: ./hack/make sdk:nodejs:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -119,7 +124,7 @@ jobs:
 
   sdk-rust:
     name: "sdk / rust"
-    runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: dagger-runner-4c-16g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -128,6 +133,7 @@ jobs:
       - run: ./hack/make sdk:rust:lint
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
