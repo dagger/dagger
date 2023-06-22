@@ -21,9 +21,10 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
           "fields" => fields,
           "description" => desc,
           "private" => %{mod_name: mod_name}
-        } = _full_type
+        } = _full_type,
+        types
       ) do
-    defs = render_functions(Function.format_var_name(name), fields)
+    defs = render_functions(Function.format_var_name(name), fields, types)
 
     desc =
       if desc == "" do
@@ -47,9 +48,9 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def render_functions(mod_var_name, fields) do
+  def render_functions(mod_var_name, fields, types) do
     for field <- fields do
-      render_function(mod_var_name, field)
+      render_function(mod_var_name, field, types)
     end
   end
 
@@ -59,11 +60,12 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
           "name" => name,
           "args" => args,
           "type" => %{"ofType" => type_ref}
-        } = field
+        } = field,
+        types
       ) do
     mod_var_name = to_macro_var(mod_var_name)
     fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
-    fun_body = format_function_body(name, {mod_var_name, args}, type_ref)
+    fun_body = format_function_body(name, {mod_var_name, args}, type_ref, types)
 
     Function.define(name, fun_args, nil, fun_body,
       doc: format_doc(field),
@@ -75,7 +77,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   def format_function_body(
         field_name,
         {mod_var_name, args},
-        %{"kind" => "OBJECT", "name" => name}
+        %{"kind" => "OBJECT", "name" => name},
+        _types
       ) do
     mod_name = Module.concat([Dagger, Mod.format_name(name)])
     args = render_args(args)
@@ -92,7 +95,34 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def format_function_body(field_name, {mod_var_name, args}, _) do
+  def format_function_body(
+        field_name,
+        {mod_var_name, args},
+        %{
+          "kind" => "LIST",
+          "ofType" => %{"ofType" => %{"kind" => "OBJECT", "name" => name}}
+        },
+        types
+      ) do
+    args = render_args(args)
+
+    selection_fields =
+      types
+      |> Enum.find(fn %{"name" => typename} -> typename == name end)
+      |> then(fn %{"fields" => fields} -> get_in(fields, [Access.all(), "name"]) end)
+      |> Enum.join(" ")
+
+    quote do
+      selection = select(unquote(mod_var_name).selection, unquote(field_name))
+      selection = select(selection, unquote(selection_fields))
+
+      unquote_splicing(args)
+
+      execute(selection, unquote(mod_var_name).client)
+    end
+  end
+
+  def format_function_body(field_name, {mod_var_name, args}, _type_ref, _types) do
     args = render_args(args)
 
     quote do

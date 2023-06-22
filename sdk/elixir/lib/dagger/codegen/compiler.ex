@@ -22,7 +22,7 @@ defmodule Dagger.Codegen.Compiler do
       only_supported_kinds(type) and not_graphql_introspection_types(type)
     end)
     |> Enum.map(&Mutator.mutate/1)
-    |> Enum.map(&render/1)
+    |> Enum.map(&render(&1, types))
   end
 
   defp only_supported_kinds(%{"kind" => kind}) do
@@ -52,11 +52,11 @@ defmodule Dagger.Codegen.Compiler do
     ]
   end
 
-  defp render(%{"name" => name, "kind" => kind} = full_type) do
+  defp render(%{"name" => name, "kind" => kind} = full_type, types) do
     q =
       case kind do
         "OBJECT" ->
-          Object.render(full_type)
+          Object.render(full_type, types)
 
         "SCALAR" ->
           Scalar.render(full_type)
