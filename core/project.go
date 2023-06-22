@@ -29,8 +29,9 @@ const (
 type ProjectSDK string
 
 const (
-	ProjectSDKGo     ProjectSDK = "go"
-	ProjectSDKPython ProjectSDK = "python"
+	ProjectSDKGo         ProjectSDK = "go"
+	ProjectSDKPython     ProjectSDK = "python"
+	ProjectSDKTypescript ProjectSDK = "typescript"
 )
 
 type ProjectID string
@@ -262,7 +263,7 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client, progSock *Socket,
 		return p.goRuntime(ctx, gw, progSock, pipeline)
 	case ProjectSDKPython:
 		return p.pythonRuntime(ctx, gw, progSock, pipeline)
-	case "typescript":
+	case ProjectSDKTypescript:
 		runtimeFS, err = p.typescriptRuntime(ctx, "/", gw, p.Platform)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)

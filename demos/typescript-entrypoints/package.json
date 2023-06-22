@@ -1,7 +1,7 @@
 {
   "name": "typescript-entrypoints",
   "version": "1.0.0",
-  "main": "main.mts",
+  "main": "index.mts",
   "license": "MIT",
   "type": "module",
   "scripts": {
