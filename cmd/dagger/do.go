@@ -191,7 +191,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 					if flagName == "help" {
 						continue
 					}
-					flagVal, err := cmd.Flags().GetString(flagName)
+					flagVal, err := cmd.Flags().GetString(strcase.ToKebab(flagName))
 					if err != nil {
 						return fmt.Errorf("failed to get flag %q: %w", flagName, err)
 					}
@@ -314,7 +314,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 		if err != nil {
 			return nil, fmt.Errorf("failed to get flag description: %w", err)
 		}
-		subcmd.Flags().String(flagName, "", flagDescription)
+		subcmd.Flags().String(strcase.ToKebab(flagName), "", flagDescription)
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
 	returnCmds := []*cobra.Command{subcmd}

@@ -247,7 +247,7 @@ func TestProjectHostExport(t *testing.T) {
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-file").
-						WithUserArg("prefix", prefix).
+						WithUserArg("file-prefix", prefix).
 						CallDo().
 						Sync(ctx)
 					if testGitProject {
@@ -266,7 +266,7 @@ func TestProjectHostExport(t *testing.T) {
 					ctr, err := CLITestContainer(ctx, t, c).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-dir").
-						WithUserArg("prefix", prefix).
+						WithUserArg("dir-prefix", prefix).
 						CallDo().
 						Sync(ctx)
 					if testGitProject {
