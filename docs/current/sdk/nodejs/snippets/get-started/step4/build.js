@@ -28,9 +28,7 @@
           .withExec(["npm", "install"])
 
         // run tests
-        await runner
-          .withExec(["npm", "test", "--", "--watchAll=false"])
-          .exitCode()
+        await runner.withExec(["npm", "test", "--", "--watchAll=false"]).sync()
 
         // highlight-start
         // build application using specified Node version

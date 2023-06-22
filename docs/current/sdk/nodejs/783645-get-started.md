@@ -165,7 +165,7 @@ The revised code now does the following:
 - It uses the client's `container().from()` method to initialize a new container from a base image. This base image is the Node.js version to be tested against - the `node:16` image. This method returns a new `Container` object with the results.
 - It uses the `Container.withDirectory()` method to mount the host directory into the container at the `/src` mount point, and the `Container.withWorkdir()` method to set the working directory in the container. The revised `Container` is stored in the `runner` constant.
 - It uses the `Container.withExec()` method to define the command to run tests in the container - in this case, the command `npm test -- --watchAll=false`.
-- It uses the `Container.exitCode()` method to execute the command and obtain the corresponding exit code. An exit code of `0` implies successful execution (all tests pass).
+- It uses the `Container.sync()` method to execute the command.
 - It invokes the `Container.withExec()` method again, this time to define the build command `npm run build` in the container.
 - It obtains a reference to the `build/` directory in the container with the `Container.directory()` method. This method returns a `Directory` object.
 - It writes the `build/` directory from the container to the host using the `Directory.export()` method.

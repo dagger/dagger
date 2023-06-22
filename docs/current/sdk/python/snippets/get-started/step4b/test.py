@@ -32,7 +32,7 @@ async def test():
             print(f"Starting tests for Python {version}")
 
             # execute
-            await python.exit_code()
+            await python.sync()
 
             print(f"Tests for Python {version} succeeded!")
 

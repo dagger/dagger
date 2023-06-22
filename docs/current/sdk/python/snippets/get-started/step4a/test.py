@@ -39,7 +39,7 @@ async def test():
             # highlight-end
 
             # execute
-            await python.exit_code()
+            await python.sync()
 
             # highlight-start
             print(f"Tests for Python {version} succeeded!")

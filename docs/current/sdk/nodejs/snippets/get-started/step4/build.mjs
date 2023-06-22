@@ -27,7 +27,7 @@ connect(
       // run tests
       await runner
         .withExec(["npm", "test", "--", "--watchAll=false"])
-        .exitCode()
+        .sync()
 
       // highlight-start
       // build application using specified Node version

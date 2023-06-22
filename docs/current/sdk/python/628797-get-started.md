@@ -92,7 +92,7 @@ The revised `test()` function now does the following:
 - It uses the `Container.with_directory()` method to mount the host directory into the container at the `/src` mount point.
 - It uses the `Container.with_workdir()` method to set the working directory in the container.
 - It chains `Container.with_exec()` methods to install test dependencies and run tests in the container.
-- It uses the `Container.exit_code()` method to obtain the exit code of the last executed command. An exit code of `0` implies successful execution.
+- It uses the `Container.sync()` method to execute the command.
 
 :::tip
 The `from_()`, `with_directory()`, `with_workdir()` and `with_exec()` methods all return a `Container`, making it easy to chain method calls together and create a pipeline that is easy and intuitive to understand.

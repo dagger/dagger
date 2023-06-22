@@ -26,7 +26,7 @@ async def test():
         )
 
         # execute
-        await python.exit_code()
+        await python.sync()
 
     print("Tests succeeded!")
     # highlight-end
