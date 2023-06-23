@@ -131,6 +131,10 @@ class CacheVolume(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(CacheID)
 
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return CacheID
+
 
 class Container(Type):
     """An OCI-compatible container, also known as a docker container."""
@@ -556,6 +560,14 @@ class Container(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ContainerID)
 
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ContainerID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "container"
+
     @typecheck
     async def image_ref(self) -> Optional[str]:
         """The unique image reference which can only be retrieved immediately
@@ -835,8 +847,9 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("sync", _args)
-        await _ctx.execute()
-        return self
+        _id = await _ctx.execute(ContainerID)
+        _ctx = self._root_select("container", [Arg("id", _id)])
+        return Container(_ctx)
 
     def __await__(self):
         return self.sync().__await__()
@@ -1749,6 +1762,14 @@ class Directory(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(DirectoryID)
 
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return DirectoryID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "directory"
+
     @typecheck
     def pipeline(
         self,
@@ -2067,6 +2088,14 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(FileID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return FileID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "file"
 
     @typecheck
     def secret(self) -> "Secret":
@@ -2567,6 +2596,14 @@ class Project(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(ProjectID)
 
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ProjectID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "project"
+
     @typecheck
     def load(
         self,
@@ -2659,6 +2696,14 @@ class ProjectCommand(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(ProjectCommandID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ProjectCommandID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "projectCommand"
 
     @typecheck
     async def name(self) -> str:
@@ -3009,6 +3054,14 @@ class Secret(Type):
         _ctx = self._select("id", _args)
         return await _ctx.execute(SecretID)
 
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return SecretID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "secret"
+
     @typecheck
     async def plaintext(self) -> str:
         """The value of this secret.
@@ -3056,6 +3109,14 @@ class Socket(Type):
         _args: list[Arg] = []
         _ctx = self._select("id", _args)
         return await _ctx.execute(SocketID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return SocketID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "socket"
 
 
 __all__ = [
