@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -29,11 +30,15 @@ const DaggerNetwork = "dagger"
 var servicesDomain string
 var servicesDomainOnce = &sync.Once{}
 
-// ServicesDomain is a session-global domain suffix appended to every service's
+// SessionDomain is a session-global domain suffix appended to every service's
 // hostname. It is randomly generated on the first call.
-func ServicesDomain() string {
+//
+// Ideally we would base this on the Buildkit gateway session ID instead of
+// using global state, but for exporting we actually establish multiple gateway
+// sessions.
+func SessionDomain() string {
 	servicesDomainOnce.Do(func() {
-		servicesDomain = hostHashStr(identity.NewID()) + ".dagger.local"
+		servicesDomain = hostHashStr(identity.NewID()) + network.DomainSuffix
 	})
 	return servicesDomain
 }
@@ -377,7 +382,7 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	fullHost := host + "." + ServicesDomain()
+	fullHost := host + "." + SessionDomain()
 
 	health := newHealth(gw, fullHost, svc.Container.Ports)
 

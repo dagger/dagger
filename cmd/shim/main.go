@@ -23,6 +23,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/network"
 	"github.com/dagger/dagger/router"
 	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -697,7 +698,7 @@ func collectSearchDomains(resolv string) ([]string, error) {
 
 		domains := strings.Fields(srcScan.Text())[1:]
 		for _, domain := range domains {
-			if strings.HasSuffix(domain, ".dagger.local") {
+			if strings.HasSuffix(domain, network.DomainSuffix) {
 				daggerDomains = append(daggerDomains, domain)
 			}
 		}

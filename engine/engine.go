@@ -188,7 +188,7 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 					return &networks.Config{
 						Dns: &networks.DNSConfig{
 							SearchDomains: append(
-								[]string{core.ServicesDomain()},
+								[]string{core.SessionDomain()},
 								startOpts.ExtraSearchDomains...,
 							),
 						},
