@@ -19,7 +19,7 @@ permissions:
 
 jobs:
   engine:
-    runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: dagger-runner-16c-64g
     steps:
       - name: "Set up QEMU"
         run: |
@@ -31,6 +31,7 @@ jobs:
       - run: ./hack/make engine:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
@@ -80,7 +81,7 @@ jobs:
   #
   # Run in parallel to the regular tests so that the entire pipeline finishes quicker
   engine-race-detection:
-    runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: dagger-runner-16c-64g
     steps:
       - uses: actions/setup-go@v3
         with:
@@ -91,6 +92,7 @@ jobs:
       - run: ./hack/make engine:testrace
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - name: "ALWAYS print kernel logs - especialy useful on failure"
         if: always()
@@ -105,7 +107,7 @@ jobs:
 
   sdk-go:
     name: "sdk / go"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-2c-8g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -114,6 +116,7 @@ jobs:
       - run: ./hack/make sdk:go:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -125,7 +128,7 @@ jobs:
 
   sdk-python:
     name: "sdk / python"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-2c-8g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -134,6 +137,7 @@ jobs:
       - run: ./hack/make sdk:python:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -145,7 +149,7 @@ jobs:
 
   sdk-nodejs:
     name: "sdk / nodejs"
-    runs-on: ubuntu-latest
+    runs-on: dagger-runner-2c-8g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -154,6 +158,7 @@ jobs:
       - run: ./hack/make sdk:nodejs:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
@@ -165,7 +170,7 @@ jobs:
 
   sdk-rust:
     name: "sdk / rust"
-    runs-on: ubuntu-22.04-16c-64g-600gb
+    runs-on: dagger-runner-16c-64g
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v3
@@ -174,6 +179,7 @@ jobs:
       - run: ./hack/make sdk:rust:test
         env:
           _EXPERIMENTAL_DAGGER_JOURNAL: "/tmp/journal.log"
+          _EXPERIMENTAL_DAGGER_RUNNER_HOST: "unix:///var/run/buildkit/buildkitd.sock"
           _EXPERIMENTAL_DAGGER_CLOUD_TOKEN: "p.eyJ1IjogIjFiZjEwMmRjLWYyZmQtNDVhNi1iNzM1LTgxNzI1NGFkZDU2ZiIsICJpZCI6ICIwYzhmMGY2Yy00YjY1LTRhODktYTI0YS0yN2NjNWNhNzNmNTcifQ.Em92UDP-KmcNd80Y-euTS2IrRkIE8qTisP3SXYkQi3c"
       - uses: actions/upload-artifact@v3
         if: always()
