@@ -86,16 +86,16 @@ defmodule Dagger.QueryBuilder do
     end
   end
 
-  defp select_data(data, [leaf | path]) do
-    case leaf |> String.split() do
-      children when is_list(children) ->
-        case get_in(data, Enum.reverse(path)) do
-          data when is_list(data) -> Enum.map(data, &Map.take(&1, children))
-          data when is_map(data) -> Map.take(data, children)
-        end
+  defp select_data(data, [sub_selection | path]) do
+    case sub_selection |> String.split() do
+      [selection] ->
+        get_in(data, Enum.reverse([selection | path]))
 
-      children when is_binary(children) ->
-        get_in(data, Enum.reverse([children | path]))
+      selections ->
+        case get_in(data, Enum.reverse(path)) do
+          data when is_list(data) -> Enum.map(data, &Map.take(&1, selections))
+          data when is_map(data) -> Map.take(data, selections)
+        end
     end
   end
 
