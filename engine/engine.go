@@ -177,7 +177,8 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		},
 		AllowedEntitlements: allowedEntitlements,
 		OCIStores: map[string]content.Store{
-			core.OCIStoreName: ociStore,
+			core.LocalOCIStoreName: ociStore,
+			core.UnionOCIStoreName: core.UnionOCIStore,
 		},
 	}
 

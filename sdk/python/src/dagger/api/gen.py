@@ -618,15 +618,35 @@ class Container(Type):
         source:
             File to read the container from.
         tag:
-            Identifies the tag to import from the archive, if the archive
-            bundles
-            multiple tags.
+            Identifies the tag to import, if the image bundles multiple tags.
         """
         _args = [
             Arg("source", source),
             Arg("tag", tag, None),
         ]
         _ctx = self._select("import", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def import_dir(
+        self,
+        source: "Directory",
+        tag: Optional[str] = None,
+    ) -> "Container":
+        """Reads the container from an OCI layout directory.
+
+        Parameters
+        ----------
+        source:
+            File to read the container from.
+        tag:
+            Identifies the tag to import, if the image bundles multiple tags.
+        """
+        _args = [
+            Arg("source", source),
+            Arg("tag", tag, None),
+        ]
+        _ctx = self._select("importDir", _args)
         return Container(_ctx)
 
     @typecheck

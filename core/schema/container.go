@@ -88,6 +88,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"platform":             router.ToResolver(s.platform),
 			"export":               router.ToResolver(s.export),
 			"import":               router.ToResolver(s.import_),
+			"importDir":            router.ToResolver(s.importDir),
 			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
 			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
 			"imageRef":             router.ToResolver(s.imageRef),
@@ -671,7 +672,16 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	return parent.Import(ctx, s.gw, s.host, args.Source, args.Tag, s.ociStore)
+	return parent.ImportOCITarball(ctx, s.gw, s.host, args.Source, args.Tag, s.ociStore)
+}
+
+type containerImportDirArgs struct {
+	Source core.DirectoryID
+	Tag    string
+}
+
+func (s *containerSchema) importDir(ctx *router.Context, parent *core.Container, args containerImportDirArgs) (*core.Container, error) { // nolint:revive
+	return parent.ImportOCILayoutDir(ctx, s.gw, s.host, args.Source, args.Tag, s.ociStore)
 }
 
 type containerWithRegistryAuthArgs struct {

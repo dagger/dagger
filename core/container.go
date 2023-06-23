@@ -20,6 +20,7 @@ import (
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/core/ocistore"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/docker/distribution/reference"
@@ -1514,11 +1515,16 @@ func (container *Container) Export(
 	})
 }
 
-const OCIStoreName = "dagger-oci"
+// OCI store referring to the user's local cache, used for import OCI tarballs.
+const LocalOCIStoreName = "dagger-oci-local"
+
+// OCI store backed by traversing a OCI layout directory remotely via
+// bkgw.Reference.
+const UnionOCIStoreName = "dagger-oci-union"
 
 var importCache = newCacheMap[uint64, *Container]()
 
-func (container *Container) Import(
+func (container *Container) ImportOCITarball(
 	ctx context.Context,
 	gw bkgw.Client,
 	host *Host,
@@ -1529,12 +1535,28 @@ func (container *Container) Import(
 	return importCache.GetOrInitialize(
 		cacheKey(container, source, tag),
 		func() (*Container, error) {
-			return container.importUncached(ctx, gw, host, source, tag, store)
+			return container.importUncachedTarball(ctx, gw, host, source, tag, store)
 		},
 	)
 }
 
-func (container *Container) importUncached(
+func (container *Container) ImportOCILayoutDir(
+	ctx context.Context,
+	gw bkgw.Client,
+	host *Host,
+	source DirectoryID,
+	tag string,
+	store content.Store,
+) (*Container, error) {
+	return importCache.GetOrInitialize(
+		cacheKey(container, source, tag),
+		func() (*Container, error) {
+			return container.importUncachedDir(ctx, gw, source, tag)
+		},
+	)
+}
+
+func (container *Container) importUncachedTarball(
 	ctx context.Context,
 	gw bkgw.Client,
 	host *Host,
@@ -1563,7 +1585,22 @@ func (container *Container) importUncached(
 		return nil, fmt.Errorf("image archive import: %w", err)
 	}
 
-	manifestDesc, err := resolveIndex(ctx, store, desc, container.Platform, tag)
+	if desc.MediaType != specs.MediaTypeImageIndex {
+		return nil, fmt.Errorf("expected index, got %s", desc.MediaType)
+	}
+
+	indexBlob, err := content.ReadBlob(ctx, store, desc)
+	if err != nil {
+		return nil, fmt.Errorf("read index blob: %w", err)
+	}
+
+	var idx specs.Index
+	err = json.Unmarshal(indexBlob, &idx)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshal index: %w", err)
+	}
+
+	manifestDesc, err := resolveIndex(ctx, store, idx, container.Platform, tag)
 	if err != nil {
 		return nil, fmt.Errorf("image archive resolve index: %w", err)
 	}
@@ -1574,7 +1611,95 @@ func (container *Container) importUncached(
 
 	st := llb.OCILayout(
 		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-		llb.OCIStore("", OCIStoreName),
+		llb.OCIStore("", LocalOCIStoreName),
+		llb.Platform(container.Platform),
+	)
+
+	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform))
+	if err != nil {
+		return nil, fmt.Errorf("marshal root: %w", err)
+	}
+
+	container.FS = execDef.ToPB()
+
+	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
+	}
+
+	var man specs.Manifest
+	err = json.Unmarshal(manifestBlob, &man)
+	if err != nil {
+		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+	}
+
+	configBlob, err := content.ReadBlob(ctx, store, man.Config)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
+	}
+
+	var imgSpec specs.Image
+	err = json.Unmarshal(configBlob, &imgSpec)
+	if err != nil {
+		return nil, fmt.Errorf("load image config: %w", err)
+	}
+
+	container.Config = imgSpec.Config
+
+	return container, nil
+}
+
+var UnionOCIStore = ocistore.NewUnionStore()
+
+func (container *Container) importUncachedDir(
+	ctx context.Context,
+	gw bkgw.Client,
+	source DirectoryID,
+	tag string,
+) (*Container, error) {
+	container = container.Clone()
+
+	dir, err := source.ToDirectory()
+	if err != nil {
+		return nil, err
+	}
+
+	store, err := ocistore.NewLayoutStore(ctx, gw, dir.LLB, dir.Dir)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := UnionOCIStore.Install(ctx, store); err != nil {
+		return nil, err
+	}
+
+	file, err := dir.File(ctx, "index.json")
+	if err != nil {
+		return nil, err
+	}
+
+	indexJSON, err := file.Contents(ctx, gw)
+	if err != nil {
+		return nil, err
+	}
+
+	var idx specs.Index
+	if err := json.Unmarshal(indexJSON, &idx); err != nil {
+		return nil, err
+	}
+
+	manifestDesc, err := resolveIndex(ctx, store, idx, container.Platform, tag)
+	if err != nil {
+		return nil, fmt.Errorf("image archive resolve index: %w", err)
+	}
+
+	// NB: the repository portion of this ref doesn't actually matter, but it's
+	// pleasant to see something recognizable.
+	dummyRepo := "dagger/import"
+
+	st := llb.OCILayout(
+		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		llb.OCIStore("", UnionOCIStoreName),
 		llb.Platform(container.Platform),
 	)
 
@@ -1915,22 +2040,7 @@ func b32(n uint64) string {
 // OCI manifest annotation that specifies an image's tag
 const ociTagAnnotation = "org.opencontainers.image.ref.name"
 
-func resolveIndex(ctx context.Context, store content.Store, desc specs.Descriptor, platform specs.Platform, tag string) (*specs.Descriptor, error) {
-	if desc.MediaType != specs.MediaTypeImageIndex {
-		return nil, fmt.Errorf("expected index, got %s", desc.MediaType)
-	}
-
-	indexBlob, err := content.ReadBlob(ctx, store, desc)
-	if err != nil {
-		return nil, fmt.Errorf("read index blob: %w", err)
-	}
-
-	var idx specs.Index
-	err = json.Unmarshal(indexBlob, &idx)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal index: %w", err)
-	}
-
+func resolveIndex(ctx context.Context, store content.Store, idx specs.Index, platform specs.Platform, tag string) (*specs.Descriptor, error) {
 	matcher := platforms.Only(platform)
 
 	for _, m := range idx.Manifests {
@@ -1959,7 +2069,18 @@ func resolveIndex(ctx context.Context, store content.Store, desc specs.Descripto
 
 		case specs.MediaTypeImageIndex, // OCI
 			images.MediaTypeDockerSchema2ManifestList: // Docker
-			return resolveIndex(ctx, store, m, platform, tag)
+			indexBlob, err := content.ReadBlob(ctx, store, m)
+			if err != nil {
+				return nil, fmt.Errorf("read index blob: %w", err)
+			}
+
+			var idx specs.Index
+			err = json.Unmarshal(indexBlob, &idx)
+			if err != nil {
+				return nil, fmt.Errorf("unmarshal index: %w", err)
+			}
+
+			return resolveIndex(ctx, store, idx, platform, tag)
 
 		default:
 			return nil, fmt.Errorf("expected manifest or index, got %s", m.MediaType)

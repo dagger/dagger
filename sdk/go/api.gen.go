@@ -524,8 +524,7 @@ func (r *Container) ImageRef(ctx context.Context) (string, error) {
 
 // ContainerImportOpts contains options for Container.Import
 type ContainerImportOpts struct {
-	// Identifies the tag to import from the archive, if the archive bundles
-	// multiple tags.
+	// Identifies the tag to import, if the image bundles multiple tags.
 	Tag string
 }
 
@@ -535,6 +534,29 @@ type ContainerImportOpts struct {
 // $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
 func (r *Container) Import(source *File, opts ...ContainerImportOpts) *Container {
 	q := r.q.Select("import")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `tag` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Tag) {
+			q = q.Arg("tag", opts[i].Tag)
+		}
+	}
+	q = q.Arg("source", source)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// ContainerImportDirOpts contains options for Container.ImportDir
+type ContainerImportDirOpts struct {
+	// Identifies the tag to import, if the image bundles multiple tags.
+	Tag string
+}
+
+// Reads the container from an OCI layout directory.
+func (r *Container) ImportDir(source *Directory, opts ...ContainerImportDirOpts) *Container {
+	q := r.q.Select("importDir")
 	for i := len(opts) - 1; i >= 0; i-- {
 		// `tag` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Tag) {

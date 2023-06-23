@@ -680,8 +680,22 @@ type Container {
     source: FileID!
 
     """
-    Identifies the tag to import from the archive, if the archive bundles
-    multiple tags.
+    Identifies the tag to import, if the image bundles multiple tags.
+    """
+    tag: String
+  ): Container!
+
+  """
+  Reads the container from an OCI layout directory.
+  """
+  importDir(
+    """
+    File to read the container from.
+    """
+    source: DirectoryID!
+
+    """
+    Identifies the tag to import, if the image bundles multiple tags.
     """
     tag: String
   ): Container!

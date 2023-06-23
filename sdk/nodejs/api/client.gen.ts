@@ -175,8 +175,14 @@ export type ContainerExportOpts = {
 
 export type ContainerImportOpts = {
   /**
-   * Identifies the tag to import from the archive, if the archive bundles
-   * multiple tags.
+   * Identifies the tag to import, if the image bundles multiple tags.
+   */
+  tag?: string
+}
+
+export type ContainerImportDirOpts = {
+  /**
+   * Identifies the tag to import, if the image bundles multiple tags.
    */
   tag?: string
 }
@@ -1090,8 +1096,7 @@ export class Container extends BaseClient {
    * NOTE: this involves unpacking the tarball to an OCI store on the host at
    * $XDG_CACHE_DIR/dagger/oci. This directory can be removed whenever you like.
    * @param source File to read the container from.
-   * @param opts.tag Identifies the tag to import from the archive, if the archive bundles
-   * multiple tags.
+   * @param opts.tag Identifies the tag to import, if the image bundles multiple tags.
    */
   import(source: File, opts?: ContainerImportOpts): Container {
     return new Container({
@@ -1099,6 +1104,25 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "import",
+          args: { source, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Reads the container from an OCI layout directory.
+   * @param source File to read the container from.
+   * @param opts.tag Identifies the tag to import, if the image bundles multiple tags.
+   */
+  importDir(source: Directory, opts?: ContainerImportDirOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "importDir",
           args: { source, ...opts },
         },
       ],
