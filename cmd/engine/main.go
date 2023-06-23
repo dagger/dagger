@@ -24,6 +24,7 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -978,17 +979,17 @@ func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig,
 
 	// NB: this is needed for the Dagger shim worker at the moment for host alias
 	// resolution
-	err = network.InstallResolvconf(netName, bridge.String())
+	err = netinst.InstallResolvconf(netName, bridge.String())
 	if err != nil {
 		return nil, fmt.Errorf("install resolv.conf: %w", err)
 	}
 
-	err = network.InstallDnsmasq(ctx, netName)
+	err = netinst.InstallDnsmasq(ctx, netName)
 	if err != nil {
 		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(netName, netCIDR)
 	if err != nil {
 		return nil, fmt.Errorf("install cni: %w", err)
 	}
