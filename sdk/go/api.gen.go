@@ -849,6 +849,9 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
+	// Indicate that this command is a primary focus of the pipeline being run so
+	// that it will be featured more prominently in the UI.
+	Focus bool
 	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
 	SkipEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -873,6 +876,10 @@ type ContainerWithExecOpts struct {
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.q.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `focus` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Focus) {
+			q = q.Arg("focus", opts[i].Focus)
+		}
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)

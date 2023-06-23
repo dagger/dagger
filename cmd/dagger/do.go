@@ -30,6 +30,7 @@ const (
 
 func init() {
 	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
+	doCmd.PersistentFlags().BoolVar(&focus, "focus", true, "Only show output for focused commands.")
 }
 
 // project flags (--project) for do command are setup in project.go

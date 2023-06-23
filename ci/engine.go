@@ -11,7 +11,9 @@ func (e EngineTargets) Lint(ctx dagger.Context) (string, error) {
 		From("golangci/golangci-lint:v1.51-alpine").
 		WithMountedDirectory("/app", e.SrcDir).
 		WithWorkdir("/app").
-		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
+		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}, dagger.ContainerWithExecOpts{
+			Focus: true,
+		}).
 		Stdout(ctx)
 	return out, err
 }

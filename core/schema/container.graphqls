@@ -517,6 +517,12 @@ type Container {
     args: [String!]!
 
     """
+    Indicate that this command is a primary focus of the pipeline being run so
+    that it will be featured more prominently in the UI.
+    """
+    focus: Boolean
+
+    """
     If the container has an entrypoint, ignore it for args rather than using it to wrap them.
     """
     skipEntrypoint: Boolean

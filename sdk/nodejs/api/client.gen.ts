@@ -248,6 +248,12 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
+   * Indicate that this command is a primary focus of the pipeline being run so
+   * that it will be featured more prominently in the UI.
+   */
+  focus?: boolean
+
+  /**
    * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    */
   skipEntrypoint?: boolean
@@ -1413,6 +1419,8 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
+   * @param opts.focus Indicate that this command is a primary focus of the pipeline being run so
+   * that it will be featured more prominently in the UI.
    * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").

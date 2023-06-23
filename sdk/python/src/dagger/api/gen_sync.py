@@ -991,6 +991,7 @@ class Container(Type):
     def with_exec(
         self,
         args: Sequence[str],
+        focus: Optional[bool] = None,
         skip_entrypoint: Optional[bool] = None,
         stdin: Optional[str] = None,
         redirect_stdout: Optional[str] = None,
@@ -1007,6 +1008,10 @@ class Container(Type):
             Command to run instead of the container's default command (e.g.,
             ["run", "main.go"]).
             If empty, the container's default command is used.
+        focus:
+            Indicate that this command is a primary focus of the pipeline
+            being run so
+            that it will be featured more prominently in the UI.
         skip_entrypoint:
             If the container has an entrypoint, ignore it for args rather than
             using it to wrap them.
@@ -1036,6 +1041,7 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
+            Arg("focus", focus, None),
             Arg("skipEntrypoint", skip_entrypoint, None),
             Arg("stdin", stdin, None),
             Arg("redirectStdout", redirect_stdout, None),

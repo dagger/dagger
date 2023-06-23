@@ -1046,9 +1046,16 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		return nil, errors.New("no command has been set")
 	}
 
+	var namef string
+	if opts.Focus {
+		namef = focusPrefix + "exec %s"
+	} else {
+		namef = "exec %s"
+	}
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
+		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -1079,7 +1086,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName("[internal] creating dagger metadata")),
+			llb.Scratch().File(meta, llb.WithCustomName(internalPrefix+"creating dagger metadata")),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
@@ -1868,6 +1875,10 @@ func (container *Container) ownership(ctx context.Context, gw bkgw.Client, owner
 type ContainerExecOpts struct {
 	// Command to run instead of the container's default command
 	Args []string
+
+	// Focus indicates that the command is the primary focus of the pipeline
+	// being run.
+	Focus bool
 
 	// If the container has an entrypoint, ignore it for this exec rather than
 	// calling it with args.

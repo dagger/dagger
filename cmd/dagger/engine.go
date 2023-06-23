@@ -43,6 +43,9 @@ func init() {
 	)
 }
 
+// show only focused vertices. enabled by default for dagger do.
+var focus bool
+
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
 func withEngineAndTUI(
@@ -146,9 +149,8 @@ func inlineTUI(
 	fn engine.StartCallback,
 ) error {
 	tape := progrock.NewTape()
-	if debug {
-		tape.ShowInternal(true)
-	}
+	tape.ShowInternal(debug)
+	tape.Focus(focus)
 
 	progW, engineErr := progrockTee(tape)
 	if engineErr != nil {
