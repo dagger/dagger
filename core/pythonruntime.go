@@ -2,45 +2,67 @@ package core
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
+	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *Project) pythonRuntime(ctx context.Context, subpath string, gw bkgw.Client, platform specs.Platform) (*Directory, error) {
-	contextState, err := p.Directory.State()
+func (p *Project) pythonRuntime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
+	ctr, err := NewContainer("", pipeline, p.Platform)
+	if err != nil {
+		return nil, err
+	}
+	ctr, err = ctr.From(ctx, gw, "python:3.11-alpine")
 	if err != nil {
 		return nil, err
 	}
 
 	workdir := "/src"
+	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
+		cfg.Cmd = nil
+		return cfg
+	})
+	if err != nil {
+		return nil, err
+	}
+	ctr, err = ctr.WithMountedDirectory(ctx, gw, workdir, p.Directory, "")
+	if err != nil {
+		return nil, err
+	}
 
-	pipCache := llb.AddMount(
-		"/root/.cache/pip",
-		llb.Scratch(),
-		llb.AsPersistentCacheDir("pythonpipcache", llb.CacheMountShared),
-	)
+	ctr, err = ctr.WithMountedCache(ctx, gw, "/root/.cache/pip", NewCache("pythonpipcache"), nil, CacheSharingModeShared, "")
+	if err != nil {
+		return nil, err
+	}
 
-	return NewDirectorySt(ctx,
-		llb.Image("python:3.11-alpine", llb.WithMetaResolver(gw)).
-			Run(llb.Shlex(`apk add --no-cache git openssh-client`)).Root().
-			Run(llb.Shlex("pip install shiv"), pipCache).Root().
-			Run(
-				llb.Shlex(fmt.Sprintf(
-					"shiv -e dagger.server.cli:app -o /entrypoint %s --root /tmp/.shiv",
-					filepath.ToSlash(filepath.Join(workdir, filepath.Dir(p.ConfigPath), subpath)),
-				)),
-				llb.AddMount(workdir, contextState, llb.SourcePath(p.Directory.Dir)),
-				llb.Dir(workdir),
-				pipCache,
-			).Root(),
-		"",
-		pipeline.Path{},
-		platform,
-		nil,
-	)
+	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		Args: []string{"pip", "install", "shiv"},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		Args: []string{
+			"shiv", "-e", "dagger.server.cli:app", "-o", "/entrypoint",
+			path.Join(workdir, path.Dir(p.ConfigPath)),
+			"--root", "/tmp/.shiv",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = []string{"/entrypoint"}
+		return cfg
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ctr, nil
 }

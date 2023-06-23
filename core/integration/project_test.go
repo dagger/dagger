@@ -193,8 +193,7 @@ func TestProjectCommandHierarchy(t *testing.T) {
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
-			outputLines := strings.Split(output, "\n")
-			require.Contains(t, outputLines, "hello from foo")
+			require.Contains(t, output, "hello from foo")
 
 			output, err = CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
@@ -202,8 +201,7 @@ func TestProjectCommandHierarchy(t *testing.T) {
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
-			outputLines = strings.Split(output, "\n")
-			require.Contains(t, outputLines, "hello from bar")
+			require.Contains(t, output, "hello from bar")
 		})
 	}
 }
@@ -401,11 +399,10 @@ func TestProjectDirImported(t *testing.T) {
 					CallDo().
 					Stderr(ctx)
 				require.NoError(t, err)
-				outputLines := strings.Split(output, "\n")
-				require.Contains(t, outputLines, "README.md")
-				require.Contains(t, outputLines, projectDir)
-				require.Contains(t, outputLines, projectDir+"/dagger.json")
-				require.Contains(t, outputLines, projectDir+"/"+tc.expectedMainFile)
+				require.Contains(t, output, "README.md")
+				require.Contains(t, output, projectDir)
+				require.Contains(t, output, projectDir+"/dagger.json")
+				require.Contains(t, output, projectDir+"/"+tc.expectedMainFile)
 			})
 		}
 	}

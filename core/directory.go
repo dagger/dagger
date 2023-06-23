@@ -43,6 +43,14 @@ func NewDirectory(ctx context.Context, def *pb.Definition, dir string, pipeline 
 	}
 }
 
+func NewScratchDirectory(pipeline pipeline.Path, platform specs.Platform) *Directory {
+	return &Directory{
+		Dir:      "/",
+		Platform: platform,
+		Pipeline: pipeline.Copy(),
+	}
+}
+
 func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipeline.Path, platform specs.Platform, services ServiceBindings) (*Directory, error) {
 	def, err := st.Marshal(ctx, llb.Platform(platform))
 	if err != nil {

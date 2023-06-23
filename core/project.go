@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"path"
 
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql"
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
@@ -17,10 +17,7 @@ import (
 )
 
 const (
-	schemaPath     = "/schema.graphql"
-	entrypointPath = "/entrypoint"
-
-	tmpMountPath = "/tmp"
+	schemaPath = "/schema.graphql"
 
 	inputMountPath = "/inputs"
 	inputFile      = "/dagger.json"
@@ -110,7 +107,7 @@ func (p *Project) Clone() *Project {
 	return &cp
 }
 
-func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, source *Directory, configPath string) (*Project, error) {
+func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path, source *Directory, configPath string) (*Project, error) {
 	p = p.Clone()
 	p.Directory = source
 
@@ -129,12 +126,12 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, pr
 		return nil, fmt.Errorf("failed to unmarshal project config: %w", err)
 	}
 
-	p.Schema, err = p.getSchema(ctx, gw, r)
+	p.Schema, err = p.getSchema(ctx, gw, progSock, pipeline, r)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get schema: %w", err)
 	}
 
-	resolvers, err := p.getResolvers(ctx, gw, r, progSock)
+	resolvers, err := p.getResolvers(ctx, gw, r, progSock, pipeline)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resolvers: %w", err)
 	}
@@ -223,85 +220,54 @@ func (p *Project) schemaToCommand(field *ast.FieldDefinition, schemaTypes map[st
 	return &cmd, nil
 }
 
-func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, r *router.Router) (string, error) {
-	runtimeFS, err := p.runtime(ctx, gw)
+func (p *Project) getSchema(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path, r *router.Router) (string, error) {
+	ctr, err := p.runtime(ctx, gw, progSock, pipeline)
 	if err != nil {
-		return "", fmt.Errorf("failed to get runtime filesystem: %w", err)
+		return "", fmt.Errorf("failed to get runtime container for schema: %w", err)
 	}
-
-	fsState, err := runtimeFS.State()
+	ctr, err = ctr.WithMountedDirectory(ctx, gw, outputMountPath, NewScratchDirectory(pipeline, p.Platform), "")
 	if err != nil {
-		return "", fmt.Errorf("failed to get runtime filesystem state: %w", err)
+		return "", fmt.Errorf("failed to mount output directory: %w", err)
 	}
-
-	projectDirState, err := p.Directory.State()
-	if err != nil {
-		return "", fmt.Errorf("failed to get project dir state: %w", err)
-	}
-
-	st := fsState.Run(
-		llb.Args([]string{entrypointPath, "-schema"}),
-		llb.AddMount("/src", projectDirState, llb.Readonly),
-		llb.Dir("/src"),
-		llb.ReadonlyRootFS(),
-		llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
-	)
-	outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-	outputDef, err := outputMnt.Marshal(ctx, llb.Platform(p.Platform))
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal output mount: %w", err)
-	}
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Definition: outputDef.ToPB(),
+	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		Args: []string{"-schema"},
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to solve output mount: %w", err)
+		return "", fmt.Errorf("failed to exec schema command: %w", err)
 	}
-	ref, err := res.SingleRef()
+	schemaFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, schemaPath))
 	if err != nil {
-		return "", fmt.Errorf("failed to get output mount ref: %w", err)
+		return "", fmt.Errorf("failed to get schema file: %w", err)
 	}
-	outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-		Filename: "/schema.graphql",
-	})
+	newSchema, err := schemaFile.Contents(ctx, gw)
 	if err != nil {
-		return "", fmt.Errorf("failed to read schema: %w", err)
+		return "", fmt.Errorf("failed to read schema file: %w", err)
 	}
-	newSchema := string(outputBytes)
 
 	// validate it against the existing schema early
 	currentSchema := r.MergedSchemas()
 	_, err = gqlparser.LoadSchema(
 		&ast.Source{Input: currentSchema, BuiltIn: true},
-		&ast.Source{Input: newSchema},
+		&ast.Source{Input: string(newSchema)},
 	)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse schema: %w", err)
 	}
-	return newSchema, nil
+	return string(newSchema), nil
 }
 
-func (p *Project) runtime(ctx context.Context, gw bkgw.Client) (*Directory, error) {
-	var runtimeFS *Directory
-	var err error
+func (p *Project) runtime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
 	switch ProjectSDK(p.Config.SDK) {
 	case ProjectSDKGo:
-		runtimeFS, err = p.goRuntime(ctx, "/", gw, p.Platform)
+		return p.goRuntime(ctx, gw, progSock, pipeline)
 	case ProjectSDKPython:
-		runtimeFS, err = p.pythonRuntime(ctx, "/", gw, p.Platform)
+		return p.pythonRuntime(ctx, gw, progSock, pipeline)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)
 	}
-	if err != nil {
-		return nil, err
-	}
-	if _, err := runtimeFS.Stat(ctx, gw, "."); err != nil {
-		return nil, err
-	}
-	return runtimeFS, nil
 }
 
-func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket) (router.Resolvers, error) {
+func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path) (router.Resolvers, error) {
 	resolvers := make(router.Resolvers)
 	if p.Config.SDK == "" {
 		return nil, fmt.Errorf("sdk not set")
@@ -318,7 +284,7 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Ro
 		objResolver := router.ObjectResolver{}
 		resolvers[def.Name] = objResolver
 		for _, field := range def.Fields {
-			objResolver[field.Name], err = p.getResolver(ctx, gw, r, progSock, field.Type)
+			objResolver[field.Name], err = p.getResolver(ctx, gw, r, progSock, pipeline, field.Type)
 			if err != nil {
 				return nil, err
 			}
@@ -327,16 +293,13 @@ func (p *Project) getResolvers(ctx context.Context, gw bkgw.Client, r *router.Ro
 	return resolvers, nil
 }
 
-func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, outputType *ast.Type) (graphql.FieldResolveFn, error) {
-	runtimeFS, err := p.runtime(ctx, gw)
+func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Router, progSock *Socket, pipeline pipeline.Path, outputType *ast.Type) (graphql.FieldResolveFn, error) {
+	ctr, err := p.runtime(ctx, gw, progSock, pipeline)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get runtime container for resolver: %w", err)
 	}
 
 	return router.ToResolver(func(ctx *router.Context, parent any, args any) (any, error) {
-		pathArray := ctx.ResolveParams.Info.Path.AsArray()
-		name := fmt.Sprintf("%+v", pathArray)
-
 		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveParams.Info.ParentType.Name(), ctx.ResolveParams.Info.FieldName)
 
 		inputMap := map[string]any{
@@ -348,63 +311,30 @@ func (p *Project) getResolver(ctx context.Context, gw bkgw.Client, r *router.Rou
 		if err != nil {
 			return nil, err
 		}
-		input := llb.Scratch().File(llb.Mkfile(inputFile, 0644, inputBytes))
-
-		fsState, err := runtimeFS.State()
+		ctr, err = ctr.WithNewFile(ctx, gw, path.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 		if err != nil {
-			return nil, err
+			return "", fmt.Errorf("failed to mount resolver input file: %w", err)
 		}
 
-		wdState, err := p.Directory.State()
+		ctr, err = ctr.WithMountedDirectory(ctx, gw, outputMountPath, NewScratchDirectory(nil, p.Platform), "")
 		if err != nil {
-			return nil, err
+			return "", fmt.Errorf("failed to mount resolver output directory: %w", err)
 		}
 
-		sid, err := progSock.ID()
-		if err != nil {
-			return nil, err
-		}
-
-		st := fsState.Run(
-			llb.Args([]string{entrypointPath}),
-			llb.Dir("/src"),
-			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
-			llb.AddSSHSocket(
-				llb.SSHID(sid.LLBID()),
-				llb.SSHSocketTarget("/.progrock.sock"),
-			),
-			// make extensions compatible with the shim, in future we can actually enable retrieval of stdout/stderr
-			llb.AddMount("/.dagger_meta_mount", llb.Scratch(), llb.Tmpfs()),
-			llb.AddMount(inputMountPath, input, llb.Readonly),
-			llb.AddMount(tmpMountPath, llb.Scratch(), llb.Tmpfs()),
-		)
-
-		switch p.Config.SDK {
-		case "go", "python":
-			st.AddMount("/src", wdState, llb.Readonly)
-		}
-
-		outputMnt := st.AddMount(outputMountPath, llb.Scratch())
-		outputDef, err := outputMnt.Marshal(ctx, llb.Platform(p.Platform), llb.WithCustomName(name))
-		if err != nil {
-			return nil, err
-		}
-
-		res, err := gw.Solve(ctx, bkgw.SolveRequest{
-			Definition: outputDef.ToPB(),
+		ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+			ExperimentalPrivilegedNesting: true,
 		})
 		if err != nil {
-			return nil, err
+			return "", fmt.Errorf("failed to exec resolver: %w", err)
 		}
-		ref, err := res.SingleRef()
+
+		outputFile, err := ctr.File(ctx, gw, path.Join(outputMountPath, outputFile))
 		if err != nil {
-			return nil, err
+			return "", fmt.Errorf("failed to get resolver output file: %w", err)
 		}
-		outputBytes, err := ref.ReadFile(ctx, bkgw.ReadRequest{
-			Filename: outputFile,
-		})
+		outputBytes, err := outputFile.Contents(ctx, gw)
 		if err != nil {
-			return nil, err
+			return "", fmt.Errorf("failed to read resolver output file: %w", err)
 		}
 		var output interface{}
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
