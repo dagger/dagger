@@ -264,7 +264,7 @@ func (p *Project) runtime(ctx context.Context, gw bkgw.Client, progSock *Socket,
 	case ProjectSDKPython:
 		return p.pythonRuntime(ctx, gw, progSock, pipeline)
 	case ProjectSDKTypescript:
-		runtimeFS, err = p.typescriptRuntime(ctx, "/", gw, p.Platform)
+		return p.typescriptRuntime(ctx, gw, progSock, pipeline)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)
 	}
