@@ -12,7 +12,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -3704,28 +3706,23 @@ func TestContainerForceCompression(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		compression             dagger.ImageLayerCompression
-		expectedDockerMediaType string
-		expectedOCIMediaType    string
+		compression          dagger.ImageLayerCompression
+		expectedOCIMediaType string
 	}{
 		{
 			dagger.Gzip,
-			"application/vnd.docker.image.rootfs.diff.tar.gzip",
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 		{
 			dagger.Zstd,
-			"application/vnd.docker.image.rootfs.diff.tar.zstd",
 			"application/vnd.oci.image.layer.v1.tar+zstd",
 		},
 		{
 			dagger.Uncompressed,
-			"application/vnd.docker.image.rootfs.diff.tar",
 			"application/vnd.oci.image.layer.v1.tar",
 		},
 		{
 			dagger.Estargz,
-			"", // not supported
 			"application/vnd.oci.image.layer.v1.tar+gzip",
 		},
 	} {
@@ -3756,11 +3753,7 @@ func TestContainerForceCompression(t *testing.T) {
 			for _, layer := range layers {
 				mediaType, err := layer.MediaType()
 				require.NoError(t, err)
-				expectedMediaType := tc.expectedDockerMediaType
-				if tc.compression == dagger.Estargz {
-					expectedMediaType = tc.expectedOCIMediaType
-				}
-				require.EqualValues(t, expectedMediaType, mediaType)
+				require.EqualValues(t, tc.expectedOCIMediaType, mediaType)
 			}
 
 			tarPath := filepath.Join(t.TempDir(), "export.tar")
@@ -3770,19 +3763,21 @@ func TestContainerForceCompression(t *testing.T) {
 					ForcedCompression: tc.compression,
 				})
 			require.NoError(t, err)
+
+			// check that docker compatible manifest is present
+			dockerManifestBytes := readTarFile(t, tarPath, "manifest.json")
+			require.NotNil(t, dockerManifestBytes)
+
 			indexBytes := readTarFile(t, tarPath, "index.json")
 			var index ocispecs.Index
 			require.NoError(t, json.Unmarshal(indexBytes, &index))
+
 			manifestDigest := index.Manifests[0].Digest
 			manifestBytes := readTarFile(t, tarPath, "blobs/sha256/"+manifestDigest.Encoded())
 			var manifest ocispecs.Manifest
 			require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
 			for _, layer := range manifest.Layers {
-				expectedMediaType := tc.expectedDockerMediaType
-				if tc.compression == dagger.Estargz {
-					expectedMediaType = tc.expectedOCIMediaType
-				}
-				require.EqualValues(t, expectedMediaType, layer.MediaType)
+				require.EqualValues(t, tc.expectedOCIMediaType, layer.MediaType)
 			}
 		})
 	}
@@ -3915,4 +3910,80 @@ func TestContainerFromMergesWithParent(t *testing.T) {
 	port, err := ports[0].Port(ctx)
 	require.NoError(t, err)
 	require.Equal(t, 5000, port)
+}
+
+func TestContainerImageLoadCompatibility(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+	defer c.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	for i, dockerVersion := range []string{"20.10", "23.0", "24.0"} {
+		port := 2375 + i
+		dockerd := c.Container().From(fmt.Sprintf("docker:%s-dind", dockerVersion)).
+			WithMountedCache("/var/lib/docker", c.CacheVolume(t.Name()+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
+				Sharing: dagger.Private,
+			}).
+			WithMountedCache("/tmp", c.CacheVolume(t.Name()+"-share-tmp")).
+			WithExposedPort(port).
+			WithExec([]string{
+				"dockerd",
+				"--host=tcp://0.0.0.0:" + strconv.Itoa(port),
+				"--tls=false",
+			}, dagger.ContainerWithExecOpts{
+				InsecureRootCapabilities: true,
+			})
+
+		dockerHost, err := dockerd.Endpoint(ctx, dagger.ContainerEndpointOpts{
+			Scheme: "tcp",
+		})
+		require.NoError(t, err)
+
+		for _, compression := range []dagger.ImageLayerCompression{dagger.Gzip, dagger.Zstd, dagger.Uncompressed} {
+			tmpdir := t.TempDir()
+			tmpfile := filepath.Join(tmpdir, fmt.Sprintf("test-%s-%s.tar", dockerVersion, compression))
+			_, err := c.Container().From("alpine:3.16.2").
+				// we need a unique image, otherwise docker load skips it after the first tar load
+				WithExec([]string{"sh", "-c", "echo " + string(compression) + " > /foo"}).
+				Export(ctx, tmpfile, dagger.ContainerExportOpts{
+					ForcedCompression: compression,
+				})
+			require.NoError(t, err)
+
+			randID := identity.NewID()
+			ctr := c.Container().From(fmt.Sprintf("docker:%s-cli", dockerVersion)).
+				WithEnvVariable("CACHEBUST", randID).
+				WithServiceBinding("docker", dockerd).
+				WithEnvVariable("DOCKER_HOST", dockerHost).
+				WithMountedCache("/tmp", c.CacheVolume(t.Name()+"-share-tmp")).
+				WithMountedFile(path.Join("/", path.Base(tmpfile)), c.Host().File(tmpfile)).
+				WithExec([]string{"cp", path.Join("/", path.Base(tmpfile)), "/tmp/"}, dagger.ContainerWithExecOpts{
+					SkipEntrypoint: true,
+				}).
+				WithExec([]string{"docker", "version"}).
+				WithExec([]string{"docker", "load", "-i", "/tmp/" + path.Base(tmpfile)})
+
+			output, err := ctr.Stdout(ctx)
+			if dockerVersion == "20.10" && compression == dagger.Zstd {
+				// zstd wasn't added until 23, so sanity check that it fails
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				_, imageID, ok := strings.Cut(output, "sha256:")
+				require.True(t, ok)
+				imageID = strings.TrimSpace(imageID)
+
+				_, err = ctr.WithExec([]string{"docker", "run", "--rm", imageID, "echo", "hello"}).Sync(ctx)
+				require.NoError(t, err)
+			}
+
+			// also check that buildkit can load+run it too
+			_, err = c.Container().
+				Import(c.Host().File(tmpfile)).
+				WithExec([]string{"echo", "hello"}).
+				Sync(ctx)
+			require.NoError(t, err)
+		}
+	}
 }
