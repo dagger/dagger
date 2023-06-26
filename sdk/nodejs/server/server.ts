@@ -3,7 +3,7 @@ import ts from "typescript"
 import Client from "../api/client.gen.js"
 import { UnknownDaggerError } from "../common/errors/UnknownDaggerError.js"
 import { connect } from "../connect.js"
-import { entrypointsMetadatatoGQLSchema } from "./convertor.js"
+import { convertResult, entrypointsMetadatatoGQLSchema } from "./convertor.js"
 import { Arg, EntrypointMetadata } from "./entrypointMetadata.js"
 import { serializeSignature, serializeSymbol } from "./serialization.js"
 import { listFiles, writeFile, readFile } from "./utils.js"
@@ -169,7 +169,9 @@ export async function serveCommands(
 
   await connect(async (client) => {
     const result = await fct.call(fct, client, ...args)
-    const output = JSON.stringify(result, null, 2)
+    const formattedResult = await convertResult(result)
+
+    const output = JSON.stringify(formattedResult, null, 2)
     await writeFile(output, "/outputs/dagger.json")
   })
 }

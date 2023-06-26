@@ -41,7 +41,12 @@ func TestProjectCmd(t *testing.T) {
 			expectedName: "basic",
 			expectedRoot: "../../../../../../",
 		},
-		// TODO: add ts projects once those are under testdata too
+		{
+			projectPath:  "core/integration/testdata/projects/typescript/basic",
+			expectedSDK:  "typescript",
+			expectedName: "basic",
+			expectedRoot: "../../../../../../",
+		},
 	} {
 		tc := tc
 		for _, testGitProject := range []bool{false, true} {
@@ -224,6 +229,10 @@ func TestProjectHostExport(t *testing.T) {
 			sdk:              "python",
 			expectedMainFile: "main.py",
 		},
+		{
+			sdk:              "typescript",
+			expectedMainFile: "index.mts",
+		},
 	} {
 		tc := tc
 		projectDir := fmt.Sprintf("core/integration/testdata/projects/%s/basic", tc.sdk)
@@ -377,6 +386,10 @@ func TestProjectDirImported(t *testing.T) {
 		{
 			sdk:              "python",
 			expectedMainFile: "main.py",
+		},
+		{
+			sdk:              "typescript",
+			expectedMainFile: "index.mts",
 		},
 	} {
 		tc := tc

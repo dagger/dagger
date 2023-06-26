@@ -30,7 +30,7 @@ export function convertTsToGqlType(type: string): string {
     return primFct()
   }
 
-  return "Unknown"
+  return type
 }
 
 type RenderFuncs = { [key: string]: (entrypoint: EntrypointMetadata) => string }
@@ -105,4 +105,23 @@ extend type Query {
     },
     entrypoints
   )
+}
+
+/**
+ * Convert Typescript result into expect GraphQL types
+ *
+ * @param result Output of the function call.
+ * @returns Actual output with correct values.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function convertResult(result: any): Promise<any> {
+  // Check if there's a function id in the result, which means it is a custom dagger Type.
+  // TODO: To ensure it actually comes from Dagger, we might extends all our custom type with
+  // a type `DaggerObject`.
+  // WARFNING: Right now, any class with a field ID will fit with this condition.
+  if (typeof result["id"] === "function") {
+    return await result["id"]()
+  }
+
+  return result
 }

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -47,7 +48,8 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"npm", "start"}
+		cfg.Entrypoint = []string{"npm", "start", "--"}
+		cfg.WorkingDir = path.Join(workdir, path.Dir(p.ConfigPath))
 		return cfg
 	})
 	if err != nil {
