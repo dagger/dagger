@@ -439,6 +439,17 @@ func (r *Container) File(path string) *File {
 	}
 }
 
+// Indicate that subsequent commands should be featured more
+// prominently in the UI.
+func (r *Container) Focus() *Container {
+	q := r.q.Select("focus")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Initializes this container from a pulled base image.
 func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
@@ -736,6 +747,19 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
+// Indicate that subsequent commands should not be featured
+// more prominently in the UI.
+//
+// This is the initial state of all containers.
+func (r *Container) Unfocus() *Container {
+	q := r.q.Select("unfocus")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
 	if r.user != nil {
@@ -849,9 +873,6 @@ func (r *Container) WithEnvVariable(name string, value string, opts ...Container
 
 // ContainerWithExecOpts contains options for Container.WithExec
 type ContainerWithExecOpts struct {
-	// Indicate that this command is a primary focus of the pipeline being run so
-	// that it will be featured more prominently in the UI.
-	Focus bool
 	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
 	SkipEntrypoint bool
 	// Content to write to the command's standard input before closing (e.g., "Hello world").
@@ -876,10 +897,6 @@ type ContainerWithExecOpts struct {
 func (r *Container) WithExec(args []string, opts ...ContainerWithExecOpts) *Container {
 	q := r.q.Select("withExec")
 	for i := len(opts) - 1; i >= 0; i-- {
-		// `focus` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Focus) {
-			q = q.Arg("focus", opts[i].Focus)
-		}
 		// `skipEntrypoint` optional argument
 		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
 			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)

@@ -506,6 +506,20 @@ type Container {
   ): Container!
 
   """
+  Indicate that subsequent commands should be featured more
+  prominently in the UI.
+  """
+  focus: Container!
+
+  """
+  Indicate that subsequent commands should not be featured
+  more prominently in the UI.
+
+  This is the initial state of all containers.
+  """
+  unfocus: Container!
+
+  """
   Retrieves this container after executing the specified command inside it.
   """
   withExec(
@@ -515,12 +529,6 @@ type Container {
     If empty, the container's default command is used.
     """
     args: [String!]!
-
-    """
-    Indicate that this command is a primary focus of the pipeline being run so
-    that it will be featured more prominently in the UI.
-    """
-    focus: Boolean
 
     """
     If the container has an entrypoint, ignore it for args rather than using it to wrap them.

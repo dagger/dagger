@@ -97,6 +97,8 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"hostname":             router.ToResolver(s.hostname),
 			"endpoint":             router.ToResolver(s.endpoint),
 			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
+			"focus":                router.ToResolver(s.focus),
+			"unfocus":              router.ToResolver(s.unfocus),
 		},
 	}
 }
@@ -840,4 +842,16 @@ func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Contain
 	}
 
 	return exposedPorts, nil
+}
+
+func (s *containerSchema) focus(ctx *router.Context, parent *core.Container, args any) (*core.Container, error) {
+	child := parent.Clone()
+	child.Focused = true
+	return child, nil
+}
+
+func (s *containerSchema) unfocus(ctx *router.Context, parent *core.Container, args any) (*core.Container, error) {
+	child := parent.Clone()
+	child.Focused = false
+	return child, nil
 }

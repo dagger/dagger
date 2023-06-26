@@ -486,6 +486,15 @@ class Container(Type):
         return File(_ctx)
 
     @typecheck
+    def focus(self) -> "Container":
+        """Indicate that subsequent commands should be featured more
+        prominently in the UI.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("focus", _args)
+        return Container(_ctx)
+
+    @typecheck
     def from_(self, address: str) -> "Container":
         """Initializes this container from a pulled base image.
 
@@ -868,6 +877,17 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
+    def unfocus(self) -> "Container":
+        """Indicate that subsequent commands should not be featured
+        more prominently in the UI.
+
+        This is the initial state of all containers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("unfocus", _args)
+        return Container(_ctx)
+
+    @typecheck
     async def user(self) -> Optional[str]:
         """Retrieves the user to be set for all commands.
 
@@ -994,7 +1014,6 @@ class Container(Type):
     def with_exec(
         self,
         args: Sequence[str],
-        focus: Optional[bool] = None,
         skip_entrypoint: Optional[bool] = None,
         stdin: Optional[str] = None,
         redirect_stdout: Optional[str] = None,
@@ -1011,10 +1030,6 @@ class Container(Type):
             Command to run instead of the container's default command (e.g.,
             ["run", "main.go"]).
             If empty, the container's default command is used.
-        focus:
-            Indicate that this command is a primary focus of the pipeline
-            being run so
-            that it will be featured more prominently in the UI.
         skip_entrypoint:
             If the container has an entrypoint, ignore it for args rather than
             using it to wrap them.
@@ -1044,7 +1059,6 @@ class Container(Type):
         """
         _args = [
             Arg("args", args),
-            Arg("focus", focus, None),
             Arg("skipEntrypoint", skip_entrypoint, None),
             Arg("stdin", stdin, None),
             Arg("redirectStdout", redirect_stdout, None),

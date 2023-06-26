@@ -248,12 +248,6 @@ export type ContainerWithEnvVariableOpts = {
 
 export type ContainerWithExecOpts = {
   /**
-   * Indicate that this command is a primary focus of the pipeline being run so
-   * that it will be featured more prominently in the UI.
-   */
-  focus?: boolean
-
-  /**
    * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    */
   skipEntrypoint?: boolean
@@ -1001,6 +995,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Indicate that subsequent commands should be featured more
+   * prominently in the UI.
+   */
+  focus(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "focus",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Initializes this container from a pulled base image.
    * @param address Image's address from its registry.
    *
@@ -1307,6 +1318,25 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Indicate that subsequent commands should not be featured
+   * more prominently in the UI.
+   *
+   * This is the initial state of all containers.
+   */
+  unfocus(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "unfocus",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves the user to be set for all commands.
    */
   async user(): Promise<string> {
@@ -1419,8 +1449,6 @@ export class Container extends BaseClient {
    * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
    *
    * If empty, the container's default command is used.
-   * @param opts.focus Indicate that this command is a primary focus of the pipeline being run so
-   * that it will be featured more prominently in the UI.
    * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
    * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
    * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
