@@ -34,8 +34,8 @@ client = Dagger.connect!()
 
 client
 |> Dagger.Query.container([])
-|> Dagger.Container.from(address: "hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
-|> Dagger.Container.with_exec(args: ["elixir", "--version"])
+|> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
+|> Dagger.Container.with_exec(["elixir", "--version"])
 |> Dagger.Container.stdout()
 |> IO.puts()
 ```
