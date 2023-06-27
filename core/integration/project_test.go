@@ -60,7 +60,7 @@ func TestProjectCmd(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				output, err := CLITestContainer(ctx, t, c, "").
 					WithLoadedProject(tc.projectPath, testGitProject).
 					CallProject().
 					Stderr(ctx)
@@ -139,7 +139,7 @@ func TestProjectCmdInit(t *testing.T) {
 			t.Parallel()
 			c, ctx := connect(t)
 			defer c.Close()
-			ctr := CLITestContainer(ctx, t, c).
+			ctr := CLITestContainer(ctx, t, c, tc.sdk).
 				WithProjectArg(tc.projectPath).
 				WithSDKArg(tc.sdk).
 				WithNameArg(tc.name).
@@ -171,7 +171,7 @@ func TestProjectCmdInit(t *testing.T) {
 		t.Parallel()
 		c, ctx := connect(t)
 		defer c.Close()
-		_, err := CLITestContainer(ctx, t, c).
+		_, err := CLITestContainer(ctx, t, c, "").
 			WithLoadedProject("core/integration/testdata/projects/go/basic", false).
 			WithSDKArg("go").
 			WithNameArg("foo").
@@ -192,7 +192,7 @@ func TestProjectCommandHierarchy(t *testing.T) {
 			c, ctx := connect(t)
 			defer c.Close()
 
-			output, err := CLITestContainer(ctx, t, c).
+			output, err := CLITestContainer(ctx, t, c, sdk).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:foo").
 				CallDo().
@@ -200,7 +200,7 @@ func TestProjectCommandHierarchy(t *testing.T) {
 			require.NoError(t, err)
 			require.Contains(t, output, "hello from foo")
 
-			output, err = CLITestContainer(ctx, t, c).
+			output, err = CLITestContainer(ctx, t, c, sdk).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:bar").
 				CallDo().
@@ -251,7 +251,7 @@ func TestProjectHostExport(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 					defer c.Close()
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-file").
 						WithUserArg("file-prefix", prefix).
@@ -270,7 +270,7 @@ func TestProjectHostExport(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)
 					defer c.Close()
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-dir").
 						WithUserArg("dir-prefix", prefix).
@@ -297,7 +297,7 @@ func TestProjectHostExport(t *testing.T) {
 					defer c.Close()
 
 					outputPath := "/var/blahblah.txt"
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-file").
 						WithOutputArg(outputPath).
@@ -314,7 +314,7 @@ func TestProjectHostExport(t *testing.T) {
 					defer c.Close()
 
 					outputDir := "/var"
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-file").
 						WithOutputArg(outputDir).
@@ -331,7 +331,7 @@ func TestProjectHostExport(t *testing.T) {
 					defer c.Close()
 
 					outputDir := "/var"
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-dir").
 						WithOutputArg(outputDir).
@@ -354,7 +354,7 @@ func TestProjectHostExport(t *testing.T) {
 					c, ctx := connect(t)
 					defer c.Close()
 					outputDir := "/var"
-					ctr, err := CLITestContainer(ctx, t, c).
+					ctr, err := CLITestContainer(ctx, t, c, tc.sdk).
 						WithLoadedProject(projectDir, testGitProject).
 						WithTarget("test-export-local-dir").
 						WithOutputArg(outputDir).
@@ -406,7 +406,7 @@ func TestProjectDirImported(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				output, err := CLITestContainer(ctx, t, c, tc.sdk).
 					WithLoadedProject(projectDir, testGitProject).
 					WithTarget("test-imported-project-dir").
 					CallDo().

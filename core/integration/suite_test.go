@@ -262,7 +262,7 @@ func lastNLines(str string, n int) string {
 
 const testCLIBinPath = "/bin/dagger"
 
-func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
+func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client, language string) *DaggerCLIContainer {
 	t.Helper()
 	ctr := c.Container().From("alpine:3.16.2").
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
@@ -275,6 +275,7 @@ func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *Dagg
 		ctx:       ctx,
 		t:         t,
 		c:         c,
+		Language:  language,
 	}
 }
 
@@ -286,6 +287,7 @@ type DaggerCLIContainer struct {
 
 	// common
 	ProjectArg string
+	Language   string
 
 	// "do"
 	OutputArg string
@@ -313,9 +315,20 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 	})
 	projectArg := filepath.Join(cliContainerRepoMntPath, projectPath)
 
+	// Build typescript library so it can be used within dagger integration test
+	if ctr.Language == "typescript" {
+		thisRepoDir = ctr.c.Container().
+			From("node:18-alpine").
+			WithDirectory("/src", thisRepoDir, dagger.ContainerWithDirectoryOpts{}).
+			WithExec([]string{"npm", "install", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+			WithExec([]string{"npm", "run", "build", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+			Directory("/src")
+	}
+
 	baseCtr := ctr.Container
 	if convertToGitProject {
 		gitSvc, _ := gitService(ctr.ctx, ctr.t, ctr.c, thisRepoDir)
+
 		baseCtr = baseCtr.WithServiceBinding("git", gitSvc)
 
 		endpoint, err := gitSvc.Endpoint(ctr.ctx)

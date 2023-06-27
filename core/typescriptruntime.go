@@ -2,11 +2,10 @@ package core
 
 import (
 	"context"
-	"path"
-
 	"github.com/dagger/dagger/core/pipeline"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	"path"
 )
 
 func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
@@ -40,17 +39,18 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 		return nil, err
 	}
 
-	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args: []string{"npm", "install"},
+	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
+		cfg.Entrypoint = []string{"npm", "start", "--"}
+		cfg.WorkingDir = path.Join(workdir, path.Dir(p.ConfigPath))
+		return cfg
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"npm", "start", "--"}
-		cfg.WorkingDir = path.Join(workdir, path.Dir(p.ConfigPath))
-		return cfg
+	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		Args:           []string{"npm", "install"},
+		SkipEntrypoint: true,
 	})
 	if err != nil {
 		return nil, err
