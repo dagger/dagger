@@ -6,7 +6,15 @@ import typing
 from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import MISSING, asdict, dataclass, field, is_dataclass, replace
-from typing import Annotated, Any, ParamSpec, TypeGuard, TypeVar, overload
+from typing import (
+    Annotated,
+    Any,
+    ParamSpec,
+    TypeGuard,
+    TypeVar,
+    get_type_hints,
+    overload,
+)
 
 import anyio
 import cattrs
@@ -40,38 +48,78 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 
-@dataclass
+@dataclass(slots=True)
 class Field:
     type_name: str
     name: str
     args: dict[str, Any]
+    children: dict[str, "Field"] = field(default_factory=dict)
 
     def to_dsl(self, schema: DSLSchema) -> DSLField:
         type_: DSLType = getattr(schema, self.type_name)
-        field: DSLField = getattr(type_, self.name)(**self.args)
-        return field
+        field_ = getattr(type_, self.name)(**self.args)
+        if self.children:
+            field_ = field_.select(
+                **{name: child.to_dsl(schema) for name, child in self.children.items()}
+            )
+        return field_
+
+    def add_child(self, child: "Field") -> "Field":
+        return replace(self, children={child.name: child})
 
 
-@dataclass
+@dataclass(slots=True)
 class Context:
     session: AsyncClientSession | SyncClientSession
     schema: DSLSchema
     selections: deque[Field] = field(default_factory=deque)
-    converter: cattrs.Converter = field(
-        default_factory=functools.partial(make_converter, detailed_validation=False)
-    )
+    converter: cattrs.Converter = field(init=False)
+
+    def __post_init__(self):
+        conv = make_converter(detailed_validation=False)
+
+        # For types that were returned from a list we need to set
+        # their private attributes with a custom structuring function.
+
+        def _needs_hook(cls: type) -> bool:
+            return issubclass(cls, Type) and hasattr(cls, "__slots__")
+
+        def _struct(d: dict[str, Any], cls: type) -> Any:
+            obj = cls(self)
+            hints = get_type_hints(cls)
+            for slot in getattr(cls, "__slots__", ()):
+                t = hints.get(slot)
+                if t and slot in d:
+                    setattr(obj, slot, conv.structure(d[slot], t))
+            return obj
+
+        conv.register_structure_hook_func(
+            _needs_hook,
+            _struct,
+        )
+
+        self.converter = conv
 
     def select(
-        self,
-        type_name: str,
-        field_name: str,
-        args: dict[str, Any],
+        self, type_name: str, field_name: str, args: dict[str, Any]
     ) -> "Context":
-        field = Field(type_name, field_name, args)
-
+        field_ = Field(type_name, field_name, args)
         selections = self.selections.copy()
-        selections.append(field)
+        selections.append(field_)
+        return replace(self, selections=selections)
 
+    def select_multiple(self, type_name: str, **fields: str) -> "Context":
+        selections = self.selections.copy()
+        parent = selections.pop()
+        # When selecting multiple fields, set them as children of the last
+        # selection to make `build` logic simpler.
+        field_ = replace(
+            parent,
+            # Using kwargs for alias names. This way the returned result
+            # is already formatted with the python name we expect.
+            children={k: Field(type_name, v, {}) for k, v in fields.items()},
+        )
+        selections.append(field_)
         return replace(self, selections=selections)
 
     def build(self) -> DSLSelectable:
@@ -79,14 +127,16 @@ class Context:
             msg = "No field has been selected"
             raise InvalidQueryError(msg)
 
-        selections = self.selections.copy()
-        selectable = selections.pop().to_dsl(self.schema)
+        def _collapse(child: Field, field_: Field):
+            return field_.add_child(child)
 
-        while selections:
-            parent = selections.pop().to_dsl(self.schema)
-            selectable = parent.select(selectable)
+        # This transforms the selection set into a single root Field, where
+        # the `children` attribute is set to the next selection in the set,
+        # and so on...
+        root = functools.reduce(_collapse, reversed(self.selections))
 
-        return selectable
+        # `to_dsl` will cascade to all children, until the end.
+        return root.to_dsl(self.schema)
 
     def query(self) -> graphql.DocumentNode:
         return dsl_gql(DSLQuery(self.build()))
@@ -123,24 +173,29 @@ class Context:
             result = self.session.execute(query)
         return self.get_value(result, return_type) if return_type else None
 
+    @overload
+    def get_value(self, value: None, return_type: Any) -> None:
+        ...
+
+    @overload
+    def get_value(self, value: dict[str, Any], return_type: type[T]) -> T:
+        ...
+
     def get_value(self, value: dict[str, Any] | None, return_type: type[T]) -> T | None:
-        if value is not None:
-            value = self.structure_response(value, return_type)
-        if value is None and not TypeHint(return_type).is_bearable(None):
+        type_hint = TypeHint(return_type)
+
+        for f in self.selections:
+            if not isinstance(value, dict):
+                break
+            value = value[f.name]
+
+        if value is None and not type_hint.is_bearable(value):
             msg = (
                 "Required field got a null response. Check if parent fields are valid."
             )
             raise InvalidQueryError(msg)
-        return value
 
-    def structure_response(
-        self, response: dict[str, Any], return_type: type[T]
-    ) -> T | None:
-        for f in self.selections:
-            response = response[f.name]
-            if response is None:
-                return None
-        return self.converter.structure(response, return_type)
+        return self.converter.structure(value, return_type)
 
     async def resolve_ids(self) -> None:
         """Replace Type object instances with their ID implicitly."""
@@ -267,10 +322,12 @@ def as_input_arg(val):
 class Type(Object):
     """Object type."""
 
+    __slots__ = ("_ctx",)
+
     def __init__(self, ctx: Context) -> None:
         self._ctx = ctx
 
-    def _select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
+    def _select(self, field_name: str, args: typing.Sequence[Arg]):
         _args = {
             arg.name: as_input_arg(arg.value)
             for arg in args
@@ -278,8 +335,11 @@ class Type(Object):
         }
         return self._ctx.select(self._graphql_name(), field_name, _args)
 
-    def _root_select(self, field_name: str, args: typing.Sequence[Arg]) -> Context:
+    def _root_select(self, field_name: str, args: typing.Sequence[Arg]):
         return Root._from_context(self._ctx)._select(field_name, args)  # noqa: SLF001
+
+    def _select_multiple(self, **kwargs):
+        return self._ctx.select_multiple(self._graphql_name(), **kwargs)
 
     def with_(self, cb: Callable[[Self], Self]) -> Self:
         """

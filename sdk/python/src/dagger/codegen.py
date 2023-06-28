@@ -1,19 +1,19 @@
 import enum
 import functools
+import itertools
 import logging
 import re
 import textwrap
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import InitVar, dataclass, field
 from datetime import date, datetime, time
 from decimal import Decimal
 from functools import partial
 from itertools import chain, groupby
 from keyword import iskeyword
-from operator import attrgetter
+from operator import attrgetter, itemgetter
 from typing import (
-    Any,
     ClassVar,
     Generic,
     ParamSpec,
@@ -44,11 +44,14 @@ from graphql import (
     GraphQLType,
     GraphQLWrappingType,
     Undefined,
+    assert_leaf_type,
+    assert_object_type,
     get_named_type,
     is_leaf_type,
     is_required_argument,
 )
 from graphql.pyutils import camel_to_snake
+from graphql.type.schema import TypeMap
 
 ACRONYM_RE = re.compile(r"([A-Z\d]+)(?=[A-Z\d]|$)")
 """Pattern for grouping initialisms."""
@@ -65,11 +68,28 @@ wrap_indent = partial(wrap, initial_indent=" " * 4, subsequent_indent=" " * 4)
 
 T_ParamSpec = ParamSpec("T_ParamSpec")
 
+# These alias types are used to make the code more self-documenting.
 IDName: TypeAlias = str
 TypeName: TypeAlias = str
-QueryFieldName: TypeAlias = str
+FieldName: TypeAlias = str
+PythonName: TypeAlias = str
+OutputTypeFormat: TypeAlias = str
+
 IDMap: TypeAlias = dict[IDName, TypeName]
-IDQueryMap: TypeAlias = dict[IDName, QueryFieldName]
+IDQueryMap: TypeAlias = dict[IDName, FieldName]
+
+SimpleFieldMap: TypeAlias = dict[FieldName, "SimpleField"]
+SimpleObjectsMap: TypeAlias = dict[TypeName, SimpleFieldMap]
+
+
+def joiner(func: Callable[T_ParamSpec, Iterator[str]]) -> Callable[T_ParamSpec, str]:
+    """Join elements with a new line from an iterator."""
+
+    @functools.wraps(func)
+    def wrapper(*args: T_ParamSpec.args, **kwargs: T_ParamSpec.kwargs) -> str:
+        return "\n".join(func(*args, **kwargs))
+
+    return wrapper
 
 
 class Scalars(enum.Enum):
@@ -91,16 +111,6 @@ class Scalars(enum.Enum):
             return t.name
 
 
-def joiner(func: Callable[T_ParamSpec, Iterator[str]]) -> Callable[T_ParamSpec, str]:
-    """Join elements with a new line from an iterator."""
-
-    @functools.wraps(func)
-    def wrapper(*args: T_ParamSpec.args, **kwargs: T_ParamSpec.kwargs) -> str:
-        return "\n".join(func(*args, **kwargs))
-
-    return wrapper
-
-
 @dataclass
 class Context:
     """Shared state during execution."""
@@ -114,13 +124,61 @@ class Context:
     id_query_map: IDQueryMap
     """Map to convert types to ids."""
 
+    simple_objects_map: SimpleObjectsMap
+    """Map of simple leaf fields for types that are returned in lists."""
+
+    defined: set[str] = field(default_factory=set)
+    """Types that have already been defined."""
+
     remaining: set[str] = field(default_factory=set)
     """Remaining type names that haven't been defined yet."""
 
+    def process_type(self, name: str):
+        # This is only needed to keep track of remaining types because
+        # of forward references.
+        self.remaining.remove(name)
+        self.defined.add(name)
 
-# TODO: break into class
+
+_H = TypeVar("_H", bound=GraphQLNamedType)
+"""Handler generic type"""
+
+
+Predicate: TypeAlias = Callable[..., bool]
+
+
+@dataclass
+class Handler(ABC, Generic[_H]):
+    ctx: Context
+    """Generation execution context."""
+
+    predicate: ClassVar[Predicate] = staticmethod(lambda _: False)
+    """Does this handler render the given type?"""
+
+    def supertype_name(self, _: _H) -> str:
+        return self.__class__.__name__
+
+    def type_name(self, t: _H) -> str:
+        return t.name
+
+    @joiner
+    def render(self, t: _H) -> Iterator[str]:
+        yield ""
+        yield self.render_head(t)
+        yield indent(self.render_body(t))
+        yield ""
+
+    def render_head(self, t: _H) -> str:
+        return f"class {self.type_name(t)}({self.supertype_name(t)}):"
+
+    @joiner
+    def render_body(self, t: _H) -> Iterator[str]:
+        if t.description:
+            yield from wrap(doc(t.description))
+
+
 @joiner
-def generate(  # noqa: C901
+def generate(
     schema: GraphQLSchema,
     sync: bool = False,  # noqa: FBT001, FBT002
 ) -> Iterator[str]:
@@ -138,48 +196,18 @@ def generate(  # noqa: C901
         """,
     )
 
-    # Collect object types for all id return types.
-    # Used to replace custom scalars by objects in inputs.
-    id_map: IDMap = {}
-    for type_name, t in schema.type_map.items():
-        if not is_object_type(t):
-            continue
-        fields: dict[str, GraphQLField] = t.fields
-        for field_name, f in fields.items():
-            if field_name == "id":
-                field_type = get_named_type(f.type)
-                id_map[field_type.name] = type_name
-
-    query_type = cast(GraphQLObjectType, schema.type_map["Query"])
-    query_fields: dict[str, GraphQLField] = query_type.fields
-
-    # Collect fields under Query that receive an id argument and return
-    # an object type that also has an id field that returns the same
-    # id type as the Query field argument.
-    #
-    # Example:
-    #   `Query.directory(id: DirectoryID): Directory` matches
-    #   `Directory.id(): DirectoryID`
-    #
-    # Used to create a classmethod that returns a Directory instance
-    # from a DirectoryID by telling us which field to query for.
-    id_query_map: IDQueryMap = {}
-    for field_name, f in query_fields.items():
-        field_type = get_named_type(f.type)
-        id_arg = f.args.get("id")
-        # Ignore fields that have required arguments other than id.
-        if not id_arg or any(
-            is_required_argument(arg)
-            for arg_name, arg in f.args.items()
-            if arg_name != "id"
-        ):
-            continue
-        id_type = get_named_type(id_arg.type)
-        if id_map.get(id_type.name) == field_type.name:
-            id_query_map[id_type.name] = field_name
+    # Pre-create handy maps to make handler code simpler.
+    id_map = create_id_map(schema.type_map)
+    id_query_map = create_id_query_map(id_map, schema.type_map)
+    simple_objects_map = create_simple_objects_map(schema.type_map)
 
     # shared state between all handler instances
-    ctx = Context(sync=sync, id_map=id_map, id_query_map=id_query_map)
+    ctx = Context(
+        sync=sync,
+        id_map=id_map,
+        id_query_map=id_query_map,
+        simple_objects_map=simple_objects_map,
+    )
 
     handlers: tuple[Handler, ...] = (
         Scalar(ctx),
@@ -188,44 +216,157 @@ def generate(  # noqa: C901
         Object(ctx),
     )
 
-    def _sort_key(t: GraphQLNamedType) -> tuple[int, str]:
-        for i, handler in enumerate(handlers):
-            if handler.predicate(t):
-                return i, t.name
-        return -1, t.name
+    # Split into two iterators to update ctx.remaining.
+    types_n, types_g = itertools.tee(get_grouped_types(handlers, schema.type_map))
 
-    def _group_key(t: GraphQLNamedType) -> Handler | None:
-        for handler in handlers:
-            if handler.predicate(t):
-                return handler
-        return None
+    # Track types that haven't been defined yet, to format as a forward reference.
+    ctx.remaining.update(name for _, name, _ in types_n)
 
-    def _type_name(t: GraphQLNamedType) -> str:
-        if t.name.startswith("_") or (
-            is_scalar_type(t) and not is_custom_scalar_type(t)
-        ):
-            return ""
-        return t.name.replace("Query", "Client")
-
-    all_types = sorted(schema.type_map.values(), key=_sort_key)
-    remaining = {_type_name(t) for t in all_types}
-    ctx.remaining = {n for n in remaining if n}
-
-    defined = []
-    for handler, types in groupby(all_types, _group_key):
-        for t in types:
-            type_name = _type_name(t)
-            if not handler or not type_name:
-                ctx.remaining.discard(type_name)
-                continue
-            yield handler.render(t)
-            defined.append(type_name)
-            ctx.remaining.discard(type_name)
+    for handler, type_name, named_type in types_g:
+        yield handler.render(named_type)
+        ctx.process_type(type_name)
 
     yield ""
     yield "__all__ = ["
-    yield from (indent(f'"{name}",') for name in defined)
+    yield from (indent(f"{quote(name)},") for name in sorted(ctx.defined))
     yield "]"
+
+
+def create_id_map(type_map: TypeMap) -> IDMap:
+    """Create a map of id type names to object type names.
+
+    Used to replace custom scalars by objects in inputs.
+    """
+
+    def _iter():
+        for type_name, t in type_map.items():
+            if not is_object_type(t):
+                continue
+            fields: dict[str, GraphQLField] = t.fields
+            for field_name, f in fields.items():
+                if field_name == "id":
+                    field_type = get_named_type(f.type)
+                    yield field_type.name, type_name
+
+    return dict(_iter())
+
+
+def create_id_query_map(id_map: IDMap, type_map: TypeMap) -> IDQueryMap:
+    """Create a map of id type names to Query field names.
+
+    Collects fields under Query that receive an id argument and return
+    an object type that also has an id field that returns the same
+    id type as the Query field argument.
+
+    Example:
+      `Query.directory(id: DirectoryID): Directory` matches
+      `Directory.id(): DirectoryID`
+
+    Used to create a classmethod that returns a Directory instance
+    from a DirectoryID by telling us which field to query for.
+    """
+    root_type = cast(GraphQLObjectType, type_map["Query"])
+    root_fields: dict[str, GraphQLField] = root_type.fields
+
+    def _iter():
+        for field_name, f in root_fields.items():
+            field_type = get_named_type(f.type)
+            id_arg = f.args.get("id")
+            # Ignore fields that have required arguments other than id.
+            if not id_arg or any(
+                is_required_argument(arg)
+                for arg_name, arg in f.args.items()
+                if arg_name != "id"
+            ):
+                continue
+            id_type = get_named_type(id_arg.type)
+            if id_map.get(id_type.name) == field_type.name:
+                yield id_type.name, field_name
+
+    return dict(_iter())
+
+
+@dataclass(slots=True)
+class SimpleField:
+    name: InitVar[str]
+    graphql_type: InitVar[GraphQLLeafType]
+    python_name: str = field(init=False)
+    graphql_name: str = field(init=False)
+    type_format: str = field(init=False)
+
+    def __post_init__(self, name: str, graphql_field: GraphQLLeafType):
+        graphql_field = assert_leaf_type(graphql_field)
+        self.graphql_name = name
+        # Create a private version of the field to avoid name clashes.
+        self.python_name = f"_{format_name(name)}"
+        self.type_format = format_output_type(graphql_field)
+
+    def as_kwarg(self) -> str:
+        return f"{self}={quote(self.graphql_name)}"
+
+    def as_attr(self) -> str:
+        return f"{self}: {self.type_format}"
+
+    def __str__(self) -> str:
+        return self.python_name
+
+
+def create_simple_objects_map(type_map: TypeMap) -> SimpleObjectsMap:
+    """Create a map of object type names that are returned in lists.
+
+    The values are maps of python attribute names to the simple leaf
+    GraphQL fields that they represent.
+
+    This is used to populate object types with pre-selected fields
+    when they are returned in lists because our simple chainable API
+    makes it hard to query a field that comes from a list (i.e., which
+    index in the list to get the result from?).
+    """
+
+    def _leaf_fields(named_type: GraphQLNamedType):
+        # Assertion for type checker. Already guaranteed by get_lists_of_object_types
+        object_type = assert_object_type(named_type)
+        for f_name, f in object_type.fields.items():
+            field_name = str(f_name)
+            # This strips all wrapping (e.g., List, NonNull) from the type.
+            named_field_type = get_named_type(f.type)
+            # Ignore id fields which have special meaning.
+            if field_name != "id" and is_leaf_type(named_field_type):
+                yield field_name, SimpleField(field_name, named_field_type)
+
+    return {
+        named_type.name: dict(_leaf_fields(type_map[named_type.name]))
+        for named_type in set(get_lists_of_object_types(type_map))
+    }
+
+
+def get_lists_of_object_types(type_map: TypeMap):
+    """Get object types that are returned in lists."""
+    for t in type_map.values():
+        if t.name.startswith("_") or not is_object_type(t):
+            continue
+        for f in t.fields.values():
+            if is_list_of_objects_type(f.type):
+                yield get_named_type(f.type)
+
+
+def get_grouped_types(handlers: tuple[Handler, ...], type_map: TypeMap):
+    """Group types by handler and sorted by their name."""
+
+    def _filtered():
+        for n, t in type_map.items():
+            if n.startswith("_") or is_builtin_scalar_type(t):
+                continue
+            for i, handler in enumerate(handlers):
+                if handler.predicate(t):
+                    yield i, n
+
+    for _, items in groupby(sorted(_filtered()), itemgetter(0)):
+        for index, name in items:
+            named_type = type_map[name]
+            handler = handlers[index]
+            formatted_name = handler.type_name(named_type)
+            yield handler, formatted_name, named_type
 
 
 # TODO: these typeguards should be contributed upstream
@@ -237,7 +378,15 @@ def is_required_type(t: GraphQLType) -> TypeGuard[GraphQLNonNull]:
 
 
 def is_list_type(t: GraphQLType) -> TypeGuard[GraphQLList]:
+    if is_required_type(t):
+        t = t.of_type
     return isinstance(t, GraphQLList)
+
+
+def is_list_of_objects_type(
+    t: GraphQLType,
+) -> TypeGuard[GraphQLList[GraphQLObjectType]]:
+    return is_list_type(t) and is_object_type(get_named_type(t))
 
 
 def is_wrapping_type(t: GraphQLType) -> TypeGuard[GraphQLWrappingType]:
@@ -260,9 +409,13 @@ def is_output_leaf_type(t: GraphQLOutputType) -> TypeGuard[GraphQLLeafType]:
     return is_leaf_type(get_named_type(t))
 
 
-def is_custom_scalar_type(t: GraphQLNamedType) -> TypeGuard[GraphQLScalarType]:
+def is_custom_scalar_type(t: GraphQLType) -> TypeGuard[GraphQLScalarType]:
     t = get_named_type(t)
     return is_scalar_type(t) and t.name not in Scalars.__members__
+
+
+def is_builtin_scalar_type(t: GraphQLNamedType) -> TypeGuard[GraphQLScalarType]:
+    return is_scalar_type(t) and not is_custom_scalar_type(t)
 
 
 def is_enum_type(t: GraphQLNamedType) -> TypeGuard[GraphQLEnumType]:
@@ -270,6 +423,7 @@ def is_enum_type(t: GraphQLNamedType) -> TypeGuard[GraphQLEnumType]:
 
 
 def format_name(s: str) -> str:
+    """Format a GraphQL field or argument name into Python."""
     # rewrite acronyms, initialisms and abbreviations
     s = ACRONYM_RE.sub(lambda m: m.group(0).title(), s)
     s = camel_to_snake(s)
@@ -292,24 +446,16 @@ def format_input_type(t: GraphQLInputType, id_map: IDMap) -> str:
     if is_custom_scalar_type(t) and t.name in id_map:
         return fmt % id_map[t.name]
 
-    return fmt % (Scalars.from_type(t) if is_scalar_type(t) else t.name)
+    return fmt % (Scalars.from_type(t) if is_scalar_type(t) else get_named_type(t).name)
 
 
 def format_output_type(t: GraphQLOutputType) -> str:
     """May be used as the output type of an object field."""
-    # only wrap optional and list when ready
-    if is_output_leaf_type(t):
-        return format_input_type(t, {})
-
-    # when building the query return shouldn't be None
-    # even if optional to not break the chain while
-    # we're only building the query
-    # TODO: detect this when returning the scalar
-    #        since it affects the result
-    if is_wrapping_type(t):
-        return format_output_type(t.of_type)
-
-    return Scalars.from_type(t) if is_scalar_type(t) else t.name
+    # When returning objects we're in query building mode, so don't return
+    # None even if the field's return is optional.
+    if not is_output_leaf_type(t) and not is_required_type(t):
+        t = GraphQLNonNull(t)
+    return format_input_type(t, {})
 
 
 def output_type_description(t: GraphQLOutputType) -> str:
@@ -325,6 +471,11 @@ def doc(s: str) -> str:
     if "\n" in s:
         s = f"{s}\n"
     return f'"""{s}"""'
+
+
+def quote(s: str) -> str:
+    """Wrap string in quotes."""
+    return f'"{s}"'
 
 
 class _InputField:
@@ -396,7 +547,7 @@ class _InputField:
 
     def as_arg(self) -> str:
         """As a Arg object for the query builder."""
-        params = [f'"{self.graphql_name}"', self.name]
+        params = [quote(self.graphql_name), self.name]
         if self.has_default:
             # repr uses single quotes for strings, contrary to black
             params.append(repr(self.default_value).replace("'", '"'))
@@ -425,17 +576,32 @@ class _ObjectField:
         )
         self.description = field.description
 
-        self.is_leaf = is_output_leaf_type(field.type)
         self.is_custom_scalar = is_custom_scalar_type(field.type)
+        self.is_leaf = is_output_leaf_type(field.type)
+        self.is_exec = self.is_leaf
         self.type = format_output_type(field.type).replace("Query", "Client")
         self.parent_name = get_named_type(parent).name
-        self.convert_id = False
+
+        # If this field returns a list of objects, get the type's fields
+        # for pre-selection.
+        self.sub_select_slots = ()
+        if is_list_of_objects_type(field.type):
+            self.is_exec = True
+            self.sub_select_slots = tuple(
+                ctx.simple_objects_map.get(self.named_type.name, {}).values()
+            )
+
+        # Slot fields are fields that can be prefilled from the result of a list.
+        self.slot_field = self.ctx.simple_objects_map.get(self.parent_name, {}).get(
+            name
+        )
 
         # Currently, `sync` is the only field where the error is all we
         # care about but more could be added later.
         # To avoid wasting a result, we return the ID which is a leaf value
         # and triggers execution, but then convert to object in the SDK to
         # allow continued chaining.
+        self.convert_id = False
         if (
             name != "id"
             and self.is_leaf
@@ -487,8 +653,10 @@ class _ObjectField:
         # arbitrary heuristic to force trailing comma in long signatures
         if len(params) > 40:  # noqa: PLR2004
             params = f"{params},"
-        prefix = "" if self.ctx.sync or not self.is_leaf else "async "
-        sig = f"{prefix}def {self.name}({params}) -> {self.type}:"
+        sig = f"def {self.name}({params}) -> {self.type}:"
+        if self.is_exec and not self.ctx.sync:
+            sig = f"async {sig}"
+        # Add quotes around types that haven't been defined yet (forward references).
         if self.ctx.remaining:
             sig = re.sub(rf"\b({'|'.join(self.ctx.remaining)})\b", r'"\1"', sig)
         return sig
@@ -510,6 +678,10 @@ class _ObjectField:
                 )\
                 """)
 
+        if self.slot_field:
+            yield f'if hasattr(self, "{self.slot_field.python_name}"):'
+            yield indent(f"return self.{self.slot_field.python_name}")
+
         if not self.args:
             yield "_args: list[Arg] = []"
         else:
@@ -519,7 +691,7 @@ class _ObjectField:
 
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
-        if self.is_leaf:
+        if self.is_exec:
             exec_ = "_ctx.execute_sync" if self.ctx.sync else "await _ctx.execute"
             if self.convert_id:
                 if _field := self.id_query_field:
@@ -530,6 +702,10 @@ class _ObjectField:
                     yield f"{exec_}()"
                     yield "return self"
             else:
+                if slots := self.sub_select_slots:
+                    target = self.named_type.name
+                    kwargs = ", ".join(s.as_kwarg() for s in slots)
+                    yield f"_ctx = {target}(_ctx)._select_multiple({kwargs},)"
                 yield f"return {exec_}({self.type})"
         else:
             yield f"return {self.type}(_ctx)"
@@ -603,45 +779,9 @@ class _ObjectField:
         )
 
 
-_H = TypeVar("_H", bound=GraphQLNamedType)
-"""Handler generic type"""
-
-
-class Predicate(Protocol):
-    def __call__(self, _: Any) -> bool:
-        ...
-
-
-@dataclass
-class Handler(ABC, Generic[_H]):
-    ctx: Context
-    """Generation execution context."""
-
-    predicate: ClassVar[Predicate] = staticmethod(lambda _: False)
-    """Does this handler render the given type?"""
-
-    @joiner
-    def render(self, t: _H) -> Iterator[str]:
-        yield ""
-        yield self.render_head(t)
-        yield indent(self.render_body(t))
-        yield ""
-
-    def render_head(self, t: _H) -> str:
-        return f"class {t.name}(Type):"
-
-    @joiner
-    def render_body(self, t: _H) -> Iterator[str]:
-        if t.description:
-            yield from wrap(doc(t.description))
-
-
 @dataclass
 class Scalar(Handler[GraphQLScalarType]):
     predicate: ClassVar[Predicate] = staticmethod(is_custom_scalar_type)
-
-    def render_head(self, t: GraphQLScalarType) -> str:
-        return super().render_head(t).replace("Type", "Scalar")
 
     def render_body(self, t: GraphQLScalarType) -> str:
         return super().render_body(t) or "..."
@@ -650,9 +790,6 @@ class Scalar(Handler[GraphQLScalarType]):
 @dataclass
 class Enum(Handler[GraphQLEnumType]):
     predicate: ClassVar[Predicate] = staticmethod(is_enum_type)
-
-    def render_head(self, t: GraphQLEnumType) -> str:
-        return super().render_head(t).replace("Type", "Enum")
 
     @joiner
     def render_body(self, t: GraphQLEnumType) -> Iterator[str]:
@@ -693,10 +830,17 @@ class ObjectHandler(Handler[_O]):
     def render_body(self, t: _O) -> Iterator[str]:
         if body := super().render_body(t):
             yield body
+
+        if slots := self.ctx.simple_objects_map.get(t.name):
+            yield ""
+            yield f"__slots__ = ({', '.join(quote(str(s)) for s in slots.values())},)"
+            yield ""
+            yield from (s.as_attr() for s in slots.values())
+
         yield from (
             str(field)
-            # sorting by graphql name rather than pytnon name for
-            # consistency with other SDKs
+            # Sorting by graphql name rather than python name for
+            # consistency with other SDKs.
             for field in sorted(self.fields(t), key=attrgetter("graphql_name"))
         )
 
@@ -705,7 +849,7 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
     predicate: ClassVar[Predicate] = staticmethod(is_input_object_type)
 
     def render_head(self, t: GraphQLInputObjectType) -> str:
-        return f"@dataclass\nclass {t.name}(Input):"
+        return f"@dataclass(slots=True)\n{super().render_head(t)}"
 
     def fields(self, t: GraphQLInputObjectType) -> Iterator[_InputField]:
         return (
@@ -717,8 +861,11 @@ class Input(ObjectHandler[GraphQLInputObjectType]):
 class Object(ObjectHandler[GraphQLObjectType]):
     predicate: ClassVar[Predicate] = staticmethod(is_object_type)
 
-    def render_head(self, t: GraphQLObjectType) -> str:
-        return super().render_head(t).replace("Query(Type)", "Client(Root)")
+    def supertype_name(self, t: GraphQLObjectType) -> str:
+        return "Root" if t.name == "Query" else "Type"
+
+    def type_name(self, t: GraphQLObjectType) -> str:
+        return super().type_name(t).replace("Query", "Client")
 
     def fields(self, t: GraphQLObjectType) -> Iterator[_ObjectField]:
         return (
