@@ -3,7 +3,7 @@ from typing import NamedTuple
 
 import pytest
 
-from dagger.api.base import Context, InvalidQueryError, Scalar
+from dagger.api.base import Context, Field, InvalidQueryError, Scalar
 
 
 class SomeID(Scalar):
@@ -18,13 +18,7 @@ class F(NamedTuple):
 def context(mocker):
     session = mocker.MagicMock()
     schema = mocker.MagicMock()
-    selections = deque(
-        [
-            F("one"),
-            F("two"),
-            F("three"),
-        ],
-    )
+    selections = deque(Field("T", f, {}) for f in ("one", "two", "three"))
     return Context(session, schema, selections)
 
 
@@ -57,3 +51,9 @@ def test_scalar(ctx: Context):
     actual = ctx.get_value(r, SomeID)
     assert isinstance(actual, SomeID)
     assert actual == "144"
+
+
+def test_list(ctx: Context):
+    r = {"one": {"two": ["200", "201"]}}
+    actual = ctx.get_value(r, list[SomeID])
+    assert actual == [SomeID("200"), SomeID("201")]

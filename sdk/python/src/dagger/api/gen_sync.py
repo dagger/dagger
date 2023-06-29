@@ -84,7 +84,7 @@ class NetworkProtocol(Enum):
     """UDP (User Datagram Protocol)"""
 
 
-@dataclass
+@dataclass(slots=True)
 class BuildArg(Input):
     """Key value object that represents a build argument."""
 
@@ -95,7 +95,7 @@ class BuildArg(Input):
     """The build argument value."""
 
 
-@dataclass
+@dataclass(slots=True)
 class PipelineLabel(Input):
     """Key value object that represents a Pipeline label."""
 
@@ -311,11 +311,15 @@ class Container(Type):
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def env_variables(self) -> "EnvVariable":
+    def env_variables(self) -> list["EnvVariable"]:
         """Retrieves the list of environment variables passed to commands."""
         _args: list[Arg] = []
         _ctx = self._select("envVariables", _args)
-        return EnvVariable(_ctx)
+        _ctx = EnvVariable(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return _ctx.execute_sync(list[EnvVariable])
 
     @typecheck
     def exec(
@@ -446,7 +450,7 @@ class Container(Type):
         return _ctx.execute_sync(bool)
 
     @typecheck
-    def exposed_ports(self) -> "Port":
+    def exposed_ports(self) -> list["Port"]:
         """Retrieves the list of exposed ports.
 
         This includes ports already exposed by the image, even if not
@@ -457,7 +461,12 @@ class Container(Type):
         """
         _args: list[Arg] = []
         _ctx = self._select("exposedPorts", _args)
-        return Port(_ctx)
+        _ctx = Port(_ctx)._select_multiple(
+            _description="description",
+            _port="port",
+            _protocol="protocol",
+        )
+        return _ctx.execute_sync(list[Port])
 
     @typecheck
     def file(self, path: str) -> "File":
@@ -645,11 +654,15 @@ class Container(Type):
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def labels(self) -> "Label":
+    def labels(self) -> list["Label"]:
         """Retrieves the list of labels passed to container."""
         _args: list[Arg] = []
         _ctx = self._select("labels", _args)
-        return Label(_ctx)
+        _ctx = Label(_ctx)._select_multiple(
+            _name="name",
+            _value="value",
+        )
+        return _ctx.execute_sync(list[Label])
 
     @typecheck
     def mounts(self) -> list[str]:
@@ -1956,6 +1969,14 @@ class EnvVariable(Type):
     """A simple key value object that represents an environment
     variable."""
 
+    __slots__ = (
+        "_name",
+        "_value",
+    )
+
+    _name: Optional[str]
+    _value: Optional[str]
+
     @typecheck
     def name(self) -> str:
         """The environment variable name.
@@ -1974,6 +1995,8 @@ class EnvVariable(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
@@ -1996,6 +2019,8 @@ class EnvVariable(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_value"):
+            return self._value
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
         return _ctx.execute_sync(str)
@@ -2445,6 +2470,14 @@ class HostVariable(Type):
 class Label(Type):
     """A simple key value object that represents a label."""
 
+    __slots__ = (
+        "_name",
+        "_value",
+    )
+
+    _name: Optional[str]
+    _value: Optional[str]
+
     @typecheck
     def name(self) -> str:
         """The label name.
@@ -2463,6 +2496,8 @@ class Label(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
@@ -2485,6 +2520,8 @@ class Label(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_value"):
+            return self._value
         _args: list[Arg] = []
         _ctx = self._select("value", _args)
         return _ctx.execute_sync(str)
@@ -2492,6 +2529,16 @@ class Label(Type):
 
 class Port(Type):
     """A port exposed by a container."""
+
+    __slots__ = (
+        "_description",
+        "_port",
+        "_protocol",
+    )
+
+    _description: Optional[str]
+    _port: Optional[int]
+    _protocol: Optional[NetworkProtocol]
 
     @typecheck
     def description(self) -> Optional[str]:
@@ -2511,6 +2558,8 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_description"):
+            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return _ctx.execute_sync(Optional[str])
@@ -2533,6 +2582,8 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_port"):
+            return self._port
         _args: list[Arg] = []
         _ctx = self._select("port", _args)
         return _ctx.execute_sync(int)
@@ -2553,6 +2604,8 @@ class Port(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_protocol"):
+            return self._protocol
         _args: list[Arg] = []
         _ctx = self._select("protocol", _args)
         return _ctx.execute_sync(NetworkProtocol)
@@ -2563,11 +2616,16 @@ class Project(Type):
     invoked."""
 
     @typecheck
-    def commands(self) -> "ProjectCommand":
+    def commands(self) -> list["ProjectCommand"]:
         """Commands provided by this project"""
         _args: list[Arg] = []
         _ctx = self._select("commands", _args)
-        return ProjectCommand(_ctx)
+        _ctx = ProjectCommand(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+            _result_type="resultType",
+        )
+        return _ctx.execute_sync(list[ProjectCommand])
 
     @typecheck
     def id(self) -> ProjectID:
@@ -2641,6 +2699,16 @@ class Project(Type):
 class ProjectCommand(Type):
     """A command defined in a project that can be invoked from the CLI."""
 
+    __slots__ = (
+        "_description",
+        "_name",
+        "_result_type",
+    )
+
+    _description: Optional[str]
+    _name: Optional[str]
+    _result_type: Optional[str]
+
     @typecheck
     def description(self) -> Optional[str]:
         """Documentation for what this command does.
@@ -2659,16 +2727,22 @@ class ProjectCommand(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_description"):
+            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def flags(self) -> "ProjectCommandFlag":
+    def flags(self) -> list["ProjectCommandFlag"]:
         """Flags accepted by this command."""
         _args: list[Arg] = []
         _ctx = self._select("flags", _args)
-        return ProjectCommandFlag(_ctx)
+        _ctx = ProjectCommandFlag(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return _ctx.execute_sync(list[ProjectCommandFlag])
 
     @typecheck
     def id(self) -> ProjectCommandID:
@@ -2720,6 +2794,8 @@ class ProjectCommand(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
@@ -2742,20 +2818,35 @@ class ProjectCommand(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_result_type"):
+            return self._result_type
         _args: list[Arg] = []
         _ctx = self._select("resultType", _args)
         return _ctx.execute_sync(Optional[str])
 
     @typecheck
-    def subcommands(self) -> "ProjectCommand":
+    def subcommands(self) -> list["ProjectCommand"]:
         """Subcommands, if any, that this command provides."""
         _args: list[Arg] = []
         _ctx = self._select("subcommands", _args)
-        return ProjectCommand(_ctx)
+        _ctx = ProjectCommand(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+            _result_type="resultType",
+        )
+        return _ctx.execute_sync(list[ProjectCommand])
 
 
 class ProjectCommandFlag(Type):
     """A flag accepted by a project command."""
+
+    __slots__ = (
+        "_description",
+        "_name",
+    )
+
+    _description: Optional[str]
+    _name: Optional[str]
 
     @typecheck
     def description(self) -> Optional[str]:
@@ -2775,6 +2866,8 @@ class ProjectCommandFlag(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_description"):
+            return self._description
         _args: list[Arg] = []
         _ctx = self._select("description", _args)
         return _ctx.execute_sync(Optional[str])
@@ -2797,6 +2890,8 @@ class ProjectCommandFlag(Type):
         QueryError
             If the API returns an error.
         """
+        if hasattr(self, "_name"):
+            return self._name
         _args: list[Arg] = []
         _ctx = self._select("name", _args)
         return _ctx.execute_sync(str)
@@ -3117,35 +3212,35 @@ class Socket(Type):
 
 
 __all__ = [
-    "CacheID",
-    "ContainerID",
-    "DirectoryID",
-    "FileID",
-    "Platform",
-    "ProjectCommandID",
-    "ProjectID",
-    "SecretID",
-    "SocketID",
-    "CacheSharingMode",
-    "ImageLayerCompression",
-    "NetworkProtocol",
     "BuildArg",
-    "PipelineLabel",
+    "CacheID",
+    "CacheSharingMode",
     "CacheVolume",
+    "Client",
     "Container",
+    "ContainerID",
     "Directory",
+    "DirectoryID",
     "EnvVariable",
     "File",
+    "FileID",
     "GitRef",
     "GitRepository",
     "Host",
     "HostVariable",
+    "ImageLayerCompression",
     "Label",
+    "NetworkProtocol",
+    "PipelineLabel",
+    "Platform",
     "Port",
     "Project",
     "ProjectCommand",
     "ProjectCommandFlag",
-    "Client",
+    "ProjectCommandID",
+    "ProjectID",
     "Secret",
+    "SecretID",
     "Socket",
+    "SocketID",
 ]

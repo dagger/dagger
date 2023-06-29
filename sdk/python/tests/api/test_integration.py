@@ -239,3 +239,34 @@ async def test_deprecation_warning():
     async with dagger.Connection() as client:
         with pytest.warns(DeprecationWarning, match="with_exec"):
             await client.container().from_("alpine:3.16.2").exec(["true"])
+
+
+async def test_return_list_of_objects():
+    async with dagger.Connection() as client:
+        envs = await client.container().from_("alpine:3.16.2").env_variables()
+        assert await envs[0].name() == "PATH"
+
+
+async def test_env_variable_set(mocker):
+    """Check if private properties can be set manually."""
+    ctx = mocker.MagicMock()
+    ctx.select.return_value = ctx
+    ctx.execute = mocker.AsyncMock(return_value="BAR")
+
+    env_var = dagger.EnvVariable(ctx)
+    env_var._name = "FOO"  # noqa: SLF001
+    env_var._value = "foo"  # noqa: SLF001
+
+    ctx.select.assert_not_called()
+    assert await env_var.name() == "FOO"
+    assert await env_var.value() == "foo"
+
+
+async def test_env_variable_empty(mocker):
+    """Check if private properties don't interrupt normal flow if not set."""
+    ctx = mocker.MagicMock()
+    ctx.select.return_value = ctx
+    ctx.execute = mocker.AsyncMock(return_value="BAR")
+
+    env_var = dagger.EnvVariable(ctx)
+    assert await env_var.name() == "BAR"

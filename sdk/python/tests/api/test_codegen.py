@@ -38,6 +38,7 @@ def ctx():
             "ContainerID": "container",
             "DirectoryID": "directory",
         },
+        simple_objects_map={},
         remaining={"Secret"},
     )
 
@@ -107,8 +108,8 @@ cache_volume = Object(
         (Scalar("FileID"), "Optional[FileID]"),
         (NonNull(cache_volume), "CacheVolume"),
         (cache_volume, "CacheVolume"),
-        (List(NonNull(cache_volume)), "CacheVolume"),
-        (List(cache_volume), "CacheVolume"),
+        (List(NonNull(cache_volume)), "list[CacheVolume]"),
+        (List(cache_volume), "list[Optional[CacheVolume]]"),
     ],
 )
 def test_format_output_type(graphql, expected):
