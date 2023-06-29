@@ -6,16 +6,22 @@
 
     <groupId>org.chelonix.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>0.6.2-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
-        <module>dagger-codegen</module>
-        <module>dagger-sdk-smallrye-graphql</module>
+        <module>dagger-codegen-maven-plugin</module>
+        <module>dagger-java-sdk</module>
+        <module>dagger-java-samples</module>
     </modules>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.chelonix.dagger</groupId>
+                <artifactId>dagger-java-sdk</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.smallrye</groupId>
                 <artifactId>smallrye-graphql-client-api</artifactId>
@@ -34,17 +40,12 @@
             <dependency>
                 <groupId>jakarta.json.bind</groupId>
                 <artifactId>jakarta.json.bind-api</artifactId>
-                <version>3.0.0</version>
+                <version>${jakarta.json.bind-api.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.samskivert</groupId>
-                <artifactId>jmustache</artifactId>
-                <version>${jmustache.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-text</artifactId>
-                <version>${commons-text.version}</version>
+                <groupId>com.squareup</groupId>
+                <artifactId>javapoet</artifactId>
+                <version>${javapoet.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.commons</groupId>
@@ -52,9 +53,62 @@
                 <version>${commons-lang.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.google.code.gson</groupId>
-                <artifactId>gson</artifactId>
-                <version>2.10.1</version>
+                <groupId>net.kothar</groupId>
+                <artifactId>xdg-java</artifactId>
+                <version>${xdg-java.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-compress</artifactId>
+                <version>${commons-compress.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.ongres</groupId>
+                <artifactId>fluent-process</artifactId>
+                <version>${fluent-process.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-plugin-api</artifactId>
+                <version>3.8.8</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven</groupId>
+                <artifactId>maven-project</artifactId>
+                <version>2.2.1</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-api</artifactId>
+                <version>2.0.0</version>
+            </dependency>
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>2.0.7</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.maven.plugin-tools</groupId>
+                <artifactId>maven-plugin-annotations</artifactId>
+                <version>3.8.1</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj-core.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito-core.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -64,8 +118,28 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${maven-resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.11.0</version>
+                    <version>${maven-compiler-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven-failsafe-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-javadoc-plugin</artifactId>
+                    <version>${maven-javadoc-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.chelonix.dagger</groupId>
+                    <artifactId>dagger-codegen-maven-plugin</artifactId>
+                    <version>${project.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -76,14 +150,21 @@
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
-        <graphql-maven-plugin.version>2.0RC1</graphql-maven-plugin.version>
-        <graphql-java.version>20.2</graphql-java.version>
-        <smallrye-graphql.version>2.2.0</smallrye-graphql.version>
-        <jakarta.json-api.version>2.1.2</jakarta.json-api.version>
-        <jmustache.version>1.15</jmustache.version>
-        <commons-text.version>1.9</commons-text.version>
+        <assertj-core.version>3.24.2</assertj-core.version>
+        <commons-compress.version>1.21</commons-compress.version>
         <commons-lang.version>3.12.0</commons-lang.version>
-        <tree.version>0.2.5</tree.version>
+        <fluent-process.version>1.0.1</fluent-process.version>
+        <jakarta.json-api.version>2.1.2</jakarta.json-api.version>
+        <jakarta.json.bind-api.version>3.0.0</jakarta.json.bind-api.version>
+        <javapoet.version>1.13.0</javapoet.version>
+        <junit.version>5.9.3</junit.version>
+        <maven-compiler-plugin.version>3.11.0</maven-compiler-plugin.version>
+        <maven-failsafe-plugin.version>3.0.0</maven-failsafe-plugin.version>
+        <maven-javadoc-plugin.version>3.5.0</maven-javadoc-plugin.version>
+        <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
+        <smallrye-graphql.version>2.2.1</smallrye-graphql.version>
+        <xdg-java.version>0.1.1</xdg-java.version>
+        <mockito-core.version>5.2.0</mockito-core.version>
     </properties>
 
 </project>
