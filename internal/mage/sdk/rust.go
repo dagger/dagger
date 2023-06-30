@@ -74,12 +74,13 @@ func (r Rust) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	version := "rustlang/rust:nightly-slim"
+	version := "rust:1.70.0-bookworm"
 	generated := r.rustBase(ctx, c.Pipeline(version), version).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
+		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"})
