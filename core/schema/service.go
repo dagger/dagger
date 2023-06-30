@@ -49,7 +49,8 @@ func (s *serviceSchema) service(ctx *router.Context, parent *core.Query, args se
 }
 
 func (s *serviceSchema) containerService(ctx *router.Context, parent *core.Container, args any) (*core.Service, error) {
-	return parent.Service, nil
+	progSock := &core.Socket{HostPath: s.progSock}
+	return parent.Service(ctx, s.gw, progSock)
 }
 
 func (s *serviceSchema) id(ctx *router.Context, parent *core.Service, args any) (core.ServiceID, error) {

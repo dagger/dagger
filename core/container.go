@@ -53,8 +53,9 @@ type Container struct {
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
 
-	// Service stores the service representation of the container.
-	Service *Service `json:"service,omitempty"`
+	// ServiceExec is a Service representation of a WithExec. It may be null if
+	// no exec has happened yet.
+	ServiceExec *Service `json:"service_exec,omitempty"`
 
 	// The platform of the container's rootfs.
 	Platform specs.Platform `json:"platform,omitempty"`
@@ -1058,13 +1059,13 @@ func metaMount(stdin string) (llb.State, string) {
 
 func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSock *Socket, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	stripped := *container
-	stripped.Service = nil
+	stripped.ServiceExec = nil
 	svc := &Service{
 		Container: &stripped,
 		Exec:      opts,
 	}
 	container = container.Clone()
-	container.Service = svc
+	container.ServiceExec = svc
 
 	cfg := container.Config
 	mounts := container.Mounts
@@ -1793,6 +1794,18 @@ func (container *Container) ImageRefOrErr(ctx context.Context, gw bkgw.Client) (
 	}
 
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
+}
+
+func (container *Container) Service(ctx context.Context, gw bkgw.Client, progSock *Socket) (*Service, error) {
+	if container.ServiceExec == nil {
+		var err error
+		container, err = container.WithExec(ctx, gw, progSock, container.Platform, ContainerExecOpts{})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return container.ServiceExec, nil
 }
 
 func (container *Container) ownership(ctx context.Context, gw bkgw.Client, owner string) (*Ownership, error) {
