@@ -78,8 +78,7 @@ defmodule Dagger.QueryBuilder do
         {:error, %Dagger.QueryError{errors: errors}}
 
       {:ok, %{status: 200, body: %{"data" => data}}} ->
-        # TODO: returns {:ok, response}.
-        select_data(data, Selection.path(selection) |> Enum.reverse())
+        {:ok, select_data(data, Selection.path(selection) |> Enum.reverse())}
 
       otherwise ->
         otherwise
