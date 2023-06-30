@@ -81,7 +81,6 @@ func (r Rust) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
 		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
 		WithExec([]string{"cargo", "fmt"})
@@ -240,6 +239,7 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 		Container().
 		From(image).
 		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo")).
+		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "install", "cargo-chef"}).
 		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{
