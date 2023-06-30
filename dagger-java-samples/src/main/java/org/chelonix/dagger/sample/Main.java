@@ -14,7 +14,7 @@ public class Main {
             ReadFileInGitRepository.class,
             GetGitVersion.class,
             CreateAndUseSecret.class,
-            GetGitVersion.class
+            TestWithDatabase.class
     };
 
     public static void main(String... args) {
