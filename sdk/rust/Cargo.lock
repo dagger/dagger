@@ -320,7 +320,6 @@ dependencies = [
  "eyre",
  "flate2",
  "futures",
- "genco",
  "graphql_client",
  "hex",
  "hex-literal",
