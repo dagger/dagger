@@ -12,6 +12,7 @@
 
     <artifactId>dagger-java-sdk</artifactId>
     <version>0.6.2-SNAPSHOT</version>
+    <description>Java SDK for Dagger.io</description>
 
     <dependencies>
         <dependency>
@@ -33,7 +34,6 @@
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>
             <artifactId>json-path</artifactId>
-            <version>2.8.0</version>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>

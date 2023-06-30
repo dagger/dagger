@@ -1,7 +1,5 @@
 package org.chelonix.dagger.codegen.introspection;
 
-import java.io.IOException;
-
 public interface SchemaVisitor {
 
     void visitScalar(Type type);

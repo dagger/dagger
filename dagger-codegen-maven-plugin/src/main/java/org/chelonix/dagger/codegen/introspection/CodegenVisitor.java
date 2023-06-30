@@ -1,13 +1,8 @@
 package org.chelonix.dagger.codegen.introspection;
 
-import com.squareup.javapoet.*;
-
-import javax.lang.model.element.Modifier;
 import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.file.Path;
-
-import static org.apache.commons.lang3.StringUtils.capitalize;
 
 public class CodegenVisitor implements SchemaVisitor {
 
@@ -15,14 +10,6 @@ public class CodegenVisitor implements SchemaVisitor {
     private final InputVisitor inputVisitor;
     private final EnumVisitor enumVisitor;
     private final ObjectVisitor objectVisitor;
-
-    private static MethodSpec getter(String var, TypeName type) {
-        return MethodSpec.methodBuilder("get" + capitalize(var))
-                .addModifiers(Modifier.PUBLIC)
-                .returns(type)
-                .addStatement("return this.$L", var)
-                .build();
-    }
 
     public CodegenVisitor(Schema schema, Path targetDirectory, Charset encoding) {
         this.scalarVisitor = new ScalarVisitor(schema, targetDirectory, encoding);

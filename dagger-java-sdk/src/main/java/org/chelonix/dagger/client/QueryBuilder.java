@@ -2,7 +2,6 @@ package org.chelonix.dagger.client;
 
 import com.jayway.jsonpath.JsonPath;
 import io.smallrye.graphql.client.GraphQLError;
-import io.smallrye.graphql.client.Request;
 import io.smallrye.graphql.client.Response;
 import io.smallrye.graphql.client.core.Document;
 import io.smallrye.graphql.client.core.Field;

@@ -13,39 +13,29 @@
     <artifactId>dagger-codegen-maven-plugin</artifactId>
     <packaging>maven-plugin</packaging>
     <version>0.6.2-SNAPSHOT</version>
+    <description>Maven plugin for Dagger.io API codegen</description>
 
     <dependencies>
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-plugin-api</artifactId>
-            <version>3.8.8</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.maven.plugin-tools</groupId>
             <artifactId>maven-plugin-annotations</artifactId>
-            <version>3.8.1</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.maven</groupId>
             <artifactId>maven-project</artifactId>
-            <version>2.2.1</version>
             <scope>provided</scope>
         </dependency>
         <!-- Dependencies for GraphQL -->
         <dependency>
-            <groupId>io.smallrye</groupId>
-            <artifactId>smallrye-graphql-client-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.smallrye</groupId>
-            <artifactId>smallrye-graphql-client-implementation-vertx</artifactId>
+            <groupId>org.eclipse</groupId>
+            <artifactId>yasson</artifactId>
             <scope>runtime</scope>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.json</groupId>
-            <artifactId>jakarta.json-api</artifactId>
         </dependency>
         <dependency>
             <groupId>jakarta.json.bind</groupId>

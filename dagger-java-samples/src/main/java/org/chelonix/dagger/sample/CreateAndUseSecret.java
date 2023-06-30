@@ -6,8 +6,12 @@ import java.util.List;
 
 public class CreateAndUseSecret {
     public static void main(String... args) throws Exception {
+        String token = System.getenv("GH_API_TOKEN");
+        if (token == null) {
+            token = new String(System.console().readPassword("GithHub API token: "));
+        }
         try(Client client = Dagger.connect()) {
-            Secret secret = client.setSecret("ghApiToken", System.getenv("GH_API_TOKEN"));
+            Secret secret = client.setSecret("ghApiToken", token);
 
             // use secret in container environment
             String out = client.container()

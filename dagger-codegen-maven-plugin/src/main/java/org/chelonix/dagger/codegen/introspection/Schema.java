@@ -3,10 +3,7 @@ package org.chelonix.dagger.codegen.introspection;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.Comparator;
 import java.util.List;
-import jakarta.json.Json;
-import jakarta.json.JsonObject;
 import jakarta.json.bind.JsonbBuilder;
 import jakarta.json.bind.annotation.JsonbProperty;
 

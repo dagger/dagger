@@ -6,7 +6,7 @@ import org.chelonix.dagger.client.Dagger;
 
 import java.util.List;
 
-public class SimpleContainer {
+public class RunContainer {
     public static void main(String... args) throws Exception {
         try(Client client = Dagger.connect()) {
             Container container = client.container()

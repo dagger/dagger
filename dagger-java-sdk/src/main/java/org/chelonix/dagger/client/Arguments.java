@@ -1,7 +1,6 @@
 package org.chelonix.dagger.client;
 
 import io.smallrye.graphql.client.core.Argument;
-import io.smallrye.graphql.client.core.InputObject;
 import io.smallrye.graphql.client.core.InputObjectField;
 
 import java.util.ArrayList;

@@ -20,7 +20,6 @@ import java.nio.charset.Charset;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
-import java.util.concurrent.TimeUnit;
 
 @Mojo(name = "codegen",
         defaultPhase = LifecyclePhase.GENERATE_SOURCES,

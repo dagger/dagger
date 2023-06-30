@@ -66,4 +66,32 @@ public class GetDaggerWebsite {
 }
 ```
 
-Look at the `dagger-java-samples` module for more code samples.
+### Run sample code snippets
+
+The `dagger-java-samples` module contains code samples.
+
+Run the samples with this command:
+
+```bash
+# Build the packages 
+./mvnw package
+# Run the samples 
+./mvnw exec:java -pl dagger-java-samples
+```
+
+Then select the sample to run:
+```
+=== Dagger.io Java SDK samples ===
+  1 - org.chelonix.dagger.sample.RunContainer
+  2 - org.chelonix.dagger.sample.GetDaggerWebsite
+  3 - org.chelonix.dagger.sample.ListEnvVars
+  4 - org.chelonix.dagger.sample.MountHostDirectoryInContainer
+  5 - org.chelonix.dagger.sample.ListHostDirectoryContents
+  6 - org.chelonix.dagger.sample.ReadFileInGitRepository
+  7 - org.chelonix.dagger.sample.GetGitVersion
+  8 - org.chelonix.dagger.sample.CreateAndUseSecret
+  9 - org.chelonix.dagger.sample.GetGitVersion
+  q - exit
+
+Select sample:
+```
