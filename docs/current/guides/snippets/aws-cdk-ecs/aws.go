@@ -126,11 +126,11 @@ func (c *AWSClient) cdkDeployStack(ctx context.Context, client *dagger.Client, s
 		WithExec(cdkCommand).
 		Sync(ctx)
 
-    if err != nil {
-        var exErr *dagger.ExecError
-        if errors.As(err, &exErr) {
-            return nil, fmt.Errorf("cdk deploy exited with code %d", exErr.ExitCode)
-        }
+	if err != nil {
+		var exErr *dagger.ExecError
+		if errors.As(err, &exErr) {
+			return nil, fmt.Errorf("cdk deploy exited with code %d", exErr.ExitCode)
+		}
 		return nil, err
 	}
 

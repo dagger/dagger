@@ -25,7 +25,7 @@ func main() {
 		WithExposedPort(6379).
 		WithMountedCache("/data", client.CacheVolume("my-redis")).
 		WithWorkdir("/data").
-		Service(nil)
+		Service()
 
 	// create Redis client container
 	redisCLI := client.Container().
