@@ -1,0 +1,4 @@
+source 'https://rubygems.org'
+
+gem 'graphlient'
+gem 'dagger', path: "./dagger"

@@ -1,0 +1,35 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    activesupport (7.0.5.1)
+      concurrent-ruby (~> 1.0, >= 1.0.2)
+      i18n (>= 1.6, < 2)
+      minitest (>= 5.1)
+      tzinfo (~> 2.0)
+    concurrent-ruby (1.2.2)
+    faraday (2.7.8)
+      faraday-net_http (>= 2.0, < 3.1)
+      ruby2_keywords (>= 0.0.4)
+    faraday-net_http (3.0.2)
+    graphlient (0.7.0)
+      faraday (~> 2.0)
+      graphql-client
+    graphql (2.0.24)
+    graphql-client (0.18.0)
+      activesupport (>= 3.0)
+      graphql
+    i18n (1.14.1)
+      concurrent-ruby (~> 1.0)
+    minitest (5.18.1)
+    ruby2_keywords (0.0.5)
+    tzinfo (2.0.6)
+      concurrent-ruby (~> 1.0)
+
+PLATFORMS
+  arm64-darwin-22
+
+DEPENDENCIES
+  graphlient
+
+BUNDLED WITH
+   2.4.2
