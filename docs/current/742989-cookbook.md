@@ -708,6 +708,38 @@ The following code listing demonstrates how to add multiple environment variable
 
 ## Integrations
 
+### Docker Engine
+
+The following code shows different ways to integrate with the Docker Engine.
+
+#### Connecting to Docker Engine on the host
+
+This shows how to connect to a Docker Engine on the host machine, by mounting the Docker unix socket into a container, and running the `docker` CLI.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/docker-engine-host/main.go
+```
+
+</TabItem>
+
+<TabItem value="Node.JS">
+
+```javascript file=./guides/snippets/docker-engine-host/index.mjs
+```
+
+</TabItem>
+
+<TabItem value="Python">
+
+```python file=./guides/snippets/docker-engine-host/main.py
+```
+
+</TabItem>
+
+</Tabs>
+
 ### AWS Cloud Development Kit
 
 The following code listing builds, publishes and deploys a container using the Amazon Web Services (AWS) Cloud Development Kit (CDK).
