@@ -1,0 +1,119 @@
+# Draft for a Zenith extension to the Dagger API GraphQL schema
+
+extend type Query {
+    "The current environment"
+    here: Environment!
+
+    "Load a new environment"
+    environment(
+        "Source code of the environment"
+        source: Directory!,
+        "Working directory of the environment"
+        workdir: Directory!): Environment!
+    )
+}
+
+"API for your Dagger environment"
+type Environment {
+  "Command-line tools available in the environment"
+  tools: [Tool!]
+  "Lookup a command-line tool by name"
+  tool(name: String!): Tool!
+
+  "Artifacts available in the environment"
+  artifacts(filters: [String!]): [Artifact!]
+
+  """
+  Checks available in the environment
+  This could be unit tests, integration tests, linting, etc.
+  """
+  checks: [Checks!]
+  "Lookup a check by name"
+  check(name: String!): Check!
+
+  "Services available in the environment"
+  services: [Service!]
+  "Lookup a service by name"
+  service(name: String!): Service!
+  
+  "Interactive shells available in the environment"
+  shells: [Shell!]
+  "Lookup a shell by name"
+  shell(name: String!): Shell!
+
+  "The working directory for this environment"
+  workdir: Directory!
+
+  "Direct access to the environment as a data graph. Great for scripting and composition"
+  graph: EnvironmentGraph!
+
+  """
+  Extend this environment with the capabilities of other environments.
+  If no namespace is provided, environments are merged - this may cause naming conflicts.
+  """
+  withExtension(namespace: String, environment: Environment!): Environment!
+  "Extensions currently added to the environment"
+  extensions: [String!]!
+  "Lookup an extension by its namespace"
+  extension(namespace: String!) Environment!
+
+  "Warm up the environment cache by pre-executing as much of the DAG as possible. This may make subsequent operations considerably faster"
+  warmup: Environment!
+}
+
+
+type EnvironmentGraph {
+    # This type will be extended by an environment-specific graphql schema
+}
+
+type Tool {
+    name: String!
+    description: String
+    commands: [ToolCommand!]!
+}
+
+type ToolCommand {
+    name: String!
+    description: String
+    subcommands: [ToolCommand!]
+    # invocation?
+}
+
+type Artifact {
+    name: String!
+    description: String
+    version: String
+    labels: [String!]
+    contents: ArtifactData!
+    sbom: String!
+}
+
+union ArtifactData {
+    Directory
+    File
+    Container
+}
+
+type Checks {
+  name: String!
+  description: String
+  result: CheckResult!
+  subchecks: [Check!]
+}
+
+type CheckResult {
+  success: Boolean!
+  output: String!
+}
+
+type Shell {
+    name: String!
+    description: String
+    terminal: Stream
+}
+
+// A bi-directional byte stream (eg. for terminal emulation)
+type Stream {
+    // Path to the websocket stream, relative to the current HTTP server
+    wsPath: String!
+}
