@@ -212,44 +212,6 @@ export type ContainerPublishOpts = {
   mediaTypes?: ImageMediaTypes
 }
 
-export type ContainerServiceOpts = {
-  /**
-   * If the container has an entrypoint, ignore it for args rather than using it to wrap them.
-   */
-  skipEntrypoint?: boolean
-
-  /**
-   * Content to write to the command's standard input before closing (e.g., "Hello world").
-   */
-  stdin?: string
-
-  /**
-   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   */
-  redirectStdout?: string
-
-  /**
-   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   */
-  redirectStderr?: string
-
-  /**
-   * Provides dagger access to the executed command.
-   *
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   */
-  experimentalPrivilegedNesting?: boolean
-
-  /**
-   * Execute the command with all root capabilities. This is similar to running a command
-   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
-   * does not provide any security guarantees when using this option. It should only be used
-   * when absolutely necessary and only with trusted commands.
-   */
-  insecureRootCapabilities?: boolean
-}
-
 export type ContainerWithDefaultArgsOpts = {
   /**
    * Arguments to prepend to future executions (e.g., ["-v", "--no-cache"]).
@@ -1242,30 +1204,14 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves a service that will run the specified command in the container.
-   * @param args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   *
-   * If empty, the container's default command is used.
-   * @param opts.skipEntrypoint If the container has an entrypoint, ignore it for args rather than using it to wrap them.
-   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   * @param opts.experimentalPrivilegedNesting Provides dagger access to the executed command.
-   *
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   * @param opts.insecureRootCapabilities Execute the command with all root capabilities. This is similar to running a command
-   * with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
-   * does not provide any security guarantees when using this option. It should only be used
-   * when absolutely necessary and only with trusted commands.
+   * Retrieves a service that will run the container.
    */
-  service(args: string[], opts?: ContainerServiceOpts): Service {
+  service(): Service {
     return new Service({
       queryTree: [
         ...this._queryTree,
         {
           operation: "service",
-          args: { args, ...opts },
         },
       ],
       host: this.clientHost,

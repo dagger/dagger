@@ -94,9 +94,9 @@ func TestClientWaitsForEngine(t *testing.T) {
 			Permissions: 0700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
-		Service(nil, dagger.ContainerServiceOpts{
+		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).Service()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
@@ -117,9 +117,9 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	engineName := "my-special-engine"
 	devEngineSvc := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
-		Service([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerServiceOpts{
+		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).Service()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)

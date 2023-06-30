@@ -753,61 +753,9 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    def service(
-        self,
-        args: Sequence[str],
-        skip_entrypoint: Optional[bool] = None,
-        stdin: Optional[str] = None,
-        redirect_stdout: Optional[str] = None,
-        redirect_stderr: Optional[str] = None,
-        experimental_privileged_nesting: Optional[bool] = None,
-        insecure_root_capabilities: Optional[bool] = None,
-    ) -> "Service":
-        """Retrieves a service that will run the specified command in the
-        container.
-
-        Parameters
-        ----------
-        args:
-            Command to run instead of the container's default command (e.g.,
-            ["run", "main.go"]).
-            If empty, the container's default command is used.
-        skip_entrypoint:
-            If the container has an entrypoint, ignore it for args rather than
-            using it to wrap them.
-        stdin:
-            Content to write to the command's standard input before closing
-            (e.g., "Hello world").
-        redirect_stdout:
-            Redirect the command's standard output to a file in the container
-            (e.g., "/tmp/stdout").
-        redirect_stderr:
-            Redirect the command's standard error to a file in the container
-            (e.g., "/tmp/stderr").
-        experimental_privileged_nesting:
-            Provides dagger access to the executed command.
-            Do not use this option unless you trust the command being
-            executed.
-            The command being executed WILL BE GRANTED FULL ACCESS TO YOUR
-            HOST FILESYSTEM.
-        insecure_root_capabilities:
-            Execute the command with all root capabilities. This is similar to
-            running a command
-            with "sudo" or executing `docker run` with the `--privileged`
-            flag. Containerization
-            does not provide any security guarantees when using this option.
-            It should only be used
-            when absolutely necessary and only with trusted commands.
-        """
-        _args = [
-            Arg("args", args),
-            Arg("skipEntrypoint", skip_entrypoint, None),
-            Arg("stdin", stdin, None),
-            Arg("redirectStdout", redirect_stdout, None),
-            Arg("redirectStderr", redirect_stderr, None),
-            Arg("experimentalPrivilegedNesting", experimental_privileged_nesting, None),
-            Arg("insecureRootCapabilities", insecure_root_capabilities, None),
-        ]
+    def service(self) -> "Service":
+        """Retrieves a service that will run the container."""
+        _args: list[Arg] = []
         _ctx = self._select("service", _args)
         return Service(_ctx)
 

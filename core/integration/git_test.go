@@ -155,8 +155,9 @@ sleep infinity
 	sshPort := 2222
 	sshSvc := hostKeyGen.
 		WithMountedFile("/root/start.sh", setupScript).
-		WithExposedPort(sshPort).
-		Service([]string{"sh", "/root/start.sh"})
+		WithExposedPort(sshPort).WithExec(
+
+		[]string{"sh", "/root/start.sh"}).Service()
 
 	sshHost, err := sshSvc.Hostname(ctx)
 	require.NoError(t, err)

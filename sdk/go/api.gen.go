@@ -665,58 +665,9 @@ func (r *Container) Rootfs() *Directory {
 	}
 }
 
-// ContainerServiceOpts contains options for Container.Service
-type ContainerServiceOpts struct {
-	// If the container has an entrypoint, ignore it for args rather than using it to wrap them.
-	SkipEntrypoint bool
-	// Content to write to the command's standard input before closing (e.g., "Hello world").
-	Stdin string
-	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-	RedirectStdout string
-	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-	RedirectStderr string
-	// Provides dagger access to the executed command.
-	//
-	// Do not use this option unless you trust the command being executed.
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-	ExperimentalPrivilegedNesting bool
-	// Execute the command with all root capabilities. This is similar to running a command
-	// with "sudo" or executing `docker run` with the `--privileged` flag. Containerization
-	// does not provide any security guarantees when using this option. It should only be used
-	// when absolutely necessary and only with trusted commands.
-	InsecureRootCapabilities bool
-}
-
-// Retrieves a service that will run the specified command in the container.
-func (r *Container) Service(args []string, opts ...ContainerServiceOpts) *Service {
+// Retrieves a service that will run the container.
+func (r *Container) Service() *Service {
 	q := r.q.Select("service")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `skipEntrypoint` optional argument
-		if !querybuilder.IsZeroValue(opts[i].SkipEntrypoint) {
-			q = q.Arg("skipEntrypoint", opts[i].SkipEntrypoint)
-		}
-		// `stdin` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Stdin) {
-			q = q.Arg("stdin", opts[i].Stdin)
-		}
-		// `redirectStdout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
-			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
-		}
-		// `redirectStderr` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
-			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
-		}
-		// `experimentalPrivilegedNesting` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
-			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-		}
-		// `insecureRootCapabilities` optional argument
-		if !querybuilder.IsZeroValue(opts[i].InsecureRootCapabilities) {
-			q = q.Arg("insecureRootCapabilities", opts[i].InsecureRootCapabilities)
-		}
-	}
-	q = q.Arg("args", args)
 
 	return &Service{
 		q: q,

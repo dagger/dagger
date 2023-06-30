@@ -55,7 +55,8 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 		WithEnvVariable("FOO", "123").
 		WithEnvVariable("BAR", "456").
 		WithExposedPort(8000).
-		Service([]string{"python", "-m", "http.server"})
+		WithExec([]string{"python", "-m", "http.server"}).
+		Service()
 
 	hosts := map[string]int{}
 
@@ -82,13 +83,15 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 		a, err := c.Container().
 			From("python").
 			WithExposedPort(8000).
-			Service([]string{"python", "-m", "http.server"}).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service().
 			Hostname(ctx)
 		require.NoError(t, err)
 
 		b, err := c.Container().
 			From("python").
-			Service([]string{"python", "-m", "http.server"}).
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service().
 			Hostname(ctx)
 		require.NoError(t, err)
 
@@ -99,7 +102,8 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 		srv := c.Container().
 			From("python").
 			WithExposedPort(8000).
-			Service([]string{"python", "-m", "http.server"})
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
 
 		hn, err := srv.Hostname(ctx)
 		require.NoError(t, err)
@@ -113,7 +117,8 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 	t.Run("endpoint can specify arbitrary port", func(t *testing.T) {
 		srv := c.Container().
 			From("python").
-			Service([]string{"python", "-m", "http.server"})
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
 
 		hn, err := srv.Hostname(ctx)
 		require.NoError(t, err)
@@ -129,7 +134,8 @@ func TestServiceHostnameEndpoint(t *testing.T) {
 	t.Run("endpoint with no port errors if no exposed port", func(t *testing.T) {
 		srv := c.Container().
 			From("python").
-			Service([]string{"python", "-m", "http.server"})
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
 
 		_, err := srv.Endpoint(ctx)
 		require.Error(t, err)
@@ -322,7 +328,7 @@ func TestContainerPortOCIConfig(t *testing.T) {
 	require.ElementsMatch(t, []string{"8000/tcp", "5432/udp"}, ports)
 }
 
-func TestContainerExecServices(t *testing.T) {
+func TestContainerExecServicesSimple(t *testing.T) {
 	t.Parallel()
 
 	checkNotDisabled(t, engine.ServicesDNSEnvName)
@@ -364,7 +370,8 @@ func TestContainerExecServicesError(t *testing.T) {
 	srv := c.Container().
 		From("alpine:3.16.2").
 		WithExposedPort(8080).
-		Service([]string{"sh", "-c", "echo nope; exit 42"})
+		WithExec([]string{"sh", "-c", "echo nope; exit 42"}).
+		Service()
 
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
@@ -394,7 +401,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: []string{"sh", "-c", "echo nope; exit 42"},
 		}).
-		Service(nil)
+		Service()
 
 	host, err := srv.Hostname(ctx)
 	require.NoError(t, err)
@@ -427,7 +434,8 @@ func TestContainerExecUDPServices(t *testing.T) {
 		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
 			Protocol: dagger.Udp,
 		}).
-		Service([]string{"go", "run", "/src/main.go"})
+		WithExec([]string{"go", "run", "/src/main.go"}).
+		Service()
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -489,7 +497,8 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 		WithMountedFile("/src/main.go",
 			c.Directory().WithNewFile("main.go", pipeSrc).File("main.go")).
 		WithExposedPort(8080).
-		Service([]string{"go", "run", "/src/main.go"})
+		WithExec([]string{"go", "run", "/src/main.go"}).
+		Service()
 
 	client := c.Container().
 		From("alpine:3.16.2").
@@ -541,7 +550,9 @@ func TestContainerExecServicesChained(t *testing.T) {
 			WithExec([]string{"sh", "-c", "echo $0 >> /srv/www/index.html", strconv.Itoa(i)}).
 			WithWorkdir("/srv/www").
 			WithExposedPort(8000).
-			Service([]string{"python", "-m", "http.server"})
+			WithExec([]string{"python", "-m", "http.server"}).
+			Service()
+
 	}
 
 	fileContent, err := c.Container().
@@ -1199,7 +1210,8 @@ func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content st
 		).
 		WithWorkdir("/srv/www").
 		WithExposedPort(8000).
-		Service([]string{"python", "-m", "http.server"})
+		WithExec([]string{"python", "-m", "http.server"}).
+		Service()
 
 	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Scheme: "http",
@@ -1248,7 +1260,8 @@ git daemon --verbose --export-all --base-path=/root/srv
 `).
 				File("start.sh")).
 		WithExposedPort(gitPort).
-		Service([]string{"sh", "/root/start.sh"})
+		WithExec([]string{"sh", "/root/start.sh"}).
+		Service()
 
 	gitHost, err := gitDaemon.Hostname(ctx)
 	require.NoError(t, err)

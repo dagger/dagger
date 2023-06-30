@@ -48,12 +48,8 @@ func (s *serviceSchema) service(ctx *router.Context, parent *core.Query, args se
 	return args.ID.ToService()
 }
 
-type containerStartArgs struct {
-	core.ContainerExecOpts
-}
-
-func (s *serviceSchema) containerService(ctx *router.Context, parent *core.Container, args containerStartArgs) (*core.Service, error) {
-	return core.NewService(parent, args.ContainerExecOpts)
+func (s *serviceSchema) containerService(ctx *router.Context, parent *core.Container, args any) (*core.Service, error) {
+	return parent.Service, nil
 }
 
 func (s *serviceSchema) id(ctx *router.Context, parent *core.Service, args any) (core.ServiceID, error) {

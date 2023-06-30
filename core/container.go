@@ -53,6 +53,9 @@ type Container struct {
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
 
+	// Service stores the service representation of the container.
+	Service *Service `json:"service,omitempty"`
+
 	// The platform of the container's rootfs.
 	Platform specs.Platform `json:"platform,omitempty"`
 
@@ -1054,7 +1057,14 @@ func metaMount(stdin string) (llb.State, string) {
 }
 
 func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSock *Socket, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+	stripped := *container
+	stripped.Service = nil
+	svc := &Service{
+		Container: &stripped,
+		Exec:      opts,
+	}
 	container = container.Clone()
+	container.Service = svc
 
 	cfg := container.Config
 	mounts := container.Mounts
