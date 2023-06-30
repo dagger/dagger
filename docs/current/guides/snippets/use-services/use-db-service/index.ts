@@ -1,8 +1,7 @@
-import Client, { connect } from '@dagger.io/dagger';
+import Client, { connect } from "@dagger.io/dagger"
 
 connect(
   async (client: Client) => {
-
     // get MariaDB base image
     const mariadb = client
       .container()
@@ -11,14 +10,20 @@ connect(
       .withEnvVariable("MARIADB_PASSWORD", "password")
       .withEnvVariable("MARIADB_DATABASE", "drupal")
       .withEnvVariable("MARIADB_ROOT_PASSWORD", "root")
-      .withExposedPort(3306);
+      .withExposedPort(3306)
 
-  	// get Drupal base image
-  	// install additional dependencies
+    // get Drupal base image
+    // install additional dependencies
     const drupal = client
       .container()
       .from("drupal:10.0.7-php8.2-fpm")
-      .withExec(["composer", "require", "drupal/core-dev", "--dev", "--update-with-all-dependencies"]);
+      .withExec([
+        "composer",
+        "require",
+        "drupal/core-dev",
+        "--dev",
+        "--update-with-all-dependencies",
+      ])
 
     // add service binding for MariaDB
     // run unit tests using PHPUnit
@@ -28,10 +33,10 @@ connect(
       .withEnvVariable("SYMFONY_DEPRECATIONS_HELPER", "disabled")
       .withWorkdir("/opt/drupal/web/core")
       .withExec(["../../vendor/bin/phpunit", "-v", "--group", "KernelTests"])
-      .stdout();
+      .stdout()
 
     // print ref
-    console.log(test);
-
-  }, { LogOutput: process.stderr }
-);
+    console.log(test)
+  },
+  { LogOutput: process.stderr }
+)

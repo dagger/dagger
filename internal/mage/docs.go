@@ -45,22 +45,9 @@ func (Docs) Lint(ctx context.Context) error {
 		return err
 	})
 
-	// NodeJS
-	eg.Go(func() error {
-		nodeSnippets := c.Directory().
-			WithDirectory("/", workdir.Directory("docs/current/sdk/nodejs/snippets"))
-		_, err = c.Container().
-			From("node:16-alpine").
-			WithWorkdir("/src").
-			WithMountedDirectory("/src", nodeSnippets).
-			WithExec([]string{"yarn", "install"}).
-			WithExec([]string{"yarn", "lint"}).
-			ExitCode(gctx)
-		return err
-	})
-
 	// Go is already linted by engine:lint
 	// Python is already linted by sdk:python:lint
+	// Node.js is already linted at sdk:nodejs:lint
 
 	return eg.Wait()
 }

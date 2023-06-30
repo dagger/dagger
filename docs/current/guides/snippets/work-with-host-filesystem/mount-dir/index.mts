@@ -1,13 +1,15 @@
 import Client, { connect } from "@dagger.io/dagger"
 
-connect(async (client: Client) => {
+connect(
+  async (client: Client) => {
+    const contents = await client
+      .container()
+      .from("alpine:latest")
+      .withDirectory("/host", client.host().directory("."))
+      .withExec(["ls", "/host"])
+      .stdout()
 
-  const contents = await client.container()
-		.from("alpine:latest")
-		.withDirectory("/host", client.host().directory("."))
-		.withExec(["ls", "/host"])
-		.stdout()
-
-  console.log(contents)
-  
-}, {LogOutput: process.stderr})
+    console.log(contents)
+  },
+  { LogOutput: process.stderr }
+)

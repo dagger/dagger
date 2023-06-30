@@ -33,22 +33,29 @@ func (t Nodejs) Lint(ctx context.Context) error {
 	base := nodeJsBase(c)
 
 	eg.Go(func() error {
-		_, err = base.
-			WithExec([]string{"yarn", "lint"}).
-			ExitCode(gctx)
+		_, err = base.WithExec([]string{"yarn", "lint"}).Sync(gctx)
 		return err
 	})
 
 	eg.Go(func() error {
-		workdir := util.Repository(c)
-		snippets := c.Directory().
-			WithDirectory("/", workdir.Directory("docs/current/sdk/nodejs/snippets"))
+		path := "docs/current"
 		_, err = base.
-			WithMountedDirectory("/snippets", snippets).
-			WithWorkdir("/snippets").
-			WithExec([]string{"yarn", "install"}).
-			WithExec([]string{"yarn", "lint"}).
-			ExitCode(gctx)
+			WithDirectory(
+				fmt.Sprintf("/%s", path),
+				util.Repository(c).Directory(path),
+				dagger.ContainerWithDirectoryOpts{
+					Include: []string{
+						"**/*.mts",
+						"**/*.mjs",
+						"**/*.ts",
+						"**/*.js",
+						"*prettier*",
+						"*eslint*",
+					},
+				},
+			).
+			WithExec([]string{"yarn", "docs:lint"}).
+			Sync(gctx)
 		return err
 	})
 
@@ -83,7 +90,7 @@ func (t Nodejs) Test(ctx context.Context) error {
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"yarn", "test"}).
-		ExitCode(ctx)
+		Sync(ctx)
 	return err
 }
 
@@ -152,7 +159,7 @@ always-auth=true`, token)
 	_, err = build.
 		WithExec([]string{"npm", "version", version}).
 		WithExec([]string{"npm", "publish", "--access", "public"}).
-		ExitCode(ctx)
+		Sync(ctx)
 
 	return err
 }
@@ -171,26 +178,20 @@ func (t Nodejs) Bump(ctx context.Context, version string) error {
 }
 
 func nodeJsBase(c *dagger.Client) *dagger.Container {
-	workdir := c.Directory().WithDirectory("/", util.Repository(c).Directory("sdk/nodejs"))
+	appDir := "sdk/nodejs"
+	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
-	base := c.Container().
+	// Mirror the same dir structure from the repo because of the
+	// relative paths in eslint (for docs linting).
+	mountPath := fmt.Sprintf("/%s", appDir)
+
+	return c.Container().
 		// ⚠️  Keep this in sync with the engine version defined in package.json
 		From("node:16-alpine").
-		WithWorkdir("/workdir")
-
-	deps := base.WithRootfs(
-		base.
-			Rootfs().
-			WithFile("/workdir/package.json", workdir.File("package.json")).
-			WithFile("/workdir/yarn.lock", workdir.File("yarn.lock")),
-	).
-		WithExec([]string{"yarn", "install"})
-
-	src := deps.WithRootfs(
-		deps.
-			Rootfs().
-			WithDirectory("/workdir", workdir),
-	)
-
-	return src
+		WithWorkdir(mountPath).
+		WithMountedCache("/usr/local/share/.cache/yarn", c.CacheVolume("yarn_cache")).
+		WithFile(fmt.Sprintf("%s/package.json", mountPath), src.File("package.json")).
+		WithFile(fmt.Sprintf("%s/yarn.lock", mountPath), src.File("yarn.lock")).
+		WithExec([]string{"yarn", "install"}).
+		WithDirectory(mountPath, src)
 }
