@@ -153,9 +153,9 @@ func solveRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Ref
 	return res.Ref, nil
 }
 
-// goling: nocyclo
 func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket) (running *RunningService, err error) {
 	ctr := svc.Container
+	cfg := ctr.Config
 	opts := svc.Exec
 
 	detachDeps, _, err := StartServices(ctx, gw, ctr.Services)
@@ -169,198 +169,21 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 		}
 	}()
 
-	fsRef, err := solveRef(ctx, gw, ctr.FS)
+	mounts, err := svc.mounts(ctx, gw, progSock)
 	if err != nil {
 		return nil, err
 	}
-
-	mounts := []bkgw.Mount{
-		{
-			Dest:      "/",
-			MountType: pb.MountType_BIND,
-			Ref:       fsRef,
-		},
-	}
-
-	metaSt, metaSourcePath := metaMount(opts.Stdin)
-
-	metaDef, err := metaSt.Marshal(ctx, llb.Platform(ctr.Platform))
-	if err != nil {
-		return nil, err
-	}
-
-	metaRef, err := solveRef(ctx, gw, metaDef.ToPB())
-	if err != nil {
-		return nil, err
-	}
-
-	mounts = append(mounts, bkgw.Mount{
-		Dest:     metaMountDestPath,
-		Ref:      metaRef,
-		Selector: metaSourcePath,
-	})
-
-	if opts.ExperimentalPrivilegedNesting {
-		sid, err := progSock.ID()
-		if err != nil {
-			return nil, err
-		}
-
-		mounts = append(mounts, bkgw.Mount{
-			Dest:      "/.progrock.sock",
-			MountType: pb.MountType_SSH,
-			SSHOpt: &pb.SSHOpt{
-				ID: sid.LLBID(),
-			},
-		})
-	}
-
-	pbPlatform := pb.PlatformFromSpec(ctr.Platform)
 
 	args, err := ctr.command(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	cfg := ctr.Config
+	env := svc.env()
 
-	env := []string{}
-
-	for _, e := range cfg.Env {
-		// strip out any env that are meant for internal use only, to prevent
-		// manually setting them
-		switch {
-		case strings.HasPrefix(e, "_DAGGER_ENABLE_NESTING="):
-		case strings.HasPrefix(e, DebugFailedExecEnv+"="):
-		default:
-			env = append(env, e)
-		}
-	}
-
-	secretEnv := []*pb.SecretEnv{}
-	secretsToScrub := SecretToScrubInfo{}
-	for i, ctrSecret := range ctr.Secrets {
-		switch {
-		case ctrSecret.EnvName != "":
-			secretsToScrub.Envs = append(secretsToScrub.Envs, ctrSecret.EnvName)
-			secret, err := ctrSecret.Secret.ToSecret()
-			if err != nil {
-				return nil, err
-			}
-			secretEnv = append(secretEnv, &pb.SecretEnv{
-				ID:   secret.Name,
-				Name: ctrSecret.EnvName,
-			})
-		case ctrSecret.MountPath != "":
-			secretsToScrub.Files = append(secretsToScrub.Files, ctrSecret.MountPath)
-			opt := &pb.SecretOpt{}
-			if ctrSecret.Owner != nil {
-				opt.Uid = uint32(ctrSecret.Owner.UID)
-				opt.Gid = uint32(ctrSecret.Owner.UID)
-				opt.Mode = 0o400 // preserve default
-			}
-			mounts = append(mounts, bkgw.Mount{
-				Dest:      ctrSecret.MountPath,
-				MountType: pb.MountType_SECRET,
-				SecretOpt: opt,
-			})
-		default:
-			return nil, fmt.Errorf("malformed secret config at index %d", i)
-		}
-	}
-
-	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
-		// we sort to avoid non-deterministic order that would break caching
-		sort.Strings(secretsToScrub.Envs)
-		sort.Strings(secretsToScrub.Files)
-
-		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
-		if err != nil {
-			return nil, fmt.Errorf("scrub secrets json: %w", err)
-		}
-		env = append(env, "_DAGGER_SCRUB_SECRETS="+string(secretsToScrubJSON))
-	}
-
-	for _, socket := range ctr.Sockets {
-		if socket.UnixPath == "" {
-			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
-		}
-
-		opt := &pb.SSHOpt{
-			ID: socket.Socket.LLBID(),
-		}
-
-		if socket.Owner != nil {
-			opt.Uid = uint32(socket.Owner.UID)
-			opt.Gid = uint32(socket.Owner.UID)
-			opt.Mode = 0o600 // preserve default
-		}
-
-		mounts = append(mounts, bkgw.Mount{
-			Dest:      socket.UnixPath,
-			MountType: pb.MountType_SSH,
-			SSHOpt:    opt,
-		})
-	}
-
-	for _, mnt := range ctr.Mounts {
-		mount := bkgw.Mount{
-			Dest:      mnt.Target,
-			MountType: pb.MountType_BIND,
-		}
-
-		if mnt.Source != nil {
-			srcRef, err := solveRef(ctx, gw, mnt.Source)
-			if err != nil {
-				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
-			}
-
-			mount.Ref = srcRef
-		}
-
-		if mnt.SourcePath != "" {
-			mount.Selector = mnt.SourcePath
-		}
-
-		if mnt.CacheID != "" {
-			mount.MountType = pb.MountType_CACHE
-			mount.CacheOpt = &pb.CacheOpt{
-				ID: mnt.CacheID,
-			}
-
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case CacheSharingModePrivate:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case CacheSharingModeLocked:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-			default:
-				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
-			}
-		}
-
-		if mnt.Tmpfs {
-			mount.MountType = pb.MountType_TMPFS
-		}
-
-		mounts = append(mounts, mount)
-	}
-
-	if opts.ExperimentalPrivilegedNesting {
-		env = append(env, "_DAGGER_ENABLE_NESTING=")
-	}
-
-	if opts.RedirectStdout != "" {
-		env = append(env, "_DAGGER_REDIRECT_STDOUT="+opts.RedirectStdout)
-	}
-
-	if opts.RedirectStderr != "" {
-		env = append(env, "_DAGGER_REDIRECT_STDERR="+opts.RedirectStderr)
-	}
-
-	for _, alias := range ctr.HostAliases {
-		env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias.Alias+"="+alias.Target)
+	secretEnv, mounts, env, err := svc.secrets(mounts, env)
+	if err != nil {
+		return nil, err
 	}
 
 	var securityMode pb.SecurityMode
@@ -385,6 +208,8 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 	fullHost := host + "." + SessionDomain()
 
 	health := newHealth(gw, fullHost, svc.Container.Ports)
+
+	pbPlatform := pb.PlatformFromSpec(ctr.Platform)
 
 	gc, err := gw.NewContainer(ctx, bkgw.NewContainerRequest{
 		Mounts:          mounts,
@@ -443,6 +268,212 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
+}
+
+func (svc *Service) mounts(ctx context.Context, gw bkgw.Client, progSock *Socket) ([]bkgw.Mount, error) {
+	ctr := svc.Container
+	opts := svc.Exec
+
+	fsRef, err := solveRef(ctx, gw, ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+
+	mounts := []bkgw.Mount{
+		{
+			Dest:      "/",
+			MountType: pb.MountType_BIND,
+			Ref:       fsRef,
+		},
+	}
+
+	metaSt, metaSourcePath := metaMount(opts.Stdin)
+
+	metaDef, err := metaSt.Marshal(ctx, llb.Platform(ctr.Platform))
+	if err != nil {
+		return nil, err
+	}
+
+	metaRef, err := solveRef(ctx, gw, metaDef.ToPB())
+	if err != nil {
+		return nil, err
+	}
+
+	mounts = append(mounts, bkgw.Mount{
+		Dest:     metaMountDestPath,
+		Ref:      metaRef,
+		Selector: metaSourcePath,
+	})
+
+	if opts.ExperimentalPrivilegedNesting {
+		sid, err := progSock.ID()
+		if err != nil {
+			return nil, err
+		}
+
+		mounts = append(mounts, bkgw.Mount{
+			Dest:      "/.progrock.sock",
+			MountType: pb.MountType_SSH,
+			SSHOpt: &pb.SSHOpt{
+				ID: sid.LLBID(),
+			},
+		})
+	}
+
+	for _, mnt := range ctr.Mounts {
+		mount := bkgw.Mount{
+			Dest:      mnt.Target,
+			MountType: pb.MountType_BIND,
+		}
+
+		if mnt.Source != nil {
+			srcRef, err := solveRef(ctx, gw, mnt.Source)
+			if err != nil {
+				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
+			}
+
+			mount.Ref = srcRef
+		}
+
+		if mnt.SourcePath != "" {
+			mount.Selector = mnt.SourcePath
+		}
+
+		if mnt.CacheID != "" {
+			mount.MountType = pb.MountType_CACHE
+			mount.CacheOpt = &pb.CacheOpt{
+				ID: mnt.CacheID,
+			}
+
+			switch mnt.CacheSharingMode {
+			case CacheSharingModeShared:
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
+			case CacheSharingModePrivate:
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
+			case CacheSharingModeLocked:
+				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
+			default:
+				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
+			}
+		}
+
+		if mnt.Tmpfs {
+			mount.MountType = pb.MountType_TMPFS
+		}
+
+		mounts = append(mounts, mount)
+	}
+
+	for _, socket := range ctr.Sockets {
+		if socket.UnixPath == "" {
+			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
+		}
+
+		opt := &pb.SSHOpt{
+			ID: socket.Socket.LLBID(),
+		}
+
+		if socket.Owner != nil {
+			opt.Uid = uint32(socket.Owner.UID)
+			opt.Gid = uint32(socket.Owner.UID)
+			opt.Mode = 0o600 // preserve default
+		}
+
+		mounts = append(mounts, bkgw.Mount{
+			Dest:      socket.UnixPath,
+			MountType: pb.MountType_SSH,
+			SSHOpt:    opt,
+		})
+	}
+
+	return mounts, nil
+}
+
+func (svc *Service) env() []string {
+	ctr := svc.Container
+	opts := svc.Exec
+	cfg := ctr.Config
+
+	env := []string{}
+
+	for _, e := range cfg.Env {
+		// strip out any env that are meant for internal use only, to prevent
+		// manually setting them
+		switch {
+		case strings.HasPrefix(e, "_DAGGER_ENABLE_NESTING="):
+		case strings.HasPrefix(e, DebugFailedExecEnv+"="):
+		default:
+			env = append(env, e)
+		}
+	}
+
+	if opts.ExperimentalPrivilegedNesting {
+		env = append(env, "_DAGGER_ENABLE_NESTING=")
+	}
+
+	if opts.RedirectStdout != "" {
+		env = append(env, "_DAGGER_REDIRECT_STDOUT="+opts.RedirectStdout)
+	}
+
+	if opts.RedirectStderr != "" {
+		env = append(env, "_DAGGER_REDIRECT_STDERR="+opts.RedirectStderr)
+	}
+
+	for _, alias := range ctr.HostAliases {
+		env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias.Alias+"="+alias.Target)
+	}
+
+	return env
+}
+
+func (svc *Service) secrets(mounts []bkgw.Mount, env []string) ([]*pb.SecretEnv, []bkgw.Mount, []string, error) {
+	ctr := svc.Container
+
+	secretEnv := []*pb.SecretEnv{}
+	secretsToScrub := SecretToScrubInfo{}
+	for i, ctrSecret := range ctr.Secrets {
+		switch {
+		case ctrSecret.EnvName != "":
+			secretsToScrub.Envs = append(secretsToScrub.Envs, ctrSecret.EnvName)
+			secret, err := ctrSecret.Secret.ToSecret()
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			secretEnv = append(secretEnv, &pb.SecretEnv{
+				ID:   secret.Name,
+				Name: ctrSecret.EnvName,
+			})
+		case ctrSecret.MountPath != "":
+			secretsToScrub.Files = append(secretsToScrub.Files, ctrSecret.MountPath)
+			opt := &pb.SecretOpt{}
+			if ctrSecret.Owner != nil {
+				opt.Uid = uint32(ctrSecret.Owner.UID)
+				opt.Gid = uint32(ctrSecret.Owner.UID)
+				opt.Mode = 0o400 // preserve default
+			}
+			mounts = append(mounts, bkgw.Mount{
+				Dest:      ctrSecret.MountPath,
+				MountType: pb.MountType_SECRET,
+				SecretOpt: opt,
+			})
+		default:
+			return nil, nil, nil, fmt.Errorf("malformed secret config at index %d", i)
+		}
+	}
+
+	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
+		// we sort to avoid non-deterministic order that would break caching
+		sort.Strings(secretsToScrub.Envs)
+		sort.Strings(secretsToScrub.Files)
+
+		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("scrub secrets json: %w", err)
+		}
+		env = append(env, "_DAGGER_SCRUB_SECRETS="+string(secretsToScrubJSON))
+	}
+
+	return secretEnv, mounts, env, nil
 }
 
 type RunningService struct {
