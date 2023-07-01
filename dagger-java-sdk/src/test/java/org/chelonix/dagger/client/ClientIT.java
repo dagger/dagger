@@ -1,5 +1,6 @@
 package org.chelonix.dagger.client;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.chelonix.dagger.client.Container.ExecArguments;
 import org.chelonix.dagger.client.Client.ContainerArguments;
@@ -10,6 +11,13 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.assertj.core.api.Assertions.*;
 
 public class ClientIT {
+
+    @BeforeAll
+    public static void setLoggerConfig() {
+        System.setProperty("org.slf4j.simpleLogger.log.org.chelonix.dagger", "debug");
+        System.setProperty("org.slf4j.simpleLogger.showShortLogName", "true");
+    }
+
     @Test
     public void testDirectory() throws Exception {
         try (Client client = Dagger.connect()) {
@@ -66,7 +74,7 @@ public class ClientIT {
     }
 
     @Test
-    public void testError() throws Exception{
+    public void testError() throws Exception {
         try (Client client = Dagger.connect()) {
             try {
                 client.container().from("fake.invalid:latest").id();

@@ -85,6 +85,9 @@ class QueryBuilder {
         if (! response.hasError()) {
             return;
         }
+        LOG.debug(String.format("Query execution failed: %s",response.getErrors().stream()
+                .map(GraphQLError::toString)
+                .collect(Collectors.joining(", "))));
         if (response.getErrors().isEmpty()) {
             throw new DaggerQueryException();
         }
@@ -112,7 +115,7 @@ class QueryBuilder {
         LOG.debug("Executing query: {}", document.build());
         Response response = client.executeSync(document);
         handleErrors(response);
-        LOG.debug("Received response: {}", response);
+        LOG.debug("Received response: {}", response.getData());
         return response;
     }
 
