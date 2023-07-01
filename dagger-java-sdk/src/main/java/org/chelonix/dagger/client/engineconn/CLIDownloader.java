@@ -192,6 +192,8 @@ class CLIDownloader {
             return "x86";
         } else if (arch.contains("arm")) {
             return "armv7";
+        } else if (arch.contains("aarch64")) {
+        	return "arm64";
         } else {
             return "unknown";
         }
