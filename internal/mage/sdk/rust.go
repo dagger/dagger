@@ -18,6 +18,8 @@ import (
 const (
 	rustGeneratedAPIPath = "sdk/rust/crates/dagger-sdk/src/gen.rs"
 	rustVersionFilePath  = "sdk/rust/crates/dagger-sdk/src/core/mod.rs"
+	rustDockerStable     = "rust:1.70.0-bookworm"
+	rustDockerNightly    = "rustlang/rust:nightly-slim"
 )
 
 var _ SDK = Rust{}
@@ -74,8 +76,7 @@ func (r Rust) Generate(ctx context.Context) error {
 
 	cliBinPath := "/.dagger-cli"
 
-	version := "rustlang/rust:nightly-slim"
-	generated := r.rustBase(ctx, c.Pipeline(version), version).
+	generated := r.rustBase(ctx, c.Pipeline(rustDockerStable), rustDockerStable).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -108,7 +109,7 @@ func (r Rust) Lint(ctx context.Context) error {
 
 	eg, gctx := errgroup.WithContext(ctx)
 
-	base := r.rustBase(ctx, c, "rustlang/rust:nightly-slim")
+	base := r.rustBase(ctx, c, rustDockerStable)
 
 	eg.Go(func() error {
 		_, err = base.
@@ -159,7 +160,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 	}
 
 	base := r.
-		rustBase(ctx, c, "rust:1.69-bullseye").
+		rustBase(ctx, c, rustDockerStable).
 		WithExec([]string{
 			"cargo", "install", "cargo-edit",
 		}).WithExec([]string{
@@ -207,7 +208,7 @@ func (r Rust) Test(ctx context.Context) error {
 
 	eg, egctx := errgroup.WithContext(ctx)
 	for _, version := range []string{
-		"rust:1.69-slim-bullseye", "rustlang/rust:nightly-slim",
+		rustDockerStable, rustDockerNightly,
 	} {
 		version := version
 		eg.Go(func() error {
@@ -238,6 +239,7 @@ func (Rust) rustBase(ctx context.Context, c *dagger.Client, image string) *dagge
 		Container().
 		From(image).
 		WithMountedCache("~/.cargo", c.CacheVolume("rust-cargo")).
+		WithExec([]string{"rustup", "component", "add", "rustfmt"}).
 		WithExec([]string{"cargo", "install", "cargo-chef"}).
 		WithWorkdir(mountPath).
 		WithDirectory(mountPath, src, dagger.ContainerWithDirectoryOpts{

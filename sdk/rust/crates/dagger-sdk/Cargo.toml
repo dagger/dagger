@@ -46,7 +46,6 @@ async-trait = "0.1.67"
 [dev-dependencies]
 pretty_assertions = "1.3.0"
 rand = "0.8.5"
-genco = "0.17.3"
 tracing-test = "0.2.4"
 
 [features]
