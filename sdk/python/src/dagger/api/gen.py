@@ -51,6 +51,10 @@ class SocketID(Scalar):
     """A content-addressed socket identifier."""
 
 
+class Void(Scalar):
+    """Nothing. Used by SDK codegen to skip the return value."""
+
+
 class CacheSharingMode(Enum):
     """Sharing mode of the cache volume."""
 
@@ -3358,4 +3362,5 @@ __all__ = [
     "ServiceID",
     "Socket",
     "SocketID",
+    "Void",
 ]

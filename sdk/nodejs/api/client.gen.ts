@@ -704,6 +704,11 @@ export type ServiceID = string & { __ServiceID: never }
  */
 export type SocketID = string & { __SocketID: never }
 
+/**
+ * Nothing. Used by SDK codegen to skip the return value.
+ */
+export type Void = string & { __Void: never }
+
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
 }

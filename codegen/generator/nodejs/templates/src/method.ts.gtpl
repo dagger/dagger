@@ -28,7 +28,7 @@
 
 	{{- /* Write return type. */ -}}
 	{{- "" }}){{- "" }}: {{ .TypeRef | FormatOutputType  }} {
-	
+
 	{{- if .TypeRef }}
     return new {{ .TypeRef | FormatOutputType }}({
       queryTree: [
