@@ -6,6 +6,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream;
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream;
 import org.freedesktop.BaseDirectory;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.URL;
@@ -21,6 +23,8 @@ import java.util.HexFormat;
 import java.util.Map;
 
 class CLIDownloader {
+
+    static final Logger LOG = LoggerFactory.getLogger(CLIDownloader.class);
 
     private static final File CACHE_DIR = Paths.get(BaseDirectory.get(BaseDirectory.XDG_CACHE_HOME), "dagger").toFile();
 
@@ -113,12 +117,14 @@ class CLIDownloader {
 
     private String extractCLI(String archiveName, String version, Path dest) throws IOException {
         String cliArchiveURL = String.format("https://dl.dagger.io/dagger/releases/%s/%s", version, archiveName);
+        LOG.info("Downloading Dagger CLI from " + cliArchiveURL);
         MessageDigest sha256;
         try {
             sha256 = MessageDigest.getInstance("SHA-256");
         } catch (NoSuchAlgorithmException nsae) {
             throw new IOException("Could not instantiate SHA-256 digester", nsae);
         }
+        LOG.info("Extracting archive...");
         try (InputStream in = new BufferedInputStream(new DigestInputStream(fetcher.fetch(cliArchiveURL), sha256))) {
             if (isWindows()) {
                 extractZip(in, dest);
