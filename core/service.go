@@ -221,6 +221,12 @@ func (svc *Service) Start(ctx context.Context, gw bkgw.Client, progSock *Socket)
 		return nil, err
 	}
 
+	defer func() {
+		if err != nil {
+			gc.Release(context.Background())
+		}
+	}()
+
 	checked := make(chan error, 1)
 	go func() {
 		checked <- health.Check(ctx)
