@@ -1,6 +1,12 @@
 name: Build dagger-java-sdk
 
-on: [push]
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - 'main'
 
 jobs:
   build:

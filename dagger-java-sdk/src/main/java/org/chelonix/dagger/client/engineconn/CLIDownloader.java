@@ -50,7 +50,7 @@ class CLIDownloader {
         }
         Path binPath = Paths.get(CACHE_DIR.getPath(), binName);
 
-        if (! binPath.toFile().exists()) {
+        if (!binPath.toFile().exists()) {
             downloadCLI(version, binPath);
         }
 
@@ -71,7 +71,7 @@ class CLIDownloader {
                 throw new IOException("Could not find checksum for " + archiveName);
             }
             String actualChecksum = extractCLI(archiveName, version, tmpBin);
-            if (! actualChecksum.equals(expectedChecksum)) {
+            if (!actualChecksum.equals(expectedChecksum)) {
                 throw new IOException("Checksum validation failed");
             }
             tmpBin.toFile().setExecutable(true);
@@ -94,17 +94,17 @@ class CLIDownloader {
     private Map<String, String> fetchChecksumMap(String version) throws IOException {
         Map<String, String> checksums = new HashMap<>();
         String checksumMapURL = String.format("https://dl.dagger.io/dagger/releases/%s/checksums.txt", version);
-        try(BufferedInputStream in = new BufferedInputStream(fetcher.fetch(checksumMapURL))) {
+        try (BufferedInputStream in = new BufferedInputStream(fetcher.fetch(checksumMapURL))) {
             ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte dataBuffer[] = new byte[1024];
+            byte[] dataBuffer = new byte[1024];
             int bytesRead;
-            while ((bytesRead = in.read(dataBuffer,0,1024)) != -1) {
+            while ((bytesRead = in.read(dataBuffer, 0, 1024)) != -1) {
                 out.write(dataBuffer, 0, bytesRead);
             }
             BufferedReader reader = new BufferedReader(new StringReader(out.toString(StandardCharsets.UTF_8)));
             String line;
             while ((line = reader.readLine()) != null) {
-                String [] arr = line.split("\\s+");
+                String[] arr = line.split("\\s+");
                 checksums.put(arr[1], arr[0]);
             }
             return checksums;
@@ -140,11 +140,11 @@ class CLIDownloader {
         boolean found = false;
         ArchiveEntry entry;
         while ((entry = in.getNextEntry()) != null) {
-            if (entry.isDirectory() || ! binName.equals(entry.getName())) {
+            if (entry.isDirectory() || !binName.equals(entry.getName())) {
                 continue;
             }
             int count;
-            byte data[] = new byte[4096];
+            byte[] data = new byte[4096];
             FileOutputStream fos = new FileOutputStream(dest.toFile());
             try (BufferedOutputStream out = new BufferedOutputStream(fos, 4096)) {
                 while ((count = in.read(data, 0, 4096)) != -1) {
