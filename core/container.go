@@ -527,16 +527,16 @@ func (container *Container) WithDirectory(ctx context.Context, gw bkgw.Client, s
 	})
 }
 
-func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, subdir string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
+func (container *Container) WithFile(ctx context.Context, gw bkgw.Client, destPath string, src *File, permissions fs.FileMode, owner string) (*Container, error) {
 	container = container.Clone()
 
-	return container.writeToPath(ctx, gw, subdir, func(dir *Directory) (*Directory, error) {
+	return container.writeToPath(ctx, gw, path.Dir(destPath), func(dir *Directory) (*Directory, error) {
 		ownership, err := container.ownership(ctx, gw, owner)
 		if err != nil {
 			return nil, err
 		}
 
-		return dir.WithFile(ctx, ".", src, permissions, ownership)
+		return dir.WithFile(ctx, path.Base(destPath), src, permissions, ownership)
 	})
 }
 

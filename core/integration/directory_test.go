@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"path"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -820,4 +822,51 @@ func TestDirectoryWithFileExceedingLength(t *testing.T) {
 		}`, &res, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+}
+
+func TestDirectoryDirectMerge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	getFileAndInode := func(t *testing.T, filePath string) (*dagger.Directory, string) {
+		t.Helper()
+		parentDir := path.Dir(filePath)
+		ctr := c.Container().From("alpine:3.16.2").
+			WithMountedDirectory(parentDir, c.Directory()).
+			WithExec([]string{"sh", "-e", "-x", "-c",
+				"mkdir -p " + parentDir + " && touch " + filePath + " && stat -c '%i' " + filePath,
+			})
+		out, err := ctr.Stdout(ctx)
+		require.NoError(t, err)
+		return ctr.Directory(parentDir), strings.TrimSpace(out)
+	}
+
+	// verify optimized hardlink based merge-op is used by verifying inodes are preserved
+	// across WithDirectory calls
+	mergeDir := c.Directory()
+	filePaths := []string{
+		"/dir/abc",
+		"/dir/xyz",
+		"/dir2/dir3/idk",
+		"/dir2/dir4/lol",
+		"/dir3/dir3/lmao",
+	}
+	filePathToInode := map[string]string{}
+	for _, filePath := range filePaths {
+		newDir, inode := getFileAndInode(t, filePath)
+		filePathToInode[filePath] = inode
+		mergeDir = mergeDir.WithDirectory("/", newDir)
+	}
+
+	ctr := c.Container().From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", mergeDir)
+
+	for filePath, inode := range filePathToInode {
+		out, err := ctr.WithExec([]string{"stat", "-c", "%i", path.Join("/mnt", path.Base(filePath))}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), inode)
+	}
 }

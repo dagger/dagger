@@ -250,6 +250,9 @@ func shim() int {
 		}
 
 		code, err := os.ReadFile(exitCodePath)
+		if os.IsNotExist(err) {
+			return -1
+		}
 		if err != nil {
 			panic(err)
 		}
