@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"fmt"
+	"io"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/identity"
@@ -77,7 +79,7 @@ func (p NetworkProtocol) Network() string {
 
 // WithServices runs the given function with the given services started,
 // detaching from each of them after the function completes.
-func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
+func WithServices[T any](ctx context.Context, bk *buildkit.Client, svcs ServiceBindings, fn func() (T, error)) (T, error) {
 	var zero T
 
 	// NB: don't use errgroup.WithCancel; we don't want to cancel on Wait
@@ -97,7 +99,7 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindin
 
 		aliases := aliases
 		eg.Go(func() error {
-			svc, err := svc.Start(ctx, gw)
+			svc, err := svc.Start(ctx, bk)
 			if err != nil {
 				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
 			}
@@ -129,14 +131,14 @@ func WithServices[T any](ctx context.Context, gw bkgw.Client, svcs ServiceBindin
 }
 
 type portHealthChecker struct {
-	gw    bkgw.Client
+	bk    *buildkit.Client
 	host  string
 	ports []ContainerPort
 }
 
-func newHealth(gw bkgw.Client, host string, ports []ContainerPort) *portHealthChecker {
+func newHealth(bk *buildkit.Client, host string, ports []ContainerPort) *portHealthChecker {
 	return &portHealthChecker{
-		gw:    gw,
+		bk:    bk,
 		host:  host,
 		ports: ports,
 	}
@@ -146,13 +148,13 @@ type marshalable interface {
 	Marshal(ctx context.Context, co ...llb.ConstraintsOpt) (*llb.Definition, error)
 }
 
-func result(ctx context.Context, gw bkgw.Client, st marshalable) (*bkgw.Result, error) {
+func result(ctx context.Context, bk *buildkit.Client, st marshalable) (*buildkit.Result, error) {
 	def, err := st.Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return gw.Solve(ctx, bkgw.SolveRequest{
+	return bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: def.ToPB(),
 	})
 }
@@ -175,12 +177,12 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 		vtx.Done(err)
 	}()
 
-	scratchRes, err := result(ctx, d.gw, llb.Scratch())
+	scratchRes, err := result(ctx, d.bk, llb.Scratch())
 	if err != nil {
 		return err
 	}
 
-	container, err := d.gw.NewContainer(ctx, bkgw.NewContainerRequest{
+	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Mounts: []bkgw.Mount{
 			{
 				Dest:      "/",
@@ -231,4 +233,12 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 
 		return ctx.Err()
 	}
+}
+
+type nopCloser struct {
+	io.Writer
+}
+
+func (nopCloser) Close() error {
+	return nil
 }

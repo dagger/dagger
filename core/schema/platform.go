@@ -4,16 +4,16 @@ import (
 	"fmt"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/graphql/language/ast"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type platformSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
-var _ router.ExecutableSchema = &platformSchema{}
+var _ ExecutableSchema = &platformSchema{}
 
 func (s *platformSchema) Name() string {
 	return "platform"
@@ -23,12 +23,12 @@ func (s *platformSchema) Schema() string {
 	return Platform
 }
 
-func (s *platformSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"Query": router.ObjectResolver{
-			"defaultPlatform": router.ToResolver(s.defaultPlatform),
+func (s *platformSchema) Resolvers() Resolvers {
+	return Resolvers{
+		"Query": ObjectResolver{
+			"defaultPlatform": ToResolver(s.defaultPlatform),
 		},
-		"Platform": router.ScalarResolver{
+		"Platform": ScalarResolver{
 			Serialize: func(value any) any {
 				switch v := value.(type) {
 				case specs.Platform:
@@ -47,7 +47,7 @@ func (s *platformSchema) Resolvers() router.Resolvers {
 				case string:
 					p, err := platforms.Parse(v)
 					if err != nil {
-						panic(router.InvalidInputError{Err: fmt.Errorf("platform parse value error: %w", err)})
+						panic(InvalidInputError{Err: fmt.Errorf("platform parse value error: %w", err)})
 					}
 					return p
 				default:
@@ -59,7 +59,7 @@ func (s *platformSchema) Resolvers() router.Resolvers {
 				case *ast.StringValue:
 					p, err := platforms.Parse(valueAST.Value)
 					if err != nil {
-						panic(router.InvalidInputError{Err: fmt.Errorf("platform parse literal error: %w", err)})
+						panic(InvalidInputError{Err: fmt.Errorf("platform parse literal error: %w", err)})
 					}
 					return p
 				default:
@@ -70,10 +70,10 @@ func (s *platformSchema) Resolvers() router.Resolvers {
 	}
 }
 
-func (s *platformSchema) Dependencies() []router.ExecutableSchema {
+func (s *platformSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *platformSchema) defaultPlatform(ctx *router.Context, parent, args any) (specs.Platform, error) {
-	return s.baseSchema.platform, nil
+func (s *platformSchema) defaultPlatform(ctx *core.Context, parent, args any) (specs.Platform, error) {
+	return s.platform, nil
 }

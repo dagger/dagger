@@ -20,8 +20,7 @@ import (
 
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vito/progrock"
@@ -180,87 +179,6 @@ func shim() int {
 	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
 	if found {
 		stderrPath = stderrRedirect
-	}
-
-	if _, found := internalEnv(core.DebugFailedExecEnv); found {
-		// if we are being requested to just obtain the output of a previously failed exec,
-		// do that and exit
-		stdoutFile, err := os.Open(stdoutPath)
-		if err == nil {
-			stdoutFileSize, err := stdoutFile.Seek(0, io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			seekFromEnd := stdoutFileSize
-			if seekFromEnd > core.MaxExecErrorOutputBytes {
-				// copy the last MaxExecErrorOutputBytes bytes only
-				seekFromEnd = core.MaxExecErrorOutputBytes
-
-				// prepend a notice when truncating
-				_, err = io.WriteString(os.Stdout, fmt.Sprintf(
-					core.TruncationMessage,
-					stdoutFileSize-seekFromEnd,
-				))
-				if err != nil {
-					panic(err)
-				}
-			}
-			_, err = stdoutFile.Seek(-int64(seekFromEnd), io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			_, err = io.Copy(os.Stdout, stdoutFile)
-			if err != nil {
-				panic(err)
-			}
-		} else if !os.IsNotExist(err) {
-			panic(err)
-		}
-
-		stderrFile, err := os.Open(stderrPath)
-		if err == nil {
-			stderrFileSize, err := stderrFile.Seek(0, io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			seekFromEnd := stderrFileSize
-			if seekFromEnd > core.MaxExecErrorOutputBytes {
-				// copy the last MaxExecErrorOutputBytes bytes only
-				seekFromEnd = core.MaxExecErrorOutputBytes
-
-				// prepend a notice when truncating
-				_, err = io.WriteString(os.Stderr, fmt.Sprintf(
-					core.TruncationMessage,
-					stderrFileSize-seekFromEnd,
-				))
-				if err != nil {
-					panic(err)
-				}
-			}
-			_, err = stderrFile.Seek(-int64(seekFromEnd), io.SeekEnd)
-			if err != nil {
-				panic(err)
-			}
-			_, err = io.Copy(os.Stderr, stderrFile)
-			if err != nil {
-				panic(err)
-			}
-		} else if !os.IsNotExist(err) {
-			panic(err)
-		}
-
-		code, err := os.ReadFile(exitCodePath)
-		if os.IsNotExist(err) {
-			return -1
-		}
-		if err != nil {
-			panic(err)
-		}
-		exitCode, err := strconv.Atoi(string(code))
-		if err != nil {
-			panic(err)
-		}
-		return exitCode
 	}
 
 	var secretsToScrub core.SecretToScrubInfo
@@ -438,6 +356,31 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
+			// also need the progsock path
+			// TODO: re-looping feels dumb
+			var daggerSockPath string
+			var progSockSrcPath string
+			for _, env := range spec.Process.Env {
+				if strings.HasPrefix(env, "_DAGGER_PROG_SOCK_PATH=") {
+					progSockSrcPath = strings.TrimPrefix(env, "_DAGGER_PROG_SOCK_PATH=")
+				}
+				if strings.HasPrefix(env, "_DAGGER_SERVER_SOCK=") {
+					daggerSockPath = strings.TrimPrefix(env, "_DAGGER_SERVER_SOCK=")
+				}
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/.dagger.sock",
+				Type:        "bind",
+				Options:     []string{"rbind"},
+				Source:      daggerSockPath,
+			})
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: "/.progrock.sock",
+				Type:        "bind",
+				Options:     []string{"rbind"},
+				Source:      progSockSrcPath,
+			})
+		case strings.HasPrefix(env, "_DAGGER_PROG_SOCK_PATH="):
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -588,9 +531,17 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("error listening on session socket: %w", engineErr)
 	}
 
-	engineConf := engine.Config{
-		SessionToken: sessionToken.String(),
-		RunnerHost:   "unix:///.runner.sock",
+	// TODO:
+	// serverID, ok := internalEnv("_DAGGER_SERVER_ID")
+	serverID, ok := os.LookupEnv("_DAGGER_SERVER_ID")
+	if !ok {
+		return fmt.Errorf("missing _DAGGER_SERVER_ID")
+	}
+	sessParams := client.SessionParams{
+		ServerID:    serverID,
+		SecretToken: sessionToken.String(),
+		RunnerHost:  "unix:///.runner.sock",
+		DaggerHost:  "unix:///.dagger.sock",
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {
@@ -598,34 +549,28 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		if err != nil {
 			return fmt.Errorf("error connecting to progrock: %w", err)
 		}
-
-		engineConf.ProgrockWriter = progW
+		sessParams.ProgrockWriter = progW
 	}
 
 	// pass dagger session along to command
 	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
 	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 
-	var cmdErr error
-	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-		go http.Serve(l, r) //nolint:gosec
-		cmdErr = cmd.Start()
-		if cmdErr != nil {
-			return cmdErr
-		}
-		pipeWg.Wait()
-		cmdErr = cmd.Wait()
-		if cmdErr != nil {
-			return cmdErr
-		}
-		return nil
-	})
-	if cmdErr != nil {
-		// propagate inner error with higher priority
-		return cmdErr
+	sess, err := client.Connect(ctx, sessParams)
+	if err != nil {
+		return fmt.Errorf("error connecting to engine: %w", err)
 	}
-	if engineErr != nil {
-		return fmt.Errorf("engine: %w", engineErr)
+	defer sess.Close()
+
+	go http.Serve(l, sess) //nolint:gosec
+	err = cmd.Start()
+	if err != nil {
+		return err
+	}
+	pipeWg.Wait()
+	err = cmd.Wait()
+	if err != nil {
+		return err
 	}
 	return nil
 }

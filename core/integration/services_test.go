@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
@@ -33,8 +32,6 @@ import (
 
 func TestServiceHostnamesAreStable(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -70,8 +67,6 @@ func TestServiceHostnamesAreStable(t *testing.T) {
 
 func TestContainerHostnameEndpoint(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -156,8 +151,6 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 
 func TestContainerPortLifecycle(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -280,8 +273,6 @@ func TestContainerPortLifecycle(t *testing.T) {
 func TestContainerPortOCIConfig(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -343,8 +334,6 @@ func TestContainerPortOCIConfig(t *testing.T) {
 func TestContainerExecServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -374,8 +363,6 @@ func TestContainerExecServices(t *testing.T) {
 func TestContainerExecServicesError(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -399,8 +386,6 @@ func TestContainerExecServicesError(t *testing.T) {
 
 func TestContainerServiceNoExec(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -431,8 +416,6 @@ var udpSrc string
 
 func TestContainerExecUDPServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -465,8 +448,6 @@ func TestContainerExecUDPServices(t *testing.T) {
 func TestContainerExecServiceAlias(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -495,8 +476,6 @@ var pipeSrc string
 
 func TestContainerExecServicesDeduping(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -533,8 +512,6 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 
 func TestContainerExecServicesChained(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -573,8 +550,6 @@ func TestContainerExecServicesChained(t *testing.T) {
 
 func TestContainerBuildService(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -655,8 +630,6 @@ CMD cat index.html
 func TestContainerExportServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -676,8 +649,6 @@ func TestContainerExportServices(t *testing.T) {
 
 func TestContainerMultiPlatformExportServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -706,8 +677,6 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 func TestServicesContainerPublish(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -733,8 +702,6 @@ func TestServicesContainerPublish(t *testing.T) {
 func TestContainerRootFSServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -756,8 +723,6 @@ func TestContainerRootFSServices(t *testing.T) {
 
 func TestContainerWithRootFSServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -792,8 +757,6 @@ func TestContainerWithRootFSServices(t *testing.T) {
 
 func TestContainerDirectoryServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -841,8 +804,6 @@ func TestContainerDirectoryServices(t *testing.T) {
 func TestContainerFileServices(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -862,8 +823,6 @@ func TestContainerFileServices(t *testing.T) {
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -913,8 +872,6 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 func TestDirectoryServiceEntries(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -932,8 +889,6 @@ func TestDirectoryServiceEntries(t *testing.T) {
 
 func TestDirectoryServiceSync(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	t.Run("triggers error", func(t *testing.T) {
 		t.Parallel()
@@ -973,8 +928,6 @@ func TestDirectoryServiceSync(t *testing.T) {
 func TestDirectoryServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -997,8 +950,6 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 
 func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()
@@ -1025,8 +976,6 @@ func TestDirectoryWithDirectoryFileServices(t *testing.T) {
 func TestDirectoryServiceExport(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1051,8 +1000,6 @@ func TestDirectoryServiceExport(t *testing.T) {
 func TestFileServiceContents(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1071,8 +1018,6 @@ func TestFileServiceContents(t *testing.T) {
 
 func TestFileServiceSync(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	t.Run("triggers error", func(t *testing.T) {
 		t.Parallel()
@@ -1114,8 +1059,6 @@ func TestFileServiceSync(t *testing.T) {
 func TestFileServiceExport(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1142,8 +1085,6 @@ func TestFileServiceExport(t *testing.T) {
 func TestFileServiceTimestamp(t *testing.T) {
 	t.Parallel()
 
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
 	c, ctx := connect(t)
 	defer c.Close()
 
@@ -1165,8 +1106,6 @@ func TestFileServiceTimestamp(t *testing.T) {
 
 func TestFileServiceSecret(t *testing.T) {
 	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()

@@ -3,14 +3,13 @@ package schema
 import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 )
 
-var _ router.ExecutableSchema = &gitSchema{}
+var _ ExecutableSchema = &gitSchema{}
 
 type gitSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
 func (s *gitSchema) Name() string {
@@ -21,23 +20,23 @@ func (s *gitSchema) Schema() string {
 	return Git
 }
 
-func (s *gitSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"Query": router.ObjectResolver{
-			"git": router.ToResolver(s.git),
+func (s *gitSchema) Resolvers() Resolvers {
+	return Resolvers{
+		"Query": ObjectResolver{
+			"git": ToResolver(s.git),
 		},
-		"GitRepository": router.ObjectResolver{
-			"branch": router.ToResolver(s.branch),
-			"tag":    router.ToResolver(s.tag),
-			"commit": router.ToResolver(s.commit),
+		"GitRepository": ObjectResolver{
+			"branch": ToResolver(s.branch),
+			"tag":    ToResolver(s.tag),
+			"commit": ToResolver(s.commit),
 		},
-		"GitRef": router.ObjectResolver{
-			"tree": router.ToResolver(s.tree),
+		"GitRef": ObjectResolver{
+			"tree": ToResolver(s.tree),
 		},
 	}
 }
 
-func (s *gitSchema) Dependencies() []router.ExecutableSchema {
+func (s *gitSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -60,7 +59,7 @@ type gitArgs struct {
 	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
-func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
+func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
 	return gitRepository{
 		URL:         args.URL,
 		KeepGitDir:  args.KeepGitDir,
@@ -77,14 +76,14 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx *router.Context, parent gitRepository, args commitArgs) (gitRef, error) {
+func (s *gitSchema) commit(ctx *core.Context, parent gitRepository, args commitArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.ID,
 	}, nil
 }
 
-func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branchArgs) (gitRef, error) {
+func (s *gitSchema) branch(ctx *core.Context, parent gitRepository, args branchArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -95,7 +94,7 @@ type tagArgs struct {
 	Name string
 }
 
-func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs) (gitRef, error) {
+func (s *gitSchema) tag(ctx *core.Context, parent gitRepository, args tagArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -107,7 +106,7 @@ type gitTreeArgs struct {
 	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
+func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
 	opts := []llb.GitOption{}
 
 	if parent.Repository.KeepGitDir {

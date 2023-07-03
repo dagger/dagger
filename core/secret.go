@@ -2,10 +2,13 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"sync"
 
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/moby/buildkit/session/secrets"
 )
 
 // Secret is a content-addressed secret.
@@ -66,13 +69,13 @@ func (secret *Secret) IsOldFormat() bool {
 	return secret.FromFile != "" || secret.FromHostEnv != ""
 }
 
-func (secret *Secret) LegacyPlaintext(ctx context.Context, gw bkgw.Client) ([]byte, error) {
+func (secret *Secret) LegacyPlaintext(ctx *Context, bk *buildkit.Client) ([]byte, error) {
 	if secret.FromFile != "" {
 		file, err := secret.FromFile.ToFile()
 		if err != nil {
 			return nil, err
 		}
-		return file.Contents(ctx, gw)
+		return file.Contents(ctx, bk)
 	}
 
 	if secret.FromHostEnv != "" {
@@ -80,4 +83,69 @@ func (secret *Secret) LegacyPlaintext(ctx context.Context, gw bkgw.Client) ([]by
 	}
 
 	return nil, fmt.Errorf("plaintext: empty secret?")
+}
+
+// ErrNotFound indicates a secret can not be found.
+var ErrNotFound = errors.New("secret not found")
+
+func NewSecretStore() *SecretStore {
+	return &SecretStore{
+		secrets: map[string]string{},
+	}
+}
+
+var _ secrets.SecretStore = &SecretStore{}
+
+type SecretStore struct {
+	mu      sync.Mutex
+	secrets map[string]string
+}
+
+// AddSecret adds the secret identified by user defined name with its plaintext
+// value to the secret store.
+func (store *SecretStore) AddSecret(_ context.Context, name, plaintext string) (SecretID, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	secret := NewDynamicSecret(name)
+
+	// add the plaintext to the map
+	store.secrets[secret.Name] = plaintext
+
+	return secret.ID()
+}
+
+// GetSecret returns the plaintext secret value.
+//
+// Its argument may either be the user defined name originally specified within
+// a SecretID, or a full SecretID value.
+//
+// A user defined name will be received when secrets are used in a Dockerfile
+// build.
+//
+// In all other cases, a SecretID is expected.
+func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	var name string
+	if secret, err := SecretID(idOrName).ToSecret(); err == nil {
+		/* TODO: remove fully now?
+		if secret.IsOldFormat() {
+			// use the legacy SecretID format
+			return secret.LegacyPlaintext(ctx, store.bk)
+		}
+		*/
+
+		name = secret.Name
+	} else {
+		name = idOrName
+	}
+
+	plaintext, ok := store.secrets[name]
+	if !ok {
+		return nil, ErrNotFound
+	}
+
+	return []byte(plaintext), nil
 }

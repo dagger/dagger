@@ -1,12 +1,4 @@
-package core
-
-import (
-	"errors"
-)
-
-var ErrHostRWDisabled = errors.New("host read/write is disabled")
-
-var ErrContainerNoExec = errors.New("no command has been executed")
+package buildkit
 
 // ExecError is an error that occurred while executing an `Op_Exec`.
 type ExecError struct {

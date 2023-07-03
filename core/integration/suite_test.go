@@ -268,7 +268,8 @@ func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *Dagg
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		// TODO: this shouldn't be needed, dagger cli should pick up existing nestedness
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock").
+		WithEnvVariable("_EXPERIMENTAL_DAGGER_HOST", "unix:///.dagger.sock")
 
 	return &DaggerCLIContainer{
 		Container: ctr,
@@ -383,7 +384,7 @@ func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--silent", "project"}
+	args := []string{testCLIBinPath, "project"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
@@ -392,7 +393,7 @@ func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--silent", "project", "init"}
+	args := []string{testCLIBinPath, "project", "init"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}

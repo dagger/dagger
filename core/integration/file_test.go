@@ -12,6 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
@@ -119,7 +120,7 @@ func TestFileExport(t *testing.T) {
 	wd := t.TempDir()
 	targetDir := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -208,10 +209,10 @@ func TestFileContents(t *testing.T) {
 		size int
 		hash string
 	}{
-		{size: core.MaxFileContentsChunkSize / 2},
-		{size: core.MaxFileContentsChunkSize},
-		{size: core.MaxFileContentsChunkSize * 2},
-		{size: core.MaxFileContentsSize + 1},
+		{size: buildkit.MaxFileContentsChunkSize / 2},
+		{size: buildkit.MaxFileContentsChunkSize},
+		{size: buildkit.MaxFileContentsChunkSize * 2},
+		{size: buildkit.MaxFileContentsSize + 1},
 	}
 	tempDir := t.TempDir()
 	for i, testFile := range testFiles {
@@ -238,7 +239,7 @@ func TestFileContents(t *testing.T) {
 		contents, err := alpine.File(filename).Contents(ctx)
 
 		// Assert error on larger files:
-		if testFile.size > core.MaxFileContentsSize {
+		if testFile.size > buildkit.MaxFileContentsSize {
 			require.Error(t, err)
 			continue
 		}

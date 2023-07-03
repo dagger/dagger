@@ -2,14 +2,13 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
 )
 
 type secretSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
-var _ router.ExecutableSchema = &secretSchema{}
+var _ ExecutableSchema = &secretSchema{}
 
 func (s *secretSchema) Name() string {
 	return "secret"
@@ -21,25 +20,25 @@ func (s *secretSchema) Schema() string {
 
 var secretIDResolver = stringResolver(core.SecretID(""))
 
-func (s *secretSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
+func (s *secretSchema) Resolvers() Resolvers {
+	return Resolvers{
 		"SecretID": secretIDResolver,
-		"Query": router.ObjectResolver{
-			"secret":    router.ToResolver(s.secret),
-			"setSecret": router.ToResolver(s.setSecret),
+		"Query": ObjectResolver{
+			"secret":    ToResolver(s.secret),
+			"setSecret": ToResolver(s.setSecret),
 		},
-		"Secret": router.ObjectResolver{
-			"id":        router.ToResolver(s.id),
-			"plaintext": router.ToResolver(s.plaintext),
+		"Secret": ObjectResolver{
+			"id":        ToResolver(s.id),
+			"plaintext": ToResolver(s.plaintext),
 		},
 	}
 }
 
-func (s *secretSchema) Dependencies() []router.ExecutableSchema {
+func (s *secretSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *secretSchema) id(ctx *router.Context, parent *core.Secret, args any) (core.SecretID, error) {
+func (s *secretSchema) id(ctx *core.Context, parent *core.Secret, args any) (core.SecretID, error) {
 	return parent.ID()
 }
 
@@ -47,7 +46,7 @@ type secretArgs struct {
 	ID core.SecretID
 }
 
-func (s *secretSchema) secret(ctx *router.Context, parent any, args secretArgs) (*core.Secret, error) {
+func (s *secretSchema) secret(ctx *core.Context, parent any, args secretArgs) (*core.Secret, error) {
 	return args.ID.ToSecret()
 }
 
@@ -63,7 +62,7 @@ type setSecretArgs struct {
 	Plaintext SecretPlaintext
 }
 
-func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecretArgs) (*core.Secret, error) {
+func (s *secretSchema) setSecret(ctx *core.Context, parent any, args setSecretArgs) (*core.Secret, error) {
 	secretID, err := s.secrets.AddSecret(ctx, args.Name, string(args.Plaintext))
 	if err != nil {
 		return nil, err
@@ -72,9 +71,9 @@ func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecret
 	return secretID.ToSecret()
 }
 
-func (s *secretSchema) plaintext(ctx *router.Context, parent *core.Secret, args any) (string, error) {
+func (s *secretSchema) plaintext(ctx *core.Context, parent *core.Secret, args any) (string, error) {
 	if parent.IsOldFormat() {
-		bytes, err := parent.LegacyPlaintext(ctx, s.gw)
+		bytes, err := parent.LegacyPlaintext(ctx, s.bk)
 		return string(bytes), err
 	}
 

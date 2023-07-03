@@ -4,15 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"path"
 	"path/filepath"
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
-	"github.com/dagger/dagger/router"
-	bkclient "github.com/moby/buildkit/client"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
@@ -69,7 +67,7 @@ func (id FileID) String() string {
 
 // FileID is digestible so that smaller hashes can be displayed in
 // --debug vertex names.
-var _ router.Digestible = FileID("")
+var _ Digestible = FileID("")
 
 func (id FileID) Digest() (digest.Digest, error) {
 	return digest.FromString(id.String()), nil
@@ -89,7 +87,7 @@ func (file *File) ID() (FileID, error) {
 	return encodeID[FileID](file)
 }
 
-var _ router.Pipelineable = (*File)(nil)
+var _ pipeline.Pipelineable = (*File)(nil)
 
 func (file *File) PipelinePath() pipeline.Path {
 	// TODO(vito): test
@@ -98,7 +96,7 @@ func (file *File) PipelinePath() pipeline.Path {
 
 // File is digestible so that it can be recorded as an output of the --debug
 // vertex that created it.
-var _ router.Digestible = (*File)(nil)
+var _ Digestible = (*File)(nil)
 
 // Digest returns the file's content hash.
 func (file *File) Digest() (digest.Digest, error) {
@@ -113,9 +111,9 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
-func (file *File) Evaluate(ctx context.Context, gw bkgw.Client) error {
-	_, err := WithServices(ctx, gw, file.Services, func() (*bkgw.Result, error) {
-		return gw.Solve(ctx, bkgw.SolveRequest{
+func (file *File) Evaluate(ctx context.Context, bk *buildkit.Client) error {
+	_, err := WithServices(ctx, bk, file.Services, func() (*buildkit.Result, error) {
+		return bk.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,
 			Definition: file.LLB,
 		})
@@ -124,24 +122,24 @@ func (file *File) Evaluate(ctx context.Context, gw bkgw.Client) error {
 }
 
 // Contents handles file content retrieval
-func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
-	return WithServices(ctx, gw, file.Services, func() ([]byte, error) {
-		ref, err := gwRef(ctx, gw, file.LLB)
+func (file *File) Contents(ctx context.Context, bk *buildkit.Client) ([]byte, error) {
+	return WithServices(ctx, bk, file.Services, func() ([]byte, error) {
+		ref, err := bkRef(ctx, bk, file.LLB)
 		if err != nil {
 			return nil, err
 		}
 
 		// Stat the file and preallocate file contents buffer:
-		st, err := file.Stat(ctx, gw)
+		st, err := file.Stat(ctx, bk)
 		if err != nil {
 			return nil, err
 		}
 
 		// Error on files that exceed MaxFileContentsSize:
 		fileSize := int(st.GetSize_())
-		if fileSize > MaxFileContentsSize {
+		if fileSize > buildkit.MaxFileContentsSize {
 			// TODO: move to proper error structure
-			return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, MaxFileContentsSize)
+			return nil, fmt.Errorf("file size %d exceeds limit %d", fileSize, buildkit.MaxFileContentsSize)
 		}
 
 		// Allocate buffer with the given file size:
@@ -155,7 +153,7 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 				Filename: file.File,
 				Range: &bkgw.FileRange{
 					Offset: offset,
-					Length: MaxFileContentsChunkSize,
+					Length: buildkit.MaxFileContentsChunkSize,
 				},
 			})
 			if err != nil {
@@ -179,9 +177,9 @@ func (file *File) Secret(ctx context.Context) (*Secret, error) {
 	return NewSecretFromFile(id), nil
 }
 
-func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
-	return WithServices(ctx, gw, file.Services, func() (*fstypes.Stat, error) {
-		ref, err := gwRef(ctx, gw, file.LLB)
+func (file *File) Stat(ctx context.Context, bk *buildkit.Client) (*fstypes.Stat, error) {
+	return WithServices(ctx, bk, file.Services, func() (*fstypes.Stat, error) {
+		ref, err := bkRef(ctx, bk, file.LLB)
 		if err != nil {
 			return nil, err
 		}
@@ -214,9 +212,9 @@ func (file *File) WithTimestamps(ctx context.Context, unix int) (*File, error) {
 	return file, nil
 }
 
-func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.ReadCloser, error) {
-	return WithServices(ctx, gw, file.Services, func() (io.ReadCloser, error) {
-		fs, err := reffs.OpenDef(ctx, gw, file.LLB)
+func (file *File) Open(ctx context.Context, host *Host, bk *buildkit.Client) (io.ReadCloser, error) {
+	return WithServices(ctx, bk, file.Services, func() (io.ReadCloser, error) {
+		fs, err := reffs.OpenDef(ctx, bk, file.LLB)
 		if err != nil {
 			return nil, err
 		}
@@ -227,18 +225,12 @@ func (file *File) Open(ctx context.Context, host *Host, gw bkgw.Client) (io.Read
 
 func (file *File) Export(
 	ctx context.Context,
+	bk *buildkit.Client,
 	host *Host,
 	dest string,
 	allowParentDirPath bool,
-	bkClient *bkclient.Client,
-	solveOpts bkclient.SolveOpt,
-	solveCh chan<- *bkclient.SolveStatus,
 ) error {
-	dest, err := host.NormalizeDest(dest)
-	if err != nil {
-		return err
-	}
-
+	/* TODO: reimplement support for allowParentDirPath being false, need to pass setting to client and enforce there
 	if stat, err := os.Stat(dest); err == nil {
 		if stat.IsDir() {
 			if !allowParentDirPath {
@@ -247,38 +239,32 @@ func (file *File) Export(
 			dest = filepath.Join(dest, filepath.Base(file.File))
 		}
 	}
+	*/
 
 	destFilename := filepath.Base(dest)
 	destDir := filepath.Dir(dest)
 
-	return host.Export(ctx, bkclient.ExportEntry{
-		Type:      bkclient.ExporterLocal,
-		OutputDir: destDir,
-	}, bkClient, solveOpts, solveCh, func(ctx context.Context, gw bkgw.Client) (*bkgw.Result, error) {
-		return WithServices(ctx, gw, file.Services, func() (*bkgw.Result, error) {
-			src, err := file.State()
-			if err != nil {
-				return nil, err
-			}
+	src, err := file.State()
+	if err != nil {
+		return err
+	}
 
-			src = llb.Scratch().File(llb.Copy(src, file.File, destFilename))
+	src = llb.Scratch().File(llb.Copy(src, file.File, destFilename))
 
-			def, err := src.Marshal(ctx, llb.Platform(file.Platform))
-			if err != nil {
-				return nil, err
-			}
-
-			return gw.Solve(ctx, bkgw.SolveRequest{
-				Evaluate:   true,
-				Definition: def.ToPB(),
-			})
-		})
+	_, err = WithServices(ctx, bk, file.Services, func() (any, error) {
+		def, err := src.Marshal(ctx, llb.Platform(file.Platform))
+		if err != nil {
+			return nil, err
+		}
+		err = bk.LocalExport(ctx, def.ToPB(), destDir)
+		return nil, err
 	})
+	return err
 }
 
-// gwRef returns the buildkit reference from the solved def.
-func gwRef(ctx context.Context, gw bkgw.Client, def *pb.Definition) (bkgw.Reference, error) {
-	res, err := gw.Solve(ctx, bkgw.SolveRequest{
+// bkRef returns the buildkit reference from the solved def.
+func bkRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkgw.Reference, error) {
+	res, err := bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: def,
 	})
 	if err != nil {

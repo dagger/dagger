@@ -21,6 +21,7 @@ import (
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
@@ -2967,20 +2968,20 @@ func TestContainerExecError(t *testing.T) {
 		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
 		var stdoutBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stdoutBuf.WriteByte('a')
 		}
 		stdoutStr := stdoutBuf.String()
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stderrBuf.WriteByte('b')
 		}
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(core.TruncationMessage, 50)
+		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, 50)
 
 		_, err = c.Container().
 			From("alpine:3.16.2").
@@ -2994,8 +2995,8 @@ func TestContainerExecError(t *testing.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:core.MaxExecErrorOutputBytes], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stderr)
 	})
 }
 

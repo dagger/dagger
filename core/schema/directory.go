@@ -5,17 +5,16 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type directorySchema struct {
-	*baseSchema
+	*MergedSchemas
 
 	host *core.Host
 }
 
-var _ router.ExecutableSchema = &directorySchema{}
+var _ ExecutableSchema = &directorySchema{}
 
 func (s *directorySchema) Name() string {
 	return "directory"
@@ -27,34 +26,34 @@ func (s *directorySchema) Schema() string {
 
 var directoryIDResolver = stringResolver(core.DirectoryID(""))
 
-func (s *directorySchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
+func (s *directorySchema) Resolvers() Resolvers {
+	return Resolvers{
 		"DirectoryID": directoryIDResolver,
-		"Query": router.ObjectResolver{
-			"directory": router.ToResolver(s.directory),
+		"Query": ObjectResolver{
+			"directory": ToResolver(s.directory),
 		},
-		"Directory": router.ToIDableObjectResolver(core.DirectoryID.ToDirectory, router.ObjectResolver{
-			"id":               router.ToResolver(s.id),
-			"sync":             router.ToResolver(s.sync),
-			"pipeline":         router.ToResolver(s.pipeline),
-			"entries":          router.ToResolver(s.entries),
-			"file":             router.ToResolver(s.file),
-			"withFile":         router.ToResolver(s.withFile),
-			"withNewFile":      router.ToResolver(s.withNewFile),
-			"withoutFile":      router.ToResolver(s.withoutFile),
-			"directory":        router.ToResolver(s.subdirectory),
-			"withDirectory":    router.ToResolver(s.withDirectory),
-			"withTimestamps":   router.ToResolver(s.withTimestamps),
-			"withNewDirectory": router.ToResolver(s.withNewDirectory),
-			"withoutDirectory": router.ToResolver(s.withoutDirectory),
-			"diff":             router.ToResolver(s.diff),
-			"export":           router.ToResolver(s.export),
-			"dockerBuild":      router.ToResolver(s.dockerBuild),
+		"Directory": ToIDableObjectResolver(core.DirectoryID.ToDirectory, ObjectResolver{
+			"id":               ToResolver(s.id),
+			"sync":             ToResolver(s.sync),
+			"pipeline":         ToResolver(s.pipeline),
+			"entries":          ToResolver(s.entries),
+			"file":             ToResolver(s.file),
+			"withFile":         ToResolver(s.withFile),
+			"withNewFile":      ToResolver(s.withNewFile),
+			"withoutFile":      ToResolver(s.withoutFile),
+			"directory":        ToResolver(s.subdirectory),
+			"withDirectory":    ToResolver(s.withDirectory),
+			"withTimestamps":   ToResolver(s.withTimestamps),
+			"withNewDirectory": ToResolver(s.withNewDirectory),
+			"withoutDirectory": ToResolver(s.withoutDirectory),
+			"diff":             ToResolver(s.diff),
+			"export":           ToResolver(s.export),
+			"dockerBuild":      ToResolver(s.dockerBuild),
 		}),
 	}
 }
 
-func (s *directorySchema) Dependencies() []router.ExecutableSchema {
+func (s *directorySchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -64,7 +63,7 @@ type directoryPipelineArgs struct {
 	Labels      []pipeline.Label
 }
 
-func (s *directorySchema) pipeline(ctx *router.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
+func (s *directorySchema) pipeline(ctx *core.Context, parent *core.Directory, args directoryPipelineArgs) (*core.Directory, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
@@ -72,20 +71,20 @@ type directoryArgs struct {
 	ID core.DirectoryID
 }
 
-func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
+func (s *directorySchema) directory(ctx *core.Context, parent *core.Query, args directoryArgs) (*core.Directory, error) {
 	if args.ID != "" {
 		return args.ID.ToDirectory()
 	}
-	platform := s.baseSchema.platform
+	platform := s.platform
 	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
 }
 
-func (s *directorySchema) id(ctx *router.Context, parent *core.Directory, args any) (core.DirectoryID, error) {
+func (s *directorySchema) id(ctx *core.Context, parent *core.Directory, args any) (core.DirectoryID, error) {
 	return parent.ID()
 }
 
-func (s *directorySchema) sync(ctx *router.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
-	err := parent.Evaluate(ctx.Context, s.gw)
+func (s *directorySchema) sync(ctx *core.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
+	err := parent.Evaluate(ctx.Context, s.bk)
 	if err != nil {
 		return "", err
 	}
@@ -96,8 +95,8 @@ type subdirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) subdirectory(ctx *router.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+func (s *directorySchema) subdirectory(ctx *core.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
+	return parent.Directory(ctx, s.bk, args.Path)
 }
 
 type withNewDirectoryArgs struct {
@@ -105,7 +104,7 @@ type withNewDirectoryArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withNewDirectory(ctx *router.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withNewDirectory(ctx *core.Context, parent *core.Directory, args withNewDirectoryArgs) (*core.Directory, error) {
 	return parent.WithNewDirectory(ctx, args.Path, args.Permissions)
 }
 
@@ -116,7 +115,7 @@ type withDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *directorySchema) withDirectory(ctx *router.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withDirectory(ctx *core.Context, parent *core.Directory, args withDirectoryArgs) (*core.Directory, error) {
 	dir, err := args.Directory.ToDirectory()
 	if err != nil {
 		return nil, err
@@ -128,7 +127,7 @@ type dirWithTimestampsArgs struct {
 	Timestamp int
 }
 
-func (s *directorySchema) withTimestamps(ctx *router.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
+func (s *directorySchema) withTimestamps(ctx *core.Context, parent *core.Directory, args dirWithTimestampsArgs) (*core.Directory, error) {
 	return parent.WithTimestamps(ctx, args.Timestamp)
 }
 
@@ -136,16 +135,16 @@ type entriesArgs struct {
 	Path string
 }
 
-func (s *directorySchema) entries(ctx *router.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
-	return parent.Entries(ctx, s.gw, args.Path)
+func (s *directorySchema) entries(ctx *core.Context, parent *core.Directory, args entriesArgs) ([]string, error) {
+	return parent.Entries(ctx, s.bk, args.Path)
 }
 
 type dirFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) file(ctx *router.Context, parent *core.Directory, args dirFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+func (s *directorySchema) file(ctx *core.Context, parent *core.Directory, args dirFileArgs) (*core.File, error) {
+	return parent.File(ctx, s.bk, args.Path)
 }
 
 type withNewFileArgs struct {
@@ -154,7 +153,7 @@ type withNewFileArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withNewFile(ctx *router.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withNewFile(ctx *core.Context, parent *core.Directory, args withNewFileArgs) (*core.Directory, error) {
 	return parent.WithNewFile(ctx, args.Path, []byte(args.Contents), args.Permissions, nil)
 }
 
@@ -164,7 +163,7 @@ type withFileArgs struct {
 	Permissions fs.FileMode
 }
 
-func (s *directorySchema) withFile(ctx *router.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withFile(ctx *core.Context, parent *core.Directory, args withFileArgs) (*core.Directory, error) {
 	file, err := args.Source.ToFile()
 	if err != nil {
 		return nil, err
@@ -177,7 +176,7 @@ type withoutDirectoryArgs struct {
 	Path string
 }
 
-func (s *directorySchema) withoutDirectory(ctx *router.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
+func (s *directorySchema) withoutDirectory(ctx *core.Context, parent *core.Directory, args withoutDirectoryArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Path)
 }
 
@@ -185,7 +184,7 @@ type withoutFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) withoutFile(ctx *router.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
+func (s *directorySchema) withoutFile(ctx *core.Context, parent *core.Directory, args withoutFileArgs) (*core.Directory, error) {
 	return parent.Without(ctx, args.Path)
 }
 
@@ -193,7 +192,7 @@ type diffArgs struct {
 	Other core.DirectoryID
 }
 
-func (s *directorySchema) diff(ctx *router.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
+func (s *directorySchema) diff(ctx *core.Context, parent *core.Directory, args diffArgs) (*core.Directory, error) {
 	dir, err := args.Other.ToDirectory()
 	if err != nil {
 		return nil, err
@@ -205,8 +204,8 @@ type dirExportArgs struct {
 	Path string
 }
 
-func (s *directorySchema) export(ctx *router.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
-	err := parent.Export(ctx, s.host, args.Path, s.bkClient, s.solveOpts, s.solveCh)
+func (s *directorySchema) export(ctx *core.Context, parent *core.Directory, args dirExportArgs) (bool, error) {
+	err := parent.Export(ctx, s.bk, s.host, args.Path)
 	if err != nil {
 		return false, err
 	}
@@ -222,8 +221,8 @@ type dirDockerBuildArgs struct {
 	Secrets    []core.SecretID
 }
 
-func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
-	platform := s.baseSchema.platform
+func (s *directorySchema) dockerBuild(ctx *core.Context, parent *core.Directory, args dirDockerBuildArgs) (*core.Container, error) {
+	platform := s.platform
 	if args.Platform != nil {
 		platform = *args.Platform
 	}
@@ -231,5 +230,5 @@ func (s *directorySchema) dockerBuild(ctx *router.Context, parent *core.Director
 	if err != nil {
 		return ctr, err
 	}
-	return ctr.Build(ctx, s.gw, parent, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	return ctr.Build(ctx, s.bk, parent, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
 }

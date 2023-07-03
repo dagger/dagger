@@ -2,15 +2,14 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 )
 
-var _ router.ExecutableSchema = &httpSchema{}
+var _ ExecutableSchema = &httpSchema{}
 
 type httpSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
 func (s *httpSchema) Name() string {
@@ -21,15 +20,15 @@ func (s *httpSchema) Schema() string {
 	return HTTP
 }
 
-func (s *httpSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"Query": router.ObjectResolver{
-			"http": router.ToResolver(s.http),
+func (s *httpSchema) Resolvers() Resolvers {
+	return Resolvers{
+		"Query": ObjectResolver{
+			"http": ToResolver(s.http),
 		},
 	}
 }
 
-func (s *httpSchema) Dependencies() []router.ExecutableSchema {
+func (s *httpSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -38,7 +37,7 @@ type httpArgs struct {
 	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
-func (s *httpSchema) http(ctx *router.Context, parent *core.Query, args httpArgs) (*core.File, error) {
+func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) (*core.File, error) {
 	pipeline := parent.PipelinePath()
 
 	// Use a filename that is set to the URL. Buildkit internally stores some cache metadata of etags

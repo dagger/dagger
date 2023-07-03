@@ -12,7 +12,7 @@ import (
 
 	"context"
 
-	"github.com/dagger/dagger/router/internal/handler"
+	"github.com/dagger/dagger/engine/internal/handler"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
 	"github.com/dagger/graphql/language/location"
