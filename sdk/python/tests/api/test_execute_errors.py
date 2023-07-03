@@ -109,7 +109,7 @@ async def test_exec_error(client: dagger.Client, httpx_mock: HTTPXMock):
     assert exc.command == ["sh", "-c", "spam"]
     assert exc.exit_code == 127
     assert exc.stderr == "/bin/sh: spam: not found"
-    assert exc.stdout == ""  # noqa: PLC1901
+    assert exc.stdout == ""
 
     assert "command not found" in str(exc)
     assert "spam: not found" in str(exc)

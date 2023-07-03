@@ -99,20 +99,15 @@ async with dagger.Connection(config) as client:
 
 ## Development
 
-This library is maintained with [Poetry](https://python-poetry.org/docs/).
-
-If you already have a [Python 3.10 or later](https://docs.python.org/3/using/index.html) interpreter in your `$PATH`, you can let [Poetry manage](https://python-poetry.org/docs/basic-usage/#using-your-virtual-environment) the [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) automatically. Otherwise you need to activate it first, before installing dependencies:
-
-```shell
-poetry install
-```
+This library is maintained with [Hatch](https://hatch.pypa.io/).
 
 The following commands are available:
-- `poe test`: Run tests.
-- `poe fmt`: Re-format code following common styling conventions.
-- `poe lint`: Check for linting violations.
-- `poe generate`: Regenerate API client after changes to the codegen (needs `poetry install -E cli`).
-- `poe docs`: Build reference docs locally (needs `poetry install --with docs`).
+- `hatch run test`: Run tests.
+- `hatch run fmt`: Re-format code following common styling conventions.
+- `hatch run lint`: Check for linting violations.
+- `hatch run generate`: Regenerate API client after changes to the codegen.
+- `hatch run typing:check`: Run the type checker.
+- `hatch run docs:build`: Build reference docs locally (check with `(cd docs/_build && python -m http.server)`).
 
 ### Engine changes
 
@@ -121,20 +116,21 @@ Testing and regenerating the client may fail if there’s changes in the engine 
 The simplest way to run those commands locally with the most updated engine version is to build it using [Dagger’s CI pipelines](https://github.com/dagger/dagger/blob/main/internal/mage/sdk/python.go) :
 
 ```shell
-../../hack/make sdk:python:test
 ../../hack/make sdk:python:generate
+../../hack/make sdk:python:lint
+../../hack/make sdk:python:test
 ```
 
 You can also build the CLI and use it directly within the Python SDK:
 
 ```shell
-../../hack/dev poe test
+../../hack/dev hatch test
 ```
 
 Or build it separately and tell the SDK to use it directly (or any other CLI binary):
 
 ```shell
 ../../hack/make
-_EXPERIMENTAL_DAGGER_CLI_BIN=../../bin/dagger poe test
+_EXPERIMENTAL_DAGGER_CLI_BIN=../../bin/dagger hatch test
 ```
 

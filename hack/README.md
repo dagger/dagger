@@ -22,6 +22,6 @@ _Example:_ `./hack/dev bash`
 
 `./hack/dev bash`
 
-This will bootstrap your local engine code and then open a shell with env vars pointing to that dev engine. You can thus run `go test`, `poetry run`, `yarn run` and have the tests execute against that dev engine.
+This will bootstrap your local engine code and then open a shell with env vars pointing to that dev engine. You can thus run `go test`, `hatch run`, `yarn run` and have the tests execute against that dev engine.
 
 Unlike `./hack/make`, this won't require always rebuilding the engine every time you run a command, which can sometimes be more convenient.
