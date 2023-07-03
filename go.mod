@@ -10,7 +10,7 @@ replace cloud.google.com/go => cloud.google.com/go v0.100.2
 require (
 	dagger.io/dagger v0.7.2
 	github.com/99designs/gqlgen v0.17.31 // indirect
-	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
+	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.31.3 // indirect
@@ -27,8 +27,8 @@ require (
 	github.com/google/go-containerregistry v0.15.2
 	github.com/google/uuid v1.3.0
 	github.com/iancoleman/strcase v0.3.0
-	// https://github.com/moby/buildkit/commit/8a28fe6bc051989cc1a5c2312a73d8da17d8a435
-	github.com/moby/buildkit v0.11.0-rc3.0.20230608232644-8a28fe6bc051
+	// https://github.com/moby/buildkit/commit/cdf28d6fff9583a0b173c62ac9a28d1626599d3b
+	github.com/moby/buildkit v0.12.0-rc1.0.20230630224845-cdf28d6fff95
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.0-rc3
 	github.com/opencontainers/runtime-spec v1.1.0-rc.2
@@ -37,7 +37,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.7.0
 	github.com/stretchr/testify v1.8.3
-	github.com/tonistiigi/fsutil v0.0.0-20230407161946-9e7a6df48576
+	github.com/tonistiigi/fsutil v0.0.0-20230629203738-36ef4d8c0dbb
 	github.com/urfave/cli v1.22.12
 	github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63
 	github.com/zeebo/xxh3 v1.0.2
@@ -212,7 +212,7 @@ require (
 )
 
 require (
-	github.com/Khan/genqlient v0.6.0 // indirect
+	github.com/Khan/genqlient v0.6.0
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.10.0-rc.8 // indirect
 	github.com/adrg/xdg v0.4.0
@@ -226,8 +226,8 @@ require (
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/containerd/ttrpc v1.2.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/docker/cli v24.0.1+incompatible
-	github.com/docker/docker v24.0.1+incompatible
+	github.com/docker/cli v24.0.2+incompatible
+	github.com/docker/docker v24.0.2+incompatible
 	github.com/docker/docker-credential-helpers v0.7.0 // indirect
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -254,7 +254,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/tidwall/gjson v1.14.4
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
-	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f // indirect
+	github.com/tonistiigi/vt100 v0.0.0-20230623042737-f9a4f7ef6531 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.6
 	go.opencensus.io v0.24.0 // indirect

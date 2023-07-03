@@ -7,8 +7,7 @@ import (
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
-	internalengine "github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -17,21 +16,18 @@ var currentSchema *introspection.Schema
 func init() {
 	ctx := context.Background()
 
-	engineConf := engine.Config{
-		RunnerHost: internalengine.RunnerHost(),
-	}
-	err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-		var err error
-		currentSchema, err = generator.Introspect(ctx, r)
-		if err != nil {
-			panic(err)
-		}
-		generator.SetSchemaParents(currentSchema)
-		return nil
+	sess, err := client.Connect(ctx, client.SessionParams{
+		RunnerHost: engine.RunnerHost(),
 	})
 	if err != nil {
 		panic(err)
 	}
+
+	currentSchema, err := generator.Introspect(ctx, sess)
+	if err != nil {
+		panic(err)
+	}
+	generator.SetSchemaParents(currentSchema)
 }
 
 func getField(t *introspection.Type, name string) *introspection.Field {

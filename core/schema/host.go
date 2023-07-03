@@ -1,21 +1,16 @@
 package schema
 
 import (
-	"fmt"
-	"os"
-	"path/filepath"
-
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
 )
 
 type hostSchema struct {
-	*baseSchema
+	*MergedSchemas
 
 	host *core.Host
 }
 
-var _ router.ExecutableSchema = &hostSchema{}
+var _ ExecutableSchema = &hostSchema{}
 
 func (s *hostSchema) Name() string {
 	return "host"
@@ -25,21 +20,20 @@ func (s *hostSchema) Schema() string {
 	return Host
 }
 
-func (s *hostSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"Query": router.ObjectResolver{
-			"host": router.PassthroughResolver,
+func (s *hostSchema) Resolvers() Resolvers {
+	return Resolvers{
+		"Query": ObjectResolver{
+			"host": PassthroughResolver,
 		},
-		"Host": router.ObjectResolver{
-			"directory":     router.ToResolver(s.directory),
-			"file":          router.ToResolver(s.file),
-			"unixSocket":    router.ToResolver(s.socket),
-			"setSecretFile": router.ToResolver(s.setSecretFile),
+		"Host": ObjectResolver{
+			"directory":  ToResolver(s.directory),
+			"file":       ToResolver(s.file),
+			"unixSocket": ToResolver(s.socket),
 		},
 	}
 }
 
-func (s *hostSchema) Dependencies() []router.ExecutableSchema {
+func (s *hostSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -48,7 +42,9 @@ type setSecretFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) setSecretFile(ctx *router.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
+func (s *hostSchema) setSecretFile(ctx *core.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
+	panic("re-incorporate")
+	/* TODO:
 	if s.host.DisableRW {
 		return nil, core.ErrHostRWDisabled
 	}
@@ -77,6 +73,7 @@ func (s *hostSchema) setSecretFile(ctx *router.Context, _ any, args setSecretFil
 	}
 
 	return secretID.ToSecret()
+	*/
 }
 
 type hostDirectoryArgs struct {
@@ -85,15 +82,15 @@ type hostDirectoryArgs struct {
 	core.CopyFilter
 }
 
-func (s *hostSchema) directory(ctx *router.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
-	return s.host.Directory(ctx, s.gw, args.Path, parent.PipelinePath(), "host.directory", s.platform, args.CopyFilter)
+func (s *hostSchema) directory(ctx *core.Context, parent *core.Query, args hostDirectoryArgs) (*core.Directory, error) {
+	return s.host.Directory(ctx, s.bk, args.Path, parent.PipelinePath(), "host.directory", s.platform, args.CopyFilter)
 }
 
 type hostSocketArgs struct {
 	Path string
 }
 
-func (s *hostSchema) socket(ctx *router.Context, _ any, args hostSocketArgs) (*core.Socket, error) {
+func (s *hostSchema) socket(ctx *core.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
 	return s.host.Socket(ctx, args.Path)
 }
 
@@ -101,6 +98,6 @@ type hostFileArgs struct {
 	Path string
 }
 
-func (s *hostSchema) file(ctx *router.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
-	return s.host.File(ctx, s.gw, args.Path, parent.PipelinePath(), s.platform)
+func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
+	return s.host.File(ctx, s.bk, args.Path, parent.PipelinePath(), s.platform)
 }

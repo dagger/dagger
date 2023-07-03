@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/ssh"
@@ -66,7 +65,6 @@ func TestGit(t *testing.T) {
 
 func TestGitSSHAuthSock(t *testing.T) {
 	t.Parallel()
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
 
 	c, ctx := connect(t)
 	defer c.Close()

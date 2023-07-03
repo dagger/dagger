@@ -1,16 +1,19 @@
-package engine
+package client
 
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"os/exec"
 	"strings"
 
+	"github.com/docker/cli/cli/connhelper/commandconn"
 	"github.com/google/go-containerregistry/pkg/authn"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
+	"github.com/moby/buildkit/client/connhelper"
 	"github.com/pkg/errors"
 )
 
@@ -26,6 +29,32 @@ const (
 	hashLen             = 16
 	containerNamePrefix = "dagger-engine-"
 )
+
+func init() {
+	// This is same as upstream but w/ --addr support, remove once upstreamed
+	connhelper.Register("docker-container", func(u *url.URL) (*connhelper.ConnectionHelper, error) {
+		ctrName := u.Hostname()
+		if ctrName == "" {
+			return nil, errors.Errorf("container name is required")
+		}
+		dockerCtx := u.Query().Get("context")
+		dialAddr := u.Query().Get("addr")
+		return &connhelper.ConnectionHelper{
+			ContextDialer: func(ctx context.Context, addr string) (net.Conn, error) {
+				var flags []string
+				if dockerCtx != "" {
+					flags = append(flags, "--context="+dockerCtx)
+				}
+				flags = append(flags, "exec", "-i", ctrName, "buildctl")
+				if dialAddr != "" {
+					flags = append(flags, "--addr="+dialAddr)
+				}
+				flags = append(flags, "dial-stdio")
+				return commandconn.New(context.Background(), "docker", flags...)
+			},
+		}, nil
+	})
+}
 
 // Pull the image and run it with a unique name tied to the pinned
 // sha of the image. Remove any other containers leftover from

@@ -12,8 +12,7 @@ import (
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -65,8 +64,8 @@ var projectCmd = &cobra.Command{
 			}
 		case proj.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
-				c, err := dagger.Connect(ctx, dagger.WithConn(router.EngineConn(r)))
+			err = withEngineAndTUI(ctx, client.SessionParams{}, func(ctx context.Context, sess *client.Session) error {
+				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(sess)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to dagger: %w", err)
 				}

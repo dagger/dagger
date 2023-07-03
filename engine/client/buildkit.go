@@ -1,4 +1,4 @@
-package engine
+package client
 
 import (
 	"context"
@@ -7,28 +7,26 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"go.opentelemetry.io/otel"
-
-	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // import the docker connection driver
-	_ "github.com/moby/buildkit/client/connhelper/kubepod"         // import the kubernetes connection driver
-	_ "github.com/moby/buildkit/client/connhelper/podmancontainer" // import the podman connection driver
+	// TODO: re-enable once upstream supports --addr
+	// _ "github.com/moby/buildkit/client/connhelper/dockercontainer"
+	// _ "github.com/moby/buildkit/client/connhelper/kubepod"
+	// _ "github.com/moby/buildkit/client/connhelper/podmancontainer"
+	// _ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-const (
-	PrivilegedExecLabel = "privilegedEnabled"
-	EngineNameLabel     = "engineName"
-)
-
-type Client struct {
-	BuildkitClient        *bkclient.Client
-	PrivilegedExecEnabled bool
-	EngineName            string
+type bkClient struct {
+	*bkclient.Client
+	PrivilegedExecEnabled   bool
+	EngineName              string
+	DaggerFrontendSessionID string
 }
 
-// Client returns a buildkit client, whether privileged execs are enabled, or an error
-func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client, error) {
+func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkClient, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
@@ -44,18 +42,21 @@ func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client,
 	}
 	var privilegedExecEnabled bool
 	var engineName string
+	var daggerFrontendSessionID string
 	if len(workerInfo) > 0 {
 		for k, v := range workerInfo[0].Labels {
 			// TODO:(sipsma) we set these custom labels in the engine's worker initializer
 			// It's not the best solution but the only way to get this
 			// information to the client right now.
 			switch k {
-			case PrivilegedExecLabel:
+			case engine.PrivilegedExecLabel:
 				if v == "true" {
 					privilegedExecEnabled = true
 				}
-			case EngineNameLabel:
+			case engine.EngineNameLabel:
 				engineName = v
+			case session.DaggerFrontendSessionIDLabel:
+				daggerFrontendSessionID = v
 			}
 		}
 	}
@@ -79,10 +80,11 @@ func NewClient(ctx context.Context, remote *url.URL, userAgent string) (*Client,
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 
-	return &Client{
-		BuildkitClient:        c,
-		PrivilegedExecEnabled: privilegedExecEnabled,
-		EngineName:            engineName,
+	return &bkClient{
+		Client:                  c,
+		PrivilegedExecEnabled:   privilegedExecEnabled,
+		EngineName:              engineName,
+		DaggerFrontendSessionID: daggerFrontendSessionID,
 	}, nil
 }
 
