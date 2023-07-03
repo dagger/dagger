@@ -130,20 +130,13 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-
-        # https://github.com/python-poetry/poetry/blob/dcd48c8df6d22246c21c0243fd387e3a9b189f93/.github/workflows/main.yml
-      - name: "Bootstrap Poetry"
-        run: |
-          curl -sL https://install.python-poetry.org | python - -y
-
-      - name: "Add Poetry & deps to PATH"
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
-
+          cache: "pip"
+          cache-dependency-path: "sdk/python/requirements.txt"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          poetry install --only main,test
-          poetry run pytest -xm provision
+          pip install -r requirements.txt .
+          pytest -xm provision
 
       - uses: actions/setup-node@v2
         with:
@@ -243,16 +236,13 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: "3.11"
-      - name: "Bootstrap Poetry"
-        run: |
-          curl -sL https://install.python-poetry.org | python - -y
-      - name: "Add Poetry & deps to PATH"
-        run: echo "$HOME/.local/bin" >> $GITHUB_PATH
+          cache: "pip"
+          cache-dependency-path: "sdk/python/requirements.txt"
       - name: "Test Python SDK"
         run: |
           cd sdk/python
-          poetry install --only main,test
-          poetry run pytest -xm provision
+          pip install -r requirements.txt .
+          pytest -xm provision
       - name: "ALWAYS print engine logs - especially useful on failure"
         if: always()
         run: docker logs $(docker ps -q --filter name=dagger-engine)
