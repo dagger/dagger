@@ -17,6 +17,7 @@ const (
 	SDKLangGo     SDKLang = "go"
 	SDKLangNodeJS SDKLang = "nodejs"
 	SDKLangPython SDKLang = "python"
+	SDKLangRuby   SDKLang = "ruby"
 )
 
 type Config struct {

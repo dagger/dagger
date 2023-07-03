@@ -70,6 +70,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// embedded files
 			"**/*.go.tmpl",
 			"**/*.ts.gtpl",
+			"**/*.rb.gtpl",
 			"**/*.graphqls",
 			"**/*.graphql",
 

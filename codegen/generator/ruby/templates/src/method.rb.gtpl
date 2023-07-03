@@ -1,0 +1,2 @@
+{{ define "method" }}
+{{- end }}

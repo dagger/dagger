@@ -15,6 +15,7 @@ import (
 	"github.com/dagger/dagger/codegen/generator"
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
 	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
+	rubygenerator "github.com/dagger/dagger/codegen/generator/ruby"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
 	internalengine "github.com/dagger/dagger/internal/engine"
@@ -154,11 +155,14 @@ func generate(ctx context.Context, schema *introspection.Schema, cfg generator.C
 		}
 	case generator.SDKLangNodeJS:
 		gen = &nodegenerator.NodeGenerator{}
+	case generator.SDKLangRuby:
+		gen = &rubygenerator.RubyGenerator{}
 
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
+			string(generator.SDKLangRuby),
 		}
 		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}
