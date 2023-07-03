@@ -16,7 +16,7 @@ module Dagger
     end
 
     def add_node(method_name, *args, &block)
-      Client.new(@graphql, @operations + [[method_name, *args]])
+      self.class.new(@graphql, @operations + [[method_name, *args]])
     end    
 
     def evaluate

@@ -2,19 +2,16 @@
 
 module Dagger
   class Client < Base
-    def host
-      add_node(:host)
-    end
-
-    def directory(path, *args)
-      args[0][:path] = path
-      add_node(:directory, *args)
-    end
-
     def container
-      add_node(:container)
+      Container.new(@graphql, [[:container]])
     end
 
+    def host
+      Host.new(@graphql, [[:host]])
+    end
+  end
+
+  class Container < Base
     def from(address)
       add_node(:from, address: address)
     end
@@ -37,6 +34,13 @@ module Dagger
 
     def stderr
       add_node(:stderr).send(:evaluate)
+    end
+  end
+
+  class Host < Base
+    def directory(path, *args)
+      args[0][:path] = path
+      add_node(:directory, *args)
     end
   end
 end
