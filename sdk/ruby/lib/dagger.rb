@@ -2,5 +2,6 @@
 
 module Dagger
   require_relative "dagger/client"
+  require_relative "dagger/connect"
   require_relative "dagger/version"
 end
