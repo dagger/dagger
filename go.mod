@@ -8,7 +8,7 @@ replace dagger.io/dagger => ./sdk/go
 replace cloud.google.com/go => cloud.google.com/go v0.100.2
 
 require (
-	dagger.io/dagger v0.4.1
+	dagger.io/dagger v0.7.2
 	github.com/99designs/gqlgen v0.17.2 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
@@ -73,7 +73,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.6.0
+	github.com/vito/progrock v0.7.0
 	github.com/vito/vt100 v0.1.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.9.0
