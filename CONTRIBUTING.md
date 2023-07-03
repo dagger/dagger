@@ -168,7 +168,7 @@ sdk:python:lint        lints the Python SDK
 ```
 
 :::tip
-The `docs:lint` is misleading as it only lints the Markdown and Node.js snippets in documentation. Go snippets in documentation are linted in `engine:lint` and Python snippets are linted in `sdk:python:lint`.
+The `docs:lint` is misleading as it only lints the Markdown in documentation (`.md`). Go snippets in documentation are linted in `engine:lint` while the others are linted in `sdk:<name>:lint`.
 :::
 
 ### How to re-run all GitHub Actions jobs?

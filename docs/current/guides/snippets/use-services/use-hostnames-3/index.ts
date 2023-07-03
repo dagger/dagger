@@ -1,4 +1,4 @@
-import Client, { connect } from '@dagger.io/dagger';
+import Client, { connect } from "@dagger.io/dagger"
 
 connect(
   async (client: Client) => {
@@ -8,7 +8,7 @@ connect(
       .from("python")
       .withExec(["python", "-m", "http.server"])
       .hostname()
-    console.log(val);
+    console.log(val)
   },
   { LogOutput: process.stderr }
-);
+)

@@ -32,7 +32,9 @@
     "watch": "tsc -w",
     "test": "mocha",
     "lint": "yarn eslint --max-warnings=0 .",
-    "fmt": "yarn eslint --fix"
+    "fmt": "yarn eslint --fix .",
+    "docs:lint": "yarn eslint --max-warnings=0 --resolve-plugins-relative-to=./ ../../docs/current",
+    "docs:fmt": "yarn eslint --fix --resolve-plugins-relative-to=./ ../../docs/current ."
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^4.1.1",
