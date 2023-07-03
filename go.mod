@@ -9,7 +9,7 @@ replace cloud.google.com/go => cloud.google.com/go v0.100.2
 
 require (
 	dagger.io/dagger v0.7.2
-	github.com/99designs/gqlgen v0.17.2 // indirect
+	github.com/99designs/gqlgen v0.17.31 // indirect
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2/config v1.18.21 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.13.20 // indirect
@@ -211,7 +211,7 @@ require (
 )
 
 require (
-	github.com/Khan/genqlient v0.5.0 // indirect
+	github.com/Khan/genqlient v0.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/Microsoft/hcsshim v0.10.0-rc.8 // indirect
 	github.com/adrg/xdg v0.4.0
@@ -255,7 +255,7 @@ require (
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea
 	github.com/tonistiigi/vt100 v0.0.0-20210615222946-8066bb97264f // indirect
 	github.com/vbatts/tar-split v0.11.2 // indirect
-	github.com/vektah/gqlparser/v2 v2.5.1
+	github.com/vektah/gqlparser/v2 v2.5.6
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/net v0.11.0
 	golang.org/x/text v0.10.0
