@@ -209,14 +209,14 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithMountedFile("/pipx.pyz", pipx).
 		WithExec([]string{"python", "/pipx.pyz", "install", "hatch==1.7.0"}).
 		WithExec([]string{"python", "-m", "venv", venv}).
+		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable(
 			"PATH",
-			fmt.Sprintf("%s/bin:$PATH", venv),
+			"$VIRTUAL_ENV/bin:$PATH",
 			dagger.ContainerWithEnvVariableOpts{
 				Expand: true,
 			},
 		).
-		WithEnvVariable("VIRTUAL_ENV", venv).
 		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv).
 		WithFile(reqPath, src.File(reqFile)).
 		WithExec([]string{"pip", "install", "-r", reqPath}).
