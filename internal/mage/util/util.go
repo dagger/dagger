@@ -20,6 +20,7 @@ func Repository(c *dagger.Client) *dagger.Directory {
 		Exclude: []string{
 			".git",
 			"bin",
+			".DS_Store",
 
 			// node
 			"**/node_modules",
@@ -29,6 +30,7 @@ func Repository(c *dagger.Client) *dagger.Directory {
 			"**/.venv",
 			"**/.mypy_cache",
 			"**/.pytest_cache",
+			"**/.ruff_cache",
 
 			// go
 			// go.work is ignored so that you can use ../foo during local dev and let

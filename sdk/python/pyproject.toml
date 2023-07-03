@@ -1,19 +1,18 @@
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
 
-[tool.poetry]
+[project]
 name = "dagger-io"
-version = "0.0.0"
+dynamic = ["version"]
 description = "A client package for running Dagger pipelines in Python."
-license = "Apache-2.0"
-authors = ["Dagger <hello@dagger.io>"]
 readme = "README.md"
-homepage = "https://dagger.io"
-documentation = "https://docs.dagger.io/sdk/python"
-repository = "https://github.com/dagger/dagger/tree/main/sdk/python"
+license = "Apache-2.0"
+authors = [
+    {name = "Dagger", email = "hello@dagger.io"},
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Framework :: AnyIO",
     "Framework :: Pytest",
@@ -23,127 +22,96 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "License :: OSI Approved :: Apache Software License",
-    # TODO: just waiting on windows tests for this
-    # "Operating System :: OS Independent",
+    "Operating System :: OS Independent",
     "Typing :: Typed",
 ]
-packages = [
-    { include = "dagger", from = "src" },
+requires-python = ">=3.10"
+dependencies = [
+    "anyio>=3.6.2",
+    "cattrs>=22.2.0",
+    "graphql-core>=3.2.3",
+    # TODO: replace next two lines with the following when gql version 3.5.0 is released
+    # "gql[httpx]>=3.5.0",
+    "gql>=3.4.0",
+    "httpx>=0.23.1",
+    "beartype>=0.11.0",
+    "platformdirs>=2.6.2",
+    "typing_extensions>=4.4.0",
 ]
 
-[tool.poetry.urls]
+[project.optional-dependencies]
+cli = [
+    "typer[all]>=0.6.1",
+]
+server = [
+    "typer[all]>=0.6.1",
+    "strawberry-graphql>=0.187.0",
+]
+
+[project.urls]
+"Homepage" = "https://dagger.io"
+"Documentation" = "https://docs.dagger.io/sdk/python"
+"Repository" = "https://github.com/dagger/dagger/tree/main/sdk/python"
 "Tracker" = "https://github.com/dagger/dagger/issues"
 "Release Notes" = "https://github.com/dagger/dagger/releases?q=tag%3Asdk%2Fpython%2Fv0"
 "Community" = "https://discord.gg/ufnyBtc8uY"
 "Twitter" = "https://twitter.com/dagger_io"
 
-[tool.poetry.dependencies]
-python = "^3.10"
-anyio = ">=3.6.2"
-cattrs = ">=22.2.0"
-graphql-core = ">=3.2.3"
-# TODO: replace next two lines with the following when gql version 3.5.0 is released
-# gql = {version = ">=3.5.0", extras = ["httpx"]}
-gql = ">=3.4.0"
-httpx = ">=0.23.1"
-beartype = ">=0.11.0"
-platformdirs = ">=2.6.2"
-typing_extensions = ">=4.4.0"
-typer = {version = ">=0.6.1", extras = ["all"], optional = true}
-strawberry-graphql = {version = ">=0.187.0", optional = true}
+[tool.hatch.version]
+source = "vcs"
+fallback-version = "0.0.0"
 
-[tool.poetry.extras]
-cli = ["typer"]
-server = ["strawberry-graphql", "typer"]
+[tool.hatch.build]
+packages = ["src/dagger"]
 
-[tool.poetry.group.test.dependencies]
-pytest = ">=7.2.0"
-pytest-mock = ">=3.10.0"
-pytest-subprocess = ">=1.4.2"
-pytest-lazy-fixture = "^0.6.3"
-pytest-httpx = ">=0.21.3"
-
-[tool.poetry.group.lint.dependencies]
-black = ">=22.3.0"
-mypy = ">=0.942"
-ruff = ">=0.0.218"
-
-[tool.poetry.group.dev.dependencies]
-poethepoet = ">=0.16.4"
-
-[tool.poetry.group.docs]
-optional = true
-
-[tool.poetry.group.docs.dependencies]
-sphinx = ">=5.3.0"
-sphinx-rtd-theme = "^1.1.1"
-
-[tool.poe.env]
-GEN_PATH = "./src/dagger/api"
-
-[tool.poe.env.DOCS_SNIPPETS]
-default = "../../docs/current"
-
-[tool.poe.tasks]
-test = "pytest"
-unittest = "pytest -m 'not slow'"
-typing = "mypy src/dagger tests"
-
-[tool.poe.tasks.docs]
-cmd = "sphinx-build -v . _build"
-cwd = "docs"
-
-[tool.poe.tasks.lint]
-sequence = [
-    "ruff check ${target}",
-    "black --preview --check ${target}",
-]
-default_item_type = "cmd"
-
-[[tool.poe.tasks.lint.args]]
-name = "target"
-positional = true
-multiple = true
-default = "."
-
-[tool.poe.tasks.lint-docs]
-ref = "lint ${DOCS_SNIPPETS}"
-
-[tool.poe.tasks.lint-all]
-sequence = [
-    "lint",
-    "lint-docs",
+[tool.hatch.envs.default]
+features = ["cli", "server"]
+dependencies = [
+    "black>=22.3.0",
+    "ruff>=0.0.218",
+    "pytest>=7.2.0",
+    "pytest-mock>=3.10.0",
+    "pytest-subprocess>=1.4.2",
+    "pytest-lazy-fixture>=0.6.3",
+    "pytest-httpx>=0.21.3",
 ]
 
-[tool.poe.tasks.fmt]
-sequence = [
-    "ruff --fix-only -e ${target}",
-    "black --preview ${target}",
+[tool.hatch.envs.default.scripts]
+generate = [
+    "python -m dagger generate --output src/dagger/api/gen.py",
+    "python -m dagger generate --output src/dagger/api/gen_sync.py --sync",
+    "black --preview src/dagger/api/gen*.py",
 ]
-default_item_type = "cmd"
-
-[[tool.poe.tasks.fmt.args]]
-name = "target"
-positional = true
-multiple = true
-default = "."
-
-[tool.poe.tasks.fmt-docs]
-ref = "fmt ${DOCS_SNIPPETS}"
-
-[tool.poe.tasks.fmt-all]
-sequence = [
-    "fmt",
-    "fmt-docs",
+fmt = [
+    "ruff --fix-only -e {args:. ../../docs/current}",
+    "black --preview {args:. ../../docs/current}",
 ]
-
-[tool.poe.tasks.generate]
-sequence = [
-    "python -m dagger generate --output ${GEN_PATH}/gen.py",
-    "python -m dagger generate --output ${GEN_PATH}/gen_sync.py --sync",
-    "black --preview ${GEN_PATH}/gen*.py",
+lint = [
+    "ruff check {args:. ../../docs/current}",
+    "black --preview --check {args:. ../../docs/current}",
 ]
-default_item_type = "cmd"
+test = "pytest -W default"
+testunit = "pytest -m 'not slow'"
+
+# Lock dependencies for CI, otherwise we could get failing checks on
+# unrelated PRs but not needed locally because it can help catch issues
+# early from dependency updates.
+lock = "hatch dep show requirements --all | pip-compile --annotate --resolver=backtracking -U -o requirements.txt -"
+
+[tool.hatch.envs.default.env-vars]
+CUSTOM_COMPILE_COMMAND = "hatch run lock"
+
+[tool.hatch.envs.typing]
+extra-dependencies = ["mypy>=0.942"]
+scripts = {check = "mypy {args:src/dagger tests}"}
+
+[tool.hatch.envs.docs]
+template = "docs"
+dependencies = [
+    "sphinx>=5.3.0",
+    "sphinx-rtd-theme~=1.1.1",
+]
+scripts = {build = "sphinx-build -v docs docs/_build"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests/"]
