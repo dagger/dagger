@@ -76,7 +76,7 @@ require (
 	github.com/vito/progrock v0.6.0
 	github.com/vito/vt100 v0.1.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
-	golang.org/x/oauth2 v0.8.0
+	golang.org/x/oauth2 v0.9.0
 )
 
 require (
