@@ -56,5 +56,13 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 		return nil, err
 	}
 
+	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+		Args:           []string{"find", "."},
+		SkipEntrypoint: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return ctr, nil
 }
