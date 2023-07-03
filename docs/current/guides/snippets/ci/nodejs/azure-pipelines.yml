@@ -9,10 +9,9 @@ steps:
 - task: NodeTool@0
   inputs:
     versionSpec: '18.x'
-  displayName: 'Install Node.js'
 
-- script: npm install @dagger.io/dagger
-  displayName: 'Install Dagger Node.js SDK'
+- script: npm ci
+  displayName: 'Install dependencies'
 
-- script: node ci/index.mjs
+- script: node index.mjs
   displayName: 'Run Dagger'

@@ -3,7 +3,7 @@ version: 0.2
 phases:
   pre_build:
     commands:
-      - echo "Installing Dagger SDK for Node"
+      - echo "Installing Dagger SDK for Node.js"
       - npm install @dagger.io/dagger@latest
 
   build:

@@ -9,6 +9,7 @@ steps:
 - task: GoTool@0
   inputs:
     version: '1.20'
+  displayName: 'Install Go'
 
 - script: |
     go get dagger.io/dagger@latest

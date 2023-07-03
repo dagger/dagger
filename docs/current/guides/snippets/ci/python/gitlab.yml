@@ -16,5 +16,5 @@
 build:
   extends: [.dagger]
   script:
-    - pip install -r requirements.txt
+    - pip install .
     - python main.py

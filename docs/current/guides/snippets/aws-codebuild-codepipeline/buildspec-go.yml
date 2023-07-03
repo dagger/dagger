@@ -3,6 +3,7 @@ version: 0.2
 phases:
   pre_build:
     commands:
+      - echo "Installing Dagger SDK for Go"
       - go get dagger.io/dagger
 
   build:

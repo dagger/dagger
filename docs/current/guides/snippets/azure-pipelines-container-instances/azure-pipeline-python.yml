@@ -8,7 +8,7 @@ pool:
 steps:
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '3.10.11'
+    versionSpec: '3.11'
   displayName: 'Install Python'
 
 - script: pip install dagger-io aiohttp azure-identity azure-mgmt-containerinstance

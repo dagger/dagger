@@ -8,15 +8,10 @@ pool:
 steps:
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '3.10.11'
-  displayName: 'Install Python'
+    versionSpec: '3.11'
 
-# uncomment below lines for self-hosted agents
-#- script: python3 -m venv .venv
-#  displayName: 'Create Python virtualenv'
+- script: pip install .
+  displayName: 'Install dependencies'
 
-- script: pip install dagger-io # .venv/bin/pip for self-hosted agents
-  displayName: 'Install Dagger Python SDK'
-
-- script: python ci/main.py # .venv/bin/python for self-hosted agents
+- script: python main.py
   displayName: 'Run Dagger'
