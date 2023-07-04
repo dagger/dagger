@@ -40,8 +40,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"npm", "start", "--"}
-		cfg.WorkingDir = path.Join(workdir, path.Dir(p.ConfigPath))
+		cfg.Entrypoint = []string{"npm", "start", "--prefix", path.Join(workdir, path.Dir(p.ConfigPath)), "--"}
 		return cfg
 	})
 	if err != nil {
@@ -49,15 +48,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args:           []string{"npm", "install"},
-		SkipEntrypoint: true,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args:           []string{"find", "."},
+		Args:           []string{"npm", "install", "--prefix", path.Join(workdir, path.Dir(p.ConfigPath))},
 		SkipEntrypoint: true,
 	})
 	if err != nil {
