@@ -509,7 +509,7 @@ type Container {
   Indicate that subsequent commands should be featured more
   prominently in the UI.
   """
-  focus: Container!
+  withFocus: Container!
 
   """
   Indicate that subsequent commands should not be featured
@@ -517,7 +517,7 @@ type Container {
 
   This is the initial state of all containers.
   """
-  unfocus: Container!
+  withoutFocus: Container!
 
   """
   Retrieves this container after executing the specified command inside it.

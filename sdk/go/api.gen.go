@@ -439,17 +439,6 @@ func (r *Container) File(path string) *File {
 	}
 }
 
-// Indicate that subsequent commands should be featured more
-// prominently in the UI.
-func (r *Container) Focus() *Container {
-	q := r.q.Select("focus")
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Initializes this container from a pulled base image.
 func (r *Container) From(address string) *Container {
 	q := r.q.Select("from")
@@ -747,19 +736,6 @@ func (r *Container) Sync(ctx context.Context) (*Container, error) {
 	return r, q.Execute(ctx, r.c)
 }
 
-// Indicate that subsequent commands should not be featured
-// more prominently in the UI.
-//
-// This is the initial state of all containers.
-func (r *Container) Unfocus() *Container {
-	q := r.q.Select("unfocus")
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Retrieves the user to be set for all commands.
 func (r *Container) User(ctx context.Context) (string, error) {
 	if r.user != nil {
@@ -1007,6 +983,17 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 	q = q.Arg("path", path)
 	q = q.Arg("source", source)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Indicate that subsequent commands should be featured more
+// prominently in the UI.
+func (r *Container) WithFocus() *Container {
+	q := r.q.Select("withFocus")
 
 	return &Container{
 		q: q,
@@ -1342,6 +1329,19 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 		}
 	}
 	q = q.Arg("port", port)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Indicate that subsequent commands should not be featured
+// more prominently in the UI.
+//
+// This is the initial state of all containers.
+func (r *Container) WithoutFocus() *Container {
+	q := r.q.Select("withoutFocus")
 
 	return &Container{
 		q: q,

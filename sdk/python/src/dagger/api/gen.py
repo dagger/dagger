@@ -486,15 +486,6 @@ class Container(Type):
         return File(_ctx)
 
     @typecheck
-    def focus(self) -> "Container":
-        """Indicate that subsequent commands should be featured more
-        prominently in the UI.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("focus", _args)
-        return Container(_ctx)
-
-    @typecheck
     def from_(self, address: str) -> "Container":
         """Initializes this container from a pulled base image.
 
@@ -877,17 +868,6 @@ class Container(Type):
         return self.sync().__await__()
 
     @typecheck
-    def unfocus(self) -> "Container":
-        """Indicate that subsequent commands should not be featured
-        more prominently in the UI.
-
-        This is the initial state of all containers.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("unfocus", _args)
-        return Container(_ctx)
-
-    @typecheck
     async def user(self) -> Optional[str]:
         """Retrieves the user to be set for all commands.
 
@@ -1153,6 +1133,15 @@ class Container(Type):
             Arg("owner", owner, None),
         ]
         _ctx = self._select("withFile", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def with_focus(self) -> "Container":
+        """Indicate that subsequent commands should be featured more
+        prominently in the UI.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withFocus", _args)
         return Container(_ctx)
 
     @typecheck
@@ -1541,6 +1530,17 @@ class Container(Type):
             Arg("protocol", protocol, None),
         ]
         _ctx = self._select("withoutExposedPort", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def without_focus(self) -> "Container":
+        """Indicate that subsequent commands should not be featured
+        more prominently in the UI.
+
+        This is the initial state of all containers.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("withoutFocus", _args)
         return Container(_ctx)
 
     @typecheck
