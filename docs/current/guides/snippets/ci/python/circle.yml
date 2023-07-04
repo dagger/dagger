@@ -9,7 +9,7 @@ jobs:
           docker_layer_caching: true
       - run:
           name: Install deps
-          command: pip install -r requirements.txt
+          command: pip install .
       - run:
           name: Dagger Pipeline
           command: python main.py

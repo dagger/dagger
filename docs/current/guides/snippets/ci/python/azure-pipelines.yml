@@ -1,0 +1,17 @@
+trigger:
+- master
+
+pool:
+  name: 'Default'
+  vmImage: ubuntu-latest
+
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.11'
+
+- script: pip install .
+  displayName: 'Install dependencies'
+
+- script: python main.py
+  displayName: 'Run Dagger'

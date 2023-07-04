@@ -1,0 +1,12 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Installing dependencies"
+      - pip install .
+
+  build:
+    commands:
+      - echo "Running Dagger pipeline"
+      - python main.py

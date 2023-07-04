@@ -865,3 +865,57 @@ The following code listing shows how to integrate Dagger with Jenkins.
 Requires `docker` client and `go` installed on your Jenkins agent, a Docker host available (can be `docker:dind`), and agents labeled in Jenkins with `dagger`.
 
 [Learn more](./guides/145912-ci.md)
+
+### Azure Pipelines
+
+The following code listing shows how to integrate Dagger with Azure Pipelines.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```yaml title="azure-pipelines.yml" file=./guides/snippets/ci/go/azure-pipelines.yml
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```yaml title="azure-pipelines.yml" file=./guides/snippets/ci/nodejs/azure-pipelines.yml
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```yaml title="azure-pipelines.yml" file=./guides/snippets/ci/python/azure-pipelines.yml
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/145912-ci.md)
+
+### AWS CodePipeline
+
+The following code listing shows how to integrate Dagger with AWS CodePipeline.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```yaml title="buildspec.yml" file=./guides/snippets/ci/go/buildspec.yml
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```yaml title="buildspec.yml" file=./guides/snippets/ci/nodejs/buildspec.yml
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```yaml title="buildspec.yml" file=./guides/snippets/ci/python/buildspec.yml
+```
+
+</TabItem>
+</Tabs>
+
+[Learn more](./guides/145912-ci.md)

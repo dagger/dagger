@@ -1,0 +1,12 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      - echo "Installing dependencies"
+      - npm ci
+
+  build:
+    commands:
+      - echo "Running Dagger pipeline"
+      - node index.mjs
