@@ -67,6 +67,30 @@ impl Into<Platform> for String {
     }
 }
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ProjectCommandId(pub String);
+impl Into<ProjectCommandId> for &str {
+    fn into(self) -> ProjectCommandId {
+        ProjectCommandId(self.to_string())
+    }
+}
+impl Into<ProjectCommandId> for String {
+    fn into(self) -> ProjectCommandId {
+        ProjectCommandId(self.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+pub struct ProjectId(pub String);
+impl Into<ProjectId> for &str {
+    fn into(self) -> ProjectId {
+        ProjectId(self.to_string())
+    }
+}
+impl Into<ProjectId> for String {
+    fn into(self) -> ProjectId {
+        ProjectId(self.clone())
+    }
+}
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct SecretId(pub String);
 impl Into<SecretId> for &str {
     fn into(self) -> SecretId {
@@ -166,6 +190,13 @@ pub struct ContainerExecOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
+    /// Force each layer of the exported image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's
+    /// cache, that will be used (this can result in a mix of compression algorithms for
+    /// different layers). If this is unset and a layer has no compressed blob in the
+    /// engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
@@ -189,6 +220,13 @@ pub struct ContainerPipelineOpts<'a> {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerPublishOpts {
+    /// Force each layer of the published image to use the specified compression algorithm.
+    /// If this is unset, then if a layer already has a compressed blob in the engine's
+    /// cache, that will be used (this can result in a mix of compression algorithms for
+    /// different layers). If this is unset and a layer has no compressed blob in the
+    /// engine's cache, then it will be compressed using Gzip.
+    #[builder(setter(into, strip_option), default)]
+    pub forced_compression: Option<ImageLayerCompression>,
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
@@ -213,6 +251,13 @@ pub struct ContainerWithDirectoryOpts<'a> {
     /// If the group is omitted, it defaults to the same as the user.
     #[builder(setter(into, strip_option), default)]
     pub owner: Option<&'a str>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct ContainerWithEnvVariableOpts {
+    /// Replace ${VAR} or $VAR in the value according to the current environment
+    /// variables defined in the container (e.g., "/opt/bin:$PATH").
+    #[builder(setter(into, strip_option), default)]
+    pub expand: Option<bool>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct ContainerWithExecOpts<'a> {
@@ -534,9 +579,14 @@ impl Container {
         if let Some(platform_variants) = opts.platform_variants {
             query = query.arg("platformVariants", platform_variants);
         }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg_enum("forcedCompression", forced_compression);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the list of exposed ports.
+    /// This includes ports already exposed by the image, even if not
+    /// explicitly added with dagger.
     /// Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
     pub fn exposed_ports(&self) -> Vec<Port> {
         let query = self.selection.select("exposedPorts");
@@ -739,6 +789,9 @@ impl Container {
         if let Some(platform_variants) = opts.platform_variants {
             query = query.arg("platformVariants", platform_variants);
         }
+        if let Some(forced_compression) = opts.forced_compression {
+            query = query.arg_enum("forcedCompression", forced_compression);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves this container's root filesystem. Mounts are not included.
@@ -760,6 +813,12 @@ impl Container {
     /// Will execute default command if none is set, or error if there's no default.
     pub async fn stdout(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("stdout");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Forces evaluation of the pipeline in the engine.
+    /// It doesn't run the default command if no exec has been set.
+    pub async fn sync(&self) -> Result<ContainerId, DaggerError> {
+        let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the user to be set for all commands.
@@ -867,6 +926,7 @@ impl Container {
     ///
     /// * `name` - The name of the environment variable (e.g., "HOST").
     /// * `value` - The value of the environment variable. (e.g., "localhost").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub fn with_env_variable(
         &self,
         name: impl Into<String>,
@@ -875,6 +935,31 @@ impl Container {
         let mut query = self.selection.select("withEnvVariable");
         query = query.arg("name", name.into());
         query = query.arg("value", value.into());
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Retrieves this container plus the given environment variable.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The name of the environment variable (e.g., "HOST").
+    /// * `value` - The value of the environment variable. (e.g., "localhost").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn with_env_variable_opts(
+        &self,
+        name: impl Into<String>,
+        value: impl Into<String>,
+        opts: ContainerWithEnvVariableOpts,
+    ) -> Container {
+        let mut query = self.selection.select("withEnvVariable");
+        query = query.arg("name", name.into());
+        query = query.arg("value", value.into());
+        if let Some(expand) = opts.expand {
+            query = query.arg("expand", expand);
+        }
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1755,16 +1840,6 @@ impl Directory {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// load a project's metadata
-    pub fn load_project(&self, config_path: impl Into<String>) -> Project {
-        let mut query = self.selection.select("loadProject");
-        query = query.arg("configPath", config_path.into());
-        return Project {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// Creates a named sub-pipeline
     ///
     /// # Arguments
@@ -2040,6 +2115,13 @@ pub struct File {
     pub selection: Selection,
     pub graphql_client: DynGraphQLClient,
 }
+#[derive(Builder, Debug, PartialEq)]
+pub struct FileExportOpts {
+    /// If allowParentDirPath is true, the path argument can be a directory path, in which case
+    /// the file will be created in that directory.
+    #[builder(setter(into, strip_option), default)]
+    pub allow_parent_dir_path: Option<bool>,
+}
 impl File {
     /// Retrieves the contents of the file.
     pub async fn contents(&self) -> Result<String, DaggerError> {
@@ -2051,9 +2133,28 @@ impl File {
     /// # Arguments
     ///
     /// * `path` - Location of the written directory (e.g., "output.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
     pub async fn export(&self, path: impl Into<String>) -> Result<bool, DaggerError> {
         let mut query = self.selection.select("export");
         query = query.arg("path", path.into());
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Writes the file to a file path on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the written directory (e.g., "output.txt").
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub async fn export_opts(
+        &self,
+        path: impl Into<String>,
+        opts: FileExportOpts,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("export");
+        query = query.arg("path", path.into());
+        if let Some(allow_parent_dir_path) = opts.allow_parent_dir_path {
+            query = query.arg("allowParentDirPath", allow_parent_dir_path);
+        }
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves the content-addressed identifier of the file.
@@ -2283,6 +2384,20 @@ impl Host {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Accesses a file on the host.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Location of the file to retrieve (e.g., "README.md").
+    pub fn file(&self, path: impl Into<String>) -> File {
+        let mut query = self.selection.select("file");
+        query = query.arg("path", path.into());
+        return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
     /// Accesses a Unix socket on the host.
     ///
     /// # Arguments
@@ -2400,42 +2515,98 @@ pub struct Project {
     pub graphql_client: DynGraphQLClient,
 }
 impl Project {
-    /// extensions in this project
-    pub fn extensions(&self) -> Vec<Project> {
-        let query = self.selection.select("extensions");
-        return vec![Project {
+    /// Commands provided by this project
+    pub fn commands(&self) -> Vec<ProjectCommand> {
+        let query = self.selection.select("commands");
+        return vec![ProjectCommand {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         }];
     }
-    /// Code files generated by the SDKs in the project
-    pub fn generated_code(&self) -> Directory {
-        let query = self.selection.select("generatedCode");
-        return Directory {
+    /// A unique identifier for this project.
+    pub async fn id(&self) -> Result<ProjectId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Initialize this project from the given directory and config path
+    pub fn load(&self, source: DirectoryId, config_path: impl Into<String>) -> Project {
+        let mut query = self.selection.select("load");
+        query = query.arg("source", source);
+        query = query.arg("configPath", config_path.into());
+        return Project {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// install the project's schema
-    pub async fn install(&self) -> Result<bool, DaggerError> {
-        let query = self.selection.select("install");
-        query.execute(self.graphql_client.clone()).await
-    }
-    /// name of the project
+    /// Name of the project
     pub async fn name(&self) -> Result<String, DaggerError> {
         let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
-    /// schema provided by the project
-    pub async fn schema(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("schema");
+}
+#[derive(Clone)]
+pub struct ProjectCommand {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ProjectCommand {
+    /// Documentation for what this command does.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
         query.execute(self.graphql_client.clone()).await
     }
-    /// sdk used to generate code for and/or execute this project
-    pub async fn sdk(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("sdk");
+    /// Flags accepted by this command.
+    pub fn flags(&self) -> Vec<ProjectCommandFlag> {
+        let query = self.selection.select("flags");
+        return vec![ProjectCommandFlag {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+    /// A unique identifier for this command.
+    pub async fn id(&self) -> Result<ProjectCommandId, DaggerError> {
+        let query = self.selection.select("id");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the command.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the type returned by this command.
+    pub async fn result_type(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("resultType");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Subcommands, if any, that this command provides.
+    pub fn subcommands(&self) -> Vec<ProjectCommand> {
+        let query = self.selection.select("subcommands");
+        return vec![ProjectCommand {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        }];
+    }
+}
+#[derive(Clone)]
+pub struct ProjectCommandFlag {
+    pub proc: Option<Arc<Child>>,
+    pub selection: Selection,
+    pub graphql_client: DynGraphQLClient,
+}
+impl ProjectCommandFlag {
+    /// Documentation for what this flag sets.
+    pub async fn description(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("description");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// The name of the flag.
+    pub async fn name(&self) -> Result<String, DaggerError> {
+        let query = self.selection.select("name");
         query.execute(self.graphql_client.clone()).await
     }
 }
@@ -2480,6 +2651,16 @@ pub struct QueryPipelineOpts<'a> {
     /// Pipeline labels.
     #[builder(setter(into, strip_option), default)]
     pub labels: Option<Vec<PipelineLabel>>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryProjectOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub id: Option<ProjectId>,
+}
+#[derive(Builder, Debug, PartialEq)]
+pub struct QueryProjectCommandOpts {
+    #[builder(setter(into, strip_option), default)]
+    pub id: Option<ProjectCommandId>,
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct QuerySocketOpts {
@@ -2701,11 +2882,59 @@ impl Query {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Look up a project by name
-    pub fn project(&self, name: impl Into<String>) -> Project {
-        let mut query = self.selection.select("project");
-        query = query.arg("name", name.into());
+    /// Load a project from ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn project(&self) -> Project {
+        let query = self.selection.select("project");
         return Project {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a project from ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn project_opts(&self, opts: QueryProjectOpts) -> Project {
+        let mut query = self.selection.select("project");
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
+        }
+        return Project {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a project command from ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn project_command(&self) -> ProjectCommand {
+        let query = self.selection.select("projectCommand");
+        return ProjectCommand {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Load a project command from ID.
+    ///
+    /// # Arguments
+    ///
+    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
+    pub fn project_command_opts(&self, opts: QueryProjectCommandOpts) -> ProjectCommand {
+        let mut query = self.selection.select("projectCommand");
+        if let Some(id) = opts.id {
+            query = query.arg("id", id);
+        }
+        return ProjectCommand {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -2722,6 +2951,7 @@ impl Query {
         };
     }
     /// Sets a secret given a user defined name to its plaintext and returns the secret.
+    /// The plaintext value is limited to a size of 128000 bytes.
     ///
     /// # Arguments
     ///
@@ -2803,6 +3033,13 @@ pub enum CacheSharingMode {
     LOCKED,
     PRIVATE,
     SHARED,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ImageLayerCompression {
+    EStarGZ,
+    Gzip,
+    Uncompressed,
+    Zstd,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {
