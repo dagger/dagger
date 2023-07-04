@@ -303,10 +303,10 @@ func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
 	}, nil
 }
 
-func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
+func (dir *Directory) WithDirectory(ctx context.Context, destDir string, src *Directory, filter CopyFilter, owner *Ownership) (*Directory, error) {
 	dir = dir.Clone()
 
-	st, err := dir.State()
+	destSt, err := dir.State()
 	if err != nil {
 		return nil, err
 	}
@@ -316,28 +316,119 @@ func (dir *Directory) WithDirectory(ctx context.Context, subdir string, src *Dir
 		return nil, err
 	}
 
-	opts := []llb.CopyOption{
-		&llb.CopyInfo{
-			CreateDestPath:      true,
-			CopyDirContentsOnly: true,
-			IncludePatterns:     filter.Include,
-			ExcludePatterns:     filter.Exclude,
-		},
-	}
-	if owner != nil {
-		opts = append(opts, owner.Opt())
-	}
-
-	st = st.File(llb.Copy(srcSt, src.Dir, path.Join(dir.Dir, subdir), opts...))
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
+	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
+		Dest:            destSt,
+		DestDir:         path.Join(dir.Dir, destDir),
+		Src:             srcSt,
+		SrcDir:          src.Dir,
+		IncludePatterns: filter.Include,
+		ExcludePatterns: filter.Exclude,
+		Owner:           owner,
+	})); err != nil {
 		return nil, err
 	}
 
 	dir.Services.Merge(src.Services)
 
 	return dir, nil
+}
+
+func (dir *Directory) WithFile(ctx context.Context, destPath string, src *File, permissions fs.FileMode, owner *Ownership) (*Directory, error) {
+	dir = dir.Clone()
+
+	destSt, err := dir.State()
+	if err != nil {
+		return nil, err
+	}
+
+	srcSt, err := src.State()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := dir.SetState(ctx, mergeStates(mergeStateInput{
+		Dest:         destSt,
+		DestDir:      path.Join(dir.Dir, path.Dir(destPath)),
+		DestFileName: path.Base(destPath),
+		Src:          srcSt,
+		SrcDir:       path.Dir(src.File),
+		SrcFileName:  path.Base(src.File),
+		Permissions:  permissions,
+		Owner:        owner,
+	})); err != nil {
+		return nil, err
+	}
+
+	dir.Services.Merge(src.Services)
+
+	return dir, nil
+}
+
+type mergeStateInput struct {
+	Dest         llb.State
+	DestDir      string
+	DestFileName string
+
+	Src         llb.State
+	SrcDir      string
+	SrcFileName string
+
+	IncludePatterns []string
+	ExcludePatterns []string
+
+	Permissions fs.FileMode
+	Owner       *Ownership
+}
+
+func mergeStates(input mergeStateInput) llb.State {
+	input.DestDir = path.Join("/", input.DestDir)
+	input.SrcDir = path.Join("/", input.SrcDir)
+
+	copyInfo := &llb.CopyInfo{
+		CreateDestPath:      true,
+		CopyDirContentsOnly: true,
+		IncludePatterns:     input.IncludePatterns,
+		ExcludePatterns:     input.ExcludePatterns,
+	}
+	if input.DestFileName == "" && input.SrcFileName != "" {
+		input.DestFileName = input.SrcFileName
+	}
+	if input.Permissions != 0 {
+		copyInfo.Mode = &input.Permissions
+	}
+	if input.Owner != nil {
+		input.Owner.Opt().SetCopyOption(copyInfo)
+	}
+
+	// MergeOp currently only supports merging the "/" of states together without any
+	// modifications or filtering
+	canDoDirectMerge := copyInfo.Mode == nil &&
+		copyInfo.ChownOpt == nil &&
+		len(copyInfo.ExcludePatterns) == 0 &&
+		len(copyInfo.IncludePatterns) == 0 &&
+		input.DestDir == input.SrcDir &&
+		// TODO:(sipsma) we could support direct merge-op with individual files if we can verify
+		// there are no other files in the dir, but doing so by just calling ReadDir would result
+		// in unlazying the inputs, which defeats some of the performance benefits of merge-op.
+		input.DestFileName == "" &&
+		input.SrcFileName == ""
+
+	mergeStates := []llb.State{input.Dest}
+	if canDoDirectMerge {
+		// Directly merge the states together, which is lazy, uses hardlinks instead of
+		// copies and caches inputs individually instead of invalidating the whole
+		// chain following any modified input.
+		mergeStates = append(mergeStates, input.Src)
+	} else {
+		// Even if we can't merge directly, we can still get some optimization by
+		// copying to scratch and then merging that. This still results in an on-disk
+		// copy but preserves the other caching benefits of MergeOp. This is the same
+		// behavior as "COPY --link" in Dockerfiles.
+		mergeStates = append(mergeStates, llb.Scratch().File(llb.Copy(
+			input.Src, path.Join(input.SrcDir, input.SrcFileName), path.Join(input.DestDir, input.DestFileName), copyInfo,
+		)))
+	}
+	return llb.Merge(mergeStates)
 }
 
 func (dir *Directory) WithTimestamps(ctx context.Context, unix int) (*Directory, error) {
@@ -394,71 +485,6 @@ func (dir *Directory) WithNewDirectory(ctx context.Context, dest string, permiss
 	}
 
 	return dir, nil
-}
-
-func (dir *Directory) WithFile(ctx context.Context, subdir string, src *File, permissions fs.FileMode, ownership *Ownership) (*Directory, error) {
-	dir = dir.Clone()
-
-	st, err := dir.State()
-	if err != nil {
-		return nil, err
-	}
-
-	srcSt, err := src.State()
-	if err != nil {
-		return nil, err
-	}
-
-	var perm *fs.FileMode
-	if permissions != 0 {
-		perm = &permissions
-	}
-
-	opts := []llb.CopyOption{
-		&llb.CopyInfo{
-			CreateDestPath: true,
-			Mode:           perm,
-		},
-	}
-
-	if ownership != nil {
-		opts = append(opts, ownership.Opt())
-	}
-
-	st = st.File(llb.Copy(srcSt, src.File, path.Join(dir.Dir, subdir), opts...))
-
-	err = dir.SetState(ctx, st)
-	if err != nil {
-		return nil, err
-	}
-
-	dir.Services.Merge(src.Services)
-
-	return dir, nil
-}
-
-func MergeDirectories(ctx context.Context, dirs []*Directory, platform specs.Platform) (*Directory, error) {
-	states := make([]llb.State, 0, len(dirs))
-	var pipeline pipeline.Path
-	for _, dir := range dirs {
-		if !reflect.DeepEqual(platform, dir.Platform) {
-			// TODO(vito): work around with llb.Copy shenanigans?
-			return nil, fmt.Errorf("TODO: cannot merge across platforms: %+v != %+v", platform, dir.Platform)
-		}
-
-		if pipeline.Name() == "" {
-			pipeline = dir.Pipeline
-		}
-
-		state, err := dir.State()
-		if err != nil {
-			return nil, err
-		}
-
-		states = append(states, state)
-	}
-
-	return NewDirectorySt(ctx, llb.Merge(states), "", pipeline, platform, nil)
 }
 
 func (dir *Directory) Diff(ctx context.Context, other *Directory) (*Directory, error) {

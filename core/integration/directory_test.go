@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -352,13 +353,26 @@ func TestDirectoryWithFile(t *testing.T) {
 
 	file := c.Directory().
 		WithNewFile("some-file", "some-content").
+		WithNewFile("some-other-file", "some-other-content").
 		File("some-file")
 
-	content, err := c.Directory().
-		WithFile("target-file", file).
+	dirWithFile := c.Directory().WithFile("target-file", file)
+	content, err := dirWithFile.
 		File("target-file").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "some-content", content)
+	_, err = dirWithFile.File("some-other-file").Contents(ctx)
+	require.Error(t, err)
+
+	// Same as above, but use the same name for the file rather than changing it.
+	// Needed for testing merge-op corner cases.
+	dirWithFile = c.Directory().WithFile("some-file", file)
+	content, err = dirWithFile.
+		File("some-file").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "some-content", content)
+	_, err = dirWithFile.File("some-other-file").Contents(ctx)
+	require.Error(t, err)
 
 	content, err = c.Directory().
 		WithFile("sub-dir/target-file", file).
@@ -820,4 +834,58 @@ func TestDirectoryWithFileExceedingLength(t *testing.T) {
 		}`, &res, nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "File name length exceeds the maximum supported 255 characters")
+}
+
+func TestDirectoryDirectMerge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	getDirAndInodes := func(t *testing.T, fileNames ...string) (*dagger.Directory, []string) {
+		t.Helper()
+		ctr := c.Container().From("alpine:3.16.2").
+			WithMountedDirectory("/src", c.Directory()).
+			WithWorkdir("/src")
+
+		var inodes []string
+		for _, fileName := range fileNames {
+			ctr = ctr.WithExec([]string{"sh", "-e", "-x", "-c",
+				"touch " + fileName + " && stat -c '%i' " + fileName,
+			})
+			out, err := ctr.Stdout(ctx)
+			require.NoError(t, err)
+			inodes = append(inodes, strings.TrimSpace(out))
+		}
+		return ctr.Directory("/src"), inodes
+	}
+
+	// verify optimized hardlink based merge-op is used by verifying inodes are preserved
+	// across WithDirectory calls
+	mergeDir := c.Directory()
+	fileGroups := [][]string{
+		{"abc", "xyz"},
+		{"123", "456", "789"},
+		{"foo"},
+		{"bar"},
+	}
+	fileNameToInode := map[string]string{}
+	for _, fileNames := range fileGroups {
+		newDir, inodes := getDirAndInodes(t, fileNames...)
+		for i, fileName := range fileNames {
+			fileNameToInode[fileName] = inodes[i]
+		}
+		mergeDir = mergeDir.WithDirectory("/", newDir)
+	}
+
+	ctr := c.Container().From("alpine:3.16.2").
+		WithMountedDirectory("/mnt", mergeDir).
+		WithWorkdir("/mnt")
+
+	for fileName, inode := range fileNameToInode {
+		out, err := ctr.WithExec([]string{"stat", "-c", "%i", fileName}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, strings.TrimSpace(out), inode)
+	}
 }
