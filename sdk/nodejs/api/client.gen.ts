@@ -2565,23 +2565,6 @@ export class File extends BaseClient {
 
 export class GitRef extends BaseClient {
   /**
-   * The digest of the current value of this ref.
-   */
-  async digest(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "digest",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * The filesystem tree at this ref.
    */
   tree(opts?: GitRefTreeOpts): Directory {
@@ -2648,23 +2631,6 @@ export class GitRepository extends BaseClient {
   }
 
   /**
-   * Lists of branches on the repository.
-   */
-  async branches(): Promise<string[]> {
-    const response: Awaited<string[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "branches",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * Returns details on one commit.
    * @param id Identifier of the commit (e.g., "b6315d8f2810962c601af73f86831f6866ea798b").
    */
@@ -2698,23 +2664,6 @@ export class GitRepository extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Lists of tags on the repository.
-   */
-  async tags(): Promise<string[]> {
-    const response: Awaited<string[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "tags",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**

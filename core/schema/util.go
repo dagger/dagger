@@ -1,17 +1,12 @@
 package schema
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/internal/engine"
 	"github.com/dagger/dagger/router"
 	"github.com/dagger/graphql/language/ast"
 )
-
-// ErrNotImplementedYet is used to stub out API fields that aren't implemented
-// yet.
-var ErrNotImplementedYet = errors.New("not implemented yet")
 
 var ErrServicesDisabled = fmt.Errorf("services are disabled; unset %s to enable", engine.ServicesDNSEnvName)
 
