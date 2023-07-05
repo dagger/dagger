@@ -1,5 +1,7 @@
 # dagger-java-sdk
 
+![main workflow](https://github.com/jcsirot/dagger-java-sdk/actions/workflows/build.yml/badge.svg?branch=main)
+
 A [Dagger.io](https://dagger.io) SDK written in Java.
 
 > **Warning**
@@ -95,3 +97,21 @@ Then select the sample to run:
 
 Select sample:
 ```
+
+## Test without building
+
+For those who would like to test without having to build the SDK:
+
+1. Go to the workflows on the main branch: https://github.com/jcsirot/dagger-java-sdk/actions?query=branch%3Amain
+2. Click on the most recent executed workflow
+3. Scroll down to the bottom of the page and download the `jar-with-dependencies` artifact
+> **Warning**
+> It is a zip file. Unzip it to retrieve the jar file.
+4. Compile and run your sample pipeline with this jar file in the classpath
+```bash
+# Compile
+javac -cp dagger-java-sdk-[version]-jar-with-dependencies.jar GetDaggerWebsite.java
+# Run
+java -cp dagger-java-sdk-[version]-jar-with-dependencies.jar:. GetDaggerWebsite
+```
+5. Enjoy 😁
