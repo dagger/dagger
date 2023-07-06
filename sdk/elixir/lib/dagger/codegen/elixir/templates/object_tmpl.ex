@@ -202,12 +202,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
           mod = Module.concat([Dagger, Mod.format_name(Mod.id_module_to_module(type_name))])
 
           quote do
-            selection =
-              arg(
-                selection,
-                unquote(arg["name"]),
-                unquote(mod).id(unquote(to_macro_var(name)))
-              )
+            {:ok, id} = unquote(mod).id(unquote(to_macro_var(name)))
+            selection = arg(selection, unquote(arg["name"]), id)
           end
 
         _ ->
