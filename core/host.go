@@ -120,7 +120,7 @@ func (host *Host) File(ctx context.Context, gw bkgw.Client, path string, p pipel
 	if err != nil {
 		return nil, err
 	}
-	return parentDir.File(ctx, filepath.Base(path))
+	return parentDir.File(ctx, gw, filepath.Base(path))
 }
 
 func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {

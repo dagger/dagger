@@ -855,9 +855,24 @@ func TestContainerFileServices(t *testing.T) {
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
 
-	fileContent, err := client.File("index.html").Contents(ctx)
-	require.NoError(t, err)
-	require.Equal(t, content, fileContent)
+    t.Run("runs services for Container.File.Contents", func(t *testing.T) {
+        fileContent, err := client.File("index.html").Contents(ctx)
+        require.NoError(t, err)
+        require.Equal(t, content, fileContent)
+    })
+
+    t.Run("runs services for Container.File.Sync", func(t *testing.T) {
+        _, err := client.WithExec([]string{"cat", "foobar"}).File("index.html").Sync(ctx)
+        require.Error(t, err)
+		require.Contains(t, err.Error(), "No such file")
+
+        file, err := client.File("index.html").Sync(ctx)
+        require.NoError(t, err)
+
+        fileContent, err := file.Contents(ctx)
+        require.NoError(t, err)
+        require.Equal(t, content, fileContent)
+    })
 }
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {

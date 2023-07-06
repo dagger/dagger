@@ -113,6 +113,14 @@ func (file *File) State() (llb.State, error) {
 	return defToState(file.LLB)
 }
 
+func (file *File) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	_, err := gw.Solve(ctx, bkgw.SolveRequest{
+		Evaluate:   true,
+		Definition: file.LLB,
+	})
+	return err
+}
+
 // Contents handles file content retrieval
 func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) {
 	return WithServices(ctx, gw, file.Services, func() ([]byte, error) {

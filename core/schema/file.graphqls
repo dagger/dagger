@@ -11,6 +11,9 @@ type File {
   "Retrieves the content-addressed identifier of the file."
   id: FileID!
 
+  "Force evaluation in the engine."
+  sync: FileID!
+
   "Retrieves the contents of the file."
   contents: String!
 

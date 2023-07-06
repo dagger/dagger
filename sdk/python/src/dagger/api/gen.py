@@ -2185,6 +2185,26 @@ class File(Type):
         return await _ctx.execute(int)
 
     @typecheck
+    async def sync(self) -> "File":
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        _id = await _ctx.execute(FileID)
+        _ctx = self._root_select("file", [Arg("id", _id)])
+        return File(_ctx)
+
+    def __await__(self):
+        return self.sync().__await__()
+
+    @typecheck
     def with_timestamps(self, timestamp: int) -> "File":
         """Retrieves this file with its created/modified timestamps set to the
         given time.

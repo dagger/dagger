@@ -31,6 +31,7 @@ func (s *fileSchema) Resolvers() router.Resolvers {
 		},
 		"File": router.ToIDableObjectResolver(core.FileID.ToFile, router.ObjectResolver{
 			"id":             router.ToResolver(s.id),
+			"sync":           router.ToResolver(s.sync),
 			"contents":       router.ToResolver(s.contents),
 			"secret":         router.ToResolver(s.secret),
 			"size":           router.ToResolver(s.size),
@@ -53,6 +54,14 @@ func (s *fileSchema) file(ctx *router.Context, parent any, args fileArgs) (*core
 }
 
 func (s *fileSchema) id(ctx *router.Context, parent *core.File, args any) (core.FileID, error) {
+	return parent.ID()
+}
+
+func (s *fileSchema) sync(ctx *router.Context, parent *core.File, _ any) (core.FileID, error) {
+	err := parent.Evaluate(ctx.Context, s.gw)
+	if err != nil {
+		return "", err
+	}
 	return parent.ID()
 }
 
