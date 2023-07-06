@@ -73,15 +73,14 @@ func TestContainer(t *testing.T) {
 		From("alpine:3.16.2")
 
 	contents, err := alpine.
-		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", contents)
 
-	stdout, err := alpine.Exec(ContainerExecOpts{
-		Args: []string{"cat", "/etc/alpine-release"},
-	}).Stdout(ctx)
+	stdout, err := alpine.
+		WithExec([]string{"cat", "/etc/alpine-release"}).
+		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "3.16.2\n", stdout)
 
@@ -92,7 +91,6 @@ func TestContainer(t *testing.T) {
 		Container(ContainerOpts{
 			ID: id,
 		}).
-		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
@@ -110,7 +108,6 @@ func TestConnectOption(t *testing.T) {
 	_, err = c.
 		Container().
 		From("alpine:3.16.1").
-		FS().
 		File("/etc/alpine-release").
 		Contents(ctx)
 	require.NoError(t, err)
