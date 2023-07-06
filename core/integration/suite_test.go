@@ -323,6 +323,7 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 			WithExec([]string{"npm", "install", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
 			WithExec([]string{"npm", "run", "build", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
 			WithExec([]string{"rm", "/src/sdk/nodejs/.gitignore"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+			WithExec([]string{"find", "-L", "/src/sdk/nodejs/node_modules"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
 			Directory("/src")
 	}
 
