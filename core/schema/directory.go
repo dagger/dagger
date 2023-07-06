@@ -36,6 +36,7 @@ func (s *directorySchema) Resolvers() router.Resolvers {
 		},
 		"Directory": router.ToIDableObjectResolver(core.DirectoryID.ToDirectory, router.ObjectResolver{
 			"id":               router.ToResolver(s.id),
+			"sync":             router.ToResolver(s.sync),
 			"pipeline":         router.ToResolver(s.pipeline),
 			"entries":          router.ToResolver(s.entries),
 			"file":             router.ToResolver(s.file),
@@ -85,12 +86,20 @@ func (s *directorySchema) id(ctx *router.Context, parent *core.Directory, args a
 	return parent.ID()
 }
 
+func (s *directorySchema) sync(ctx *router.Context, parent *core.Directory, _ any) (core.DirectoryID, error) {
+	err := parent.Evaluate(ctx.Context, s.gw)
+	if err != nil {
+		return "", err
+	}
+	return parent.ID()
+}
+
 type subdirectoryArgs struct {
 	Path string
 }
 
 func (s *directorySchema) subdirectory(ctx *router.Context, parent *core.Directory, args subdirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, args.Path)
+	return parent.Directory(ctx, s.gw, args.Path)
 }
 
 type withNewDirectoryArgs struct {

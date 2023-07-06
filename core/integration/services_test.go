@@ -836,6 +836,18 @@ func TestContainerDirectoryServices(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, content, string(fileContent))
 	})
+
+	t.Run("runs services for Container.Directory.Sync", func(t *testing.T) {
+		_, err := wget.WithExec([]string{"cat", "foobar"}).Directory(".").Sync(ctx)
+		require.Error(t, err)
+
+		dir, err := wget.Directory(".").Sync(ctx)
+		require.NoError(t, err)
+
+		entries, err := dir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"index.html"}, entries)
+	})
 }
 
 func TestContainerFileServices(t *testing.T) {

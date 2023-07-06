@@ -1389,6 +1389,7 @@ type Directory struct {
 
 	export *bool
 	id     *DirectoryID
+	sync   *DirectoryID
 }
 type WithDirectoryFunc func(r *Directory) *Directory
 
@@ -1574,6 +1575,13 @@ func (r *Directory) Pipeline(name string, opts ...DirectoryPipelineOpts) *Direct
 		q: q,
 		c: r.c,
 	}
+}
+
+// Force evaluation in the engine.
+func (r *Directory) Sync(ctx context.Context) (*Directory, error) {
+	q := r.q.Select("sync")
+
+	return r, q.Execute(ctx, r.c)
 }
 
 // DirectoryWithDirectoryOpts contains options for Directory.WithDirectory

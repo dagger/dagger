@@ -889,3 +889,34 @@ func TestDirectoryDirectMerge(t *testing.T) {
 		require.Equal(t, strings.TrimSpace(out), inode)
 	}
 }
+
+func TestDirectorySync(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("empty", func(t *testing.T) {
+		_, err := c.Directory().Sync(ctx)
+		require.NoError(t, err)
+	})
+
+	t.Run("triggers error", func(t *testing.T) {
+		_, err := c.Directory().Directory("/foo").Sync(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such file or directory")
+
+		_, err = c.Container().From("alpine:3.16.2").Directory("/bar").Sync(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such file or directory")
+	})
+
+	t.Run("allows chaining", func(t *testing.T) {
+		dir, err := c.Directory().WithNewFile("foo", "bar").Sync(ctx)
+		require.NoError(t, err)
+
+		entries, err := dir.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, entries)
+	})
+}

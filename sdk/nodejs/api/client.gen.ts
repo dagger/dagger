@@ -2172,6 +2172,23 @@ export class Directory extends BaseClient {
   }
 
   /**
+   * Force evaluation in the engine.
+   */
+  async sync(): Promise<Directory> {
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sync",
+        },
+      ],
+      this.client
+    )
+
+    return this
+  }
+
+  /**
    * Retrieves this directory plus a directory written at the given path.
    * @param path Location of the written directory (e.g., "/src/").
    * @param directory Identifier of the directory to copy.
