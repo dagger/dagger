@@ -38,7 +38,7 @@ func (t Go) Lint(ctx context.Context) error {
 		WithMountedDirectory("/app", util.RepositoryGoCodeOnly(c)).
 		WithWorkdir("/app/sdk/go").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-		ExitCode(ctx)
+		Sync(ctx)
 	if err != nil {
 		return err
 	}
@@ -173,7 +173,7 @@ func (t Go) Publish(ctx context.Context, tag string) error {
 		"-f",
 		targetRepo,
 		fmt.Sprintf("%s:%s", tag, targetTag),
-	}).ExitCode(ctx)
+	}).Sync(ctx)
 
 	return err
 }

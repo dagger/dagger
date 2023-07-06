@@ -49,7 +49,7 @@ func TestPipeline(t *testing.T) {
 			Pipeline("container pipeline").
 			From("alpine:3.16.2").
 			WithExec([]string{"echo", cacheBuster}).
-			ExitCode(ctx)
+			Sync(ctx)
 
 		require.NoError(t, err)
 
@@ -100,9 +100,8 @@ func TestPipeline(t *testing.T) {
 			WithExec([]string{"apk", "add", "curl"}).
 			WithExec([]string{"curl", "-v", url})
 
-		code, err := client.ExitCode(ctx)
+		_, err = client.Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, code)
 
 		require.NoError(t, c.Close()) // close + flush logs
 

@@ -121,11 +121,10 @@ func TestPlatformCrossCompile(t *testing.T) {
 
 	// make sure the binaries for each platform are executable via emulation now
 	for _, ctr := range variants {
-		exit, err := ctr.
+		_, err := ctr.
 			WithExec([]string{"/dagger", "version"}).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, exit)
 	}
 
 	// push a multiplatform image
@@ -146,11 +145,10 @@ func TestPlatformCrossCompile(t *testing.T) {
 		ctr = ctr.WithMountedDirectory("/"+string(platform), pulledDir)
 		cmds = append(cmds, fmt.Sprintf(`file /%s/dagger | tee /dev/stderr | grep -q '%s'`, platform, uname))
 	}
-	exit, err := ctr.
+	_, err = ctr.
 		WithExec([]string{"sh", "-x", "-e", "-c", strings.Join(cmds, "\n")}).
-		ExitCode(ctx)
+		Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, exit)
 }
 
 func TestPlatformCacheMounts(t *testing.T) {
@@ -172,26 +170,24 @@ func TestPlatformCacheMounts(t *testing.T) {
 	// make sure cache mounts are inherently platform-agnostic
 	cmds := make([]string, 0, len(platformToUname))
 	for platform := range platformToUname {
-		exit, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+		_, err := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16").
 			WithMountedCache("/cache", cache).
 			WithExec([]string{"sh", "-x", "-c", strings.Join([]string{
 				"mkdir -p /cache/" + randomID + string(platform),
 				"uname -m > /cache/" + randomID + string(platform) + "/uname",
 			}, " && ")}).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, exit)
 		cmds = append(cmds, fmt.Sprintf(`cat /cache/%s%s/uname | grep '%s'`, randomID, platform, platformToUname[platform]))
 	}
 
-	exit, err := c.Container().
+	_, err = c.Container().
 		From("alpine:3.16").
 		WithMountedCache("/cache", cache).
 		WithExec([]string{"sh", "-x", "-c", strings.Join(cmds, " && ")}).
-		ExitCode(ctx)
+		Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, exit)
 }
 
 func TestPlatformInvalid(t *testing.T) {

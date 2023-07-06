@@ -152,8 +152,8 @@ describe("NodeJS SDK api", function () {
         .from("alpine:3.16.2")
         .withExec(["echo", "hello", "world"])
 
-      const a = await image.exitCode()
-      assert.strictEqual(a, 0)
+      const a = await image.withExec(["echo", "foobar"]).stdout()
+      assert.strictEqual(a, "foobar\n")
 
       const b = await image.stdout()
       assert.strictEqual(b, "hello world\n")

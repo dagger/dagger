@@ -55,7 +55,7 @@ func (Elixir) Lint(ctx context.Context) error {
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "lint"}).
-		ExitCode(ctx)
+		Sync(ctx)
 	if err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (Elixir) Test(ctx context.Context) error {
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"mix", "test"}).
-		ExitCode(ctx)
+		Sync(ctx)
 	if err != nil {
 		return err
 	}

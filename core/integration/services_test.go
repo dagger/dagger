@@ -359,9 +359,8 @@ func TestContainerExecServices(t *testing.T) {
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", url})
 
-	code, err := client.ExitCode(ctx)
+	_, err = client.Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, code)
 
 	stdout, err := client.Stdout(ctx)
 	require.NoError(t, err)
@@ -393,7 +392,7 @@ func TestContainerExecServicesError(t *testing.T) {
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
-	_, err = client.ExitCode(ctx)
+	_, err = client.Sync(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www): exited:")
 }
@@ -422,7 +421,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
-	_, err = client.ExitCode(ctx)
+	_, err = client.Sync(ctx)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "start "+host+" (aliased as www)")
 }
@@ -455,9 +454,8 @@ func TestContainerExecUDPServices(t *testing.T) {
 			Stdin: "Hello, world!",
 		})
 
-	code, err := client.ExitCode(ctx)
+	_, err := client.Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, code)
 
 	stdout, err := client.Stdout(ctx)
 	require.NoError(t, err)
@@ -480,9 +478,8 @@ func TestContainerExecServiceAlias(t *testing.T) {
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", "http://hello:8000"})
 
-	code, err := client.ExitCode(ctx)
+	_, err := client.Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, code)
 
 	stdout, err := client.Stdout(ctx)
 	require.NoError(t, err)
@@ -521,7 +518,7 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 	eg.Go(func() error {
 		_, err := client.
 			WithExec([]string{"curl", "-s", "-X", "POST", "http://www:8080/write", "-d", "hello"}).
-			ExitCode(ctx)
+			Sync(ctx)
 		return err
 	})
 
@@ -1102,23 +1099,21 @@ func TestFileServiceSecret(t *testing.T) {
 	}).Secret()
 
 	t.Run("secret env", func(t *testing.T) {
-		exitCode, err := c.Container().
+		_, err := c.Container().
 			From("alpine:3.16.2").
 			WithSecretVariable("SEKRIT", secret).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, exitCode)
 	})
 
 	t.Run("secret mount", func(t *testing.T) {
-		exitCode, err := c.Container().
+		_, err := c.Container().
 			From("alpine:3.16.2").
 			WithMountedSecret("/sekrit", secret).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
-			ExitCode(ctx)
+			Sync(ctx)
 		require.NoError(t, err)
-		require.Equal(t, 0, exitCode)
 	})
 }
 

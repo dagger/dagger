@@ -63,7 +63,7 @@ func (t Engine) Lint(ctx context.Context) error {
 		WithMountedDirectory("/app", repo).
 		WithWorkdir("/app").
 		WithExec([]string{"golangci-lint", "run", "-v", "--timeout", "5m"}).
-		ExitCode(ctx)
+		Sync(ctx)
 	return err
 }
 
