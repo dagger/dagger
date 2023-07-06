@@ -1874,21 +1874,6 @@ func (r *File) WithTimestamps(timestamp int) *File {
 type GitRef struct {
 	q *querybuilder.Selection
 	c graphql.Client
-
-	digest *string
-}
-
-// The digest of the current value of this ref.
-func (r *GitRef) Digest(ctx context.Context) (string, error) {
-	if r.digest != nil {
-		return *r.digest, nil
-	}
-	q := r.q.Select("digest")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // GitRefTreeOpts contains options for GitRef.Tree
@@ -1935,16 +1920,6 @@ func (r *GitRepository) Branch(name string) *GitRef {
 	}
 }
 
-// Lists of branches on the repository.
-func (r *GitRepository) Branches(ctx context.Context) ([]string, error) {
-	q := r.q.Select("branches")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // Returns details on one commit.
 func (r *GitRepository) Commit(id string) *GitRef {
 	q := r.q.Select("commit")
@@ -1965,16 +1940,6 @@ func (r *GitRepository) Tag(name string) *GitRef {
 		q: q,
 		c: r.c,
 	}
-}
-
-// Lists of tags on the repository.
-func (r *GitRepository) Tags(ctx context.Context) ([]string, error) {
-	q := r.q.Select("tags")
-
-	var response []string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // Information about the host execution environment.

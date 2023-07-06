@@ -2186,28 +2186,6 @@ class GitRef(Type):
     """A git ref (tag, branch or commit)."""
 
     @typecheck
-    async def digest(self) -> str:
-        """The digest of the current value of this ref.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("digest", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
     def tree(
         self,
         ssh_known_hosts: Optional[str] = None,
@@ -2241,28 +2219,6 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
     @typecheck
-    async def branches(self) -> list[str]:
-        """Lists of branches on the repository.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("branches", _args)
-        return await _ctx.execute(list[str])
-
-    @typecheck
     def commit(self, id: str) -> GitRef:
         """Returns details on one commit.
 
@@ -2292,28 +2248,6 @@ class GitRepository(Type):
         ]
         _ctx = self._select("tag", _args)
         return GitRef(_ctx)
-
-    @typecheck
-    async def tags(self) -> list[str]:
-        """Lists of tags on the repository.
-
-        Returns
-        -------
-        list[str]
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("tags", _args)
-        return await _ctx.execute(list[str])
 
 
 class Host(Type):

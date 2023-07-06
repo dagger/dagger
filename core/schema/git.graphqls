@@ -20,8 +20,6 @@ extend type Query {
 
 "A git repository."
 type GitRepository {
-  "Lists of branches on the repository."
-  branches: [String!]!
 
   """
   Returns details on one branch.
@@ -32,9 +30,6 @@ type GitRepository {
     """
     name: String!
   ): GitRef!
-
-  "Lists of tags on the repository."
-  tags: [String!]!
 
   """
   Returns details on one tag.
@@ -59,9 +54,6 @@ type GitRepository {
 
 "A git ref (tag, branch or commit)."
 type GitRef {
-  "The digest of the current value of this ref."
-  digest: String!
-
   "The filesystem tree at this ref."
   tree(sshKnownHosts: String, sshAuthSocket: SocketID): Directory!
 }

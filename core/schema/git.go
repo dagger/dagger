@@ -27,15 +27,12 @@ func (s *gitSchema) Resolvers() router.Resolvers {
 			"git": router.ToResolver(s.git),
 		},
 		"GitRepository": router.ObjectResolver{
-			"branches": router.ToResolver(s.branches),
-			"branch":   router.ToResolver(s.branch),
-			"tags":     router.ToResolver(s.tags),
-			"tag":      router.ToResolver(s.tag),
-			"commit":   router.ToResolver(s.commit),
+			"branch": router.ToResolver(s.branch),
+			"tag":    router.ToResolver(s.tag),
+			"commit": router.ToResolver(s.commit),
 		},
 		"GitRef": router.ObjectResolver{
-			"digest": router.ToResolver(s.digest),
-			"tree":   router.ToResolver(s.tree),
+			"tree": router.ToResolver(s.tree),
 		},
 	}
 }
@@ -45,10 +42,11 @@ func (s *gitSchema) Dependencies() []router.ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL         string            `json:"url"`
-	KeepGitDir  bool              `json:"keepGitDir"`
-	Pipeline    pipeline.Path     `json:"pipeline"`
-	ServiceHost *core.ContainerID `json:"serviceHost,omitempty"`
+	URL             string            `json:"url"`
+	KeepGitDir      bool              `json:"keepGitDir"`
+	AuthTokenSecret *core.SecretID    `json:"authTokenSecret,omitempty"`
+	Pipeline        pipeline.Path     `json:"pipeline"`
+	ServiceHost     *core.ContainerID `json:"serviceHost,omitempty"`
 }
 
 type gitRef struct {
@@ -93,10 +91,6 @@ func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branc
 	}, nil
 }
 
-func (s *gitSchema) branches(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, ErrNotImplementedYet
-}
-
 type tagArgs struct {
 	Name string
 }
@@ -106,14 +100,6 @@ func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs)
 		Repository: parent,
 		Name:       args.Name,
 	}, nil
-}
-
-func (s *gitSchema) tags(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, ErrNotImplementedYet
-}
-
-func (s *gitSchema) digest(ctx *router.Context, parent any, args any) (any, error) {
-	return nil, ErrNotImplementedYet
 }
 
 type gitTreeArgs struct {
