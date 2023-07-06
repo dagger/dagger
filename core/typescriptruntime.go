@@ -42,7 +42,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
-		cfg.Entrypoint = []string{"yarn", "start", "--prefix", path.Join(workdir, path.Dir(p.ConfigPath)), "--"}
+		cfg.Entrypoint = []string{"yarn", "--cwd", path.Join(workdir, path.Dir(p.ConfigPath)), "start", "--"}
 		return cfg
 	})
 	if err != nil {
@@ -50,7 +50,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args:           []string{"yarn", "--prefix", path.Join(workdir, path.Dir(p.ConfigPath))},
+		Args:           []string{"yarn", "--cwd", path.Join(workdir, path.Dir(p.ConfigPath))},
 		SkipEntrypoint: true,
 	})
 	if err != nil {
@@ -58,7 +58,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args:           []string{"find", path.Join(workdir, "sdk/nodejs/node_modules")},
+		Args:           []string{"find", path.Join(workdir, "sdk/nodejs")},
 		SkipEntrypoint: true,
 	})
 	if err != nil {

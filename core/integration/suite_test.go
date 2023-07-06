@@ -320,8 +320,8 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 		thisRepoDir = ctr.c.Container().
 			From("node:18-alpine").
 			WithDirectory("/src", thisRepoDir, dagger.ContainerWithDirectoryOpts{}).
-			WithExec([]string{"npm", "install", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
-			WithExec([]string{"npm", "run", "build", "--prefix", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+			WithExec([]string{"yarn", "--cwd", "/src/sdk/nodejs"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
+			WithExec([]string{"yarn", "--cwd", "/src/sdk/nodejs", "build"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
 			WithExec([]string{"rm", "/src/sdk/nodejs/.gitignore"}, dagger.ContainerWithExecOpts{SkipEntrypoint: true}).
 			Directory("/src")
 	}
