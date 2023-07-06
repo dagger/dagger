@@ -2,10 +2,11 @@ package core
 
 import (
 	"context"
+	"path"
+
 	"github.com/dagger/dagger/core/pipeline"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
-	"path"
 )
 
 func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
@@ -18,6 +19,7 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 		return nil, err
 	}
 
+	//nolint:goconst
 	workdir := "/src"
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
