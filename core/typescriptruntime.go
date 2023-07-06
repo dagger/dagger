@@ -58,9 +58,12 @@ func (p *Project) typescriptRuntime(ctx context.Context, gw bkgw.Client, progSoc
 	}
 
 	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
-		Args:           []string{"find", "-L", path.Join(workdir, "sdk/nodejs/node_modules")},
+		Args:           []string{"find", path.Join(workdir, "sdk/nodejs/node_modules")},
 		SkipEntrypoint: true,
 	})
+	if err != nil {
+		return nil, err
+	}
 
 	return ctr, nil
 }

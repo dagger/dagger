@@ -19,6 +19,7 @@ func (p *Project) goRuntime(ctx context.Context, gw bkgw.Client, progSock *Socke
 		return nil, err
 	}
 
+	//nolint:goconst
 	workdir := "/src"
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, workdir)
