@@ -897,8 +897,12 @@ func TestDirectorySync(t *testing.T) {
 	defer c.Close()
 
 	t.Run("empty", func(t *testing.T) {
-		_, err := c.Directory().Sync(ctx)
+		dir, err := c.Directory().Sync(ctx)
 		require.NoError(t, err)
+
+		entries, err := dir.Entries(ctx)
+		require.NoError(t, err)
+		require.Empty(t, entries)
 	})
 
 	t.Run("triggers error", func(t *testing.T) {

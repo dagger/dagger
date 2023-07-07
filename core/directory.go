@@ -170,6 +170,9 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 }
 
 func (dir *Directory) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	if dir.LLB == nil {
+		return nil
+	}
 	_, err := WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
 		return gw.Solve(ctx, bkgw.SolveRequest{
 			Evaluate:   true,

@@ -6,7 +6,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/router"
-	"github.com/moby/buildkit/client/llb"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -77,9 +76,8 @@ func (s *directorySchema) directory(ctx *router.Context, parent *core.Query, arg
 	if args.ID != "" {
 		return args.ID.ToDirectory()
 	}
-
 	platform := s.baseSchema.platform
-	return core.NewDirectorySt(ctx, llb.Scratch(), "", parent.PipelinePath(), platform, nil)
+	return core.NewScratchDirectory(parent.PipelinePath(), platform), nil
 }
 
 func (s *directorySchema) id(ctx *router.Context, parent *core.Directory, args any) (core.DirectoryID, error) {
