@@ -33,19 +33,18 @@ describe("NodeJS sdk Connect", function () {
     delete process.env["DAGGER_SESSION_PORT"]
     delete process.env["DAGGER_SESSION_TOKEN"]
   })
+
   it("Connect to local engine and execute a simple query to make sure it does not fail", async function () {
     this.timeout(60000)
 
     await connect(
       async (client) => {
-        const result = await client
+        await client
           .container()
           .from("alpine")
           .withExec(["apk", "add", "curl"])
           .withExec(["curl", "https://dagger.io/"])
-          .exitCode()
-
-        assert.ok(result === 0)
+          .sync()
       },
       { LogOutput: process.stderr }
     )

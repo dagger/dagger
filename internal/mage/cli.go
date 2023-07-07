@@ -56,7 +56,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 	_, err = container.
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args).
-		ExitCode(ctx)
+		Sync(ctx)
 	return err
 }
 

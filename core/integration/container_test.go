@@ -320,14 +320,13 @@ func TestContainerWithRootFS(t *testing.T) {
 
 	alpine316ReleaseStr = strings.TrimSpace(alpine316ReleaseStr)
 	dir := alpine316.Rootfs()
-	exitCode, err := c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithRootfs(dir).WithExec([]string{
+	_, err = c.Container().WithEnvVariable("ALPINE_RELEASE", alpine316ReleaseStr).WithRootfs(dir).WithExec([]string{
 		"/bin/sh",
 		"-c",
 		"test -f /etc/alpine-release && test \"$(head -n 1 /etc/alpine-release)\" = \"$ALPINE_RELEASE\"",
-	}).ExitCode(ctx)
+	}).Sync(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, exitCode, 0)
 
 	alpine315 := c.Container().From("alpine:3.15.6")
 

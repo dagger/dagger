@@ -70,7 +70,7 @@ exit $?
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).
-		ExitCode(ctx)
+		Sync(ctx)
 	require.NoError(t, err)
 }
 
@@ -100,15 +100,14 @@ func TestClientWaitsForEngine(t *testing.T) {
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
-	exitCode, err := clientCtr.
+	_, err = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
 			Contents: `{ defaultPlatform }`}). // arbitrary valid query
 		WithExec([]string{"time", "dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		}).ExitCode(ctx)
+		}).Sync(ctx)
 
 	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
 }
 
 func TestEngineSetsNameFromEnv(t *testing.T) {

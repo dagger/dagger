@@ -18,34 +18,21 @@ func TestSecretEnvFromFile(t *testing.T) {
 
 	secretID := newSecret(t, "some-content")
 
-	var envRes struct {
-		Container struct {
-			From struct {
-				WithSecretVariable struct {
-					WithExec struct {
-						ExitCode int
-					}
-				}
-			}
-		}
-	}
-
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "alpine:3.16.2") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
 						withExec(args: ["sh", "-c", "test \"$SECRET\" = \"some-content\""]) {
-							exitCode
+							sync
 						}
 					}
 				}
 			}
-		}`, &envRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
 			"secret": secretID,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, 0, envRes.Container.From.WithSecretVariable.WithExec.ExitCode)
 }
 
 func TestSecretMountFromFile(t *testing.T) {
@@ -53,34 +40,21 @@ func TestSecretMountFromFile(t *testing.T) {
 
 	secretID := newSecret(t, "some-content")
 
-	var envRes struct {
-		Container struct {
-			From struct {
-				WithMountedSecret struct {
-					WithExec struct {
-						ExitCode int
-					}
-				}
-			}
-		}
-	}
-
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
 				from(address: "alpine:3.16.2") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-content\""]) {
-							exitCode
+							sync
 						}
 					}
 				}
 			}
-		}`, &envRes, &testutil.QueryOptions{Variables: map[string]any{
+		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
 			"secret": secretID,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, 0, envRes.Container.From.WithMountedSecret.WithExec.ExitCode)
 }
 
 func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
@@ -94,9 +68,6 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 			From struct {
 				WithMountedSecret struct {
 					WithMountedFile struct {
-						WithExec struct {
-							ExitCode int
-						}
 						File struct {
 							Contents string
 						}
@@ -113,7 +84,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withMountedFile(path: "/sekret", source: $file) {
 							withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-secret\""]) {
-								exitCode
+								sync
 							}
 							file(path: "/sekret") {
 								contents
@@ -127,7 +98,6 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 			"file":   fileID,
 		}})
 	require.NoError(t, err)
-	require.Equal(t, 0, res.Container.From.WithMountedSecret.WithMountedFile.WithExec.ExitCode)
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
 
@@ -154,12 +124,11 @@ func TestNewSecret(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	exitCode, err := c.Container().From("alpine:3.16.2").
+	_, err := c.Container().From("alpine:3.16.2").
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).
-		ExitCode(ctx)
+		Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 0, exitCode)
 }
 
 func TestWhitespaceSecretScrubbed(t *testing.T) {

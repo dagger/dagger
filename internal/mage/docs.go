@@ -41,7 +41,7 @@ func (Docs) Lint(ctx context.Context) error {
 				"./docs",
 				"README.md",
 			}).
-			ExitCode(gctx)
+			Sync(gctx)
 		return err
 	})
 

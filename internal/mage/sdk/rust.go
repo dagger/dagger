@@ -114,7 +114,7 @@ func (r Rust) Lint(ctx context.Context) error {
 	eg.Go(func() error {
 		_, err = base.
 			WithExec([]string{"cargo", "check", "--all", "--release"}).
-			ExitCode(gctx)
+			Sync(gctx)
 
 		return err
 	})
@@ -122,7 +122,7 @@ func (r Rust) Lint(ctx context.Context) error {
 	eg.Go(func() error {
 		_, err = base.
 			WithExec([]string{"cargo", "fmt", "--check"}).
-			ExitCode(gctx)
+			Sync(gctx)
 
 		return err
 	})
@@ -180,7 +180,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 		base = base.WithExec(args)
 	}
 
-	_, err = base.ExitCode(ctx)
+	_, err = base.Sync(ctx)
 
 	return err
 }
@@ -218,7 +218,7 @@ func (r Rust) Test(ctx context.Context) error {
 				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 				WithExec([]string{"cargo", "test", "--release", "--all"}).
-				ExitCode(ctx)
+				Sync(ctx)
 			return err
 		})
 	}
