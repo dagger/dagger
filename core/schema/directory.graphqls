@@ -11,6 +11,9 @@ type Directory {
   "The content-addressed identifier of the directory."
   id: DirectoryID!
 
+  "Force evaluation in the engine."
+  sync: DirectoryID!
+
   "Creates a named sub-pipeline"
   pipeline(
     "Pipeline name."

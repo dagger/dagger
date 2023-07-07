@@ -235,6 +235,21 @@ async def test_container_awaitable():
         assert out == "spam\n"
 
 
+async def test_directory_sync():
+    # This feature is tested in core, we're just testing if
+    # sync in different types work.
+    async with dagger.Connection() as client:
+        base = client.directory().with_new_file("foo", "bar")
+
+        # short cirtcut
+        with pytest.raises(dagger.QueryError, match="no such file or directory"):
+            await base.directory("foobar").sync()
+
+        # chaining
+        entries = await (await base.sync()).entries()
+        assert entries == ["foo"]
+
+
 async def test_deprecation_warning():
     async with dagger.Connection() as client:
         with pytest.warns(DeprecationWarning, match="with_exec"):

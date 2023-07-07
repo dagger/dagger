@@ -169,6 +169,19 @@ func (dir *Directory) WithPipeline(ctx context.Context, name, description string
 	return dir, nil
 }
 
+func (dir *Directory) Evaluate(ctx context.Context, gw bkgw.Client) error {
+	if dir.LLB == nil {
+		return nil
+	}
+	_, err := WithServices(ctx, gw, dir.Services, func() (*bkgw.Result, error) {
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: dir.LLB,
+		})
+	})
+	return err
+}
+
 func (dir *Directory) Stat(ctx context.Context, gw bkgw.Client, src string) (*fstypes.Stat, error) {
 	src = path.Join(dir.Dir, src)
 
@@ -282,9 +295,21 @@ func (dir *Directory) WithNewFile(ctx context.Context, dest string, content []by
 	return dir, nil
 }
 
-func (dir *Directory) Directory(ctx context.Context, subdir string) (*Directory, error) {
+func (dir *Directory) Directory(ctx context.Context, gw bkgw.Client, subdir string) (*Directory, error) {
 	dir = dir.Clone()
 	dir.Dir = path.Join(dir.Dir, subdir)
+
+	// check that the directory actually exists so the user gets an error earlier
+	// rather than when the dir is used
+	info, err := dir.Stat(ctx, gw, ".")
+	if err != nil {
+		return nil, err
+	}
+
+	if !info.IsDir() {
+		return nil, fmt.Errorf("path %s is a file, not a directory", subdir)
+	}
+
 	return dir, nil
 }
 

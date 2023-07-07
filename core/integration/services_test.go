@@ -930,6 +930,46 @@ func TestDirectoryServiceEntries(t *testing.T) {
 	require.Equal(t, []string{"README.md"}, entries)
 }
 
+func TestDirectoryServiceSync(t *testing.T) {
+	t.Parallel()
+
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
+	t.Run("triggers error", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+		defer c.Close()
+
+		content := identity.NewID()
+		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+		_, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			Branch("foobar").
+			Tree().
+			Sync(ctx)
+		require.Error(t, err)
+	})
+
+	t.Run("with chaining", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+		defer c.Close()
+
+		content := identity.NewID()
+		gitDaemon, repoURL := gitService(ctx, t, c, c.Directory().WithNewFile("README.md", content))
+		repo, err := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
+			Branch("main").
+			Tree().
+			Sync(ctx)
+		require.NoError(t, err)
+
+		entries, err := repo.Entries(ctx)
+		require.NoError(t, err)
+		require.Equal(t, []string{"README.md"}, entries)
+	})
+}
+
 func TestDirectoryServiceTimestamp(t *testing.T) {
 	t.Parallel()
 

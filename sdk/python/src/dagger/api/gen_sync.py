@@ -1807,6 +1807,23 @@ class Directory(Type):
         return Directory(_ctx)
 
     @typecheck
+    def sync(self) -> "Directory":
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        _id = _ctx.execute_sync(DirectoryID)
+        _ctx = self._root_select("directory", [Arg("id", _id)])
+        return Directory(_ctx)
+
+    @typecheck
     def with_directory(
         self,
         path: str,
