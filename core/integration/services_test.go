@@ -855,24 +855,9 @@ func TestContainerFileServices(t *testing.T) {
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
 
-    t.Run("runs services for Container.File.Contents", func(t *testing.T) {
-        fileContent, err := client.File("index.html").Contents(ctx)
-        require.NoError(t, err)
-        require.Equal(t, content, fileContent)
-    })
-
-    t.Run("runs services for Container.File.Sync", func(t *testing.T) {
-        _, err := client.WithExec([]string{"cat", "foobar"}).File("index.html").Sync(ctx)
-        require.Error(t, err)
-		require.Contains(t, err.Error(), "No such file")
-
-        file, err := client.File("index.html").Sync(ctx)
-        require.NoError(t, err)
-
-        fileContent, err := file.Contents(ctx)
-        require.NoError(t, err)
-        require.Equal(t, content, fileContent)
-    })
+	fileContent, err := client.File("index.html").Contents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
 }
 
 func TestContainerWithServiceFileDirectory(t *testing.T) {
@@ -1082,6 +1067,48 @@ func TestFileServiceContents(t *testing.T) {
 		Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, fileContent)
+}
+
+func TestFileServiceSync(t *testing.T) {
+	t.Parallel()
+
+	checkNotDisabled(t, engine.ServicesDNSEnvName)
+
+	t.Run("triggers error", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+		defer c.Close()
+
+		content := identity.NewID()
+		httpSrv, httpURL := httpService(ctx, t, c, content)
+
+		_, err := c.HTTP(httpURL+"/foobar", dagger.HTTPOpts{
+			ExperimentalServiceHost: httpSrv,
+		}).Sync(ctx)
+
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "status 404")
+	})
+
+	t.Run("with chaining", func(t *testing.T) {
+		t.Parallel()
+
+		c, ctx := connect(t)
+		defer c.Close()
+
+		content := identity.NewID()
+		httpSrv, httpURL := httpService(ctx, t, c, content)
+
+		file, err := c.HTTP(httpURL, dagger.HTTPOpts{
+			ExperimentalServiceHost: httpSrv,
+		}).Sync(ctx)
+		require.NoError(t, err)
+
+		fileContent, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content, fileContent)
+	})
 }
 
 func TestFileServiceExport(t *testing.T) {

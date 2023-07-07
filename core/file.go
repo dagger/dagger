@@ -114,9 +114,11 @@ func (file *File) State() (llb.State, error) {
 }
 
 func (file *File) Evaluate(ctx context.Context, gw bkgw.Client) error {
-	_, err := gw.Solve(ctx, bkgw.SolveRequest{
-		Evaluate:   true,
-		Definition: file.LLB,
+	_, err := WithServices(ctx, gw, file.Services, func() (*bkgw.Result, error) {
+		return gw.Solve(ctx, bkgw.SolveRequest{
+			Evaluate:   true,
+			Definition: file.LLB,
+		})
 	})
 	return err
 }
