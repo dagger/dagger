@@ -35,8 +35,8 @@ func TestContainerScratch(t *testing.T) {
 
 	res := struct {
 		Container struct {
-			ID string
-			Fs struct {
+			ID     string
+			Rootfs struct {
 				Entries []string
 			}
 		}
@@ -46,13 +46,13 @@ func TestContainerScratch(t *testing.T) {
 		`{
 			container {
 				id
-				fs {
+				rootfs {
 					entries
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Empty(t, res.Container.Fs.Entries)
+	require.Empty(t, res.Container.Rootfs.Entries)
 }
 
 func TestContainerFrom(t *testing.T) {
@@ -61,10 +61,8 @@ func TestContainerFrom(t *testing.T) {
 	res := struct {
 		Container struct {
 			From struct {
-				Fs struct {
-					File struct {
-						Contents string
-					}
+				File struct {
+					Contents string
 				}
 			}
 		}
@@ -74,16 +72,14 @@ func TestContainerFrom(t *testing.T) {
 		`{
 			container {
 				from(address: "alpine:3.16.2") {
-					fs {
-						file(path: "/etc/alpine-release") {
-							contents
-						}
-					}
+                    file(path: "/etc/alpine-release") {
+                        contents
+                    }
 				}
 			}
 		}`, &res, nil)
 	require.NoError(t, err)
-	require.Equal(t, res.Container.From.Fs.File.Contents, "3.16.2\n")
+	require.Equal(t, res.Container.From.File.Contents, "3.16.2\n")
 }
 
 func TestContainerWith(t *testing.T) {
@@ -3134,7 +3130,7 @@ func TestContainerImageRef(t *testing.T) {
 			`{
 				container {
 					from(address:"hello-world") {
-						exec(args:["/hello"]) {
+						withExec(args:["/hello"]) {
 							imageRef
 						}
 					}

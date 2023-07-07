@@ -197,7 +197,7 @@ describe("NodeJS SDK api", function () {
     const tree = {
       container: {
         from: {
-          exec: {
+          withExec: {
             stdout:
               "fetch https://dl-cdn.alpinelinux.org/alpine/v3.16/main/aarch64/APKINDEX.tar.gz",
           },
