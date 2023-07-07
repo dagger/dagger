@@ -313,10 +313,21 @@ func (dir *Directory) Directory(ctx context.Context, gw bkgw.Client, subdir stri
 	return dir, nil
 }
 
-func (dir *Directory) File(ctx context.Context, file string) (*File, error) {
+func (dir *Directory) File(ctx context.Context, gw bkgw.Client, file string) (*File, error) {
 	err := validateFileName(file)
 	if err != nil {
 		return nil, err
+	}
+
+	// check that the file actually exists so the user gets an error earlier
+	// rather than when the file is used
+	info, err := dir.Stat(ctx, gw, file)
+	if err != nil {
+		return nil, err
+	}
+
+	if info.IsDir() {
+		return nil, fmt.Errorf("path %s is a directory, not a file", file)
 	}
 
 	return &File{

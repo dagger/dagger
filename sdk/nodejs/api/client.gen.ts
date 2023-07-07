@@ -2531,6 +2531,23 @@ export class File extends BaseClient {
   }
 
   /**
+   * Force evaluation in the engine.
+   */
+  async sync(): Promise<File> {
+    await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "sync",
+        },
+      ],
+      this.client
+    )
+
+    return this
+  }
+
+  /**
    * Retrieves this file with its created/modified timestamps set to the given time.
    * @param timestamp Timestamp to set dir/files in.
    *

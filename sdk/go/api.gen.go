@@ -1768,6 +1768,7 @@ type File struct {
 	export   *bool
 	id       *FileID
 	size     *int
+	sync     *FileID
 }
 
 // Retrieves the contents of the file.
@@ -1865,6 +1866,13 @@ func (r *File) Size(ctx context.Context) (int, error) {
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
+}
+
+// Force evaluation in the engine.
+func (r *File) Sync(ctx context.Context) (*File, error) {
+	q := r.q.Select("sync")
+
+	return r, q.Execute(ctx, r.c)
 }
 
 // Retrieves this file with its created/modified timestamps set to the given time.

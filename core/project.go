@@ -114,7 +114,7 @@ func (p *Project) Load(ctx context.Context, gw bkgw.Client, r *router.Router, pr
 	configPath = p.normalizeConfigPath(configPath)
 	p.ConfigPath = configPath
 
-	configFile, err := source.File(ctx, p.ConfigPath)
+	configFile, err := source.File(ctx, gw, p.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load project config at path %q: %w", configPath, err)
 	}

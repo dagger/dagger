@@ -248,3 +248,29 @@ func TestFileContents(t *testing.T) {
 		require.Equal(t, testFile.hash, contentsHash)
 	}
 }
+
+func TestFileSync(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	t.Run("triggers error", func(t *testing.T) {
+		_, err := c.Directory().File("baz").Sync(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such file")
+
+		_, err = c.Container().From("alpine:3.16.2").File("/bar").Sync(ctx)
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "no such file")
+	})
+
+	t.Run("allows chaining", func(t *testing.T) {
+		file, err := c.Directory().WithNewFile("foo", "bar").File("foo").Sync(ctx)
+		require.NoError(t, err)
+
+		contents, err := file.Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", contents)
+	})
+}

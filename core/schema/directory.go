@@ -145,7 +145,7 @@ type dirFileArgs struct {
 }
 
 func (s *directorySchema) file(ctx *router.Context, parent *core.Directory, args dirFileArgs) (*core.File, error) {
-	return parent.File(ctx, args.Path)
+	return parent.File(ctx, s.gw, args.Path)
 }
 
 type withNewFileArgs struct {

@@ -2179,6 +2179,23 @@ class File(Type):
         return _ctx.execute_sync(int)
 
     @typecheck
+    def sync(self) -> "File":
+        """Force evaluation in the engine.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("sync", _args)
+        _id = _ctx.execute_sync(FileID)
+        _ctx = self._root_select("file", [Arg("id", _id)])
+        return File(_ctx)
+
+    @typecheck
     def with_timestamps(self, timestamp: int) -> "File":
         """Retrieves this file with its created/modified timestamps set to the
         given time.
