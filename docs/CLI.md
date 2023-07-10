@@ -48,6 +48,8 @@ side-by-side comparison.
 > This probably deserves a separate RFC but so long as it's entangled with the
 > CLI UX I'll just include it here to maintain low overhead.
 
+Status: **rough draft**. Still have some things to work out.
+
 Here's an attempt at modeling `.lock` file semantics by caching GraphQL query
 results - in other words, by [memoizing] them.
 
@@ -82,6 +84,37 @@ $ dagger refresh apko-packages
 > side effects, or it might not be able to compile if you're in the middle of
 > adapting to backwards-incompatible schema changes.
 
+#### Usage
+
+* Developer (robin hood) creates a single `dagger.lock` file somewhere in their
+  Environment.
+* The `dagger.lock` file is human-readable but not intended for direct editing.
+* Adding `Memoize()` to a query allows subsequent queries to load results from
+  and save results to `dagger.lock`.
+* Platform developers (:tophat:) add `Memoize([]string{"foo"})` calls to their
+  pipelines with tags to indicate their purpose. (Configurable tags might be a
+  pattern.)
+* Platform consumers (🪶) add `Memoize([]string{"bar"})` calls outside of the
+  platform calls, to memoize anything they want.
+* Platform consumers bump dependencies with `dagger refresh [tags...]`.
+* Platform consumers "prune" dependencies by providing an entrypoint that hits
+  all the necessary memoization paths and removing `dagger.json`.
+
+#### Open questions
+
+* **TODO:** We'll need some way to prevent meta-queries like `pipeline()` and
+  `memoize()` from becoming part of the cache key. If we can't come up with a
+  better idea, we could always just reserve the words and drop them from the
+  query path during memoization.
+
+* **TODO:** How can this work with environment-provided resolvers and types? I
+  guess we need some way to decorate resolvers as @memoizable? (Back to the
+  special comment syntax discussion.)
+
+* **TODO:** Does this need to work by _only_ memoizing the next query?
+  Otherwise how can you memoize a `Container.From` but not every single
+  subsequent query? Seems like an easy mistake to make in code.
+
 #### Implementation notes
 
 The API could look something like this:
@@ -112,10 +145,10 @@ extend type File {
 # not implemented for Secret; its plaintext value should never be
 ```
 
-Each type decides which fields can/can't be memoized. This way we can prevent
-memoizing sensitive information (`Secret.plaintext`) or effect-ful queries
-(`Container.export`) and even store results for intermediate queries
-(`Container.from`).
+* Each type decides which fields can/can't be memoized. This way we can prevent
+  memoizing sensitive information (`Secret.plaintext`) or effectful queries
+  (`Container.export`) and even memoize intermediary queries (`Container.from`)
+  (as opposed to just leaf nodes).
 
 * There are parallels here to chats we've had about caching of `dagger do`
   commands.
@@ -123,12 +156,3 @@ memoizing sensitive information (`Secret.plaintext`) or effect-ful queries
 * Buildkit source pinning could work with this by having e.g. `Container.from`
   and `Git.branch` memoize by returning a `ContainerID` that embeds a source
   policy.
-
-* **TODO:** we'll need some way to prevent meta-queries like `pipeline()` and
-  `memoize()` from becoming part of the cache key. If we can't come up with a
-  better idea, we could always just reserve the words and drop them from the
-  query path during memoization.
-
-* **TODO:** How can this work with environment-provided resolvers and types? I
-  guess we need some way to decorate resolvers as @memoizable? (Back to the
-  special comment syntax discussion.)
