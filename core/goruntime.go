@@ -9,8 +9,16 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *Project) goRuntime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
-	ctr, err := NewContainer("", pipeline, p.Platform)
+func goRuntime(
+	ctx context.Context,
+	bk *buildkit.Client,
+	progSock string,
+	pipeline pipeline.Path,
+	platform specs.Platform,
+	rootDir *Directory,
+	configPath string,
+) (*Container, error) {
+	ctr, err := NewContainer("", pipeline, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +36,7 @@ func (p *Project) goRuntime(ctx context.Context, bk *buildkit.Client, progSock s
 	if err != nil {
 		return nil, err
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, p.Directory, "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "")
 	if err != nil {
 		return nil, err
 	}
@@ -42,10 +50,10 @@ func (p *Project) goRuntime(ctx context.Context, bk *buildkit.Client, progSock s
 		return nil, err
 	}
 
-	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
+	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
 		Args: []string{
 			"go", "build", "-o", "/entrypoint", "-ldflags", "-s -d -w",
-			path.Join(workdir, path.Dir(p.ConfigPath)),
+			path.Join(workdir, path.Dir(configPath)),
 		},
 	})
 	if err != nil {

@@ -1,4 +1,4 @@
-package projectconfig
+package environmentconfig
 
 type SDK string
 
@@ -10,5 +10,5 @@ const (
 type Config struct {
 	Root string `json:"root"`
 	Name string `json:"name"`
-	SDK  string `json:"sdk,omitempty"`
+	SDK  SDK    `json:"sdk,omitempty"`
 }

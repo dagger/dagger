@@ -18,6 +18,12 @@ type ContainerID string
 // A content-addressed directory identifier.
 type DirectoryID string
 
+// A unique environment command identifier.
+type EnvironmentCommandID string
+
+// A unique environment identifier.
+type EnvironmentID string
+
 // A file identifier.
 type FileID string
 
@@ -25,12 +31,6 @@ type FileID string
 //
 // The format is [os]/[platform]/[version] (e.g., "darwin/arm64/v7", "windows/amd64", "linux/arm64").
 type Platform string
-
-// A unique project command identifier.
-type ProjectCommandID string
-
-// A unique project identifier.
-type ProjectID string
 
 // A unique identifier for a secret.
 type SecretID string
@@ -1714,6 +1714,424 @@ func (r *EnvVariable) Value(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+// A collection of Dagger resources that can be queried and invoked.
+type Environment struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	id   *EnvironmentID
+	name *string
+}
+type WithEnvironmentFunc func(r *Environment) *Environment
+
+// With calls the provided function with current Environment.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Environment) With(f WithEnvironmentFunc) *Environment {
+	return f(r)
+}
+
+// TODO
+func (r *Environment) Command(name string) *EnvironmentCommand {
+	q := r.q.Select("command")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Commands provided by this environment
+func (r *Environment) Commands(ctx context.Context) ([]EnvironmentCommand, error) {
+	q := r.q.Select("commands")
+
+	q = q.Select("description id name resultType")
+
+	type commands struct {
+		Description string
+		Id          EnvironmentCommandID
+		Name        string
+		ResultType  string
+	}
+
+	convert := func(fields []commands) []EnvironmentCommand {
+		out := []EnvironmentCommand{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
+		}
+
+		return out
+	}
+	var response []commands
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// Container this environment executes in
+func (r *Environment) Container() *Container {
+	q := r.q.Select("container")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A unique identifier for this environment.
+func (r *Environment) ID(ctx context.Context) (EnvironmentID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *Environment) XXX_GraphQLType() string {
+	return "Environment"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *Environment) XXX_GraphQLIDType() string {
+	return "EnvironmentID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *Environment) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// Initialize this environment from the given directory and config path
+func (r *Environment) Load(source *Directory, configPath string) *Environment {
+	q := r.q.Select("load")
+	q = q.Arg("source", source)
+	q = q.Arg("configPath", configPath)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) LoadFromUniverse(name string) *Environment {
+	q := r.q.Select("loadFromUniverse")
+	q = q.Arg("name", name)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Name of the environment
+func (r *Environment) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+func (r *Environment) WithCommand(id *EnvironmentCommand) *Environment {
+	q := r.q.Select("withCommand")
+	q = q.Arg("id", id)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) WithExtension(id *Environment, namespace string) *Environment {
+	q := r.q.Select("withExtension")
+	q = q.Arg("id", id)
+	q = q.Arg("namespace", namespace)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A command defined in a environment that can be invoked from the CLI.
+type EnvironmentCommand struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	id          *EnvironmentCommandID
+	name        *string
+	resultType  *string
+}
+type WithEnvironmentCommandFunc func(r *EnvironmentCommand) *EnvironmentCommand
+
+// With calls the provided function with current EnvironmentCommand.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentCommand) With(f WithEnvironmentCommandFunc) *EnvironmentCommand {
+	return f(r)
+}
+
+// Documentation for what this command does.
+func (r *EnvironmentCommand) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Flags accepted by this command.
+func (r *EnvironmentCommand) Flags(ctx context.Context) ([]EnvironmentCommandFlag, error) {
+	q := r.q.Select("flags")
+
+	q = q.Select("description name")
+
+	type flags struct {
+		Description string
+		Name        string
+	}
+
+	convert := func(fields []flags) []EnvironmentCommandFlag {
+		out := []EnvironmentCommandFlag{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCommandFlag{description: &fields[i].Description, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []flags
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this command.
+func (r *EnvironmentCommand) ID(ctx context.Context) (EnvironmentCommandID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentCommandID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentCommand) XXX_GraphQLType() string {
+	return "EnvironmentCommand"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentCommand) XXX_GraphQLIDType() string {
+	return "EnvironmentCommandID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentCommand) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// TODO
+func (r *EnvironmentCommand) Invoke() *InvokeResult {
+	q := r.q.Select("invoke")
+
+	return &InvokeResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// The name of the command.
+func (r *EnvironmentCommand) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the type returned by this command.
+func (r *EnvironmentCommand) ResultType(ctx context.Context) (string, error) {
+	if r.resultType != nil {
+		return *r.resultType, nil
+	}
+	q := r.q.Select("resultType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO, can we make an input that's like map[string]any?
+func (r *EnvironmentCommand) SetStringFlag(name string, value string) *EnvironmentCommand {
+	q := r.q.Select("setStringFlag")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCommand) WithDescription(description string) *EnvironmentCommand {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentCommandWithFlagOpts contains options for EnvironmentCommand.WithFlag
+type EnvironmentCommandWithFlagOpts struct {
+	Description string
+}
+
+// TODO
+func (r *EnvironmentCommand) WithFlag(name string, opts ...EnvironmentCommandWithFlagOpts) *EnvironmentCommand {
+	q := r.q.Select("withFlag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCommand) WithName(name string) *EnvironmentCommand {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCommand) WithResultType(name string) *EnvironmentCommand {
+	q := r.q.Select("withResultType")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A flag accepted by a environment command.
+type EnvironmentCommandFlag struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	name        *string
+}
+
+// Documentation for what this flag sets.
+func (r *EnvironmentCommandFlag) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the flag.
+func (r *EnvironmentCommandFlag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+type Extensions struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	dummy *bool
+}
+
+// TODO: needed?
+func (r *Extensions) Dummy(ctx context.Context) (bool, error) {
+	if r.dummy != nil {
+		return *r.dummy, nil
+	}
+	q := r.q.Select("dummy")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A file.
 type File struct {
 	q *querybuilder.Selection
@@ -1979,6 +2397,47 @@ func (r *Host) UnixSocket(path string) *Socket {
 	}
 }
 
+// TODO
+type InvokeResult struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	string *string
+}
+
+// TODO
+func (r *InvokeResult) Directory() *Directory {
+	q := r.q.Select("directory")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *InvokeResult) File() *File {
+	q := r.q.Select("file")
+
+	return &File{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *InvokeResult) String(ctx context.Context) (string, error) {
+	if r.string != nil {
+		return *r.string, nil
+	}
+	q := r.q.Select("string")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // A simple key value object that represents a label.
 type Label struct {
 	q *querybuilder.Selection
@@ -2058,297 +2517,6 @@ func (r *Port) Protocol(ctx context.Context) (NetworkProtocol, error) {
 	q := r.q.Select("protocol")
 
 	var response NetworkProtocol
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A collection of Dagger resources that can be queried and invoked.
-type Project struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	id   *ProjectID
-	name *string
-}
-type WithProjectFunc func(r *Project) *Project
-
-// With calls the provided function with current Project.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *Project) With(f WithProjectFunc) *Project {
-	return f(r)
-}
-
-// Commands provided by this project
-func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
-	q := r.q.Select("commands")
-
-	q = q.Select("description id name resultType")
-
-	type commands struct {
-		Description string
-		Id          ProjectCommandID
-		Name        string
-		ResultType  string
-	}
-
-	convert := func(fields []commands) []ProjectCommand {
-		out := []ProjectCommand{}
-
-		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
-		}
-
-		return out
-	}
-	var response []commands
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this project.
-func (r *Project) ID(ctx context.Context) (ProjectID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.q.Select("id")
-
-	var response ProjectID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *Project) XXX_GraphQLType() string {
-	return "Project"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *Project) XXX_GraphQLIDType() string {
-	return "ProjectID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *Project) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-// Initialize this project from the given directory and config path
-func (r *Project) Load(source *Directory, configPath string) *Project {
-	q := r.q.Select("load")
-	q = q.Arg("source", source)
-	q = q.Arg("configPath", configPath)
-
-	return &Project{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Name of the project
-func (r *Project) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// A command defined in a project that can be invoked from the CLI.
-type ProjectCommand struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	description *string
-	id          *ProjectCommandID
-	name        *string
-	resultType  *string
-}
-
-// Documentation for what this command does.
-func (r *ProjectCommand) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.q.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Flags accepted by this command.
-func (r *ProjectCommand) Flags(ctx context.Context) ([]ProjectCommandFlag, error) {
-	q := r.q.Select("flags")
-
-	q = q.Select("description name")
-
-	type flags struct {
-		Description string
-		Name        string
-	}
-
-	convert := func(fields []flags) []ProjectCommandFlag {
-		out := []ProjectCommandFlag{}
-
-		for i := range fields {
-			out = append(out, ProjectCommandFlag{description: &fields[i].Description, name: &fields[i].Name})
-		}
-
-		return out
-	}
-	var response []flags
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A unique identifier for this command.
-func (r *ProjectCommand) ID(ctx context.Context) (ProjectCommandID, error) {
-	if r.id != nil {
-		return *r.id, nil
-	}
-	q := r.q.Select("id")
-
-	var response ProjectCommandID
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
-func (r *ProjectCommand) XXX_GraphQLType() string {
-	return "ProjectCommand"
-}
-
-// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
-func (r *ProjectCommand) XXX_GraphQLIDType() string {
-	return "ProjectCommandID"
-}
-
-// XXX_GraphQLID is an internal function. It returns the underlying type ID
-func (r *ProjectCommand) XXX_GraphQLID(ctx context.Context) (string, error) {
-	id, err := r.ID(ctx)
-	if err != nil {
-		return "", err
-	}
-	return string(id), nil
-}
-
-// The name of the command.
-func (r *ProjectCommand) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The name of the type returned by this command.
-func (r *ProjectCommand) ResultType(ctx context.Context) (string, error) {
-	if r.resultType != nil {
-		return *r.resultType, nil
-	}
-	q := r.q.Select("resultType")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// Subcommands, if any, that this command provides.
-func (r *ProjectCommand) Subcommands(ctx context.Context) ([]ProjectCommand, error) {
-	q := r.q.Select("subcommands")
-
-	q = q.Select("description id name resultType")
-
-	type subcommands struct {
-		Description string
-		Id          ProjectCommandID
-		Name        string
-		ResultType  string
-	}
-
-	convert := func(fields []subcommands) []ProjectCommand {
-		out := []ProjectCommand{}
-
-		for i := range fields {
-			out = append(out, ProjectCommand{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name, resultType: &fields[i].ResultType})
-		}
-
-		return out
-	}
-	var response []subcommands
-
-	q = q.Bind(&response)
-
-	err := q.Execute(ctx, r.c)
-	if err != nil {
-		return nil, err
-	}
-
-	return convert(response), nil
-}
-
-// A flag accepted by a project command.
-type ProjectCommandFlag struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	description *string
-	name        *string
-}
-
-// Documentation for what this flag sets.
-func (r *ProjectCommandFlag) Description(ctx context.Context) (string, error) {
-	if r.description != nil {
-		return *r.description, nil
-	}
-	q := r.q.Select("description")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
-// The name of the flag.
-func (r *ProjectCommandFlag) Name(ctx context.Context) (string, error) {
-	if r.name != nil {
-		return *r.name, nil
-	}
-	q := r.q.Select("name")
-
-	var response string
 
 	q = q.Bind(&response)
 	return response, q.Execute(ctx, r.c)
@@ -2442,6 +2610,58 @@ func (r *Client) Directory(opts ...DirectoryOpts) *Directory {
 	}
 
 	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentOpts contains options for Client.Environment
+type EnvironmentOpts struct {
+	ID EnvironmentID
+}
+
+// Load a environment from ID.
+func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
+	q := r.q.Select("environment")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentCommandOpts contains options for Client.EnvironmentCommand
+type EnvironmentCommandOpts struct {
+	ID EnvironmentCommandID
+}
+
+// Load a environment command from ID.
+func (r *Client) EnvironmentCommand(opts ...EnvironmentCommandOpts) *EnvironmentCommand {
+	q := r.q.Select("environmentCommand")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Client) Extensions() *Extensions {
+	q := r.q.Select("extensions")
+
+	return &Extensions{
 		q: q,
 		c: r.c,
 	}
@@ -2544,48 +2764,6 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	q = q.Arg("name", name)
 
 	return &Client{
-		q: q,
-		c: r.c,
-	}
-}
-
-// ProjectOpts contains options for Client.Project
-type ProjectOpts struct {
-	ID ProjectID
-}
-
-// Load a project from ID.
-func (r *Client) Project(opts ...ProjectOpts) *Project {
-	q := r.q.Select("project")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
-
-	return &Project{
-		q: q,
-		c: r.c,
-	}
-}
-
-// ProjectCommandOpts contains options for Client.ProjectCommand
-type ProjectCommandOpts struct {
-	ID ProjectCommandID
-}
-
-// Load a project command from ID.
-func (r *Client) ProjectCommand(opts ...ProjectCommandOpts) *ProjectCommand {
-	q := r.q.Select("projectCommand")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `id` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ID) {
-			q = q.Arg("id", opts[i].ID)
-		}
-	}
-
-	return &ProjectCommand{
 		q: q,
 		c: r.c,
 	}

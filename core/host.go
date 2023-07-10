@@ -76,6 +76,7 @@ func (host *Host) Directory(
 	// associate vertexes to the 'host.directory' sub-pipeline
 	buildkit.RecordVertexes(subRecorder, defPB)
 
+	// TODO: still needed to do sync?
 	_, err = bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: defPB,
 		Evaluate:   true, // do the sync now, not lazily
@@ -85,6 +86,23 @@ func (host *Host) Directory(
 	}
 
 	return NewDirectory(ctx, defPB, "", p, platform, nil), nil
+}
+
+// sync a dir from this engine server's host (as opposed to a client's)
+func (host *Host) EngineServerDirectory(
+	ctx context.Context,
+	bk *buildkit.Client,
+	dirPath string,
+	p pipeline.Path,
+	pipelineNamePrefix string,
+	platform specs.Platform,
+	filter CopyFilter,
+) (*Directory, error) {
+	ctx, err := bk.EngineServerDirectoryLoadCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return host.Directory(ctx, bk, dirPath, p, pipelineNamePrefix, platform, filter)
 }
 
 func (host *Host) File(

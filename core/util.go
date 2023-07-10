@@ -184,7 +184,7 @@ func parseKeyValue(env string) (string, string) {
 
 // AddEnv adds or updates an environment variable in 'env'.
 func AddEnv(env []string, name, value string) []string {
-	// Implementation from the dockerfile2llb project.
+	// Implementation from the dockerfile2llb environment.
 	gotOne := false
 
 	for i, envVar := range env {

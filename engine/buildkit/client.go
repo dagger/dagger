@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -361,6 +362,16 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	return c.Solve(ctx, bkgw.SolveRequest{
 		Definition: llbdef.ToPB(),
 	})
+}
+
+func (c *Client) EngineServerDirectoryLoadCtx(ctx context.Context) (context.Context, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// TODO: this is hacky kludge, just barely works (if at all)
+	clientMetadata.ClientID = c.ID()
+	return engine.ContextWithClientMetadata(ctx, clientMetadata), nil
 }
 
 func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []ResolveCacheExporterFunc) error {

@@ -1,7 +1,6 @@
 package dagger
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
@@ -13,12 +12,18 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 
 	"dagger.io/dagger/internal/querybuilder"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
-	"github.com/vektah/gqlparser/v2/formatter"
 )
+
+var getSchema bool
+
+func init() {
+	flag.BoolVar(&getSchema, "schema", false, "print the schema rather than executing")
+}
 
 type Context struct {
 	context.Context
@@ -29,63 +34,172 @@ func (c *Context) Client() *Client {
 	return c.client
 }
 
-// EXPERIMENTAL: ServeCommands is not intended for production use yet.
-//
-//nolint:gocyclo
-func ServeCommands(entrypoints ...any) {
-	ctx := context.Background()
+// TODO:
+var defaultContext Context
+var connectOnce sync.Once
 
-	types := &goTypes{
-		Structs: make(map[string]*goStruct),
-		Funcs:   make(map[string]*goFunc),
-	}
-	for _, entrypoint := range entrypoints {
-		t := reflect.TypeOf(entrypoint)
-		var err error
-		switch t.Kind() {
-		case reflect.Struct:
-			err = types.walkStruct(t, walkState{})
-		case reflect.Func:
-			err = types.walkFunc(t, reflect.ValueOf(entrypoint), walkState{})
-		default:
-			err = fmt.Errorf("unexpected entrypoint type: %v", t)
-		}
+func DefaultContext() Context {
+	connectOnce.Do(func() {
+		ctx := context.Background()
+		client, err := Connect(ctx, WithLogOutput(os.Stderr))
 		if err != nil {
-			writeErrorf(err)
+			panic(err)
 		}
-	}
-	srcFiles := make(map[string]struct{})
-	for _, s := range types.Structs {
-		for _, m := range s.methods {
-			filePath, _ := m.srcPathAndLine()
-			srcFiles[filePath] = struct{}{}
+		defaultContext = Context{
+			Context: ctx,
+			client:  client,
 		}
-	}
-	for _, f := range types.Funcs {
-		filePath, _ := f.srcPathAndLine()
-		srcFiles[filePath] = struct{}{}
-	}
-	for srcFile := range srcFiles {
-		fileSet := token.NewFileSet()
-		parsed, err := parser.ParseFile(fileSet, srcFile, nil, parser.ParseComments)
-		if err != nil {
-			writeErrorf(err)
-		}
-		types.fillASTData(parsed, fileSet)
-	}
+	})
+	return defaultContext
+}
 
-	// if the schema is being requested, just return that
-	var getSchema bool
-	flag.BoolVar(&getSchema, "schema", false, "print the schema rather than executing")
+// TODO: this is obviously dumb, but can be cleaned up nicely w/ codegen changes
+var resolvers = map[string]*goFunc{}
+
+func (r *Environment) WITHCommand(in any) *Environment {
 	flag.Parse()
 
-	if getSchema {
-		schema, err := types.schema()
+	typ := reflect.TypeOf(in)
+	if typ.Kind() != reflect.Func {
+		writeErrorf(fmt.Errorf("expected func, got %v", typ))
+	}
+	val := reflect.ValueOf(in)
+	name := runtime.FuncForPC(val.Pointer()).Name()
+	if name == "" {
+		writeErrorf(fmt.Errorf("anonymous functions are not supported"))
+	}
+	fn := &goFunc{
+		name: name,
+		typ:  typ,
+		val:  val,
+	}
+	for i := 0; i < fn.typ.NumIn(); i++ {
+		inputParam := fn.typ.In(i)
+		fn.args = append(fn.args, &goParam{
+			typ: inputParam,
+		})
+	}
+	for i := 0; i < fn.typ.NumOut(); i++ {
+		outputParam := fn.typ.Out(i)
+		fn.returns = append(fn.returns, &goParam{
+			typ: outputParam,
+		})
+	}
+	if len(fn.returns) > 2 {
+		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
+	}
+
+	filePath, lineNum := fn.srcPathAndLine()
+	// TODO: cache parsed files
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
+	if err != nil {
+		writeErrorf(err)
+	}
+	goast.Inspect(parsed, func(n goast.Node) bool {
+		if n == nil {
+			return false
+		}
+		switch decl := n.(type) {
+		case *goast.FuncDecl:
+			astStart := fileSet.PositionFor(decl.Pos(), false)
+			astEnd := fileSet.PositionFor(decl.End(), false)
+			// lineNum can be inside the function body due to optimizations that set it to
+			// the location of the return statement
+			if lineNum < astStart.Line || lineNum > astEnd.Line {
+				return true
+			}
+
+			fn.name = decl.Name.Name
+			fn.doc = decl.Doc.Text()
+
+			fnArgs := fn.args
+			if decl.Recv != nil {
+				// ignore the object receiver for now
+				fnArgs = fnArgs[1:]
+				fn.hasReceiver = true
+			}
+			astParamList := decl.Type.Params.List
+			argIndex := 0
+			for _, param := range astParamList {
+				// if the signature is like func(a, b string), then a and b are in the same Names slice
+				for _, name := range param.Names {
+					fnArgs[argIndex].name = name.Name
+					argIndex++
+				}
+			}
+			return false
+
+		case *goast.GenDecl:
+			/* TODO:
+			// check if it's a struct we know about, if so, fill in the doc string
+			if f.Tok != token.TYPE {
+				return true
+			}
+			for _, spec := range f.Specs {
+				typeSpec, ok := spec.(*goast.TypeSpec)
+				if !ok {
+					continue
+				}
+				strukt, ok := ts.Structs[typeSpec.Name.Name]
+				if !ok {
+					continue
+				}
+				strukt.doc = f.Doc.Text()
+			}
+			*/
+		default:
+		}
+		return true
+	})
+	resolvers[lowerCamelCase(fn.name)] = fn
+
+	if !getSchema {
+		return r
+	}
+
+	cmd := defaultContext.Client().EnvironmentCommand().
+		WithName(strcase.ToLowerCamel(fn.name)).
+		WithDescription(fn.doc)
+
+	for i, param := range fn.args {
+		// skip receiver
+		if fn.hasReceiver && i == 0 {
+			continue
+		}
+
+		// skip Context
+		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+			continue
+		}
+		cmd = cmd.WithFlag(param.name, EnvironmentCommandWithFlagOpts{
+			Description: "TODO",
+		})
+	}
+	for _, param := range fn.returns {
+		// skip error
+		if param.typ == reflect.TypeOf((*error)(nil)).Elem() {
+			continue
+		}
+		astType, err := goReflectTypeToGraphqlType(param.typ, false)
 		if err != nil {
 			writeErrorf(err)
 		}
-		if err := os.WriteFile("/outputs/schema.graphql", schema, 0600); err != nil {
-			writeErrorf(fmt.Errorf("unable to write schema response file: %v", err))
+		cmd = cmd.WithResultType(astType.Name())
+	}
+
+	return r.WithCommand(cmd)
+}
+
+func (r *Environment) Serve(ctx Context) {
+	if getSchema {
+		id, err := r.ID(ctx)
+		if err != nil {
+			writeErrorf(err)
+		}
+		err = os.WriteFile("/outputs/envid", []byte(id), 0644)
+		if err != nil {
+			writeErrorf(err)
 		}
 		return
 	}
@@ -103,35 +217,19 @@ func ServeCommands(entrypoints ...any) {
 		writeErrorf(fmt.Errorf("unable to parse request file: %w", err))
 	}
 
+	if input.Resolver == "" {
+		writeErrorf(fmt.Errorf("missing resolver"))
+	}
 	objName, fieldName, ok := strings.Cut(input.Resolver, ".")
 	if !ok {
 		writeErrorf(fmt.Errorf("invalid resolver name: %s", input.Resolver))
 	}
 
-	if input.Resolver == "" {
-		writeErrorf(fmt.Errorf("missing resolver"))
+	if objName != "Query" {
+		// TODO:
+		writeErrorf(fmt.Errorf("only Query is supported for now"))
 	}
-
-	var fn *goFunc
-	strukt, ok := types.Structs[objName]
-	switch {
-	case ok:
-		for _, m := range strukt.methods {
-			if lowerCamelCase(m.name) == fieldName {
-				fn = m
-				break
-			}
-		}
-	case objName == "Query":
-		for _, f := range types.Funcs {
-			if lowerCamelCase(f.name) == fieldName {
-				fn = f
-				break
-			}
-		}
-	default:
-		writeErrorf(fmt.Errorf("unknown struct: %s", objName))
-	}
+	fn := resolvers[fieldName]
 
 	var result any
 	if fn == nil {
@@ -167,118 +265,6 @@ type goTypes struct {
 	Funcs   map[string]*goFunc
 }
 
-func (ts *goTypes) schema() ([]byte, error) {
-	doc := &ast.SchemaDocument{}
-	queryExtension := &ast.Definition{
-		Kind: ast.Object,
-		Name: "Query",
-	}
-	doc.Extensions = append(doc.Extensions, queryExtension)
-
-	for _, s := range ts.Structs {
-		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-		if reflect.PtrTo(s.typ).Implements(marshaller) {
-			// this is from our core api, don't need it in the schema here
-			continue
-		}
-
-		if s.usedAsInput {
-			inputDef := &ast.Definition{
-				Kind:        ast.InputObject,
-				Name:        inputName(s.typ.Name()),
-				Description: s.doc,
-			}
-			// TODO:(sipsma) just ignoring methods for now, maybe should be error or something else
-			for _, f := range s.fields {
-				t, err := goReflectTypeToGraphqlType(f.typ, true)
-				if err != nil {
-					return nil, err
-				}
-				fieldDef := &ast.FieldDefinition{
-					Name: lowerCamelCase(f.name),
-					Type: t,
-				}
-				inputDef.Fields = append(inputDef.Fields, fieldDef)
-			}
-			doc.Definitions = append(doc.Definitions, inputDef)
-		} else {
-			if s.topLevel {
-				queryExtension.Fields = append(queryExtension.Fields, &ast.FieldDefinition{
-					Name:        lowerCamelCase(s.typ.Name()),
-					Type:        ast.NonNullNamedType(s.typ.Name(), nil),
-					Description: s.doc,
-				})
-			}
-			objDef := &ast.Definition{
-				Kind:        ast.Object,
-				Name:        s.typ.Name(),
-				Description: s.doc,
-			}
-			for _, m := range s.methods {
-				ret, err := goReflectTypeToGraphqlType(m.returns[0].typ, false)
-				if err != nil {
-					return nil, err
-				}
-				fieldDef := &ast.FieldDefinition{
-					Name:        lowerCamelCase(m.name),
-					Type:        ret,
-					Description: m.doc,
-				}
-				for _, arg := range m.args {
-					t, err := goReflectTypeToGraphqlType(arg.typ, true)
-					if err != nil {
-						return nil, err
-					}
-					argDef := &ast.ArgumentDefinition{
-						Name: lowerCamelCase(arg.name),
-						Type: t,
-					}
-					fieldDef.Arguments = append(fieldDef.Arguments, argDef)
-				}
-				objDef.Fields = append(objDef.Fields, fieldDef)
-			}
-			// NOTE: we are purposely skipping including fields in the schema for now.
-			// This is because for entrypoints we really only care about exposing the
-			// methods to the CLI user, fields are only needed in the entrypoint
-			// implementation code for passing context from parent commands to child
-			// commands.
-			// In the future we will most likely want to support returning objects
-			// as outputs of methods/funcs. One option will be to only include
-			// fields when they are "leaf" outputs of methods/funcs as opposed to
-			// objects used as parents between resolvers.
-			doc.Definitions = append(doc.Definitions, objDef)
-		}
-	}
-
-	for _, fn := range ts.Funcs {
-		ret, err := goReflectTypeToGraphqlType(fn.returns[0].typ, false)
-		if err != nil {
-			return nil, err
-		}
-		fieldDef := &ast.FieldDefinition{
-			Name:        lowerCamelCase(fn.name),
-			Type:        ret,
-			Description: fn.doc,
-		}
-		for _, arg := range fn.args {
-			t, err := goReflectTypeToGraphqlType(arg.typ, true)
-			if err != nil {
-				return nil, err
-			}
-			argDef := &ast.ArgumentDefinition{
-				Name: lowerCamelCase(arg.name),
-				Type: t,
-			}
-			fieldDef.Arguments = append(fieldDef.Arguments, argDef)
-		}
-		queryExtension.Fields = append(queryExtension.Fields, fieldDef)
-	}
-
-	var b bytes.Buffer
-	formatter.NewFormatter(&b).FormatSchemaDocument(doc)
-	return b.Bytes(), nil
-}
-
 type goStruct struct {
 	name    string
 	typ     reflect.Type
@@ -300,12 +286,14 @@ type goFunc struct {
 	name string
 	// args are args to the function, except for the receiver
 	// (if it's a method) and for the dagger.Context arg.
-	args     []*goParam
-	returns  []*goParam
-	typ      reflect.Type
-	val      reflect.Value
-	receiver *goStruct // only set for methods
-	doc      string
+	args    []*goParam
+	returns []*goParam
+	typ     reflect.Type
+	val     reflect.Value
+	// TODO:
+	// receiver *goStruct // only set for methods
+	hasReceiver bool
+	doc         string
 }
 
 type goParam struct {
@@ -320,28 +308,27 @@ func (fn *goFunc) srcPathAndLine() (string, int) {
 }
 
 func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (any, error) {
-	client, err := Connect(ctx, WithLogOutput(os.Stderr))
-	if err != nil {
-		return nil, err
-	}
-	defer client.Close()
-
-	name := fn.name
+	client := DefaultContext().client
 	var callArgs []reflect.Value
-	if fn.receiver != nil {
-		name = fmt.Sprintf("%s.%s", fn.receiver.typ.Name(), fn.name)
-		parent, err := convertInput(rawParent, fn.receiver.typ, client)
+	if fn.hasReceiver {
+		/* TODO:
+		parent, err := convertInput(rawParent, fn.args[0].typ, client)
 		if err != nil {
 			return nil, fmt.Errorf("unable to convert parent: %w", err)
 		}
-		callArgs = append(callArgs, reflect.ValueOf(parent))
+		*/
+		callArgs = append(callArgs, reflect.New(fn.args[0].typ).Elem())
 	}
-	callArgs = append(callArgs, reflect.ValueOf(Context{
-		Context: ctx,
-		client:  client,
-	}))
 
-	for _, arg := range fn.args {
+	for _, arg := range fn.args[len(callArgs):] {
+		if arg.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+			callArgs = append(callArgs, reflect.ValueOf(Context{
+				Context: ctx,
+				client:  client,
+			}))
+			continue
+		}
+
 		rawArg, argValuePresent := rawArgs[arg.name]
 		var argIsOptional bool
 		switch arg.typ.Kind() {
@@ -364,17 +351,22 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 		}
 	}
 
-	results := fn.val.Call(callArgs)
-	if len(results) != 2 {
-		return nil, fmt.Errorf("resolver %s.%s returned %d results, expected 2", name, name, len(results))
+	reflectOutputs := fn.val.Call(callArgs)
+	var returnVal any
+	var returnErr error
+	for _, output := range reflectOutputs {
+		if output.Type() == reflect.TypeOf((*error)(nil)).Elem() {
+			if !output.IsNil() {
+				returnErr = output.Interface().(error)
+			}
+		} else {
+			returnVal = output.Interface()
+		}
 	}
-	returnErr := results[1].Interface()
-	if returnErr != nil {
-		return nil, returnErr.(error)
-	}
-	return results[0].Interface(), nil
+	return returnVal, returnErr
 }
 
+/*
 type walkState struct {
 	inputPath   bool // are we following a type path from an argument?
 	isSubObject bool // false if this is an object directly provided to Serve, true otherwise
@@ -650,6 +642,7 @@ func (ts *goTypes) fillFuncFromAST(decl *goast.FuncDecl, fileSet *token.FileSet)
 		}
 	}
 }
+*/
 
 func writeErrorf(err error) {
 	fmt.Println(err.Error())

@@ -132,7 +132,7 @@ func (s *Selection) unpack(data interface{}) error {
 		case []interface{}:
 			data = f
 		default:
-			fmt.Printf("type not found %s\n", f)
+			fmt.Printf("type not found %T\n", f)
 		}
 
 		if i.bind != nil {

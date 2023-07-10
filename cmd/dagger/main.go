@@ -39,7 +39,7 @@ func init() {
 		queryCmd,
 		runCmd,
 		sessionCmd(),
-		projectCmd,
+		environmentCmd,
 	)
 }
 

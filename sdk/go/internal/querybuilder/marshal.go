@@ -33,15 +33,15 @@ var (
 	// Taken from codegen/generator/functions.go
 	// Includes also Platform
 	customScalar = map[string]struct{}{
-		"ContainerID":      {},
-		"FileID":           {},
-		"DirectoryID":      {},
-		"SecretID":         {},
-		"SocketID":         {},
-		"CacheID":          {},
-		"Platform":         {},
-		"ProjectID":        {},
-		"ProjectCommandID": {},
+		"ContainerID":          {},
+		"FileID":               {},
+		"DirectoryID":          {},
+		"SecretID":             {},
+		"SocketID":             {},
+		"CacheID":              {},
+		"Platform":             {},
+		"EnvironmentID":        {},
+		"EnvironmentCommandID": {},
 	}
 )
 

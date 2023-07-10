@@ -20,7 +20,9 @@ func ExampleContainer() {
 
 	alpine := client.Container().From("alpine:3.16.2")
 
-	out, err := alpine.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
+	out, err := alpine.Exec(dagger.ContainerExecOpts{
+		Args: []string{"cat", "/etc/alpine-release"},
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -43,7 +45,9 @@ func ExampleContainer_With() {
 			return c.WithEnvVariable("FOO", "bar")
 		})
 
-	out, err := alpine.WithExec([]string{"printenv", "FOO"}).Stdout(ctx)
+	out, err := alpine.Exec(dagger.ContainerExecOpts{
+		Args: []string{"printenv", "FOO"},
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -87,7 +91,9 @@ func ExampleContainer_Build() {
 
 	daggerImg := client.Container().Build(repo)
 
-	out, err := daggerImg.WithExec([]string{"version"}).Stdout(ctx)
+	out, err := daggerImg.Exec(dagger.ContainerExecOpts{
+		Args: []string{"version"},
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -106,12 +112,13 @@ func ExampleContainer_WithEnvVariable() {
 	}
 	defer client.Close()
 
-	out, err := client.
-		Container().
-		From("alpine:3.16.2").
-		WithEnvVariable("FOO", "bar").
-		WithExec([]string{"sh", "-c", "echo $FOO"}).
-		Stdout(ctx)
+	container := client.Container().From("alpine:3.16.2")
+
+	container = container.WithEnvVariable("FOO", "bar")
+
+	out, err := container.Exec(dagger.ContainerExecOpts{
+		Args: []string{"sh", "-c", "echo $FOO"},
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -133,12 +140,13 @@ func ExampleContainer_WithMountedDirectory() {
 		WithNewFile("hello.txt", "Hello, world!").
 		WithNewFile("goodbye.txt", "Goodbye, world!")
 
-	out, err := client.
-		Container().
-		From("alpine:3.16.2").
-		WithMountedDirectory("/mnt", dir).
-		WithExec([]string{"ls", "/mnt"}).
-		Stdout(ctx)
+	container := client.Container().From("alpine:3.16.2")
+
+	container = container.WithMountedDirectory("/mnt", dir)
+
+	out, err := container.Exec(dagger.ContainerExecOpts{
+		Args: []string{"ls", "/mnt"},
+	}).Stdout(ctx)
 	if err != nil {
 		panic(err)
 	}
@@ -169,9 +177,9 @@ func ExampleContainer_WithMountedCache() {
 
 	var out string
 	for i := 0; i < 5; i++ {
-		out, err = container.
-			WithExec([]string{"sh", "-c", echoCmd, strconv.Itoa(i)}).
-			Stdout(ctx)
+		out, err = container.Exec(dagger.ContainerExecOpts{
+			Args: []string{"sh", "-c", echoCmd, strconv.Itoa(i)},
+		}).Stdout(ctx)
 		if err != nil {
 			panic(err)
 		}

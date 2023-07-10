@@ -1,0 +1,109 @@
+extend type Query {
+  "Load a environment from ID."
+  environment(id: EnvironmentID): Environment!
+
+  "Load a environment command from ID."
+  environmentCommand(id: EnvironmentCommandID): EnvironmentCommand!
+
+  "TODO"
+  extensions: Extensions!
+}
+
+"TODO"
+type Extensions {
+  "TODO: needed?"
+  dummy: Boolean!
+}
+
+"A unique environment identifier."
+scalar EnvironmentID
+
+"A unique environment command identifier."
+scalar EnvironmentCommandID
+
+"A collection of Dagger resources that can be queried and invoked."
+type Environment {
+  "A unique identifier for this environment."
+  id: EnvironmentID!
+
+  "Initialize this environment from the given directory and config path"
+  load(source: DirectoryID!, configPath: String!): Environment!
+
+  "TODO"
+  loadFromUniverse(name: String!): Environment!
+
+  "Name of the environment"
+  name: String!
+
+  "Container this environment executes in"
+  container: Container!
+
+  "Commands provided by this environment"
+  commands: [EnvironmentCommand!]
+
+  "TODO"
+  command(name: String!): EnvironmentCommand
+
+  "TODO"
+  withCommand(id: EnvironmentCommandID!): Environment!
+
+  "TODO"
+  withExtension(id: EnvironmentID!, namespace: String!): Environment!
+}
+
+"A command defined in a environment that can be invoked from the CLI."
+type EnvironmentCommand {
+  "A unique identifier for this command."
+  id: EnvironmentCommandID!
+
+  "The name of the command."
+  name: String!
+
+  "TODO"
+  withName(name: String!): EnvironmentCommand!
+
+  "Flags accepted by this command."
+  flags: [EnvironmentCommandFlag!]
+
+  "TODO"
+  withFlag(name: String!, description: String): EnvironmentCommand!
+
+  "The name of the type returned by this command."
+  resultType: String
+
+  "TODO"
+  withResultType(name: String!): EnvironmentCommand!
+
+  "Documentation for what this command does."
+  description: String
+
+  "TODO"
+  withDescription(description: String!): EnvironmentCommand!
+
+  "TODO, can we make an input that's like map[string]any?"
+  setStringFlag(name: String!, value: String!): EnvironmentCommand!
+
+  "TODO"
+  invoke: InvokeResult!
+}
+
+"TODO"
+type InvokeResult {
+  "TODO"
+  string: String
+
+  "TODO"
+  file: File
+
+  "TODO"
+  directory: Directory
+}
+
+"A flag accepted by a environment command."
+type EnvironmentCommandFlag {
+  "The name of the flag."
+  name: String!
+
+  "Documentation for what this flag sets."
+  description: String
+}

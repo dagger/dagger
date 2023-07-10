@@ -24,6 +24,7 @@ import (
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/tonistiigi/fsutil"
 	filesynctypes "github.com/tonistiigi/fsutil/types"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -366,6 +367,21 @@ func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) 
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+
+	// handle corner case where we are importing from the engine server by directly
+	// calling import rather than proxying
+	if opts.OwnerClientID == p.c.ID() {
+		baseProvider := filesync.NewFSSyncProvider(AnyDirSource{})
+		provider, ok := baseProvider.(filesync.FileSyncServer)
+		if !ok {
+			return fmt.Errorf("unexpected provider type: %T", baseProvider)
+		}
+		return provider.DiffCopy(&fileSyncDiffCopyServerWithContext{
+			FileSync_DiffCopyServer: stream,
+			ctx:                     ctx,
+		})
+	}
+
 	diffCopyClient, err := filesync.NewFileSyncClient(opts.session.Conn()).DiffCopy(ctx)
 	if err != nil {
 		return err
@@ -484,4 +500,29 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 		return proxyStream[filesync.BytesMessage](ctx, diffCopyClient, stream)
 	}
 	return proxyStream[filesynctypes.Packet](ctx, diffCopyClient, stream)
+}
+
+// TODO: all the below is from zenith PR, double check if still needed or can be cleaned up
+
+// for direct (un-proxied) local dir imports
+type AnyDirSource struct{}
+
+func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
+	return filesync.SyncedDir{
+		Dir: name,
+		Map: func(p string, st *filesynctypes.Stat) fsutil.MapResult {
+			st.Uid = 0
+			st.Gid = 0
+			return fsutil.MapResultKeep
+		},
+	}, true
+}
+
+type fileSyncDiffCopyServerWithContext struct {
+	filesync.FileSync_DiffCopyServer
+	ctx context.Context
+}
+
+func (s *fileSyncDiffCopyServerWithContext) Context() context.Context {
+	return s.ctx
 }

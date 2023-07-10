@@ -502,6 +502,20 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type EnvironmentCommandWithFlagOpts = {
+  description?: string
+}
+
+/**
+ * A unique environment command identifier.
+ */
+export type EnvironmentCommandID = string & { __EnvironmentCommandID: never }
+
+/**
+ * A unique environment identifier.
+ */
+export type EnvironmentID = string & { __EnvironmentID: never }
+
 export type FileExportOpts = {
   /**
    * If allowParentDirPath is true, the path argument can be a directory path, in which case
@@ -586,16 +600,6 @@ export type PipelineLabel = {
  */
 export type Platform = string & { __Platform: never }
 
-/**
- * A unique project command identifier.
- */
-export type ProjectCommandID = string & { __ProjectCommandID: never }
-
-/**
- * A unique project identifier.
- */
-export type ProjectID = string & { __ProjectID: never }
-
 export type ClientContainerOpts = {
   id?: ContainerID
   platform?: Platform
@@ -603,6 +607,14 @@ export type ClientContainerOpts = {
 
 export type ClientDirectoryOpts = {
   id?: DirectoryID
+}
+
+export type ClientEnvironmentOpts = {
+  id?: EnvironmentID
+}
+
+export type ClientEnvironmentCommandOpts = {
+  id?: EnvironmentCommandID
 }
 
 export type ClientGitOpts = {
@@ -634,14 +646,6 @@ export type ClientPipelineOpts = {
    * Pipeline labels.
    */
   labels?: PipelineLabel[]
-}
-
-export type ClientProjectOpts = {
-  id?: ProjectID
-}
-
-export type ClientProjectCommandOpts = {
-  id?: ProjectCommandID
 }
 
 export type ClientSocketOpts = {
@@ -2528,6 +2532,585 @@ export class EnvVariable extends BaseClient {
 }
 
 /**
+ * A collection of Dagger resources that can be queried and invoked.
+ */
+export class Environment extends BaseClient {
+  private readonly _id?: EnvironmentID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: EnvironmentID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * TODO
+   */
+  command(name: string): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "command",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Commands provided by this environment
+   */
+  async commands(): Promise<EnvironmentCommand[]> {
+    type commands = {
+      description: string
+      id: EnvironmentCommandID
+      name: string
+      resultType: string
+    }
+
+    const response: Awaited<commands[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "commands",
+        },
+        {
+          operation: "description id name resultType",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCommand(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.id,
+          r.name,
+          r.resultType
+        )
+    )
+  }
+
+  /**
+   * Container this environment executes in
+   */
+  container(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "container",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * A unique identifier for this environment.
+   */
+  async id(): Promise<EnvironmentID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Initialize this environment from the given directory and config path
+   */
+  load(source: Directory, configPath: string): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "load",
+          args: { source, configPath },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  loadFromUniverse(name: string): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "loadFromUniverse",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Name of the environment
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  withCommand(id: EnvironmentCommand): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withCommand",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withExtension(id: Environment, namespace: string): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withExtension",
+          args: { id, namespace },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current Environment.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: Environment) => Environment) {
+    return arg(this)
+  }
+}
+
+/**
+ * A command defined in a environment that can be invoked from the CLI.
+ */
+export class EnvironmentCommand extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _id?: EnvironmentCommandID = undefined
+  private readonly _name?: string = undefined
+  private readonly _resultType?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _id?: EnvironmentCommandID,
+    _name?: string,
+    _resultType?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._id = _id
+    this._name = _name
+    this._resultType = _resultType
+  }
+
+  /**
+   * Documentation for what this command does.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Flags accepted by this command.
+   */
+  async flags(): Promise<EnvironmentCommandFlag[]> {
+    type flags = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<flags[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "flags",
+        },
+        {
+          operation: "description name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCommandFlag(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * A unique identifier for this command.
+   */
+  async id(): Promise<EnvironmentCommandID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentCommandID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  invoke(): InvokeResult {
+    return new InvokeResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "invoke",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * The name of the command.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the type returned by this command.
+   */
+  async resultType(): Promise<string> {
+    if (this._resultType) {
+      return this._resultType
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "resultType",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO, can we make an input that's like map[string]any?
+   */
+  setStringFlag(name: string, value: string): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setStringFlag",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withDescription(description: string): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withFlag(
+    name: string,
+    opts?: EnvironmentCommandWithFlagOpts
+  ): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFlag",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withName(name: string): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withResultType(name: string): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withResultType",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentCommand.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentCommand) => EnvironmentCommand) {
+    return arg(this)
+  }
+}
+
+/**
+ * A flag accepted by a environment command.
+ */
+export class EnvironmentCommandFlag extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * Documentation for what this flag sets.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the flag.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
+ * TODO
+ */
+export class Extensions extends BaseClient {
+  private readonly _dummy?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _dummy?: boolean
+  ) {
+    super(parent)
+
+    this._dummy = _dummy
+  }
+
+  /**
+   * TODO: needed?
+   */
+  async dummy(): Promise<boolean> {
+    if (this._dummy) {
+      return this._dummy
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "dummy",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
  * A file.
  */
 export class File extends BaseClient {
@@ -2888,6 +3471,78 @@ export class Host extends BaseClient {
 }
 
 /**
+ * TODO
+ */
+export class InvokeResult extends BaseClient {
+  private readonly _string?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _string?: string
+  ) {
+    super(parent)
+
+    this._string = _string
+  }
+
+  /**
+   * TODO
+   */
+  directory(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "directory",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  file(): File {
+    return new File({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "file",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  async string(): Promise<string> {
+    if (this._string) {
+      return this._string
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "string",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
@@ -3039,388 +3694,6 @@ export class Port extends BaseClient {
   }
 }
 
-/**
- * A collection of Dagger resources that can be queried and invoked.
- */
-export class Project extends BaseClient {
-  private readonly _id?: ProjectID = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _id?: ProjectID,
-    _name?: string
-  ) {
-    super(parent)
-
-    this._id = _id
-    this._name = _name
-  }
-
-  /**
-   * Commands provided by this project
-   */
-  async commands(): Promise<ProjectCommand[]> {
-    type commands = {
-      description: string
-      id: ProjectCommandID
-      name: string
-      resultType: string
-    }
-
-    const response: Awaited<commands[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "commands",
-        },
-        {
-          operation: "description id name resultType",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new ProjectCommand(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.description,
-          r.id,
-          r.name,
-          r.resultType
-        )
-    )
-  }
-
-  /**
-   * A unique identifier for this project.
-   */
-  async id(): Promise<ProjectID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ProjectID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Initialize this project from the given directory and config path
-   */
-  load(source: Directory, configPath: string): Project {
-    return new Project({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "load",
-          args: { source, configPath },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Name of the project
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Call the provided function with current Project.
-   *
-   * This is useful for reusability and readability by not breaking the calling chain.
-   */
-  with(arg: (param: Project) => Project) {
-    return arg(this)
-  }
-}
-
-/**
- * A command defined in a project that can be invoked from the CLI.
- */
-export class ProjectCommand extends BaseClient {
-  private readonly _description?: string = undefined
-  private readonly _id?: ProjectCommandID = undefined
-  private readonly _name?: string = undefined
-  private readonly _resultType?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _description?: string,
-    _id?: ProjectCommandID,
-    _name?: string,
-    _resultType?: string
-  ) {
-    super(parent)
-
-    this._description = _description
-    this._id = _id
-    this._name = _name
-    this._resultType = _resultType
-  }
-
-  /**
-   * Documentation for what this command does.
-   */
-  async description(): Promise<string> {
-    if (this._description) {
-      return this._description
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "description",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Flags accepted by this command.
-   */
-  async flags(): Promise<ProjectCommandFlag[]> {
-    type flags = {
-      description: string
-      name: string
-    }
-
-    const response: Awaited<flags[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "flags",
-        },
-        {
-          operation: "description name",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new ProjectCommandFlag(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.description,
-          r.name
-        )
-    )
-  }
-
-  /**
-   * A unique identifier for this command.
-   */
-  async id(): Promise<ProjectCommandID> {
-    if (this._id) {
-      return this._id
-    }
-
-    const response: Awaited<ProjectCommandID> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "id",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The name of the command.
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The name of the type returned by this command.
-   */
-  async resultType(): Promise<string> {
-    if (this._resultType) {
-      return this._resultType
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "resultType",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Subcommands, if any, that this command provides.
-   */
-  async subcommands(): Promise<ProjectCommand[]> {
-    type subcommands = {
-      description: string
-      id: ProjectCommandID
-      name: string
-      resultType: string
-    }
-
-    const response: Awaited<subcommands[]> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "subcommands",
-        },
-        {
-          operation: "description id name resultType",
-        },
-      ],
-      this.client
-    )
-
-    return response.map(
-      (r) =>
-        new ProjectCommand(
-          {
-            queryTree: this.queryTree,
-            host: this.clientHost,
-            sessionToken: this.sessionToken,
-          },
-          r.description,
-          r.id,
-          r.name,
-          r.resultType
-        )
-    )
-  }
-}
-
-/**
- * A flag accepted by a project command.
- */
-export class ProjectCommandFlag extends BaseClient {
-  private readonly _description?: string = undefined
-  private readonly _name?: string = undefined
-
-  /**
-   * Constructor is used for internal usage only, do not create object from it.
-   */
-  constructor(
-    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
-    _description?: string,
-    _name?: string
-  ) {
-    super(parent)
-
-    this._description = _description
-    this._name = _name
-  }
-
-  /**
-   * Documentation for what this flag sets.
-   */
-  async description(): Promise<string> {
-    if (this._description) {
-      return this._description
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "description",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * The name of the flag.
-   */
-  async name(): Promise<string> {
-    if (this._name) {
-      return this._name
-    }
-
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "name",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-}
-
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
@@ -3532,6 +3805,56 @@ export class Client extends BaseClient {
   }
 
   /**
+   * Load a environment from ID.
+   */
+  environment(opts?: ClientEnvironmentOpts): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environment",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a environment command from ID.
+   */
+  environmentCommand(opts?: ClientEnvironmentCommandOpts): EnvironmentCommand {
+    return new EnvironmentCommand({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentCommand",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  extensions(): Extensions {
+    return new Extensions({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "extensions",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Loads a file by ID.
    */
   file(id: FileID): File {
@@ -3618,40 +3941,6 @@ export class Client extends BaseClient {
         {
           operation: "pipeline",
           args: { name, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Load a project from ID.
-   */
-  project(opts?: ClientProjectOpts): Project {
-    return new Project({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "project",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Load a project command from ID.
-   */
-  projectCommand(opts?: ClientProjectCommandOpts): ProjectCommand {
-    return new ProjectCommand({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "projectCommand",
-          args: { ...opts },
         },
       ],
       host: this.clientHost,

@@ -11,7 +11,7 @@ func main() {
 	dagger.ServeCommands(
 		TestFile,
 		TestDir,
-		TestImportedProjectDir,
+		TestImportedEnvironmentDir,
 		TestExportLocalDir,
 		Level1,
 	)
@@ -33,7 +33,7 @@ func TestDir(ctx dagger.Context, dirPrefix string) (*dagger.Directory, error) {
 		WithNewFile(dirPrefix+"bar2.txt", "bar2\n"), nil
 }
 
-func TestImportedProjectDir(ctx dagger.Context) (string, error) {
+func TestImportedEnvironmentDir(ctx dagger.Context) (string, error) {
 	var output string
 	err := filepath.Walk(".", func(path string, info fs.FileInfo, err error) error {
 		if err != nil {
@@ -46,7 +46,7 @@ func TestImportedProjectDir(ctx dagger.Context) (string, error) {
 }
 
 func TestExportLocalDir(ctx dagger.Context) (*dagger.Directory, error) {
-	return ctx.Client().Host().Directory("./core/integration/testdata/projects/go/basic"), nil
+	return ctx.Client().Host().Directory("./core/integration/testdata/environments/go/basic"), nil
 }
 
 func Level1(ctx dagger.Context) (Level1Targets, error) {

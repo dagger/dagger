@@ -45,7 +45,7 @@ type cacheArgs struct {
 }
 
 func (s *cacheSchema) cacheVolume(ctx *core.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
-	// TODO(vito): inject some sort of scope/session/project/user derived value
+	// TODO(vito): inject some sort of scope/session/environment/user derived value
 	// here instead of a static value
 	//
 	// we have to inject something so we can tell it's a valid ID
