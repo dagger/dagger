@@ -1,14 +1,21 @@
-import Client, { connect, Container } from "@dagger.io/dagger"
+import Client, { connect } from "@dagger.io/dagger"
 
-// create Dagger client
-connect(async (client: Client) => {
-    // setup container and
-    // define environment variables
+connect(
+  // create Dagger client
+  async (client: Client) => {
+    // setup container with docker socket
     const ctr = client
-        .container()
-        .from("docker")
-        .withUnixSocket("/var/run/docker.sock", client.host().file("/var/run/docker.sock"))
-        .withExec(["docker", "run", "--rm", "alpine", "uname", "-a"])
+      .container()
+      .from("docker")
+      .withUnixSocket(
+        "/var/run/docker.sock",
+        client.host().unix_socket("/var/run/docker.sock")
+      )
+      .withExec(["docker", "run", "--rm", "alpine", "uname", "-a"])
+      .stdout()
 
+    // print docker run
     console.log(await ctr.stdout())
-}, {})
+  },
+  { LogOutput: process.stderr }
+)
