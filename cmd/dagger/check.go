@@ -14,7 +14,7 @@ var checkCmd = &cobra.Command{
 	Aliases:               []string{"test"},
 	DisableFlagsInUseLine: true,
 	Long:                  `Run your environment's checks.`,
-	RunE:                  Check,
+	RunE:                  RunCheck,
 	SilenceUsage:          true,
 	SilenceErrors:         true,
 }
@@ -26,9 +26,25 @@ func init() {
 	checkCmd.Flags().SetInterspersed(false)
 
 	checkCmd.Flags().BoolVar(&doFocus, "focus", true, "Only show output for focused commands.")
+
+	checkCmd.AddCommand(
+		&cobra.Command{
+			Use:          "list",
+			Long:         `List your environment's checks.`,
+			SilenceUsage: true,
+			RunE:         ListChecks,
+		},
+		&cobra.Command{
+			Use:          "run",
+			Long:         `Run your environment's checks.`,
+			SilenceUsage: true,
+			RunE:         RunCheck,
+		},
+	)
+
 }
 
-func Check(cmd *cobra.Command, args []string) error {
+func RunCheck(cmd *cobra.Command, args []string) error {
 	ctx := cmd.Context()
 
 	focus = doFocus
@@ -50,6 +66,10 @@ func Check(cmd *cobra.Command, args []string) error {
 					check = c
 					break
 				}
+			}
+
+			if check.Func == nil {
+				return fmt.Errorf("check not found: %s", args[0])
 			}
 		} else {
 			// TODO: default to the first one, or have an explicit default?
