@@ -1,8 +1,8 @@
-import Client, { connect } from "@dagger.io/dagger"
+import { connect } from "@dagger.io/dagger"
 
+// create Dagger client
 connect(
-  // create Dagger client
-  async (client: Client) => {
+  async (client) => {
     // setup container with docker socket
     const ctr = client
       .container()
