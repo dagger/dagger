@@ -719,21 +719,21 @@ This shows how to connect to a Docker Engine on the host machine, by mounting th
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/docker-engine-host/main.go
+```go file=./cookbook/snippets/docker-engine-host/main.go
 ```
 
 </TabItem>
 
-<TabItem value="Node.JS">
+<TabItem value="Node.js">
 
-```javascript file=./guides/snippets/docker-engine-host/index.mjs
+```javascript file=./cookbook/snippets/docker-engine-host/index.mjs
 ```
 
 </TabItem>
 
 <TabItem value="Python">
 
-```python file=./guides/snippets/docker-engine-host/main.py
+```python file=./cookbook/snippets/docker-engine-host/main.py
 ```
 
 </TabItem>
