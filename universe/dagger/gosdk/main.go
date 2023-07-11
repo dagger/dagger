@@ -5,7 +5,7 @@ import "dagger.io/dagger"
 func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
-		WITHCommand(Targets.GoLint).
+		WithCheck_(Targets.GoLint).
 		Serve(ctx)
 }
 

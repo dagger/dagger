@@ -3,6 +3,7 @@ package schema
 import (
 	"archive/tar"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/opencontainers/go-digest"
@@ -36,13 +38,17 @@ var environmentIDResolver = stringResolver(core.EnvironmentID(""))
 
 var environmentCommandIDResolver = stringResolver(core.EnvironmentCommandID(""))
 
+var environmentCheckIDResolver = stringResolver(core.EnvironmentCheckID(""))
+
 func (s *environmentSchema) Resolvers() Resolvers {
 	return Resolvers{
 		"EnvironmentID":        environmentIDResolver,
 		"EnvironmentCommandID": environmentCommandIDResolver,
+		"EnvironmentCheckID":   environmentCheckIDResolver,
 		"Query": ObjectResolver{
 			"environment":        ToResolver(s.environment),
 			"environmentCommand": ToResolver(s.environmentCommand),
+			"environmentCheck":   ToResolver(s.environmentCheck),
 		},
 		"Environment": ObjectResolver{
 			"id":               ToResolver(s.environmentID),
@@ -51,16 +57,29 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"name":             ToResolver(s.environmentName),
 			"command":          ToResolver(s.command),
 			"withCommand":      ToResolver(s.withCommand),
+			"withCheck":        ToResolver(s.withCheck),
 			"withExtension":    ToResolver(s.withExtension),
 		},
 		"EnvironmentCommand": ObjectResolver{
 			"id":              ToResolver(s.commandID),
 			"withName":        ToResolver(s.withCommandName),
+			"withDescription": ToResolver(s.withCommandDescription),
 			"withFlag":        ToResolver(s.withCommandFlag),
 			"withResultType":  ToResolver(s.withCommandResultType),
-			"withDescription": ToResolver(s.withCommandDescription),
-			"setStringFlag":   ToResolver(s.setStringFlag),
-			"invoke":          ToResolver(s.invoke),
+			"setStringFlag":   ToResolver(s.setCommandStringFlag),
+			"invoke":          ToResolver(s.invokeCommand),
+		},
+		"EnvironmentCheck": ObjectResolver{
+			"id":              ToResolver(s.checkID),
+			"withName":        ToResolver(s.withCheckName),
+			"withDescription": ToResolver(s.withCheckDescription),
+			"withFlag":        ToResolver(s.withCheckFlag),
+			"setStringFlag":   ToResolver(s.setCheckStringFlag),
+			"result":          ToResolver(s.checkResult),
+		},
+		"EnvironmentCheckResult": ObjectResolver{
+			"success": ToResolver(s.checkResultSuccess),
+			"output":  ToResolver(s.checkResultOutput),
 		},
 	}
 }
@@ -123,10 +142,12 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 			field := field
 			objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
 				res, err := resolver(ctx, parent, args)
+				// don't check err yet, convert output may do some handling of that
+				res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
 				if err != nil {
 					return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
 				}
-				return convertOutput(res, field.Type, s.MergedSchemas)
+				return res, nil
 			})
 		}
 		resolvers[def.Name] = objResolver
@@ -147,13 +168,39 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	return env, nil
 }
 
-func convertOutput(output any, outputType *ast.Type, s *MergedSchemas) (any, error) {
-	if outputType.Elem != nil {
-		outputType = outputType.Elem
+func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *MergedSchemas) (any, error) {
+	if schemaOutputType.Elem != nil {
+		schemaOutputType = schemaOutputType.Elem
 	}
 
+	// TODO: avoid hardcoding type names amap
+	if schemaOutputType.Name() == "EnvironmentCheckResult" {
+		checkRes := &core.EnvironmentCheckResult{}
+		if resErr != nil {
+			checkRes.Success = false
+			// TODO: forcing users to include all relevent error output in the error/exception is probably annoying
+			execErr := new(buildkit.ExecError)
+			if errors.As(resErr, &execErr) {
+				// TODO: stdout and then stderr is weird, need interleaved stream
+				checkRes.Output = strings.Join([]string{execErr.Stdout, execErr.Stderr}, "\n")
+			} else {
+				return nil, fmt.Errorf("failed to execute check: %w", resErr)
+			}
+			return checkRes, nil
+		}
+		// TODO: should collect all the progress and prints from user code and set that to output instead
+		output, ok := rawOutput.(string)
+		if !ok {
+			return nil, fmt.Errorf("expected string output for check entrypoint")
+		}
+		checkRes.Success = true
+		checkRes.Output = output
+		return checkRes, nil
+	}
+
+	// see if the output type needs to be converted from an id to a dagger object (container, directory, etc)
 	for objectName, baseResolver := range s.resolvers() {
-		if objectName != outputType.Name() {
+		if objectName != schemaOutputType.Name() {
 			continue
 		}
 		resolver, ok := baseResolver.(IDableObjectResolver)
@@ -163,13 +210,13 @@ func convertOutput(output any, outputType *ast.Type, s *MergedSchemas) (any, err
 
 		// ID-able dagger objects are serialized as their ID string across the wire
 		// between the session and environment container.
-		outputStr, ok := output.(string)
+		outputStr, ok := rawOutput.(string)
 		if !ok {
 			return nil, fmt.Errorf("expected id string output for %s", objectName)
 		}
 		return resolver.FromID(outputStr)
 	}
-	return output, nil
+	return rawOutput, nil
 }
 
 type loadFromUniverseArgs struct {
@@ -265,6 +312,18 @@ func (s *environmentSchema) withCommand(ctx *core.Context, parent *core.Environm
 	return parent.WithCommand(ctx, cmd)
 }
 
+type withCheckArgs struct {
+	ID core.EnvironmentCheckID
+}
+
+func (s *environmentSchema) withCheck(ctx *core.Context, parent *core.Environment, args withCheckArgs) (*core.Environment, error) {
+	cmd, err := args.ID.ToEnvironmentCheck()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithCheck(ctx, cmd)
+}
+
 type withExtensionArgs struct {
 	ID        core.EnvironmentID
 	Namespace string
@@ -281,6 +340,14 @@ type environmentCommandArgs struct {
 
 func (s *environmentSchema) environmentCommand(ctx *core.Context, parent *core.Query, args environmentCommandArgs) (*core.EnvironmentCommand, error) {
 	return core.NewEnvironmentCommand(args.ID)
+}
+
+type environmentCheckArgs struct {
+	ID core.EnvironmentCheckID
+}
+
+func (s *environmentSchema) environmentCheck(ctx *core.Context, parent *core.Query, args environmentCheckArgs) (*core.EnvironmentCheck, error) {
+	return core.NewEnvironmentCheck(args.ID)
 }
 
 func (s *environmentSchema) commandID(ctx *core.Context, parent *core.EnvironmentCommand, args any) (core.EnvironmentCommandID, error) {
@@ -323,16 +390,16 @@ func (s *environmentSchema) withCommandDescription(ctx *core.Context, parent *co
 	return parent.WithDescription(args.Description), nil
 }
 
-type setStringFlagArgs struct {
+type setCommandStringFlagArgs struct {
 	Name  string
 	Value string
 }
 
-func (s *environmentSchema) setStringFlag(ctx *core.Context, parent *core.EnvironmentCommand, args setStringFlagArgs) (*core.EnvironmentCommand, error) {
+func (s *environmentSchema) setCommandStringFlag(ctx *core.Context, parent *core.EnvironmentCommand, args setCommandStringFlagArgs) (*core.EnvironmentCommand, error) {
 	return parent.SetStringFlag(args.Name, args.Value)
 }
 
-func (s *environmentSchema) invoke(ctx *core.Context, cmd *core.EnvironmentCommand, _ any) (map[string]any, error) {
+func (s *environmentSchema) invokeCommand(ctx *core.Context, cmd *core.EnvironmentCommand, _ any) (map[string]any, error) {
 	// TODO: just for now, should namespace asap
 	parentObj := s.MergedSchemas.Schema().QueryType()
 	parentVal := map[string]any{}
@@ -385,4 +452,137 @@ func (s *environmentSchema) invoke(ctx *core.Context, cmd *core.EnvironmentComma
 	return map[string]any{
 		strings.ToLower(cmd.ResultType): res,
 	}, nil
+}
+
+func (s *environmentSchema) checkID(ctx *core.Context, parent *core.EnvironmentCheck, args any) (core.EnvironmentCheckID, error) {
+	return parent.ID()
+}
+
+type withCheckNameArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) withCheckName(ctx *core.Context, parent *core.EnvironmentCheck, args withCheckNameArgs) (*core.EnvironmentCheck, error) {
+	return parent.WithName(args.Name), nil
+}
+
+type withCheckDescriptionArgs struct {
+	Description string
+}
+
+func (s *environmentSchema) withCheckDescription(ctx *core.Context, parent *core.EnvironmentCheck, args withCheckDescriptionArgs) (*core.EnvironmentCheck, error) {
+	return parent.WithDescription(args.Description), nil
+}
+
+type withCheckFlagArgs struct {
+	Name        string
+	Description string
+}
+
+func (s *environmentSchema) withCheckFlag(ctx *core.Context, parent *core.EnvironmentCheck, args withCheckFlagArgs) (*core.EnvironmentCheck, error) {
+	return parent.WithFlag(core.EnvironmentCheckFlag{
+		Name:        args.Name,
+		Description: args.Description,
+	}), nil
+}
+
+type setCheckStringFlagArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *environmentSchema) setCheckStringFlag(ctx *core.Context, parent *core.EnvironmentCheck, args setCheckStringFlagArgs) (*core.EnvironmentCheck, error) {
+	return parent.SetStringFlag(args.Name, args.Value)
+}
+
+func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
+	// TODO: codegen clients currently request every field when list of objects are returned, so we need to avoid doing expensive work
+	// here, right? Or if not then simplify this
+	// Or maybe graphql-go lets you return structs with methods that match the field names?
+	checkID, err := check.ID()
+	if err != nil {
+		return nil, err
+	}
+	return &core.EnvironmentCheckResult{ParentCheck: checkID}, nil
+}
+
+func (s *environmentSchema) checkResultSuccess(ctx *core.Context, checkRes *core.EnvironmentCheckResult, _ any) (bool, error) {
+	check, err := checkRes.ParentCheck.ToEnvironmentCheck()
+	if err != nil {
+		return false, err
+	}
+	res, err := s.runCheck(ctx, check)
+	if err != nil {
+		return false, err
+	}
+	return res.Success, nil
+}
+
+func (s *environmentSchema) checkResultOutput(ctx *core.Context, checkRes *core.EnvironmentCheckResult, _ any) (string, error) {
+	check, err := checkRes.ParentCheck.ToEnvironmentCheck()
+	if err != nil {
+		return "", err
+	}
+	res, err := s.runCheck(ctx, check)
+	if err != nil {
+		return "", err
+	}
+	return res.Output, nil
+}
+
+// private helper, not in schema
+func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentCheck) (*core.EnvironmentCheckResult, error) {
+	// TODO: just for now, should namespace asap
+	parentObj := s.MergedSchemas.Schema().QueryType()
+	parentVal := map[string]any{}
+
+	// find the field resolver for this check, as installed during "load" above
+	var resolver Resolver
+	for objectName, possibleResolver := range s.resolvers() {
+		if objectName == parentObj.Name() {
+			resolver = possibleResolver
+		}
+	}
+	if resolver == nil {
+		return nil, fmt.Errorf("no resolver for %s", parentObj.Name())
+	}
+	objResolver, ok := resolver.(ObjectResolver)
+	if !ok {
+		return nil, fmt.Errorf("resolver for %s is not an object resolver", parentObj.Name())
+	}
+	var fieldResolver graphql.FieldResolveFn
+	for fieldName, possibleFieldResolver := range objResolver {
+		if fieldName == check.Name {
+			fieldResolver = possibleFieldResolver
+		}
+	}
+	if fieldResolver == nil {
+		return nil, fmt.Errorf("no field resolver for %s.%s", parentObj.Name(), check.Name)
+	}
+
+	// setup the inputs and invoke it
+	resolveParams := graphql.ResolveParams{
+		Context: ctx,
+		Source:  parentVal,
+		Args:    map[string]any{},
+		Info: graphql.ResolveInfo{
+			FieldName:  check.Name,
+			ParentType: parentObj,
+			// TODO: we don't currently use any of the other resolve info fields, but that could change
+		},
+	}
+	for _, flag := range check.Flags {
+		resolveParams.Args[flag.Name] = flag.SetValue
+	}
+
+	res, err := fieldResolver(resolveParams)
+	if err != nil {
+		return nil, err
+	}
+	// all the result type handling is done in convertOutput above
+	checkRes, ok := res.(*core.EnvironmentCheckResult)
+	if !ok {
+		return nil, fmt.Errorf("unexpected result type %T from check resolver", res)
+	}
+	return checkRes, nil
 }

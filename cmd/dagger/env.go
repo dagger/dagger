@@ -34,6 +34,7 @@ func init() {
 	environmentFlags.StringVarP(&environmentURI, "env", "e", environmentURIDefault, "Path to dagger.json config file for the environment or a directory containing that file. Either local path (e.g. \"/path/to/some/dir\") or a git repo (e.g. \"git://github.com/dagger/dagger?ref=branch?subpath=path/to/some/dir\").")
 	environmentCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	doCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	checkCmd.PersistentFlags().AddFlagSet(environmentFlags)
 
 	environmentInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK to use for the environment")
 	environmentInitCmd.MarkFlagRequired("sdk")

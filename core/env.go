@@ -60,6 +60,23 @@ func (id EnvironmentCommandID) ToEnvironmentCommand() (*EnvironmentCommand, erro
 	return &environmentCommand, nil
 }
 
+type EnvironmentCheckID string
+
+func (id EnvironmentCheckID) String() string {
+	return string(id)
+}
+
+func (id EnvironmentCheckID) ToEnvironmentCheck() (*EnvironmentCheck, error) {
+	var environmentCheck EnvironmentCheck
+	if id == "" {
+		return &environmentCheck, nil
+	}
+	if err := resourceid.Decode(&environmentCheck, id); err != nil {
+		return nil, err
+	}
+	return &environmentCheck, nil
+}
+
 type Environment struct {
 	// The environment's root directory
 	Directory *Directory `json:"directory"`
@@ -73,6 +90,7 @@ type Environment struct {
 	Platform specs.Platform `json:"platform,omitempty"`
 	// TODO:
 	Commands []*EnvironmentCommand `json:"commands,omitempty"`
+	Checks   []*EnvironmentCheck   `json:"checks,omitempty"`
 }
 
 func NewEnvironment(id EnvironmentID) (*Environment, error) {
@@ -239,6 +257,46 @@ func (env *Environment) WithCommand(ctx context.Context, cmd *EnvironmentCommand
 	return env, nil
 }
 
+func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) (*Environment, error) {
+	env = env.Clone()
+	fieldDef := &ast.FieldDefinition{
+		Name:        check.Name,
+		Description: check.Description,
+		Type: &ast.Type{
+			NamedType: "EnvironmentCheckResult",
+			NonNull:   true,
+		},
+	}
+	for _, flag := range check.Flags {
+		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+			Name: flag.Name,
+			// Type is always string for the moment
+			Type: &ast.Type{
+				NamedType: "String",
+				NonNull:   true,
+			},
+		})
+	}
+
+	buf := &bytes.Buffer{}
+	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
+		Extensions: ast.DefinitionList{
+			&ast.Definition{
+				// TODO: we need some namespace
+				// TODO:
+				// Name:   "Extensions",
+				Name:   "Query",
+				Kind:   ast.Object,
+				Fields: ast.FieldList{fieldDef},
+			},
+		},
+	})
+	env.Schema = env.Schema + "\n" + buf.String()
+
+	env.Checks = append(env.Checks, check)
+	return env, nil
+}
+
 func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	return func(ctx *Context, parent any, args any) (any, error) {
 		ctr, err := runtime(ctx, bk, progSock, pipeline, env.Platform, env.Config.SDK, env.Directory, env.ConfigPath)
@@ -259,28 +317,32 @@ func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progS
 		}
 		ctr, err = ctr.WithNewFile(ctx, bk, path.Join(inputMountPath, inputFile), inputBytes, 0644, "")
 		if err != nil {
-			return "", fmt.Errorf("failed to mount resolver input file: %w", err)
+			return nil, fmt.Errorf("failed to mount resolver input file: %w", err)
 		}
 
 		ctr, err = ctr.WithMountedDirectory(ctx, bk, outputMountPath, NewScratchDirectory(nil, env.Platform), "")
 		if err != nil {
-			return "", fmt.Errorf("failed to mount resolver output directory: %w", err)
+			return nil, fmt.Errorf("failed to mount resolver output directory: %w", err)
 		}
 
 		ctr, err = ctr.WithExec(ctx, bk, progSock, env.Platform, ContainerExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		})
 		if err != nil {
-			return "", fmt.Errorf("failed to exec resolver: %w", err)
+			return nil, fmt.Errorf("failed to exec resolver: %w", err)
+		}
+		err = ctr.Evaluate(ctx, bk)
+		if err != nil {
+			return nil, fmt.Errorf("failed to exec resolver: %w", err)
 		}
 
 		outputFile, err := ctr.File(ctx, bk, path.Join(outputMountPath, outputFile))
 		if err != nil {
-			return "", fmt.Errorf("failed to get resolver output file: %w", err)
+			return nil, fmt.Errorf("failed to get resolver output file: %w", err)
 		}
 		outputBytes, err := outputFile.Contents(ctx, bk)
 		if err != nil {
-			return "", fmt.Errorf("failed to read resolver output file: %w", err)
+			return nil, fmt.Errorf("failed to read resolver output file: %w", err)
 		}
 		var output interface{}
 		if err := json.Unmarshal(outputBytes, &output); err != nil {
@@ -351,6 +413,71 @@ func (cmd *EnvironmentCommand) SetStringFlag(name, value string) (*EnvironmentCo
 		if flag.Name == name {
 			cmd.Flags[i].SetValue = value
 			return cmd, nil
+		}
+	}
+	return nil, fmt.Errorf("no flag named %q", name)
+}
+
+type EnvironmentCheck struct {
+	Name        string                 `json:"name"`
+	Flags       []EnvironmentCheckFlag `json:"flags"`
+	Description string                 `json:"description"`
+}
+
+type EnvironmentCheckFlag struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SetValue    string `json:"setValue"`
+}
+
+type EnvironmentCheckResult struct {
+	Success     bool               `json:"success"`
+	Output      string             `json:"output"`
+	ParentCheck EnvironmentCheckID `json:"parent_check"`
+}
+
+func NewEnvironmentCheck(id EnvironmentCheckID) (*EnvironmentCheck, error) {
+	environmentCmd, err := id.ToEnvironmentCheck()
+	if err != nil {
+		return nil, err
+	}
+	return environmentCmd, nil
+}
+
+func (env *EnvironmentCheck) ID() (EnvironmentCheckID, error) {
+	return resourceid.Encode[EnvironmentCheckID](env)
+}
+
+func (check EnvironmentCheck) Clone() *EnvironmentCheck {
+	cp := check
+	cp.Flags = cloneSlice(check.Flags)
+	return &cp
+}
+
+func (check *EnvironmentCheck) WithName(name string) *EnvironmentCheck {
+	check = check.Clone()
+	check.Name = name
+	return check
+}
+
+func (check *EnvironmentCheck) WithFlag(flag EnvironmentCheckFlag) *EnvironmentCheck {
+	check = check.Clone()
+	check.Flags = append(check.Flags, flag)
+	return check
+}
+
+func (check *EnvironmentCheck) WithDescription(description string) *EnvironmentCheck {
+	check = check.Clone()
+	check.Description = description
+	return check
+}
+
+func (check *EnvironmentCheck) SetStringFlag(name, value string) (*EnvironmentCheck, error) {
+	check = check.Clone()
+	for i, flag := range check.Flags {
+		if flag.Name == name {
+			check.Flags[i].SetValue = value
+			return check, nil
 		}
 	}
 	return nil, fmt.Errorf("no flag named %q", name)

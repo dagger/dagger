@@ -45,7 +45,7 @@ func (t NodejsTargets) NodejsLint(ctx dagger.Context) (string, error) {
 		var err error
 		yarnLintOut, err = t.baseImage(ctx).
 			WithExec([]string{"yarn", "lint"}).
-			Stdout(gctx)
+			Stderr(gctx)
 		return err
 	})
 
@@ -69,7 +69,7 @@ func (t NodejsTargets) NodejsLint(ctx dagger.Context) (string, error) {
 				},
 			).
 			WithExec([]string{"yarn", "docs:lint"}).
-			Stdout(gctx)
+			Stderr(gctx)
 		return err
 	})
 

@@ -43,7 +43,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"container": ToResolver(s.container),
 		},
-		"Container": ObjectResolver{
+		"Container": ToIDableObjectResolver(core.ContainerID.ToContainer, ObjectResolver{
 			"id":                   ToResolver(s.id),
 			"sync":                 ToResolver(s.sync),
 			"from":                 ToResolver(s.from),
@@ -100,7 +100,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withServiceBinding":   ToResolver(s.withServiceBinding),
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
-		},
+		}),
 	}
 }
 

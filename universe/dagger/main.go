@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"os"
+	"strings"
 
 	"dagger.io/dagger"
 	"golang.org/x/sync/errgroup"
@@ -10,11 +12,11 @@ import (
 func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
-		WITHCommand(Targets.Lint).
-		WITHCommand(Targets.EngineLint).
-		WITHCommand(Targets.Cli).
-		WITHCommand(PythonTargets.PythonLint).
-		WITHCommand(NodejsTargets.NodejsLint).
+		WithCheck_(Targets.Lint).
+		WithCheck_(Targets.EngineLint).
+		WithCommand_(Targets.Cli).
+		WithCheck_(PythonTargets.PythonLint).
+		WithCheck_(NodejsTargets.NodejsLint).
 		// Merge in all the entrypoints from the Go SDK too under the "go" namespace
 		// TODO:
 		// WithExtension(ctx.Client().Environment().LoadFromUniverse("dagger/gosdk"), "go").
@@ -44,24 +46,43 @@ func (t Targets) srcDir(ctx dagger.Context) *dagger.Directory {
 // Lint everything (engine, sdks, etc)
 func (t Targets) Lint(ctx dagger.Context) (string, error) {
 	var eg errgroup.Group
+
+	// TODO: these should be subchecks
+
+	var goSdkOutput string
+	var goSdkErr error
 	eg.Go(func() error {
-		_, err := ctx.Client().Environment().
+		goSdkOutput, goSdkErr = ctx.Client().Environment().
 			LoadFromUniverse("dagger/gosdk").
-			Command("goLint").
-			Invoke().String(ctx)
-		return err
+			Check("goLint").
+			Result().Output(ctx)
+		return goSdkErr
 	})
+
+	var engineOutput string
+	var engineErr error
 	eg.Go(func() error {
-		_, err := t.EngineLint(ctx)
-		return err
+		engineOutput, engineErr = t.EngineLint(ctx)
+		return engineErr
 	})
+
+	var pythonOutput string
+	var pythonErr error
 	eg.Go(func() error {
-		_, err := PythonTargets{t}.PythonLint(ctx)
-		return err
+		pythonOutput, pythonErr = PythonTargets{t}.PythonLint(ctx)
+		return pythonErr
 	})
+
+	var nodejsOutput string
+	var nodejsErr error
 	eg.Go(func() error {
-		_, err := NodejsTargets{t}.NodejsLint(ctx)
-		return err
+		nodejsOutput, nodejsErr = NodejsTargets{t}.NodejsLint(ctx)
+		return nodejsErr
 	})
-	return "", eg.Wait()
+
+	err := eg.Wait()
+	if err != nil {
+		return "", errors.Join(goSdkErr, engineErr, pythonErr, nodejsErr)
+	}
+	return strings.Join([]string{goSdkOutput, engineOutput, pythonOutput, nodejsOutput}, "\n"), nil
 }

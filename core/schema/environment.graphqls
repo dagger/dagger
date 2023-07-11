@@ -5,6 +5,9 @@ extend type Query {
   "Load a environment command from ID."
   environmentCommand(id: EnvironmentCommandID): EnvironmentCommand!
 
+  "Load a environment check from ID."
+  environmentCheck(id: EnvironmentCheckID): EnvironmentCheck!
+
   "TODO"
   extensions: Extensions!
 }
@@ -21,6 +24,9 @@ scalar EnvironmentID
 "A unique environment command identifier."
 scalar EnvironmentCommandID
 
+"A unique environment check identifier."
+scalar EnvironmentCheckID
+
 "A collection of Dagger resources that can be queried and invoked."
 type Environment {
   "A unique identifier for this environment."
@@ -35,9 +41,6 @@ type Environment {
   "Name of the environment"
   name: String!
 
-  "Container this environment executes in"
-  container: Container!
-
   "Commands provided by this environment"
   commands: [EnvironmentCommand!]
 
@@ -49,6 +52,15 @@ type Environment {
 
   "TODO"
   withExtension(id: EnvironmentID!, namespace: String!): Environment!
+
+  "TODO"
+  withCheck(id: EnvironmentCheckID!): Environment!
+
+  "TODO"
+  checks: [EnvironmentCheck!]
+
+  "TODO"
+  check(name: String!): EnvironmentCheck
 }
 
 "A command defined in a environment that can be invoked from the CLI."
@@ -84,11 +96,20 @@ type EnvironmentCommand {
   setStringFlag(name: String!, value: String!): EnvironmentCommand!
 
   "TODO"
-  invoke: InvokeResult!
+  invoke: InvokeCommandResult!
+}
+
+"A flag accepted by a environment command."
+type EnvironmentCommandFlag {
+  "The name of the flag."
+  name: String!
+
+  "Documentation for what this flag sets."
+  description: String
 }
 
 "TODO"
-type InvokeResult {
+type InvokeCommandResult {
   "TODO"
   string: String
 
@@ -99,11 +120,47 @@ type InvokeResult {
   directory: Directory
 }
 
-"A flag accepted by a environment command."
-type EnvironmentCommandFlag {
+"TODO"
+type EnvironmentCheck {
+  "A unique identifier for this check."
+  id: EnvironmentCheckID!
+
+  "The name of the check."
+  name: String!
+
+  "TODO"
+  withName(name: String!): EnvironmentCheck!
+
+  "Documentation for what this check checks."
+  description: String
+
+  "TODO"
+  withDescription(description: String!): EnvironmentCheck!
+
+  "Flags accepted by this check."
+  flags: [EnvironmentCheckFlag!]
+
+  "TODO"
+  withFlag(name: String!, description: String): EnvironmentCheck!
+
+  "TODO"
+  setStringFlag(name: String!, value: String!): EnvironmentCheck!
+
+  "TODO"
+  result: EnvironmentCheckResult!
+}
+
+"A flag accepted by a environment check."
+type EnvironmentCheckFlag {
   "The name of the flag."
   name: String!
 
   "Documentation for what this flag sets."
   description: String
+}
+
+"TODO"
+type EnvironmentCheckResult {
+  success: Boolean!
+  output: String!
 }

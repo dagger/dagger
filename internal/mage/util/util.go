@@ -77,7 +77,17 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// misc
 			".golangci.yml",
 			"**/README.md", // needed for examples test
+
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			"universe/dagger/**",
 			"universe/universe.tar",
+			"universe/embed.go",
 		},
 	})
 }

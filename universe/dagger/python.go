@@ -61,9 +61,11 @@ func (t PythonTargets) baseImage(ctx dagger.Context) *dagger.Container {
 func (t PythonTargets) PythonLint(ctx dagger.Context) (string, error) {
 	base := t.baseImage(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
+	var output string
 	eg.Go(func() error {
 		path := "docs/current"
-		_, err := base.
+		var err error
+		output, err = base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
 				t.srcDir(ctx).Directory(path),
@@ -75,11 +77,11 @@ func (t PythonTargets) PythonLint(ctx dagger.Context) (string, error) {
 				},
 			).
 			WithExec([]string{"hatch", "run", "lint"}).
-			Sync(gctx)
+			Stderr(gctx)
 		return err
 	})
 
 	// TODO: test generated code too
 
-	return "", eg.Wait()
+	return output, eg.Wait()
 }

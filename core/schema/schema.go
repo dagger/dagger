@@ -242,12 +242,6 @@ func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...Execu
 }
 
 func compile(s ExecutableSchema) (*graphql.Schema, error) {
-	// gqlparser has actual validation and errors, unlike the graphql-go library
-	_, err := gqlparser.LoadSchema(&ast.Source{Input: s.Schema()})
-	if err != nil {
-		return nil, fmt.Errorf("schema validation failed: %w\n%s", err, s.Schema())
-	}
-
 	typeResolvers := tools.ResolverMap{}
 	for name, resolver := range s.Resolvers() {
 		switch resolver := resolver.(type) {

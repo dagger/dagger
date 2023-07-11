@@ -18,6 +18,9 @@ type ContainerID string
 // A content-addressed directory identifier.
 type DirectoryID string
 
+// A unique environment check identifier.
+type EnvironmentCheckID string
+
 // A unique environment command identifier.
 type EnvironmentCommandID string
 
@@ -1732,6 +1735,50 @@ func (r *Environment) With(f WithEnvironmentFunc) *Environment {
 }
 
 // TODO
+func (r *Environment) Check(name string) *EnvironmentCheck {
+	q := r.q.Select("check")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) Checks(ctx context.Context) ([]EnvironmentCheck, error) {
+	q := r.q.Select("checks")
+
+	q = q.Select("description id name")
+
+	type checks struct {
+		Description string
+		Id          EnvironmentCheckID
+		Name        string
+	}
+
+	convert := func(fields []checks) []EnvironmentCheck {
+		out := []EnvironmentCheck{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCheck{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []checks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// TODO
 func (r *Environment) Command(name string) *EnvironmentCommand {
 	q := r.q.Select("command")
 	q = q.Arg("name", name)
@@ -1774,16 +1821,6 @@ func (r *Environment) Commands(ctx context.Context) ([]EnvironmentCommand, error
 	}
 
 	return convert(response), nil
-}
-
-// Container this environment executes in
-func (r *Environment) Container() *Container {
-	q := r.q.Select("container")
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
 }
 
 // A unique identifier for this environment.
@@ -1855,6 +1892,17 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 }
 
 // TODO
+func (r *Environment) WithCheck(id *EnvironmentCheck) *Environment {
+	q := r.q.Select("withCheck")
+	q = q.Arg("id", id)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
 func (r *Environment) WithCommand(id *EnvironmentCommand) *Environment {
 	q := r.q.Select("withCommand")
 	q = q.Arg("id", id)
@@ -1875,6 +1923,240 @@ func (r *Environment) WithExtension(id *Environment, namespace string) *Environm
 		q: q,
 		c: r.c,
 	}
+}
+
+// TODO
+type EnvironmentCheck struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	id          *EnvironmentCheckID
+	name        *string
+}
+
+// Documentation for what this check checks.
+func (r *EnvironmentCheck) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Flags accepted by this check.
+func (r *EnvironmentCheck) Flags(ctx context.Context) ([]EnvironmentCheckFlag, error) {
+	q := r.q.Select("flags")
+
+	q = q.Select("description name")
+
+	type flags struct {
+		Description string
+		Name        string
+	}
+
+	convert := func(fields []flags) []EnvironmentCheckFlag {
+		out := []EnvironmentCheckFlag{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCheckFlag{description: &fields[i].Description, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []flags
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this check.
+func (r *EnvironmentCheck) ID(ctx context.Context) (EnvironmentCheckID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentCheckID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentCheck) XXX_GraphQLType() string {
+	return "EnvironmentCheck"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentCheck) XXX_GraphQLIDType() string {
+	return "EnvironmentCheckID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentCheck) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// The name of the check.
+func (r *EnvironmentCheck) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+func (r *EnvironmentCheck) Result() *EnvironmentCheckResult {
+	q := r.q.Select("result")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCheck) SetStringFlag(name string, value string) *EnvironmentCheck {
+	q := r.q.Select("setStringFlag")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCheck) WithDescription(description string) *EnvironmentCheck {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentCheckWithFlagOpts contains options for EnvironmentCheck.WithFlag
+type EnvironmentCheckWithFlagOpts struct {
+	Description string
+}
+
+// TODO
+func (r *EnvironmentCheck) WithFlag(name string, opts ...EnvironmentCheckWithFlagOpts) *EnvironmentCheck {
+	q := r.q.Select("withFlag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCheck) WithName(name string) *EnvironmentCheck {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A flag accepted by a environment check.
+type EnvironmentCheckFlag struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	name        *string
+}
+
+// Documentation for what this flag sets.
+func (r *EnvironmentCheckFlag) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the flag.
+func (r *EnvironmentCheckFlag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+type EnvironmentCheckResult struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	output  *string
+	success *bool
+}
+
+func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
+	if r.output != nil {
+		return *r.output, nil
+	}
+	q := r.q.Select("output")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+func (r *EnvironmentCheckResult) Success(ctx context.Context) (bool, error) {
+	if r.success != nil {
+		return *r.success, nil
+	}
+	q := r.q.Select("success")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // A command defined in a environment that can be invoked from the CLI.
@@ -1974,10 +2256,10 @@ func (r *EnvironmentCommand) XXX_GraphQLID(ctx context.Context) (string, error) 
 }
 
 // TODO
-func (r *EnvironmentCommand) Invoke() *InvokeResult {
+func (r *EnvironmentCommand) Invoke() *InvokeCommandResult {
 	q := r.q.Select("invoke")
 
-	return &InvokeResult{
+	return &InvokeCommandResult{
 		q: q,
 		c: r.c,
 	}
@@ -2398,7 +2680,7 @@ func (r *Host) UnixSocket(path string) *Socket {
 }
 
 // TODO
-type InvokeResult struct {
+type InvokeCommandResult struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
@@ -2406,7 +2688,7 @@ type InvokeResult struct {
 }
 
 // TODO
-func (r *InvokeResult) Directory() *Directory {
+func (r *InvokeCommandResult) Directory() *Directory {
 	q := r.q.Select("directory")
 
 	return &Directory{
@@ -2416,7 +2698,7 @@ func (r *InvokeResult) Directory() *Directory {
 }
 
 // TODO
-func (r *InvokeResult) File() *File {
+func (r *InvokeCommandResult) File() *File {
 	q := r.q.Select("file")
 
 	return &File{
@@ -2426,7 +2708,7 @@ func (r *InvokeResult) File() *File {
 }
 
 // TODO
-func (r *InvokeResult) String(ctx context.Context) (string, error) {
+func (r *InvokeCommandResult) String(ctx context.Context) (string, error) {
 	if r.string != nil {
 		return *r.string, nil
 	}
@@ -2636,7 +2918,28 @@ func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 	}
 }
 
-// EnvironmentCommandOpts contains options for Client.EnvironmentCommand
+// EnvironmentCheckOpts contains options for Query.EnvironmentCheck
+type EnvironmentCheckOpts struct {
+	ID EnvironmentCheckID
+}
+
+// Load a environment check from ID.
+func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentCheck {
+	q := r.q.Select("environmentCheck")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentCommandOpts contains options for Query.EnvironmentCommand
 type EnvironmentCommandOpts struct {
 	ID EnvironmentCommandID
 }

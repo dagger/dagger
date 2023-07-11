@@ -42,6 +42,7 @@ var (
 		"Platform":             {},
 		"EnvironmentID":        {},
 		"EnvironmentCommandID": {},
+		"EnvironmentCheckID":   {},
 	}
 )
 
