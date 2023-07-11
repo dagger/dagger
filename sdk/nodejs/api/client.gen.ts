@@ -1519,8 +1519,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Indicate that subsequent commands should be featured more
-   * prominently in the UI.
+   * Indicate that subsequent operations should be featured more prominently in
+   * the UI.
    */
   withFocus(): Container {
     return new Container({
@@ -1913,8 +1913,8 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Indicate that subsequent commands should not be featured
-   * more prominently in the UI.
+   * Indicate that subsequent operations should not be featured more prominently
+   * in the UI.
    *
    * This is the initial state of all containers.
    */

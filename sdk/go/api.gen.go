@@ -990,8 +990,8 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
-// Indicate that subsequent commands should be featured more
-// prominently in the UI.
+// Indicate that subsequent operations should be featured more prominently in
+// the UI.
 func (r *Container) WithFocus() *Container {
 	q := r.q.Select("withFocus")
 
@@ -1336,8 +1336,8 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 	}
 }
 
-// Indicate that subsequent commands should not be featured
-// more prominently in the UI.
+// Indicate that subsequent operations should not be featured more prominently
+// in the UI.
 //
 // This is the initial state of all containers.
 func (r *Container) WithoutFocus() *Container {

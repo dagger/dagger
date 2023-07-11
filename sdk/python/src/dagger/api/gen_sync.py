@@ -1134,8 +1134,9 @@ class Container(Type):
 
     @typecheck
     def with_focus(self) -> "Container":
-        """Indicate that subsequent commands should be featured more
-        prominently in the UI.
+        """Indicate that subsequent operations should be featured more
+        prominently in
+        the UI.
         """
         _args: list[Arg] = []
         _ctx = self._select("withFocus", _args)
@@ -1531,8 +1532,9 @@ class Container(Type):
 
     @typecheck
     def without_focus(self) -> "Container":
-        """Indicate that subsequent commands should not be featured
-        more prominently in the UI.
+        """Indicate that subsequent operations should not be featured more
+        prominently
+        in the UI.
 
         This is the initial state of all containers.
         """
