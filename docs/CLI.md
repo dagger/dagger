@@ -8,8 +8,10 @@
 Here are all the commands for things you can do, with alternatives inline for
 side-by-side comparison.
 
+* list available checks
+    * `dagger checks`
 * run tests/checks
-    * TODO decide between `test` or `check`
+    * **TODO:** Decide between `test` or `check`.
         * `test` is arguably more familiar and guessable, but not every check
           will be a test suite. It could also be a linter, or whatever the user
           wants to run.
@@ -22,15 +24,23 @@ side-by-side comparison.
     * `dagger test` - alternative
     * `dagger test engine`
     * `dagger test engine -- -run Services`
-* build artifacts
-    * `dagger build`
 * list available artifacts
     * `dagger artifacts`
+* build/export an artifact
+    * `dagger build` - build default artifact
+    * `dagger build foo` - build `foo` artifact
+    * `dagger export` - alternative, avoid overly-specific "build"
+    * `dagger export foo`
 * extend your environment with another environment
     * `dagger use go` - universe environment
     * `dagger use ./go/` - local environment
     * `dagger use github.com/vito/progrock@main` - git environment
     * `dagger use github.com/vito/progrock/ci@main` - git environment, `./ci` subdirectory
+* alternatively, `dagger use` just sets a persistent --env flag
+    * `dagger use go; dagger test` - universe environment
+    * `dagger use ./go/; dagger test` - local environment
+    * `dagger use github.com/vito/progrock@main; dagger test` - git environment
+    * `dagger use github.com/vito/progrock/ci@main; dagger test` - git environment, `./ci` subdirectory
 * list memoized queries
     * `dagger memos` - lists queries and associated tags
     * `dagger inputs`
