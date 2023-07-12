@@ -206,6 +206,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			c.bkSession.Close()
 		}
 	}()
+	recorder := progrock.NewRecorder(progMultiW)
+	c.Recorder = recorder
+	ctx = progrock.RecorderToContext(ctx, c.Recorder)
 
 	workdir, err := os.Getwd()
 	if err != nil {

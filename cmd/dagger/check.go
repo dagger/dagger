@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/iancoleman/strcase"
 	"github.com/muesli/termenv"
+	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
@@ -47,6 +48,28 @@ func init() {
 
 }
 
+func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error) {
+	env, err := getEnvironmentFlagConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment config: %w", err)
+	}
+	if env.local != nil && outputPath == "" {
+		// default to outputting to the environment root dir
+		rootDir, err := env.local.rootDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment root dir: %w", err)
+		}
+		outputPath = rootDir
+	}
+
+	loadedEnv, err := env.load(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load environment: %w", err)
+	}
+
+	return loadedEnv, nil
+}
+
 func wrapper(
 	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
 ) func(*cobra.Command, []string) error {
@@ -62,38 +85,23 @@ func wrapper(
 		dynamicCmdArgs := flags.Args()
 
 		focus = doFocus
-		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
-			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
-			if !silent {
-				cmd.SetOut(vtx.Stdout())
-				cmd.SetErr(vtx.Stderr())
-			}
+			vtx := rec.Vertex("cmd-root", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
-			cmd.Println("Loading+installing environment...")
-
+			connect := vtx.Task("connecting to Dagger")
 			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
+			connect.Done(err)
 			if err != nil {
 				return fmt.Errorf("connect to dagger: %w", err)
 			}
 
-			env, err := getEnvironmentFlagConfig()
+			load := vtx.Task("loading environment")
+			loadedEnv, err := loadEnv(ctx, c)
+			load.Done(err)
 			if err != nil {
-				return fmt.Errorf("failed to get environment config: %w", err)
-			}
-			if env.local != nil && outputPath == "" {
-				// default to outputting to the environment root dir
-				rootDir, err := env.local.rootDir()
-				if err != nil {
-					return fmt.Errorf("failed to get environment root dir: %w", err)
-				}
-				outputPath = rootDir
-			}
-
-			loadedEnv, err := env.load(ctx, c)
-			if err != nil {
-				return fmt.Errorf("failed to load environment: %w", err)
+				return err
 			}
 
 			return fn(ctx, engineClient, c, loadedEnv, cmd, dynamicCmdArgs)
@@ -101,12 +109,17 @@ func wrapper(
 	}
 }
 
-func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) error {
+func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
+	rec := progrock.RecorderFromContext(ctx)
+	vtx := rec.Vertex("cmd-list-checks", "list checks", progrock.Focused())
+	defer func() { vtx.Done(err) }()
+
 	envChecks, err := loadedEnv.Checks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get environment commands: %w", err)
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+
+	tw := tabwriter.NewWriter(vtx.Stdout(), 0, 0, 2, ' ', 0)
 
 	if stdoutIsTTY {
 		fmt.Fprintf(tw, "%s\t%s\n", termenv.String("check name").Bold(), termenv.String("description").Bold())
@@ -127,11 +140,12 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 	return tw.Flush()
 }
 
-func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) error {
+func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv *dagger.Environment, cmd *cobra.Command, dynamicCmdArgs []string) (err error) {
 	envChecks, err := loadedEnv.Checks(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get environment commands: %w", err)
 	}
+
 	for _, envCheck := range envChecks {
 		envCheck := envCheck
 		subChecks, err := addCheck(ctx, nil, &envCheck, c)
@@ -156,21 +170,20 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 
 	if subCmd.Name() == cmd.Name() {
 		cmd.Println(subCmd.UsageString())
-		// TODO:
-		fmt.Fprintln(os.Stderr, subCmd.UsageString())
 		return fmt.Errorf("entrypoint not found or not set")
 	}
-	cmd.Printf("Running check %q...\n", subCmd.Name())
+
 	err = subCmd.Execute()
 	if err != nil {
-		// TODO:
-		fmt.Fprintln(os.Stderr, "Error:", err.Error())
 		return fmt.Errorf("failed to execute subcmd: %w", err)
 	}
+
 	return nil
 }
 
 func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.EnvironmentCheck, c *dagger.Client) ([]*cobra.Command, error) {
+	rec := progrock.RecorderFromContext(ctx)
+
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	envCheckID, err := envCheck.ID(ctx)
@@ -208,11 +221,21 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 		Use:         cmdName,
 		Short:       description,
 		Annotations: map[string]string{},
-		RunE: func(cmd *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			if !isLeafCheck {
 				// just print the usage
 				return pflag.ErrHelp
 			}
+
+			vtx := rec.Vertex(
+				digest.Digest("check-"+envCheckName),
+				"check "+envCheckName,
+				progrock.Focused(),
+			)
+			defer func() { vtx.Done(err) }()
+
+			cmd.SetOut(vtx.Stdout())
+			cmd.SetErr(vtx.Stderr())
 
 			for _, flagName := range commandAnnotations(cmd.Annotations).getCommandSpecificFlags() {
 				// skip help flag
@@ -226,29 +249,18 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 				}
 				envCheck = envCheck.SetStringFlag(flagName, flagVal)
 			}
+
 			// TODO: awkward api
 			success, err := envCheck.Result().Success(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get check result: %w", err)
 			}
-			output, err := envCheck.Result().Output(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to get check result: %w", err)
-			}
 
-			// TODO: why doesn't cmd.Printf work?
-			// cmd.Printf("Check %s: %t\n%s\n", envCheckName, success, output)
-
-			successStr := "PASS"
-			if !success {
-				successStr = "FAIL"
+			if success {
+				cmd.Println(termenv.String("PASS").Foreground(termenv.ANSIGreen))
+			} else {
+				cmd.Println(termenv.String("FAIL").Foreground(termenv.ANSIGreen))
 			}
-			output = strings.TrimSpace(output)
-			fmt.Fprintf(os.Stderr, "\nCheck %s:\n", envCheckName)
-			fmt.Fprintf(os.Stderr, "%s\n", successStr)
-			fmt.Fprintf(os.Stderr, "----------------\n")
-			fmt.Fprintf(os.Stderr, "%s\n", output)
-			fmt.Fprintf(os.Stderr, "----------------\n\n")
 			return nil
 		},
 	}

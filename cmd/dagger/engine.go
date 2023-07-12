@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -90,6 +89,7 @@ func withEngineAndTUI(
 		return err
 	}
 	defer engineClient.Close()
+
 	return fn(ctx, engineClient)
 }
 
@@ -137,6 +137,8 @@ func interactiveTUI(
 	}
 	defer sess.Close()
 
+	ctx = progrock.RecorderToContext(ctx, sess.Recorder)
+
 	err = fn(ctx, sess)
 	tuiErr := <-tuiDone
 	return errors.Join(tuiErr, err)
@@ -180,19 +182,13 @@ func inlineTUI(
 		})
 	}
 
-	sess, ctx, err := client.Connect(ctx, params)
+	engineClient, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		return err
 	}
-	defer sess.Close()
-	before := time.Now()
-	err = fn(ctx, sess)
-	program.Send(progrock.StatusInfoMsg{
-		Name:  "Duration",
-		Value: time.Since(before).Truncate(time.Millisecond).String(),
-		Order: 3,
-	})
-	return err
+	defer engineClient.Close()
+
+	return fn(ctx, engineClient)
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {
