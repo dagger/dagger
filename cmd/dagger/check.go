@@ -87,7 +87,7 @@ func wrapper(
 		focus = doFocus
 		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
 			rec := progrock.RecorderFromContext(ctx)
-			vtx := rec.Vertex("cmd-root", strings.Join(os.Args, " "))
+			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
 			defer func() { vtx.Done(err) }()
 
 			connect := vtx.Task("connecting to Dagger")
