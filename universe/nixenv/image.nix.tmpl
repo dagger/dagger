@@ -1,0 +1,34 @@
+let
+  pkgs = import {{.FlakeRef}} {};
+  fhs = (pkgs.callPackage <nixpkgs/pkgs/build-support/build-fhs-userenv/env.nix> {}) {
+    name = "container-fhs";
+    targetPkgs = pkgs: with pkgs; [
+    {{- range .Packages}}
+      {{.}}
+    {{- end}}
+    ];
+    multiPkgs = null;  # Don't include glibc's multilib
+  };
+  stream = pkgs.dockerTools.streamLayeredImage {
+    name = "{{.Name}}";
+    contents = pkgs.symlinkJoin {
+      name = "contents";
+      paths = [ fhs ];
+    };
+    config = {
+      Env = [
+        "PATH=/bin"
+        "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+      ];
+    };
+    # lots of things assume /tmp is there, and apko images seem to add it
+    # automatically, so let's make sure nix images have it too
+    extraCommands = ''
+      mkdir -p tmp
+      chmod 0777 tmp
+    '';
+  };
+in
+pkgs.runCommand "write-docker-tar" {} ''
+  ${stream} > $out
+''
