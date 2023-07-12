@@ -259,7 +259,7 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 			if success {
 				cmd.Println(termenv.String("PASS").Foreground(termenv.ANSIGreen))
 			} else {
-				cmd.Println(termenv.String("FAIL").Foreground(termenv.ANSIGreen))
+				cmd.Println(termenv.String("FAIL").Foreground(termenv.ANSIRed))
 			}
 			return nil
 		},
