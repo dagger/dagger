@@ -990,6 +990,17 @@ func (r *Container) WithFile(path string, source *File, opts ...ContainerWithFil
 	}
 }
 
+// Indicate that subsequent operations should be featured more prominently in
+// the UI.
+func (r *Container) WithFocus() *Container {
+	q := r.q.Select("withFocus")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container plus the given label.
 func (r *Container) WithLabel(name string, value string) *Container {
 	q := r.q.Select("withLabel")
@@ -1318,6 +1329,19 @@ func (r *Container) WithoutExposedPort(port int, opts ...ContainerWithoutExposed
 		}
 	}
 	q = q.Arg("port", port)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Indicate that subsequent operations should not be featured more prominently
+// in the UI.
+//
+// This is the initial state of all containers.
+func (r *Container) WithoutFocus() *Container {
+	q := r.q.Select("withoutFocus")
 
 	return &Container{
 		q: q,

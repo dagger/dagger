@@ -22,6 +22,7 @@ import (
 
 var (
 	outputPath string
+	doFocus    bool
 )
 
 const (
@@ -30,6 +31,7 @@ const (
 
 func init() {
 	doCmd.PersistentFlags().StringVarP(&outputPath, "output", "o", "", "If the command returns a file or directory, it will be written to this path. If --output is not specified, the file or directory will be written to the project's root directory when using a project loaded from a local dir.")
+	doCmd.PersistentFlags().BoolVar(&doFocus, "focus", true, "Only show output for focused commands.")
 }
 
 // project flags (--project) for do command are setup in project.go
@@ -48,6 +50,8 @@ var doCmd = &cobra.Command{
 			return fmt.Errorf("failed to parse top-level flags: %w", err)
 		}
 		dynamicCmdArgs := flags.Args()
+
+		focus = doFocus
 
 		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
 			rec := progrock.RecorderFromContext(ctx)

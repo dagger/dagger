@@ -74,6 +74,10 @@ type Container struct {
 	// Services to start before running the container.
 	Services    ServiceBindings `json:"services,omitempty"`
 	HostAliases []HostAlias     `json:"host_aliases,omitempty"`
+
+	// Focused indicates whether subsequent operations will be
+	// focused, i.e. shown more prominently in the UI.
+	Focused bool `json:"focused"`
 }
 
 func NewContainer(id ContainerID, pipeline pipeline.Path, platform specs.Platform) (*Container, error) {
@@ -1046,9 +1050,16 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 		return nil, errors.New("no command has been set")
 	}
 
+	var namef string
+	if container.Focused {
+		namef = focusPrefix + "exec %s"
+	} else {
+		namef = "exec %s"
+	}
+
 	runOpts := []llb.RunOption{
 		llb.Args(args),
-		llb.WithCustomNamef("exec %s", strings.Join(args, " ")),
+		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
 	// this allows executed containers to communicate back to this API
@@ -1079,7 +1090,7 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(metaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName("[internal] creating dagger metadata")),
+			llb.Scratch().File(meta, llb.WithCustomName(internalPrefix+"creating dagger metadata")),
 			llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {

@@ -1519,6 +1519,23 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Indicate that subsequent operations should be featured more prominently in
+   * the UI.
+   */
+  withFocus(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFocus",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container plus the given label.
    * @param name The name of the label (e.g., "org.opencontainers.artifact.created").
    * @param value The value of the label (e.g., "2023-01-01T00:00:00Z").
@@ -1888,6 +1905,25 @@ export class Container extends BaseClient {
         {
           operation: "withoutExposedPort",
           args: { port, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Indicate that subsequent operations should not be featured more prominently
+   * in the UI.
+   *
+   * This is the initial state of all containers.
+   */
+  withoutFocus(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withoutFocus",
         },
       ],
       host: this.clientHost,
