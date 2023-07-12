@@ -18,16 +18,17 @@ import (
 	"strings"
 	"testing"
 
-	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+
+	"dagger.io/dagger"
+	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/internal/testutil"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -3937,4 +3938,23 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 			require.NoError(t, err)
 		}
 	}
+}
+
+func TestContainerWithPlainSecretVariable(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	ctr := c.Container().From("alpine").
+		WithPlainSecretVariable("SECRET_ENV", "secret-value")
+
+	// Assert env value cannot be read from API
+	v, err := ctr.EnvVariable(ctx, "SECRET_ENV")
+	require.NoError(t, err)
+	require.Equal(t, "", v)
+
+	out, err := ctr.WithExec([]string{"sh", "-c", "echo \"secret=$SECRET_ENV\""}).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out, "secret=***\n")
 }

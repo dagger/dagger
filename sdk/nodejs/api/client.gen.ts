@@ -1691,6 +1691,26 @@ export class Container extends BaseClient {
   }
 
   /**
+   * Retrieves this container plus an env variable containing a given secret
+   * inserted as plain text but converted into secret.
+   * @param name The name of the secret variable (e.g., "API_SECRET").
+   * @param secret The value of the secret in plain test.
+   */
+  withPlainSecretVariable(name: string, secret: string): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withPlainSecretVariable",
+          args: { name, secret },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Retrieves this container with a registry authentication for a given address.
    * @param address Registry's address to bind the authentication to.
    * Formatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).

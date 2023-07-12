@@ -1196,6 +1196,19 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	}
 }
 
+// Retrieves this container plus an env variable containing a given secret
+// inserted as plain text but converted into secret.
+func (r *Container) WithPlainSecretVariable(name string, secret string) *Container {
+	q := r.q.Select("withPlainSecretVariable")
+	q = q.Arg("name", name)
+	q = q.Arg("secret", secret)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Retrieves this container with a registry authentication for a given address.
 func (r *Container) WithRegistryAuth(address string, username string, secret *Secret) *Container {
 	q := r.q.Select("withRegistryAuth")

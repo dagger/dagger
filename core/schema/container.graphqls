@@ -223,6 +223,22 @@ type Container {
   ): Container!
 
   """
+  Retrieves this container plus an env variable containing a given secret
+  inserted as plain text but converted into secret.
+  """
+  withPlainSecretVariable(
+    """
+    The name of the secret variable (e.g., "API_SECRET").
+    """
+    name: String!
+
+    """
+    The value of the secret in plain test.
+    """
+    secret: String!
+  ): Container
+
+  """
   Retrieves this container minus the given environment variable.
   """
   withoutEnvVariable(
