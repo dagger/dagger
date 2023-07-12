@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"text/tabwriter"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/iancoleman/strcase"
+	"github.com/juju/ansiterm/tabwriter"
 	"github.com/muesli/termenv"
 	"github.com/opencontainers/go-digest"
 	"github.com/spf13/cobra"
