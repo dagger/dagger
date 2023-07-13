@@ -34,6 +34,7 @@ var (
 		"FormatArrayField":        formatArrayField,
 		"FormatArrayToSingleType": formatArrayToSingleType,
 		"ConvertID":               commonFunc.ConvertID,
+		"IsSelfChainable":         commonFunc.IsSelfChainable,
 	}
 )
 
@@ -75,6 +76,9 @@ func isEnum(t introspection.Type) bool {
 // formatName formats a GraphQL name (e.g. object, field, arg) into a Go equivalent
 // Example: `fooId` -> `FooID`
 func formatName(s string) string {
+	if s == generator.QueryStructName {
+		return generator.QueryStructClientName
+	}
 	if len(s) > 0 {
 		s = strings.ToUpper(string(s[0])) + s[1:]
 	}
@@ -169,9 +173,6 @@ func fieldOptionsStructName(f introspection.Field) string {
 // Example: `contents: String!` -> `func (r *File) Contents(ctx context.Context) (string, error)`
 func fieldFunction(f introspection.Field) string {
 	structName := formatName(f.ParentObject.Name)
-	if structName == generator.QueryStructName {
-		structName = "Client"
-	}
 	signature := fmt.Sprintf(`func (r *%s) %s`,
 		structName, formatName(f.Name))
 

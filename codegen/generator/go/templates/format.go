@@ -42,12 +42,7 @@ func (f *FormatTypeFunc) FormatKindScalarDefault(representation string, refName 
 }
 
 func (f *FormatTypeFunc) FormatKindObject(representation string, refName string) string {
-	name := refName
-	if name == generator.QueryStructName {
-		name = generator.QueryStructClientName
-	}
-
-	representation += formatName(name)
+	representation += formatName(refName)
 	return representation
 }
 

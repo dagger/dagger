@@ -8,21 +8,18 @@ Export a type for each type or input existing in the GraphQL schema.
 {{- end }}
 
 {{ define "type" }}
-	{{- $typeName := .Name }}
-	{{- if eq $typeName "Query" }}
-		{{- $typeName = "Client" }}
-	{{- end }}
+	{{- $typeName := .Name | FormatName }}
 
 	{{- /* Generate scalar type. */ -}}
 	{{- if IsCustomScalar . }}
 		{{- if .Description }}
 			{{- /* Split comment string into a slice of one line per element. */ -}}
 			{{- $desc := CommentToLines .Description }}
-/** 
+/**
 				{{- range $desc }}
- * {{ . }}				
+ * {{ . }}
 				{{- end }}
- */			
+ */
 		{{- end }}
 export type {{ .Name }} = string & {__{{ .Name }}: never}
 {{ "" }}
@@ -96,11 +93,11 @@ export type {{ $typeName }} = {
 			{{- if ne $i 0 }}
 {{""}}
 			{{- end }}
-  /**			
+  /**
 			{{- range $desc }}
-   * {{ . }}			
+   * {{ . }}
 			{{- end }}
-   */		
+   */
 		{{- end }}
 
 		{{- /* Write type, if it's an id it's an output, otherwise it's an input. */ -}}
@@ -109,6 +106,6 @@ export type {{ $typeName }} = {
 		{{- else }}
   {{ $field.Name }}{{ $opt }}: {{ $field.TypeRef | FormatInputType }}
 		{{- end }}
-		
+
 	{{- end }}
 {{- end }}

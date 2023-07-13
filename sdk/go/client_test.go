@@ -132,6 +132,35 @@ func TestConnectOption(t *testing.T) {
 	}
 }
 
+func TestContainerWith(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	env := func(c *Container) *Container {
+		return c.WithEnvVariable("FOO", "bar")
+	}
+
+	secret := func(token string, client *Client) WithContainerFunc {
+		return func(c *Container) *Container {
+			return c.WithSecretVariable("TOKEN", client.SetSecret("TOKEN", token))
+		}
+	}
+
+	c, err := Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	_, err = c.
+		Container().
+		From("alpine:3.16.2").
+		With(env).
+		With(secret("baz", c)).
+		WithExec([]string{"sh", "-c", "test $FOO = bar && test $TOKEN = baz"}).
+		Sync(ctx)
+
+	require.NoError(t, err)
+}
+
 func TestErrorMessage(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
