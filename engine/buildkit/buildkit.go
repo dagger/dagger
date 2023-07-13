@@ -253,6 +253,18 @@ func (c *Client) LocalExport(
 	return c.sessionManager.LocalExport(ctx, cacheRes, destPath)
 }
 
+// TODO: Actually call this when the server instance ends
+// TODO: Integ test for all cache being releasable at end of every integ test suite
+func (c *Client) Close() error {
+	// TODO: release any running interactive containers
+	for rf := range c.refs {
+		if rf != nil {
+			rf.resultProxy.Release(context.TODO())
+		}
+	}
+	return nil
+}
+
 func newRef(res solver.ResultProxy, c *Client) *ref {
 	return &ref{
 		resultProxy: res,
