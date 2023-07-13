@@ -125,6 +125,12 @@ type EnvironmentCheck {
   "A unique identifier for this check."
   id: EnvironmentCheckID!
 
+  "TODO"
+  subchecks: [EnvironmentCheck!]
+
+  "TODO"
+  withSubcheck(id: EnvironmentCheckID!): EnvironmentCheck!
+
   "The name of the check."
   name: String!
 
@@ -147,7 +153,7 @@ type EnvironmentCheck {
   setStringFlag(name: String!, value: String!): EnvironmentCheck!
 
   "TODO"
-  result: EnvironmentCheckResult!
+  result: [EnvironmentCheckResult!]
 }
 
 "A flag accepted by a environment check."
@@ -163,4 +169,5 @@ type EnvironmentCheckFlag {
 type EnvironmentCheckResult {
   success: Boolean!
   output: String!
+  name: String!
 }

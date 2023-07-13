@@ -18,6 +18,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
+	"golang.org/x/sync/errgroup"
 )
 
 type environmentSchema struct {
@@ -71,15 +72,13 @@ func (s *environmentSchema) Resolvers() Resolvers {
 		},
 		"EnvironmentCheck": ObjectResolver{
 			"id":              ToResolver(s.checkID),
+			"subchecks":       ToResolver(s.subchecks),
+			"withSubcheck":    ToResolver(s.withSubcheck),
 			"withName":        ToResolver(s.withCheckName),
 			"withDescription": ToResolver(s.withCheckDescription),
 			"withFlag":        ToResolver(s.withCheckFlag),
 			"setStringFlag":   ToResolver(s.setCheckStringFlag),
 			"result":          ToResolver(s.checkResult),
-		},
-		"EnvironmentCheckResult": ObjectResolver{
-			"success": ToResolver(s.checkResultSuccess),
-			"output":  ToResolver(s.checkResultOutput),
 		},
 	}
 }
@@ -458,6 +457,31 @@ func (s *environmentSchema) checkID(ctx *core.Context, parent *core.EnvironmentC
 	return parent.ID()
 }
 
+func (s *environmentSchema) subchecks(ctx *core.Context, parent *core.EnvironmentCheck, args any) ([]*core.EnvironmentCheck, error) {
+	var subchecks []*core.EnvironmentCheck
+	for _, subcheckID := range parent.Subchecks {
+		subcheck, err := core.NewEnvironmentCheck(subcheckID)
+		if err != nil {
+			return nil, err
+		}
+		subchecks = append(subchecks, subcheck)
+	}
+	return subchecks, nil
+}
+
+type withSubcheckArgs struct {
+	ID core.EnvironmentCheckID
+}
+
+func (s *environmentSchema) withSubcheck(ctx *core.Context, parent *core.EnvironmentCheck, args withSubcheckArgs) (*core.EnvironmentCheck, error) {
+	subcheck, err := core.NewEnvironmentCheck(args.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	return parent.WithSubcheck(subcheck)
+}
+
 type withCheckNameArgs struct {
 	Name string
 }
@@ -495,39 +519,47 @@ func (s *environmentSchema) setCheckStringFlag(ctx *core.Context, parent *core.E
 	return parent.SetStringFlag(args.Name, args.Value)
 }
 
-func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
-	// TODO: codegen clients currently request every field when list of objects are returned, so we need to avoid doing expensive work
+func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) ([]*core.EnvironmentCheckResult, error) {
+	if len(check.Subchecks) > 0 {
+		// run them in parallel instead
+		var eg errgroup.Group
+		results := make([]*core.EnvironmentCheckResult, len(check.Subchecks))
+		for i, subcheckID := range check.Subchecks {
+			i := i
+			subcheck, err := core.NewEnvironmentCheck(subcheckID)
+			if err != nil {
+				return nil, err
+			}
+			eg.Go(func() error {
+				res, err := s.runCheck(ctx, subcheck)
+				if err != nil {
+					return err
+				}
+				results[i] = res
+				return nil
+			})
+		}
+		if err := eg.Wait(); err != nil {
+			return nil, err
+		}
+		return results, nil
+	}
+
+	/* TODO: codegen clients currently request every field when list of objects are returned, so we need to avoid doing expensive work
 	// here, right? Or if not then simplify this
 	// Or maybe graphql-go lets you return structs with methods that match the field names?
 	checkID, err := check.ID()
 	if err != nil {
 		return nil, err
 	}
-	return &core.EnvironmentCheckResult{ParentCheck: checkID}, nil
-}
+	return []*core.EnvironmentCheckResult{{ParentCheck: checkID}}, nil
+	*/
 
-func (s *environmentSchema) checkResultSuccess(ctx *core.Context, checkRes *core.EnvironmentCheckResult, _ any) (bool, error) {
-	check, err := checkRes.ParentCheck.ToEnvironmentCheck()
-	if err != nil {
-		return false, err
-	}
 	res, err := s.runCheck(ctx, check)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return res.Success, nil
-}
-
-func (s *environmentSchema) checkResultOutput(ctx *core.Context, checkRes *core.EnvironmentCheckResult, _ any) (string, error) {
-	check, err := checkRes.ParentCheck.ToEnvironmentCheck()
-	if err != nil {
-		return "", err
-	}
-	res, err := s.runCheck(ctx, check)
-	if err != nil {
-		return "", err
-	}
-	return res.Output, nil
+	return []*core.EnvironmentCheckResult{res}, nil
 }
 
 // private helper, not in schema
@@ -584,5 +616,6 @@ func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentC
 	if !ok {
 		return nil, fmt.Errorf("unexpected result type %T from check resolver", res)
 	}
+	checkRes.Name = check.Name
 	return checkRes, nil
 }

@@ -15,17 +15,13 @@ const (
 	reqFile       = "requirements.txt"
 )
 
-type PythonTargets struct {
-	Targets
+func pythonSDKSrc(ctx dagger.Context) *dagger.Directory {
+	return srcDir(ctx).Directory(pythonAppDir)
 }
 
-func (t PythonTargets) sdkSrcDir(ctx dagger.Context) *dagger.Directory {
-	return t.srcDir(ctx).Directory(pythonAppDir)
-}
-
-func (t PythonTargets) baseImage(ctx dagger.Context) *dagger.Container {
+func pythonBase(ctx dagger.Context) *dagger.Container {
 	pipx := ctx.Client().HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
-	src := t.sdkSrcDir(ctx)
+	src := pythonSDKSrc(ctx)
 
 	// Mirror the same dir structure from the repo because of the
 	// relative paths in ruff (for docs linting).
@@ -58,8 +54,8 @@ func (t PythonTargets) baseImage(ctx dagger.Context) *dagger.Container {
 }
 
 // Lint the Dagger Python SDK
-func (t PythonTargets) PythonLint(ctx dagger.Context) (string, error) {
-	base := t.baseImage(ctx)
+func PythonLint(ctx dagger.Context) (string, error) {
+	base := pythonBase(ctx)
 	eg, gctx := errgroup.WithContext(ctx)
 	var output string
 	eg.Go(func() error {
@@ -68,7 +64,7 @@ func (t PythonTargets) PythonLint(ctx dagger.Context) (string, error) {
 		output, err = base.
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
-				t.srcDir(ctx).Directory(path),
+				srcDir(ctx).Directory(path),
 				dagger.ContainerWithDirectoryOpts{
 					Include: []string{
 						"**/*.py",

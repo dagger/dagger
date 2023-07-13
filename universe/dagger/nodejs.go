@@ -10,16 +10,12 @@ import (
 
 const nodejsAppDir = "sdk/nodejs"
 
-type NodejsTargets struct {
-	Targets
+func nodejsSDKSrc(ctx dagger.Context) *dagger.Directory {
+	return srcDir(ctx).Directory(nodejsAppDir)
 }
 
-func (t NodejsTargets) sdkSrcDir(ctx dagger.Context) *dagger.Directory {
-	return t.srcDir(ctx).Directory(nodejsAppDir)
-}
-
-func (t NodejsTargets) baseImage(ctx dagger.Context) *dagger.Container {
-	src := t.sdkSrcDir(ctx)
+func nodejsBase(ctx dagger.Context) *dagger.Container {
+	src := nodejsSDKSrc(ctx)
 
 	// Mirror the same dir structure from the repo because of the
 	// relative paths in eslint (for docs linting).
@@ -37,13 +33,13 @@ func (t NodejsTargets) baseImage(ctx dagger.Context) *dagger.Container {
 }
 
 // Lint the Nodejs SDK
-func (t NodejsTargets) NodejsLint(ctx dagger.Context) (string, error) {
+func NodejsLint(ctx dagger.Context) (string, error) {
 	eg, gctx := errgroup.WithContext(ctx)
 
 	var yarnLintOut string
 	eg.Go(func() error {
 		var err error
-		yarnLintOut, err = t.baseImage(ctx).
+		yarnLintOut, err = nodejsBase(ctx).
 			WithExec([]string{"yarn", "lint"}).
 			Stderr(gctx)
 		return err
@@ -53,10 +49,10 @@ func (t NodejsTargets) NodejsLint(ctx dagger.Context) (string, error) {
 	eg.Go(func() error {
 		path := "docs/current"
 		var err error
-		docLintOut, err = t.baseImage(ctx).
+		docLintOut, err = nodejsBase(ctx).
 			WithDirectory(
 				fmt.Sprintf("/%s", path),
-				t.srcDir(ctx).Directory(path),
+				srcDir(ctx).Directory(path),
 				dagger.ContainerWithDirectoryOpts{
 					Include: []string{
 						"**/*.mts",

@@ -156,9 +156,6 @@ type goFunc struct {
 	// receiver *goStruct // only set for methods
 	hasReceiver bool
 	doc         string
-
-	// TODO: kludge, this shouldn't be here
-	isCheck bool
 }
 
 type goParam struct {

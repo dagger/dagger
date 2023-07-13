@@ -1,6 +1,7 @@
 package dagger
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	goast "go/ast"
@@ -8,6 +9,7 @@ import (
 	"go/token"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"strings"
 
 	"github.com/iancoleman/strcase"
@@ -27,10 +29,9 @@ func (r *Environment) WithCheck_(in any) *Environment {
 		writeErrorf(fmt.Errorf("anonymous functions are not supported"))
 	}
 	fn := &goFunc{
-		name:    name,
-		typ:     typ,
-		val:     val,
-		isCheck: true,
+		name: name,
+		typ:  typ,
+		val:  val,
 	}
 	for i := 0; i < fn.typ.NumIn(); i++ {
 		inputParam := fn.typ.In(i)
@@ -53,7 +54,7 @@ func (r *Environment) WithCheck_(in any) *Environment {
 	fileSet := token.NewFileSet()
 	parsed, err := parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
 	if err != nil {
-		writeErrorf(err)
+		writeErrorf(fmt.Errorf("parse file: %w", err))
 	}
 	goast.Inspect(parsed, func(n goast.Node) bool {
 		if n == nil {
@@ -91,33 +92,41 @@ func (r *Environment) WithCheck_(in any) *Environment {
 
 		case *goast.GenDecl:
 			/* TODO:
-			// check if it's a struct we know about, if so, fill in the doc string
-			if f.Tok != token.TYPE {
-				return true
-			}
-			for _, spec := range f.Specs {
-				typeSpec, ok := spec.(*goast.TypeSpec)
-				if !ok {
-					continue
-				}
-				strukt, ok := ts.Structs[typeSpec.Name.Name]
-				if !ok {
-					continue
-				}
-				strukt.doc = f.Doc.Text()
-			}
-			*/
+			 */
 		default:
 		}
 		return true
 	})
-	resolvers[lowerCamelCase(fn.name)] = fn
+
+	check := defaultContext.Client().EnvironmentCheck()
+	if fn.returns[0].typ == reflect.TypeOf((*EnvironmentCheck)(nil)) {
+		// this returns a check, so call it now to register it
+		// TODO: support args on these too
+		ret, err := fn.call(context.Background(), nil, map[string]any{})
+		if err != nil {
+			writeErrorf(fmt.Errorf("call: %w", err))
+		}
+		var ok bool
+		check, ok = ret.(*EnvironmentCheck)
+		if !ok {
+			writeErrorf(fmt.Errorf("expected *EnvironmentCheck, got %T", ret))
+		}
+		/* TODO:?
+		// force eval
+		_, err = check.ID(context.Background())
+		if err != nil {
+			writeErrorf(err)
+		}
+		*/
+	} else {
+		resolvers[lowerCamelCase(fn.name)] = fn
+	}
 
 	if !getSchema {
 		return r
 	}
 
-	check := defaultContext.Client().EnvironmentCheck().
+	check = check.
 		WithName(strcase.ToLowerCamel(fn.name)).
 		WithDescription(fn.doc)
 
@@ -136,4 +145,136 @@ func (r *Environment) WithCheck_(in any) *Environment {
 		})
 	}
 	return r.WithCheck(check)
+}
+
+func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
+	// TODO: dedupe huge chunks of code
+	flag.Parse()
+
+	typ := reflect.TypeOf(in)
+	if typ.Kind() != reflect.Func {
+		writeErrorf(fmt.Errorf("expected func, got %v", typ))
+	}
+	val := reflect.ValueOf(in)
+	name := runtime.FuncForPC(val.Pointer()).Name()
+	if name == "" {
+		writeErrorf(fmt.Errorf("anonymous functions are not supported"))
+	}
+	fn := &goFunc{
+		name: name,
+		typ:  typ,
+		val:  val,
+	}
+	for i := 0; i < fn.typ.NumIn(); i++ {
+		inputParam := fn.typ.In(i)
+		fn.args = append(fn.args, &goParam{
+			typ: inputParam,
+		})
+	}
+	for i := 0; i < fn.typ.NumOut(); i++ {
+		outputParam := fn.typ.Out(i)
+		fn.returns = append(fn.returns, &goParam{
+			typ: outputParam,
+		})
+	}
+	if len(fn.returns) > 2 {
+		writeErrorf(fmt.Errorf("expected 1 or 2 return values, got %d", len(fn.returns)))
+	}
+
+	filePath, lineNum := fn.srcPathAndLine()
+	// TODO: cache parsed files
+	fileSet := token.NewFileSet()
+	parsed, err := parser.ParseFile(fileSet, filePath, nil, parser.ParseComments)
+	if err != nil {
+		writeErrorf(fmt.Errorf("parse file %s: %w, %s", filePath, err, string(debug.Stack())))
+	}
+	goast.Inspect(parsed, func(n goast.Node) bool {
+		if n == nil {
+			return false
+		}
+		switch decl := n.(type) {
+		case *goast.FuncDecl:
+			astStart := fileSet.PositionFor(decl.Pos(), false)
+			astEnd := fileSet.PositionFor(decl.End(), false)
+			// lineNum can be inside the function body due to optimizations that set it to
+			// the location of the return statement
+			if lineNum < astStart.Line || lineNum > astEnd.Line {
+				return true
+			}
+
+			fn.name = decl.Name.Name
+			fn.doc = decl.Doc.Text()
+
+			fnArgs := fn.args
+			if decl.Recv != nil {
+				// ignore the object receiver for now
+				fnArgs = fnArgs[1:]
+				fn.hasReceiver = true
+			}
+			astParamList := decl.Type.Params.List
+			argIndex := 0
+			for _, param := range astParamList {
+				// if the signature is like func(a, b string), then a and b are in the same Names slice
+				for _, name := range param.Names {
+					fnArgs[argIndex].name = name.Name
+					argIndex++
+				}
+			}
+			return false
+
+		case *goast.GenDecl:
+			/* TODO:
+			 */
+		default:
+		}
+		return true
+	})
+
+	check := defaultContext.Client().EnvironmentCheck()
+	if fn.returns[0].typ == reflect.TypeOf((*EnvironmentCheck)(nil)) {
+		// this returns a check, so call it now to register it
+		// TODO: support args on these too
+		ret, err := fn.call(context.Background(), nil, map[string]any{})
+		if err != nil {
+			writeErrorf(fmt.Errorf("call: %w", err))
+		}
+		var ok bool
+		check, ok = ret.(*EnvironmentCheck)
+		if !ok {
+			writeErrorf(fmt.Errorf("expected *EnvironmentCheck, got %T", ret))
+		}
+		/* TODO:?
+		// force eval
+		_, err = check.ID(context.Background())
+		if err != nil {
+			writeErrorf(err)
+		}
+		*/
+	} else {
+		resolvers[lowerCamelCase(fn.name)] = fn
+	}
+
+	if !getSchema {
+		return r
+	}
+
+	check = check.
+		WithName(strcase.ToLowerCamel(fn.name)).
+		WithDescription(fn.doc)
+
+	for i, param := range fn.args {
+		// skip receiver
+		if fn.hasReceiver && i == 0 {
+			continue
+		}
+
+		// skip Context
+		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+			continue
+		}
+		check = check.WithFlag(param.name, EnvironmentCheckWithFlagOpts{
+			Description: "TODO",
+		})
+	}
+	return r.WithSubcheck(check)
 }

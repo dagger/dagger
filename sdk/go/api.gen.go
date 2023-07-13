@@ -1934,6 +1934,14 @@ type EnvironmentCheck struct {
 	id          *EnvironmentCheckID
 	name        *string
 }
+type WithEnvironmentCheckFunc func(r *EnvironmentCheck) *EnvironmentCheck
+
+// With calls the provided function with current EnvironmentCheck.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentCheck) With(f WithEnvironmentCheckFunc) *EnvironmentCheck {
+	return f(r)
+}
 
 // Documentation for what this check checks.
 func (r *EnvironmentCheck) Description(ctx context.Context) (string, error) {
@@ -2026,13 +2034,36 @@ func (r *EnvironmentCheck) Name(ctx context.Context) (string, error) {
 }
 
 // TODO
-func (r *EnvironmentCheck) Result() *EnvironmentCheckResult {
+func (r *EnvironmentCheck) Result(ctx context.Context) ([]EnvironmentCheckResult, error) {
 	q := r.q.Select("result")
 
-	return &EnvironmentCheckResult{
-		q: q,
-		c: r.c,
+	q = q.Select("name output success")
+
+	type result struct {
+		Name    string
+		Output  string
+		Success bool
 	}
+
+	convert := func(fields []result) []EnvironmentCheckResult {
+		out := []EnvironmentCheckResult{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCheckResult{name: &fields[i].Name, output: &fields[i].Output, success: &fields[i].Success})
+		}
+
+		return out
+	}
+	var response []result
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // TODO
@@ -2045,6 +2076,39 @@ func (r *EnvironmentCheck) SetStringFlag(name string, value string) *Environment
 		q: q,
 		c: r.c,
 	}
+}
+
+// TODO
+func (r *EnvironmentCheck) Subchecks(ctx context.Context) ([]EnvironmentCheck, error) {
+	q := r.q.Select("subchecks")
+
+	q = q.Select("description id name")
+
+	type subchecks struct {
+		Description string
+		Id          EnvironmentCheckID
+		Name        string
+	}
+
+	convert := func(fields []subchecks) []EnvironmentCheck {
+		out := []EnvironmentCheck{}
+
+		for i := range fields {
+			out = append(out, EnvironmentCheck{description: &fields[i].Description, id: &fields[i].Id, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []subchecks
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
 }
 
 // TODO
@@ -2084,6 +2148,17 @@ func (r *EnvironmentCheck) WithFlag(name string, opts ...EnvironmentCheckWithFla
 func (r *EnvironmentCheck) WithName(name string) *EnvironmentCheck {
 	q := r.q.Select("withName")
 	q = q.Arg("name", name)
+
+	return &EnvironmentCheck{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentCheck) WithSubcheck(id *EnvironmentCheck) *EnvironmentCheck {
+	q := r.q.Select("withSubcheck")
+	q = q.Arg("id", id)
 
 	return &EnvironmentCheck{
 		q: q,
@@ -2131,8 +2206,21 @@ type EnvironmentCheckResult struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
+	name    *string
 	output  *string
 	success *bool
+}
+
+func (r *EnvironmentCheckResult) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 func (r *EnvironmentCheckResult) Output(ctx context.Context) (string, error) {
@@ -2918,7 +3006,7 @@ func (r *Client) Environment(opts ...EnvironmentOpts) *Environment {
 	}
 }
 
-// EnvironmentCheckOpts contains options for Query.EnvironmentCheck
+// EnvironmentCheckOpts contains options for Client.EnvironmentCheck
 type EnvironmentCheckOpts struct {
 	ID EnvironmentCheckID
 }
@@ -2939,7 +3027,7 @@ func (r *Client) EnvironmentCheck(opts ...EnvironmentCheckOpts) *EnvironmentChec
 	}
 }
 
-// EnvironmentCommandOpts contains options for Query.EnvironmentCommand
+// EnvironmentCommandOpts contains options for Client.EnvironmentCommand
 type EnvironmentCommandOpts struct {
 	ID EnvironmentCommandID
 }

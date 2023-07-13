@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/vito/progrock"
+	"golang.org/x/sync/errgroup"
 )
 
 var checkCmd = &cobra.Command{
@@ -70,6 +71,7 @@ func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error)
 	return loadedEnv, nil
 }
 
+// TODO: better name
 func wrapper(
 	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
 ) func(*cobra.Command, []string) error {
@@ -125,16 +127,52 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 		fmt.Fprintf(tw, "%s\t%s\n", termenv.String("check name").Bold(), termenv.String("description").Bold())
 	}
 
-	for _, check := range envChecks {
+	var printCheck func(*dagger.EnvironmentCheck) error
+	printCheck = func(check *dagger.EnvironmentCheck) error {
+
 		name, err := check.Name(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check name: %w", err)
 		}
+
 		descr, err := check.Description(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to get check description: %w", err)
 		}
 		fmt.Fprintf(tw, "%s\t%s\n", name, descr)
+		subChecks, err := check.Subchecks(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get check subchecks: %w", err)
+		}
+
+		for _, subCheck := range subChecks {
+			// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
+			// internally be doing this so it's not needed explicitly
+			subCheckID, err := subCheck.ID(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get check id: %w", err)
+			}
+			subCheck = *c.EnvironmentCheck(dagger.EnvironmentCheckOpts{ID: subCheckID})
+			err = printCheck(&subCheck)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	for _, check := range envChecks {
+		// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
+		// internally be doing this so it's not needed explicitly
+		checkID, err := check.ID(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get check id: %w", err)
+		}
+		check = *c.EnvironmentCheck(dagger.EnvironmentCheckOpts{ID: checkID})
+		err = printCheck(&check)
+		if err != nil {
+			return err
+		}
 	}
 
 	return tw.Flush()
@@ -146,13 +184,19 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		return fmt.Errorf("failed to get environment commands: %w", err)
 	}
 
+	allLeafCmds := map[string]*cobra.Command{}
 	for _, envCheck := range envChecks {
 		envCheck := envCheck
-		subChecks, err := addCheck(ctx, nil, &envCheck, c)
+		subChecks, err := addCheck(ctx, &envCheck, c)
 		if err != nil {
 			return fmt.Errorf("failed to add cmd: %w", err)
 		}
 		cmd.AddCommand(subChecks...)
+		for _, subCheck := range subChecks {
+			if subCheck.Annotations["leaf"] == "true" {
+				allLeafCmds[subCheck.Name()] = subCheck
+			}
+		}
 	}
 
 	subCmd, _, err := cmd.Find(dynamicCmdArgs)
@@ -169,8 +213,19 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	cmd.Root().TraverseChildren = true
 
 	if subCmd.Name() == cmd.Name() {
-		cmd.Println(subCmd.UsageString())
-		return fmt.Errorf("entrypoint not found or not set")
+		// default to running all checks
+		var eg errgroup.Group
+		var i int
+		for _, leafCmd := range allLeafCmds {
+			leafCmd := leafCmd
+			i++
+			eg.Go(leafCmd.Execute)
+		}
+		err := eg.Wait()
+		if err != nil {
+			return fmt.Errorf("failed to execute subcmd: %w", err)
+		}
+		return nil
 	}
 
 	err = subCmd.Execute()
@@ -181,7 +236,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 	return nil
 }
 
-func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.EnvironmentCheck, c *dagger.Client) ([]*cobra.Command, error) {
+func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.Client) ([]*cobra.Command, error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
@@ -206,27 +261,12 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 		return nil, fmt.Errorf("failed to get check flags: %w", err)
 	}
 
-	// TODO:
-	isLeafCheck := true
-
-	var parentCmd *cobra.Command
-	if len(cmdStack) > 0 {
-		parentCmd = cmdStack[len(cmdStack)-1]
-	}
-	cmdName := getCommandName(parentCmd, envCheckName)
-
-	// make a copy of cmdStack
-	cmdStack = append([]*cobra.Command{}, cmdStack...)
+	cmdName := getCommandName(nil, envCheckName)
 	subcmd := &cobra.Command{
 		Use:         cmdName,
 		Short:       description,
 		Annotations: map[string]string{},
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			if !isLeafCheck {
-				// just print the usage
-				return pflag.ErrHelp
-			}
-
 			vtx := rec.Vertex(
 				digest.Digest("check-"+envCheckName),
 				"check "+envCheckName,
@@ -250,25 +290,33 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 				envCheck = envCheck.SetStringFlag(flagName, flagVal)
 			}
 
-			// TODO: awkward api
-			success, err := envCheck.Result().Success(ctx)
+			results, err := envCheck.Result(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get check result: %w", err)
 			}
-
-			if success {
-				cmd.Println(termenv.String("PASS").Foreground(termenv.ANSIGreen))
-			} else {
-				cmd.Println(termenv.String("FAIL").Foreground(termenv.ANSIRed))
+			for _, result := range results {
+				success, err := result.Success(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get check result success: %w", err)
+				}
+				name, err := result.Name(ctx)
+				if err != nil {
+					return fmt.Errorf("failed to get check result name: %w", err)
+				}
+				var subcheckSuffix string
+				if len(results) > 1 {
+					subcheckSuffix = " " + strcase.ToKebab(name)
+				}
+				if success {
+					cmd.Println(termenv.String("PASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
+				} else {
+					cmd.Println(termenv.String("FAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
+				}
 			}
 			return nil
 		},
 	}
-	cmdStack = append(cmdStack, subcmd)
 
-	if parentCmd != nil {
-		subcmd.Flags().AddFlagSet(parentCmd.Flags())
-	}
 	for _, flag := range envCheckFlags {
 		flagName, err := flag.Name(ctx)
 		if err != nil {
@@ -282,6 +330,22 @@ func addCheck(ctx context.Context, cmdStack []*cobra.Command, envCheck *dagger.E
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
 	returnCmds := []*cobra.Command{subcmd}
+	subChecks, err := envCheck.Subchecks(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get subchecks: %w", err)
+	}
+	if len(subChecks) == 0 {
+		// TODO: utter kludge
+		subcmd.Annotations["leaf"] = "true"
+	}
+	for _, subCheck := range subChecks {
+		subCheck := subCheck
+		cmds, err := addCheck(ctx, &subCheck, c)
+		if err != nil {
+			return nil, fmt.Errorf("failed to add subcheck: %w", err)
+		}
+		returnCmds = append(returnCmds, cmds...)
+	}
 
 	subcmd.SetHelpFunc(func(cmd *cobra.Command, args []string) {
 		cmd.Printf("\nCommand %s - %s\n", cmdName, description)

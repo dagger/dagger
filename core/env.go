@@ -113,6 +113,9 @@ func (env *Environment) Clone() *Environment {
 	for i, cmd := range env.Commands {
 		cp.Commands[i] = cmd.Clone()
 	}
+	for i, check := range env.Checks {
+		cp.Checks[i] = check.Clone()
+	}
 	return &cp
 }
 
@@ -259,6 +262,7 @@ func (env *Environment) WithCommand(ctx context.Context, cmd *EnvironmentCommand
 
 func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) (*Environment, error) {
 	env = env.Clone()
+
 	fieldDef := &ast.FieldDefinition{
 		Name:        check.Name,
 		Description: check.Description,
@@ -293,7 +297,31 @@ func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) 
 	})
 	env.Schema = env.Schema + "\n" + buf.String()
 
-	env.Checks = append(env.Checks, check)
+	checkID, err := check.ID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get check id: %w", err)
+	}
+	for i, subcheckID := range check.Subchecks {
+		subcheck, err := NewEnvironmentCheck(subcheckID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subcheck %q: %w", subcheckID, err)
+		}
+		subcheck.ParentCheck = checkID
+		newSubcheckID, err := subcheck.ID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get subcheck id: %w", err)
+		}
+		check.Subchecks[i] = newSubcheckID
+		env, err = env.WithCheck(ctx, subcheck)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if check.ParentCheck == "" {
+		// only include top-level checks in the environment's check list
+		env.Checks = append(env.Checks, check)
+	}
 	return env, nil
 }
 
@@ -422,6 +450,8 @@ type EnvironmentCheck struct {
 	Name        string                 `json:"name"`
 	Flags       []EnvironmentCheckFlag `json:"flags"`
 	Description string                 `json:"description"`
+	Subchecks   []EnvironmentCheckID   `json:"subchecks"`
+	ParentCheck EnvironmentCheckID     `json:"parent_check"`
 }
 
 type EnvironmentCheckFlag struct {
@@ -431,8 +461,10 @@ type EnvironmentCheckFlag struct {
 }
 
 type EnvironmentCheckResult struct {
-	Success     bool               `json:"success"`
-	Output      string             `json:"output"`
+	Success bool   `json:"success"`
+	Output  string `json:"output"`
+	Name    string `json:"name"`
+
 	ParentCheck EnvironmentCheckID `json:"parent_check"`
 }
 
@@ -451,6 +483,7 @@ func (env *EnvironmentCheck) ID() (EnvironmentCheckID, error) {
 func (check EnvironmentCheck) Clone() *EnvironmentCheck {
 	cp := check
 	cp.Flags = cloneSlice(check.Flags)
+	cp.Subchecks = cloneSlice(check.Subchecks)
 	return &cp
 }
 
@@ -481,4 +514,19 @@ func (check *EnvironmentCheck) SetStringFlag(name, value string) (*EnvironmentCh
 		}
 	}
 	return nil, fmt.Errorf("no flag named %q", name)
+}
+
+func (check *EnvironmentCheck) WithSubcheck(subcheck *EnvironmentCheck) (*EnvironmentCheck, error) {
+	check = check.Clone()
+	var err error
+	subcheck.ParentCheck, err = check.ID()
+	if err != nil {
+		return nil, err
+	}
+	subcheckID, err := subcheck.ID()
+	if err != nil {
+		return nil, err
+	}
+	check.Subchecks = append(check.Subchecks, subcheckID)
+	return check, nil
 }

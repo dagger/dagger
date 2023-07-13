@@ -502,6 +502,15 @@ export type DirectoryWithNewFileOpts = {
  */
 export type DirectoryID = string & { __DirectoryID: never }
 
+export type EnvironmentCheckWithFlagOpts = {
+  description?: string
+}
+
+/**
+ * A unique environment check identifier.
+ */
+export type EnvironmentCheckID = string & { __EnvironmentCheckID: never }
+
 export type EnvironmentCommandWithFlagOpts = {
   description?: string
 }
@@ -611,6 +620,10 @@ export type ClientDirectoryOpts = {
 
 export type ClientEnvironmentOpts = {
   id?: EnvironmentID
+}
+
+export type ClientEnvironmentCheckOpts = {
+  id?: EnvironmentCheckID
 }
 
 export type ClientEnvironmentCommandOpts = {
@@ -2555,6 +2568,61 @@ export class Environment extends BaseClient {
   /**
    * TODO
    */
+  check(name: string): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "check",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  async checks(): Promise<EnvironmentCheck[]> {
+    type checks = {
+      description: string
+      id: EnvironmentCheckID
+      name: string
+    }
+
+    const response: Awaited<checks[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "checks",
+        },
+        {
+          operation: "description id name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCheck(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.id,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * TODO
+   */
   command(name: string): EnvironmentCommand {
     return new EnvironmentCommand({
       queryTree: [
@@ -2607,22 +2675,6 @@ export class Environment extends BaseClient {
           r.resultType
         )
     )
-  }
-
-  /**
-   * Container this environment executes in
-   */
-  container(): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "container",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
   }
 
   /**
@@ -2704,6 +2756,23 @@ export class Environment extends BaseClient {
   /**
    * TODO
    */
+  withCheck(id: EnvironmentCheck): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withCheck",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
   withCommand(id: EnvironmentCommand): Environment {
     return new Environment({
       queryTree: [
@@ -2742,6 +2811,443 @@ export class Environment extends BaseClient {
    */
   with(arg: (param: Environment) => Environment) {
     return arg(this)
+  }
+}
+
+/**
+ * TODO
+ */
+export class EnvironmentCheck extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _id?: EnvironmentCheckID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _id?: EnvironmentCheckID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._id = _id
+    this._name = _name
+  }
+
+  /**
+   * Documentation for what this check checks.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Flags accepted by this check.
+   */
+  async flags(): Promise<EnvironmentCheckFlag[]> {
+    type flags = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<flags[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "flags",
+        },
+        {
+          operation: "description name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCheckFlag(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * A unique identifier for this check.
+   */
+  async id(): Promise<EnvironmentCheckID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentCheckID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the check.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async result(): Promise<EnvironmentCheckResult[]> {
+    type result = {
+      name: string
+      output: string
+      success: boolean
+    }
+
+    const response: Awaited<result[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "result",
+        },
+        {
+          operation: "name output success",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCheckResult(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.output,
+          r.success
+        )
+    )
+  }
+
+  /**
+   * TODO
+   */
+  setStringFlag(name: string, value: string): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setStringFlag",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  async subchecks(): Promise<EnvironmentCheck[]> {
+    type subchecks = {
+      description: string
+      id: EnvironmentCheckID
+      name: string
+    }
+
+    const response: Awaited<subchecks[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "subchecks",
+        },
+        {
+          operation: "description id name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentCheck(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.id,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * TODO
+   */
+  withDescription(description: string): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withFlag(
+    name: string,
+    opts?: EnvironmentCheckWithFlagOpts
+  ): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFlag",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withName(name: string): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withSubcheck(id: EnvironmentCheck): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withSubcheck",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentCheck.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentCheck) => EnvironmentCheck) {
+    return arg(this)
+  }
+}
+
+/**
+ * A flag accepted by a environment check.
+ */
+export class EnvironmentCheckFlag extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
+  /**
+   * Documentation for what this flag sets.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the flag.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
+ * TODO
+ */
+export class EnvironmentCheckResult extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _output?: string = undefined
+  private readonly _success?: boolean = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _output?: string,
+    _success?: boolean
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._output = _output
+    this._success = _success
+  }
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+  async output(): Promise<string> {
+    if (this._output) {
+      return this._output
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "output",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+  async success(): Promise<boolean> {
+    if (this._success) {
+      return this._success
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "success",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 }
 
@@ -2853,8 +3359,8 @@ export class EnvironmentCommand extends BaseClient {
   /**
    * TODO
    */
-  invoke(): InvokeResult {
-    return new InvokeResult({
+  invoke(): InvokeCommandResult {
+    return new InvokeCommandResult({
       queryTree: [
         ...this._queryTree,
         {
@@ -3473,7 +3979,7 @@ export class Host extends BaseClient {
 /**
  * TODO
  */
-export class InvokeResult extends BaseClient {
+export class InvokeCommandResult extends BaseClient {
   private readonly _string?: string = undefined
 
   /**
@@ -3813,6 +4319,23 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "environment",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a environment check from ID.
+   */
+  environmentCheck(opts?: ClientEnvironmentCheckOpts): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentCheck",
           args: { ...opts },
         },
       ],
