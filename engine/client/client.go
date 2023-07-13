@@ -15,6 +15,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/adrg/xdg"
+	"github.com/cenkalti/backoff/v4"
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/dagger/dagger/auth"
@@ -274,26 +275,16 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		},
 	}
 
-	maxAttempts := 12
-	timePerAttempt := 5 * time.Second
-	for i := 0; i < maxAttempts; i++ {
-		waitCtx, waitCancel := context.WithTimeout(ctx, timePerAttempt)
-		defer waitCancel()
-		err := s.Do(waitCtx, `{defaultPlatform}`, "", nil, nil)
-		if err == nil {
-			return s, nil
-		}
-		if i == maxAttempts-1 {
-			return nil, fmt.Errorf("connect: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("connect: %w", ctx.Err())
-		case <-waitCtx.Done():
-		}
+	bo := backoff.NewExponentialBackOff()
+	bo.InitialInterval = 100 * time.Millisecond
+	err = backoff.Retry(func() error {
+		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+	}, backoff.WithContext(bo, ctx))
+	if err != nil {
+		return nil, fmt.Errorf("connect: %w", err)
 	}
-	// TODO: cleanup
-	panic("unreachable")
+
+	return s, nil
 }
 
 func (s *Session) FrontendOpts() server.FrontendOpts {
