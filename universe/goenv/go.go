@@ -1,6 +1,7 @@
 package goenv
 
 import (
+	"fmt"
 	"strings"
 
 	"dagger.io/dagger"
@@ -206,4 +207,35 @@ func Generate(
 		WithExec([]string{"go", "generate", "./..."}).
 		WithoutFocus().
 		Directory("/src")
+}
+
+type GolangCILintOpts struct {
+	Verbose bool
+	Timeout int
+}
+
+func GolangCILint(
+	ctx dagger.Context,
+	base *dagger.Container,
+	src *dagger.Directory,
+	opts_ ...GolangCILintOpts,
+) *dagger.Container {
+	var opts GolangCILintOpts
+	if len(opts_) > 0 {
+		opts = opts_[0]
+	}
+	cmd := []string{"golangci-lint", "run"}
+	if opts.Verbose {
+		cmd = append(cmd, "--verbose")
+	}
+	if opts.Timeout > 0 {
+		cmd = append(cmd, fmt.Sprintf("--timeout=%ds", opts.Timeout))
+	}
+	return base.
+		With(GlobalCache(ctx)).
+		WithMountedDirectory("/src", src).
+		WithWorkdir("/src").
+		WithFocus().
+		WithExec(cmd).
+		WithoutFocus()
 }
