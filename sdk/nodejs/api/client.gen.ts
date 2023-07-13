@@ -689,7 +689,6 @@ export type __TypeFieldsOpts = {
 /**
  * A directory whose contents persist across runs.
  */
-
 export class CacheVolume extends BaseClient {
   async id(): Promise<CacheID> {
     const response: Awaited<CacheID> = await computeQuery(
@@ -704,37 +703,11 @@ export class CacheVolume extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: CacheVolume) => CacheVolume) {
-    return arg(this)
-  }
 }
 
 /**
  * An OCI-compatible container, also known as a docker container.
  */
-
 export class Container extends BaseClient {
   /**
    * Initializes this container from a Dockerfile build.
@@ -2022,25 +1995,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Call the provided function with current Container.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: Container) => Container) {
     return arg(this)
@@ -2050,7 +2007,6 @@ export class Container extends BaseClient {
 /**
  * A directory.
  */
-
 export class Directory extends BaseClient {
   /**
    * Gets the difference between this directory and an another directory.
@@ -2382,25 +2338,9 @@ export class Directory extends BaseClient {
   }
 
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Call the provided function with current Directory.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: Directory) => Directory) {
     return arg(this)
@@ -2410,7 +2350,6 @@ export class Directory extends BaseClient {
 /**
  * A simple key value object that represents an environment variable.
  */
-
 export class EnvVariable extends BaseClient {
   /**
    * The environment variable name.
@@ -2445,37 +2384,11 @@ export class EnvVariable extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: EnvVariable) => EnvVariable) {
-    return arg(this)
-  }
 }
 
 /**
  * A file.
  */
-
 export class File extends BaseClient {
   /**
    * Retrieves the contents of the file.
@@ -2604,25 +2517,9 @@ export class File extends BaseClient {
   }
 
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Call the provided function with current File.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: File) => File) {
     return arg(this)
@@ -2632,7 +2529,6 @@ export class File extends BaseClient {
 /**
  * A git ref (tag, branch or commit).
  */
-
 export class GitRef extends BaseClient {
   /**
    * The filesystem tree at this ref.
@@ -2650,37 +2546,11 @@ export class GitRef extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: GitRef) => GitRef) {
-    return arg(this)
-  }
 }
 
 /**
  * A git repository.
  */
-
 export class GitRepository extends BaseClient {
   /**
    * Returns details on one branch.
@@ -2735,37 +2605,11 @@ export class GitRepository extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: GitRepository) => GitRepository) {
-    return arg(this)
-  }
 }
 
 /**
  * Information about the host execution environment.
  */
-
 export class Host extends BaseClient {
   /**
    * Accesses a directory on the host.
@@ -2860,37 +2704,11 @@ export class Host extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Host) => Host) {
-    return arg(this)
-  }
 }
 
 /**
  * An environment variable on the host environment.
  */
-
 export class HostVariable extends BaseClient {
   /**
    * A secret referencing the value of this variable.
@@ -2925,37 +2743,11 @@ export class HostVariable extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: HostVariable) => HostVariable) {
-    return arg(this)
-  }
 }
 
 /**
  * A simple key value object that represents a label.
  */
-
 export class Label extends BaseClient {
   /**
    * The label name.
@@ -2990,37 +2782,11 @@ export class Label extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Label) => Label) {
-    return arg(this)
-  }
 }
 
 /**
  * A port exposed by a container.
  */
-
 export class Port extends BaseClient {
   /**
    * The port description.
@@ -3072,37 +2838,11 @@ export class Port extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Port) => Port) {
-    return arg(this)
-  }
 }
 
 /**
  * A collection of Dagger resources that can be queried and invoked.
  */
-
 export class Project extends BaseClient {
   /**
    * Commands provided by this project
@@ -3173,25 +2913,9 @@ export class Project extends BaseClient {
   }
 
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Call the provided function with current Project.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: Project) => Project) {
     return arg(this)
@@ -3201,7 +2925,6 @@ export class Project extends BaseClient {
 /**
  * A command defined in a project that can be invoked from the CLI.
  */
-
 export class ProjectCommand extends BaseClient {
   /**
    * Documentation for what this command does.
@@ -3304,37 +3027,11 @@ export class ProjectCommand extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: ProjectCommand) => ProjectCommand) {
-    return arg(this)
-  }
 }
 
 /**
  * A flag accepted by a project command.
  */
-
 export class ProjectCommandFlag extends BaseClient {
   /**
    * Documentation for what this flag sets.
@@ -3368,31 +3065,6 @@ export class ProjectCommandFlag extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: ProjectCommandFlag) => ProjectCommandFlag) {
-    return arg(this)
   }
 }
 
@@ -3651,12 +3323,20 @@ export default class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+
+  /**
+   * Call the provided function with current Client.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: Client) => Client) {
+    return arg(this)
+  }
 }
 
 /**
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
-
 export class Secret extends BaseClient {
   /**
    * The identifier for this secret.
@@ -3691,31 +3371,6 @@ export class Secret extends BaseClient {
 
     return response
   }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Secret) => Secret) {
-    return arg(this)
-  }
 }
 
 export class Socket extends BaseClient {
@@ -3734,30 +3389,5 @@ export class Socket extends BaseClient {
     )
 
     return response
-  }
-
-  /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
-   *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
-   */
-  with(arg: (param: Socket) => Socket) {
-    return arg(this)
   }
 }

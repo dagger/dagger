@@ -35,6 +35,7 @@ var (
 		"Solve":               solve,
 		"Subtract":            subtract,
 		"ConvertID":           commonFunc.ConvertID,
+		"IsSelfChainable":     commonFunc.IsSelfChainable,
 	}
 )
 
@@ -100,6 +101,9 @@ func isEnum(t *introspection.Type) bool {
 
 // formatName formats a GraphQL name (e.g. object, field, arg) into a TS equivalent
 func formatName(s string) string {
+	if s == generator.QueryStructName {
+		return generator.QueryStructClientName
+	}
 	return s
 }
 

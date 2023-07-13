@@ -176,37 +176,24 @@ async def test_connection_closed_error():
 
 
 async def test_container_with():
-    def spam(c: dagger.Container) -> dagger.Container:
-        return c.with_env_variable("SPAM", "eggs")
+    def env(ctr: dagger.Container):
+        return ctr.with_env_variable("FOO", "bar")
 
-    def envs_factory(m: dict[str, str]):
-        def envs(c: dagger.Container) -> dagger.Container:
-            for name, value in m.items():
-                c = c.with_env_variable(name, value)
-            return c
+    def secret(token: str, client: dagger.Client):
+        def _secret(ctr: dagger.Container):
+            return ctr.with_secret_variable("TOKEN", client.set_secret("TOKEN", token))
 
-        return envs
+        return _secret
 
     async with dagger.Connection() as client:
-        out = await (
+        await (
             client.container()
             .from_("alpine:3.16.2")
-            .with_(spam)
-            .with_(
-                envs_factory(
-                    {
-                        "FOO": "foo",
-                        "BAR": "bar",
-                    }
-                )
-            )
-            .with_exec(["printenv"])
-            .stdout()
+            .with_(env)
+            .with_(secret("baz", client))
+            .with_exec(["sh", "-c", "test $FOO = bar && test $TOKEN = baz"])
+            .sync()
         )
-
-    assert "SPAM=eggs" in out
-    assert "FOO=foo" in out
-    assert "BAR=bar" in out
 
 
 async def test_container_sync():

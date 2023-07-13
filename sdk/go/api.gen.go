@@ -118,6 +118,9 @@ type Container struct {
 }
 type WithContainerFunc func(r *Container) *Container
 
+// With calls the provided function with current Container.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
 func (r *Container) With(f WithContainerFunc) *Container {
 	return f(r)
 }
@@ -1417,6 +1420,9 @@ type Directory struct {
 }
 type WithDirectoryFunc func(r *Directory) *Directory
 
+// With calls the provided function with current Directory.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
 func (r *Directory) With(f WithDirectoryFunc) *Directory {
 	return f(r)
 }
@@ -1793,6 +1799,14 @@ type File struct {
 	id       *FileID
 	size     *int
 	sync     *FileID
+}
+type WithFileFunc func(r *File) *File
+
+// With calls the provided function with current File.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *File) With(f WithFileFunc) *File {
+	return f(r)
 }
 
 // Retrieves the contents of the file.
@@ -2205,6 +2219,14 @@ type Project struct {
 	id   *ProjectID
 	name *string
 }
+type WithProjectFunc func(r *Project) *Project
+
+// With calls the provided function with current Project.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Project) With(f WithProjectFunc) *Project {
+	return f(r)
+}
 
 // Commands provided by this project
 func (r *Project) Commands(ctx context.Context) ([]ProjectCommand, error) {
@@ -2480,6 +2502,15 @@ func (r *ProjectCommandFlag) Name(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+type WithClientFunc func(r *Client) *Client
+
+// With calls the provided function with current Client.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *Client) With(f WithClientFunc) *Client {
+	return f(r)
+}
+
 // Constructs a cache volume for a given cache key.
 func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.q.Select("cacheVolume")
@@ -2491,7 +2522,7 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
-// ContainerOpts contains options for Query.Container
+// ContainerOpts contains options for Client.Container
 type ContainerOpts struct {
 	ID ContainerID
 
@@ -2532,7 +2563,7 @@ func (r *Client) DefaultPlatform(ctx context.Context) (Platform, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
-// DirectoryOpts contains options for Query.Directory
+// DirectoryOpts contains options for Client.Directory
 type DirectoryOpts struct {
 	ID DirectoryID
 }
@@ -2564,7 +2595,7 @@ func (r *Client) File(id FileID) *File {
 	}
 }
 
-// GitOpts contains options for Query.Git
+// GitOpts contains options for Client.Git
 type GitOpts struct {
 	// Set to true to keep .git directory.
 	KeepGitDir bool
@@ -2603,7 +2634,7 @@ func (r *Client) Host() *Host {
 	}
 }
 
-// HTTPOpts contains options for Query.HTTP
+// HTTPOpts contains options for Client.HTTP
 type HTTPOpts struct {
 	// A service which must be started before the URL is fetched.
 	ExperimentalServiceHost *Container
@@ -2626,7 +2657,7 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
-// PipelineOpts contains options for Query.Pipeline
+// PipelineOpts contains options for Client.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
 	Description string
@@ -2655,7 +2686,7 @@ func (r *Client) Pipeline(name string, opts ...PipelineOpts) *Client {
 	}
 }
 
-// ProjectOpts contains options for Query.Project
+// ProjectOpts contains options for Client.Project
 type ProjectOpts struct {
 	ID ProjectID
 }
@@ -2676,7 +2707,7 @@ func (r *Client) Project(opts ...ProjectOpts) *Project {
 	}
 }
 
-// ProjectCommandOpts contains options for Query.ProjectCommand
+// ProjectCommandOpts contains options for Client.ProjectCommand
 type ProjectCommandOpts struct {
 	ID ProjectCommandID
 }
@@ -2721,7 +2752,7 @@ func (r *Client) SetSecret(name string, plaintext string) *Secret {
 	}
 }
 
-// SocketOpts contains options for Query.Socket
+// SocketOpts contains options for Client.Socket
 type SocketOpts struct {
 	ID SocketID
 }

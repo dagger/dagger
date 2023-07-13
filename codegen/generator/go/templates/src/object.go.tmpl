@@ -1,4 +1,4 @@
-{{- if ne (.Name | FormatName) "Query" }}
+{{- if ne .Name "Query" }}
 {{ .Description | Comment }}
 type {{ .Name | FormatName }} struct {
 	q *querybuilder.Selection
@@ -13,9 +13,12 @@ type {{ .Name | FormatName }} struct {
 {{- end }}
 
 
-{{- if or (eq (.Name | FormatName) "Directory") (eq (.Name | FormatName) "Container") }}
+{{- if . | IsSelfChainable }}
 type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
 
+// With calls the provided function with current {{ .Name | FormatName }}.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
 func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{ $.Name | FormatName }} {
 	return f(r)
 }

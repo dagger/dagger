@@ -1,7 +1,5 @@
 
-
 export class Container extends BaseClient {
-
   exec(opts?: ContainerExecOpts): Container {
     return new Container({
       queryTree: [
@@ -17,25 +15,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Use a function to add to the current object.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This allows reusing functionality without breaking the pipeline chain.
    */
   with(arg: (param: Container) => Container) {
     return arg(this)

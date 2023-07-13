@@ -16,14 +16,7 @@
 {{""}}
 
 			{{- /* Write object name. */ -}}
-			{{- $name := .Name | FormatName }}
-			{{- if eq $name "Query" }}
-export default class Client extends BaseClient {
-			{{- else }}
-export class {{ .Name | FormatName }} extends BaseClient {
-{{""}}
-			{{- end }}
-
+export {{- if eq .Name "Query" }} default{{ end }} class {{ .Name | FormatName }} extends BaseClient {
 			{{- /* Write methods. */ -}}
 			{{- "" }}{{ range $field := .Fields }}
 				{{- if Solve . }}
@@ -33,28 +26,12 @@ export class {{ .Name | FormatName }} extends BaseClient {
 				{{- end }}
 			{{- end }}
 
-{{- if ne $name "Query" }}
+{{- if . | IsSelfChainable }}
 {{""}}
   /**
-   * Chain objects together
-   * @example
-   * ```ts
-   *	function AddAFewMounts(c) {
-   *			return c
-   *			.withMountedDirectory("/foo", new Client().host().directory("/Users/slumbering/forks/dagger"))
-   *			.withMountedDirectory("/bar", new Client().host().directory("/Users/slumbering/forks/dagger/sdk/nodejs"))
-   *	}
+   * Call the provided function with current {{ .Name | FormatName }}.
    *
-   * connect(async (client) => {
-   *		const tree = await client
-   *			.container()
-   *			.from("alpine")
-   *			.withWorkdir("/foo")
-   *			.with(AddAFewMounts)
-   *			.withExec(["ls", "-lh"])
-   *			.stdout()
-   * })
-   *```
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: {{ .Name | FormatName }}) => {{ .Name | FormatName }}) {
     return arg(this)

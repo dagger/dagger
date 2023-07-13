@@ -46,6 +46,20 @@ func NewCommonFunctions(formatTypeFuncs FormatTypeFuncs) *CommonFunctions {
 	return &CommonFunctions{formatTypeFuncs: formatTypeFuncs}
 }
 
+// IsSelfChainable returns true if an object type has any fields that return that same type.
+func (c *CommonFunctions) IsSelfChainable(t introspection.Type) bool {
+	for _, f := range t.Fields {
+		// Only consider fields that return a non-null object.
+		if !f.TypeRef.IsObject() || f.TypeRef.Kind != introspection.TypeKindNonNull {
+			continue
+		}
+		if f.TypeRef.OfType.Name == t.Name {
+			return true
+		}
+	}
+	return false
+}
+
 // FormatReturnType formats a GraphQL type into the SDK language output,
 // unless it's an ID that will be converted which needs to be formatted
 // as an input (for chaining).
