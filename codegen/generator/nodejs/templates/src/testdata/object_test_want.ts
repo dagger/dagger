@@ -15,9 +15,9 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Use a function to add to the current object.
+   * Call the provided function with current Container.
    *
-   * This allows reusing functionality without breaking the pipeline chain.
+   * This is useful for reusability and readability by not breaking the calling chain.
    */
   with(arg: (param: Container) => Container) {
     return arg(this)
