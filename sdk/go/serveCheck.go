@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"reflect"
 	"runtime"
+	"strings"
 
 	"github.com/iancoleman/strcase"
 )
@@ -69,7 +70,7 @@ func (r *Environment) WithCheck_(in any) *Environment {
 			}
 
 			fn.name = decl.Name.Name
-			fn.doc = decl.Doc.Text()
+			fn.doc = strings.TrimSpace(decl.Doc.Text())
 
 			fnArgs := fn.args
 			if decl.Recv != nil {
