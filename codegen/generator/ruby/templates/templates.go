@@ -11,7 +11,7 @@ var srcs embed.FS
 
 // New creates a new template with all the template dependencies set up.
 func New() *template.Template {
-	var fileNames []string
+	fileNames := make([]string, 0, 10)
 	for _, tmpl := range []string{"api", "header", "objects", "object", "method", "method_solve", "call_args", "method_comment", "types", "args"} {
 		fileNames = append(fileNames, fmt.Sprintf("src/%s.rb.gtpl", tmpl))
 	}
