@@ -207,6 +207,8 @@ func TestProjectCommandHierarchy(t *testing.T) {
 }
 
 func TestProjectHostExport(t *testing.T) {
+	t.Skip("disabled by https://github.com/dagger/dagger/pull/5468")
+
 	t.Parallel()
 
 	prefix := identity.NewID()
