@@ -37,10 +37,10 @@ dagger is /usr/local/bin/dagger
 If you do not have Homebrew installed, or you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | VERSION=0.3.6 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.6.2 sh
 
 ./bin/dagger version
-dagger 0.3.6 (GIT_SHA) darwin/arm64
+dagger 0.6.2 (GIT_SHA) darwin/arm64
 ```
 
 </TabItem>
@@ -66,10 +66,10 @@ If you want to install the Dagger Engine to a different location, `cd` where you
 If you want to install a specific version of `dagger`, you can run:
 
 ```shell
-curl -L https://dl.dagger.io/dagger/install.sh | VERSION=0.3.6 sh
+curl -L https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=0.6.2 sh
 
 ./bin/dagger version
-dagger 0.3.6 (GIT_SHA) linux/amd64
+dagger 0.6.2 (GIT_SHA) linux/amd64
 ```
 
 </TabItem>
@@ -96,7 +96,7 @@ If you want to install a specific version of `dagger`, pass in a version number 
 
 ```Powershell
 $script = Invoke-WebRequest -UseBasicParsing -Uri https://dl.dagger.io/dagger/install.ps1
-$params = "-DaggerVersion 0.3.6"
+$params = "-DaggerVersion 0.6.2"
 "$script $params" | Invoke-Expression
 ```
 
