@@ -72,7 +72,16 @@ func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string,
 
 		// sync this dir from this session specifically, even if this ends up passed
 		// to a different session (e.g. a project container)
-		llb.SessionID(gw.BuildOpts().SessionID),
+		//
+		// TODO(vito): disabled this and brought back LocalUniqueID as this is
+		// causing downstream container hostnames to change every session and
+		// busting all the caches
+		// llb.SessionID(gw.BuildOpts().SessionID),
+
+		// make the LLB stable so we can test invariants like:
+		//
+		//   workdir == directory(".")
+		llb.LocalUniqueID(localID),
 	}
 
 	if len(filter.Exclude) > 0 {
