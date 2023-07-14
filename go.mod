@@ -26,7 +26,7 @@ require (
 	github.com/docker/distribution v2.8.2+incompatible
 	github.com/google/go-containerregistry v0.14.0
 	github.com/google/uuid v1.3.0
-	github.com/iancoleman/strcase v0.2.0
+	github.com/iancoleman/strcase v0.3.0
 	// https://github.com/moby/buildkit/commit/8a28fe6bc051989cc1a5c2312a73d8da17d8a435
 	github.com/moby/buildkit v0.11.0-rc3.0.20230608232644-8a28fe6bc051
 	github.com/opencontainers/go-digest v1.0.0
