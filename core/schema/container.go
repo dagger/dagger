@@ -11,14 +11,16 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type containerSchema struct {
 	*MergedSchemas
 
-	host     *core.Host
-	ociStore content.Store
+	host         *core.Host
+	ociStore     content.Store
+	leaseManager *leaseutil.Manager
 }
 
 var _ ExecutableSchema = &containerSchema{}
@@ -662,7 +664,7 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx *core.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	return parent.Import(ctx, s.bk, s.host, args.Source, args.Tag, s.ociStore)
+	return parent.Import(ctx, s.bk, s.host, args.Source, args.Tag, s.ociStore, s.leaseManager)
 }
 
 type containerWithRegistryAuthArgs struct {

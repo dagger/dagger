@@ -101,8 +101,9 @@ func (s *Server) Run(ctx context.Context) (*frontend.Result, error) {
 				BuildkitClient: s.bkClient,
 				Platform:       s.worker.Platforms(true)[0],
 				ProgSockPath:   progSockPath,
+				OCIStore:       s.worker.ContentStore(),
+				LeaseManager:   s.worker.LeaseManager(),
 				/* TODO:
-				OCIStore content.Store
 				Auth     *auth.RegistryAuthProvider
 				Secrets  *session.SecretStore
 				*/

@@ -13,6 +13,7 @@ import (
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
+	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -23,6 +24,7 @@ type InitializeArgs struct {
 	Platform       specs.Platform
 	ProgSockPath   string
 	OCIStore       content.Store
+	LeaseManager   *leaseutil.Manager
 	Auth           *auth.RegistryAuthProvider
 	Secrets        *core.SecretStore
 }
@@ -42,7 +44,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		&directorySchema{merged, host},
 		&fileSchema{merged, host},
 		&gitSchema{merged},
-		&containerSchema{merged, host, params.OCIStore},
+		&containerSchema{merged, host, params.OCIStore, params.LeaseManager},
 		&cacheSchema{merged},
 		&secretSchema{merged},
 		&hostSchema{merged, host},
