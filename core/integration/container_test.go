@@ -3946,7 +3946,7 @@ func TestContainerWithPlainSecretVariable(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	ctr := c.Container().From("alpine").
+	ctr := c.Container().From("alpine:3.16.2").
 		WithPlainSecretVariable("SECRET_ENV", "secret-value")
 
 	// Assert env value cannot be read from API
@@ -3954,7 +3954,6 @@ func TestContainerWithPlainSecretVariable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", v)
 
-	out, err := ctr.WithExec([]string{"sh", "-c", "echo \"secret=$SECRET_ENV\""}).Stdout(ctx)
+	_, err := ctr.WithExec([]string{"sh", "-c", "test $SECRET_ENV = secret-value"}).Sync(ctx)
 	require.NoError(t, err)
-	require.Equal(t, out, "secret=***\n")
 }

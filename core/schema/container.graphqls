@@ -223,8 +223,9 @@ type Container {
   ): Container!
 
   """
-  Retrieves this container plus an env variable containing a given secret
-  inserted as plain text but converted into secret.
+  Retrieves this container plus an env variable containing a secret with the given value.
+  
+  This is a convenience. The secret is automatically created from the plaintext, using the same name as the environment variable.
   """
   withPlainSecretVariable(
     """
@@ -233,10 +234,10 @@ type Container {
     name: String!
 
     """
-    The value of the secret in plain test.
+    The value of the secret in plaintext.
     """
-    secret: String!
-  ): Container
+    value: String!
+  ): Container!
 
   """
   Retrieves this container minus the given environment variable.
