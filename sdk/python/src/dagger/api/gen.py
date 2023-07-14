@@ -1346,21 +1346,23 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_plain_secret_variable(self, name: str, secret: str) -> "Container":
-        """Retrieves this container plus an env variable containing a given
-        secret
-        inserted as plain text but converted into secret.
+    def with_plain_secret_variable(self, name: str, value: str) -> "Container":
+        """Retrieves this container plus an env variable containing a secret with
+        the given value.
+
+        This is a convenience. The secret is automatically created from the
+        plaintext, using the same name as the environment variable.
 
         Parameters
         ----------
         name:
             The name of the secret variable (e.g., "API_SECRET").
-        secret:
-            The value of the secret in plain test.
+        value:
+            The value of the secret in plaintext.
         """
         _args = [
             Arg("name", name),
-            Arg("secret", secret),
+            Arg("value", value),
         ]
         _ctx = self._select("withPlainSecretVariable", _args)
         return Container(_ctx)

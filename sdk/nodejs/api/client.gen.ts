@@ -1691,18 +1691,19 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container plus an env variable containing a given secret
-   * inserted as plain text but converted into secret.
+   * Retrieves this container plus an env variable containing a secret with the given value.
+   *
+   * This is a convenience. The secret is automatically created from the plaintext, using the same name as the environment variable.
    * @param name The name of the secret variable (e.g., "API_SECRET").
-   * @param secret The value of the secret in plain test.
+   * @param value The value of the secret in plaintext.
    */
-  withPlainSecretVariable(name: string, secret: string): Container {
+  withPlainSecretVariable(name: string, value: string): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withPlainSecretVariable",
-          args: { name, secret },
+          args: { name, value },
         },
       ],
       host: this.clientHost,

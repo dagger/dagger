@@ -1196,12 +1196,13 @@ func (r *Container) WithNewFile(path string, opts ...ContainerWithNewFileOpts) *
 	}
 }
 
-// Retrieves this container plus an env variable containing a given secret
-// inserted as plain text but converted into secret.
-func (r *Container) WithPlainSecretVariable(name string, secret string) *Container {
+// Retrieves this container plus an env variable containing a secret with the given value.
+//
+// This is a convenience. The secret is automatically created from the plaintext, using the same name as the environment variable.
+func (r *Container) WithPlainSecretVariable(name string, value string) *Container {
 	q := r.q.Select("withPlainSecretVariable")
 	q = q.Arg("name", name)
-	q = q.Arg("secret", secret)
+	q = q.Arg("value", value)
 
 	return &Container{
 		q: q,

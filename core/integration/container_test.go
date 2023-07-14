@@ -3954,6 +3954,6 @@ func TestContainerWithPlainSecretVariable(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "", v)
 
-	_, err := ctr.WithExec([]string{"sh", "-c", "test $SECRET_ENV = secret-value"}).Sync(ctx)
+	_, err = ctr.WithExec([]string{"sh", "-c", "test $SECRET_ENV = secret-value"}).Sync(ctx)
 	require.NoError(t, err)
 }

@@ -581,12 +581,12 @@ func (s *containerSchema) withSecretVariable(ctx *router.Context, parent *core.C
 }
 
 type containerWithPlainSecretVariableArgs struct {
-	Name   string
-	Secret string
+	Name  string
+	Value string
 }
 
 func (s *containerSchema) withPlainSecretVariable(ctx *router.Context, parent *core.Container, args containerWithPlainSecretVariableArgs) (*core.Container, error) {
-	secretID, err := s.secrets.AddSecret(ctx, args.Name, args.Secret)
+	secretID, err := s.secrets.AddSecret(ctx, args.Name, args.Value)
 	if err != nil {
 		return nil, err
 	}
