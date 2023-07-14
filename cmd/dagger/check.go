@@ -23,7 +23,7 @@ var checkCmd = &cobra.Command{
 	DisableFlagParsing: true,
 	Aliases:            []string{"test"},
 	Long:               `Run your environment's checks.`,
-	RunE:               wrapper(RunCheck),
+	RunE:               loadEnvCmdWrapper(RunCheck),
 }
 
 func init() {
@@ -37,13 +37,13 @@ func init() {
 			Use:          "list",
 			Long:         `List your environment's checks.`,
 			SilenceUsage: true,
-			RunE:         wrapper(ListChecks),
+			RunE:         loadEnvCmdWrapper(ListChecks),
 		},
 		&cobra.Command{
 			Use:                "run",
 			Long:               `Run your environment's checks.`,
 			DisableFlagParsing: true,
-			RunE:               wrapper(RunCheck),
+			RunE:               loadEnvCmdWrapper(RunCheck),
 		},
 	)
 
@@ -71,8 +71,7 @@ func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error)
 	return loadedEnv, nil
 }
 
-// TODO: better name
-func wrapper(
+func loadEnvCmdWrapper(
 	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
 ) func(*cobra.Command, []string) error {
 	return func(cmd *cobra.Command, args []string) error {

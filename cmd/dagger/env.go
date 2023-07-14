@@ -35,6 +35,8 @@ func init() {
 	environmentCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	doCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	checkCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	listenCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	queryCmd.PersistentFlags().AddFlagSet(environmentFlags)
 
 	environmentInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK to use for the environment")
 	environmentInitCmd.MarkFlagRequired("sdk")

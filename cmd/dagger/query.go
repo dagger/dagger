@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -91,7 +92,25 @@ func Query(cmd *cobra.Command, args []string) {
 func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
 	res := make(map[string]interface{})
 	err := withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
-		err := engineClient.Do(ctx, query, op, vars, &res)
+		c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
+		if err != nil {
+			return fmt.Errorf("connect to dagger: %w", err)
+		}
+
+		if environmentURI != "" && environmentURI != environmentURIDefault {
+			fmt.Fprintf(os.Stderr, "Loading environment from %s\n", environmentURI)
+			env, err := loadEnv(ctx, c)
+			if err != nil {
+				return err
+			}
+			// TODO: forces eval, ugly
+			_, err = env.ID(ctx)
+			if err != nil {
+				return err
+			}
+		}
+
+		err = engineClient.Do(ctx, query, op, vars, &res)
 		return err
 	})
 	if err != nil {
