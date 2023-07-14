@@ -442,7 +442,8 @@ func mergeStates(input mergeStateInput) llb.State {
 		copyInfo.ChownOpt == nil &&
 		len(copyInfo.ExcludePatterns) == 0 &&
 		len(copyInfo.IncludePatterns) == 0 &&
-		input.DestDir == input.SrcDir &&
+		input.DestDir == "/" &&
+		input.SrcDir == "/" &&
 		// TODO:(sipsma) we could support direct merge-op with individual files if we can verify
 		// there are no other files in the dir, but doing so by just calling ReadDir would result
 		// in unlazying the inputs, which defeats some of the performance benefits of merge-op.

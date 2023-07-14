@@ -890,6 +890,28 @@ func TestDirectoryDirectMerge(t *testing.T) {
 	}
 }
 
+func TestDirectoryFallbackMerge(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	c, err := dagger.Connect(ctx)
+	require.NoError(t, err)
+	defer c.Close()
+
+	t.Run("dest path same as src selector", func(t *testing.T) {
+		// corner case where we need to use the fallback rather than direct merge
+		srcDir := c.Directory().
+			WithNewFile("/toplevel", "").
+			WithNewFile("/dir/lowerlevel", "")
+		srcSubdir := srcDir.Directory("/dir")
+
+		mergedDir := c.Directory().WithDirectory("/dir", srcSubdir)
+		_, err = mergedDir.File("/dir/lowerlevel").Contents(ctx)
+		require.NoError(t, err)
+		_, err = mergedDir.File("/toplevel").Contents(ctx)
+		require.Error(t, err)
+	})
+}
+
 func TestDirectorySync(t *testing.T) {
 	t.Parallel()
 
