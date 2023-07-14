@@ -9,6 +9,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{134BD5AA
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "IntegrationTests", "Tests\IntegrationTests\IntegrationTests.csproj", "{A0C7B3A6-61C0-441C-8BD1-66517F08C14D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DaggerSDKCodeGen", "DaggerSDKCodeGen\DaggerSDKCodeGen.csproj", "{E05F4484-2F33-472E-B9D3-1D8AC5C4E414}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -23,6 +25,10 @@ Global
 		{A0C7B3A6-61C0-441C-8BD1-66517F08C14D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A0C7B3A6-61C0-441C-8BD1-66517F08C14D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A0C7B3A6-61C0-441C-8BD1-66517F08C14D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E05F4484-2F33-472E-B9D3-1D8AC5C4E414}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E05F4484-2F33-472E-B9D3-1D8AC5C4E414}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E05F4484-2F33-472E-B9D3-1D8AC5C4E414}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E05F4484-2F33-472E-B9D3-1D8AC5C4E414}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
