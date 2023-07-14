@@ -8,7 +8,7 @@ puts client
   .container
   .from("alpine")
   .with_exec("apk", "add", "curl")
-  .with_exec("which", "curl")
+  .with_exec("curl", "--version")
   .stdout
 
 sources = client.host.directory("./demo", exclude: ["node_modules/", "ci/"])

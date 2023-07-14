@@ -1,3 +1,8 @@
+PATH
+  remote: .
+  specs:
+    dagger (0.0.1)
+
 GEM
   remote: https://rubygems.org/
   specs:
@@ -27,8 +32,10 @@ GEM
 
 PLATFORMS
   arm64-darwin-22
+  x86_64-darwin-21
 
 DEPENDENCIES
+  dagger!
   graphlient
 
 BUNDLED WITH
