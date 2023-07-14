@@ -14,7 +14,7 @@ backoff==2.2.1
     # via gql
 beartype==0.14.1
     # via -r -
-black==23.3.0
+black==23.7.0
     # via -r -
 cattrs==23.1.2
     # via -r -
