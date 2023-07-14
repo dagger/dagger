@@ -11,6 +11,7 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
@@ -19,6 +20,7 @@ import (
 	"github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
+	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/worker"
 	"google.golang.org/grpc"
@@ -81,6 +83,8 @@ type Manager struct {
 	baseSession      *session.Session
 }
 
+const OCIStoreName = "dagger-oci"
+
 func NewManager(ctx context.Context, w worker.Worker, bkSessionManager *session.Manager) (*Manager, error) {
 	sm := &Manager{
 		bkSessionManager: bkSessionManager,
@@ -94,6 +98,10 @@ func NewManager(ctx context.Context, w worker.Worker, bkSessionManager *session.
 	sm.baseSession = baseSession
 	sm.baseSession.Allow(&fileSendServerProxy{sm})
 	sm.baseSession.Allow(&fileSyncServerProxy{sm})
+	sm.baseSession.Allow(sessioncontent.NewAttachable(map[string]content.Store{
+		// the "oci:" prefix is actually interpreted by buildkit, not just for show
+		"oci:" + OCIStoreName: w.ContentStore(),
+	}))
 	// TODO: this should proxy out to the right session, this is just to unblock dockerhub rate limits for now
 	sm.baseSession.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 

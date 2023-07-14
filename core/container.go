@@ -17,6 +17,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/images"
+	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -27,6 +28,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
@@ -35,6 +37,8 @@ import (
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
+
+const OCIStoreName = "dagger-oci"
 
 // Container is a content-addressed container.
 type Container struct {
@@ -345,18 +349,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 const defaultDockerfileName = "Dockerfile"
 
-var buildCache = newCacheMap[uint64, *Container]()
-
-func cacheKey(keys ...any) uint64 {
-	hash := xxh3.New()
-
-	enc := json.NewEncoder(hash)
-	for _, key := range keys {
-		enc.Encode(key)
-	}
-
-	return hash.Sum64()
-}
+var buildCache = newCacheMap[digest.Digest, *Container]()
 
 func (container *Container) Build(
 	ctx context.Context,
@@ -1423,7 +1416,7 @@ func (container *Container) Export(
 	panic("reimplement container export")
 }
 
-var importCache = newCacheMap[uint64, *Container]()
+var importCache = newCacheMap[digest.Digest, *specs.Descriptor]()
 
 func (container *Container) Import(
 	ctx context.Context,
@@ -1432,30 +1425,15 @@ func (container *Container) Import(
 	source FileID,
 	tag string,
 	store content.Store,
+	lm *leaseutil.Manager,
 ) (*Container, error) {
-	return importCache.GetOrInitialize(
-		cacheKey(container, source, tag),
-		func() (*Container, error) {
-			return container.importUncached(ctx, bk, host, source, tag, store)
-		},
-	)
-}
+	file, err := source.ToFile()
+	if err != nil {
+		return nil, err
+	}
 
-func (container *Container) importUncached(
-	ctx context.Context,
-	bk *buildkit.Client,
-	host *Host,
-	source FileID,
-	tag string,
-	store content.Store,
-) (*Container, error) {
-	panic("reimplement container import")
-	/*
-		file, err := source.ToFile()
-		if err != nil {
-			return nil, err
-		}
-
+	var release func(context.Context) error
+	loadManifest := func() (*specs.Descriptor, error) {
 		src, err := file.Open(ctx, host, bk)
 		if err != nil {
 			return nil, err
@@ -1465,6 +1443,12 @@ func (container *Container) importUncached(
 
 		container = container.Clone()
 
+		// override outer ctx with release ctx and set release
+		ctx, release, err = leaseutil.WithLease(ctx, lm, leaseutil.MakeTemporary)
+		if err != nil {
+			return nil, err
+		}
+
 		stream := archive.NewImageImportStream(src, "")
 
 		desc, err := stream.Import(ctx, store)
@@ -1472,54 +1456,80 @@ func (container *Container) importUncached(
 			return nil, fmt.Errorf("image archive import: %w", err)
 		}
 
-		manifestDesc, err := resolveIndex(ctx, store, desc, container.Platform, tag)
+		return resolveIndex(ctx, store, desc, container.Platform, tag)
+	}
+
+	key := cacheKey(file, tag)
+
+	manifestDesc, err := importCache.GetOrInitialize(key, loadManifest)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = store.Info(ctx, manifestDesc.Digest)
+	if err != nil {
+		// TODO(vito): loadManifest again, to be durable to buildctl prune. but I
+		// can't reproduce this at the moment since it doesn't seem to be pruned.
+		return nil, fmt.Errorf("manifest pruned?: %w", err)
+	}
+
+	// NB: the repository portion of this ref doesn't actually matter, but it's
+	// pleasant to see something recognizable.
+	dummyRepo := "dagger/import"
+
+	st := llb.OCILayout(
+		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
+		llb.OCIStore("", OCIStoreName),
+		llb.Platform(container.Platform),
+	)
+
+	execDef, err := st.Marshal(ctx, llb.Platform(container.Platform))
+	if err != nil {
+		return nil, fmt.Errorf("marshal root: %w", err)
+	}
+
+	container.FS = execDef.ToPB()
+
+	if release != nil {
+		// eagerly evaluate the OCI reference so Buildkit sets up a long-term lease
+		_, err = bk.Solve(ctx, bkgw.SolveRequest{
+			Definition: container.FS,
+			Evaluate:   true,
+		})
 		if err != nil {
-			return nil, fmt.Errorf("image archive resolve index: %w", err)
+			return nil, fmt.Errorf("solve: %w", err)
 		}
 
-		// NB: the repository portion of this ref doesn't actually matter, but it's
-		// pleasant to see something recognizable.
-		dummyRepo := "dagger/import"
-
-		st := llb.OCILayout(
-			fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-			llb.OCIStore("", engine.OCIStoreName),
-			llb.Platform(container.Platform),
-		)
-
-		execDef, err := st.Marshal(ctx, llb.Platform(container.Platform))
-		if err != nil {
-			return nil, fmt.Errorf("marshal root: %w", err)
+		if err := release(ctx); err != nil {
+			return nil, fmt.Errorf("release: %w", err)
 		}
+	}
 
-		container.FS = execDef.ToPB()
+	manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read manifest blob: %w", err)
+	}
 
-		manifestBlob, err := content.ReadBlob(ctx, store, *manifestDesc)
-		if err != nil {
-			return nil, fmt.Errorf("image archive read manifest blob: %w", err)
-		}
+	var man specs.Manifest
+	err = json.Unmarshal(manifestBlob, &man)
+	if err != nil {
+		return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
+	}
 
-		var man specs.Manifest
-		err = json.Unmarshal(manifestBlob, &man)
-		if err != nil {
-			return nil, fmt.Errorf("image archive unmarshal manifest: %w", err)
-		}
+	configBlob, err := content.ReadBlob(ctx, store, man.Config)
+	if err != nil {
+		return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
+	}
 
-		configBlob, err := content.ReadBlob(ctx, store, man.Config)
-		if err != nil {
-			return nil, fmt.Errorf("image archive read image config blob %s: %w", man.Config.Digest, err)
-		}
+	var imgSpec specs.Image
+	err = json.Unmarshal(configBlob, &imgSpec)
+	if err != nil {
+		return nil, fmt.Errorf("load image config: %w", err)
+	}
 
-		var imgSpec specs.Image
-		err = json.Unmarshal(configBlob, &imgSpec)
-		if err != nil {
-			return nil, fmt.Errorf("load image config: %w", err)
-		}
+	container.Config = imgSpec.Config
 
-		container.Config = imgSpec.Config
-
-		return container, nil
-	*/
+	return container, nil
 }
 
 func (container *Container) HostnameOrErr() (string, error) {
