@@ -63,7 +63,7 @@ class CacheSharingMode(Enum):
 
 
 class ImageLayerCompression(Enum):
-    """Compression algorithm to use for image layers"""
+    """Compression algorithm to use for image layers."""
 
     EStarGZ = "EStarGZ"
 
@@ -72,6 +72,14 @@ class ImageLayerCompression(Enum):
     Uncompressed = "Uncompressed"
 
     Zstd = "Zstd"
+
+
+class ImageMediaTypes(Enum):
+    """Mediatypes to use in published or exported image metadata."""
+
+    DockerMediaTypes = "DockerMediaTypes"
+
+    OCIMediaTypes = "OCIMediaTypes"
 
 
 class NetworkProtocol(Enum):
@@ -403,6 +411,7 @@ class Container(Type):
         path: str,
         platform_variants: Optional[Sequence["Container"]] = None,
         forced_compression: Optional[ImageLayerCompression] = None,
+        media_types: Optional[ImageMediaTypes] = None,
     ) -> bool:
         """Writes the container as an OCI tarball to the destination file path on
         the host for the specified platform variants.
@@ -428,6 +437,12 @@ class Container(Type):
             different layers). If this is unset and a layer has no compressed
             blob in the
             engine's cache, then it will be compressed using Gzip.
+        media_types:
+            Use the specified media types for the exported image's layers.
+            Defaults to OCI, which
+            is largely compatible with most recent container runtimes, but
+            Docker may be needed
+            for older runtimes without OCI support.
 
         Returns
         -------
@@ -445,6 +460,7 @@ class Container(Type):
             Arg("path", path),
             Arg("platformVariants", platform_variants, None),
             Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, None),
         ]
         _ctx = self._select("export", _args)
         return await _ctx.execute(bool)
@@ -740,6 +756,7 @@ class Container(Type):
         address: str,
         platform_variants: Optional[Sequence["Container"]] = None,
         forced_compression: Optional[ImageLayerCompression] = None,
+        media_types: Optional[ImageMediaTypes] = None,
     ) -> str:
         """Publishes this container as a new image to the specified address.
 
@@ -765,6 +782,12 @@ class Container(Type):
             different layers). If this is unset and a layer has no compressed
             blob in the
             engine's cache, then it will be compressed using Gzip.
+        media_types:
+            Use the specified media types for the published image's layers.
+            Defaults to OCI, which
+            is largely compatible with most recent registries, but Docker may
+            be needed for older
+            registries without OCI support.
 
         Returns
         -------
@@ -784,6 +807,7 @@ class Container(Type):
             Arg("address", address),
             Arg("platformVariants", platform_variants, None),
             Arg("forcedCompression", forced_compression, None),
+            Arg("mediaTypes", media_types, None),
         ]
         _ctx = self._select("publish", _args)
         return await _ctx.execute(str)
@@ -3263,6 +3287,7 @@ __all__ = [
     "Host",
     "HostVariable",
     "ImageLayerCompression",
+    "ImageMediaTypes",
     "Label",
     "NetworkProtocol",
     "PipelineLabel",

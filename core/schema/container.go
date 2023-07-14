@@ -445,10 +445,11 @@ type containerPublishArgs struct {
 	Address           string
 	PlatformVariants  []core.ContainerID
 	ForcedCompression core.ImageLayerCompression
+	MediaTypes        core.ImageMediaTypes
 }
 
 func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, s.bkClient, s.solveOpts, s.solveCh)
+	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, s.bkClient, s.solveOpts, s.solveCh)
 }
 
 type containerWithMountedFileArgs struct {
@@ -657,10 +658,11 @@ type containerExportArgs struct {
 	Path              string
 	PlatformVariants  []core.ContainerID
 	ForcedCompression core.ImageLayerCompression
+	MediaTypes        core.ImageMediaTypes
 }
 
 func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, args.ForcedCompression, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, s.bkClient, s.solveOpts, s.solveCh); err != nil {
 		return false, err
 	}
 
