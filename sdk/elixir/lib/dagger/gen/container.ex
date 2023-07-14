@@ -10,7 +10,11 @@ defmodule Dagger.Container do
     @spec build(t(), Dagger.Directory.t(), keyword()) :: Dagger.Container.t()
     def build(%__MODULE__{} = container, context, optional_args \\ []) do
       selection = select(container.selection, "build")
-      selection = arg(selection, "context", Dagger.Directory.id(context))
+
+      (
+        {:ok, id} = Dagger.Directory.id(context)
+        selection = arg(selection, "context", id)
+      )
 
       selection =
         if is_nil(optional_args[:dockerfile]) do
@@ -272,7 +276,11 @@ defmodule Dagger.Container do
     @spec import(t(), Dagger.File.t(), keyword()) :: Dagger.Container.t()
     def import(%__MODULE__{} = container, source, optional_args \\ []) do
       selection = select(container.selection, "import")
-      selection = arg(selection, "source", Dagger.File.id(source))
+
+      (
+        {:ok, id} = Dagger.File.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:tag]) do
@@ -441,7 +449,11 @@ defmodule Dagger.Container do
     def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
       selection = select(container.selection, "withDirectory")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "directory", Dagger.Directory.id(directory))
+
+      (
+        {:ok, id} = Dagger.Directory.id(directory)
+        selection = arg(selection, "directory", id)
+      )
 
       selection =
         if is_nil(optional_args[:exclude]) do
@@ -585,7 +597,12 @@ defmodule Dagger.Container do
     @spec with_fs(t(), Dagger.Directory.t()) :: Dagger.Container.t()
     def with_fs(%__MODULE__{} = container, directory) do
       selection = select(container.selection, "withFS")
-      selection = arg(selection, "id", Dagger.Directory.id(directory))
+
+      (
+        {:ok, id} = Dagger.Directory.id(directory)
+        selection = arg(selection, "id", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -596,7 +613,11 @@ defmodule Dagger.Container do
     def with_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withFile")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.File.id(source))
+
+      (
+        {:ok, id} = Dagger.File.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:permissions]) do
@@ -633,7 +654,11 @@ defmodule Dagger.Container do
     def with_mounted_cache(%__MODULE__{} = container, path, cache, optional_args \\ []) do
       selection = select(container.selection, "withMountedCache")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "cache", Dagger.CacheVolume.id(cache))
+
+      (
+        {:ok, id} = Dagger.CacheVolume.id(cache)
+        selection = arg(selection, "cache", id)
+      )
 
       selection =
         if is_nil(optional_args[:source]) do
@@ -667,7 +692,11 @@ defmodule Dagger.Container do
     def with_mounted_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedDirectory")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.Directory.id(source))
+
+      (
+        {:ok, id} = Dagger.Directory.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:owner]) do
@@ -686,7 +715,11 @@ defmodule Dagger.Container do
     def with_mounted_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedFile")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.File.id(source))
+
+      (
+        {:ok, id} = Dagger.File.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:owner]) do
@@ -706,7 +739,11 @@ defmodule Dagger.Container do
     def with_mounted_secret(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedSecret")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.Secret.id(source))
+
+      (
+        {:ok, id} = Dagger.Secret.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:owner]) do
@@ -769,7 +806,12 @@ defmodule Dagger.Container do
       selection = select(container.selection, "withRegistryAuth")
       selection = arg(selection, "address", address)
       selection = arg(selection, "username", username)
-      selection = arg(selection, "secret", Dagger.Secret.id(secret))
+
+      (
+        {:ok, id} = Dagger.Secret.id(secret)
+        selection = arg(selection, "secret", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -779,7 +821,12 @@ defmodule Dagger.Container do
     @spec with_rootfs(t(), Dagger.Directory.t()) :: Dagger.Container.t()
     def with_rootfs(%__MODULE__{} = container, directory) do
       selection = select(container.selection, "withRootfs")
-      selection = arg(selection, "id", Dagger.Directory.id(directory))
+
+      (
+        {:ok, id} = Dagger.Directory.id(directory)
+        selection = arg(selection, "id", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -790,7 +837,12 @@ defmodule Dagger.Container do
     def with_secret_variable(%__MODULE__{} = container, name, secret) do
       selection = select(container.selection, "withSecretVariable")
       selection = arg(selection, "name", name)
-      selection = arg(selection, "secret", Dagger.Secret.id(secret))
+
+      (
+        {:ok, id} = Dagger.Secret.id(secret)
+        selection = arg(selection, "secret", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -801,7 +853,12 @@ defmodule Dagger.Container do
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
-      selection = arg(selection, "service", Dagger.Container.id(service))
+
+      (
+        {:ok, id} = Dagger.Container.id(service)
+        selection = arg(selection, "service", id)
+      )
+
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -812,7 +869,11 @@ defmodule Dagger.Container do
     def with_unix_socket(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withUnixSocket")
       selection = arg(selection, "path", path)
-      selection = arg(selection, "source", Dagger.Socket.id(source))
+
+      (
+        {:ok, id} = Dagger.Socket.id(source)
+        selection = arg(selection, "source", id)
+      )
 
       selection =
         if is_nil(optional_args[:owner]) do

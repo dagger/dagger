@@ -28,7 +28,12 @@ defmodule Dagger.Project do
     @spec load(t(), Dagger.Directory.t(), String.t()) :: Dagger.Project.t()
     def load(%__MODULE__{} = project, source, config_path) do
       selection = select(project.selection, "load")
-      selection = arg(selection, "source", Dagger.Directory.id(source))
+
+      (
+        {:ok, id} = Dagger.Directory.id(source)
+        selection = arg(selection, "source", id)
+      )
+
       selection = arg(selection, "configPath", config_path)
       %Dagger.Project{selection: selection, client: project.client}
     end
