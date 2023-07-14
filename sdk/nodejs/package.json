@@ -43,7 +43,7 @@
     "@types/node": "~16",
     "@types/tar": "^6.1.4",
     "@typescript-eslint/eslint-plugin": "^5.62.0",
-    "@typescript-eslint/parser": "^5.60.1",
+    "@typescript-eslint/parser": "^5.62.0",
     "eslint": "^8.45.0",
     "eslint-config-prettier": "^8.7.0",
     "eslint-plugin-prettier": "^4.2.1",
