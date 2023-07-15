@@ -656,7 +656,7 @@ type Container {
     is largely compatible with most recent registries, but Docker may be needed for older
     registries without OCI support.
     """
-    mediaTypes: ImageMediaTypes
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
   ): String!
 
   """
@@ -692,7 +692,7 @@ type Container {
     is largely compatible with most recent container runtimes, but Docker may be needed 
     for older runtimes without OCI support.
     """
-    mediaTypes: ImageMediaTypes
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
   ): Boolean!
 
   """
