@@ -57,7 +57,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "subdir", "sub-file"), []byte("goodbye"), 0600))
 
 	ctx := context.Background()
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(dir), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
