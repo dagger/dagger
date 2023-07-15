@@ -21,7 +21,7 @@ func TestSecretEnvFromFile(t *testing.T) {
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withSecretVariable(name: "SECRET", secret: $secret) {
 						withExec(args: ["sh", "-c", "test \"$SECRET\" = \"some-content\""]) {
 							sync
@@ -43,7 +43,7 @@ func TestSecretMountFromFile(t *testing.T) {
 	err := testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-content\""]) {
 							sync
@@ -80,7 +80,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	err := testutil.Query(
 		`query Test($secret: SecretID!, $file: FileID!) {
 			container {
-				from(address: "alpine:3.16.2") {
+				from(address: "`+alpineImage+`") {
 					withMountedSecret(path: "/sekret", source: $secret) {
 						withMountedFile(path: "/sekret", source: $file) {
 							withExec(args: ["sh", "-c", "test \"$(cat /sekret)\" = \"some-secret\""]) {
@@ -124,7 +124,7 @@ func TestNewSecret(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	_, err := c.Container().From("alpine:3.16.2").
+	_, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very-secret-text\""}).
 		Sync(ctx)
@@ -140,7 +140,7 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 
 	s := c.SetSecret("aws_key", secretValue)
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithSecretVariable("AWS_KEY", s).
 		WithExec([]string{"sh", "-c", "test \"$AWS_KEY\" = \"very\nsecret\ntext\n\""}).
 		WithExec([]string{"sh", "-c", "echo -n \"$AWS_KEY\""}).
@@ -159,7 +159,7 @@ func TestBigSecretScrubbed(t *testing.T) {
 
 	s := c.SetSecret("key", string(secretValue))
 
-	sec := c.Container().From("alpine:3.16.2").
+	sec := c.Container().From(alpineImage).
 		WithSecretVariable("KEY", s).
 		WithExec([]string{"sh", "-c", "echo  -n \"$KEY\""})
 
