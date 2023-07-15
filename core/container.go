@@ -1411,19 +1411,24 @@ func (container *Container) Publish(
 	ref string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) (string, error) {
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
 	exportOpts := bkclient.ExportEntry{
 		Type: bkclient.ExporterImage,
 		Attrs: map[string]string{
-			"name": ref,
-			"push": strconv.FormatBool(true),
-			// Every registry supports oci types and docker daemons have been capable of pulling them
-			// since 2018: https://github.com/moby/moby/pull/37359
-			// So it should be safe to always use them.
-			"oci-mediatypes": strconv.FormatBool(true),
+			"name":           ref,
+			"push":           strconv.FormatBool(true),
+			"oci-mediatypes": strconv.FormatBool(mediaTypes == OCIMediaTypes),
 		},
 	}
 	if forcedCompression != "" {
@@ -1473,10 +1478,14 @@ func (container *Container) Export(
 	dest string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
+	mediaTypes ImageMediaTypes,
 	bkClient *bkclient.Client,
 	solveOpts bkclient.SolveOpt,
 	solveCh chan<- *bkclient.SolveStatus,
 ) error {
+	if mediaTypes == "" {
+		mediaTypes = OCIMediaTypes
+	}
 	dest, err := host.NormalizeDest(dest)
 	if err != nil {
 		return err
@@ -1496,7 +1505,7 @@ func (container *Container) Export(
 	exportOpts := bkclient.ExportEntry{
 		Type: bkclient.ExporterOCI,
 		Attrs: map[string]string{
-			"oci-mediatypes": strconv.FormatBool(true),
+			"oci-mediatypes": strconv.FormatBool(mediaTypes == OCIMediaTypes),
 		},
 	}
 	if forcedCompression != "" {
@@ -1987,4 +1996,11 @@ const (
 	CompressionZstd         ImageLayerCompression = "Zstd"
 	CompressionEStarGZ      ImageLayerCompression = "EStarGZ"
 	CompressionUncompressed ImageLayerCompression = "Uncompressed"
+)
+
+type ImageMediaTypes string
+
+const (
+	OCIMediaTypes    ImageMediaTypes = "OCIMediaTypes"
+	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )

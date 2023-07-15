@@ -650,6 +650,13 @@ type Container {
     engine's cache, then it will be compressed using Gzip.
     """
     forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the published image's layers. Defaults to OCI, which
+    is largely compatible with most recent registries, but Docker may be needed for older
+    registries without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
   ): String!
 
   """
@@ -679,6 +686,13 @@ type Container {
     engine's cache, then it will be compressed using Gzip.
     """
     forcedCompression: ImageLayerCompression
+
+    """
+    Use the specified media types for the exported image's layers. Defaults to OCI, which
+    is largely compatible with most recent container runtimes, but Docker may be needed 
+    for older runtimes without OCI support.
+    """
+    mediaTypes: ImageMediaTypes = OCIMediaTypes
   ): Boolean!
 
   """
@@ -867,10 +881,16 @@ enum NetworkProtocol {
   UDP
 }
 
-"Compression algorithm to use for image layers"
+"Compression algorithm to use for image layers."
 enum ImageLayerCompression {
   Gzip
   Zstd
   EStarGZ
   Uncompressed
+}
+
+"Mediatypes to use in published or exported image metadata."
+enum ImageMediaTypes {
+  OCIMediaTypes
+  DockerMediaTypes
 }

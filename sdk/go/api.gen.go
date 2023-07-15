@@ -362,6 +362,10 @@ type ContainerExportOpts struct {
 	// different layers). If this is unset and a layer has no compressed blob in the
 	// engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the exported image's layers. Defaults to OCI, which
+	// is largely compatible with most recent container runtimes, but Docker may be needed
+	// for older runtimes without OCI support.
+	MediaTypes ImageMediaTypes
 }
 
 // Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
@@ -381,6 +385,10 @@ func (r *Container) Export(ctx context.Context, path string, opts ...ContainerEx
 		// `forcedCompression` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
 		}
 	}
 	q = q.Arg("path", path)
@@ -661,6 +669,10 @@ type ContainerPublishOpts struct {
 	// different layers). If this is unset and a layer has no compressed blob in the
 	// engine's cache, then it will be compressed using Gzip.
 	ForcedCompression ImageLayerCompression
+	// Use the specified media types for the published image's layers. Defaults to OCI, which
+	// is largely compatible with most recent registries, but Docker may be needed for older
+	// registries without OCI support.
+	MediaTypes ImageMediaTypes
 }
 
 // Publishes this container as a new image to the specified address.
@@ -680,6 +692,10 @@ func (r *Container) Publish(ctx context.Context, address string, opts ...Contain
 		// `forcedCompression` optional argument
 		if !querybuilder.IsZeroValue(opts[i].ForcedCompression) {
 			q = q.Arg("forcedCompression", opts[i].ForcedCompression)
+		}
+		// `mediaTypes` optional argument
+		if !querybuilder.IsZeroValue(opts[i].MediaTypes) {
+			q = q.Arg("mediaTypes", opts[i].MediaTypes)
 		}
 	}
 	q = q.Arg("address", address)
@@ -2881,6 +2897,13 @@ const (
 	Gzip         ImageLayerCompression = "Gzip"
 	Uncompressed ImageLayerCompression = "Uncompressed"
 	Zstd         ImageLayerCompression = "Zstd"
+)
+
+type ImageMediaTypes string
+
+const (
+	Dockermediatypes ImageMediaTypes = "DockerMediaTypes"
+	Ocimediatypes    ImageMediaTypes = "OCIMediaTypes"
 )
 
 type NetworkProtocol string

@@ -171,6 +171,13 @@ export type ContainerExportOpts = {
    * engine's cache, then it will be compressed using Gzip.
    */
   forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the exported image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerImportOpts = {
@@ -208,6 +215,13 @@ export type ContainerPublishOpts = {
    * engine's cache, then it will be compressed using Gzip.
    */
   forcedCompression?: ImageLayerCompression
+
+  /**
+   * Use the specified media types for the published image's layers. Defaults to OCI, which
+   * is largely compatible with most recent registries, but Docker may be needed for older
+   * registries without OCI support.
+   */
+  mediaTypes?: ImageMediaTypes
 }
 
 export type ContainerWithDefaultArgsOpts = {
@@ -565,13 +579,20 @@ export type HostWorkdirOpts = {
 export type ID = string & { __ID: never }
 
 /**
- * Compression algorithm to use for image layers
+ * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
   Estargz,
   Gzip,
   Uncompressed,
   Zstd,
+}
+/**
+ * Mediatypes to use in published or exported image metadata.
+ */
+export enum ImageMediaTypes {
+  Dockermediatypes,
+  Ocimediatypes,
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -909,6 +930,9 @@ export class Container extends BaseClient {
    * cache, that will be used (this can result in a mix of compression algorithms for
    * different layers). If this is unset and a layer has no compressed blob in the
    * engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the exported image's layers. Defaults to OCI, which
+   * is largely compatible with most recent container runtimes, but Docker may be needed
+   * for older runtimes without OCI support.
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
@@ -1184,6 +1208,9 @@ export class Container extends BaseClient {
    * cache, that will be used (this can result in a mix of compression algorithms for
    * different layers). If this is unset and a layer has no compressed blob in the
    * engine's cache, then it will be compressed using Gzip.
+   * @param opts.mediaTypes Use the specified media types for the published image's layers. Defaults to OCI, which
+   * is largely compatible with most recent registries, but Docker may be needed for older
+   * registries without OCI support.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
     const response: Awaited<string> = await computeQuery(
