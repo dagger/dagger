@@ -75,11 +75,15 @@ func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string,
 		llb.SessionID(gw.BuildOpts().SessionID),
 	}
 
+	opName := fmt.Sprintf("copy %s", absPath)
+
 	if len(filter.Exclude) > 0 {
+		opName += fmt.Sprintf(" (exclude %s)", strings.Join(filter.Exclude, ", "))
 		localOpts = append(localOpts, llb.ExcludePatterns(filter.Exclude))
 	}
 
 	if len(filter.Include) > 0 {
+		opName += fmt.Sprintf(" (include %s)", strings.Join(filter.Include, ", "))
 		localOpts = append(localOpts, llb.IncludePatterns(filter.Include))
 	}
 
@@ -89,7 +93,7 @@ func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string,
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(llb.Local(absPath, localOpts...), "/", "/"),
-		llb.WithCustomNamef("copy %s", absPath),
+		llb.WithCustomNamef(opName),
 	)
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))
