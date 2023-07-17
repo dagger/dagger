@@ -28,10 +28,8 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-const SessionIDHeader = "X-Dagger-Session-ID"
-
 type Server struct {
-	*FrontendOpts
+	*engine.FrontendOpts
 	llbBridge      frontend.FrontendLLBBridge
 	worker         worker.Worker
 	sessionManager *session.Manager
@@ -201,7 +199,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// TODO: should think through case where evil client lies about its session ID
 	// maybe maintain a map of secret session token -> session ID and verify against that
-	requesterSessionID := req.Header.Get(SessionIDHeader)
+	requesterSessionID := req.Header.Get(engine.SessionIDHeader)
 	req = req.WithContext(session.ContextWithSessionMetadata(req.Context(), s.ServerID, requesterSessionID))
 
 	mux := http.NewServeMux()
