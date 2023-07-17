@@ -3954,7 +3954,6 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 			WithMountedCache("/var/lib/docker", c.CacheVolume(t.Name()+"-"+dockerVersion+"-docker-lib"), dagger.ContainerWithMountedCacheOpts{
 				Sharing: dagger.Private,
 			}).
-			WithMountedCache("/tmp", c.CacheVolume(t.Name()+"-share-tmp")).
 			WithExposedPort(port).
 			WithExec([]string{
 				"dockerd",
@@ -3991,17 +3990,12 @@ func TestContainerImageLoadCompatibility(t *testing.T) {
 						WithEnvVariable("CACHEBUST", randID).
 						WithServiceBinding("docker", dockerd).
 						WithEnvVariable("DOCKER_HOST", dockerHost).
-						WithMountedCache("/tmp", c.CacheVolume(t.Name()+"-share-tmp")).
 						WithMountedFile(path.Join("/", path.Base(tmpfile)), c.Host().File(tmpfile)).
-						WithExec([]string{"cp", path.Join("/", path.Base(tmpfile)), "/tmp/"}, dagger.ContainerWithExecOpts{
-							SkipEntrypoint: true,
-						}).
-						WithExec([]string{"docker", "version"}).
-						WithExec([]string{"docker", "load", "-i", "/tmp/" + path.Base(tmpfile)})
+						WithExec([]string{"docker", "load", "-i", "/" + path.Base(tmpfile)})
 
 					output, err := ctr.Stdout(ctx)
 					if dockerVersion == "20.10" && compression == dagger.Zstd {
-						// zstd wasn't added until 23, so sanity check that it fails
+						// zstd support in docker wasn't added until 23, so sanity check that it fails
 						require.Error(t, err)
 					} else {
 						require.NoError(t, err)
