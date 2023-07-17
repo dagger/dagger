@@ -140,12 +140,11 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 
 	// first, stabilize all Ops
 	for i, dt := range cp.Def {
+		digBefore := digest.FromBytes(dt)
 		var op pb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
 			return nil, errors.Wrap(err, "failed to parse llb proto op")
 		}
-
-		digBefore := digest.FromBytes(dt)
 
 		if src := op.GetSource(); src != nil {
 			// prevent ephemeral metadata from busting caches
@@ -196,28 +195,31 @@ func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Dige
 
 		cp.Metadata[after] = meta
 		delete(cp.Metadata, before)
+	}
 
-		for i, dt := range cp.Def {
-			var op pb.Op
-			if err := (&op).Unmarshal(dt); err != nil {
-				return errors.Wrap(err, "failed to parse llb proto op")
-			}
-			digBefore := digest.FromBytes(dt)
+	for i, dt := range cp.Def {
+		digBefore := digest.FromBytes(dt)
+
+		var op pb.Op
+		if err := (&op).Unmarshal(dt); err != nil {
+			return errors.Wrap(err, "failed to parse llb proto op")
+		}
+		for before, after := range stabilized {
 			for _, input := range op.Inputs {
 				if input.Digest == before {
 					input.Digest = after
 				}
 			}
-			stableDt, err := op.Marshal()
-			if err != nil {
-				return errors.Wrap(err, "failed to marshal llb proto op")
-			}
-			digAfter := digest.FromBytes(stableDt)
-			if digAfter != digBefore {
-				nextPass[digBefore] = digAfter
-			}
-			cp.Def[i] = stableDt
 		}
+		stableDt, err := op.Marshal()
+		if err != nil {
+			return errors.Wrap(err, "failed to marshal llb proto op")
+		}
+		digAfter := digest.FromBytes(stableDt)
+		if digAfter != digBefore {
+			nextPass[digBefore] = digAfter
+		}
+		cp.Def[i] = stableDt
 	}
 
 	if len(nextPass) > 0 {
