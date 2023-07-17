@@ -309,7 +309,7 @@ func (ctr DaggerCLIContainer) WithLoadedProject(
 	require.NoError(ctr.t, err)
 
 	thisRepoDir := ctr.c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
-		Exclude: []string{".git", "bin", "docs", "website"},
+		Include: []string{"core", "sdk", "go.mod", "go.sum"},
 	})
 	projectArg := filepath.Join(cliContainerRepoMntPath, projectPath)
 
