@@ -61,7 +61,8 @@ func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string,
 	pipelineName := fmt.Sprintf("%s %s", pipelineNamePrefix, absPath)
 	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 
-	localID := fmt.Sprintf("host:%s", absPath)
+	sessionID := gw.BuildOpts().SessionID
+	localID := fmt.Sprintf("host:%s:%s", sessionID, absPath)
 
 	localOpts := []llb.LocalOption{
 		// Custom name
@@ -71,8 +72,9 @@ func (host *Host) Directory(ctx context.Context, gw bkgw.Client, dirPath string,
 		llb.SharedKeyHint(localID),
 
 		// sync this dir from this session specifically, even if this ends up passed
-		// to a different session (e.g. a project container)
-		llb.SessionID(gw.BuildOpts().SessionID),
+		// to a different session (e.g. a project container). this also helps
+		// protect against cross-session solver collisions in Buildkit.
+		llb.SessionID(sessionID),
 	}
 
 	opName := fmt.Sprintf("copy %s", absPath)

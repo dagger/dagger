@@ -1244,11 +1244,14 @@ func (container *Container) WithExec(ctx context.Context, gw bkgw.Client, progSo
 	execStNoHostname := fsSt.Run(runOpts...)
 
 	// next, marshal it to compute a deterministic hostname
-	constraints := llb.NewConstraints(llb.Platform(platform))
-	rootVtx := execStNoHostname.Root().Output().Vertex(ctx, constraints)
-	digest, _, _, _, err := rootVtx.Marshal(ctx, constraints) //nolint:dogsled
+	execDefNoHostname, err := execStNoHostname.Root().Marshal(ctx, llb.Platform(platform))
 	if err != nil {
-		return nil, fmt.Errorf("marshal: %w", err)
+		return nil, fmt.Errorf("marshal root: %w", err)
+	}
+	// compute a *stable* digest so that hostnames don't change across sessions
+	digest, err := stableDigest(execDefNoHostname.ToPB())
+	if err != nil {
+		return nil, fmt.Errorf("stable digest: %w", err)
 	}
 	hostname := hostHash(digest)
 	container.Hostname = hostname
