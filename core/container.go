@@ -349,7 +349,18 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 const defaultDockerfileName = "Dockerfile"
 
-var buildCache = newCacheMap[digest.Digest, *Container]()
+var buildCache = newCacheMap[uint64, *Container]()
+
+func cacheKey(keys ...any) uint64 {
+	hash := xxh3.New()
+
+	enc := json.NewEncoder(hash)
+	for _, key := range keys {
+		enc.Encode(key)
+	}
+
+	return hash.Sum64()
+}
 
 func (container *Container) Build(
 	ctx context.Context,
@@ -1416,7 +1427,7 @@ func (container *Container) Export(
 	panic("reimplement container export")
 }
 
-var importCache = newCacheMap[digest.Digest, *specs.Descriptor]()
+var importCache = newCacheMap[uint64, *specs.Descriptor]()
 
 func (container *Container) Import(
 	ctx context.Context,
