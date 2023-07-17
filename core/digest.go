@@ -2,6 +2,7 @@ package core
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -36,12 +37,13 @@ func digestInto(value any, dest io.Writer) (err error) {
 			break
 		}
 
-		cp, err := stabilizeDef(x)
+		digest, err := digestLLB(context.TODO(), x, stabilizeSourcePolicy{})
 		if err != nil {
 			return err
 		}
 
-		value = cp
+		_, err = fmt.Fprintln(dest, digest)
+		return err
 
 	case []byte:
 		// base64-encode bytes rather than treating it like a slice
@@ -128,103 +130,134 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 	return nil
 }
 
-// stabilizeDef returns a copy of def that has been pruned of any ephemeral
-// data so that it may be used as a cache key that is stable across sessions.
-func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
-	cp := *def
-	cp.Def = cloneSlice(def.Def)
-	cp.Metadata = cloneMap(def.Metadata)
-	cp.Source = nil // discard source map
-
-	stabilized := map[digest.Digest]digest.Digest{}
-
-	// first, stabilize all Ops
-	for i, dt := range cp.Def {
-		digBefore := digest.FromBytes(dt)
-		var op pb.Op
-		if err := (&op).Unmarshal(dt); err != nil {
-			return nil, errors.Wrap(err, "failed to parse llb proto op")
-		}
-
-		if src := op.GetSource(); src != nil {
-			// prevent ephemeral metadata from busting caches
-			delete(src.Attrs, pb.AttrLocalSessionID)
-			delete(src.Attrs, pb.AttrLocalUniqueID)
-			delete(src.Attrs, pb.AttrSharedKeyHint) // has session ID + path
-		}
-
-		stableDt, err := op.Marshal()
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to marshal llb proto op")
-		}
-
-		digAfter := digest.FromBytes(stableDt)
-		if digAfter != digBefore {
-			stabilized[digBefore] = digAfter
-		}
-
-		cp.Def[i] = stableDt
-	}
-
-	// update all inputs to reference the new digests
-	if err := stabilizeInputs(&cp, stabilized); err != nil {
-		return nil, errors.Wrap(err, "failed to stabilize inputs")
-	}
-
-	// finally, sort Def since it's in unstable topological order
-	sort.Slice(cp.Def, func(i, j int) bool {
-		return bytes.Compare(cp.Def[i], cp.Def[j]) < 0
-	})
-
-	return &cp, nil
+type sourcePolicyEvaluator interface {
+	Evaluate(ctx context.Context, op *pb.Op) (bool, error)
 }
 
-// stabilizeInputs takes a mapping from old digests to new digests and updates
-// all Op inputs to use the new digests instead. Because inputs are addressed
-// by Op digests, any Ops that needed to be updated will thereby yield a new
-// mapping, so stabilizeInputs will keep recursing until no new mappings are
-// yielded.
-func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Digest) error {
-	nextPass := map[digest.Digest]digest.Digest{}
-
-	for before, after := range stabilized {
-		meta, found := cp.Metadata[before]
-		if !found {
-			return fmt.Errorf("missing metadata for %s", before)
-		}
-
-		cp.Metadata[after] = meta
-		delete(cp.Metadata, before)
+// TODO(vito): this is an extracted/trimmed down implementation of
+// llbsolver.Load from upstream Buildkit. Ideally we would use it directly but
+// we have to avoid importing that package because it breaks the Darwin build.
+func digestLLB(ctx context.Context, def *pb.Definition, polEngine sourcePolicyEvaluator) (digest.Digest, error) {
+	if len(def.Def) == 0 {
+		return "", errors.New("invalid empty definition")
 	}
 
-	for i, dt := range cp.Def {
-		digBefore := digest.FromBytes(dt)
+	allOps := make(map[digest.Digest]*pb.Op)
+	mutatedDigests := make(map[digest.Digest]digest.Digest) // key: old, val: new
 
+	var lastDgst digest.Digest
+
+	for _, dt := range def.Def {
 		var op pb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
-			return errors.Wrap(err, "failed to parse llb proto op")
+			return "", errors.Wrap(err, "failed to parse llb proto op")
 		}
-		for before, after := range stabilized {
-			for _, input := range op.Inputs {
-				if input.Digest == before {
-					input.Digest = after
+		dgst := digest.FromBytes(dt)
+		if polEngine != nil {
+			mutated, err := polEngine.Evaluate(ctx, &op)
+			if err != nil {
+				return "", errors.Wrap(err, "error evaluating the source policy")
+			}
+			if mutated {
+				dtMutated, err := op.Marshal()
+				if err != nil {
+					return "", err
 				}
+				dgstMutated := digest.FromBytes(dtMutated)
+				mutatedDigests[dgst] = dgstMutated
+				dgst = dgstMutated
 			}
 		}
-		stableDt, err := op.Marshal()
+		allOps[dgst] = &op
+		lastDgst = dgst
+	}
+
+	for dgst := range allOps {
+		_, err := recomputeDigests(ctx, allOps, mutatedDigests, dgst)
 		if err != nil {
-			return errors.Wrap(err, "failed to marshal llb proto op")
+			return "", err
 		}
-		digAfter := digest.FromBytes(stableDt)
-		if digAfter != digBefore {
-			nextPass[digBefore] = digAfter
-		}
-		cp.Def[i] = stableDt
 	}
 
-	if len(nextPass) > 0 {
-		return stabilizeInputs(cp, nextPass)
+	if len(allOps) < 2 {
+		return "", errors.Errorf("invalid LLB with %d vertexes", len(allOps))
 	}
 
-	return nil
+	for {
+		newDgst, ok := mutatedDigests[lastDgst]
+		if !ok || newDgst == lastDgst {
+			break
+		}
+		lastDgst = newDgst
+	}
+
+	lastOp := allOps[lastDgst]
+	delete(allOps, lastDgst)
+	if len(lastOp.Inputs) == 0 {
+		return "", errors.Errorf("invalid LLB with no inputs on last vertex")
+	}
+
+	dgst := lastOp.Inputs[0].Digest
+
+	return dgst, nil
+}
+
+func recomputeDigests(ctx context.Context, all map[digest.Digest]*pb.Op, visited map[digest.Digest]digest.Digest, dgst digest.Digest) (digest.Digest, error) {
+	if dgst, ok := visited[dgst]; ok {
+		return dgst, nil
+	}
+	op := all[dgst]
+
+	var mutated bool
+	for _, input := range op.Inputs {
+		if ctx.Err() != nil {
+			return "", ctx.Err()
+		}
+
+		iDgst, err := recomputeDigests(ctx, all, visited, input.Digest)
+		if err != nil {
+			return "", err
+		}
+		if input.Digest != iDgst {
+			mutated = true
+			input.Digest = iDgst
+		}
+	}
+
+	if !mutated {
+		visited[dgst] = dgst
+		return dgst, nil
+	}
+
+	dt, err := op.Marshal()
+	if err != nil {
+		return "", err
+	}
+	newDgst := digest.FromBytes(dt)
+	visited[dgst] = newDgst
+	all[newDgst] = op
+	delete(all, dgst)
+	return newDgst, nil
+}
+
+// stabilizeSourcePolicy removes ephemeral metadata from ops to prevent it from
+// busting caches.
+type stabilizeSourcePolicy struct{}
+
+func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, error) {
+	if src := op.GetSource(); src != nil {
+		var modified bool
+		for k := range src.Attrs {
+			switch k {
+			case pb.AttrLocalSessionID,
+				pb.AttrLocalUniqueID,
+				pb.AttrSharedKeyHint: // contains session ID
+				delete(src.Attrs, k)
+				modified = true
+			}
+		}
+		return modified, nil
+	}
+
+	return false, nil
 }
