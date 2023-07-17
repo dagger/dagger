@@ -7,6 +7,7 @@ import (
 	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/projectconfig"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -21,13 +22,6 @@ const (
 
 	outputMountPath = "/outputs"
 	outputFile      = "/dagger.json"
-)
-
-type ProjectSDK string
-
-const (
-	ProjectSDKGo     ProjectSDK = "go"
-	ProjectSDKPython ProjectSDK = "python"
 )
 
 type ProjectID string
@@ -70,17 +64,11 @@ type Project struct {
 	// Path to the project's config file relative to the root directory
 	ConfigPath string `json:"configPath"`
 	// The parsed project config
-	Config ProjectConfig `json:"config"`
+	Config projectconfig.Config `json:"config"`
 	// The graphql schema for the project
 	Schema string `json:"schema"`
 	// The project's platform
 	Platform specs.Platform `json:"platform,omitempty"`
-}
-
-type ProjectConfig struct {
-	Root string `json:"root"`
-	Name string `json:"name"`
-	SDK  string `json:"sdk,omitempty"`
 }
 
 func NewProject(id ProjectID, platform specs.Platform) (*Project, error) {
@@ -246,10 +234,10 @@ func (p *Project) getSchema(ctx context.Context, bk *buildkit.Client, progSock s
 }
 
 func (p *Project) runtime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
-	switch ProjectSDK(p.Config.SDK) {
-	case ProjectSDKGo:
+	switch projectconfig.SDK(p.Config.SDK) {
+	case projectconfig.SDKGo:
 		return p.goRuntime(ctx, bk, progSock, pipeline)
-	case ProjectSDKPython:
+	case projectconfig.SDKPython:
 		return p.pythonRuntime(ctx, bk, progSock, pipeline)
 	default:
 		return nil, fmt.Errorf("unknown sdk %q", p.Config.SDK)

@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"go.opentelemetry.io/otel"
@@ -55,7 +54,7 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 				}
 			case engine.EngineNameLabel:
 				engineName = v
-			case session.DaggerFrontendSessionIDLabel:
+			case engine.DaggerFrontendSessionIDLabel:
 				daggerFrontendSessionID = v
 			}
 		}

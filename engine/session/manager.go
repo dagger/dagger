@@ -13,6 +13,7 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/engine"
 	"github.com/docker/cli/cli/config"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/exporter"
@@ -27,28 +28,13 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
-const (
-	ServerIDMetaKey           = "dagger-server-id"
-	RequesterSessionIDMetaKey = "dagger-requester-session-id"
-
-	// local dir import
-	localDirImportDirNameMetaKey = "dir-name" // from buildkit
-
-	// local dir export
-	localDirExportDestSessionIDMetaKey = "dagger-local-dir-export-dest-session-id"
-	LocalDirExportDestPathMetaKey      = "dagger-local-dir-export-dest-path"
-
-	// worker label
-	DaggerFrontendSessionIDLabel = "dagger-frontend-session-id"
-)
-
 func ContextWithSessionMetadata(ctx context.Context, serverID, requesterSessionID string) context.Context {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		md = metadata.MD{}
 	}
-	md[ServerIDMetaKey] = []string{serverID}
-	md[RequesterSessionIDMetaKey] = []string{requesterSessionID}
+	md[engine.ServerIDMetaKey] = []string{serverID}
+	md[engine.RequesterSessionIDMetaKey] = []string{requesterSessionID}
 	return metadata.NewIncomingContext(ctx, md)
 }
 
@@ -57,13 +43,13 @@ func SessionMetadataFromContext(ctx context.Context) (string, string, error) {
 	if !ok {
 		return "", "", fmt.Errorf("failed to get metadata from context")
 	}
-	if len(md[ServerIDMetaKey]) != 1 {
-		return "", "", fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
+	if len(md[engine.ServerIDMetaKey]) != 1 {
+		return "", "", fmt.Errorf("failed to get %s from metadata", engine.ServerIDMetaKey)
 	}
-	if len(md[RequesterSessionIDMetaKey]) != 1 {
-		return "", "", fmt.Errorf("failed to get %s from metadata", RequesterSessionIDMetaKey)
+	if len(md[engine.RequesterSessionIDMetaKey]) != 1 {
+		return "", "", fmt.Errorf("failed to get %s from metadata", engine.RequesterSessionIDMetaKey)
 	}
-	return md[ServerIDMetaKey][0], md[RequesterSessionIDMetaKey][0], nil
+	return md[engine.ServerIDMetaKey][0], md[engine.RequesterSessionIDMetaKey][0], nil
 }
 
 func serverIDFromContext(ctx context.Context) (string, error) {
@@ -71,10 +57,10 @@ func serverIDFromContext(ctx context.Context) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("failed to get metadata from context")
 	}
-	if len(md[ServerIDMetaKey]) != 1 {
-		return "", fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
+	if len(md[engine.ServerIDMetaKey]) != 1 {
+		return "", fmt.Errorf("failed to get %s from metadata", engine.ServerIDMetaKey)
 	}
-	return md[ServerIDMetaKey][0], nil
+	return md[engine.ServerIDMetaKey][0], nil
 }
 
 type Manager struct {
@@ -143,7 +129,7 @@ func NewManager(ctx context.Context, w worker.Worker, bkSessionManager *session.
 		}
 	}()
 
-	w.Labels()[DaggerFrontendSessionIDLabel] = baseSession.ID() // TODO: const
+	w.Labels()[engine.DaggerFrontendSessionIDLabel] = baseSession.ID() // TODO: const
 	return sm, nil
 }
 
@@ -212,8 +198,8 @@ func (sm *Manager) LocalExport(ctx context.Context, res *exporter.Source, destPa
 	if !ok {
 		md = metadata.MD{}
 	}
-	md[localDirExportDestSessionIDMetaKey] = []string{destSessionID}
-	md[LocalDirExportDestPathMetaKey] = []string{destPath}
+	md[engine.LocalDirExportDestSessionIDMetaKey] = []string{destSessionID}
+	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -272,7 +258,7 @@ func (sm *Manager) Get(stream grpc.ServerStream) (context.Context, *sessionData,
 
 	sessData := &sessionData{}
 
-	serverID, err := getVal(ServerIDMetaKey)
+	serverID, err := getVal(engine.ServerIDMetaKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -280,7 +266,7 @@ func (sm *Manager) Get(stream grpc.ServerStream) (context.Context, *sessionData,
 		sessData.serverID = serverID
 	}
 
-	requesterSessionID, err := getVal(RequesterSessionIDMetaKey)
+	requesterSessionID, err := getVal(engine.RequesterSessionIDMetaKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -288,18 +274,18 @@ func (sm *Manager) Get(stream grpc.ServerStream) (context.Context, *sessionData,
 		sessData.requesterSessionID = requesterSessionID
 	}
 
-	localDirImportDirName, err := getVal(localDirImportDirNameMetaKey)
+	localDirImportDirName, err := getVal(engine.LocalDirImportDirNameMetaKey)
 	if err != nil {
 		return nil, nil, err
 	}
 	if localDirImportDirName != "" {
 		jsonBytes, err := base64.URLEncoding.DecodeString(localDirImportDirName)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid import local dir name: %q", localDirImportDirNameMetaKey)
+			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
 		}
 		var opts localImportOpts
 		if err := json.Unmarshal(jsonBytes, &opts); err != nil {
-			return nil, nil, fmt.Errorf("invalid import local dir name: %q", localDirImportDirNameMetaKey)
+			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
 		}
 		sessData.serverID = opts.ServerID
 		sess, err := sm.bkSessionManager.Get(stream.Context(), opts.OwnerSessionID, false)
@@ -311,13 +297,13 @@ func (sm *Manager) Get(stream grpc.ServerStream) (context.Context, *sessionData,
 			path:    opts.Path,
 		}
 		// TODO: validation that requester has access
-		md[localDirImportDirNameMetaKey] = []string{sessData.importLocalDirData.path}
+		md[engine.LocalDirImportDirNameMetaKey] = []string{sessData.importLocalDirData.path}
 		ctx = metadata.NewIncomingContext(ctx, md) // TODO: needed too?
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return ctx, sessData, nil
 	}
 
-	localDirExportDestSessionID, err := getVal(localDirExportDestSessionIDMetaKey)
+	localDirExportDestSessionID, err := getVal(engine.LocalDirExportDestSessionIDMetaKey)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -328,12 +314,12 @@ func (sm *Manager) Get(stream grpc.ServerStream) (context.Context, *sessionData,
 			return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
 		}
 
-		localDirExportDestPath, err := getVal(LocalDirExportDestPathMetaKey)
+		localDirExportDestPath, err := getVal(engine.LocalDirExportDestPathMetaKey)
 		if err != nil {
 			return nil, nil, err
 		}
 		if localDirExportDestPath == "" {
-			return nil, nil, fmt.Errorf("missing %s", LocalDirExportDestPathMetaKey)
+			return nil, nil, fmt.Errorf("missing %s", engine.LocalDirExportDestPathMetaKey)
 		}
 
 		sess, err := sm.bkSessionManager.Get(stream.Context(), localDirExportDestSessionID, false)

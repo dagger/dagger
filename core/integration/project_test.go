@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/projectconfig"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
@@ -60,7 +60,7 @@ func TestProjectCmd(t *testing.T) {
 					CallProject().
 					Stderr(ctx)
 				require.NoError(t, err)
-				cfg := core.ProjectConfig{}
+				cfg := projectconfig.Config{}
 				require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
 				require.Equal(t, tc.expectedSDK, cfg.SDK)
 				require.Equal(t, tc.expectedName, cfg.Name)
@@ -155,7 +155,7 @@ func TestProjectCmdInit(t *testing.T) {
 
 			output, err := ctr.CallProject().Stderr(ctx)
 			require.NoError(t, err)
-			cfg := core.ProjectConfig{}
+			cfg := projectconfig.Config{}
 			require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
 			require.Equal(t, tc.sdk, cfg.SDK)
 			require.Equal(t, tc.name, cfg.Name)

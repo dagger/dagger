@@ -746,7 +746,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	if err != nil {
 		return nil, nil, err
 	}
-	frontends[server.DaggerFrontendName] = daggerFrontend
+	frontends[engine.DaggerFrontendName] = daggerFrontend
 
 	cacheStorage, err := bboltcachestorage.NewStore(filepath.Join(cfg.Root, "cache.db"))
 	if err != nil {

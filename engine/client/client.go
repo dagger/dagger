@@ -19,9 +19,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/local"
 	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine/server"
-	"github.com/dagger/dagger/engine/session"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -32,7 +30,6 @@ import (
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
-	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/entitlements"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -139,16 +136,18 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		bkSession.Allow(AnyDirTarget{})
 	}
 
-	// secrets
+	/* TODO: secrets
 	secretStore := core.NewSecretStore()
 	bkSession.Allow(secretsprovider.NewSecretProvider(secretStore))
-	// TODO: secretStore.SetGateway(...)
+	secretStore.SetGateway(...)
+	*/
 
-	// sockets
+	/* TODO: sockets
 	bkSession.Allow(session.MergedSocketProvider{
 		// TODO: enforce this in the session stream proxy
 		// EnableHostNetworkAccess: !s.DisableHostRW,
 	})
+	*/
 
 	// registry auth
 	bkSession.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
@@ -231,7 +230,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{
 			Ref:           solveRef,
 			Session:       s.bkClient.DaggerFrontendSessionID,
-			Frontend:      server.DaggerFrontendName,
+			Frontend:      engine.DaggerFrontendName,
 			FrontendAttrs: frontendOptMap,
 			Entitlements:  allowedEntitlements,
 			Internal:      true, // disables history recording, which we don't need
@@ -271,7 +270,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 			},
 		},
 		headers: http.Header{
-			server.SessionIDHeader: []string{bkSession.ID()},
+			engine.SessionIDHeader: []string{bkSession.ID()},
 		},
 	}
 
@@ -287,8 +286,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	return s, nil
 }
 
-func (s *Session) FrontendOpts() server.FrontendOpts {
-	return server.FrontendOpts{
+func (s *Session) FrontendOpts() engine.FrontendOpts {
+	return engine.FrontendOpts{
 		ServerID:        s.ServerID,
 		ClientSessionID: s.bkSession.ID(),
 		// TODO: cache configs
@@ -463,12 +462,12 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 		return fmt.Errorf("diff copy missing metadata")
 	}
 
-	destVal, ok := opts[session.LocalDirExportDestPathMetaKey]
+	destVal, ok := opts[engine.LocalDirExportDestPathMetaKey]
 	if !ok {
-		return fmt.Errorf("missing " + session.LocalDirExportDestPathMetaKey)
+		return fmt.Errorf("missing " + engine.LocalDirExportDestPathMetaKey)
 	}
 	if len(destVal) != 1 {
-		return fmt.Errorf("expected exactly one "+session.LocalDirExportDestPathMetaKey+" value, got %d", len(destVal))
+		return fmt.Errorf("expected exactly one "+engine.LocalDirExportDestPathMetaKey+" value, got %d", len(destVal))
 	}
 	dest := destVal[0]
 
