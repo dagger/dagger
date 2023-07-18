@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'engine: remove unimplemented git fields'
+time: 2023-07-18T19:28:34.672011+01:00
+custom:
+  Author: helderco
+  PR: "5410"
