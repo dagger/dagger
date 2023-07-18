@@ -2205,10 +2205,8 @@ class File(Type):
             :py:meth:`set_secret`
         """
         warnings.warn(
-            (
-                'Method "secret" is deprecated: insecure, leaves secret in cache.'
-                ' Superseded by "set_secret"'
-            ),
+            'Method "secret" is deprecated: insecure, leaves secret in cache.'
+            ' Superseded by "set_secret"',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -2445,10 +2443,8 @@ class Host(Type):
             ["app/", "package.*"]).
         """
         warnings.warn(
-            (
-                'Method "workdir" is deprecated: Use "directory" with path set to \'.\''
-                " instead."
-            ),
+            'Method "workdir" is deprecated: Use "directory" with path set to \'.\''
+            " instead.",
             DeprecationWarning,
             stacklevel=4,
         )
