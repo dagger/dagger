@@ -1,10 +1,11 @@
 import contextlib
 import enum
 import functools
+import inspect
 import logging
 import typing
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import MISSING, asdict, dataclass, field, is_dataclass, replace
 from typing import (
     Annotated,
@@ -418,7 +419,23 @@ def is_id_type_sequence(v: object) -> TypeGuard[IDTypeSeq]:
     return IDTypeSeqHint.is_bearable(v)
 
 
+@overload
+def typecheck(
+    func: Callable[P, Coroutine[Any, Any, T]]
+) -> Callable[P, Coroutine[Any, Any, T]]:
+    ...
+
+
+@overload
 def typecheck(func: Callable[P, T]) -> Callable[P, T]:
+    ...
+
+
+def typecheck(
+    func: Callable[P, T | Coroutine[Any, Any, T]]
+) -> Callable[P, T | Coroutine[Any, Any, T]]:
+    ...
+
     """
     Runtime type checking.
 
@@ -441,10 +458,10 @@ def typecheck(func: Callable[P, T]) -> Callable[P, T]:
     # so it'll be catched early, during development.
     bear = beartype(func)
 
-    @functools.wraps(func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+    @contextlib.contextmanager
+    def _handle_exception():
         try:
-            return bear(*args, **kwargs)
+            yield
         except BeartypeCallHintViolation as e:
             # Tweak the error message a bit.
             msg = str(e).replace("@beartyped ", "")
@@ -461,4 +478,22 @@ def typecheck(func: Callable[P, T]) -> Callable[P, T]:
             err = TypeError(msg).with_traceback(None)
             raise err from None
 
-    return wrapper
+    if inspect.iscoroutinefunction(bear):
+
+        @functools.wraps(func)
+        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            with _handle_exception():
+                return await bear(*args, **kwargs)
+
+        return async_wrapper
+
+    if inspect.isfunction(bear):
+
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            with _handle_exception():
+                return bear(*args, **kwargs)
+
+        return wrapper
+
+    return bear
