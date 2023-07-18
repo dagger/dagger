@@ -604,7 +604,7 @@ type Container {
 
   Will execute default command if none is set, or error if there's no default.
   """
-  exitCode: Int!
+  exitCode: Int! @deprecated(reason: "Use `sync` instead.")
 
   """
   The output stream of the last executed command.
@@ -689,7 +689,7 @@ type Container {
 
     """
     Use the specified media types for the exported image's layers. Defaults to OCI, which
-    is largely compatible with most recent container runtimes, but Docker may be needed 
+    is largely compatible with most recent container runtimes, but Docker may be needed
     for older runtimes without OCI support.
     """
     mediaTypes: ImageMediaTypes = OCIMediaTypes

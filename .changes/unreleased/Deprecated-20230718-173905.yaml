@@ -1,0 +1,6 @@
+kind: Deprecated
+body: Deprecate `exitCode`
+time: 2023-07-18T17:39:05.715807Z
+custom:
+  Author: helderco
+  PR: "5481"
