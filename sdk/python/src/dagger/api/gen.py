@@ -387,6 +387,9 @@ class Container(Type):
         Will execute default command if none is set, or error if there's no
         default.
 
+        .. deprecated::
+            Use :py:meth:`sync` instead.
+
         Returns
         -------
         int
@@ -401,6 +404,11 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "exit_code" is deprecated: Use "sync" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
         return await _ctx.execute(int)
