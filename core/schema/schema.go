@@ -20,23 +20,25 @@ import (
 )
 
 type InitializeArgs struct {
-	BuildkitClient *buildkit.Client
-	Platform       specs.Platform
-	ProgSockPath   string
-	OCIStore       content.Store
-	LeaseManager   *leaseutil.Manager
-	Auth           *auth.RegistryAuthProvider
-	Secrets        *core.SecretStore
+	BuildkitClient     *buildkit.Client
+	Platform           specs.Platform
+	ProgSockPath       string
+	OCIStore           content.Store
+	LeaseManager       *leaseutil.Manager
+	Auth               *auth.RegistryAuthProvider
+	Secrets            *core.SecretStore
+	ExtraSearchDomains []string
 }
 
 func New(params InitializeArgs) (*MergedSchemas, error) {
 	merged := &MergedSchemas{
-		bk:              params.BuildkitClient,
-		platform:        params.Platform,
-		progSockPath:    params.ProgSockPath,
-		auth:            params.Auth,
-		secrets:         params.Secrets,
-		separateSchemas: map[string]ExecutableSchema{},
+		bk:                 params.BuildkitClient,
+		platform:           params.Platform,
+		progSockPath:       params.ProgSockPath,
+		extraSearchDomains: params.ExtraSearchDomains,
+		auth:               params.Auth,
+		secrets:            params.Secrets,
+		separateSchemas:    map[string]ExecutableSchema{},
 	}
 	host := core.NewHost()
 	err := merged.addSchemas(
@@ -47,6 +49,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		&containerSchema{merged, host, params.OCIStore, params.LeaseManager},
 		&cacheSchema{merged},
 		&secretSchema{merged},
+		&serviceSchema{merged},
 		&hostSchema{merged, host},
 		&projectSchema{merged},
 		&httpSchema{merged},
@@ -65,6 +68,8 @@ type MergedSchemas struct {
 	progSockPath string
 	auth         *auth.RegistryAuthProvider
 	secrets      *core.SecretStore
+
+	extraSearchDomains []string
 
 	schemaMu        sync.RWMutex
 	separateSchemas map[string]ExecutableSchema

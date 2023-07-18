@@ -24,8 +24,9 @@ func main() {
 		From("python").
 		WithDirectory("/srv", client.Directory().WithNewFile("index.html", "Hello, world!")).
 		WithWorkdir("/srv").
+		WithExposedPort(8080).
 		WithExec([]string{"python", "-m", "http.server", "8080"}).
-		WithExposedPort(8080)
+		Service()
 
 	// get endpoint
 	val, err := httpSrv.
@@ -38,7 +39,7 @@ func main() {
 	fmt.Println(val)
 
 	// get HTTP endpoint
-	val, err = httpSrv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+	val, err = httpSrv.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Scheme: "http",
 	})
 

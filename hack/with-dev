@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e -u -x
+
+DAGGER_SRC_ROOT="$(cd $(dirname "${BASH_SOURCE[0]}")/.. && pwd)"
+MAGEDIR="$DAGGER_SRC_ROOT/internal/mage"
+
+export _EXPERIMENTAL_DAGGER_CLI_BIN=$DAGGER_SRC_ROOT/bin/dagger
+export _EXPERIMENTAL_DAGGER_RUNNER_HOST=docker-container://dagger-engine.dev
+export _DAGGER_TESTS_ENGINE_TAR=$DAGGER_SRC_ROOT/bin/engine.tar
+
+exec "$@"

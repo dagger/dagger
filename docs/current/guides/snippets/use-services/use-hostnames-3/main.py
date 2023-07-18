@@ -12,7 +12,7 @@ async def main():
         val = await (
             client.container()
             .from_("python")
-            .with_exec(["python", "-m", "http.server"])
+            .service(["python", "-m", "http.server"])
             .hostname()
         )
 

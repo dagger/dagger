@@ -41,11 +41,11 @@ func (s *gitSchema) Dependencies() []ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL             string            `json:"url"`
-	KeepGitDir      bool              `json:"keepGitDir"`
-	AuthTokenSecret *core.SecretID    `json:"authTokenSecret,omitempty"`
-	Pipeline        pipeline.Path     `json:"pipeline"`
-	ServiceHost     *core.ContainerID `json:"serviceHost,omitempty"`
+	URL             string          `json:"url"`
+	KeepGitDir      bool            `json:"keepGitDir"`
+	AuthTokenSecret *core.SecretID  `json:"authTokenSecret,omitempty"`
+	Pipeline        pipeline.Path   `json:"pipeline"`
+	ServiceHost     *core.ServiceID `json:"serviceHost,omitempty"`
 }
 
 type gitRef struct {
@@ -54,9 +54,9 @@ type gitRef struct {
 }
 
 type gitArgs struct {
-	URL                     string            `json:"url"`
-	KeepGitDir              bool              `json:"keepGitDir"`
-	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
+	URL                     string          `json:"url"`
+	KeepGitDir              bool            `json:"keepGitDir"`
+	ExperimentalServiceHost *core.ServiceID `json:"experimentalServiceHost"`
 }
 
 func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
@@ -108,7 +108,6 @@ type gitTreeArgs struct {
 
 func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
 	opts := []llb.GitOption{}
-
 	if parent.Repository.KeepGitDir {
 		opts = append(opts, llb.KeepGitDir())
 	}
@@ -118,10 +117,23 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 	if args.SSHAuthSocket != "" {
 		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
 	}
+
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
+
+	// TODO(vito): use Git+DNS source
+	//if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
+	//	// NB: only configure search domains if we're directly using a service, or
+	//	// if we're nested beneath another search domain.
+	//	//
+	//	// we have to be a bit selective here to avoid breaking Dockerfile builds
+	//	// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+	//	// networks API cap yet.
+	//	opts = append(opts, llb.WithNetworkConfig(core.DaggerNetwork))
+	//}
+
 	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
 	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

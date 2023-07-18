@@ -6,7 +6,7 @@ connect(
     const val = await client
       .container()
       .from("python")
-      .withExec(["python", "-m", "http.server"])
+      .service(["python", "-m", "http.server"])
       .hostname()
     console.log(val)
   },

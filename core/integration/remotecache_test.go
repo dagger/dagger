@@ -12,10 +12,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Container, cacheName, cacheEnv string, index uint8) (devEngine *dagger.Container, endpoint string, err error) {
+func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *dagger.Service, cacheName, cacheEnv string, index uint8) (devEngineSvc *dagger.Service, endpoint string, err error) {
 	id := identity.NewID()
 	networkCIDR := fmt.Sprintf("10.%d.0.0/16", 100+index)
-	devEngine = devEngineContainer(c)
+	devEngine := devEngineContainer(c)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 	if err != nil {
 		return nil, "", err
@@ -27,7 +27,7 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 		Contents: entrypoint,
 	})
 
-	devEngine = devEngine.
+	devEngineSvc = devEngine.
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
@@ -35,11 +35,14 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).Service()
 
-	endpoint, err = devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err = devEngineSvc.Endpoint(ctx, dagger.ServiceEndpointOpts{
+		Port:   1234,
+		Scheme: "tcp",
+	})
 
-	return devEngine, endpoint, err
+	return devEngineSvc, endpoint, err
 }
 
 func TestRemoteCacheRegistry(t *testing.T) {
@@ -48,7 +51,8 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	registry := c.Pipeline("registry").Container().From("registry:2").
 		WithMountedCache("/var/lib/registry/", c.CacheVolume("remote-cache-registry-"+identity.NewID())).
-		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
+		WithExposedPort(5000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
+		Service()
 
 	cacheEnv := "type=registry,ref=registry:5000/test-cache,mode=max"
 
@@ -68,14 +72,14 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
+			Contents: `{
+				container {
+					from(address: "alpine:3.17") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
 			}`}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
@@ -94,14 +98,14 @@ func TestRemoteCacheRegistry(t *testing.T) {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
+			Contents: `{
+				container {
+					from(address: "alpine:3.17") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
 			}`}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
@@ -123,9 +127,10 @@ func TestRemoteCacheS3(t *testing.T) {
 		s3 := c.Pipeline("s3").Container().From("minio/minio").
 			WithMountedCache("/data", c.CacheVolume("minio-cache")).
 			WithExposedPort(9000, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-			WithExec([]string{"server", "/data"})
+			WithExec([]string{"server", "/data"}).
+			Service()
 
-		s3Endpoint, err := s3.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 9000, Scheme: "http"})
+		s3Endpoint, err := s3.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 9000, Scheme: "http"})
 		require.NoError(t, err)
 
 		minioStdout, err := c.Container().From("minio/mc").
@@ -153,14 +158,14 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
+				Contents: `{
+						container {
+							from(address: "alpine:3.17") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
 					}`}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
@@ -179,14 +184,14 @@ func TestRemoteCacheS3(t *testing.T) {
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
+				Contents: `{
+						container {
+							from(address: "alpine:3.17") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
 					}`}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",

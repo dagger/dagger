@@ -172,8 +172,6 @@ require (
 	github.com/moby/sys/mount v0.3.3 // indirect
 	github.com/moby/sys/mountinfo v0.6.2 // indirect
 	github.com/moby/sys/sequential v0.5.0 // indirect
-	github.com/onsi/ginkgo/v2 v2.6.1 // indirect
-	github.com/onsi/gomega v1.24.2 // indirect
 	github.com/opencontainers/selinux v1.11.0 // indirect
 	github.com/package-url/packageurl-go v0.1.1-0.20220428063043-89078438f170 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect

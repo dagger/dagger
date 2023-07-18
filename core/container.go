@@ -57,6 +57,10 @@ type Container struct {
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
 
+	// ServiceExec is a Service representation of a WithExec. It may be null if
+	// no exec has happened yet.
+	ServiceExec *Service `json:"service_exec,omitempty"`
+
 	// The platform of the container's rootfs.
 	Platform specs.Platform `json:"platform,omitempty"`
 
@@ -68,9 +72,6 @@ type Container struct {
 
 	// Image reference
 	ImageRef string `json:"image_ref,omitempty"`
-
-	// Hostname is the computed hostname for the container.
-	Hostname string `json:"hostname,omitempty"`
 
 	// Ports to expose from the container.
 	Ports []ContainerPort `json:"ports,omitempty"`
@@ -222,9 +223,6 @@ func (container *Container) FSState() (llb.State, error) {
 	return defToState(container.FS)
 }
 
-// metaSourcePath is a world-writable directory created and mounted to /dagger.
-const metaSourcePath = "meta"
-
 // MetaState returns the container's metadata mount state. If the container has
 // yet to run, it returns nil.
 func (container *Container) MetaState() (*llb.State, error) {
@@ -255,7 +253,7 @@ type ContainerMount struct {
 	CacheID string `json:"cache_id,omitempty"`
 
 	// How to share the cache across concurrent runs.
-	CacheSharingMode string `json:"cache_sharing,omitempty"`
+	CacheSharingMode CacheSharingMode `json:"cache_sharing,omitempty"`
 
 	// Configure the mount as a tmpfs.
 	Tmpfs bool `json:"tmpfs,omitempty"`
@@ -571,25 +569,19 @@ func (container *Container) WithMountedFile(ctx context.Context, bk *buildkit.Cl
 	return container.withMounted(ctx, bk, target, file.LLB, file.File, file.Services, owner)
 }
 
-func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, concurrency CacheSharingMode, owner string) (*Container, error) {
+func (container *Container) WithMountedCache(ctx context.Context, bk *buildkit.Client, target string, cache *CacheVolume, source *Directory, sharingMode CacheSharingMode, owner string) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)
 
-	cacheSharingMode := ""
-	switch concurrency {
-	case CacheSharingModePrivate:
-		cacheSharingMode = "private"
-	case CacheSharingModeLocked:
-		cacheSharingMode = "locked"
-	default:
-		cacheSharingMode = "shared"
+	if sharingMode == "" {
+		sharingMode = CacheSharingModeShared
 	}
 
 	mount := ContainerMount{
 		Target:           target,
 		CacheID:          cache.Sum(),
-		CacheSharingMode: cacheSharingMode,
+		CacheSharingMode: sharingMode,
 	}
 
 	if source != nil {
@@ -1026,16 +1018,8 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 	return container, nil
 }
 
-func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, progSock string, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
-	container = container.Clone()
-
+func (container *Container) command(opts ContainerExecOpts) ([]string, error) {
 	cfg := container.Config
-	mounts := container.Mounts
-	platform := container.Platform
-	if platform.OS == "" {
-		platform = defaultPlatform
-	}
-
 	args := opts.Args
 
 	if len(args) == 0 {
@@ -1049,6 +1033,48 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	if len(args) == 0 {
 		return nil, errors.New("no command has been set")
+	}
+
+	return args, nil
+}
+
+func metaMount(stdin string) (llb.State, string) {
+	// because the shim might run as non-root, we need to make a world-writable
+	// directory first and then make it the base of the /dagger mount point.
+	//
+	// TODO(vito): have the shim exec as the other user instead?
+	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
+	if stdin != "" {
+		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(stdin))
+	}
+
+	return llb.Scratch().File(
+			meta,
+			llb.WithCustomName(internalPrefix+"creating dagger metadata"),
+		),
+		buildkit.MetaSourcePath
+}
+
+func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, progSock string, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
+	stripped := *container
+	stripped.ServiceExec = nil
+	svc := &Service{
+		Container: &stripped,
+		Exec:      opts,
+	}
+	container = container.Clone()
+	container.ServiceExec = svc
+
+	cfg := container.Config
+	mounts := container.Mounts
+	platform := container.Platform
+	if platform.OS == "" {
+		platform = defaultPlatform
+	}
+
+	args, err := container.command(opts)
+	if err != nil {
+		return nil, err
 	}
 
 	var namef string
@@ -1077,20 +1103,14 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		)
 	}
 
-	// because the shim might run as non-root, we need to make a world-writable
-	// directory first and then make it the base of the /dagger mount point.
-	//
-	// TODO(vito): have the shim exec as the other user instead?
-	meta := llb.Mkdir(buildkit.MetaSourcePath, 0o777)
-	if opts.Stdin != "" {
-		meta = meta.Mkfile(path.Join(buildkit.MetaSourcePath, "stdin"), 0o600, []byte(opts.Stdin))
-	}
+	// TODO(vito): add /etc/resolv.conf mount
+	// runOpts = append(runOpts, llb.WithNetworkConfig(DaggerNetwork))
+
+	metaSt, metaSourcePath := metaMount(opts.Stdin)
 
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
-		llb.AddMount(buildkit.MetaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName(internalPrefix+"creating dagger metadata")),
-			llb.SourcePath(buildkit.MetaSourcePath)))
+		llb.AddMount(buildkit.MetaMountDestPath, metaSt, llb.SourcePath(metaSourcePath)))
 
 	if opts.RedirectStdout != "" {
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDOUT", opts.RedirectStdout))
@@ -1205,11 +1225,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		if mnt.CacheID != "" {
 			var sharingMode llb.CacheMountSharingMode
 			switch mnt.CacheSharingMode {
-			case "shared":
+			case CacheSharingModeShared:
 				sharingMode = llb.CacheMountShared
-			case "private":
+			case CacheSharingModePrivate:
 				sharingMode = llb.CacheMountPrivate
-			case "locked":
+			case CacheSharingModeLocked:
 				sharingMode = llb.CacheMountLocked
 			default:
 				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
@@ -1234,24 +1254,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	// first, build without a hostname
-	execStNoHostname := fsSt.Run(runOpts...)
-
-	// next, marshal it to compute a deterministic hostname
-	execDefNoHostname, err := execStNoHostname.Root().Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-	// compute a *stable* digest so that hostnames don't change across sessions
-	digest, err := stableDigest(execDefNoHostname.ToPB())
-	if err != nil {
-		return nil, fmt.Errorf("stable digest: %w", err)
-	}
-	hostname := hostHash(digest)
-	container.Hostname = hostname
-
-	// finally, build with the hostname set
-	runOpts = append(runOpts, llb.Hostname(hostname))
 	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
@@ -1325,58 +1327,6 @@ func (container *Container) ExitCode(ctx context.Context, bk *buildkit.Client, p
 	return strconv.Atoi(content)
 }
 
-func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
-	if container.Hostname == "" {
-		return nil, ErrContainerNoExec
-	}
-
-	health := newHealth(bk, container.Hostname, container.Ports)
-
-	// annotate the container as a service so they can be treated differently
-	// in the UI
-	rec := progrock.RecorderFromContext(ctx).
-		WithGroup(
-			fmt.Sprintf("service %s", container.Hostname),
-			progrock.Weak(),
-		)
-
-	svcCtx, stop := context.WithCancel(context.Background())
-	svcCtx = progrock.RecorderToContext(svcCtx, rec)
-
-	checked := make(chan error, 1)
-	go func() {
-		checked <- health.Check(svcCtx)
-	}()
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- container.Evaluate(svcCtx, bk)
-	}()
-
-	select {
-	case err := <-checked:
-		if err != nil {
-			stop()
-			return nil, fmt.Errorf("health check errored: %w", err)
-		}
-
-		_ = stop // leave it running
-
-		return &Service{
-			Container: container,
-			Detach:    stop,
-		}, nil
-	case err := <-exited:
-		stop() // interrupt healthcheck
-
-		if err != nil {
-			return nil, fmt.Errorf("exited: %w", err)
-		}
-
-		return nil, fmt.Errorf("service exited before healthcheck")
-	}
-}
-
 func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.Client, progSock string, filePath string) (string, error) {
 	if container.Meta == nil {
 		ctr, err := container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
@@ -1389,7 +1339,7 @@ func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.C
 	file := NewFile(
 		ctx,
 		container.Meta,
-		path.Join(metaSourcePath, filePath),
+		path.Join(buildkit.MetaSourcePath, filePath),
 		container.Pipeline,
 		container.Platform,
 		container.Services,
@@ -1540,36 +1490,6 @@ func (container *Container) Import(
 	return container, nil
 }
 
-func (container *Container) HostnameOrErr() (string, error) {
-	if container.Hostname == "" {
-		return "", ErrContainerNoExec
-	}
-
-	return container.Hostname, nil
-}
-
-func (container *Container) Endpoint(port int, scheme string) (string, error) {
-	if port == 0 {
-		if len(container.Ports) == 0 {
-			return "", fmt.Errorf("no ports exposed")
-		}
-
-		port = container.Ports[0].Port
-	}
-
-	host, err := container.HostnameOrErr()
-	if err != nil {
-		return "", err
-	}
-
-	endpoint := fmt.Sprintf("%s:%d", host, port)
-	if scheme != "" {
-		endpoint = scheme + "://" + endpoint
-	}
-
-	return endpoint, nil
-}
-
 func (container *Container) WithExposedPort(port ContainerPort) (*Container, error) {
 	container = container.Clone()
 
@@ -1617,7 +1537,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
 	svcID, err := svc.ID()
@@ -1630,14 +1550,14 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 	})
 
 	if alias != "" {
-		hn, err := svc.HostnameOrErr()
+		hostname, err := svc.Hostname()
 		if err != nil {
 			return nil, fmt.Errorf("get hostname: %w", err)
 		}
 
 		container.HostAliases = append(container.HostAliases, HostAlias{
 			Alias:  alias,
-			Target: hn,
+			Target: hostname,
 		})
 	}
 
@@ -1782,6 +1702,18 @@ func (container *Container) ImageRefOrErr(ctx context.Context, bk *buildkit.Clie
 	return "", errors.Errorf("Image reference can only be retrieved immediately after the 'Container.From' call. Error in fetching imageRef as the container image is changed")
 }
 
+func (container *Container) Service(ctx context.Context, bk *buildkit.Client, progSock string) (*Service, error) {
+	if container.ServiceExec == nil {
+		var err error
+		container, err = container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return container.ServiceExec, nil
+}
+
 func (container *Container) ownership(ctx context.Context, bk *buildkit.Client, owner string) (*Ownership, error) {
 	if owner == "" {
 		// do not change ownership
@@ -1832,7 +1764,12 @@ func hostHash(val digest.Digest) string {
 	if err != nil {
 		panic(err)
 	}
-	return b32(xxh3.Hash(b))
+
+	return strings.ToLower(b32(xxh3.Hash(b)))
+}
+
+func hostHashStr(val string) string {
+	return strings.ToLower(b32(xxh3.HashString(val)))
 }
 
 func b32(n uint64) string {

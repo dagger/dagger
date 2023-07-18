@@ -25,6 +25,7 @@ import (
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -38,7 +39,7 @@ import (
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/control"
-	"github.com/moby/buildkit/executor/oci"
+	"github.com/moby/buildkit/executor"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
 	"github.com/moby/buildkit/frontend/gateway"
@@ -242,7 +243,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancel(context.Background())
 		defer cancelNetworking()
-		cniConfigPath, err := setupNetwork(networkContext,
+		netConf, err := setupNetwork(networkContext,
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
 		)
@@ -251,7 +252,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
+		if err := setDaggerDefaults(&cfg, netConf); err != nil {
 			return err
 		}
 
@@ -912,10 +913,10 @@ func getBuildkitVersion() client.BuildkitVersion {
 	}
 }
 
-func getDNSConfig(cfg *config.DNSConfig) *oci.DNSConfig {
-	var dns *oci.DNSConfig
+func getDNSConfig(cfg *config.DNSConfig) *executor.DNSConfig {
+	var dns *executor.DNSConfig
 	if cfg != nil {
-		dns = &oci.DNSConfig{
+		dns = &executor.DNSConfig{
 			Nameservers:   cfg.Nameservers,
 			Options:       cfg.Options,
 			SearchDomains: cfg.SearchDomains,
@@ -962,32 +963,46 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 	return &tracev1.ExportTraceServiceResponse{}, nil
 }
 
-func setupNetwork(ctx context.Context, netName, netCIDR string) (string, error) {
+type networkConfig struct {
+	NetName       string
+	NetCIDR       string
+	Bridge        net.IP
+	CNIConfigPath string
+}
+
+func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
 	if os.Getenv(servicesDNSEnvName) == "0" {
-		return "", nil
+		return nil, nil
 	}
 
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("bridge from cidr: %w", err)
+		return nil, fmt.Errorf("bridge from cidr: %w", err)
 	}
 
-	err = network.InstallResolvconf(netName, bridge.String())
+	// NB: this is needed for the Dagger shim worker at the moment for host alias
+	// resolution
+	err = netinst.InstallResolvconf(netName, bridge.String())
 	if err != nil {
-		return "", fmt.Errorf("install resolv.conf: %w", err)
+		return nil, fmt.Errorf("install resolv.conf: %w", err)
 	}
 
-	err = network.InstallDnsmasq(ctx, netName)
+	err = netinst.InstallDnsmasq(ctx, netName)
 	if err != nil {
-		return "", fmt.Errorf("install dnsmasq: %w", err)
+		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(netName, netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("install cni: %w", err)
+		return nil, fmt.Errorf("install cni: %w", err)
 	}
 
-	return cniConfigPath, nil
+	return &networkConfig{
+		NetName:       netName,
+		NetCIDR:       netCIDR,
+		Bridge:        bridge,
+		CNIConfigPath: cniConfigPath,
+	}, nil
 }
 
 type noopCacheImporter struct{}

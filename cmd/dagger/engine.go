@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -69,6 +71,10 @@ func withEngineAndTUI(
 
 	if params.JournalFile == "" {
 		params.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
+	}
+
+	if params.ExtraSearchDomains == nil {
+		params.ExtraSearchDomains = strings.Fields(os.Getenv("_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN"))
 	}
 
 	if !silent {
@@ -191,6 +197,16 @@ func inlineTUI(
 		return err
 	}
 	defer sess.Close()
+
+	before := time.Now()
+	defer func() {
+		program.Send(progrock.StatusInfoMsg{
+			Name:  "Duration",
+			Value: time.Since(before).Truncate(time.Millisecond).String(),
+			Order: 3,
+		})
+	}()
+
 	return fn(ctx, sess)
 }
 

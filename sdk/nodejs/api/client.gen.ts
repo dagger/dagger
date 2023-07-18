@@ -115,18 +115,6 @@ export type ContainerBuildOpts = {
   secrets?: Secret[]
 }
 
-export type ContainerEndpointOpts = {
-  /**
-   * The exposed port number for the endpoint
-   */
-  port?: number
-
-  /**
-   * Return a URL with the given scheme, eg. http for http://
-   */
-  scheme?: string
-}
-
 export type ContainerExecOpts = {
   /**
    * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
@@ -655,14 +643,14 @@ export type ClientGitOpts = {
   /**
    * A service which must be started before the repo is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientHttpOpts = {
   /**
    * A service which must be started before the URL is fetched.
    */
-  experimentalServiceHost?: Container
+  experimentalServiceHost?: Service
 }
 
 export type ClientPipelineOpts = {
@@ -694,10 +682,32 @@ export type ClientSocketOpts = {
  */
 export type SecretID = string & { __SecretID: never }
 
+export type ServiceEndpointOpts = {
+  /**
+   * The exposed port number for the endpoint
+   */
+  port?: number
+
+  /**
+   * Return a URL with the given scheme, eg. http for http://
+   */
+  scheme?: string
+}
+
+/**
+ * A unique service identifier.
+ */
+export type ServiceID = string & { __ServiceID: never }
+
 /**
  * A content-addressed socket identifier.
  */
 export type SocketID = string & { __SocketID: never }
+
+/**
+ * Nothing. Used by SDK codegen to skip the return value.
+ */
+export type Void = string & { __Void: never }
 
 export type __TypeEnumValuesOpts = {
   includeDeprecated?: boolean
@@ -791,32 +801,6 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Retrieves an endpoint that clients can use to reach this container.
-   *
-   * If no port is specified, the first exposed port is used. If none exist an error is returned.
-   *
-   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   * @param opts.port The exposed port number for the endpoint
-   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
-   */
-  async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "endpoint",
-          args: { ...opts },
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 
   /**
@@ -1029,25 +1013,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves a hostname which can be used by clients to reach this container.
-   *
-   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
-   */
-  async hostname(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "hostname",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
@@ -1236,6 +1201,22 @@ export class Container extends BaseClient {
         ...this._queryTree,
         {
           operation: "rootfs",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Retrieves a service that will run the container.
+   */
+  service(): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
         },
       ],
       host: this.clientHost,
@@ -1792,7 +1773,7 @@ export class Container extends BaseClient {
    * @param alias A name that can be used to reach the service from the container
    * @param service Identifier of the service container
    */
-  withServiceBinding(alias: string, service: Container): Container {
+  withServiceBinding(alias: string, service: Service): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
@@ -3315,6 +3296,23 @@ export default class Client extends BaseClient {
   }
 
   /**
+   * Loads a service from ID.
+   */
+  service(id: ServiceID): Service {
+    return new Service({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "service",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Sets a secret given a user defined name to its plaintext and returns the secret.
    * The plaintext value is limited to a size of 128000 bytes.
    * @param name The user defined name for this secret
@@ -3391,6 +3389,70 @@ export class Secret extends BaseClient {
         ...this._queryTree,
         {
           operation: "plaintext",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+export class Service extends BaseClient {
+  /**
+   * Retrieves an endpoint that clients can use to reach this container.
+   *
+   * If no port is specified, the first exposed port is used. If none exist an error is returned.
+   *
+   * If a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   * @param opts.port The exposed port number for the endpoint
+   * @param opts.scheme Return a URL with the given scheme, eg. http for http://
+   */
+  async endpoint(opts?: ServiceEndpointOpts): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+          args: { ...opts },
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Retrieves a hostname which can be used by clients to reach this container.
+   *
+   * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
+   */
+  async hostname(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "hostname",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A unique identifier for this service.
+   */
+  async id(): Promise<ServiceID> {
+    const response: Awaited<ServiceID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
         },
       ],
       this.client

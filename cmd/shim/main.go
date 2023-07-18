@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +23,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine/client"
+	"github.com/dagger/dagger/network"
 	"github.com/google/uuid"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vito/progrock"
@@ -89,7 +92,7 @@ func internalCommand() int {
 
 func check(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: check <host> port/tcp [port/udp ...]")
+		return fmt.Errorf("usage: check port/tcp [port/udp ...]")
 	}
 
 	host, ports := args[0], args[1:]
@@ -102,14 +105,14 @@ func check(args []string) error {
 
 		pollAddr := net.JoinHostPort(host, port)
 
-		fmt.Println("polling for port", pollAddr)
+		fmt.Fprintln(os.Stderr, "polling for port", pollAddr)
 
 		reached, err := pollForPort(network, pollAddr)
 		if err != nil {
 			return fmt.Errorf("poll %s: %w", pollAddr, err)
 		}
 
-		fmt.Println("port is up at", reached)
+		fmt.Fprintln(os.Stderr, "port is up at", reached)
 	}
 
 	return nil
@@ -304,9 +307,16 @@ func setupBundle() int {
 			break
 		}
 	}
-	// We're running an internal shim command, i.e. a service health check
+
 	for _, env := range spec.Process.Env {
+		// We're running an internal shim command, i.e. a service health check
 		if strings.HasPrefix(env, "_DAGGER_INTERNAL_COMMAND=") {
+			isDaggerExec = true
+			break
+		}
+		// We're running a service, which needs to report its IP to the health
+		// checker as part of the IP exchange dance
+		if strings.HasPrefix(env, "_DAGGER_CHECKER_ADDR=") {
 			isDaggerExec = true
 			break
 		}
@@ -336,9 +346,26 @@ func setupBundle() int {
 	}
 
 	var hostsFilePath string
+	var searchDomains []string
 	for _, mnt := range spec.Mounts {
-		if mnt.Destination == "/etc/hosts" {
+		switch mnt.Destination {
+		case "/etc/hosts":
 			hostsFilePath = mnt.Source
+		case "/etc/resolv.conf":
+			// collect search domains; we need them this early so that we can use
+			// them for resolving service aliases
+
+			var err error
+			searchDomains, err = collectSearchDomains(mnt.Source)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "collect search domains:", err)
+				return 1
+			}
+
+			// propagate search domains to the child
+			spec.Process.Env = append(spec.Process.Env,
+				"_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN="+strings.Join(searchDomains, " "),
+			)
 		}
 	}
 
@@ -375,7 +402,7 @@ func setupBundle() int {
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
 
-			if err := appendHostAlias(hostsFilePath, env); err != nil {
+			if err := appendHostAlias(hostsFilePath, env, searchDomains); err != nil {
 				fmt.Fprintln(os.Stderr, "host alias:", err)
 				return 1
 			}
@@ -446,15 +473,32 @@ func setupBundle() int {
 
 const aliasPrefix = "_DAGGER_HOSTNAME_ALIAS_"
 
-func appendHostAlias(hostsFilePath string, env string) error {
+func appendHostAlias(hostsFilePath string, env string, searchDomains []string) error {
 	alias, target, ok := strings.Cut(strings.TrimPrefix(env, aliasPrefix), "=")
 	if !ok {
 		return fmt.Errorf("malformed host alias: %s", env)
 	}
 
-	ips, err := net.LookupIP(target)
-	if err != nil {
-		return err
+	var ips []net.IP
+	var errs error
+	for _, domain := range append([]string{""}, searchDomains...) {
+		qualified := target
+
+		if domain != "" {
+			qualified += "." + domain
+		}
+
+		var err error
+		ips, err = net.LookupIP(qualified)
+		if err == nil {
+			errs = nil // ignore prior failures
+			break
+		}
+
+		errs = errors.Join(errs, err)
+	}
+	if errs != nil {
+		return errs
 	}
 
 	hostsFile, err := os.OpenFile(hostsFilePath, os.O_APPEND|os.O_WRONLY, 0o777)
@@ -463,7 +507,7 @@ func appendHostAlias(hostsFilePath string, env string) error {
 	}
 
 	for _, ip := range ips {
-		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip.String(), alias); err != nil {
+		if _, err := fmt.Fprintf(hostsFile, "\n%s\t%s\n", ip, alias); err != nil {
 			return err
 		}
 	}
@@ -533,6 +577,13 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:  "unix:///.runner.sock",
 	}
 
+	if searchDomains, found := os.LookupEnv("_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN"); found {
+		// NB: don't use internalEnv since it unsets the env var. we keep it around
+		// to propagate to the command, to support running 'dagger do' in dagger,
+		// though this is primarily motivated by tests
+		engineConf.ExtraSearchDomains = strings.Fields(searchDomains)
+	}
+
 	if _, err := os.Stat("/.progrock.sock"); err == nil {
 		progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
 		if err != nil {
@@ -562,4 +613,30 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return err
 	}
 	return nil
+}
+
+func collectSearchDomains(resolv string) ([]string, error) {
+	src, err := os.Open(resolv)
+	if err != nil {
+		return nil, err
+	}
+	defer src.Close()
+
+	srcScan := bufio.NewScanner(src)
+
+	daggerDomains := []string{}
+	for srcScan.Scan() {
+		if !strings.HasPrefix(srcScan.Text(), "search") {
+			continue
+		}
+
+		domains := strings.Fields(srcScan.Text())[1:]
+		for _, domain := range domains {
+			if strings.HasSuffix(domain, network.DomainSuffix) {
+				daggerDomains = append(daggerDomains, domain)
+			}
+		}
+	}
+
+	return daggerDomains, nil
 }

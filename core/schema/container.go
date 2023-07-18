@@ -95,8 +95,6 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withExposedPort":      ToResolver(s.withExposedPort),
 			"withoutExposedPort":   ToResolver(s.withoutExposedPort),
 			"exposedPorts":         ToResolver(s.exposedPorts),
-			"hostname":             ToResolver(s.hostname),
-			"endpoint":             ToResolver(s.endpoint),
 			"withServiceBinding":   ToResolver(s.withServiceBinding),
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
@@ -197,13 +195,6 @@ type containerExecArgs struct {
 
 func (s *containerSchema) withExec(ctx *core.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
 	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
-}
-
-func (s *containerSchema) withDefaultExec(ctx *core.Context, parent *core.Container) (*core.Container, error) {
-	if parent.Meta == nil {
-		return s.withExec(ctx, parent, containerExecArgs{})
-	}
-	return parent, nil
 }
 
 func (s *containerSchema) exitCode(ctx *core.Context, parent *core.Container, args any) (int, error) {
@@ -713,41 +704,13 @@ func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, ar
 	return parent.ImageRefOrErr(ctx, s.bk)
 }
 
-func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, args any) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
-	if err != nil {
-		return "", err
-	}
-
-	return parent.HostnameOrErr()
-}
-
-type containerEndpointArgs struct {
-	Port   int
-	Scheme string
-}
-
-func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	parent, err := s.withDefaultExec(ctx, parent)
-	if err != nil {
-		return "", err
-	}
-
-	return parent.Endpoint(args.Port, args.Scheme)
-}
-
-type containerWithServiceDependencyArgs struct {
-	Service core.ContainerID
+type containerWithServiceBindingArgs struct {
+	Service core.ServiceID
 	Alias   string
 }
 
-func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	svc, err := args.Service.ToContainer()
-	if err != nil {
-		return nil, err
-	}
-
-	svc, err = s.withDefaultExec(ctx, svc)
+func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceBindingArgs) (*core.Container, error) {
+	svc, err := args.Service.ToService()
 	if err != nil {
 		return nil, err
 	}

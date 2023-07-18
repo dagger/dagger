@@ -42,6 +42,7 @@ var (
 		"Platform":         {},
 		"ProjectID":        {},
 		"ProjectCommandID": {},
+		"ServiceID":        {},
 	}
 )
 

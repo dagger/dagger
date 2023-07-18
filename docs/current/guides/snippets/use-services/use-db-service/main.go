@@ -26,7 +26,8 @@ func main() {
 		WithEnvVariable("MARIADB_PASSWORD", "password").
 		WithEnvVariable("MARIADB_DATABASE", "drupal").
 		WithEnvVariable("MARIADB_ROOT_PASSWORD", "root").
-		WithExposedPort(3306)
+		WithExposedPort(3306).
+		Service()
 
 	// get Drupal base image
 	// install additional dependencies

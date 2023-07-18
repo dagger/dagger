@@ -43,8 +43,16 @@ class SecretID(Scalar):
     """A unique identifier for a secret."""
 
 
+class ServiceID(Scalar):
+    """A unique service identifier."""
+
+
 class SocketID(Scalar):
     """A content-addressed socket identifier."""
+
+
+class Void(Scalar):
+    """Nothing. Used by SDK codegen to skip the return value."""
 
 
 class CacheSharingMode(Enum):
@@ -221,51 +229,6 @@ class Container(Type):
         ]
         _ctx = self._select("directory", _args)
         return Directory(_ctx)
-
-    @typecheck
-    async def endpoint(
-        self,
-        port: Optional[int] = None,
-        scheme: Optional[str] = None,
-    ) -> str:
-        """Retrieves an endpoint that clients can use to reach this container.
-
-        If no port is specified, the first exposed port is used. If none exist
-        an error is returned.
-
-        If a scheme is specified, a URL is returned. Otherwise, a host:port
-        pair is returned.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
-
-        Parameters
-        ----------
-        port:
-            The exposed port number for the endpoint
-        scheme:
-            Return a URL with the given scheme, eg. http for http://
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args = [
-            Arg("port", port, None),
-            Arg("scheme", scheme, None),
-        ]
-        _ctx = self._select("endpoint", _args)
-        return await _ctx.execute(str)
 
     @typecheck
     async def entrypoint(self) -> Optional[list[str]]:
@@ -535,32 +498,6 @@ class Container(Type):
         return Directory(_ctx)
 
     @typecheck
-    async def hostname(self) -> str:
-        """Retrieves a hostname which can be used by clients to reach this
-        container.
-
-        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
-        disable.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("hostname", _args)
-        return await _ctx.execute(str)
-
-    @typecheck
     async def id(self) -> ContainerID:
         """A unique identifier for this container.
 
@@ -818,6 +755,13 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    def service(self) -> "Service":
+        """Retrieves a service that will run the container."""
+        _args: list[Arg] = []
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
 
     @typecheck
     async def stderr(self) -> str:
@@ -1427,7 +1371,7 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_service_binding(self, alias: str, service: "Container") -> "Container":
+    def with_service_binding(self, alias: str, service: "Service") -> "Container":
         """Establish a runtime dependency on a service.
 
         The service will be started automatically when needed and detached
@@ -3030,7 +2974,7 @@ class Client(Root):
         self,
         url: str,
         keep_git_dir: Optional[bool] = None,
-        experimental_service_host: Optional[Container] = None,
+        experimental_service_host: Optional["Service"] = None,
     ) -> GitRepository:
         """Queries a git repository.
 
@@ -3065,7 +3009,7 @@ class Client(Root):
     def http(
         self,
         url: str,
-        experimental_service_host: Optional[Container] = None,
+        experimental_service_host: Optional["Service"] = None,
     ) -> File:
         """Returns a file containing an http remote url content.
 
@@ -3138,6 +3082,15 @@ class Client(Root):
         ]
         _ctx = self._select("secret", _args)
         return Secret(_ctx)
+
+    @typecheck
+    def service(self, id: ServiceID) -> "Service":
+        """Loads a service from ID."""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("service", _args)
+        return Service(_ctx)
 
     @typecheck
     def set_secret(self, name: str, plaintext: str) -> "Secret":
@@ -3235,6 +3188,111 @@ class Secret(Type):
         return await _ctx.execute(str)
 
 
+class Service(Type):
+    @typecheck
+    async def endpoint(
+        self,
+        port: Optional[int] = None,
+        scheme: Optional[str] = None,
+    ) -> str:
+        """Retrieves an endpoint that clients can use to reach this container.
+
+        If no port is specified, the first exposed port is used. If none exist
+        an error is returned.
+
+        If a scheme is specified, a URL is returned. Otherwise, a host:port
+        pair is returned.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
+        Parameters
+        ----------
+        port:
+            The exposed port number for the endpoint
+        scheme:
+            Return a URL with the given scheme, eg. http for http://
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args = [
+            Arg("port", port, None),
+            Arg("scheme", scheme, None),
+        ]
+        _ctx = self._select("endpoint", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def hostname(self) -> str:
+        """Retrieves a hostname which can be used by clients to reach this
+        container.
+
+        Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to
+        disable.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("hostname", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def id(self) -> ServiceID:
+        """A unique identifier for this service.
+
+        Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        ServiceID
+            A unique service identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(ServiceID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return ServiceID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "service"
+
+
 class Socket(Type):
     @typecheck
     async def id(self) -> SocketID:
@@ -3300,6 +3358,9 @@ __all__ = [
     "ProjectID",
     "Secret",
     "SecretID",
+    "Service",
+    "ServiceID",
     "Socket",
     "SocketID",
+    "Void",
 ]

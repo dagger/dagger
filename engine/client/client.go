@@ -52,6 +52,12 @@ type SessionParams struct {
 
 	DisableHostRW bool
 
+	// Search domains of parent Dagger sessions to include in this session.
+	//
+	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
+	// passed from the parent.
+	ExtraSearchDomains []string
+
 	JournalFile        string
 	ProgrockWriter     progrock.Writer
 	EngineNameCallback func(string)
