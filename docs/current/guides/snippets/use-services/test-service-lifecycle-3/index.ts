@@ -7,7 +7,7 @@ connect(
       .container()
       .from("redis")
       .withExposedPort(6379)
-      .service();
+      .service()
 
     // create Redis client container
     const redisCLI = client

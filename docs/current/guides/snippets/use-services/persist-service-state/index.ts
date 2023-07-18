@@ -8,7 +8,7 @@ connect(
       .withExposedPort(6379)
       .withMountedCache("/data", client.cacheVolume("my-redis"))
       .withWorkdir("/data")
-      .service();
+      .service()
 
     // create Redis client container
     const redisCLI = client
