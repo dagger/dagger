@@ -1,0 +1,6 @@
+kind: Added
+body: show total duration at the end of a run
+time: 2023-07-17T17:38:25.400368661-04:00
+custom:
+  Author: vito
+  PR: "5476"

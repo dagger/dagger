@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -183,14 +184,26 @@ func inlineTUI(
 
 	var cbErr error
 	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+		before := time.Now()
+
 		cbErr = fn(ctx, api)
+
+		program.Send(progrock.StatusInfoMsg{
+			Name:  "Duration",
+			Value: time.Since(before).Truncate(time.Millisecond).String(),
+			Order: 3,
+		})
+
 		return cbErr
 	})
+
 	if cbErr != nil {
 		return cbErr
+	} else if engineErr != nil {
+		return engineErr
 	}
 
-	return engineErr
+	return nil
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {
