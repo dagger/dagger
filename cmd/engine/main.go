@@ -323,6 +323,7 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
+		// TODO: update controller term
 		bklog.G(ctx).Debug("creating engine controller")
 		controller, cacheManager, err := newController(ctx, c, &cfg)
 		if err != nil {
@@ -705,7 +706,8 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*control.Controller, cache.Manager, error) {
+// TODO: change name of newController
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*server.Server, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
@@ -741,12 +743,6 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	frontends := map[string]frontend.Frontend{}
 	frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(wc, dockerfile.Build)
 	frontends["gateway.v0"] = gateway.NewGatewayFrontend(wc)
-
-	daggerFrontend, err := server.NewFrontend(ctx, w, sessionManager)
-	if err != nil {
-		return nil, nil, err
-	}
-	frontends[engine.DaggerFrontendName] = daggerFrontend
 
 	cacheStorage, err := bboltcachestorage.NewStore(filepath.Join(cfg.Root, "cache.db"))
 	if err != nil {
@@ -802,7 +798,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 		},
 	}
 
-	ctrler, err := control.NewController(control.Opt{
+	ctrler, err := server.NewServer(control.Opt{
 		SessionManager:            sessionManager,
 		WorkerController:          wc,
 		Frontends:                 frontends,

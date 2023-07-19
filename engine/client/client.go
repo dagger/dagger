@@ -24,13 +24,11 @@ import (
 	"github.com/docker/cli/cli/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/client/connhelper"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
-	"github.com/moby/buildkit/util/entitlements"
 	"github.com/tonistiigi/fsutil"
 	fstypes "github.com/tonistiigi/fsutil/types"
 	"github.com/vito/progrock"
@@ -42,16 +40,14 @@ import (
 const OCIStoreName = "dagger-oci"
 
 type SessionParams struct {
-	// The id of the frontend server to connect to, or if blank a new one
-	// will be started.
-	ServerID string
+	// The id of the router to connect to, or if blank a new one
+	// should be started.
+	RouterID string
 
 	// TODO: re-add support
 	SecretToken string
 
-	// TODO: the difference between these two makes sense if you really think about it, but you shouldn't need to think about it
 	RunnerHost string // host of dagger engine runner serving buildkit apis
-	DaggerHost string // host of existing dagger graphql server to connect to (optional)
 	UserAgent  string
 
 	DisableHostRW bool
@@ -62,6 +58,7 @@ type SessionParams struct {
 	CloudURLCallback   func(string)
 }
 
+// TODO: probably rename Session to something
 type Session struct {
 	SessionParams
 	eg             *errgroup.Group
@@ -69,26 +66,27 @@ type Session struct {
 
 	Recorder *progrock.Recorder
 
-	httpClient *DoerWithHeaders
-	bkClient   *bkClient
+	httpClient *http.Client
+	bkClient   *bkclient.Client
 	bkSession  *bksession.Session
 }
 
 func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error) {
 	s := &Session{SessionParams: params}
 
-	if s.ServerID == "" {
-		s.ServerID = identity.NewID()
+	if s.RouterID == "" {
+		s.RouterID = identity.NewID()
 	}
+
+	// TODO:
+	fmt.Fprintf(os.Stderr, "Connecting to router %s\n", params.RouterID)
+	defer fmt.Fprintf(os.Stderr, "Connected to router %s\n", params.RouterID)
 
 	// TODO: this is only needed temporarily to work around issue w/
 	// `dagger do` and `dagger project` not picking up env set by nesting
 	// (which impacts project tests). Remove ASAP
-	if v, ok := os.LookupEnv("_DAGGER_SERVER_ID"); ok {
-		s.ServerID = v
-	}
-	if v, ok := os.LookupEnv("_EXPERIMENTAL_DAGGER_HOST"); ok {
-		s.DaggerHost = v
+	if v, ok := os.LookupEnv("_DAGGER_ROUTER_ID"); ok {
+		s.RouterID = v
 	}
 
 	internalCtx, internalCancel := context.WithCancel(context.Background())
@@ -116,7 +114,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 
-	bkSessionName := identity.NewID() // TODO: does this affect anything?
+	bkSessionName := s.RouterID // not interpreted by buildkit, so we use it to pass the router id
 	sharedKey := ""
 
 	bkSession, err := bksession.NewSession(ctx, bkSessionName, sharedKey)
@@ -129,6 +127,11 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 			s.bkSession.Close()
 		}
 	}()
+
+	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
+		ClientID: s.ID(),
+		RouterID: s.RouterID,
+	})
 
 	// filesync
 	if !s.DisableHostRW {
@@ -188,96 +191,46 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	if s.CloudURLCallback != nil && cloudURL != "" {
 		s.CloudURLCallback(cloudURL)
 	}
+	/* TODO: fix by including engine name in the Info return, then we can get version easily too
 	if s.EngineNameCallback != nil && bkClient.EngineName != "" {
 		s.EngineNameCallback(bkClient.EngineName)
 	}
+	*/
 
 	bkSession.Allow(progRockAttachable{progMultiW})
 	recorder := progrock.NewRecorder(progMultiW)
 	s.Recorder = recorder
 
-	solveCh := make(chan *bkclient.SolveStatus)
+	// run the client session
 	s.eg.Go(func() error {
-		for ev := range solveCh {
-			if err := recorder.Record(bk2progrock(ev)); err != nil {
-				return fmt.Errorf("record: %w", err)
-			}
-		}
-		return nil
-	})
-
-	// run the client s
-	s.eg.Go(func() error {
+		// client ID and router ID get passed via the session ID and session name respectively,
+		// this is because in order to explicitly set those in our own code we'd need to copy
+		// a lot of internal code; could be addressed with upstream tweaks to make some types
+		// public
 		return bkSession.Run(internalCtx, grpchijack.Dialer(s.bkClient.ControlClient()))
 	})
 
-	var allowedEntitlements []entitlements.Entitlement
-	if bkClient.PrivilegedExecEnabled {
-		// NOTE: this just allows clients to set this if they want. It also needs
-		// to be set in the ExecOp LLB and enabled server-side in order for privileged
-		// execs to actually run.
-		allowedEntitlements = append(allowedEntitlements, entitlements.EntitlementSecurityInsecure)
-	}
-
-	frontendOptMap, err := s.FrontendOpts().ToSolveOpts()
-	if err != nil {
-		return nil, fmt.Errorf("frontend opts: %w", err)
-	}
-
-	// start the session server frontend if it's not already running
-	solveRef := identity.NewID()
+	// start the session server frontend if it's not already running, client+router ID are
+	// passed through grpc context
 	s.eg.Go(func() error {
-		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{
-			Ref:           solveRef,
-			Session:       s.bkClient.DaggerFrontendSessionID,
-			Frontend:      engine.DaggerFrontendName,
-			FrontendAttrs: frontendOptMap,
-			Entitlements:  allowedEntitlements,
-			Internal:      true, // disables history recording, which we don't need
-			// TODO:
-			// Cache: (for upstream remotecache)
-		})
+		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{})
 		return err
 	})
 
-	// connect to the progress stream from buildkit
-	// TODO: upstream has a hardcoded 3 second sleep before cancelling this one's context, needed here?
-	s.eg.Go(func() error {
-		defer close(solveCh)
-		stream, err := s.bkClient.ControlClient().Status(internalCtx, &controlapi.StatusRequest{
-			Ref: solveRef,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to get status: %w", err)
-		}
-		for {
-			resp, err := stream.Recv()
-			if err != nil {
-				if err == io.EOF {
-					return nil
-				}
-				return fmt.Errorf("failed to receive status: %w", err)
-			}
-			solveCh <- bkclient.NewSolveStatus(resp)
-		}
-	})
-
 	// Try connecting to the session server to make sure it's running
-	s.httpClient = &DoerWithHeaders{
-		inner: &http.Client{
-			Transport: &http.Transport{
-				DialContext: s.DialContext,
-			},
-		},
-		headers: http.Header{
-			engine.SessionIDHeader: []string{bkSession.ID()},
-		},
-	}
+	s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.DialContext}}
 
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 100 * time.Millisecond
 	err = backoff.Retry(func() error {
-		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		ctx, cancel := context.WithTimeout(ctx, bo.NextBackOff())
+		defer cancel()
+		err := s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		if err != nil {
+			// TODO:
+			fmt.Fprintf(os.Stderr, "connect err: %v\n", err)
+		}
+		return err
 	}, backoff.WithContext(bo, ctx))
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
@@ -286,51 +239,30 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	return s, nil
 }
 
-func (s *Session) FrontendOpts() engine.FrontendOpts {
-	return engine.FrontendOpts{
-		ServerID:        s.ServerID,
-		ClientSessionID: s.bkSession.ID(),
-		// TODO: cache configs
+func (s *Session) Close() error {
+	// mark all groups completed
+	// close the recorder so the UI exits
+	s.Recorder.Complete()
+	s.Recorder.Close()
+
+	if s.internalCancel != nil {
+		s.internalCancel()
+		s.bkSession.Close()
+		s.bkClient.Close()
+		return s.eg.Wait()
 	}
+	return nil
+}
+
+func (s *Session) ID() string {
+	return s.bkSession.ID()
 }
 
 func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	host := s.RunnerHost
-	if s.DaggerHost != "" {
-		host = s.DaggerHost
-	}
-
-	u, err := url.Parse(host)
-	if err != nil {
-		return nil, fmt.Errorf("parse runner host: %w", err)
-	}
-	switch u.Scheme {
-	case "tcp":
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			deadline = time.Now().Add(10 * time.Second)
-		}
-		return net.DialTimeout("tcp", u.Host, time.Until(deadline))
-	case "unix":
-		deadline, ok := ctx.Deadline()
-		if !ok {
-			deadline = time.Now().Add(10 * time.Second)
-		}
-		return net.DialTimeout("unix", u.Path, time.Until(deadline))
-	default:
-	}
-
-	queryStrs := u.Query()
-	queryStrs.Add("addr", s.FrontendOpts().ServerAddr())
-	u.RawQuery = queryStrs.Encode()
-	connHelper, err := connhelper.GetConnectionHelper(u.String())
-	if err != nil {
-		return nil, fmt.Errorf("get connection helper: %w", err)
-	}
-	if connHelper == nil {
-		return nil, fmt.Errorf("unsupported scheme in %s", u.String())
-	}
-	return connHelper.ContextDialer(ctx, "")
+	return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
+		ClientID: s.ID(),
+		RouterID: s.RouterID,
+	}.ToMD())
 }
 
 func (s *Session) Do(
@@ -375,6 +307,7 @@ func (s *Session) Do(
 }
 
 func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: thought httputil.ReverseProxy would do this, but got weird errors and gave up, try again?
 	newReq := &http.Request{
 		Method: r.Method,
 		URL: &url.URL{
@@ -394,45 +327,14 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer resp.Body.Close()
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("io copy: " + err.Error()))
-		return
-	}
 	for k, v := range resp.Header {
 		w.Header()[k] = v
 	}
-	if resp.StatusCode != http.StatusOK {
-		w.WriteHeader(resp.StatusCode)
+	w.WriteHeader(resp.StatusCode)
+	_, err = io.Copy(w, resp.Body)
+	if err != nil {
+		panic(err) // don't write header because we already wrote to the body, which isn't allowed
 	}
-}
-
-func (s *Session) Close() error {
-	// mark all groups completed
-	// close the recorder so the UI exits
-	s.Recorder.Complete()
-	s.Recorder.Close()
-
-	if s.internalCancel != nil {
-		s.internalCancel()
-		s.bkSession.Close()
-		s.bkClient.Close()
-		return s.eg.Wait()
-	}
-	return nil
-}
-
-type DoerWithHeaders struct {
-	inner   *http.Client
-	headers http.Header
-}
-
-func (c DoerWithHeaders) Do(req *http.Request) (*http.Response, error) {
-	for k, v := range c.headers {
-		req.Header[k] = v
-	}
-	return c.inner.Do(req)
 }
 
 // Local dir imports

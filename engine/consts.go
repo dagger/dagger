@@ -2,18 +2,18 @@ package engine
 
 // shared consts between engine subpackages
 const (
-	DaggerFrontendName    = "dagger.v0"
-	DaggerFrontendOptsKey = "dagger_frontend_opts"
-	SessionIDHeader       = "X-Dagger-Session-ID"
+	RouterIDMetaKey      = "x-dagger-router-id"
+	ClientIDMetaKey      = "x-dagger-requester-client-id"
+	EngineVersionMetaKey = "x-dagger-engine" // don't change, would be backwards incompatible
 
-	// session-related grpc labels
-	ServerIDMetaKey           = "dagger-server-id"
-	RequesterSessionIDMetaKey = "dagger-requester-session-id"
+	// session API (these are set by buildkit, can't change)
+	SessionIDMetaKey   = "x-docker-expose-session-uuid"
+	SessionNameMetaKey = "x-docker-expose-session-name"
+
 	// local dir import
-	LocalDirImportDirNameMetaKey = "dir-name" // from buildkit
+	LocalDirImportDirNameMetaKey = "dir-name" // from buildkit, can't change
+
 	// local dir export
-	LocalDirExportDestSessionIDMetaKey = "dagger-local-dir-export-dest-session-id"
-	LocalDirExportDestPathMetaKey      = "dagger-local-dir-export-dest-path"
-	// worker label
-	DaggerFrontendSessionIDLabel = "dagger-frontend-session-id"
+	LocalDirExportDestClientIDMetaKey = "x-dagger-local-dir-export-dest-client-id"
+	LocalDirExportDestPathMetaKey     = "x-dagger-local-dir-export-dest-path"
 )

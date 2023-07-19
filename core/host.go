@@ -57,7 +57,7 @@ func (host *Host) Directory(
 	ctx, subRecorder := progrock.WithGroup(ctx, pipelineName, progrock.Weak())
 
 	localOpts := []llb.LocalOption{llb.WithCustomNamef("upload %s", dirPath)}
-	opName := fmt.Sprintf("copy %s", absPath)
+	opName := fmt.Sprintf("copy %s", dirPath)
 	if len(filter.Exclude) > 0 {
 		opName += fmt.Sprintf(" (exclude %s)", strings.Join(filter.Exclude, ", "))
 		localOpts = append(localOpts, llb.ExcludePatterns(filter.Exclude))
@@ -67,7 +67,7 @@ func (host *Host) Directory(
 		localOpts = append(localOpts, llb.IncludePatterns(filter.Include))
 	}
 
-	localLLB, err := bk.LocalLLB(ctx, dirPath, localOpts...)
+	localLLB, err := bk.LocalImportLLB(ctx, dirPath, localOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("local %s: %w", dirPath, err)
 	}

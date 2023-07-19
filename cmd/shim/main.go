@@ -358,22 +358,12 @@ func setupBundle() int {
 			})
 			// also need the progsock path
 			// TODO: re-looping feels dumb
-			var daggerSockPath string
 			var progSockSrcPath string
 			for _, env := range spec.Process.Env {
 				if strings.HasPrefix(env, "_DAGGER_PROG_SOCK_PATH=") {
 					progSockSrcPath = strings.TrimPrefix(env, "_DAGGER_PROG_SOCK_PATH=")
 				}
-				if strings.HasPrefix(env, "_DAGGER_SERVER_SOCK=") {
-					daggerSockPath = strings.TrimPrefix(env, "_DAGGER_SERVER_SOCK=")
-				}
 			}
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Destination: "/.dagger.sock",
-				Type:        "bind",
-				Options:     []string{"rbind"},
-				Source:      daggerSockPath,
-			})
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.progrock.sock",
 				Type:        "bind",
@@ -532,16 +522,15 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 
 	// TODO:
-	// serverID, ok := internalEnv("_DAGGER_SERVER_ID")
-	serverID, ok := os.LookupEnv("_DAGGER_SERVER_ID")
+	// routerID, ok := internalEnv("_DAGGER_ROUTER_ID")
+	routerID, ok := os.LookupEnv("_DAGGER_ROUTER_ID")
 	if !ok {
-		return fmt.Errorf("missing _DAGGER_SERVER_ID")
+		return fmt.Errorf("missing _DAGGER_ROUTER_ID")
 	}
 	sessParams := client.SessionParams{
-		ServerID:    serverID,
+		RouterID:    routerID,
 		SecretToken: sessionToken.String(),
 		RunnerHost:  "unix:///.runner.sock",
-		DaggerHost:  "unix:///.dagger.sock",
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {
