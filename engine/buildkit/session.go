@@ -50,7 +50,6 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		case DaggerNetwork:
 			return &networks.Config{
 				Dns: &networks.DNSConfig{
-					Nameservers: []string{"10.87.0.1"}, // TODO(vito): use configured value
 					SearchDomains: append(
 						[]string{network.SessionDomain(sess.ID())},
 						// startOpts.ExtraSearchDomains...,

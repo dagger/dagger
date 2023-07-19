@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/pb"
@@ -15,16 +16,19 @@ import (
 const Scheme = "netconf"
 
 type Source struct {
-	cache cache.Accessor
+	cache   cache.Accessor
+	baseCfg *oci.DNSConfig
 }
 
 type Opt struct {
 	CacheAccessor cache.Accessor
+	BaseDNSConfig *oci.DNSConfig
 }
 
 func NewSource(opt Opt) (source.Source, error) {
 	return &Source{
-		cache: opt.CacheAccessor,
+		cache:   opt.CacheAccessor,
+		baseCfg: opt.BaseDNSConfig,
 	}, nil
 }
 
@@ -57,7 +61,8 @@ func (s *Source) Resolve(ctx context.Context, id source.Identifier, sm *session.
 	}
 
 	return &Instance{
-		id:    netId,
-		cache: s.cache,
+		id:      netId,
+		cache:   s.cache,
+		baseCfg: s.baseCfg,
 	}, nil
 }

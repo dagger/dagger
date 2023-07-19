@@ -364,16 +364,17 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if err != nil {
 		return nil, err
 	}
-	if err := registerDaggerCustomSources(w); err != nil {
+	if err := registerDaggerCustomSources(w, dns); err != nil {
 		return nil, fmt.Errorf("register Dagger sources: %w", err)
 	}
 	return []worker.Worker{w}, nil
 }
 
 // registerDaggerCustomSources adds Dagger's custom sources to the worker.
-func registerDaggerCustomSources(worker *base.Worker) error {
+func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error {
 	hs, err := httpdns.NewSource(httpdns.Opt{
 		CacheAccessor: worker.CacheMgr,
+		BaseDNSConfig: dns,
 	})
 	if err != nil {
 		return err
@@ -383,6 +384,7 @@ func registerDaggerCustomSources(worker *base.Worker) error {
 
 	gs, err := gitdns.NewSource(gitdns.Opt{
 		CacheAccessor: worker.CacheMgr,
+		BaseDNSConfig: dns,
 	})
 	if err != nil {
 		return err
@@ -392,6 +394,7 @@ func registerDaggerCustomSources(worker *base.Worker) error {
 
 	ns, err := netconf.NewSource(netconf.Opt{
 		CacheAccessor: worker.CacheMgr,
+		BaseDNSConfig: dns,
 	})
 	if err != nil {
 		return err

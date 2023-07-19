@@ -17,6 +17,7 @@ import (
 	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/secrets"
@@ -39,13 +40,13 @@ var defaultBranch = regexp.MustCompile(`refs/heads/(\S+)`)
 
 type Opt struct {
 	CacheAccessor cache.Accessor
-	DNSConfig     *networks.DNSConfig
+	BaseDNSConfig *oci.DNSConfig
 }
 
 type gitSource struct {
 	cache  cache.Accessor
 	locker *locker.Locker
-	dns    *networks.DNSConfig
+	dns    *oci.DNSConfig
 }
 
 // Supported returns nil if the system supports Git source
@@ -60,7 +61,7 @@ func NewSource(opt Opt) (source.Source, error) {
 	gs := &gitSource{
 		cache:  opt.CacheAccessor,
 		locker: locker.New(),
-		dns:    opt.DNSConfig,
+		dns:    opt.BaseDNSConfig,
 	}
 	return gs, nil
 }
@@ -339,7 +340,10 @@ func (gs *gitSourceHandler) mountKnownHosts(ctx context.Context) (string, func()
 
 func (gs *gitSourceHandler) networkConfig(ctx context.Context, g session.Group) (*networks.Config, error) {
 	// base network config inherits from system-wide config
-	netConfig := &networks.Config{Dns: gs.dns}
+	netConfig := &networks.Config{
+		// TODO(vito): this is awkward, but unlikely to break
+		Dns: (*networks.DNSConfig)(gs.dns),
+	}
 
 	if gs.src.NetworkConfigID != "" {
 		err := gs.sm.Any(ctx, g, func(ctx context.Context, _ string, caller session.Caller) error {

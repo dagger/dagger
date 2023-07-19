@@ -7,7 +7,7 @@ import (
 	"github.com/moby/buildkit/solver/pb"
 )
 
-const AttrHTTPNetConfig = "httpdns.netconfig"
+const AttrNetConfig = "httpdns.netconfig"
 
 // HTTP is a helper mimicking the llb.HTTP function, but with the ability to
 // set additional attributes.
@@ -18,7 +18,7 @@ func State(url string, netConfID string, opts ...llb.HTTPOption) llb.State {
 	}
 
 	attrs := map[string]string{
-		AttrHTTPNetConfig: netConfID,
+		AttrNetConfig: netConfID,
 	}
 	if hi.Checksum != "" {
 		attrs[pb.AttrHTTPChecksum] = hi.Checksum.String()

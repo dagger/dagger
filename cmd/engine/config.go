@@ -27,11 +27,8 @@ func setDaggerDefaults(cfg *config.Config, netConf *networkConfig) error {
 		cfg.DNS = &config.DNSConfig{}
 	}
 
-	// add dnsmasq as the default nameserver
-	cfg.DNS.Nameservers = append(
-		[]string{netConf.Bridge.String()},
-		cfg.DNS.Nameservers...,
-	)
+	// set dnsmasq as the default nameserver
+	cfg.DNS.Nameservers = []string{netConf.Bridge.String()}
 
 	if netConf.CNIConfigPath != "" {
 		setNetworkDefaults(&cfg.Workers.OCI.NetworkConfig, netConf.CNIConfigPath)

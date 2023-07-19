@@ -19,6 +19,7 @@ import (
 	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
@@ -33,8 +34,8 @@ import (
 
 type Opt struct {
 	CacheAccessor cache.Accessor
+	BaseDNSConfig *oci.DNSConfig
 	Transport     http.RoundTripper
-	DNSConfig     *networks.DNSConfig
 }
 
 type httpSource struct {
@@ -53,7 +54,8 @@ func NewSource(opt Opt) (source.Source, error) {
 		cache:     opt.CacheAccessor,
 		locker:    locker.New(),
 		transport: transport,
-		dns:       opt.DNSConfig,
+		// TODO(vito): this is awkward, but unlikely to break
+		dns: (*networks.DNSConfig)(opt.BaseDNSConfig),
 	}
 	return hs, nil
 }
@@ -96,7 +98,7 @@ func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, pl
 				return nil, err
 			}
 			id.GID = int(i)
-		case AttrHTTPNetConfig:
+		case AttrNetConfig:
 			id.NetworkConfigID = v
 		}
 	}

@@ -1,29 +1,26 @@
 package netconf
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
 	"path/filepath"
-	"strings"
 
-	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
+	"github.com/docker/docker/libnetwork/resolvconf"
 	"github.com/moby/buildkit/cache"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/snapshot"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/source"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 )
 
 type Instance struct {
-	id    *Identifier
-	cache cache.Accessor
+	id      *Identifier
+	cache   cache.Accessor
+	baseCfg *oci.DNSConfig
 }
 
 var _ source.SourceInstance = (*Instance)(nil)
@@ -89,73 +86,21 @@ func (i *Instance) Snapshot(ctx context.Context, g session.Group) (_ cache.Immut
 	return ref, nil
 }
 
-func (i *Instance) netCfg() *networks.DNSConfig {
-	return &networks.DNSConfig{
-		SearchDomains: []string{
-			network.SessionDomain(i.id.SessionID),
-			// TODO: append parents
-		},
+func (i *Instance) netCfg() *oci.DNSConfig {
+	return &oci.DNSConfig{
+		Nameservers: i.baseCfg.Nameservers,
+		SearchDomains: append(
+			[]string{
+				network.SessionDomain(i.id.SessionID),
+				// TODO: append parents
+			},
+			i.baseCfg.SearchDomains...,
+		),
+		Options: i.baseCfg.Options,
 	}
 }
 
-func (i *Instance) generateResolv(fp string, dns *networks.DNSConfig) error {
-	src, err := os.Open("/etc/resolv.conf")
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	override, err := os.Create(fp)
-	if err != nil {
-		return errors.Wrap(err, "create hosts override")
-	}
-
-	defer override.Close()
-
-	return mergeResolv(override, src, dns)
-}
-
-func mergeResolv(dst *os.File, src io.Reader, dns *networks.DNSConfig) error {
-	srcScan := bufio.NewScanner(src)
-
-	var replacedSearch bool
-	var replacedOptions bool
-
-	for _, ns := range dns.Nameservers {
-		fmt.Fprintln(dst, "nameserver", ns)
-	}
-
-	for srcScan.Scan() {
-		switch {
-		case strings.HasPrefix(srcScan.Text(), "search"):
-			oldDomains := strings.Fields(srcScan.Text())[1:]
-			newDomains := append([]string{}, dns.SearchDomains...)
-			newDomains = append(newDomains, oldDomains...)
-			fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
-			replacedSearch = true
-		case strings.HasPrefix(srcScan.Text(), "options"):
-			oldOptions := strings.Fields(srcScan.Text())[1:]
-			newOptions := append([]string{}, dns.Options...)
-			newOptions = append(newOptions, oldOptions...)
-			fmt.Fprintln(dst, "options", strings.Join(newOptions, " "))
-			replacedOptions = true
-		case strings.HasPrefix(srcScan.Text(), "nameserver"):
-			if len(dns.Nameservers) == 0 {
-				// preserve existing nameservers
-				fmt.Fprintln(dst, srcScan.Text())
-			}
-		default:
-			fmt.Fprintln(dst, srcScan.Text())
-		}
-	}
-
-	if !replacedSearch {
-		fmt.Fprintln(dst, "search", strings.Join(dns.SearchDomains, " "))
-	}
-
-	if !replacedOptions {
-		fmt.Fprintln(dst, "options", strings.Join(dns.Options, " "))
-	}
-
-	return nil
+func (i *Instance) generateResolv(fp string, dns *oci.DNSConfig) error {
+	_, err := resolvconf.Build(fp, dns.Nameservers, dns.SearchDomains, dns.Options)
+	return err
 }
