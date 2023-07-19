@@ -19,8 +19,8 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/session"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -1064,17 +1064,14 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		serverID, _, err := session.SessionMetadataFromContext(ctx)
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 		if err != nil {
 			return nil, err
 		}
-		if serverID == "" {
-			return nil, errors.New("no server ID in context")
-		}
+		routerID := clientMetadata.RouterID
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
-			llb.AddEnv("_DAGGER_SERVER_ID", serverID),
-			llb.AddEnv("_DAGGER_SERVER_SOCK", "/run/dagger/server-"+serverID+".sock"), // TODO: de-dupe this path definition
+			llb.AddEnv("_DAGGER_ROUTER_ID", routerID),
 			llb.AddEnv("_DAGGER_PROG_SOCK_PATH", progSock),
 		)
 	}

@@ -1,4 +1,4 @@
-package session
+package buildkit
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 
 // for local dir imports
 type fileSyncServerProxy struct {
-	sm *Manager
+	c *Client
 }
 
 func (p *fileSyncServerProxy) Register(srv *grpc.Server) {
@@ -25,7 +25,7 @@ func (p *fileSyncServerProxy) Register(srv *grpc.Server) {
 }
 
 func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	ctx, baseData, err := p.sm.Get(stream)
+	ctx, baseData, err := p.c.GetSessionResourceData(stream)
 	if err != nil {
 		return err
 	}
@@ -98,7 +98,7 @@ func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) 
 }
 
 func (p *fileSyncServerProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
-	ctx, baseData, err := p.sm.Get(stream)
+	ctx, baseData, err := p.c.GetSessionResourceData(stream)
 	if err != nil {
 		return err
 	}
@@ -165,7 +165,7 @@ func (p *fileSyncServerProxy) TarStream(stream filesync.FileSync_TarStreamServer
 
 // for local dir exports
 type fileSendServerProxy struct {
-	sm *Manager
+	c *Client
 }
 
 func (p *fileSendServerProxy) Register(srv *grpc.Server) {
@@ -173,7 +173,7 @@ func (p *fileSendServerProxy) Register(srv *grpc.Server) {
 }
 
 func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr error) {
-	ctx, baseData, err := p.sm.Get(stream)
+	ctx, baseData, err := p.c.GetSessionResourceData(stream)
 	if err != nil {
 		return err
 	}

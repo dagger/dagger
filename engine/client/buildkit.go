@@ -7,25 +7,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dagger/dagger/engine"
 	bkclient "github.com/moby/buildkit/client"
+	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
+	_ "github.com/moby/buildkit/client/connhelper/kubepod"
+	_ "github.com/moby/buildkit/client/connhelper/podmancontainer"
+	_ "github.com/moby/buildkit/client/connhelper/ssh"
 	"github.com/moby/buildkit/util/tracing/detect"
 	"go.opentelemetry.io/otel"
-	// TODO: re-enable once upstream supports --addr
-	// _ "github.com/moby/buildkit/client/connhelper/dockercontainer"
-	// _ "github.com/moby/buildkit/client/connhelper/kubepod"
-	// _ "github.com/moby/buildkit/client/connhelper/podmancontainer"
-	// _ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-type bkClient struct {
-	*bkclient.Client
-	PrivilegedExecEnabled   bool
-	EngineName              string
-	DaggerFrontendSessionID string
-}
-
-func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkClient, error) {
+// TODO: re-add ability to get engine name
+func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
 		var err error
@@ -35,29 +27,9 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 		}
 	}
 
-	workerInfo, err := waitBuildkit(ctx, buildkitdHost)
+	_, err := waitBuildkit(ctx, buildkitdHost)
 	if err != nil {
 		return nil, err
-	}
-	var privilegedExecEnabled bool
-	var engineName string
-	var daggerFrontendSessionID string
-	if len(workerInfo) > 0 {
-		for k, v := range workerInfo[0].Labels {
-			// TODO:(sipsma) we set these custom labels in the engine's worker initializer
-			// It's not the best solution but the only way to get this
-			// information to the client right now.
-			switch k {
-			case engine.PrivilegedExecLabel:
-				if v == "true" {
-					privilegedExecEnabled = true
-				}
-			case engine.EngineNameLabel:
-				engineName = v
-			case engine.DaggerFrontendSessionIDLabel:
-				daggerFrontendSessionID = v
-			}
-		}
 	}
 
 	opts := []bkclient.ClientOpt{
@@ -79,15 +51,11 @@ func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (
 		return nil, fmt.Errorf("buildkit client: %w", err)
 	}
 
-	return &bkClient{
-		Client:                  c,
-		PrivilegedExecEnabled:   privilegedExecEnabled,
-		EngineName:              engineName,
-		DaggerFrontendSessionID: daggerFrontendSessionID,
-	}, nil
+	return c, nil
 }
 
 // waitBuildkit waits for the buildkit daemon to be responsive.
+// TODO: there's a builtin method for this now
 func waitBuildkit(ctx context.Context, host string) ([]*bkclient.WorkerInfo, error) {
 	// Try to connect every 100ms up to 1800 times (3 minutes total)
 	// NOTE: the long timeout accounts for startup time of the engine when

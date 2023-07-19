@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/graphql"
 	"github.com/dagger/graphql/gqlerrors"
 )
@@ -121,6 +122,14 @@ func NewRequestOptions(r *http.Request) *RequestOptions {
 // ContextHandler provides an entrypoint into executing graphQL queries with a
 // user-provided context.
 func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	// this response may be tunneled through grpc, in which case it may need chunking in order
+	// to not exceed the max grpc message size
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
 	// get query
 	opts := NewRequestOptions(r)
 
@@ -149,15 +158,26 @@ func (h *Handler) ContextHandler(ctx context.Context, w http.ResponseWriter, r *
 	w.Header().Add("Content-Type", "application/json; charset=utf-8")
 
 	var buff []byte
+	var err error
 	if h.pretty {
 		w.WriteHeader(http.StatusOK)
-		buff, _ = json.MarshalIndent(result, "", "\t")
-
-		w.Write(buff)
+		buff, err = json.MarshalIndent(result, "", "\t")
 	} else {
 		w.WriteHeader(http.StatusOK)
-		buff, _ = json.Marshal(result)
+		buff, err = json.Marshal(result)
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
+	for len(buff) > buildkit.MaxFileContentsChunkSize {
+		chunk := buff[:buildkit.MaxFileContentsChunkSize]
+		buff = buff[buildkit.MaxFileContentsChunkSize:]
+		w.Write(chunk)
+		flusher.Flush()
+	}
+	if len(buff) > 0 {
 		w.Write(buff)
 	}
 
