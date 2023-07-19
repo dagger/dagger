@@ -20,7 +20,7 @@ kinds:
   - label: Fixed
   - label: Dependencies
 headerFormat: |
-  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`.[See what changed in that release]](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
+  This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
 
   ⬢ https://www.npmjs.com/package/@dagger.io/dagger
   📒 https://docs.dagger.io/current/sdk/nodejs/reference/modules/api_client_gen
