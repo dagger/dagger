@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'engine: optimize `WithDirectory` & `WithFile` via MergeOp'
+time: 2023-07-18T19:25:59.971743+01:00
+custom:
+  Author: sipsma
+  PR: "5400"

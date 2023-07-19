@@ -1,0 +1,6 @@
+kind: Added
+body: 'engine: add File.Sync'
+time: 2023-07-18T19:32:29.870216+01:00
+custom:
+  Author: helderco
+  PR: "5416"

@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'engine: support optionally setting explicit OCI mediatypes'
+time: 2023-07-18T19:38:25.465609+01:00
+custom:
+  Author: sipsma
+  PR: "5467"

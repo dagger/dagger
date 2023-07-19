@@ -1,5 +1,5 @@
 kind: Deprecated
-body: Deprecate `exitCode`
+body: 'engine: deprecate `exitCode`'
 time: 2023-07-18T17:39:05.715807Z
 custom:
   Author: helderco
