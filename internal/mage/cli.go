@@ -2,6 +2,7 @@ package mage
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger"
@@ -11,12 +12,17 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	// https://github.com/goreleaser/goreleaser/releases
+	goReleaserVersion = "v1.19.2-pro"
+)
+
 type Cli mg.Namespace
 
 // Publish publishes dagger CLI using GoReleaser
 func (cl Cli) Publish(ctx context.Context, version string) error {
-	// if this isn't an official semver version, do a nightly release
-	nightly := !semver.IsValid(version)
+	// if this isn't an official semver version, do a dev release
+	devRelease := !semver.IsValid(version)
 
 	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
 	if err != nil {
@@ -26,7 +32,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 
 	wd := c.Host().Directory(".")
 	container := c.Container().
-		From("ghcr.io/goreleaser/goreleaser-pro:v1.16.2-pro").
+		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"}).
 		WithWorkdir("/app").
@@ -40,17 +46,21 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		WithSecretVariable("ARTEFACTS_FQDN", util.WithSetHostVar(ctx, c.Host(), "ARTEFACTS_FQDN").Secret()).
 		WithSecretVariable("HOMEBREW_TAP_OWNER", util.WithSetHostVar(ctx, c.Host(), "HOMEBREW_TAP_OWNER").Secret())
 
-	if nightly {
+	if devRelease {
 		// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
 		container = container.WithExec([]string{"git", "tag", "0.0.0"})
 	}
 
-	args := []string{"release", "--rm-dist", "--skip-validate", "--debug"}
-	if nightly {
+	args := []string{"release", "--clean", "--skip-validate", "--debug"}
+	if devRelease {
 		args = append(args,
 			"--nightly",
 			"--config", ".goreleaser.nightly.yml",
 		)
+	}
+
+	if !devRelease {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", version))
 	}
 
 	_, err = container.
@@ -62,7 +72,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 
 // TestPublish verifies that the CLI builds without actually publishing anything
 // TODO: ideally this would also use go releaser, but we want to run this step in
-// PRs and locally and we use goreleaser pro features that require a key...
+// PRs and locally and we use goreleaser pro features that require a key which is private.
 // For now, this just builds the CLI for the same targets so there's at least some
 // coverage
 func (cl Cli) TestPublish(ctx context.Context) error {

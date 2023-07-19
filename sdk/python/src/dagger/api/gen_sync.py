@@ -350,6 +350,9 @@ class Container(Type):
         Will execute default command if none is set, or error if there's no
         default.
 
+        .. deprecated::
+            Use :py:meth:`sync` instead.
+
         Returns
         -------
         int
@@ -364,6 +367,11 @@ class Container(Type):
         QueryError
             If the API returns an error.
         """
+        warnings.warn(
+            'Method "exit_code" is deprecated: Use "sync" instead.',
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args: list[Arg] = []
         _ctx = self._select("exitCode", _args)
         return _ctx.execute_sync(int)
@@ -2149,10 +2157,8 @@ class File(Type):
             :py:meth:`set_secret`
         """
         warnings.warn(
-            (
-                'Method "secret" is deprecated: insecure, leaves secret in cache.'
-                ' Superseded by "set_secret"'
-            ),
+            'Method "secret" is deprecated: insecure, leaves secret in cache.'
+            ' Superseded by "set_secret"',
             DeprecationWarning,
             stacklevel=4,
         )
@@ -2389,10 +2395,8 @@ class Host(Type):
             ["app/", "package.*"]).
         """
         warnings.warn(
-            (
-                'Method "workdir" is deprecated: Use "directory" with path set to \'.\''
-                " instead."
-            ),
+            'Method "workdir" is deprecated: Use "directory" with path set to \'.\''
+            " instead.",
             DeprecationWarning,
             stacklevel=4,
         )

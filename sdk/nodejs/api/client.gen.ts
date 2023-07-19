@@ -885,6 +885,7 @@ export class Container extends BaseClient {
    * Exit code of the last executed command. Zero means success.
    *
    * Will execute default command if none is set, or error if there's no default.
+   * @deprecated Use sync instead.
    */
   async exitCode(): Promise<number> {
     const response: Awaited<number> = await computeQuery(
