@@ -51,7 +51,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		container = container.WithExec([]string{"git", "tag", "0.0.0"})
 	}
 
-	args := []string{"release", "--rm-dist", "--skip-validate", "--debug"}
+	args := []string{"release", "--clean", "--skip-validate", "--debug"}
 	if devRelease {
 		args = append(args,
 			"--nightly",
