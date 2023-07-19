@@ -1,6 +1,0 @@
-kind: Changed
-body: Exposed explicit `with_` methods instead of generic in fewer types
-time: 2023-07-18T21:02:19.629242Z
-custom:
-  Author: helderco
-  PR: "5447"

@@ -1,6 +1,0 @@
-kind: Changed
-body: Changed types that include the `with` method
-time: 2023-07-18T21:04:33.471962Z
-custom:
-  Author: helderco
-  PR: "5447"
