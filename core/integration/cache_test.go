@@ -4,11 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/internal/testutil"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,6 +69,55 @@ func TestCacheVolume(t *testing.T) {
 		require.NotEmpty(t, idDiff)
 
 		require.NotEqual(t, idOrig, idDiff)
+	})
+}
+
+func TestCacheVolumeWithSubmount(t *testing.T) {
+	t.Parallel()
+	c, ctx := connect(t)
+	t.Cleanup(func() { c.Close() })
+
+	t.Run("file mount", func(t *testing.T) {
+		t.Parallel()
+		subfile := c.Directory().WithNewFile("foo", "bar").File("foo")
+		ctr := c.Container().From("alpine:3.16.2").
+			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
+			WithMountedFile("/cache/subfile", subfile)
+
+		out, err := ctr.WithExec([]string{"cat", "/cache/subfile"}).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", strings.TrimSpace(out))
+
+		contents, err := ctr.File("/cache/subfile").Contents(ctx)
+		require.NoError(t, err)
+		require.Equal(t, "bar", strings.TrimSpace(string(contents)))
+	})
+
+	t.Run("dir mount", func(t *testing.T) {
+		t.Parallel()
+		subdir := c.Directory().WithNewFile("foo", "bar").WithNewFile("baz", "qux")
+		ctr := c.Container().From("alpine:3.16.2").
+			WithMountedCache("/cache", c.CacheVolume(identity.NewID())).
+			WithMountedDirectory("/cache/subdir", subdir)
+
+		for fileName, expectedContents := range map[string]string{
+			"foo": "bar",
+			"baz": "qux",
+		} {
+			subpath := filepath.Join("/cache/subdir", fileName)
+			out, err := ctr.WithExec([]string{"cat", subpath}).Stdout(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedContents, strings.TrimSpace(out))
+
+			contents, err := ctr.File(subpath).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedContents, strings.TrimSpace(string(contents)))
+
+			dir := ctr.Directory("/cache/subdir")
+			contents, err = dir.File(fileName).Contents(ctx)
+			require.NoError(t, err)
+			require.Equal(t, expectedContents, strings.TrimSpace(string(contents)))
+		}
 	})
 }
 
