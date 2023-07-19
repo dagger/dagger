@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/internal/engine"
@@ -60,7 +61,7 @@ type checkVersionCompatibilityArgs struct {
 	Version string
 }
 
-func (s *querySchema) checkVersionCompatibility(_ *router.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
+func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {
 		return true, nil
