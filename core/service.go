@@ -28,22 +28,6 @@ import (
 // session attachable.
 const DaggerNetwork = "dagger"
 
-var servicesDomain string
-var servicesDomainOnce = &sync.Once{}
-
-// SessionDomain is a session-global domain suffix appended to every service's
-// hostname. It is randomly generated on the first call.
-//
-// Ideally we would base this on the Buildkit gateway session ID instead of
-// using global state, but for exporting we actually establish multiple gateway
-// sessions.
-func SessionDomain() string {
-	servicesDomainOnce.Do(func() {
-		servicesDomain = hostHashStr(identity.NewID()) + network.DomainSuffix
-	})
-	return servicesDomain
-}
-
 type Service struct {
 	// Container is the container that this service is running in.
 	Container *Container `json:"container"`
@@ -114,7 +98,7 @@ func (svc *Service) Hostname() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return hostHash(dig), nil
+	return network.HostHash(dig), nil
 }
 
 func (svc *Service) Endpoint(port int, scheme string) (string, error) {
@@ -205,7 +189,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	fullHost := host + "." + SessionDomain()
+	fullHost := host + "." + network.SessionDomain(bk.ID())
 
 	health := newHealth(bk, fullHost, svc.Container.Ports)
 

@@ -13,6 +13,8 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/networks"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/cli/cli/config"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
@@ -22,7 +24,13 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// OCIStoreName is the name of the OCI content store used for OCI tarball
+// imports.
 const OCIStoreName = "dagger-oci"
+
+// DaggerNetwork is the ID of the network used for the Buildkit networks
+// session attachable.
+const DaggerNetwork = "dagger"
 
 func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess, err := bksession.NewSession(ctx, identity.NewID(), "")
@@ -35,6 +43,22 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
+	}))
+
+	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {
+		switch id {
+		case DaggerNetwork:
+			return &networks.Config{
+				Dns: &networks.DNSConfig{
+					SearchDomains: append(
+						[]string{network.SessionDomain(sess.ID())},
+						// startOpts.ExtraSearchDomains...,
+					),
+				},
+			}
+		default:
+			return nil
+		}
 	}))
 
 	// TODO: this should proxy out to the right session, this is just to unblock dockerhub rate limits for now

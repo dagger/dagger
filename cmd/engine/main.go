@@ -215,12 +215,12 @@ func main() { //nolint:gocyclo
 		cli.StringFlag{
 			Name:  "network-name",
 			Usage: "short name for the engine's container network; used for interface name",
-			Value: "dagger",
+			Value: network.DefaultName,
 		},
 		cli.StringFlag{
 			Name:  "network-cidr",
 			Usage: "address range to use for networked containers",
-			Value: "10.87.0.0/16",
+			Value: network.DefaultCIDR,
 		},
 	)
 	app.Flags = append(app.Flags, appFlags...)

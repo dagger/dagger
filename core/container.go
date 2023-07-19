@@ -2,9 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/base32"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -37,8 +34,6 @@ import (
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
-
-const OCIStoreName = "dagger-oci"
 
 // Container is a content-addressed container.
 type Container struct {
@@ -1429,7 +1424,7 @@ func (container *Container) Import(
 
 	st := llb.OCILayout(
 		fmt.Sprintf("%s@%s", dummyRepo, manifestDesc.Digest),
-		llb.OCIStore("", OCIStoreName),
+		llb.OCIStore("", buildkit.OCIStoreName),
 		llb.Platform(container.Platform),
 	)
 
@@ -1749,27 +1744,6 @@ type ContainerExecOpts struct {
 type BuildArg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
-}
-
-func hostHash(val digest.Digest) string {
-	b, err := hex.DecodeString(val.Encoded())
-	if err != nil {
-		panic(err)
-	}
-
-	return strings.ToLower(b32(xxh3.Hash(b)))
-}
-
-func hostHashStr(val string) string {
-	return strings.ToLower(b32(xxh3.HashString(val)))
-}
-
-func b32(n uint64) string {
-	var sum [8]byte
-	binary.BigEndian.PutUint64(sum[:], n)
-	return base32.HexEncoding.
-		WithPadding(base32.NoPadding).
-		EncodeToString(sum[:])
 }
 
 // OCI manifest annotation that specifies an image's tag
