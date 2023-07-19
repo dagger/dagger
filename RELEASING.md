@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July.%204%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July.%2019%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -125,6 +125,9 @@ and improve it. We want small, constant improvements which compound. Therefore:
   patch` (or `changie batch minor` if this is a new minor). `ENGINE_VERSION`
   will be automatically generated. If you do not have `changie` installed,
   see https://changie.dev
+- [ ] Update `CHANGELOG.md` by running `changie merge`.
+- [ ] Submit a PR with the resulting changes so that release notes can be
+  generated correctly. The merge commit is what gets tagged in the next step.
 - [ ] Ensure that all checks are green ✅ for the `<ENGINE_GIT_SHA>` on the
   `main` branch that you are about to release.
 - [ ] `20mins` When you have confirmed that all checks are green, run the following:
