@@ -58,8 +58,8 @@ func NewSource(opt Opt) (source.Source, error) {
 	return hs, nil
 }
 
-func (hs *httpSource) ID() string {
-	return srctypes.HTTPSScheme
+func (hs *httpSource) Schemes() []string {
+	return []string{srctypes.HTTPSScheme, srctypes.HTTPScheme}
 }
 
 func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
@@ -96,14 +96,12 @@ func (hs *httpSource) Identifier(scheme, ref string, attrs map[string]string, pl
 				return nil, err
 			}
 			id.GID = int(i)
+		case AttrHTTPNetConfig:
+			id.NetworkConfigID = v
 		}
 	}
 
 	return id, nil
-}
-
-func (hs *httpSource) Schemes() []string {
-	return []string{srctypes.HTTPSScheme, srctypes.HTTPScheme}
 }
 
 type httpSourceHandler struct {

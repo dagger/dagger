@@ -581,7 +581,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		// NB: don't use internalEnv since it unsets the env var. we keep it around
 		// to propagate to the command, to support running 'dagger do' in dagger,
 		// though this is primarily motivated by tests
-		engineConf.ExtraSearchDomains = strings.Fields(searchDomains)
+		sessParams.ExtraSearchDomains = strings.Fields(searchDomains)
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {

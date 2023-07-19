@@ -65,10 +65,6 @@ func NewSource(opt Opt) (source.Source, error) {
 	return gs, nil
 }
 
-func (gs *gitSource) ID() string {
-	return srctypes.GitScheme
-}
-
 func (gs *gitSource) Schemes() []string {
 	return []string{srctypes.GitScheme}
 }
@@ -98,6 +94,8 @@ func (gs *gitSource) Identifier(scheme, ref string, attrs map[string]string, pla
 			id.KnownSSHHosts = v
 		case pb.AttrMountSSHSock:
 			id.MountSSHSock = v
+		case AttrNetConfig:
+			id.NetworkConfigID = v
 		}
 	}
 

@@ -56,11 +56,11 @@ func NewGitIdentifier(remoteURL string) (*GitIdentifier, error) {
 	return &repo, nil
 }
 
-func (GitIdentifier) ID() string {
+var _ source.Identifier = (*GitIdentifier)(nil)
+
+func (GitIdentifier) Scheme() string {
 	return srctypes.GitScheme
 }
-
-var _ source.Identifier = (*GitIdentifier)(nil)
 
 func (id *GitIdentifier) Capture(c *provenance.Capture, pin string) error {
 	url := id.Remote

@@ -33,6 +33,10 @@ func NewTransport(rt http.RoundTripper, netConfig *networks.Config) http.RoundTr
 		resolver = &net.Resolver{
 			PreferGo: true,
 			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				if len(netConfig.Dns.Nameservers) == 0 {
+					return nil, errors.New("no nameservers configured")
+				}
+
 				var errs error
 				for _, ns := range netConfig.Dns.Nameservers {
 					conn, err := dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))

@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sort"
 
+	"github.com/dagger/dagger/engine/sources/netconf"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -251,7 +252,8 @@ func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, err
 			switch k {
 			case pb.AttrLocalSessionID,
 				pb.AttrLocalUniqueID,
-				pb.AttrSharedKeyHint: // contains session ID
+				pb.AttrSharedKeyHint,  // contains session ID
+				netconf.AttrSessionID: // network config session IDs
 				delete(src.Attrs, k)
 				modified = true
 			}

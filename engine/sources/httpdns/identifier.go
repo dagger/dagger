@@ -27,7 +27,7 @@ type HTTPIdentifier struct {
 	NetworkConfigID string
 }
 
-func (*HTTPIdentifier) ID() string {
+func (*HTTPIdentifier) Scheme() string {
 	return srctypes.HTTPSScheme
 }
 

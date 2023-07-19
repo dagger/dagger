@@ -142,7 +142,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 
 	detachDeps, _, err := StartServices(ctx, bk, ctr.Services)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start dependent services: %w", err)
 	}
 
 	defer func() {
@@ -153,21 +153,21 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 
 	mounts, err := svc.mounts(ctx, bk, progSock)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("mounts: %w", err)
 	}
 
 	// XXX(vito): add resolv.conf mount
 
 	args, err := ctr.command(opts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("command: %w", err)
 	}
 
 	env := svc.env()
 
 	secretEnv, mounts, env, err := svc.secrets(mounts, env)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("secrets: %w", err)
 	}
 
 	var securityMode pb.SecurityMode
@@ -201,7 +201,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 		Platform: &pbPlatform,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("new container: %w", err)
 	}
 
 	defer func() {
@@ -227,7 +227,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 		SecurityMode: securityMode,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("start container: %w", err)
 	}
 
 	exited := make(chan error, 1)

@@ -1119,6 +1119,29 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.Dir(cfg.WorkingDir))
 	}
 
+	netConf := llb.NewState(
+		llb.NewSource(
+			"netconf://resolv.conf",
+			map[string]string{
+				"netconf.session": bk.ID(),
+
+				// NB: an earlier iteration considered having the
+				// source create /etc/hosts too.
+				//
+				// But we don't want aliases here, because we don't
+				// want their resolved IPs to be cached. DNS
+				// resolution should strictly happen at runtime.
+				// "netconf.aliases": string(aliases),
+			},
+			llb.Constraints{},
+		).Output(),
+	)
+
+	runOpts = append(runOpts,
+		llb.AddMount("/etc/resolv.conf",
+			netConf,
+			llb.SourcePath("resolv.conf")))
+
 	for _, env := range cfg.Env {
 		name, val, ok := strings.Cut(env, "=")
 		if !ok {

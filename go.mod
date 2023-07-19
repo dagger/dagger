@@ -76,7 +76,7 @@ require (
 	github.com/prometheus/procfs v0.11.0
 	github.com/rs/zerolog v1.29.1
 	github.com/shurcooL/graphql v0.0.0-20220606043923-3cf50f8a0a29
-	github.com/vito/progrock v0.7.3-0.20230712190600-7f03ec8d0623
+	github.com/vito/progrock v0.8.1
 	github.com/vito/vt100 v0.1.2
 	golang.org/x/exp v0.0.0-20230425010034-47ecfdc1ba53
 	golang.org/x/oauth2 v0.9.0
@@ -264,4 +264,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230719022153-3b7b3a524c2e
+replace github.com/moby/buildkit => github.com/vito/buildkit v0.10.1-0.20230719171904-85f35d5dc18c

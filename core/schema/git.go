@@ -3,6 +3,8 @@ package schema
 import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -123,17 +125,20 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
 
-	// TODO(vito): use Git+DNS source
-	//if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
-	//	// NB: only configure search domains if we're directly using a service, or
-	//	// if we're nested beneath another search domain.
-	//	//
-	//	// we have to be a bit selective here to avoid breaking Dockerfile builds
-	//	// that use a Buildkit frontend (# syntax = ...) that doesn't have the
-	//	// networks API cap yet.
-	//	opts = append(opts, llb.WithNetworkConfig(core.DaggerNetwork))
-	//}
+	var st llb.State
+	if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
+		// NB: only configure search domains if we're directly using a service, or
+		// if we're nested beneath another search domain.
+		//
+		// we have to be a bit selective here to avoid breaking Dockerfile builds
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap.
+		//
+		// TODO: add API cap
+		st = gitdns.State(parent.Repository.URL, parent.Name, buildkit.DaggerNetwork, opts...)
+	} else {
+		st = llb.Git(parent.Repository.URL, parent.Name, opts...)
+	}
 
-	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
 	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

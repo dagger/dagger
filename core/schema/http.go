@@ -2,6 +2,8 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 )
@@ -55,17 +57,20 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		llb.Filename(filename),
 	}
 
-	// TODO(vito): use HTTP+DNS source
-	//if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
-	//	// NB: only configure search domains if we're directly using a service, or
-	//	// if we're nested beneath another search domain.
-	//	//
-	//	// we have to be a bit selective here to avoid breaking Dockerfile builds
-	//	// that use a Buildkit frontend (# syntax = ...) that doesn't have the
-	//	// networks API cap yet.
-	//	opts = append(opts, llb.WithNetworkConfig(core.DaggerNetwork))
-	//}
+	var st llb.State
+	if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
+		// NB: only configure search domains if we're directly using a service, or
+		// if we're nested beneath another search domain.
+		//
+		// we have to be a bit selective here to avoid breaking Dockerfile builds
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap.
+		//
+		// TODO: add API cap
+		st = httpdns.State(args.URL, buildkit.DaggerNetwork, opts...)
+	} else {
+		st = llb.HTTP(args.URL, opts...)
+	}
 
-	st := llb.HTTP(args.URL, opts...)
 	return core.NewFileSt(ctx, st, filename, pipeline, s.platform, svcs)
 }

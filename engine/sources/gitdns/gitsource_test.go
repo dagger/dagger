@@ -54,7 +54,7 @@ func testRepeatedFetch(t *testing.T, keepGitDir bool) {
 
 	repo := setupGitRepo(t)
 
-	id := &source.GitIdentifier{Remote: repo.mainURL, KeepGitDir: keepGitDir}
+	id := &GitIdentifier{Remote: repo.mainURL, KeepGitDir: keepGitDir}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -95,7 +95,7 @@ func testRepeatedFetch(t *testing.T, keepGitDir bool) {
 	require.ErrorAs(t, err, &os.ErrNotExist)
 
 	// second fetch returns same dir
-	id = &source.GitIdentifier{Remote: repo.mainURL, Ref: "master", KeepGitDir: keepGitDir}
+	id = &GitIdentifier{Remote: repo.mainURL, Ref: "master", KeepGitDir: keepGitDir}
 
 	g, err = gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -112,7 +112,7 @@ func testRepeatedFetch(t *testing.T, keepGitDir bool) {
 
 	require.Equal(t, ref1.ID(), ref2.ID())
 
-	id = &source.GitIdentifier{Remote: repo.mainURL, Ref: "feature", KeepGitDir: keepGitDir}
+	id = &GitIdentifier{Remote: repo.mainURL, Ref: "feature", KeepGitDir: keepGitDir}
 
 	g, err = gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func testFetchBySHA(t *testing.T, keepGitDir bool) {
 	sha := strings.TrimSpace(string(out))
 	require.Equal(t, 40, len(sha))
 
-	id := &source.GitIdentifier{Remote: repo.mainURL, Ref: sha, KeepGitDir: keepGitDir}
+	id := &GitIdentifier{Remote: repo.mainURL, Ref: sha, KeepGitDir: keepGitDir}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -243,7 +243,7 @@ func testFetchByTag(t *testing.T, tag, expectedCommitSubject string, isAnnotated
 
 	repo := setupGitRepo(t)
 
-	id := &source.GitIdentifier{Remote: repo.mainURL, Ref: tag, KeepGitDir: keepGitDir}
+	id := &GitIdentifier{Remote: repo.mainURL, Ref: tag, KeepGitDir: keepGitDir}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -345,8 +345,8 @@ func testMultipleRepos(t *testing.T, keepGitDir bool) {
 	)
 	repoURL2 := serveGitRepo(t, repodir2)
 
-	id := &source.GitIdentifier{Remote: repo.mainURL, KeepGitDir: keepGitDir}
-	id2 := &source.GitIdentifier{Remote: repoURL2, KeepGitDir: keepGitDir}
+	id := &GitIdentifier{Remote: repo.mainURL, KeepGitDir: keepGitDir}
+	id2 := &GitIdentifier{Remote: repoURL2, KeepGitDir: keepGitDir}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -419,7 +419,7 @@ func TestCredentialRedaction(t *testing.T) {
 	gs := setupGitSource(t, t.TempDir())
 
 	url := "https://user:keepthissecret@non-existant-host/user/private-repo.git"
-	id := &source.GitIdentifier{Remote: url}
+	id := &GitIdentifier{Remote: url}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)
@@ -461,7 +461,7 @@ func testSubdir(t *testing.T, keepGitDir bool) {
 	)
 
 	repoURL := serveGitRepo(t, repodir)
-	id := &source.GitIdentifier{Remote: repoURL, KeepGitDir: keepGitDir, Subdir: "sub"}
+	id := &GitIdentifier{Remote: repoURL, KeepGitDir: keepGitDir, Subdir: "sub"}
 
 	g, err := gs.Resolve(ctx, id, nil, nil)
 	require.NoError(t, err)

@@ -168,7 +168,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 			if ref != nil {
 				res, err := ref.resultProxy.Result(egctx)
 				if err != nil {
-					return err
+					return fmt.Errorf("result: %w", err)
 				}
 				var ok bool
 				workerRef, ok = res.Sys().(*bkworker.WorkerRef)
@@ -193,7 +193,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	}
 	err = eg.Wait()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("wait: %w", err)
 	}
 
 	// using context.Background so it continues running until exit or when c.Close() is called

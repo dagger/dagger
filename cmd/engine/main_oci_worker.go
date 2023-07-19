@@ -34,6 +34,7 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
+	"github.com/dagger/dagger/engine/sources/netconf"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
@@ -388,6 +389,15 @@ func registerDaggerCustomSources(worker *base.Worker) error {
 	}
 
 	worker.SourceManager.Register(gs)
+
+	ns, err := netconf.NewSource(netconf.Opt{
+		CacheAccessor: worker.CacheMgr,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(ns)
 
 	return nil
 }

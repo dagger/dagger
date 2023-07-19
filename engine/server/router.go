@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
@@ -68,6 +69,9 @@ func NewRouter(
 		return nil, err
 	}
 	rtr.progCleanup = progCleanup
+
+	// set up global service tracker
+	core.InitServices(progSockPath)
 
 	// TODO: correct progrock labels
 	go pipeline.LoadRootLabels("/", "da-engine")

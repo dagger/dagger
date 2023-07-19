@@ -1011,8 +1011,6 @@ github.com/docker/docker v23.0.1+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bc
 github.com/docker/docker v23.0.3+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
 github.com/docker/docker v24.0.0-rc.2.0.20230706181717-98d3da79ef9c+incompatible h1:XccikgvtGCEZE9ZQoaEApdx9ZvruGYakfi2tw4d/vUg=
 github.com/docker/docker v24.0.0-rc.2.0.20230706181717-98d3da79ef9c+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
-github.com/docker/docker v24.0.2+incompatible h1:eATx+oLz9WdNVkQrr0qjQ8HvRJ4bOOxfzEo8R+dA3cg=
-github.com/docker/docker v24.0.2+incompatible/go.mod h1:eEKB0N0r5NX/I1kEveEz05bcu8tLC/8azJZsviup8Sk=
 github.com/docker/docker-credential-helpers v0.6.3/go.mod h1:WRaJzqw3CTB9bk10avuGsjVBZsD05qeibJ1/TYlvc0Y=
 github.com/docker/docker-credential-helpers v0.6.4/go.mod h1:ofX3UI0Gz1TteYBjtgs07O36Pyasyp66D2uKT7H8W1c=
 github.com/docker/docker-credential-helpers v0.7.0 h1:xtCHsjxogADNZcdv1pKUHXryefjlVRqWqIhk/uXJp0A=
@@ -1952,10 +1950,12 @@ github.com/vishvananda/netns v0.0.0-20180720170159-13995c7128cc/go.mod h1:ZjcWmF
 github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17pCcGlemwknint6hfoeCVQrEMVwxRLRjXpq+BU=
 github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae/go.mod h1:DD4vA1DwXk04H54A1oHXtwZmA0grkVMdPxx/VGLCah0=
 github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f/go.mod h1:DD4vA1DwXk04H54A1oHXtwZmA0grkVMdPxx/VGLCah0=
-github.com/vito/buildkit v0.10.1-0.20230719022153-3b7b3a524c2e h1:Mj40fIWHQZPhTKt17WYkYycZXILmOVCN7FJMzjwAw0A=
-github.com/vito/buildkit v0.10.1-0.20230719022153-3b7b3a524c2e/go.mod h1:+n9GmkxwBCjVz4u7wmiyh+oqvjIjQM+1zk3iJrWfdos=
+github.com/vito/buildkit v0.10.1-0.20230719171904-85f35d5dc18c h1:+uHdteWU2vCO+Gh0G9LOxiKOmR7ILw13Z64JpbNUdz0=
+github.com/vito/buildkit v0.10.1-0.20230719171904-85f35d5dc18c/go.mod h1:+n9GmkxwBCjVz4u7wmiyh+oqvjIjQM+1zk3iJrWfdos=
 github.com/vito/progrock v0.7.3-0.20230712190600-7f03ec8d0623 h1:GYk1kL5hcoOrrRJjBqhvl5Pu8Z6plxhf6PpbrvKO/eY=
 github.com/vito/progrock v0.7.3-0.20230712190600-7f03ec8d0623/go.mod h1:1KTQP8B56h0didAAY+/kmhGjp423TSBrNUrgUWYo9ec=
+github.com/vito/progrock v0.8.1 h1:F+evv4gmQHO+cj8LbW4SCY1yvmbqw3pnAUw4SclWN8k=
+github.com/vito/progrock v0.8.1/go.mod h1:1KTQP8B56h0didAAY+/kmhGjp423TSBrNUrgUWYo9ec=
 github.com/vito/vt100 v0.1.2 h1:gRhKJ/shHTRfMHg+Wc5ExHJzV6HHZqyQIAL52x4EUmA=
 github.com/vito/vt100 v0.1.2/go.mod h1:ByMBsZZEP04RrkT9q/UxvZOjECM8Xc/MRLZ7GLrAUXs=
 github.com/weaveworks/common v0.0.0-20230119144549-0aaa5abd1e63 h1:qZcnPZbiX8gGs3VmipVc3ft29vPYBZzlox/04Von6+k=
