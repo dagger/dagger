@@ -306,15 +306,10 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 	ref := reference.TagNameOnly(refName).String()
 
-	digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	resolvedRef, _, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	digested, err := reference.WithDigest(refName, digest)
 	if err != nil {
 		return nil, err
 	}
@@ -324,10 +319,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 		return nil, err
 	}
 
-	fsSt := llb.Image(
-		digested.String(),
-		llb.WithCustomNamef("pull %s", ref),
-	)
+	fsSt := llb.Image(resolvedRef, llb.WithCustomNamef("pull %s", ref))
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
 	if err != nil {
@@ -340,7 +332,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 	RecordVertexes(subRecorder, container.FS)
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
-	container.ImageRef = digested.String()
+	container.ImageRef = resolvedRef
 
 	return container, nil
 }

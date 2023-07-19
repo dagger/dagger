@@ -32,6 +32,8 @@ import (
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
@@ -361,7 +363,33 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if err != nil {
 		return nil, err
 	}
+	if err := registerDaggerCustomSources(w); err != nil {
+		return nil, fmt.Errorf("register Dagger sources: %w", err)
+	}
 	return []worker.Worker{w}, nil
+}
+
+// registerDaggerCustomSources adds Dagger's custom sources to the worker.
+func registerDaggerCustomSources(worker *base.Worker) error {
+	hs, err := httpdns.NewSource(httpdns.Opt{
+		CacheAccessor: worker.CacheMgr,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(hs)
+
+	gs, err := gitdns.NewSource(gitdns.Opt{
+		CacheAccessor: worker.CacheMgr,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(gs)
+
+	return nil
 }
 
 func snapshotterFactory(commonRoot string, cfg config.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (runc.SnapshotterFactory, error) {

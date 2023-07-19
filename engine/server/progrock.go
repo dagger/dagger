@@ -24,7 +24,7 @@ type recordingGateway struct {
 
 // ResolveImageConfig records the image config resolution vertex as a member of
 // the current progress group, and calls the inner ResolveImageConfig.
-func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
+func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	// HACK(vito): this is how Buildkit determines the vertex digest. Keep this
