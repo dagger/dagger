@@ -41,16 +41,19 @@ type Client struct {
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
 
-	refs   map[*ref]struct{}
-	refsMu sync.Mutex
+	refs         map[*ref]struct{}
+	refsMu       sync.Mutex
+	containers   map[bkgw.Container]struct{}
+	containersMu sync.Mutex
 }
 
 type Result = solverresult.Result[*ref]
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client := &Client{
-		Opts: opts,
-		refs: make(map[*ref]struct{}),
+		Opts:       opts,
+		refs:       make(map[*ref]struct{}),
+		containers: make(map[bkgw.Container]struct{}),
 	}
 
 	session, err := client.newSession(ctx)
@@ -78,19 +81,29 @@ func (c *Client) ID() string {
 	return c.session.ID()
 }
 
-// TODO: Actually call this when the server instance ends
 // TODO: Integ test for all cache being releasable at end of every integ test suite
 func (c *Client) Close() error {
 	c.job.Discard()
 	c.job.CloseProgress()
 
+	c.refsMu.Lock()
 	for rf := range c.refs {
 		if rf != nil {
-			rf.resultProxy.Release(context.TODO())
+			rf.resultProxy.Release(context.Background())
 		}
 	}
+	c.refs = nil // TODO: make sure everything else handles this in case there's so other request happening for some reason and we don't get a panic. Or maybe just have a RWMutex for checks whether we have closed everywhere
+	c.refsMu.Unlock()
 
-	// TODO: release any running interactive containers
+	c.containersMu.Lock()
+	for ctr := range c.containers {
+		if ctr != nil {
+			// TODO: can this block a long time on accident? should we have a timeout?
+			ctr.Release(context.Background())
+		}
+	}
+	c.containers = nil // TODO: same as above about handling this
+	c.containersMu.Unlock()
 
 	// TODO: ensure session is fully closed by goroutines started in client.newSession
 
@@ -143,7 +156,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	ctrReq.ExtraHosts = extraHosts
 
 	// get the input mounts in parallel in case they need to be evaluated, which can be expensive
-	eg, ctx := errgroup.WithContext(ctx)
+	eg, egctx := errgroup.WithContext(ctx)
 	for i, m := range req.Mounts {
 		i, m := i, m
 		eg.Go(func() error {
@@ -153,7 +166,7 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 			}
 			var workerRef *bkworker.WorkerRef
 			if ref != nil {
-				res, err := ref.resultProxy.Result(ctx)
+				res, err := ref.resultProxy.Result(egctx)
 				if err != nil {
 					return err
 				}
@@ -183,8 +196,9 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 		return nil, err
 	}
 
+	// using context.Background so it continues running until exit or when c.Close() is called
 	ctr, err := bkcontainer.NewContainer(
-		ctx,
+		context.Background(),
 		c.Worker,
 		c.SessionManager,
 		bksession.NewGroup(c.ID()),
@@ -193,6 +207,10 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	if err != nil {
 		return nil, err
 	}
+
+	c.containersMu.Lock()
+	defer c.containersMu.Unlock()
+	c.containers[ctr] = struct{}{}
 	return ctr, nil
 }
 

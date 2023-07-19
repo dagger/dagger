@@ -110,7 +110,6 @@ func NewRouter(
 		LeaseManager:   rtr.worker.LeaseManager(),
 		/* TODO:
 		Auth     *auth.RegistryAuthProvider
-		Secrets  *session.SecretStore
 		*/
 	})
 	if err != nil {
