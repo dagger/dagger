@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'engine: prevent session id from busting caches everywhere'
-time: 2023-07-18T19:24:26.184321+01:00
-custom:
-  Author: vito
-  PR: "5474"
