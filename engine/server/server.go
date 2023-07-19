@@ -111,11 +111,13 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			e.routerMu.Unlock()
 			return nil, err
 		}
+
 		caller, err := e.opt.SessionManager.Get(ctx, opts.ClientID, false)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
 		}
+
 		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID)
 		if err != nil {
 			e.routerMu.Unlock()
@@ -129,6 +131,10 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			rtr.Close()
 			delete(e.routers, opts.RouterID)
 			e.routerMu.Unlock()
+
+			if err := bkClient.Close(); err != nil {
+				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for router %s", opts.RouterID)
+			}
 
 			// TODO: synchronous? or put this in a goroutine?
 			time.AfterFunc(time.Second, e.throttledGC)
