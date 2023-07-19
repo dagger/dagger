@@ -77,7 +77,7 @@ class CLISession(SyncResourceManager):
                     stderr=self.cfg.log_output or subprocess.PIPE,
                     encoding="utf-8",
                 )
-            except OSError as e:
+            except OSError as e:  # noqa: PERF203
                 if e.errno != OS_ETXTBSY:
                     raise
                 logger.warning("file busy, retrying in 0.1 seconds...")

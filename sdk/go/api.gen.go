@@ -339,6 +339,8 @@ func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
 // Exit code of the last executed command. Zero means success.
 //
 // Will execute default command if none is set, or error if there's no default.
+//
+// Deprecated: Use Sync instead.
 func (r *Container) ExitCode(ctx context.Context) (int, error) {
 	if r.exitCode != nil {
 		return *r.exitCode, nil

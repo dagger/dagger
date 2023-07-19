@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dagger/dagger/engine"
@@ -191,7 +192,14 @@ func inlineTUI(
 		return err
 	}
 	defer sess.Close()
-	return fn(ctx, sess)
+	before := time.Now()
+	err = fn(ctx, sess)
+	program.Send(progrock.StatusInfoMsg{
+		Name:  "Duration",
+		Value: time.Since(before).Truncate(time.Millisecond).String(),
+		Order: 3,
+	})
+	return err
 }
 
 func newProgrockWriter(dest string) (progrock.Writer, error) {

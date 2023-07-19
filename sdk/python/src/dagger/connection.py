@@ -48,11 +48,9 @@ class Connection(ResourceManager, SyncResourceManager):
 
     def __enter__(self) -> SyncClient:
         warnings.warn(
-            (
-                "The synchronous API is deprecated and will be removed in a future"
-                " release. See https://github.com/dagger/dagger/issues/5192"
-                " for more information."
-            ),
+            "The synchronous API is deprecated and will be removed in a future"
+            " release. See https://github.com/dagger/dagger/issues/5192"
+            " for more information.",
             DeprecationWarning,
             stacklevel=2,
         )
