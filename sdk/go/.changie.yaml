@@ -29,7 +29,7 @@ footerFormat: |
   - Join our [Discord server](https://discord.gg/dagger-io)
   - Follow us on [Twitter](https://twitter.com/dagger_io)
 newlines:
-  afterChangelogHeader: 3
+  beforeChangelogVersion: 3
   afterVersion: 1
   beforeKind: 1
   beforeFooterTemplate: 1
