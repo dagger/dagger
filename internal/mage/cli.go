@@ -2,6 +2,7 @@ package mage
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"dagger.io/dagger"
@@ -51,6 +52,10 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 			"--nightly",
 			"--config", ".goreleaser.nightly.yml",
 		)
+	}
+
+	if !devRelease {
+		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", version))
 	}
 
 	_, err = container.
