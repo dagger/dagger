@@ -12,6 +12,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	// https://github.com/goreleaser/goreleaser/releases
+	goReleaserVersion = "v1.19.2-pro"
+)
+
 type Cli mg.Namespace
 
 // Publish publishes dagger CLI using GoReleaser
@@ -27,7 +32,7 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 
 	wd := c.Host().Directory(".")
 	container := c.Container().
-		From("ghcr.io/goreleaser/goreleaser-pro:v1.16.2-pro").
+		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
 		WithEntrypoint([]string{}).
 		WithExec([]string{"apk", "add", "aws-cli"}).
 		WithWorkdir("/app").
