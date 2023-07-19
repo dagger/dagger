@@ -5,10 +5,11 @@ import (
 	"context"
 	"io"
 
-	"dagger.io/dagger/internal/engineconn"
-	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+
+	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/internal/querybuilder"
 )
 
 // Client is the Dagger Engine Client
@@ -48,6 +49,12 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 func WithConn(conn engineconn.EngineConn) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.Conn = conn
+	})
+}
+
+func WithEngineLoading() ClientOpt {
+	return clientOptFunc(func(cfg *engineconn.Config) {
+		cfg.EngineLoading = true
 	})
 }
 

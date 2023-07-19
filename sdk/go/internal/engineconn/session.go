@@ -109,7 +109,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var stderrBuf *bytes.Buffer
 	var childStdin io.WriteCloser
 
-	fmt.Println("Starting Dagger session...")
+	if cfg.EngineLoading {
+		fmt.Println("Starting Dagger session...")
+	}
+
 	for i := 0; i < 10; i++ {
 		proc = exec.CommandContext(cmdCtx, binPath, args...)
 		proc.Env = env
@@ -188,8 +191,11 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		}
 	}()
 
+	if cfg.EngineLoading {
+		fmt.Println("Dagger session started! Establishing connection with the SDK...")
+	}
+
 	// Read the connect params from stdout.
-	fmt.Println("Dagger session started! Establishing connection with the SDK...")
 	paramCh := make(chan error, 1)
 	var params ConnectParams
 	go func() {
@@ -218,7 +224,10 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		return nil, fmt.Errorf("timed out waiting for session params")
 	}
 
-	fmt.Printf("Connection established with Dagger session version %s!\n", CLIVersion)
+	if cfg.EngineLoading {
+		fmt.Printf("Connection established with Dagger session version %s!\n", CLIVersion)
+	}
+
 	return &cliSessionConn{
 		Client:      defaultHTTPClient(&params),
 		childCancel: cmdCancel,
