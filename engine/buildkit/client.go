@@ -78,6 +78,8 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 
 func (c *Client) ID() string {
 	// TODO: ? if you change this, be sure to change the session ID provide to llbBridge methods too
+	// TODO(vito): fyi, I'm now using this in a few different spots as a way to
+	// get the session ID.
 	return c.session.ID()
 }
 

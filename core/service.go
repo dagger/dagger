@@ -245,8 +245,11 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 		}
 
 		return &RunningService{
-			Service:   svc,
-			Hostname:  host,
+			Service: svc,
+			Key: ServiceKey{
+				Hostname:  host,
+				SessionID: bk.ID(),
+			},
 			Container: gc,
 			Process:   svcProc,
 		}, nil
@@ -466,17 +469,22 @@ func (svc *Service) secrets(mounts []bkgw.Mount, env []string) ([]*pb.SecretEnv,
 
 type RunningService struct {
 	Service   *Service
-	Hostname  string
+	Key       ServiceKey
 	Container bkgw.Container
 	Process   bkgw.ContainerProcess
 }
 
 type Services struct {
 	progSock *Socket
-	starting map[string]*sync.WaitGroup
-	running  map[string]*RunningService
-	bindings map[string]int
+	starting map[ServiceKey]*sync.WaitGroup
+	running  map[ServiceKey]*RunningService
+	bindings map[ServiceKey]int
 	l        sync.Mutex
+}
+
+type ServiceKey struct {
+	Hostname  string
+	SessionID string
 }
 
 // AllServices is a pesky global variable storing the state of all running
@@ -486,18 +494,10 @@ var AllServices *Services
 func InitServices(progSockPath string) {
 	AllServices = &Services{
 		progSock: NewHostSocket(progSockPath),
-		starting: map[string]*sync.WaitGroup{},
-		running:  map[string]*RunningService{},
-		bindings: map[string]int{},
+		starting: map[ServiceKey]*sync.WaitGroup{},
+		running:  map[ServiceKey]*RunningService{},
+		bindings: map[ServiceKey]int{},
 	}
-}
-
-func (ss *Services) Service(host string) (*RunningService, bool) {
-	ss.l.Lock()
-	defer ss.l.Unlock()
-
-	svc, ok := ss.running[host]
-	return svc, ok
 }
 
 func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service) (*RunningService, error) {
@@ -506,19 +506,24 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 		return nil, err
 	}
 
+	key := ServiceKey{
+		Hostname:  host,
+		SessionID: bk.ID(),
+	}
+
 	ss.l.Lock()
-	starting, isStarting := ss.starting[host]
-	running, isRunning := ss.running[host]
+	starting, isStarting := ss.starting[key]
+	running, isRunning := ss.running[key]
 	switch {
 	case !isStarting && !isRunning:
 		// not starting or running; start it
 		starting = new(sync.WaitGroup)
 		starting.Add(1)
 		defer starting.Done()
-		ss.starting[host] = starting
+		ss.starting[key] = starting
 	case isRunning:
 		// already running; increment binding count and return
-		ss.bindings[host]++
+		ss.bindings[key]++
 		ss.l.Unlock()
 		return running, nil
 	case isStarting:
@@ -527,7 +532,7 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 		ss.l.Unlock()
 		starting.Wait()
 		ss.l.Lock()
-		running, didStart := ss.running[host]
+		running, didStart := ss.running[key]
 		if didStart {
 			// starting succeeded as normal; return the isntance
 			ss.l.Unlock()
@@ -550,15 +555,15 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 	if err != nil {
 		stop()
 		ss.l.Lock()
-		delete(ss.starting, host)
+		delete(ss.starting, key)
 		ss.l.Unlock()
 		return nil, err
 	}
 
 	ss.l.Lock()
-	delete(ss.starting, host)
-	ss.running[host] = running
-	ss.bindings[host] = 1
+	delete(ss.starting, key)
+	ss.running[key] = running
+	ss.bindings[key] = 1
 	ss.l.Unlock()
 
 	_ = stop // leave it running
@@ -570,15 +575,15 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
-	running, found := ss.running[svc.Hostname]
+	running, found := ss.running[svc.Key]
 	if !found {
 		// not even running; ignore
 		return nil
 	}
 
-	ss.bindings[svc.Hostname]--
+	ss.bindings[svc.Key]--
 
-	if ss.bindings[svc.Hostname] > 0 {
+	if ss.bindings[svc.Key] > 0 {
 		// detached, but other instances still active
 		return nil
 	}
@@ -592,8 +597,8 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 		return err
 	}
 
-	delete(ss.bindings, svc.Hostname)
-	delete(ss.running, svc.Hostname)
+	delete(ss.bindings, svc.Key)
+	delete(ss.running, svc.Key)
 
 	return nil
 }
