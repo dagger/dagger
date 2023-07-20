@@ -174,7 +174,7 @@ export class Bin implements EngineConn {
       }
     })
 
-    console.log("Starting Dagger session...")
+    process.stdout.write("Creating new Engine session... ")
     this.subProcess = execaCommand(args.join(" "), {
       stdio: "pipe",
       reject: true,
@@ -194,16 +194,15 @@ export class Bin implements EngineConn {
 
     const timeOutDuration = 300000
 
-    console.log(
-      "Dagger session started! Establishing connection with the SDK..."
-    )
+    process.stdout.write("OK!\n")
+    process.stdout.write("Establishing connection to Engine... ")
     const connectParams: ConnectParams = (await Promise.race([
       this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
             new EngineSessionConnectionTimeoutError(
-              "timeout reading connect params from engine session",
+              "Engine connection timeout",
               { timeOutDuration }
             )
           )
@@ -211,9 +210,7 @@ export class Bin implements EngineConn {
       }),
     ])) as ConnectParams
 
-    console.log(
-      `Connection established with Dagger session version ${sdkVersion}`
-    )
+    process.stdout.write("OK!\n")
     return new Client({
       host: `127.0.0.1:${connectParams.port}`,
       sessionToken: connectParams.session_token,
