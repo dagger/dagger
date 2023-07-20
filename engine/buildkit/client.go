@@ -166,19 +166,15 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 				if !ok {
 					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
 				}
-				if ref == nil {
-					panic("huh? ref")
-				}
-				if ref.resultProxy == nil {
-					panic("huh? resultProxy")
-				}
-				res, err := ref.resultProxy.Result(egctx)
-				if err != nil {
-					return fmt.Errorf("result: %w", err)
-				}
-				workerRef, ok = res.Sys().(*bkworker.WorkerRef)
-				if !ok {
-					return fmt.Errorf("invalid res: %T", res.Sys())
+				if ref != nil { // TODO(vito): apparently this is possible. scratch?
+					res, err := ref.resultProxy.Result(egctx)
+					if err != nil {
+						return fmt.Errorf("result: %w", err)
+					}
+					workerRef, ok = res.Sys().(*bkworker.WorkerRef)
+					if !ok {
+						return fmt.Errorf("invalid res: %T", res.Sys())
+					}
 				}
 			}
 			ctrReq.Mounts[i] = bkcontainer.Mount{
