@@ -132,7 +132,7 @@ func solveRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkg
 	}
 
 	// TODO(vito): is this needed anymore? had to deal with unwrapping at one point
-	return res.Ref, nil
+	return res.SingleRef()
 }
 
 func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *Socket) (running *RunningService, err error) {
