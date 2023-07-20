@@ -160,17 +160,16 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	for i, m := range req.Mounts {
 		i, m := i, m
 		eg.Go(func() error {
-			ref, ok := m.Ref.(*ref)
-			if !ok {
-				return fmt.Errorf("unexpected ref type: %T", m.Ref)
-			}
 			var workerRef *bkworker.WorkerRef
-			if ref != nil {
+			if m.Ref != nil {
+				ref, ok := m.Ref.(*ref)
+				if !ok {
+					return fmt.Errorf("dagger: unexpected ref type: %T", m.Ref)
+				}
 				res, err := ref.resultProxy.Result(egctx)
 				if err != nil {
 					return fmt.Errorf("result: %w", err)
 				}
-				var ok bool
 				workerRef, ok = res.Sys().(*bkworker.WorkerRef)
 				if !ok {
 					return fmt.Errorf("invalid res: %T", res.Sys())
