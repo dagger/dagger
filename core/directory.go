@@ -576,8 +576,6 @@ func (dir *Directory) Export(
 	host *Host,
 	destPath string,
 ) (rerr error) {
-	// TODO: wrap in services
-
 	var defPB *pb.Definition
 	if dir.Dir != "" {
 		src, err := dir.State()
@@ -596,6 +594,12 @@ func (dir *Directory) Export(
 	} else {
 		defPB = dir.LLB
 	}
+
+	detach, _, err := StartServices(ctx, bk, dir.Services)
+	if err != nil {
+		return err
+	}
+	defer detach()
 
 	return bk.LocalExport(ctx, defPB, destPath)
 }
