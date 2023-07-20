@@ -2,6 +2,7 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 )
 
 type hostSchema struct {
@@ -91,7 +92,12 @@ type hostSocketArgs struct {
 }
 
 func (s *hostSchema) socket(ctx *core.Context, parent any, args hostSocketArgs) (*core.Socket, error) {
-	return s.host.Socket(ctx, args.Path)
+	// TODO: enforcement that requester session is granted access to source session at this path
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.host.Socket(ctx, args.Path, clientMetadata.ClientHostname)
 }
 
 type hostFileArgs struct {

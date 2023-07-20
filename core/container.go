@@ -199,7 +199,7 @@ type ContainerSecret struct {
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	Socket   SocketID   `json:"socket"`
+	SocketID SocketID   `json:"socket"`
 	UnixPath string     `json:"unix_path,omitempty"`
 	Owner    *Ownership `json:"owner,omitempty"`
 }
@@ -712,7 +712,7 @@ func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Cli
 	}
 
 	newSocket := ContainerSocket{
-		Socket:   socketID,
+		SocketID: socketID,
 		UnixPath: target,
 		Owner:    ownership,
 	}
@@ -1166,22 +1166,30 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_SCRUB_SECRETS", string(secretsToScrubJSON)))
 	}
 
-	for _, socket := range container.Sockets {
-		if socket.UnixPath == "" {
+	for _, ctrSocket := range container.Sockets {
+		if ctrSocket.UnixPath == "" {
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
+		socket, err := ctrSocket.SocketID.ToSocket()
+		if err != nil {
+			return nil, fmt.Errorf("socket %s: %w", ctrSocket.UnixPath, err)
+		}
+		socketID, err := bk.SocketLLBID(socket.HostPath, socket.ClientHostname)
+		if err != nil {
+			return nil, fmt.Errorf("socket %s: %w", ctrSocket.UnixPath, err)
+		}
 		socketOpts := []llb.SSHOption{
-			llb.SSHID(socket.Socket.LLBID()),
-			llb.SSHSocketTarget(socket.UnixPath),
+			llb.SSHID(socketID),
+			llb.SSHSocketTarget(ctrSocket.UnixPath),
 		}
 
-		if socket.Owner != nil {
+		if ctrSocket.Owner != nil {
 			socketOpts = append(socketOpts,
 				llb.SSHSocketOpt(
-					socket.UnixPath,
-					socket.Owner.UID,
-					socket.Owner.GID,
+					ctrSocket.UnixPath,
+					ctrSocket.Owner.UID,
+					ctrSocket.Owner.GID,
 					0o600, // preserve default
 				))
 		}

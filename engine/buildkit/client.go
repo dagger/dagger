@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/dagger/dagger/engine"
@@ -43,6 +44,9 @@ type Client struct {
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
 
+	clientHostnameToID   map[string]string
+	clientHostnameToIDMu sync.RWMutex
+
 	refs         map[*ref]struct{}
 	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
@@ -53,9 +57,10 @@ type Result = solverresult.Result[*ref]
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client := &Client{
-		Opts:       opts,
-		refs:       make(map[*ref]struct{}),
-		containers: make(map[bkgw.Container]struct{}),
+		Opts:               opts,
+		clientHostnameToID: make(map[string]string),
+		refs:               make(map[*ref]struct{}),
+		containers:         make(map[bkgw.Container]struct{}),
 	}
 
 	session, err := client.newSession(ctx)
@@ -243,6 +248,31 @@ func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *client.SolveStatu
 	return c.job.Status(ctx, ch)
 }
 
+func (c *Client) RegisterClient(clientID, clientHostname string) {
+	c.clientHostnameToIDMu.Lock()
+	defer c.clientHostnameToIDMu.Unlock()
+	// TODO: error out if clientID already exists? How would a user accomplish that? They'd need to somehow connect to the same router id
+	c.clientHostnameToID[clientHostname] = clientID
+}
+
+func (c *Client) DeregisterClientHostname(clientHostname string) {
+	c.clientHostnameToIDMu.Lock()
+	defer c.clientHostnameToIDMu.Unlock()
+	delete(c.clientHostnameToID, clientHostname)
+}
+
+func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
+	c.clientHostnameToIDMu.RLock()
+	defer c.clientHostnameToIDMu.RUnlock()
+	clientID, ok := c.clientHostnameToID[clientHostname]
+	if !ok {
+		// TODO:
+		// return "", fmt.Errorf("client hostname %q not found", clientHostname)
+		return "", fmt.Errorf("client hostname %q not found: %s", clientHostname, string(debug.Stack()))
+	}
+	return clientID, nil
+}
+
 type localImportOpts struct {
 	OwnerClientID string `json:"ownerClientID,omitempty"`
 	Path          string `json:"path,omitempty"`
@@ -254,8 +284,11 @@ func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.Lo
 		return llb.State{}, err
 	}
 
+	// TODO: double check that reading the client id from the context here is correct, and that it shouldn't
+	// instead be deser'd from the local name. I think it's okay provided we still do the local dir import
+	// synchronously in the caller of this.
 	nameBytes, err := json.Marshal(localImportOpts{
-		// TODO: for now, the requester is always the owner of the local dir
+		// For now, the requester is always the owner of the local dir
 		// when the dir is initially created in LLB (i.e. you can't request a
 		// a new local dir from another session, you can only be passed one
 		// from another session already created).
@@ -331,6 +364,22 @@ func (c *Client) LocalExport(
 		return fmt.Errorf("failed to export: %s", err)
 	}
 	return nil
+}
+
+type hostSocketOpts struct {
+	HostPath       string `json:"host_path,omitempty"`
+	ClientHostname string `json:"client_hostname,omitempty"`
+}
+
+func (c *Client) SocketLLBID(hostPath, clientHostname string) (string, error) {
+	idBytes, err := json.Marshal(hostSocketOpts{
+		HostPath:       hostPath,
+		ClientHostname: clientHostname,
+	})
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(idBytes), nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {

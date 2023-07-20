@@ -10,14 +10,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
-	"github.com/adrg/xdg"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/containerd/containerd/content"
-	"github.com/containerd/containerd/content/local"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
@@ -26,7 +22,6 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
-	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/tonistiigi/fsutil"
@@ -69,6 +64,8 @@ type Session struct {
 	httpClient *http.Client
 	bkClient   *bkclient.Client
 	bkSession  *bksession.Session
+
+	hostname string
 }
 
 func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error) {
@@ -114,8 +111,13 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 
-	bkSessionName := s.RouterID // not interpreted by buildkit, so we use it to pass the router id
-	sharedKey := ""
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, fmt.Errorf("get hostname: %w", err)
+	}
+	s.hostname = hostname
+	bkSessionName := s.hostname
+	sharedKey := s.RouterID
 
 	bkSession, err := bksession.NewSession(ctx, bkSessionName, sharedKey)
 	if err != nil {
@@ -129,8 +131,9 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	}()
 
 	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
-		ClientID: s.ID(),
-		RouterID: s.RouterID,
+		ClientID:       s.ID(),
+		RouterID:       s.RouterID,
+		ClientHostname: s.hostname,
 	})
 
 	// filesync
@@ -139,16 +142,15 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		bkSession.Allow(AnyDirTarget{})
 	}
 
-	/* TODO: sockets
-	bkSession.Allow(session.MergedSocketProvider{
-		// TODO: enforce this in the session stream proxy
-		// EnableHostNetworkAccess: !s.DisableHostRW,
+	// sockets
+	bkSession.Allow(SocketProvider{
+		EnableHostNetworkAccess: !s.DisableHostRW,
 	})
-	*/
 
 	// registry auth
 	bkSession.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
+	/* TODO: do we still need this? or covered serverside now?
 	// oci stores
 	ociStoreDir := filepath.Join(xdg.CacheHome, "dagger", "oci")
 	ociStore, err := local.NewStore(ociStoreDir)
@@ -159,6 +161,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: ociStore,
 	}))
+	*/
 
 	// TODO: more export attachables
 
@@ -195,20 +198,20 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	recorder := progrock.NewRecorder(progMultiW)
 	s.Recorder = recorder
 
-	// run the client session
-	s.eg.Go(func() error {
-		// client ID and router ID get passed via the session ID and session name respectively,
-		// this is because in order to explicitly set those in our own code we'd need to copy
-		// a lot of internal code; could be addressed with upstream tweaks to make some types
-		// public
-		return bkSession.Run(internalCtx, grpchijack.Dialer(s.bkClient.ControlClient()))
-	})
-
-	// start the session server frontend if it's not already running, client+router ID are
+	// start the router if it's not already running, client+router ID are
 	// passed through grpc context
 	s.eg.Go(func() error {
 		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{})
 		return err
+	})
+
+	// run the client session
+	s.eg.Go(func() error {
+		// client ID and router ID get passed via the session ID and session shared key respectively,
+		// this is because in order to explicitly set those in our own code we'd need to copy
+		// a lot of internal code; could be addressed with upstream tweaks to make some types
+		// public
+		return bkSession.Run(internalCtx, grpchijack.Dialer(s.bkClient.ControlClient()))
 	})
 
 	// Try connecting to the session server to make sure it's running
@@ -254,8 +257,9 @@ func (s *Session) ID() string {
 
 func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID: s.ID(),
-		RouterID: s.RouterID,
+		ClientID:       s.ID(),
+		RouterID:       s.RouterID,
+		ClientHostname: s.hostname,
 	}.ToMD())
 }
 

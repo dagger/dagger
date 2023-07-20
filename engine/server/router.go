@@ -51,7 +51,7 @@ func NewRouter(
 	rtr := &Router{
 		bkClient: bkClient,
 		worker:   worker,
-		doneCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}, 1),
 	}
 
 	clientConn := caller.Conn()
@@ -149,8 +149,9 @@ func (rtr *Router) ServeClientConn(
 	clientMetadata *engine.ClientMetadata,
 	conn net.Conn,
 ) error {
-	// TODO:
-	bklog.G(ctx).Debugf("serve client conn: %s", clientMetadata.ClientID)
+	// TODO: use fields in logs
+	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
 
 	l := &singleConnListener{conn: conn}
 	go func() {
