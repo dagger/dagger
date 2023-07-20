@@ -17,6 +17,7 @@ import (
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -30,6 +31,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		return nil, err
 	}
 
+	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&fileSendServerProxy{c})
 	sess.Allow(&fileSyncServerProxy{c})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
@@ -80,7 +82,7 @@ func (c *Client) GetSessionCaller(ctx context.Context, clientID string) (bksessi
 	return c.SessionManager.Get(ctx, clientID, !waitForSession)
 }
 
-type sessionResourceData struct {
+type sessionStreamResourceData struct {
 	// the id of the client that made the request
 	requesterClientID string
 
@@ -102,7 +104,7 @@ type exportLocalDirData struct {
 }
 
 // TODO: just split this method out into one for each resource type, never need multiple at once
-func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionResourceData, error) {
+func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
 	md, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return nil, nil, fmt.Errorf("missing metadata")
@@ -120,7 +122,7 @@ func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Conte
 	}
 	ctx := metadata.NewOutgoingContext(stream.Context(), md)
 
-	sessData := &sessionResourceData{}
+	sessData := &sessionStreamResourceData{}
 
 	requesterClientID, err := getVal(engine.ClientIDMetaKey)
 	if err != nil {

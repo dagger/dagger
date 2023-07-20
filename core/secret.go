@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 )
 
@@ -57,6 +58,11 @@ var _ secrets.SecretStore = &SecretStore{}
 type SecretStore struct {
 	mu      sync.Mutex
 	secrets map[string][]byte
+	bk      *buildkit.Client
+}
+
+func (store *SecretStore) SetBuildkitClient(bk *buildkit.Client) {
+	store.bk = bk
 }
 
 // AddSecret adds the secret identified by user defined name with its plaintext
@@ -88,13 +94,6 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 
 	var name string
 	if secret, err := SecretID(idOrName).ToSecret(); err == nil {
-		/* TODO: remove fully now?
-		if secret.IsOldFormat() {
-			// use the legacy SecretID format
-			return secret.LegacyPlaintext(ctx, store.bk)
-		}
-		*/
-
 		name = secret.Name
 	} else {
 		name = idOrName

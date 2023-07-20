@@ -139,12 +139,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		bkSession.Allow(AnyDirTarget{})
 	}
 
-	/* TODO: secrets
-	secretStore := core.NewSecretStore()
-	bkSession.Allow(secretsprovider.NewSecretProvider(secretStore))
-	secretStore.SetGateway(...)
-	*/
-
 	/* TODO: sockets
 	bkSession.Allow(session.MergedSocketProvider{
 		// TODO: enforce this in the session stream proxy
