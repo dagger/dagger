@@ -64,7 +64,7 @@ type setSecretArgs struct {
 }
 
 func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecretArgs) (*core.Secret, error) {
-	secretID, err := s.secrets.AddSecret(ctx, args.Name, string(args.Plaintext))
+	secretID, err := s.secrets.AddSecret(ctx, args.Name, []byte(args.Plaintext))
 	if err != nil {
 		return nil, err
 	}

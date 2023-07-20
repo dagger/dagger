@@ -1,6 +1,10 @@
 package schema
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 )
@@ -27,15 +31,52 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"host": router.PassthroughResolver,
 		},
 		"Host": router.ObjectResolver{
-			"directory":  router.ToResolver(s.directory),
-			"file":       router.ToResolver(s.file),
-			"unixSocket": router.ToResolver(s.socket),
+			"directory":     router.ToResolver(s.directory),
+			"file":          router.ToResolver(s.file),
+			"unixSocket":    router.ToResolver(s.socket),
+			"setSecretFile": router.ToResolver(s.setSecretFile),
 		},
 	}
 }
 
 func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 	return nil
+}
+
+type setSecretFileArgs struct {
+	Name string
+	Path string
+}
+
+func (s *hostSchema) setSecretFile(ctx *router.Context, _ any, args setSecretFileArgs) (*core.Secret, error) {
+	if s.host.DisableRW {
+		return nil, core.ErrHostRWDisabled
+	}
+
+	var absPath string
+	var err error
+	if filepath.IsAbs(args.Path) {
+		absPath = args.Path
+	} else {
+		absPath = filepath.Join(s.host.Workdir, args.Path)
+	}
+
+	absPath, err = filepath.EvalSymlinks(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("eval symlinks: %w", err)
+	}
+
+	secretFileContent, err := os.ReadFile(absPath)
+	if err != nil {
+		return nil, fmt.Errorf("read file: %w", err)
+	}
+
+	secretID, err := s.secrets.AddSecret(ctx, args.Name, secretFileContent)
+	if err != nil {
+		return nil, err
+	}
+
+	return secretID.ToSecret()
 }
 
 type hostDirectoryArgs struct {

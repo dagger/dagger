@@ -15,7 +15,7 @@ var ErrNotFound = errors.New("secret not found")
 
 func NewStore() *Store {
 	return &Store{
-		secrets: map[string]string{},
+		secrets: map[string][]byte{},
 	}
 }
 
@@ -25,7 +25,7 @@ type Store struct {
 	gw bkgw.Client
 
 	mu      sync.Mutex
-	secrets map[string]string
+	secrets map[string][]byte
 }
 
 func (store *Store) SetGateway(gw bkgw.Client) {
@@ -34,7 +34,7 @@ func (store *Store) SetGateway(gw bkgw.Client) {
 
 // AddSecret adds the secret identified by user defined name with its plaintext
 // value to the secret store.
-func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.SecretID, error) {
+func (store *Store) AddSecret(_ context.Context, name string, plaintext []byte) (core.SecretID, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
@@ -71,5 +71,5 @@ func (store *Store) GetSecret(_ context.Context, idOrName string) ([]byte, error
 		return nil, ErrNotFound
 	}
 
-	return []byte(plaintext), nil
+	return plaintext, nil
 }

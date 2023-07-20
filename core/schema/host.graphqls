@@ -44,4 +44,20 @@ type Host {
     """
     path: String!
   ): Socket!
+
+  """
+  Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+  The file is limited to a size of 512000 bytes.
+  """
+  setSecretFile(
+    """
+    The user defined name for this secret.
+    """
+    name: String!
+
+    """
+    Location of the file to set as a secret.
+    """
+    path: String!
+  ): Secret!
 }
