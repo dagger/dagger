@@ -115,7 +115,7 @@ func TestSecretPlaintext(t *testing.T) {
 	require.Equal(t, "hi", plaintext)
 }
 
-func TestNewSecret(t *testing.T) {
+func TestSecretSet(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -131,7 +131,7 @@ func TestNewSecret(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestWhitespaceSecretScrubbed(t *testing.T) {
+func TestSecretWhitespaceScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -149,7 +149,7 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	require.Equal(t, "***", stdout)
 }
 
-func TestBigSecretScrubbed(t *testing.T) {
+func TestSecretBigScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()

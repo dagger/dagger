@@ -17,6 +17,7 @@ import (
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
+	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -32,6 +33,7 @@ type Opts struct {
 	SessionManager *bksession.Manager
 	LLBSolver      *llbsolver.Solver
 	GenericSolver  *bksolver.Solver
+	SecretStore    bksecrets.SecretStore
 }
 
 // Client is dagger's internal interface to buildkit APIs

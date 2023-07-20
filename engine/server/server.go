@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -101,16 +102,20 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 	e.routerMu.Lock()
 	rtr, ok := e.routers[opts.RouterID]
 	if !ok {
+		secretStore := core.NewSecretStore()
+
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
 			Worker:         e.worker,
 			SessionManager: e.opt.SessionManager,
 			LLBSolver:      e.llbSolver,
 			GenericSolver:  e.genericSolver,
+			SecretStore:    secretStore,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
 		}
+		secretStore.SetBuildkitClient(bkClient)
 
 		caller, err := e.opt.SessionManager.Get(ctx, opts.ClientID, false)
 		if err != nil {
@@ -118,7 +123,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			return nil, err
 		}
 
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
