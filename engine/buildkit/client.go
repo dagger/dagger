@@ -32,6 +32,7 @@ type Opts struct {
 	SessionManager *bksession.Manager
 	LLBSolver      *llbsolver.Solver
 	GenericSolver  *bksolver.Solver
+	ParentSessions []string
 }
 
 // Client is dagger's internal interface to buildkit APIs

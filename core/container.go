@@ -1081,12 +1081,19 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	sessions := append([]string{bk.ID()}, clientMetadata.ParentSessions...)
+
+	runOpts = append(runOpts,
+		// TODO(vito): convert to secret
+		llb.AddEnv("_DAGGER_PARENT_SESSIONS", strings.Join(sessions, " ")))
+
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
 		routerID := clientMetadata.RouterID
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
@@ -1094,9 +1101,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			llb.AddEnv("_DAGGER_PROG_SOCK_PATH", progSock),
 		)
 	}
-
-	// TODO(vito): add /etc/resolv.conf mount
-	// runOpts = append(runOpts, llb.WithNetworkConfig(DaggerNetwork))
 
 	metaSt, metaSourcePath := metaMount(opts.Stdin)
 

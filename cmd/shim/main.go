@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -345,27 +344,22 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	var hostsFilePath string
 	var searchDomains []string
+	for _, env := range spec.Process.Env {
+		switch {
+		case strings.HasPrefix(env, "_DAGGER_PARENT_SESSIONS="):
+			sessions := strings.Fields(strings.TrimPrefix(env, "_DAGGER_PARENT_SESSIONS="))
+			for _, id := range sessions {
+				searchDomains = append(searchDomains, network.SessionDomain(id))
+			}
+		}
+	}
+
+	var hostsFilePath string
 	for _, mnt := range spec.Mounts {
 		switch mnt.Destination {
 		case "/etc/hosts":
 			hostsFilePath = mnt.Source
-		case "/etc/resolv.conf":
-			// collect search domains; we need them this early so that we can use
-			// them for resolving service aliases
-
-			var err error
-			searchDomains, err = collectSearchDomains(mnt.Source)
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "collect search domains:", err)
-				return 1
-			}
-
-			// propagate search domains to the child
-			spec.Process.Env = append(spec.Process.Env,
-				"_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN="+strings.Join(searchDomains, " "),
-			)
 		}
 	}
 
@@ -577,11 +571,11 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:  "unix:///.runner.sock",
 	}
 
-	if searchDomains, found := os.LookupEnv("_EXPERIMENTAL_DAGGER_SEARCH_DOMAIN"); found {
+	if parentSessions, found := os.LookupEnv("_DAGGER_PARENT_SESSIONS"); found {
 		// NB: don't use internalEnv since it unsets the env var. we keep it around
 		// to propagate to the command, to support running 'dagger do' in dagger,
 		// though this is primarily motivated by tests
-		sessParams.ExtraSearchDomains = strings.Fields(searchDomains)
+		sessParams.ParentSessions = strings.Fields(parentSessions)
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {
@@ -613,30 +607,4 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return err
 	}
 	return nil
-}
-
-func collectSearchDomains(resolv string) ([]string, error) {
-	src, err := os.Open(resolv)
-	if err != nil {
-		return nil, err
-	}
-	defer src.Close()
-
-	srcScan := bufio.NewScanner(src)
-
-	daggerDomains := []string{}
-	for srcScan.Scan() {
-		if !strings.HasPrefix(srcScan.Text(), "search") {
-			continue
-		}
-
-		domains := strings.Fields(srcScan.Text())[1:]
-		for _, domain := range domains {
-			if strings.HasSuffix(domain, network.DomainSuffix) {
-				daggerDomains = append(daggerDomains, domain)
-			}
-		}
-	}
-
-	return daggerDomains, nil
 }

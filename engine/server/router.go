@@ -46,6 +46,7 @@ func NewRouter(
 	worker bkworker.Worker,
 	caller bksession.Caller,
 	routerID string,
+	parentSessions []string,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
@@ -112,6 +113,7 @@ func NewRouter(
 		ProgSockPath:   progSockPath,
 		OCIStore:       rtr.worker.ContentStore(),
 		LeaseManager:   rtr.worker.LeaseManager(),
+		ParentSessions: parentSessions,
 		/* TODO:
 		Auth     *auth.RegistryAuthProvider
 		*/

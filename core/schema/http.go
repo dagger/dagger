@@ -58,13 +58,12 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 	}
 
 	var st llb.State
-	if len(svcs) > 0 || len(s.extraSearchDomains) > 0 {
+	if len(svcs) > 0 || len(s.parentSessions) > 0 {
 		// NB: only configure search domains if we're directly using a service, or
-		// if we're nested beneath another search domain.
+		// if we're nested.
 		//
 		// we have to be a bit selective here to avoid breaking Dockerfile builds
-		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
-		// networks API cap.
+		// that use a Buildkit frontend (# syntax = ...).
 		//
 		// TODO: add API cap
 		st = httpdns.State(args.URL, buildkit.DaggerNetwork, opts...)

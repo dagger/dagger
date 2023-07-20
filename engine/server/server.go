@@ -106,6 +106,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			SessionManager: e.opt.SessionManager,
 			LLBSolver:      e.llbSolver,
 			GenericSolver:  e.genericSolver,
+			ParentSessions: opts.ParentSessions,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
@@ -118,7 +119,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			return nil, err
 		}
 
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, opts.ParentSessions)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err

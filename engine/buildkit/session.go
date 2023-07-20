@@ -45,15 +45,17 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
 	}))
 
+	searchDomains := []string{network.SessionDomain(sess.ID())}
+	for _, sid := range c.Opts.ParentSessions {
+		searchDomains = append(searchDomains, network.SessionDomain(sid))
+	}
+
 	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {
 		switch id {
 		case DaggerNetwork:
 			return &networks.Config{
 				Dns: &networks.DNSConfig{
-					SearchDomains: append(
-						[]string{network.SessionDomain(sess.ID())},
-						// startOpts.ExtraSearchDomains...,
-					),
+					SearchDomains: searchDomains,
 				},
 			}
 		default:

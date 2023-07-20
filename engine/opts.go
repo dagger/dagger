@@ -4,19 +4,22 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"google.golang.org/grpc/metadata"
 )
 
 type ClientMetadata struct {
-	ClientID string
-	RouterID string
+	ClientID       string
+	RouterID       string
+	ParentSessions []string
 }
 
 func (m ClientMetadata) ToMD() metadata.MD {
 	return metadata.Pairs(
 		ClientIDMetaKey, m.ClientID,
 		RouterIDMetaKey, m.RouterID,
+		ParentSessionsMetaKey, strings.Join(m.ParentSessions, " "),
 	)
 }
 
@@ -62,6 +65,11 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 		return nil, fmt.Errorf("failed to get %s from metadata", RouterIDMetaKey)
 	}
 	clientMetadata.RouterID = md[RouterIDMetaKey][0]
+
+	if len(md[ParentSessionsMetaKey]) != 1 {
+		return nil, fmt.Errorf("failed to get %s from metadata", ParentSessionsMetaKey)
+	}
+	clientMetadata.ParentSessions = strings.Fields(md[ParentSessionsMetaKey][0])
 
 	return clientMetadata, nil
 }
