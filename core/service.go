@@ -413,8 +413,10 @@ func (svc *Service) env(progSock string) []string {
 		env = append(env, "_DAGGER_REDIRECT_STDERR="+opts.RedirectStderr)
 	}
 
-	for _, alias := range ctr.HostAliases {
-		env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias.Alias+"="+alias.Target)
+	for _, bnd := range ctr.Services {
+		for _, alias := range bnd.Aliases {
+			env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias+"="+bnd.Hostname)
+		}
 	}
 
 	return env
@@ -606,7 +608,13 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 	return nil
 }
 
-type ServiceBindings map[ServiceID]AliasSet
+type ServiceBindings []ServiceBinding
+
+type ServiceBinding struct {
+	Hostname string   `json:"hostname"`
+	Service  *Service `json:"service"`
+	Aliases  AliasSet `json:"aliases"`
+}
 
 type AliasSet []string
 
@@ -627,22 +635,36 @@ func (set AliasSet) With(alias string) AliasSet {
 	return append(set, alias)
 }
 
+func (set AliasSet) Union(other AliasSet) AliasSet {
+	for _, a := range other {
+		set = set.With(a)
+	}
+	return set
+}
+
 func (bndp *ServiceBindings) Merge(other ServiceBindings) {
 	if *bndp == nil {
 		*bndp = ServiceBindings{}
 	}
 
-	bnd := *bndp
+	merged := *bndp
 
-	for id, aliases := range other {
-		if len(bnd[id]) == 0 {
-			bnd[id] = aliases
-		} else {
-			for _, alias := range aliases {
-				bnd[id] = bnd[id].With(alias)
-			}
-		}
+	indices := map[string]int{}
+	for i, b := range merged {
+		indices[b.Hostname] = i
 	}
+
+	for _, bnd := range other {
+		i, has := indices[bnd.Hostname]
+		if !has {
+			merged = append(merged, bnd)
+			continue
+		}
+
+		merged[i].Aliases = merged[i].Aliases.Union(bnd.Aliases)
+	}
+
+	*bndp = merged
 }
 
 // NetworkProtocol is a string deriving from NetworkProtocol enum
@@ -682,22 +704,12 @@ func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBin
 	eg := new(errgroup.Group)
 
 	started := make(chan *RunningService, len(bindings))
-	for svcID, aliases := range bindings {
-		svc, err := svcID.ToService()
-		if err != nil {
-			return nil, nil, err
-		}
-
-		host, err := svc.Hostname()
-		if err != nil {
-			return nil, nil, err
-		}
-
-		aliases := aliases
+	for _, bnd := range bindings {
+		bnd := bnd
 		eg.Go(func() error {
-			runningSvc, err := AllServices.Start(ctx, bk, svc)
+			runningSvc, err := AllServices.Start(ctx, bk, bnd.Service)
 			if err != nil {
-				return fmt.Errorf("start %s (%s): %w", host, aliases, err)
+				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 			}
 			started <- runningSvc
 			return nil

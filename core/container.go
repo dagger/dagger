@@ -72,8 +72,7 @@ type Container struct {
 	Ports []ContainerPort `json:"ports,omitempty"`
 
 	// Services to start before running the container.
-	Services    ServiceBindings `json:"services,omitempty"`
-	HostAliases []HostAlias     `json:"host_aliases,omitempty"`
+	Services ServiceBindings `json:"services,omitempty"`
 
 	// Focused indicates whether subsequent operations will be
 	// focused, i.e. shown more prominently in the UI.
@@ -106,8 +105,7 @@ func (container *Container) Clone() *Container {
 	cp.Secrets = cloneSlice(cp.Secrets)
 	cp.Sockets = cloneSlice(cp.Sockets)
 	cp.Ports = cloneSlice(cp.Ports)
-	cp.Services = cloneMap(cp.Services)
-	cp.HostAliases = cloneSlice(cp.HostAliases)
+	cp.Services = cloneSlice(cp.Services)
 	cp.Pipeline = cloneSlice(cp.Pipeline)
 	return &cp
 }
@@ -165,11 +163,6 @@ var _ Digestible = (*Container)(nil)
 // Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
 	return stableDigest(container)
-}
-
-type HostAlias struct {
-	Alias  string `json:"alias"`
-	Target string `json:"target"`
 }
 
 // Ownership contains a UID/GID pair resolved from a user/group name or ID pair
@@ -1121,8 +1114,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		runOpts = append(runOpts, llb.AddEnv("_DAGGER_REDIRECT_STDERR", opts.RedirectStderr))
 	}
 
-	for _, alias := range container.HostAliases {
-		runOpts = append(runOpts, llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias.Alias, alias.Target))
+	for _, bnd := range container.Services {
+		for _, alias := range bnd.Aliases {
+			runOpts = append(runOpts,
+				llb.AddEnv("_DAGGER_HOSTNAME_ALIAS_"+alias, bnd.Hostname))
+		}
 	}
 
 	if cfg.User != "" {
@@ -1624,26 +1620,23 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 func (container *Container) WithServiceBinding(svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
-	svcID, err := svc.ID()
+	host, err := svc.Hostname()
 	if err != nil {
 		return nil, err
 	}
 
-	container.Services.Merge(ServiceBindings{
-		svcID: AliasSet{alias},
-	})
-
+	var aliases AliasSet
 	if alias != "" {
-		hostname, err := svc.Hostname()
-		if err != nil {
-			return nil, fmt.Errorf("get hostname: %w", err)
-		}
-
-		container.HostAliases = append(container.HostAliases, HostAlias{
-			Alias:  alias,
-			Target: hostname,
-		})
+		aliases = AliasSet{alias}
 	}
+
+	container.Services.Merge(ServiceBindings{
+		{
+			Service:  svc,
+			Hostname: host,
+			Aliases:  aliases,
+		},
+	})
 
 	return container, nil
 }

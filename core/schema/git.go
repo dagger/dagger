@@ -45,11 +45,11 @@ func (s *gitSchema) Dependencies() []ExecutableSchema {
 }
 
 type gitRepository struct {
-	URL             string          `json:"url"`
-	KeepGitDir      bool            `json:"keepGitDir"`
-	AuthTokenSecret *core.SecretID  `json:"authTokenSecret,omitempty"`
-	Pipeline        pipeline.Path   `json:"pipeline"`
-	ServiceHost     *core.ServiceID `json:"serviceHost,omitempty"`
+	URL             string         `json:"url"`
+	KeepGitDir      bool           `json:"keepGitDir"`
+	AuthTokenSecret *core.SecretID `json:"authTokenSecret,omitempty"`
+	Pipeline        pipeline.Path  `json:"pipeline"`
+	ServiceHost     *core.Service  `json:"serviceHost,omitempty"`
 }
 
 type gitRef struct {
@@ -64,12 +64,19 @@ type gitArgs struct {
 }
 
 func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
-	return gitRepository{
-		URL:         args.URL,
-		KeepGitDir:  args.KeepGitDir,
-		ServiceHost: args.ExperimentalServiceHost,
-		Pipeline:    parent.PipelinePath(),
-	}, nil
+	repo := gitRepository{
+		URL:        args.URL,
+		KeepGitDir: args.KeepGitDir,
+		Pipeline:   parent.PipelinePath(),
+	}
+	if args.ExperimentalServiceHost != nil {
+		svc, err := args.ExperimentalServiceHost.ToService()
+		if err != nil {
+			return gitRepository{}, nil
+		}
+		repo.ServiceHost = svc
+	}
+	return repo, nil
 }
 
 type branchArgs struct {
@@ -132,7 +139,9 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
-		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
+		svcs = append(svcs, core.ServiceBinding{
+			Service: parent.Repository.ServiceHost,
+		})
 	}
 
 	var st llb.State

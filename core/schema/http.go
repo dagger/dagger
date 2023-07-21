@@ -50,7 +50,13 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 
 	svcs := core.ServiceBindings{}
 	if args.ExperimentalServiceHost != nil {
-		svcs[*args.ExperimentalServiceHost] = nil
+		svc, err := args.ExperimentalServiceHost.ToService()
+		if err != nil {
+			return nil, nil
+		}
+		svcs = append(svcs, core.ServiceBinding{
+			Service: svc,
+		})
 	}
 
 	opts := []llb.HTTPOption{
