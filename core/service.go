@@ -135,7 +135,7 @@ func solveRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkg
 	return res.SingleRef()
 }
 
-func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *Socket) (running *RunningService, err error) {
+func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
 	ctr := svc.Container
 	cfg := ctr.Config
 	opts := svc.Exec
@@ -151,7 +151,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 		}
 	}()
 
-	mounts, err := svc.mounts(ctx, bk, progSock)
+	mounts, err := svc.mounts(ctx, bk)
 	if err != nil {
 		return nil, fmt.Errorf("mounts: %w", err)
 	}
@@ -163,7 +163,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 		return nil, fmt.Errorf("command: %w", err)
 	}
 
-	env := svc.env()
+	env := svc.env(progSock)
 
 	secretEnv, mounts, env, err := svc.secrets(mounts, env)
 	if err != nil {
@@ -262,7 +262,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock *So
 	}
 }
 
-func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client, progSock *Socket) ([]bkgw.Mount, error) {
+func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client) ([]bkgw.Mount, error) {
 	ctr := svc.Container
 	opts := svc.Exec
 
@@ -296,21 +296,6 @@ func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client, progSock *S
 		Ref:      metaRef,
 		Selector: metaSourcePath,
 	})
-
-	if opts.ExperimentalPrivilegedNesting {
-		sid, err := progSock.ID()
-		if err != nil {
-			return nil, err
-		}
-
-		mounts = append(mounts, bkgw.Mount{
-			Dest:      "/.progrock.sock",
-			MountType: pb.MountType_SSH,
-			SSHOpt: &pb.SSHOpt{
-				ID: sid.LLBID(),
-			},
-		})
-	}
 
 	for _, mnt := range ctr.Mounts {
 		mount := bkgw.Mount{
@@ -356,23 +341,33 @@ func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client, progSock *S
 		mounts = append(mounts, mount)
 	}
 
-	for _, socket := range ctr.Sockets {
-		if socket.UnixPath == "" {
+	for _, ctrSocket := range ctr.Sockets {
+		if ctrSocket.UnixPath == "" {
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
-		opt := &pb.SSHOpt{
-			ID: socket.Socket.LLBID(),
+		socket, err := ctrSocket.SocketID.ToSocket()
+		if err != nil {
+			return nil, err
 		}
 
-		if socket.Owner != nil {
-			opt.Uid = uint32(socket.Owner.UID)
-			opt.Gid = uint32(socket.Owner.UID)
+		llbID, err := bk.SocketLLBID(socket.HostPath, socket.ClientHostname)
+		if err != nil {
+			return nil, err
+		}
+
+		opt := &pb.SSHOpt{
+			ID: llbID,
+		}
+
+		if ctrSocket.Owner != nil {
+			opt.Uid = uint32(ctrSocket.Owner.UID)
+			opt.Gid = uint32(ctrSocket.Owner.UID)
 			opt.Mode = 0o600 // preserve default
 		}
 
 		mounts = append(mounts, bkgw.Mount{
-			Dest:      socket.UnixPath,
+			Dest:      ctrSocket.UnixPath,
 			MountType: pb.MountType_SSH,
 			SSHOpt:    opt,
 		})
@@ -381,7 +376,7 @@ func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client, progSock *S
 	return mounts, nil
 }
 
-func (svc *Service) env() []string {
+func (svc *Service) env(progSock string) []string {
 	ctr := svc.Container
 	opts := svc.Exec
 	cfg := ctr.Config
@@ -396,6 +391,10 @@ func (svc *Service) env() []string {
 		default:
 			env = append(env, e)
 		}
+	}
+
+	if svc.Exec.ExperimentalPrivilegedNesting {
+		env = append(env, "_DAGGER_PROG_SOCK_PATH="+progSock)
 	}
 
 	if opts.ExperimentalPrivilegedNesting {
@@ -475,7 +474,7 @@ type RunningService struct {
 }
 
 type Services struct {
-	progSock *Socket
+	progSock string
 	starting map[ServiceKey]*sync.WaitGroup
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
@@ -493,7 +492,7 @@ var AllServices *Services
 
 func InitServices(progSockPath string) {
 	AllServices = &Services{
-		progSock: NewHostSocket(progSockPath),
+		progSock: progSockPath,
 		starting: map[ServiceKey]*sync.WaitGroup{},
 		running:  map[ServiceKey]*RunningService{},
 		bindings: map[ServiceKey]int{},
