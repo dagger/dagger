@@ -39,6 +39,12 @@ type SessionParams struct {
 	// should be started.
 	RouterID string
 
+	// Parent session IDs of this Dagger session.
+	//
+	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
+	// passed from the parent.
+	ParentSessions []string
+
 	// TODO: re-add support
 	SecretToken string
 
@@ -46,12 +52,6 @@ type SessionParams struct {
 	UserAgent  string
 
 	DisableHostRW bool
-
-	// Parent session IDs of this Dagger session.
-	//
-	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
-	// passed from the parent.
-	ParentSessions []string
 
 	JournalFile        string
 	ProgrockWriter     progrock.Writer
@@ -140,6 +140,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		ClientID:       s.ID(),
 		RouterID:       s.RouterID,
 		ClientHostname: s.hostname,
+		ParentSessions: s.ParentSessions,
 	})
 
 	// filesync
@@ -266,6 +267,7 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 		ClientID:       s.ID(),
 		RouterID:       s.RouterID,
 		ClientHostname: s.hostname,
+		ParentSessions: s.ParentSessions,
 	}.ToMD())
 }
 
