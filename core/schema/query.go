@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"github.com/vito/progrock"
 	"strings"
 
 	"github.com/blang/semver"
@@ -62,35 +63,54 @@ type checkVersionCompatibilityArgs struct {
 }
 
 func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Query, args checkVersionCompatibilityArgs) (bool, error) {
+	recorder := progrock.RecorderFromContext(ctx)
+
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {
+		recorder.Warn("Using Engine in development version, skip version compatibility check.")
+
 		return true, nil
 	}
 
-	apiVersion, err := semver.Parse(engine.Version)
+	engineVersion, err := semver.Parse(engine.Version)
 	if err != nil {
-		return false, err
+		recorder.Error(fmt.Sprintf("Could not compare engine and SDK version, they might be incompatible!"))
+
+		// TODO: throw an error and abort the session
+		// return false, err
+		return true, nil
 	}
 
 	sdkVersion, err := semver.Parse(args.Version)
 	if err != nil {
-		return false, err
+		recorder.Error(fmt.Sprintf("Could not compare engine and SDK version, they might be incompatible!"))
+
+		// TODO: throw an error and abort the session
+		// return false, err
+		return true, nil
 	}
 
-	// If the API is a major  or minor version newer, fails
-	if apiVersion.Major > sdkVersion.Major {
-		return false, fmt.Errorf("API version is not compatible with the SDK, please update your SDK version")
+	// If the Engine is a major version above the SDK version, fails
+	// TODO: throw an error and abort the session
+	if engineVersion.Major > sdkVersion.Major {
+		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is not compatible with the SDK (%s), please update your SDK.", engineVersion, sdkVersion))
+
+		// return false, fmt.Errorf("Dagger engine version (%s) is not compatible with the SDK (%s)", engineVersion, sdkVersion)
+		return true, nil
 	}
 
-	// If API is older, fails
-	if apiVersion.LT(sdkVersion) {
-		return false, fmt.Errorf("API version is older than the SDK, please update your CLI")
+	// If the Engine is older than the SDK, fails
+	// TODO: throw an error and abort the session
+	if engineVersion.LT(sdkVersion) {
+		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK (%s), please update your Dagger CLI.", engineVersion, sdkVersion))
+
+		// return false, fmt.Errorf("API version is older than the SDK, please update your Dagger CLI")
+		return true, nil
 	}
 
-	// If the API is a minor version newer, warn
-	if apiVersion.Minor > sdkVersion.Minor {
-		// TODO display a warning using progrock
-		fmt.Println("Warning: API and SDK versions mismatch")
+	// If the Engine is a minor version newer, warn
+	if engineVersion.Minor > sdkVersion.Minor {
+		recorder.Warn(fmt.Sprintf("API (%s) and SDK (%s) versions mismatchs.", engineVersion, sdkVersion))
 	}
 
 	return true, nil
