@@ -67,7 +67,7 @@ export async function connect(
     close = () => engineConn.Close()
   }
 
-  // Error shall be throw if versions are not compatible
+  // Warning shall be throw if versions are not compatible
   await client.checkVersionCompatibility(CLI_VERSION)
 
   await cb(client).finally(async () => {

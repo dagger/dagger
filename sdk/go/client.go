@@ -78,8 +78,8 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 		q:    querybuilder.Query(),
 	}
 
-	// Call version compatibility, if versions are not compatible, an error
-	// shall be returned
+	// Call version compatibility.
+	// If versions are not compatible, a warning will be displayed.
 	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
 		return nil, err
 	}
