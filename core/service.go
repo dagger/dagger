@@ -54,7 +54,11 @@ func (id ServiceID) String() string {
 var _ Digestible = ServiceID("")
 
 func (id ServiceID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	svc, err := id.ToService()
+	if err != nil {
+		return "", err
+	}
+	return svc.Digest()
 }
 
 func (id ServiceID) ToService() (*Service, error) {

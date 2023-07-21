@@ -125,7 +125,11 @@ func (id ContainerID) String() string {
 var _ Digestible = ContainerID("")
 
 func (id ContainerID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	svc, err := id.ToContainer()
+	if err != nil {
+		return "", err
+	}
+	return svc.Digest()
 }
 
 func (id ContainerID) ToContainer() (*Container, error) {
@@ -161,11 +165,7 @@ var _ Digestible = (*Container)(nil)
 
 // Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
-	id, err := container.ID()
-	if err != nil {
-		return "", err
-	}
-	return id.Digest()
+	return stableDigest(container)
 }
 
 type HostAlias struct {
