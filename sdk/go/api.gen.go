@@ -2374,7 +2374,6 @@ func (r *Client) CacheVolume(key string) *CacheVolume {
 	}
 }
 
-// ContainerOpts contains options for Client.Container
 func (r *Client) CheckVersionCompatibility(ctx context.Context, version string) (bool, error) {
 	q := r.q.Select("checkVersionCompatibility")
 	q = q.Arg("version", version)
