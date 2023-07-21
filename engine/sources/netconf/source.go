@@ -3,6 +3,7 @@ package netconf
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor/oci"
@@ -45,10 +46,10 @@ func (s *Source) Schemes() []string {
 func (s *Source) Identifier(scheme, ref string, attrs map[string]string, platform *pb.Platform) (source.Identifier, error) {
 	id := &Identifier{}
 
-	if sessionID, ok := attrs[AttrSessionID]; ok {
-		id.SessionID = sessionID
+	if search, ok := attrs[AttrSearchDomains]; ok {
+		id.SearchDomains = strings.Fields(search)
 	} else {
-		return nil, fmt.Errorf("missing %q attribute", AttrSessionID)
+		return nil, fmt.Errorf("missing %q attribute", AttrSearchDomains)
 	}
 
 	return id, nil

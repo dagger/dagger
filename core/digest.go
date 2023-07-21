@@ -252,8 +252,8 @@ func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, err
 			switch k {
 			case pb.AttrLocalSessionID,
 				pb.AttrLocalUniqueID,
-				pb.AttrSharedKeyHint,  // contains session ID
-				netconf.AttrSessionID: // network config session IDs
+				pb.AttrSharedKeyHint,      // contains session ID
+				netconf.AttrSearchDomains: // network config session IDs
 				delete(src.Attrs, k)
 				modified = true
 			}

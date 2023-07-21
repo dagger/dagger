@@ -6,10 +6,10 @@ import (
 )
 
 type Identifier struct {
-	SessionID string `json:"session"`
+	SearchDomains []string `json:"searchDomains,omitempty"`
 }
 
-const AttrSessionID = "netconf.session"
+const AttrSearchDomains = "netconf.search"
 
 var _ source.Identifier = (*Identifier)(nil)
 

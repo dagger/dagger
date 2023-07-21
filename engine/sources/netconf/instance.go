@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/libnetwork/resolvconf"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/executor/oci"
@@ -33,7 +32,7 @@ func (i *Instance) CacheKey(ctx context.Context, g session.Group, index int) (st
 
 	dgst := digest.FromBytes(dt).String()
 
-	return "random:netcfg:" + dgst, dgst, nil, true, nil
+	return "random:" + dgst, "", nil, true, nil
 }
 
 func (i *Instance) Snapshot(ctx context.Context, g session.Group) (_ cache.ImmutableRef, rerr error) {
@@ -88,15 +87,9 @@ func (i *Instance) Snapshot(ctx context.Context, g session.Group) (_ cache.Immut
 
 func (i *Instance) netCfg() *oci.DNSConfig {
 	return &oci.DNSConfig{
-		Nameservers: i.baseCfg.Nameservers,
-		SearchDomains: append(
-			[]string{
-				network.SessionDomain(i.id.SessionID),
-				// TODO: append parents
-			},
-			i.baseCfg.SearchDomains...,
-		),
-		Options: i.baseCfg.Options,
+		Nameservers:   i.baseCfg.Nameservers,
+		SearchDomains: i.id.SearchDomains,
+		Options:       i.baseCfg.Options,
 	}
 }
 
