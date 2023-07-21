@@ -376,6 +376,7 @@ func TestContainerExecServicesSimple(t *testing.T) {
 		From("alpine:3.16.2").
 		WithServiceBinding("www", srv).
 		WithExec([]string{"apk", "add", "curl"}).
+		WithEnvVariable("BUST", identity.NewID()).
 		WithExec([]string{"curl", "-v", url})
 
 	_, err = client.Sync(ctx)
