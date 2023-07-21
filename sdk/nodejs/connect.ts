@@ -68,7 +68,11 @@ export async function connect(
   }
 
   // Warning shall be throw if versions are not compatible
-  await client.checkVersionCompatibility(CLI_VERSION)
+  try {
+    await client.checkVersionCompatibility(CLI_VERSION)
+  } catch (e) {
+    console.log(e)
+  }
 
   await cb(client).finally(async () => {
     if (close) {

@@ -3,6 +3,7 @@ package dagger
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/Khan/genqlient/graphql"
@@ -81,7 +82,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	// Call version compatibility.
 	// If versions are not compatible, a warning will be displayed.
 	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
-		return nil, err
+		fmt.Println(err)
 	}
 
 	return c, nil
