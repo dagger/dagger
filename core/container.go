@@ -19,7 +19,6 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -1088,14 +1087,15 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	}
 
 	sessions := append([]string{bk.ID()}, clientMetadata.ParentSessions...)
-	searchDomains := make([]string, len(sessions))
-	for i := range sessions {
-		searchDomains[i] = network.SessionDomain(sessions[i])
-	}
 
 	runOpts = append(runOpts,
-		// TODO(vito): convert to secret
-		llb.AddEnv("_DAGGER_PARENT_SESSIONS", strings.Join(sessions, " ")))
+		// HACK(vito): passing parent sessions through ftp_proxy
+		// so it doesn't bust caches, reconsider if/when we
+		// actually add proxy support
+		llb.WithProxy(llb.ProxyEnv{
+			// no one uses FTP anymore right?
+			FTPProxy: strings.Join(sessions, " "),
+		}))
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {

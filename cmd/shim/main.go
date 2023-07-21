@@ -348,8 +348,10 @@ func setupBundle() int {
 	var searchDomains []string
 	for _, env := range spec.Process.Env {
 		switch {
-		case strings.HasPrefix(env, "_DAGGER_PARENT_SESSIONS="):
-			sessions := strings.Fields(strings.TrimPrefix(env, "_DAGGER_PARENT_SESSIONS="))
+		case strings.HasPrefix(env, "ftp_proxy="):
+			// HACK(vito): passing parent sessions through ftp_proxy so it doesn't
+			// bust caches
+			sessions := strings.Fields(strings.TrimPrefix(env, "ftp_proxy="))
 			for _, id := range sessions {
 				searchDomains = append(searchDomains, network.SessionDomain(id))
 			}
