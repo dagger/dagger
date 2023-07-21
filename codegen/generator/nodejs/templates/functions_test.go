@@ -6,8 +6,6 @@ import (
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/client"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,15 +13,7 @@ var currentSchema *introspection.Schema
 
 func init() {
 	ctx := context.Background()
-
-	sess, err := client.Connect(ctx, client.SessionParams{
-		RunnerHost: engine.RunnerHost(),
-	})
-	if err != nil {
-		panic(err)
-	}
-
-	currentSchema, err := generator.Introspect(ctx, sess)
+	currentSchema, err := generator.Introspect(ctx)
 	if err != nil {
 		panic(err)
 	}

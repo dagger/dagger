@@ -1,7 +1,9 @@
 package schema
 
 import (
+	"fmt"
 	"io/fs"
+	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
@@ -143,7 +145,15 @@ type dirFileArgs struct {
 	Path string
 }
 
-func (s *directorySchema) file(ctx *core.Context, parent *core.Directory, args dirFileArgs) (*core.File, error) {
+func (s *directorySchema) file(ctx *core.Context, parent *core.Directory, args dirFileArgs) (_ *core.File, rerr error) {
+	// TODO:
+	defer func() {
+		if x := recover(); x != nil {
+			err, _ := x.(error)
+			rerr = fmt.Errorf("panic: %w, %s", err, string(debug.Stack()))
+		}
+	}()
+
 	return parent.File(ctx, s.bk, args.Path)
 }
 

@@ -438,7 +438,7 @@ type containerPublishArgs struct {
 }
 
 func (s *containerSchema) publish(ctx *core.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
+	return parent.Publish(ctx, s.bk, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerWithMountedFileArgs struct {
@@ -674,8 +674,6 @@ type containerWithRegistryAuthArgs struct {
 }
 
 func (s *containerSchema) withRegistryAuth(ctx *core.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
-	panic("re-implement withRegistryAuth")
-	/* TODO: re-add
 	secretBytes, err := s.secrets.GetSecret(ctx, args.Secret.String())
 	if err != nil {
 		return nil, err
@@ -686,7 +684,6 @@ func (s *containerSchema) withRegistryAuth(ctx *core.Context, parents *core.Cont
 	}
 
 	return parents, nil
-	*/
 }
 
 type containerWithoutRegistryAuthArgs struct {

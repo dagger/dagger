@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
@@ -47,6 +48,7 @@ func NewRouter(
 	caller bksession.Caller,
 	routerID string,
 	secretStore *core.SecretStore,
+	authProvider *auth.RegistryAuthProvider,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
@@ -111,9 +113,7 @@ func NewRouter(
 		OCIStore:       rtr.worker.ContentStore(),
 		LeaseManager:   rtr.worker.LeaseManager(),
 		Secrets:        secretStore,
-		/* TODO:
-		Auth     *auth.RegistryAuthProvider
-		*/
+		Auth:           authProvider,
 	})
 	if err != nil {
 		return nil, err

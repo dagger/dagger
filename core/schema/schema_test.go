@@ -8,7 +8,7 @@ import (
 
 func TestMergeObjects(t *testing.T) {
 	t.Parallel()
-	merged, err := MergeExecutableSchemas("",
+	merged, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -54,7 +54,7 @@ func TestMergeObjects(t *testing.T) {
 
 func TestMergeFieldExtend(t *testing.T) {
 	t.Parallel()
-	merged, err := MergeExecutableSchemas("",
+	merged, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -92,7 +92,7 @@ func TestMergeFieldExtend(t *testing.T) {
 
 func TestMergeFieldConflict(t *testing.T) {
 	t.Parallel()
-	_, err := MergeExecutableSchemas("",
+	_, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -123,7 +123,7 @@ func TestMergeFieldConflict(t *testing.T) {
 }
 
 func TestMergeTypeConflict(t *testing.T) {
-	_, err := MergeExecutableSchemas("",
+	_, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			type TypeA {
@@ -151,7 +151,7 @@ func TestMergeTypeConflict(t *testing.T) {
 
 func TestMergeScalars(t *testing.T) {
 	t.Parallel()
-	merged, err := MergeExecutableSchemas("",
+	merged, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `
 			scalar TypeA
@@ -181,7 +181,7 @@ func TestMergeScalars(t *testing.T) {
 
 func TestMergeScalarConflict(t *testing.T) {
 	t.Parallel()
-	_, err := MergeExecutableSchemas("",
+	_, err := mergeExecutableSchemas("",
 		StaticSchema(StaticSchemaParams{
 			Schema: `scalar TypeA`,
 			Resolvers: Resolvers{
