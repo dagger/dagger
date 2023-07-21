@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -356,10 +357,31 @@ func setupBundle() int {
 	}
 
 	var hostsFilePath string
-	for _, mnt := range spec.Mounts {
+	for i, mnt := range spec.Mounts {
 		switch mnt.Destination {
 		case "/etc/hosts":
 			hostsFilePath = mnt.Source
+		case "/etc/resolv.conf":
+			if len(searchDomains) == 0 {
+				break
+			}
+
+			newResolvPath := filepath.Join(bundleDir, "resolv.conf")
+
+			newResolv, err := os.Create(newResolvPath)
+			if err != nil {
+				panic(err)
+			}
+
+			if err := replaceSearch(newResolv, mnt.Source, searchDomains); err != nil {
+				panic(err)
+			}
+
+			if err := newResolv.Close(); err != nil {
+				panic(err)
+			}
+
+			spec.Mounts[i].Source = newResolvPath
 		}
 	}
 
@@ -606,5 +628,36 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func replaceSearch(dst io.Writer, resolv string, searchDomains []string) error {
+	src, err := os.Open(resolv)
+	if err != nil {
+		return nil
+	}
+	defer src.Close()
+
+	srcScan := bufio.NewScanner(src)
+
+	var replaced bool
+	for srcScan.Scan() {
+		if !strings.HasPrefix(srcScan.Text(), "search") {
+			fmt.Fprintln(dst, srcScan.Text())
+			continue
+		}
+
+		oldDomains := strings.Fields(srcScan.Text())[1:]
+
+		newDomains := append([]string{}, searchDomains...)
+		newDomains = append(newDomains, oldDomains...)
+		fmt.Fprintln(dst, "search", strings.Join(newDomains, " "))
+		replaced = true
+	}
+
+	if !replaced {
+		fmt.Fprintln(dst, "search", strings.Join(searchDomains, " "))
+	}
+
 	return nil
 }
