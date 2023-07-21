@@ -110,7 +110,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var childStdin io.WriteCloser
 
 	if cfg.EngineLoading {
-		fmt.Println("Starting Dagger session...")
+		fmt.Printf("Creating new Engine session... ")
 	}
 
 	for i := 0; i < 10; i++ {
@@ -192,7 +192,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}()
 
 	if cfg.EngineLoading {
-		fmt.Println("Dagger session started! Establishing connection with the SDK...")
+		fmt.Printf("OK!\nEstablishing connection to engine... ")
 	}
 
 	// Read the connect params from stdout.
@@ -225,7 +225,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}
 
 	if cfg.EngineLoading {
-		fmt.Printf("Connection established with Dagger session version %s!\n", CLIVersion)
+		fmt.Println("OK!")
 	}
 
 	return &cliSessionConn{
