@@ -1413,12 +1413,87 @@ func (container *Container) MetaFileContents(ctx context.Context, bk *buildkit.C
 
 func (container *Container) Publish(
 	ctx context.Context,
+	bk *buildkit.Client,
 	ref string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) (string, error) {
-	panic("reimplement container publish")
+	// TODO: wrap in services, including merging platformVariants
+
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
+
+	// TODO: the previous implementation did an extra marshal using the containers platform, not sure if needed
+	inputByPlatform := map[string]buildkit.PublishInput{}
+	id, err := container.ID()
+	if err != nil {
+		return "", err
+	}
+	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
+		variant, err := variantID.ToContainer()
+		if err != nil {
+			return "", err
+		}
+		if variant.FS == nil {
+			continue
+		}
+
+		platformString := platforms.Format(variant.Platform)
+		if _, ok := inputByPlatform[platformString]; ok {
+			return "", fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
+			Definition: variant.FS,
+			Config:     container.Config,
+		}
+		// TODO: merge services
+	}
+	if len(inputByPlatform) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return "", errors.New("no containers to export")
+	}
+
+	opts := map[string]string{
+		string(exptypes.OptKeyName):     ref,
+		string(exptypes.OptKeyPush):     strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
+	if err != nil {
+		return "", err
+	}
+	refName, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", err
+	}
+
+	imageDigest, found := resp[exptypes.ExporterImageDigestKey]
+	if found {
+		dig, err := digest.Parse(imageDigest)
+		if err != nil {
+			return "", fmt.Errorf("parse digest: %w", err)
+		}
+
+		withDig, err := reference.WithDigest(refName, dig)
+		if err != nil {
+			return "", fmt.Errorf("with digest: %w", err)
+		}
+
+		return withDig.String(), nil
+	}
+
+	return ref, nil
 }
 
 func (container *Container) Export(
@@ -1650,135 +1725,6 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 	}
 
 	return container, nil
-}
-
-func (container *Container) export(
-	ctx context.Context,
-	bk *buildkit.Client,
-	platformVariants []ContainerID,
-) (*buildkit.Result, error) {
-	panic("reimplement container export")
-	/*
-		containers := []*Container{}
-		services := ServiceBindings{}
-		if container.FS != nil {
-			containers = append(containers, container)
-			services.Merge(container.Services)
-		}
-		for _, id := range platformVariants {
-			variant, err := id.ToContainer()
-			if err != nil {
-				return nil, err
-			}
-			if variant.FS != nil {
-				containers = append(containers, variant)
-				services.Merge(variant.Services)
-			}
-		}
-
-		if len(containers) == 0 {
-			// Could also just ignore and do nothing, airing on side of error until proven otherwise.
-			return nil, errors.New("no containers to export")
-		}
-
-		return WithServices(ctx, bk, services, func() (*Result, error) {
-			if len(containers) == 1 {
-				exportContainer := containers[0]
-
-				st, err := exportContainer.FSState()
-				if err != nil {
-					return nil, err
-				}
-
-				stDef, err := st.Marshal(ctx, llb.Platform(exportContainer.Platform))
-				if err != nil {
-					return nil, err
-				}
-
-				res, err := bk.Solve(ctx, bkgw.SolveRequest{
-					Evaluate:   true,
-					Definition: stDef.ToPB(),
-				})
-				if err != nil {
-					return nil, err
-				}
-
-				cfgBytes, err := json.Marshal(specs.Image{
-					Platform: specs.Platform{
-						Architecture: exportContainer.Platform.Architecture,
-						OS:           exportContainer.Platform.OS,
-						OSVersion:    exportContainer.Platform.OSVersion,
-						OSFeatures:   exportContainer.Platform.OSFeatures,
-					},
-					Config: exportContainer.Config,
-				})
-				if err != nil {
-					return nil, err
-				}
-				res.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
-
-				return res, nil
-			}
-
-			res := &Result{}
-			expPlatforms := &exptypes.Platforms{
-				Platforms: make([]exptypes.Platform, len(containers)),
-			}
-
-			for i, exportContainer := range containers {
-				st, err := exportContainer.FSState()
-				if err != nil {
-					return nil, err
-				}
-
-				stDef, err := st.Marshal(ctx, llb.Platform(exportContainer.Platform))
-				if err != nil {
-					return nil, err
-				}
-
-				r, err := bk.Solve(ctx, bkgw.SolveRequest{
-					Evaluate:   true,
-					Definition: stDef.ToPB(),
-				})
-				if err != nil {
-					return nil, err
-				}
-				ref, err := r.SingleRef()
-				if err != nil {
-					return nil, err
-				}
-
-				platformKey := platforms.Format(exportContainer.Platform)
-				res.AddRef(platformKey, ref)
-				expPlatforms.Platforms[i] = exptypes.Platform{
-					ID:       platformKey,
-					Platform: exportContainer.Platform,
-				}
-
-				cfgBytes, err := json.Marshal(specs.Image{
-					Platform: specs.Platform{
-						Architecture: exportContainer.Platform.Architecture,
-						OS:           exportContainer.Platform.OS,
-						OSVersion:    exportContainer.Platform.OSVersion,
-						OSFeatures:   exportContainer.Platform.OSFeatures,
-					},
-					Config: exportContainer.Config,
-				})
-				if err != nil {
-					return nil, err
-				}
-				res.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformKey), cfgBytes)
-			}
-
-			platformBytes, err := json.Marshal(expPlatforms)
-			if err != nil {
-				return nil, err
-			}
-			res.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-
-			return res, nil
-		})
-	*/
 }
 
 func (container *Container) ImageRefOrErr(ctx context.Context, bk *buildkit.Client) (string, error) {

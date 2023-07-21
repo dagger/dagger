@@ -307,12 +307,6 @@ func (t Engine) Dev(ctx context.Context) error {
 		return fmt.Errorf("docker rm: %w: %s", err, output)
 	}
 
-	homedir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	dockerCredDir := filepath.Join(homedir, ".docker")
-
 	runArgs := []string{
 		"run",
 		"-d",
@@ -322,36 +316,6 @@ func (t Engine) Dev(ctx context.Context) error {
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_TOKEN",
 		"-e", "_EXPERIMENTAL_DAGGER_CLOUD_URL",
 		"-v", volumeName + ":" + util.EngineDefaultStateDir,
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO: Hack until auth session support is re-added
-		// TODO: DO NOT FORGET TO REMOVE THIS BEFORE MERGING
-		"-v", dockerCredDir + ":/root/.docker",
 		"--name", util.EngineContainerName,
 		"--privileged",
 	}

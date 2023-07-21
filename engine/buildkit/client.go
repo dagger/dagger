@@ -8,11 +8,14 @@ import (
 	"runtime/debug"
 	"sync"
 
+	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
@@ -25,6 +28,7 @@ import (
 	solverresult "github.com/moby/buildkit/solver/result"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -35,6 +39,9 @@ type Opts struct {
 	LLBSolver      *llbsolver.Solver
 	GenericSolver  *bksolver.Solver
 	SecretStore    bksecrets.SecretStore
+	AuthProvider   *auth.RegistryAuthProvider
+	// TODO: give precise definition
+	MainClientCaller bksession.Caller
 }
 
 // Client is dagger's internal interface to buildkit APIs
@@ -359,11 +366,110 @@ func (c *Client) LocalExport(
 
 	// TODO: could optimize by just calling relevant session methods directly, not
 	// all that much code involved
-	_, _, err = expInstance.Export(ctx, cacheRes, c.ID())
+	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}
+	if descRef != nil {
+		descRef.Release()
+	}
 	return nil
+}
+
+type PublishInput struct {
+	Definition *bksolverpb.Definition
+	Config     specs.ImageConfig
+}
+
+func (c *Client) PublishContainerImage(
+	ctx context.Context,
+	inputByPlatform map[string]PublishInput,
+	opts map[string]string,
+) (map[string]string, error) {
+	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
+	expPlatforms := &exptypes.Platforms{
+		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
+	}
+	// TODO: probably faster to do this in parallel for each platform
+	for platformString, input := range inputByPlatform {
+		// TODO: add util for turning into cacheRes, dedupe w/ above
+		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
+		if err != nil {
+			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
+		}
+		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
+			res, err := rf.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
+			if !ok {
+				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
+			}
+			return workerRef.ImmutableRef, nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result: %s", err)
+		}
+		ref, err := cacheRes.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		platform, err := platforms.Parse(platformString)
+		if err != nil {
+			return nil, err
+		}
+		cfgBytes, err := json.Marshal(specs.Image{
+			Platform: specs.Platform{
+				Architecture: platform.Architecture,
+				OS:           platform.OS,
+				OSVersion:    platform.OSVersion,
+				OSFeatures:   platform.OSFeatures,
+			},
+			Config: input.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(inputByPlatform) == 1 {
+			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+			combinedResult.SetRef(ref)
+		} else {
+			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
+			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
+				ID:       platformString,
+				Platform: platform,
+			}
+			combinedResult.AddRef(platformString, ref)
+		}
+	}
+	if len(combinedResult.Refs) > 1 {
+		platformBytes, err := json.Marshal(expPlatforms)
+		if err != nil {
+			return nil, err
+		}
+		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+	}
+
+	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	expInstance, err := exporter.Resolve(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+	}
+
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %s", err)
+	}
+	if descRef != nil {
+		descRef.Release()
+	}
+	return resp, nil
 }
 
 type hostSocketOpts struct {

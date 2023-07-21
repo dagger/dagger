@@ -8,12 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 
 	"github.com/containerd/containerd/content"
-	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
-	"github.com/docker/cli/cli/config"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -35,6 +32,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	// TODO: enforce that callers are granted access to the given resources.
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&socketProxy{c})
+	sess.Allow(&authProxy{c})
 	sess.Allow(&fileSendServerProxy{c})
 	sess.Allow(&fileSyncServerProxy{c})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
@@ -42,12 +40,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
 	}))
 
-	// TODO: this should proxy out to the right session, this is just to unblock dockerhub rate limits for now
-	sess.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
-
-	// TODO: not sure if safe to use net.Pipe due to possible library assumptions about buffering, but would be nice... otherwise just use socketpair(2)
 	clientConn, serverConn := net.Pipe()
-
 	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 		go func() {
 			defer serverConn.Close()

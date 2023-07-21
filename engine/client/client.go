@@ -14,7 +14,6 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
-	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
@@ -22,6 +21,7 @@ import (
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/session/grpchijack"
 	"github.com/tonistiigi/fsutil"
@@ -148,7 +148,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	})
 
 	// registry auth
-	bkSession.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
+	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
 	/* TODO: do we still need this? or covered serverside now?
 	// oci stores

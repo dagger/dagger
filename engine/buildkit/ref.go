@@ -58,6 +58,9 @@ type ref struct {
 }
 
 func (r *ref) ToState() (llb.State, error) {
+	if r == nil {
+		return llb.Scratch(), nil
+	}
 	def := r.resultProxy.Definition()
 	if def.Def == nil {
 		return llb.Scratch(), nil
@@ -70,6 +73,9 @@ func (r *ref) ToState() (llb.State, error) {
 }
 
 func (r *ref) Evaluate(ctx context.Context) error {
+	if r == nil {
+		return nil
+	}
 	_, err := r.Result(ctx)
 	if err != nil {
 		return err
@@ -118,18 +124,30 @@ func (r *ref) StatFile(ctx context.Context, req bkgw.StatRequest) (*fstypes.Stat
 }
 
 func (r *ref) getMountable(ctx context.Context) (snapshot.Mountable, error) {
+	if r == nil {
+		return nil, nil
+	}
 	res, err := r.Result(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if res == nil {
+		return nil, nil
 	}
 	workerRef, ok := res.Sys().(*bkworker.WorkerRef)
 	if !ok {
 		return nil, fmt.Errorf("invalid ref: %T", res.Sys())
 	}
+	if workerRef == nil || workerRef.ImmutableRef == nil {
+		return nil, nil
+	}
 	return workerRef.ImmutableRef.Mount(ctx, true, bksession.NewGroup(r.c.ID()))
 }
 
 func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
+	if r == nil {
+		return nil, nil
+	}
 	ctx = withOutgoingContext(ctx)
 	res, err := r.resultProxy.Result(ctx)
 	if err != nil {

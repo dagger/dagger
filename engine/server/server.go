@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -99,17 +100,28 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		return nil, err
 	}
 
+	getCallerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	caller, err := e.opt.SessionManager.Get(getCallerCtx, opts.ClientID, false)
+	if err != nil {
+		e.routerMu.Unlock()
+		return nil, err
+	}
+
 	e.routerMu.Lock()
 	rtr, ok := e.routers[opts.RouterID]
 	if !ok {
 		secretStore := core.NewSecretStore()
+		authProvider := auth.NewRegistryAuthProvider()
 
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Worker:         e.worker,
-			SessionManager: e.opt.SessionManager,
-			LLBSolver:      e.llbSolver,
-			GenericSolver:  e.genericSolver,
-			SecretStore:    secretStore,
+			Worker:           e.worker,
+			SessionManager:   e.opt.SessionManager,
+			LLBSolver:        e.llbSolver,
+			GenericSolver:    e.genericSolver,
+			SecretStore:      secretStore,
+			AuthProvider:     authProvider,
+			MainClientCaller: caller,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
@@ -117,17 +129,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}
 		secretStore.SetBuildkitClient(bkClient)
 
-		// TODO: waiting up to 10 seconds while holding that lock is really bad, fix somehow, we
-		// also want a timeout because this can block indefinitely...
-		getCallerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-		defer cancel()
-		caller, err := e.opt.SessionManager.Get(getCallerCtx, opts.ClientID, false)
-		if err != nil {
-			e.routerMu.Unlock()
-			return nil, err
-		}
-
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
