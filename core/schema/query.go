@@ -2,10 +2,10 @@ package schema
 
 import (
 	"fmt"
-	"github.com/vito/progrock"
 	"strings"
 
 	"github.com/blang/semver"
+	"github.com/vito/progrock"
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
@@ -74,7 +74,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 
 	engineVersion, err := semver.Parse(engine.Version)
 	if err != nil {
-		recorder.Error(fmt.Sprintf("Could not compare engine and SDK version, they might be incompatible!"))
+		recorder.Error("Could not compare engine and SDK version, they might be incompatible!")
 
 		// TODO: throw an error and abort the session
 		// return false, err
@@ -83,7 +83,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 
 	sdkVersion, err := semver.Parse(args.Version)
 	if err != nil {
-		recorder.Error(fmt.Sprintf("Could not compare engine and SDK version, they might be incompatible!"))
+		recorder.Error("Could not compare engine and SDK version, they might be incompatible!")
 
 		// TODO: throw an error and abort the session
 		// return false, err
