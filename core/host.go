@@ -8,7 +8,6 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine/buildkit"
-	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -16,17 +15,7 @@ import (
 )
 
 type Host struct {
-	// TODO:
-	// Which sessionID this host refers to
-	// SessionID string `json:"sessionID"`
 }
-
-// TODO:
-/*
-func NewHost(sessionID string) *Host {
-	return &Host{SessionID: sessionID}
-}
-*/
 
 func NewHost() *Host {
 	return &Host{}
@@ -117,27 +106,6 @@ func (host *Host) File(
 	return parentDir.File(ctx, bk, filepath.Base(path))
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
-	// TODO: enforcement that requester session is granted access to source session at this path
-	return NewHostSocket(sockPath), nil
-}
-
-func (host *Host) Export(
-	ctx context.Context,
-	exportCfg bkclient.ExportEntry,
-) error {
-	panic("reimplement host export")
-	/*
-		if host.DisableRW {
-			return ErrHostRWDisabled
-		}
-
-		ch, wg := mirrorCh(solveCh)
-		defer wg.Wait()
-
-		solveOpts.Exports = []bkclient.ExportEntry{export}
-
-		_, err := bkClient.Build(ctx, solveOpts, "", buildFn, ch)
-		return err
-	*/
+func (host *Host) Socket(ctx context.Context, sockPath, clientHostname string) (*Socket, error) {
+	return NewHostSocket(sockPath, clientHostname), nil
 }

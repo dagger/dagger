@@ -8,17 +8,16 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 
 	"github.com/containerd/containerd/content"
-	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
-	"github.com/docker/cli/cli/config"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
+	"github.com/moby/buildkit/session/sshforward"
 	"github.com/moby/buildkit/util/bklog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -38,6 +37,10 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		return nil, err
 	}
 
+	// TODO: enforce that callers are granted access to the given resources.
+	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
+	sess.Allow(&socketProxy{c})
+	sess.Allow(&authProxy{c})
 	sess.Allow(&fileSendServerProxy{c})
 	sess.Allow(&fileSyncServerProxy{c})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
@@ -63,12 +66,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		}
 	}))
 
-	// TODO: this should proxy out to the right session, this is just to unblock dockerhub rate limits for now
-	sess.Allow(auth.NewRegistryAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
-
-	// TODO: not sure if safe to use net.Pipe due to possible library assumptions about buffering, but would be nice... otherwise just use socketpair(2)
 	clientConn, serverConn := net.Pipe()
-
 	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 		go func() {
 			defer serverConn.Close()
@@ -106,7 +104,7 @@ func (c *Client) GetSessionCaller(ctx context.Context, clientID string) (bksessi
 	return c.SessionManager.Get(ctx, clientID, !waitForSession)
 }
 
-type sessionResourceData struct {
+type sessionStreamResourceData struct {
 	// the id of the client that made the request
 	requesterClientID string
 
@@ -115,6 +113,7 @@ type sessionResourceData struct {
 	//
 	importLocalDirData *importLocalDirData
 	exportLocalDirData *exportLocalDirData
+	socketData         *socketData
 }
 
 type importLocalDirData struct {
@@ -127,8 +126,38 @@ type exportLocalDirData struct {
 	path    string
 }
 
-// TODO: just split this method out into one for each resource type, never need multiple at once
-func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionResourceData, error) {
+type socketData struct {
+	session bksession.Caller
+	path    string
+}
+
+func (c *Client) getSocketDataFromID(ctx context.Context, id string) (*socketData, error) {
+	jsonBytes, err := base64.URLEncoding.DecodeString(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid socket id: %q", id)
+	}
+	var opts hostSocketOpts
+	if err := json.Unmarshal(jsonBytes, &opts); err != nil {
+		return nil, fmt.Errorf("invalid socket id: %q", id)
+	}
+	data := &socketData{
+		path: opts.HostPath,
+	}
+	clientID, err := c.getClientIDByHostname(opts.ClientHostname)
+	if err != nil {
+		// TODO:
+		return nil, fmt.Errorf("failed to get client hostname for socket: %w: %s", err, string(jsonBytes))
+	}
+	sess, err := c.SessionManager.Get(ctx, clientID, false)
+	if err != nil {
+		return nil, err
+	}
+	data.session = sess
+	return data, nil
+}
+
+// TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
+func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
 	md, ok := metadata.FromIncomingContext(stream.Context())
 	if !ok {
 		return nil, nil, fmt.Errorf("missing metadata")
@@ -146,7 +175,7 @@ func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Conte
 	}
 	ctx := metadata.NewOutgoingContext(stream.Context(), md)
 
-	sessData := &sessionResourceData{}
+	sessData := &sessionStreamResourceData{}
 
 	requesterClientID, err := getVal(engine.ClientIDMetaKey)
 	if err != nil {
@@ -211,6 +240,22 @@ func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Conte
 			session: sess,
 			path:    localDirExportDestPath,
 		}
+		return ctx, sessData, nil
+	}
+
+	socketID, err := getVal(sshforward.KeySSHID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if socketID != "" {
+		data, err := c.getSocketDataFromID(stream.Context(), socketID)
+		if err != nil {
+			return nil, nil, err
+		}
+		sessData.socketData = data
+		// TODO: validation that requester has access
+		ctx = metadata.NewIncomingContext(ctx, md) // TODO: needed too?
+		ctx = metadata.NewOutgoingContext(ctx, md)
 		return ctx, sessData, nil
 	}
 

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/schema"
@@ -46,12 +47,14 @@ func NewRouter(
 	worker bkworker.Worker,
 	caller bksession.Caller,
 	routerID string,
+	secretStore *core.SecretStore,
+	authProvider *auth.RegistryAuthProvider,
 	parentSessions []string,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
 		worker:   worker,
-		doneCh:   make(chan struct{}),
+		doneCh:   make(chan struct{}, 1),
 	}
 
 	clientConn := caller.Conn()
@@ -113,10 +116,9 @@ func NewRouter(
 		ProgSockPath:   progSockPath,
 		OCIStore:       rtr.worker.ContentStore(),
 		LeaseManager:   rtr.worker.LeaseManager(),
+		Secrets:        secretStore,
+		Auth:           authProvider,
 		ParentSessions: parentSessions,
-		/* TODO:
-		Auth     *auth.RegistryAuthProvider
-		*/
 	})
 	if err != nil {
 		return nil, err
@@ -152,8 +154,9 @@ func (rtr *Router) ServeClientConn(
 	clientMetadata *engine.ClientMetadata,
 	conn net.Conn,
 ) error {
-	// TODO:
-	bklog.G(ctx).Debugf("serve client conn: %s", clientMetadata.ClientID)
+	// TODO: use fields in logs
+	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
 
 	l := &singleConnListener{conn: conn}
 	go func() {

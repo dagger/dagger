@@ -69,7 +69,7 @@ func (secret *Secret) IsOldFormat() bool {
 	return secret.FromFile != "" || secret.FromHostEnv != ""
 }
 
-func (secret *Secret) LegacyPlaintext(ctx *Context, bk *buildkit.Client) ([]byte, error) {
+func (secret *Secret) LegacyPlaintext(ctx context.Context, bk *buildkit.Client) ([]byte, error) {
 	if secret.FromFile != "" {
 		file, err := secret.FromFile.ToFile()
 		if err != nil {
@@ -99,6 +99,11 @@ var _ secrets.SecretStore = &SecretStore{}
 type SecretStore struct {
 	mu      sync.Mutex
 	secrets map[string]string
+	bk      *buildkit.Client
+}
+
+func (store *SecretStore) SetBuildkitClient(bk *buildkit.Client) {
+	store.bk = bk
 }
 
 // AddSecret adds the secret identified by user defined name with its plaintext
@@ -130,12 +135,10 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 
 	var name string
 	if secret, err := SecretID(idOrName).ToSecret(); err == nil {
-		/* TODO: remove fully now?
 		if secret.IsOldFormat() {
 			// use the legacy SecretID format
 			return secret.LegacyPlaintext(ctx, store.bk)
 		}
-		*/
 
 		name = secret.Name
 	} else {

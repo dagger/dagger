@@ -3,15 +3,24 @@ package engine
 import (
 	"context"
 	"fmt"
-	"runtime/debug"
 	"strings"
 
 	"google.golang.org/grpc/metadata"
 )
 
 type ClientMetadata struct {
-	ClientID       string
-	RouterID       string
+	// ClientID is unique to every session created by every client
+	ClientID string
+	// RouterID is the id of the router that a client and any of its nested environment clients
+	// connect to
+	RouterID string
+	// ClientHostname is the hostname of the client that made the request. It's used opportunisticly
+	// as a best-effort, semi-stable identifier for the client across multiple sessions, which can
+	// be useful for debugging and for minimizing occurences of both excessive cache misses and
+	// excessive cache matches.
+	ClientHostname string
+	// ParentSessions is a list of session ids that are parents of the current session. The first
+	// element is the direct parent, the second element is the parent of the parent, and so on.
 	ParentSessions []string
 }
 
@@ -19,6 +28,7 @@ func (m ClientMetadata) ToMD() metadata.MD {
 	return metadata.Pairs(
 		ClientIDMetaKey, m.ClientID,
 		RouterIDMetaKey, m.RouterID,
+		ClientHostnameMetaKey, m.ClientHostname,
 		ParentSessionsMetaKey, strings.Join(m.ParentSessions, " "),
 	)
 }
@@ -55,9 +65,7 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	}
 
 	if len(md[ClientIDMetaKey]) != 1 {
-		// TODO:
-		// return nil, fmt.Errorf("failed to get %s from metadata", ClientIDMetaKey)
-		return nil, fmt.Errorf("failed to get %s from metadata: %s", ClientIDMetaKey, string(debug.Stack()))
+		return nil, fmt.Errorf("failed to get %s from metadata", ClientIDMetaKey)
 	}
 	clientMetadata.ClientID = md[ClientIDMetaKey][0]
 
@@ -65,6 +73,11 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 		return nil, fmt.Errorf("failed to get %s from metadata", RouterIDMetaKey)
 	}
 	clientMetadata.RouterID = md[RouterIDMetaKey][0]
+
+	if len(md[ClientHostnameMetaKey]) != 1 {
+		return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
+	}
+	clientMetadata.ClientHostname = md[ClientHostnameMetaKey][0]
 
 	if len(md[ParentSessionsMetaKey]) != 1 {
 		return nil, fmt.Errorf("failed to get %s from metadata", ParentSessionsMetaKey)
@@ -98,11 +111,18 @@ func SessionAPIOptsFromContext(ctx context.Context) (*SessionAPIOpts, error) {
 			},
 			BuildkitAttachable: true,
 		}
+
+		// client hostname is the session name
 		if len(md[SessionNameMetaKey]) != 1 {
 			return nil, fmt.Errorf("failed to get %s from metadata", SessionNameMetaKey)
 		}
-		// router id is the session name (uninterpreted by buildkit)
-		opts.RouterID = md[SessionNameMetaKey][0]
+		opts.ClientHostname = md[SessionNameMetaKey][0]
+
+		// router id is the session shared key
+		if len(md[SessionSharedKeyMetaKey]) != 1 {
+			return nil, fmt.Errorf("failed to get %s from metadata", SessionSharedKeyMetaKey)
+		}
+		opts.RouterID = md[SessionSharedKeyMetaKey][0]
 		return opts, nil
 	}
 

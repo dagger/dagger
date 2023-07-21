@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"net"
 
@@ -11,12 +10,14 @@ import (
 
 type Socket struct {
 	HostPath string `json:"host_path,omitempty"`
+	// TODO: explain more, best-effort semi-stable client identifier
+	// TODO: think through caching implications one more time, ensure not breaking change
+	ClientHostname string `json:"client_hostname,omitempty"`
 }
 
 type SocketID string
 
 func (id SocketID) String() string { return string(id) }
-func (id SocketID) LLBID() string  { return fmt.Sprintf("socket:%s", id) }
 
 func (id SocketID) ToSocket() (*Socket, error) {
 	var socket Socket
@@ -27,9 +28,10 @@ func (id SocketID) ToSocket() (*Socket, error) {
 	return &socket, nil
 }
 
-func NewHostSocket(absPath string) *Socket {
+func NewHostSocket(absPath, clientHostname string) *Socket {
 	return &Socket{
-		HostPath: absPath,
+		HostPath:       absPath,
+		ClientHostname: clientHostname,
 	}
 }
 

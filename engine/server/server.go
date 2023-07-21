@@ -6,6 +6,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/dagger/dagger/auth"
+	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -98,28 +100,37 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		return nil, err
 	}
 
+	getCallerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	caller, err := e.opt.SessionManager.Get(getCallerCtx, opts.ClientID, false)
+	if err != nil {
+		e.routerMu.Unlock()
+		return nil, err
+	}
+
 	e.routerMu.Lock()
 	rtr, ok := e.routers[opts.RouterID]
 	if !ok {
+		secretStore := core.NewSecretStore()
+		authProvider := auth.NewRegistryAuthProvider()
+
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Worker:         e.worker,
-			SessionManager: e.opt.SessionManager,
-			LLBSolver:      e.llbSolver,
-			GenericSolver:  e.genericSolver,
-			ParentSessions: opts.ParentSessions,
+			Worker:           e.worker,
+			SessionManager:   e.opt.SessionManager,
+			LLBSolver:        e.llbSolver,
+			GenericSolver:    e.genericSolver,
+			SecretStore:      secretStore,
+			AuthProvider:     authProvider,
+			MainClientCaller: caller,
+			ParentSessions:   opts.ParentSessions,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
 		}
+		secretStore.SetBuildkitClient(bkClient)
 
-		caller, err := e.opt.SessionManager.Get(ctx, opts.ClientID, false)
-		if err != nil {
-			e.routerMu.Unlock()
-			return nil, err
-		}
-
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, opts.ParentSessions)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, opts.ParentSessions)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
@@ -142,6 +153,8 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}()
 	}
 	e.routerMu.Unlock()
+	rtr.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname)
+	defer rtr.bkClient.DeregisterClientHostname(opts.ClientHostname)
 
 	// TODO: re-add support for upstream cache import/export
 
@@ -167,6 +180,7 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 
 	lg = lg.
 		WithField("client_id", opts.ClientID).
+		WithField("client_hostname", opts.ClientHostname).
 		WithField("router_id", opts.RouterID).
 		WithField("buildkit_attachable", opts.BuildkitAttachable)
 	lg.Debug("session starting")
@@ -187,14 +201,12 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 	if opts.BuildkitAttachable {
 		// TODO:
 		lg.Debug("passing through to buildkit session manager")
-
 		// pass through to buildkit's session manager for handling the attachables
 		err = e.opt.SessionManager.HandleConn(ctx, conn, md)
 	} else {
 		// TODO:
 		lg.Debug("passing through to graphql api")
 
-		// default to connecting to the graphql api
 		e.routerMu.Lock()
 		rtr, ok := e.routers[opts.RouterID]
 		if !ok {
@@ -202,6 +214,8 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 			return fmt.Errorf("router %q not found", opts.RouterID)
 		}
 		e.routerMu.Unlock()
+
+		// default to connecting to the graphql api
 		// TODO: make sure this unblocks and has reasonable error if router is closed, I don't think either are true rn
 		err = rtr.ServeClientConn(ctx, opts.ClientMetadata, conn)
 	}
@@ -240,6 +254,7 @@ func (e *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control_P
 
 	e.routerMu.Lock()
 	if len(e.routers) == 0 {
+		e.routerMu.Unlock()
 		imageutil.CancelCacheLeases()
 	}
 	e.routerMu.Unlock()

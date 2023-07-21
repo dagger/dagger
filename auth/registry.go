@@ -10,16 +10,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/docker/cli/cli/config/configfile"
 	bkauth "github.com/moby/buildkit/session/auth"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	"google.golang.org/grpc"
 )
+
+// TODO: this could be consolidated to buildkit pkg now, should only be needed there
 
 const defaultDockerDomain = "docker.io"
 
 // RegistryAuthProvider is a custom auth provider for image's registry
-// authentication from both Docker config AND dynamic user provided secret.
+// authentication from dynamic user provided secrets.
 // Adapted from: https://github.com/dagger/dagger/blob/v0.2.36/solver/registryauth.go
 // and merge with Buildkit DockerAuthProvider from
 // https://github.com/moby/buildkit/blob/master/session/auth/authprovider/authprovider.go#L42
@@ -29,9 +29,6 @@ const defaultDockerDomain = "docker.io"
 // It also implements auth.AuthServer to merge dockerAuthProvider capabilities
 // with in memory storage.
 type RegistryAuthProvider struct {
-	// DockerAuthProvider
-	dockerAuthProvider bkauth.AuthServer
-
 	// Memory map credential storage.
 	credentials map[string]*bkauth.CredentialsResponse
 
@@ -40,11 +37,8 @@ type RegistryAuthProvider struct {
 }
 
 // NewRegistryAuthProvider initializes a new store.
-func NewRegistryAuthProvider(cfg *configfile.ConfigFile) *RegistryAuthProvider {
-	return &RegistryAuthProvider{
-		credentials:        map[string]*bkauth.CredentialsResponse{},
-		dockerAuthProvider: authprovider.NewDockerAuthProvider(cfg).(bkauth.AuthServer),
-	}
+func NewRegistryAuthProvider() *RegistryAuthProvider {
+	return &RegistryAuthProvider{credentials: map[string]*bkauth.CredentialsResponse{}}
 }
 
 // AddCredential inserts a new credential for the corresponding address.
@@ -185,8 +179,7 @@ func (r *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 	if memoryCredential != nil {
 		return memoryCredential, nil
 	}
-
-	return r.dockerAuthProvider.Credentials(ctx, req)
+	return nil, status.Errorf(codes.NotFound, "no credential found for %s", req.GetHost())
 }
 
 func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (*bkauth.FetchTokenResponse, error) {
@@ -194,8 +187,7 @@ func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.Fetch
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}
-
-	return r.dockerAuthProvider.FetchToken(ctx, req)
+	return nil, status.Errorf(codes.NotFound, "no credential found for %s", req.GetHost())
 }
 
 func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
@@ -203,8 +195,7 @@ func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkaut
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}
-
-	return r.dockerAuthProvider.GetTokenAuthority(ctx, req)
+	return nil, status.Errorf(codes.NotFound, "no credential found for %s", req.GetHost())
 }
 
 func (r *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
@@ -212,6 +203,5 @@ func (r *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bk
 	if memoryCredential != nil {
 		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
 	}
-
-	return r.dockerAuthProvider.VerifyTokenAuthority(ctx, req)
+	return nil, status.Errorf(codes.NotFound, "no credential found for %s", req.GetHost())
 }

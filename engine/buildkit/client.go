@@ -5,24 +5,30 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
+	"github.com/containerd/containerd/platforms"
+	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
+	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -33,6 +39,10 @@ type Opts struct {
 	LLBSolver      *llbsolver.Solver
 	GenericSolver  *bksolver.Solver
 	ParentSessions []string
+	SecretStore    bksecrets.SecretStore
+	AuthProvider   *auth.RegistryAuthProvider
+	// TODO: give precise definition
+	MainClientCaller bksession.Caller
 }
 
 // Client is dagger's internal interface to buildkit APIs
@@ -41,6 +51,9 @@ type Client struct {
 	session   *bksession.Session
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
+
+	clientHostnameToID   map[string]string
+	clientHostnameToIDMu sync.RWMutex
 
 	refs         map[*ref]struct{}
 	refsMu       sync.Mutex
@@ -52,9 +65,10 @@ type Result = solverresult.Result[*ref]
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client := &Client{
-		Opts:       opts,
-		refs:       make(map[*ref]struct{}),
-		containers: make(map[bkgw.Container]struct{}),
+		Opts:               opts,
+		clientHostnameToID: make(map[string]string),
+		refs:               make(map[*ref]struct{}),
+		containers:         make(map[bkgw.Container]struct{}),
 	}
 
 	session, err := client.newSession(ctx)
@@ -245,6 +259,31 @@ func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *client.SolveStatu
 	return c.job.Status(ctx, ch)
 }
 
+func (c *Client) RegisterClient(clientID, clientHostname string) {
+	c.clientHostnameToIDMu.Lock()
+	defer c.clientHostnameToIDMu.Unlock()
+	// TODO: error out if clientID already exists? How would a user accomplish that? They'd need to somehow connect to the same router id
+	c.clientHostnameToID[clientHostname] = clientID
+}
+
+func (c *Client) DeregisterClientHostname(clientHostname string) {
+	c.clientHostnameToIDMu.Lock()
+	defer c.clientHostnameToIDMu.Unlock()
+	delete(c.clientHostnameToID, clientHostname)
+}
+
+func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
+	c.clientHostnameToIDMu.RLock()
+	defer c.clientHostnameToIDMu.RUnlock()
+	clientID, ok := c.clientHostnameToID[clientHostname]
+	if !ok {
+		// TODO:
+		// return "", fmt.Errorf("client hostname %q not found", clientHostname)
+		return "", fmt.Errorf("client hostname %q not found: %s", clientHostname, string(debug.Stack()))
+	}
+	return clientID, nil
+}
+
 type localImportOpts struct {
 	OwnerClientID string `json:"ownerClientID,omitempty"`
 	Path          string `json:"path,omitempty"`
@@ -256,8 +295,11 @@ func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.Lo
 		return llb.State{}, err
 	}
 
+	// TODO: double check that reading the client id from the context here is correct, and that it shouldn't
+	// instead be deser'd from the local name. I think it's okay provided we still do the local dir import
+	// synchronously in the caller of this.
 	nameBytes, err := json.Marshal(localImportOpts{
-		// TODO: for now, the requester is always the owner of the local dir
+		// For now, the requester is always the owner of the local dir
 		// when the dir is initially created in LLB (i.e. you can't request a
 		// a new local dir from another session, you can only be passed one
 		// from another session already created).
@@ -328,11 +370,126 @@ func (c *Client) LocalExport(
 
 	// TODO: could optimize by just calling relevant session methods directly, not
 	// all that much code involved
-	_, _, err = expInstance.Export(ctx, cacheRes, c.ID())
+	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
 	}
+	if descRef != nil {
+		descRef.Release()
+	}
 	return nil
+}
+
+type PublishInput struct {
+	Definition *bksolverpb.Definition
+	Config     specs.ImageConfig
+}
+
+func (c *Client) PublishContainerImage(
+	ctx context.Context,
+	inputByPlatform map[string]PublishInput,
+	opts map[string]string,
+) (map[string]string, error) {
+	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
+	expPlatforms := &exptypes.Platforms{
+		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
+	}
+	// TODO: probably faster to do this in parallel for each platform
+	for platformString, input := range inputByPlatform {
+		// TODO: add util for turning into cacheRes, dedupe w/ above
+		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
+		if err != nil {
+			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
+		}
+		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
+			res, err := rf.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
+			if !ok {
+				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
+			}
+			return workerRef.ImmutableRef, nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result: %s", err)
+		}
+		ref, err := cacheRes.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		platform, err := platforms.Parse(platformString)
+		if err != nil {
+			return nil, err
+		}
+		cfgBytes, err := json.Marshal(specs.Image{
+			Platform: specs.Platform{
+				Architecture: platform.Architecture,
+				OS:           platform.OS,
+				OSVersion:    platform.OSVersion,
+				OSFeatures:   platform.OSFeatures,
+			},
+			Config: input.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(inputByPlatform) == 1 {
+			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+			combinedResult.SetRef(ref)
+		} else {
+			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
+			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
+				ID:       platformString,
+				Platform: platform,
+			}
+			combinedResult.AddRef(platformString, ref)
+		}
+	}
+	if len(combinedResult.Refs) > 1 {
+		platformBytes, err := json.Marshal(expPlatforms)
+		if err != nil {
+			return nil, err
+		}
+		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+	}
+
+	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	expInstance, err := exporter.Resolve(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+	}
+
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %s", err)
+	}
+	if descRef != nil {
+		descRef.Release()
+	}
+	return resp, nil
+}
+
+type hostSocketOpts struct {
+	HostPath       string `json:"host_path,omitempty"`
+	ClientHostname string `json:"client_hostname,omitempty"`
+}
+
+func (c *Client) SocketLLBID(hostPath, clientHostname string) (string, error) {
+	idBytes, err := json.Marshal(hostSocketOpts{
+		HostPath:       hostPath,
+		ClientHostname: clientHostname,
+	})
+	if err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(idBytes), nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {
