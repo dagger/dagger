@@ -1,0 +1,22 @@
+nameOverride: ""
+fullnameOverride: ""
+
+engine:
+  image:
+    repository: registry.dagger.io/engine
+    # tag: v0.6.5
+  tolerations:
+    - effect: NoSchedule
+      key: dagger-runner
+      operator: Exists
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: actions-runner
+            operator: Exists
+magicache:
+  enabled: true
+  url: https://api.dagger.cloud/magicache
+  # token: <token>

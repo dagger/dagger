@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dagger
+description: Dagger Helm chart
+
+type: application
+version: 0.0.1
+appVersion: v0.6.4
