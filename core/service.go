@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"sort"
 	"strings"
 	"sync"
@@ -505,67 +506,77 @@ func InitServices(progSockPath string) {
 	}
 }
 
-func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service) (*RunningService, error) {
-	host, err := svc.Hostname()
-	if err != nil {
-		return nil, err
-	}
-
+func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceBinding) (*RunningService, error) {
 	key := ServiceKey{
-		Hostname:  host,
+		Hostname:  bnd.Hostname,
 		SessionID: bk.ID(),
 	}
+
+	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), key.SessionID, key.Hostname)
+
+	log.Println("!!!!!", lid, "SERVICES.START")
 
 	ss.l.Lock()
 	starting, isStarting := ss.starting[key]
 	running, isRunning := ss.running[key]
 	switch {
 	case !isStarting && !isRunning:
+		log.Println("!!!!!", lid, "SERVICES.START NOT STARTING OR RUNNING")
 		// not starting or running; start it
 		starting = new(sync.WaitGroup)
 		starting.Add(1)
 		defer starting.Done()
 		ss.starting[key] = starting
 	case isRunning:
+		log.Println("!!!!!", lid, "SERVICES.START ALREADY RUNNING:", ss.bindings[key])
 		// already running; increment binding count and return
 		ss.bindings[key]++
 		ss.l.Unlock()
 		return running, nil
 	case isStarting:
+		log.Println("!!!!!", lid, "SERVICES.START ALREADY STARTING")
 		// already starting; wait for the attempt to finish and check if it
 		// succeeded
 		ss.l.Unlock()
 		starting.Wait()
+		log.Println("!!!!!", lid, "SERVICES.START DONE WAITING")
 		ss.l.Lock()
 		running, didStart := ss.running[key]
 		if didStart {
 			// starting succeeded as normal; return the isntance
 			ss.l.Unlock()
+			log.Println("!!!!!", lid, "SERVICES.START WAIT STARTED OK")
 			return running, nil
 		}
+		log.Println("!!!!!", lid, "SERVICES.START WAIT DID NOT START OK")
 		// starting didn't work; give it another go (this might just error again)
 	}
 	ss.l.Unlock()
 
+	log.Println("!!!!!", lid, "SERVICES.START RESPONSIBLE FOR STARTING")
+
 	rec := progrock.RecorderFromContext(ctx).
 		WithGroup(
-			fmt.Sprintf("service %s", host),
+			fmt.Sprintf("service %s", bnd.Hostname),
 			progrock.Weak(),
 		)
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
 
-	running, err = svc.Start(svcCtx, bk, ss.progSock)
+	running, err := bnd.Service.Start(svcCtx, bk, ss.progSock)
 	if err != nil {
 		stop()
 		ss.l.Lock()
 		delete(ss.starting, key)
 		ss.l.Unlock()
-		return nil, err
+		log.Println("!!!!!", lid, "START ERR", err)
+		return nil, fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 	}
 
+	log.Println("!!!!!", lid, "RESPONSIBLE PERSON LOCKING", ss.bindings[key])
 	ss.l.Lock()
+	log.Println("!!!!!", lid, "RESPONSIBLE PERSON STARTED", ss.bindings[key])
 	delete(ss.starting, key)
 	ss.running[key] = running
 	ss.bindings[key] = 1
@@ -580,30 +591,46 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
+	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), svc.Key.SessionID, svc.Key.Hostname)
+
+	log.Println("!!!!!", lid, "SERVICES.DETACH")
+
 	running, found := ss.running[svc.Key]
 	if !found {
+		log.Println("!!!!!", lid, "SERVICES.DETACH NOT EVEN RUNNING", lid)
 		// not even running; ignore
 		return nil
 	}
 
+	log.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTING", ss.bindings[svc.Key])
 	ss.bindings[svc.Key]--
+	log.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTED", ss.bindings[svc.Key])
 
 	if ss.bindings[svc.Key] > 0 {
+		log.Println("!!!!!", lid, "SERVICES.DETACH OTHERS ATTACHED")
 		// detached, but other instances still active
 		return nil
 	}
 
+	log.Println("!!!!!", lid, "SERVICES.DETACH KILL KILL KILL")
+
 	// TODO: graceful shutdown?
 	if err := running.Process.Signal(ctx, syscall.SIGKILL); err != nil {
+		log.Println("!!!!!", lid, "SERVICES.DETACH SIGNAL ERR", err)
 		return err
 	}
 
+	log.Println("!!!!!", lid, "SERVICES.DETACH RELEASE")
+
 	if err := running.Container.Release(ctx); err != nil {
+		log.Println("!!!!!", lid, "SERVICES.DETACH RELEASE ERR", err)
 		return err
 	}
 
 	delete(ss.bindings, svc.Key)
 	delete(ss.running, svc.Key)
+
+	log.Println("!!!!!", lid, "SERVICES.DETACH DONE")
 
 	return nil
 }
@@ -707,9 +734,9 @@ func StartServices(ctx context.Context, bk *buildkit.Client, bindings ServiceBin
 	for _, bnd := range bindings {
 		bnd := bnd
 		eg.Go(func() error {
-			runningSvc, err := AllServices.Start(ctx, bk, bnd.Service)
+			runningSvc, err := AllServices.Start(ctx, bk, bnd)
 			if err != nil {
-				return fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
+				return err
 			}
 			started <- runningSvc
 			return nil
