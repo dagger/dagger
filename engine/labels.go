@@ -1,6 +1,6 @@
 package engine
 
 const (
-	PrivilegedExecLabel = "privilegedEnabled"
-	EngineNameLabel     = "engineName"
+	// TODO: remove this old hack, replace with Info call
+	EngineNameLabel = "engineName"
 )
