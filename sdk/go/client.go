@@ -42,6 +42,7 @@ func WithWorkdir(path string) ClientOpt {
 func WithLogOutput(writer io.Writer) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.LogOutput = writer
+		cfg.EngineLoading = true
 	})
 }
 
