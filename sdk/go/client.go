@@ -52,6 +52,7 @@ func WithConn(conn engineconn.EngineConn) ClientOpt {
 	})
 }
 
+// WithEngineLoading outputs engine loading info
 func WithEngineLoading() ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.EngineLoading = true
