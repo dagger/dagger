@@ -171,16 +171,6 @@ func shim() int {
 		cmd.Stdin = nil
 	}
 
-	stdoutRedirect, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
-	if found {
-		stdoutPath = stdoutRedirect
-	}
-
-	stderrRedirect, found := internalEnv("_DAGGER_REDIRECT_STDERR")
-	if found {
-		stderrPath = stderrRedirect
-	}
-
 	var secretsToScrub core.SecretToScrubInfo
 
 	secretsToScrubVar, found := internalEnv("_DAGGER_SCRUB_SECRETS")
@@ -199,15 +189,35 @@ func shim() int {
 		panic(err)
 	}
 	defer stdoutFile.Close()
+	stdoutRedirect := io.Discard
+	stdoutRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDOUT")
+	if found {
+		stdoutRedirectFile, err := os.Create(stdoutRedirectPath)
+		if err != nil {
+			panic(err)
+		}
+		defer stdoutRedirectFile.Close()
+		stdoutRedirect = stdoutRedirectFile
+	}
 
 	stderrFile, err := os.Create(stderrPath)
 	if err != nil {
 		panic(err)
 	}
 	defer stderrFile.Close()
+	stderrRedirect := io.Discard
+	stderrRedirectPath, found := internalEnv("_DAGGER_REDIRECT_STDERR")
+	if found {
+		stderrRedirectFile, err := os.Create(stderrRedirectPath)
+		if err != nil {
+			panic(err)
+		}
+		defer stderrRedirectFile.Close()
+		stderrRedirect = stderrRedirectFile
+	}
 
-	outWriter := io.MultiWriter(stdoutFile, os.Stdout)
-	errWriter := io.MultiWriter(stderrFile, os.Stderr)
+	outWriter := io.MultiWriter(stdoutFile, stdoutRedirect, os.Stdout)
+	errWriter := io.MultiWriter(stderrFile, stderrRedirect, os.Stderr)
 
 	if len(secretsToScrub.Envs) == 0 && len(secretsToScrub.Files) == 0 {
 		cmd.Stdout = outWriter
