@@ -12,15 +12,21 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	apitypes "github.com/moby/buildkit/api/types"
+	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/control"
+	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
+	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
 	"github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/imageutil"
+	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
+	"github.com/moby/buildkit/worker"
 	bkworker "github.com/moby/buildkit/worker"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
@@ -34,11 +40,12 @@ import (
 
 // TODO: just hit a panic in Server.Serve but client just sat blocked, fix that
 type Server struct {
-	opt           control.Opt
-	llbSolver     *llbsolver.Solver
-	genericSolver *solver.Solver
-	cacheManager  solver.CacheManager
-	worker        bkworker.Worker
+	ServerOpts
+	llbSolver             *llbsolver.Solver
+	genericSolver         *solver.Solver
+	cacheManager          solver.CacheManager
+	worker                bkworker.Worker
+	privilegedExecEnabled bool
 
 	// router id -> router
 	routers  map[string]*Router
@@ -49,22 +56,32 @@ type Server struct {
 }
 
 // TODO: make your own Opt
+type ServerOpts struct {
+	WorkerController       *worker.Controller
+	SessionManager         *session.Manager
+	CacheManager           solver.CacheManager
+	ContentStore           *containerdsnapshot.Store
+	LeaseManager           *leaseutil.Manager
+	Entitlements           []string
+	Frontends              map[string]frontend.Frontend
+	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
+	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
+}
+
 // TODO: setup cache manager here instead of cmd/engine/main.go
-func NewServer(opt control.Opt) (*Server, error) {
-	w, err := opt.WorkerController.GetDefault()
+func NewServer(opts ServerOpts) (*Server, error) {
+	w, err := opts.WorkerController.GetDefault()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get default worker: %w", err)
 	}
 
 	llbSolver, err := llbsolver.New(llbsolver.Opt{
-		WorkerController: opt.WorkerController,
-		Frontends:        opt.Frontends,
-		CacheManager:     opt.CacheManager,
-		CacheResolvers:   opt.ResolveCacheImporterFuncs,
-		SessionManager:   opt.SessionManager,
-		// TODO:?
-		// Entitlements:     opt.Entitlements,
-		// HistoryQueue:     hq,
+		WorkerController: opts.WorkerController,
+		Frontends:        opts.Frontends,
+		CacheManager:     opts.CacheManager,
+		SessionManager:   opts.SessionManager,
+		CacheResolvers:   opts.UpstreamCacheImporters,
+		Entitlements:     opts.Entitlements,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create solver: %w", err)
@@ -72,21 +89,27 @@ func NewServer(opt control.Opt) (*Server, error) {
 
 	genericSolver := solver.NewSolver(solver.SolverOpt{
 		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
-			return w.ResolveOp(vtx, llbSolver.Bridge(builder), opt.SessionManager)
+			return w.ResolveOp(vtx, llbSolver.Bridge(builder), opts.SessionManager)
 		},
-		DefaultCache: opt.CacheManager,
+		DefaultCache: opts.CacheManager,
 	})
 
 	e := &Server{
-		opt:           opt,
+		ServerOpts:    opts,
 		llbSolver:     llbSolver,
 		genericSolver: genericSolver,
-		cacheManager:  opt.CacheManager,
+		cacheManager:  opts.CacheManager,
 		worker:        w,
 		routers:       make(map[string]*Router),
 	}
-	e.throttledGC = throttle.After(time.Minute, e.gc)
 
+	for _, entitlementStr := range opts.Entitlements {
+		if entitlementStr == string(entitlements.EntitlementSecurityInsecure) {
+			e.privilegedExecEnabled = true
+		}
+	}
+
+	e.throttledGC = throttle.After(time.Minute, e.gc)
 	defer func() {
 		time.AfterFunc(time.Second, e.throttledGC)
 	}()
@@ -102,7 +125,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 
 	getCallerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	caller, err := e.opt.SessionManager.Get(getCallerCtx, opts.ClientID, false)
+	caller, err := e.SessionManager.Get(getCallerCtx, opts.ClientID, false)
 	if err != nil {
 		e.routerMu.Unlock()
 		return nil, err
@@ -115,13 +138,14 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		authProvider := auth.NewRegistryAuthProvider()
 
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Worker:           e.worker,
-			SessionManager:   e.opt.SessionManager,
-			LLBSolver:        e.llbSolver,
-			GenericSolver:    e.genericSolver,
-			SecretStore:      secretStore,
-			AuthProvider:     authProvider,
-			MainClientCaller: caller,
+			Worker:                e.worker,
+			SessionManager:        e.SessionManager,
+			LLBSolver:             e.llbSolver,
+			GenericSolver:         e.genericSolver,
+			SecretStore:           secretStore,
+			AuthProvider:          authProvider,
+			PrivilegedExecEnabled: e.privilegedExecEnabled,
+			MainClientCaller:      caller,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
@@ -201,7 +225,7 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 		// TODO:
 		lg.Debug("passing through to buildkit session manager")
 		// pass through to buildkit's session manager for handling the attachables
-		err = e.opt.SessionManager.HandleConn(ctx, conn, md)
+		err = e.SessionManager.HandleConn(ctx, conn, md)
 	} else {
 		// TODO:
 		lg.Debug("passing through to graphql api")
@@ -338,12 +362,11 @@ func (e *Server) Register(server *grpc.Server) {
 	// TODO: needed?
 	// tracev1.RegisterTraceServiceServer(server, e)
 	// e.gatewayForwarder.Register(server)
-	// store := &roContentStore{e.opt.ContentStore.WithFallbackNS(e.opt.ContentStore.Namespace() + "_history")}
-	// contentapi.RegisterContentServer(server, contentserver.New(store))
 }
 
 func (e *Server) Close() error {
-	return e.opt.WorkerController.Close()
+	// TODO: ensure all routers are closed
+	return e.WorkerController.Close()
 }
 
 // TODO: just inline this so we have less fields?

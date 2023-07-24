@@ -12,7 +12,6 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/client"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -26,6 +25,7 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
+	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -33,13 +33,19 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	// from buildkit, cannot change
+	entitlementsJobKey = "llb.entitlements"
+)
+
 type Opts struct {
-	Worker         bkworker.Worker
-	SessionManager *bksession.Manager
-	LLBSolver      *llbsolver.Solver
-	GenericSolver  *bksolver.Solver
-	SecretStore    bksecrets.SecretStore
-	AuthProvider   *auth.RegistryAuthProvider
+	Worker                bkworker.Worker
+	SessionManager        *bksession.Manager
+	LLBSolver             *llbsolver.Solver
+	GenericSolver         *bksolver.Solver
+	SecretStore           bksecrets.SecretStore
+	AuthProvider          *auth.RegistryAuthProvider
+	PrivilegedExecEnabled bool
 	// TODO: give precise definition
 	MainClientCaller bksession.Caller
 }
@@ -83,7 +89,11 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client.job = job
 	client.job.SessionID = client.ID()
 
-	// TODO: entitlements based on engine config
+	entitlementSet := entitlements.Set{}
+	if opts.PrivilegedExecEnabled {
+		entitlementSet[entitlements.EntitlementSecurityInsecure] = struct{}{}
+	}
+	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
 
@@ -251,7 +261,7 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	})
 }
 
-func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *client.SolveStatus) error {
+func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveStatus) error {
 	return c.job.Status(ctx, ch)
 }
 

@@ -3093,7 +3093,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	defer cancel()
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
-	// is trickier since the full list of caps is host dependent.
+	// is trickier since the full list of caps is host dependent based on the kernel version.
 	privilegedCaps := []string{
 		"cap_sys_admin",
 		"cap_net_admin",
