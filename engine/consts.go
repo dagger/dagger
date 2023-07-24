@@ -5,6 +5,7 @@ const (
 	RouterIDMetaKey       = "x-dagger-router-id"
 	ClientIDMetaKey       = "x-dagger-client-id"
 	ClientHostnameMetaKey = "x-dagger-client-hostname"
+	ClientLabelsMetaKey   = "x-dagger-client-labels"
 	EngineVersionMetaKey  = "x-dagger-engine" // don't change, would be backwards incompatible
 
 	// session API (these are set by buildkit, can't change)

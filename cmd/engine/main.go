@@ -792,13 +792,15 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 	}
 
 	ctrler, err := server.NewServer(server.ServerOpts{
-		WorkerController:       wc,
-		SessionManager:         sessionManager,
-		CacheManager:           cacheManager,
-		ContentStore:           w.ContentStore(),
-		LeaseManager:           w.LeaseManager(),
-		Frontends:              frontends,
-		Entitlements:           cfg.Entitlements,
+		WorkerController: wc,
+		SessionManager:   sessionManager,
+		CacheManager:     cacheManager,
+		ContentStore:     w.ContentStore(),
+		LeaseManager:     w.LeaseManager(),
+		Frontends:        frontends,
+		Entitlements:     cfg.Entitlements,
+		// TODO: move off this being a worker label
+		EngineName:             w.Labels()[engine.EngineNameLabel],
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
 	})

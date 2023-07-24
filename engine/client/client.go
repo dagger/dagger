@@ -14,6 +14,7 @@ import (
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
@@ -53,7 +54,7 @@ type SessionParams struct {
 	CloudURLCallback   func(string)
 }
 
-// TODO: probably rename Session to something
+// TODO: probably rename Session to something like Client
 type Session struct {
 	SessionParams
 	eg             *errgroup.Group
@@ -130,10 +131,16 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 
+	// TODO: fix workdir from client
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get workdir: %w", err)
+	}
 	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
 		ClientID:       s.ID(),
 		RouterID:       s.RouterID,
 		ClientHostname: s.hostname,
+		Labels:         pipeline.LoadVCSLabels(workdir),
 	})
 
 	// filesync
@@ -162,8 +169,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		"oci:" + OCIStoreName: ociStore,
 	}))
 	*/
-
-	// TODO: more export attachables
 
 	// progress
 	progMultiW := progrock.MultiWriter{}
@@ -260,7 +265,7 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 		ClientID:       s.ID(),
 		RouterID:       s.RouterID,
 		ClientHostname: s.hostname,
-	}.ToMD())
+	}.ToGRPCMD())
 }
 
 func (s *Session) Do(
