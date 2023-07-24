@@ -49,6 +49,7 @@ func NewRouter(
 	routerID string,
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
+	pipelineLabels []pipeline.Label,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
@@ -73,10 +74,15 @@ func NewRouter(
 	}
 	rtr.progCleanup = progCleanup
 
-	// TODO: correct progrock labels
-	go pipeline.LoadRootLabels("/", "da-engine")
-	// rtr.recorder = progrock.NewRecorder(progrockLogrusWriter{}, progrock.WithLabels(labels...))
-	rtr.recorder = progrock.NewRecorder(progWriter)
+	pipeline.SetRootLabels(pipelineLabels)
+	progrockLabels := []*progrock.Label{}
+	for _, label := range pipelineLabels {
+		progrockLabels = append(progrockLabels, &progrock.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+	rtr.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 	ctx = progrock.RecorderToContext(ctx, rtr.recorder)
 
 	// TODO: ensure clean flush+shutdown+error-handling

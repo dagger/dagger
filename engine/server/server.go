@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -63,6 +64,7 @@ type ServerOpts struct {
 	ContentStore           *containerdsnapshot.Store
 	LeaseManager           *leaseutil.Manager
 	Entitlements           []string
+	EngineName             string
 	Frontends              map[string]frontend.Frontend
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
@@ -153,7 +155,9 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}
 		secretStore.SetBuildkitClient(bkClient)
 
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider)
+		labels := opts.Labels
+		labels = append(labels, pipeline.EngineLabel(e.EngineName))
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, labels)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err
