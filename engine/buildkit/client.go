@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path"
 	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
@@ -330,6 +332,11 @@ func (c *Client) LocalExport(
 	def *bksolverpb.Definition,
 	destPath string,
 ) error {
+	destPath = path.Clean(destPath)
+	if destPath == ".." || strings.HasPrefix(destPath, "../") {
+		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
+	}
+
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
 	if err != nil {
 		return fmt.Errorf("failed to solve for local export: %s", err)
@@ -487,6 +494,11 @@ func (c *Client) ExportContainerImage(
 	destPath string,
 	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
+	destPath = path.Clean(destPath)
+	if destPath == ".." || strings.HasPrefix(destPath, "../") {
+		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
+	}
+
 	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
 	expPlatforms := &exptypes.Platforms{
 		Platforms: make([]exptypes.Platform, len(inputByPlatform)),

@@ -76,10 +76,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		s.RouterID = identity.NewID()
 	}
 
-	// TODO:
-	fmt.Fprintf(os.Stderr, "Connecting to router %s\n", params.RouterID)
-	defer fmt.Fprintf(os.Stderr, "Connected to router %s\n", params.RouterID)
-
 	// TODO: this is only needed temporarily to work around issue w/
 	// `dagger do` and `dagger project` not picking up env set by nesting
 	// (which impacts project tests). Remove ASAP
@@ -131,7 +127,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 
-	// TODO: fix workdir from client
 	workdir, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("get workdir: %w", err)
