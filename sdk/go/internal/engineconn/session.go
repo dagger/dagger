@@ -192,7 +192,7 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	}()
 
 	if cfg.EngineLoading {
-		fmt.Printf("OK!\nEstablishing connection to engine... ")
+		fmt.Printf("OK!\nEstablishing connection to Engine... ")
 	}
 
 	// Read the connect params from stdout.
