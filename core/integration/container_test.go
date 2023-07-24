@@ -2995,8 +2995,8 @@ func TestContainerExecError(t *testing.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stderr)
 	})
 }
 
