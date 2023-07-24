@@ -1,11 +1,18 @@
+> **Warning** This SDK is experimental. Please do not use it for anything
+> mission-critical. Possible issues include:
+
+- Missing features
+- Stability issues
+- Performance issues
+- Lack of polish
+- Upcoming breaking changes
+- Incomplete or out-of-date documentation
+
 # dagger-java-sdk
 
-![main workflow](https://github.com/jcsirot/dagger-java-sdk/actions/workflows/build.yml/badge.svg?branch=main)
+![main workflow](https://github.com/dagger/dagger/actions/workflows/test.yml/badge.svg?branch=main)
 
 A [Dagger.io](https://dagger.io) SDK written in Java.
-
-> **Warning**
-> This project is still a Work in Progress
 
 ## Build
 
