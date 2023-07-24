@@ -18,4 +18,5 @@ const (
 	// local dir export
 	LocalDirExportDestClientIDMetaKey = "x-dagger-local-dir-export-dest-client-id"
 	LocalDirExportDestPathMetaKey     = "x-dagger-local-dir-export-dest-path"
+	LocalDirExportWriteStreamMetaKey  = "x-dagger-local-dir-export-write-stream"
 )

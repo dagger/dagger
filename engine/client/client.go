@@ -371,10 +371,33 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 	dest := destVal[0]
 
+	_, isWriteStream := opts[engine.LocalDirExportWriteStreamMetaKey]
+
+	if isWriteStream {
+		// TODO: set specific permissions, handle parent not existing, etc.
+		destF, err := os.Create(dest)
+		if err != nil {
+			return fmt.Errorf("failed to create synctarget dest file %s: %w", dest, err)
+		}
+		defer destF.Close()
+		for {
+			msg := filesync.BytesMessage{}
+			if err := stream.RecvMsg(&msg); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return err
+			}
+			if _, err := destF.Write(msg.Data); err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := os.MkdirAll(dest, 0700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
 	}
-	return fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
+	err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
 		Merge: true,
 		Filter: func() func(string, *fstypes.Stat) bool {
 			uid := os.Getuid()
@@ -386,6 +409,10 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 			}
 		}(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to receive fs changes: %w", err)
+	}
+	return nil
 }
 
 type progRockAttachable struct {

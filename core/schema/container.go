@@ -651,7 +651,7 @@ type containerExportArgs struct {
 }
 
 func (s *containerSchema) export(ctx *core.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
+	if err := parent.Export(ctx, s.bk, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
 		return false, err
 	}
 
