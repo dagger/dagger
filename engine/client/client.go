@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -374,7 +375,10 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	_, isWriteStream := opts[engine.LocalDirExportWriteStreamMetaKey]
 
 	if isWriteStream {
-		// TODO: set specific permissions, handle parent not existing, etc.
+		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+			return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
+		}
+		// TODO: set specific permissions?
 		destF, err := os.Create(dest)
 		if err != nil {
 			return fmt.Errorf("failed to create synctarget dest file %s: %w", dest, err)

@@ -257,10 +257,18 @@ func getExecMetaFile(ctx context.Context, mntable snapshot.Mountable, fileName s
 			Length: int(stat.Size_),
 		},
 	}
+
 	if req.Range.Length > MaxExecErrorOutputBytes {
-		// TODO: re-add truncation message
 		req.Range.Offset = int(stat.Size_) - MaxExecErrorOutputBytes
 		req.Range.Length = MaxExecErrorOutputBytes
 	}
-	return cacheutil.ReadFile(ctx, mntable, req)
+	contents, err := cacheutil.ReadFile(ctx, mntable, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %q: %w", filePath, err)
+	}
+	if len(contents) >= MaxExecErrorOutputBytes {
+		truncMsg := fmt.Sprintf(TruncationMessage, int(stat.Size_)-MaxExecErrorOutputBytes)
+		copy(contents, truncMsg)
+	}
+	return contents, nil
 }
