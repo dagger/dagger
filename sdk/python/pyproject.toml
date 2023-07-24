@@ -61,7 +61,15 @@ server = [
 source = "vcs"
 fallback-version = "0.0.0"
 
-[tool.hatch.build]
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "tests",
+    "docs",
+    "CHANGELOG.md",
+]
+
+[tool.hatch.build.targets.wheel]
 packages = ["src/dagger"]
 
 [tool.hatch.envs.default]

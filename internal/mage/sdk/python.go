@@ -88,8 +88,11 @@ func (t Python) Test(ctx context.Context) error {
 	eg, gctx := errgroup.WithContext(ctx)
 	for _, version := range versions {
 		version := version
+		c := c.Pipeline(version)
+		base := pythonBase(c, version)
+
 		eg.Go(func() error {
-			_, err := pythonBase(c.Pipeline(version), version).
+			_, err := base.
 				WithServiceBinding("dagger-engine", devEngine).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
@@ -98,6 +101,28 @@ func (t Python) Test(ctx context.Context) error {
 				Sync(gctx)
 			return err
 		})
+
+		//  Test build
+		dist := pythonBaseEnv(c, version).
+			Pipeline("build").
+			WithMountedDirectory(
+				"/dist",
+				base.Pipeline("build").
+					WithExec([]string{"hatch", "build", "--clean"}).
+					Directory("dist"),
+			)
+
+		for name, ext := range map[string]string{"sdist": "tar.gz", "bdist": "whl"} {
+			name := name
+			ext := ext
+			eg.Go(func() error {
+				_, err := dist.Pipeline(name).
+					WithExec([]string{"sh", "-c", "pip install /dist/*" + ext}).
+					WithExec([]string{"python", "-c", "import dagger"}).
+					Sync(gctx)
+				return err
+			})
+		}
 	}
 
 	return eg.Wait()
@@ -185,20 +210,10 @@ func (t Python) Bump(_ context.Context, version string) error {
 	return os.WriteFile("sdk/python/src/dagger/engine/_version.py", []byte(engineReference), 0o600)
 }
 
-func pythonBase(c *dagger.Client, version string) *dagger.Container {
-	var (
-		appDir  = "sdk/python"
-		reqFile = "requirements.txt"
-		venv    = "/opt/venv"
-	)
-
+// pythonBaseEnv retuns a general python environment, without source files.
+func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 	pipx := c.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
-	src := util.Repository(c).Directory(appDir)
-
-	// Mirror the same dir structure from the repo because of the
-	// relative paths in ruff (for docs linting).
-	mountPath := fmt.Sprintf("/%s", appDir)
-	reqPath := fmt.Sprintf("%s/%s", appDir, reqFile)
+	venv := "/opt/venv"
 
 	return c.Container().
 		From(fmt.Sprintf("python:%s-slim", version)).
@@ -217,7 +232,25 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 				Expand: true,
 			},
 		).
-		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv).
+		WithEnvVariable("HATCH_ENV_TYPE_VIRTUAL_PATH", venv)
+}
+
+// pythonBase returns a python container with the Python SDK source files
+// added and dependencies installed.
+func pythonBase(c *dagger.Client, version string) *dagger.Container {
+	var (
+		appDir  = "sdk/python"
+		reqFile = "requirements.txt"
+	)
+
+	src := util.Repository(c).Directory(appDir)
+
+	// Mirror the same dir structure from the repo because of the
+	// relative paths in ruff (for docs linting).
+	mountPath := fmt.Sprintf("/%s", appDir)
+	reqPath := fmt.Sprintf("%s/%s", appDir, reqFile)
+
+	return pythonBaseEnv(c, version).
 		WithFile(reqPath, src.File(reqFile)).
 		WithExec([]string{"pip", "install", "-r", reqPath}).
 		WithDirectory(mountPath, src).
