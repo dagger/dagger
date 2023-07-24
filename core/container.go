@@ -1498,13 +1498,67 @@ func (container *Container) Publish(
 
 func (container *Container) Export(
 	ctx context.Context,
-	host *Host,
+	bk *buildkit.Client,
 	dest string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	panic("reimplement container export")
+	// TODO: de-dupe w/ Publish
+	// TODO: wrap in services, including merging platformVariants
+
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
+
+	// TODO: the previous implementation did an extra marshal using the containers platform, not sure if needed
+	inputByPlatform := map[string]buildkit.PublishInput{}
+	id, err := container.ID()
+	if err != nil {
+		return err
+	}
+	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
+		variant, err := variantID.ToContainer()
+		if err != nil {
+			return err
+		}
+		if variant.FS == nil {
+			continue
+		}
+
+		platformString := platforms.Format(variant.Platform)
+		if _, ok := inputByPlatform[platformString]; ok {
+			return fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
+			Definition: variant.FS,
+			Config:     container.Config,
+		}
+		// TODO: merge services
+	}
+	if len(inputByPlatform) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return errors.New("no containers to export")
+	}
+
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	_, err = bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 var importCache = newCacheMap[uint64, *specs.Descriptor]()
