@@ -158,7 +158,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 
 		labels := opts.Labels
 		labels = append(labels, pipeline.EngineLabel(e.EngineName))
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, labels, opts.ParentClientIDs)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, labels)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err

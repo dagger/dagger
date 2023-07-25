@@ -209,8 +209,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		// public
 		return bkSession.Run(internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			meta[engine.RouterIDMetaKey] = []string{s.RouterID}
-			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
 			log.Println("!!! SETTING PARENT CLIENT IDS", s.RouterID, s.ParentClientIDs)
+			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
 			meta[engine.ClientHostnameMetaKey] = []string{hostname}
 			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, meta)
 		})

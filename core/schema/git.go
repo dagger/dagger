@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
@@ -149,8 +150,16 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 		})
 	}
 
+	useDNS := len(svcs) > 0
+
+	if !useDNS {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			useDNS = len(clientMetadata.ParentClientIDs) > 0
+		}
+	}
+
 	var st llb.State
-	if len(svcs) > 0 || len(s.parentClientIDs) > 0 {
+	if useDNS {
 		// NB: only configure search domains if we're directly using a service, or
 		// if we're nested beneath another search domain.
 		//

@@ -50,7 +50,6 @@ func NewRouter(
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
 	pipelineLabels []pipeline.Label,
-	parentClientIDs []string,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
@@ -113,14 +112,13 @@ func NewRouter(
 	}()
 
 	apiSchema, err := schema.New(schema.InitializeArgs{
-		BuildkitClient:  rtr.bkClient,
-		Platform:        rtr.worker.Platforms(true)[0],
-		ProgSockPath:    progSockPath,
-		OCIStore:        rtr.worker.ContentStore(),
-		LeaseManager:    rtr.worker.LeaseManager(),
-		Secrets:         secretStore,
-		Auth:            authProvider,
-		ParentClientIDs: parentClientIDs,
+		BuildkitClient: rtr.bkClient,
+		Platform:       rtr.worker.Platforms(true)[0],
+		ProgSockPath:   progSockPath,
+		OCIStore:       rtr.worker.ContentStore(),
+		LeaseManager:   rtr.worker.LeaseManager(),
+		Secrets:        secretStore,
+		Auth:           authProvider,
 	})
 	if err != nil {
 		return nil, err

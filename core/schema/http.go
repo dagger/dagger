@@ -2,6 +2,7 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/client/llb"
@@ -68,8 +69,16 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		llb.Filename(filename),
 	}
 
+	useDNS := len(svcs) > 0
+
+	if !useDNS {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			useDNS = len(clientMetadata.ParentClientIDs) > 0
+		}
+	}
+
 	var st llb.State
-	if len(svcs) > 0 || len(s.parentClientIDs) > 0 {
+	if useDNS {
 		// NB: only configure search domains if we're directly using a service, or
 		// if we're nested.
 		//
