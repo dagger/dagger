@@ -27,6 +27,7 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
@@ -163,7 +164,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
 	ctx = withOutgoingContext(ctx)
-	return c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	_, digest, configBytes, err := c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	return digest, configBytes, err
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
@@ -331,6 +333,8 @@ func (c *Client) LocalExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
 	destPath string,
+	isFile bool,
+	allowParentDirPath bool,
 ) error {
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
@@ -378,6 +382,12 @@ func (c *Client) LocalExport(
 	}
 	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
 	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
+	if isFile {
+		md[engine.LocalDirExportIsFileMetaKey] = []string{"true"}
+	}
+	if allowParentDirPath {
+		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}
+	}
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -501,7 +511,7 @@ func (c *Client) ExportContainerImage(
 
 	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
 	expPlatforms := &exptypes.Platforms{
-		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
+		Platforms: make([]exptypes.Platform, 0, len(inputByPlatform)),
 	}
 	// TODO: probably faster to do this in parallel for each platform
 	for platformString, input := range inputByPlatform {
@@ -550,10 +560,10 @@ func (c *Client) ExportContainerImage(
 			combinedResult.SetRef(ref)
 		} else {
 			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
-			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
+			expPlatforms.Platforms = append(expPlatforms.Platforms, exptypes.Platform{
 				ID:       platformString,
 				Platform: platform,
-			}
+			})
 			combinedResult.AddRef(platformString, ref)
 		}
 	}
@@ -564,6 +574,14 @@ func (c *Client) ExportContainerImage(
 		}
 		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
 	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("exporting res with metadata %+v", combinedResult.Metadata)
+	bklog.G(ctx).Debugf("exporting res with platforms %s", string(combinedResult.Metadata[exptypes.ExporterPlatformsKey]))
+	bklog.G(ctx).Debugf("exporting res with refs %d(%+v)", len(combinedResult.Refs), combinedResult.Refs)
 
 	exporterName := bkclient.ExporterDocker
 	if len(combinedResult.Refs) > 1 {
@@ -598,6 +616,11 @@ func (c *Client) ExportContainerImage(
 	if descRef != nil {
 		descRef.Release()
 	}
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("exporting res response %+v", resp)
 	return resp, nil
 }
 

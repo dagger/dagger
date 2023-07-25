@@ -153,19 +153,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
-	/* TODO: do we still need this? or covered serverside now?
-	// oci stores
-	ociStoreDir := filepath.Join(xdg.CacheHome, "dagger", "oci")
-	ociStore, err := local.NewStore(ociStoreDir)
-	if err != nil {
-		return nil, fmt.Errorf("new local oci store: %w", err)
-	}
-	bkSession.Allow(sessioncontent.NewAttachable(map[string]content.Store{
-		// the "oci:" prefix is actually interpreted by buildkit, not just for show
-		"oci:" + OCIStoreName: ociStore,
-	}))
-	*/
-
 	// progress
 	progMultiW := progrock.MultiWriter{}
 	if s.ProgrockWriter != nil {
@@ -396,6 +383,19 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 				return err
 			}
 		}
+	}
+
+	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
+	_, isFileExport := opts[engine.LocalDirExportIsFileMetaKey]
+	if isFileExport {
+		if stat, err := os.Stat(dest); err == nil {
+			if stat.IsDir() {
+				if !allowParentDirPath {
+					return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
+				}
+			}
+		}
+		dest = filepath.Dir(dest)
 	}
 
 	if err := os.MkdirAll(dest, 0700); err != nil {

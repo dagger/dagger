@@ -83,7 +83,6 @@ func NewRouter(
 		})
 	}
 	rtr.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
-	ctx = progrock.RecorderToContext(ctx, rtr.recorder)
 
 	// TODO: ensure clean flush+shutdown+error-handling
 	statusCh := make(chan *bkclient.SolveStatus, 8)
