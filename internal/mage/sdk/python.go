@@ -135,12 +135,12 @@ func (t Python) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("python").Pipeline("generate")
 
-	cliBinPath := "/.dagger-cli"
-
 	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-python-generate"})
 	if err != nil {
 		return err
 	}
+	cliBinPath := "/.dagger-cli"
+
 	generated, err := pythonBase(c, pythonDefaultVersion).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
