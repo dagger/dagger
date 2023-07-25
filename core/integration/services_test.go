@@ -601,7 +601,10 @@ func TestContainerExecServicesNested(t *testing.T) {
 	content := identity.NewID()
 	srv, svcURL := httpService(ctx, t, c, content)
 
-	depth := 10
+	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
+	// search domain config
+	depth := 5
+
 	fileContent, err := c.Container().
 		From("golang:1.20.6-alpine").
 		WithServiceBinding("www", srv).
