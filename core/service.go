@@ -194,7 +194,10 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 
 	env := svc.env(progSock)
 
-	env = append(env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(bk.Metadata.ClientIDs(), " "))
+	// HACK(vito): we use ftp_proxy in core/container.go to avoid busting caches;
+	// ideally this would be replaced with a dynamic network attachable, but that
+	// needs to be supported by the ExecOp.
+	env = append(env, "ftp_proxy="+strings.Join(bk.Metadata.ClientIDs(), " "))
 
 	secretEnv, mounts, env, err := svc.secrets(mounts, env)
 	if err != nil {
