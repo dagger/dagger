@@ -511,7 +511,6 @@ type RunningService struct {
 }
 
 type Services struct {
-	progSock string
 	starting map[ServiceKey]*sync.WaitGroup
 	running  map[ServiceKey]*RunningService
 	bindings map[ServiceKey]int
@@ -525,15 +524,10 @@ type ServiceKey struct {
 
 // AllServices is a pesky global variable storing the state of all running
 // services.
-var AllServices *Services
-
-func InitServices(progSockPath string) {
-	AllServices = &Services{
-		progSock: progSockPath,
-		starting: map[ServiceKey]*sync.WaitGroup{},
-		running:  map[ServiceKey]*RunningService{},
-		bindings: map[ServiceKey]int{},
-	}
+var AllServices = &Services{
+	starting: map[ServiceKey]*sync.WaitGroup{},
+	running:  map[ServiceKey]*RunningService{},
+	bindings: map[ServiceKey]int{},
 }
 
 func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceBinding) (*RunningService, error) {
@@ -552,7 +546,10 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceB
 		ClientID: clientMetadata.ClientID,
 	}
 
-	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), key.ClientID, key.Hostname)
+	// XXX(vito): hacky; aligned with engine/server/router.go
+	progSockPath := fmt.Sprintf("/run/dagger/router-progrock-%s.sock", clientMetadata.RouterID)
+
+	lid := fmt.Sprintf("%s:%s:%s.%s", identity.NewID(), key.ClientID, key.Hostname, network.ClientDomain(key.ClientID))
 
 	servicesL.Println("!!!!!", lid, "SERVICES.START")
 
@@ -609,7 +606,7 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceB
 		panic(err) // XXX(vito)
 	}
 
-	running, err = bnd.Service.Start(svcCtx, bk, ss.progSock)
+	running, err = bnd.Service.Start(svcCtx, bk, progSockPath)
 	if err != nil {
 		stop()
 		ss.l.Lock()
@@ -636,7 +633,7 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
-	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), svc.Key.ClientID, svc.Key.Hostname)
+	lid := fmt.Sprintf("%s:%s:%s.%s", identity.NewID(), svc.Key.ClientID, svc.Key.Hostname, network.ClientDomain(svc.Key.ClientID))
 
 	servicesL.Println("!!!!!", lid, "SERVICES.DETACH")
 

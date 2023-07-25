@@ -75,9 +75,6 @@ func NewRouter(
 	}
 	rtr.progCleanup = progCleanup
 
-	// set up global service tracker
-	core.InitServices(progSockPath)
-
 	pipeline.SetRootLabels(pipelineLabels)
 	progrockLabels := []*progrock.Label{}
 	for _, label := range pipelineLabels {
