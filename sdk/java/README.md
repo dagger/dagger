@@ -43,7 +43,7 @@ in your project's `pom.xml` add the dependency
 
 ```xml
   <dependency>
-    <groupId>org.chelonix.dagger</groupId>
+    <groupId>io.dagger</groupId>
     <artifactId>dagger-java-sdk</artifactId>
     <version>0.6.2-SNAPSHOT</version>
   </dependency>
@@ -52,10 +52,10 @@ in your project's `pom.xml` add the dependency
 Here is a code snippet using the Dagger client
 
 ```java
-package org.chelonix.dagger.sample;
+package io.dagger.sample;
 
-import org.chelonix.dagger.client.Client;
-import org.chelonix.dagger.client.Dagger;
+import io.dagger.client.Client;
+import io.dagger.client.Dagger;
 
 import java.util.List;
 
@@ -91,15 +91,15 @@ Run the samples with this command:
 Then select the sample to run:
 ```
 === Dagger.io Java SDK samples ===
-  1 - org.chelonix.dagger.sample.RunContainer
-  2 - org.chelonix.dagger.sample.GetDaggerWebsite
-  3 - org.chelonix.dagger.sample.ListEnvVars
-  4 - org.chelonix.dagger.sample.MountHostDirectoryInContainer
-  5 - org.chelonix.dagger.sample.ListHostDirectoryContents
-  6 - org.chelonix.dagger.sample.ReadFileInGitRepository
-  7 - org.chelonix.dagger.sample.GetGitVersion
-  8 - org.chelonix.dagger.sample.CreateAndUseSecret
-  9 - org.chelonix.dagger.sample.GetGitVersion
+  1 - io.dagger.sample.RunContainer
+  2 - io.dagger.sample.GetDaggerWebsite
+  3 - io.dagger.sample.ListEnvVars
+  4 - io.dagger.sample.MountHostDirectoryInContainer
+  5 - io.dagger.sample.ListHostDirectoryContents
+  6 - io.dagger.sample.ReadFileInGitRepository
+  7 - io.dagger.sample.GetGitVersion
+  8 - io.dagger.sample.CreateAndUseSecret
+  9 - io.dagger.sample.GetGitVersion
   q - exit
 
 Select sample:

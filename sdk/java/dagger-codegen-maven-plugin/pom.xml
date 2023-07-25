@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <parent>
-        <groupId>org.chelonix.dagger</groupId>
+        <groupId>io.dagger</groupId>
         <artifactId>dagger-sdk-parent</artifactId>
         <version>0.6.2-SNAPSHOT</version>
     </parent>

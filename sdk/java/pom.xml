@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.chelonix.dagger</groupId>
+    <groupId>io.dagger</groupId>
     <artifactId>dagger-sdk-parent</artifactId>
     <version>0.6.2-SNAPSHOT</version>
     <packaging>pom</packaging>
@@ -18,7 +18,7 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.chelonix.dagger</groupId>
+                <groupId>io.dagger</groupId>
                 <artifactId>dagger-java-sdk</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -162,7 +162,7 @@
                     <version>${exec-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.chelonix.dagger</groupId>
+                    <groupId>io.dagger</groupId>
                     <artifactId>dagger-codegen-maven-plugin</artifactId>
                     <version>${project.version}</version>
                 </plugin>
