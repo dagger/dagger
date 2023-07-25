@@ -166,8 +166,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
 	ctx = withOutgoingContext(ctx)
-	_, digest, configBytes, err := c.llbBridge.ResolveImageConfig(ctx, ref, opt)
-	return digest, configBytes, err
+	return c.llbBridge.ResolveImageConfig(ctx, ref, opt)
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {

@@ -20,14 +20,14 @@ import (
 )
 
 type InitializeArgs struct {
-	BuildkitClient *buildkit.Client
-	Platform       specs.Platform
-	ProgSockPath   string
-	OCIStore       content.Store
-	LeaseManager   *leaseutil.Manager
-	Auth           *auth.RegistryAuthProvider
-	Secrets        *core.SecretStore
-	ParentSessions []string
+	BuildkitClient  *buildkit.Client
+	Platform        specs.Platform
+	ProgSockPath    string
+	OCIStore        content.Store
+	LeaseManager    *leaseutil.Manager
+	Auth            *auth.RegistryAuthProvider
+	Secrets         *core.SecretStore
+	ParentClientIDs []string
 }
 
 func New(params InitializeArgs) (*MergedSchemas, error) {
@@ -35,7 +35,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		bk:              params.BuildkitClient,
 		platform:        params.Platform,
 		progSockPath:    params.ProgSockPath,
-		parentSessions:  params.ParentSessions,
+		parentClientIDs: params.ParentClientIDs,
 		auth:            params.Auth,
 		secrets:         params.Secrets,
 		separateSchemas: map[string]ExecutableSchema{},
@@ -69,7 +69,7 @@ type MergedSchemas struct {
 	auth         *auth.RegistryAuthProvider
 	secrets      *core.SecretStore
 
-	parentSessions []string
+	parentClientIDs []string
 
 	schemaMu        sync.RWMutex
 	separateSchemas map[string]ExecutableSchema

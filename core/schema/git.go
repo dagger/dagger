@@ -150,7 +150,7 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 	}
 
 	var st llb.State
-	if len(svcs) > 0 || len(s.parentSessions) > 0 {
+	if len(svcs) > 0 || len(s.parentClientIDs) > 0 {
 		// NB: only configure search domains if we're directly using a service, or
 		// if we're nested beneath another search domain.
 		//
