@@ -2,6 +2,7 @@ package core
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/md5"
 	"errors"
@@ -21,7 +22,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	os.Setenv("_DAGGER_DEBUG_HEALTHCHECKS", "1")
 	// start with fresh test registries once per suite; they're an engine-global
 	// dependency
 	// startRegistry()
@@ -29,9 +29,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func connect(t require.TestingT) (*dagger.Client, context.Context) {
+func connect(t *testing.T) (*dagger.Client, context.Context) {
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	tw := NewTWriter(t)
+	defer tw.Flush()
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(tw))
 	require.NoError(t, err)
 	return client, ctx
 }
@@ -407,4 +409,41 @@ func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
 	}
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
+}
+
+// TWriter is a writer that writes to testing.T
+type TWriter struct {
+	t   *testing.T
+	buf bytes.Buffer
+}
+
+// NewTWriter creates a new TWriter
+func NewTWriter(t *testing.T) *TWriter {
+	return &TWriter{t: t}
+}
+
+// Write writes data to the testing.T
+func (tw *TWriter) Write(p []byte) (n int, err error) {
+	if n, err = tw.buf.Write(p); err != nil {
+		return n, err
+	}
+
+	for {
+		line, err := tw.buf.ReadBytes('\n')
+		if err == io.EOF {
+			// If we've reached the end of the buffer, write it back, because it doesn't have a newline
+			tw.buf.Write(line)
+			break
+		}
+		if err != nil {
+			return n, err
+		}
+
+		tw.t.Log(strings.TrimSuffix(string(line), "\n"))
+	}
+	return n, nil
+}
+
+func (tw *TWriter) Flush() {
+	tw.t.Log(tw.buf.String())
 }
