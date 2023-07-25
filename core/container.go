@@ -1077,7 +1077,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		panic(err) // XXX(vito)
 		return nil, err
 	}
 

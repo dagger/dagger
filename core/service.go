@@ -163,7 +163,6 @@ func solveRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkg
 func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		panic(err) // XXX(vito)
 		return nil, err
 	}
 
@@ -533,7 +532,6 @@ var AllServices = &Services{
 func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceBinding) (*RunningService, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		panic(err) // XXX(vito)
 		return nil, err
 	}
 
@@ -602,8 +600,6 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceB
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
 	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
-	} else {
-		panic(err) // XXX(vito)
 	}
 
 	running, err = bnd.Service.Start(svcCtx, bk, progSockPath)
