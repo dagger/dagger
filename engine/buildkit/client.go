@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"sync"
@@ -38,7 +39,7 @@ type Opts struct {
 	SessionManager *bksession.Manager
 	LLBSolver      *llbsolver.Solver
 	GenericSolver  *bksolver.Solver
-	ParentSessions []string
+	Metadata       *engine.ClientMetadata
 	SecretStore    bksecrets.SecretStore
 	AuthProvider   *auth.RegistryAuthProvider
 	// TODO: give precise definition
@@ -93,8 +94,6 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 
 func (c *Client) ID() string {
 	// TODO: ? if you change this, be sure to change the session ID provide to llbBridge methods too
-	// TODO(vito): fyi, I'm now using this in a few different spots as a way to
-	// get the session ID.
 	return c.session.ID()
 }
 
@@ -228,6 +227,12 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 
 	c.containersMu.Lock()
 	defer c.containersMu.Unlock()
+	if c.containers == nil {
+		if err := ctr.Release(context.Background()); err != nil {
+			return nil, fmt.Errorf("release after close: %w", err)
+		}
+		return nil, errors.New("client closed")
+	}
 	c.containers[ctr] = struct{}{}
 	return ctr, nil
 }

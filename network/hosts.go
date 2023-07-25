@@ -23,13 +23,13 @@ func HostHashStr(val string) string {
 	return strings.ToLower(b32(xxh3.HashString(val)))
 }
 
-// SessionDomain is a session-global domain suffix appended to every service's
+// ClientDomain is a session-global domain suffix appended to every service's
 // hostname. It is randomly generated on the first call.
 //
 // Ideally we would base this on the Buildkit gateway session ID instead of
 // using global state, but for exporting we actually establish multiple gateway
 // sessions.
-func SessionDomain(sid string) string {
+func ClientDomain(sid string) string {
 	return HostHashStr(sid) + DomainSuffix
 }
 

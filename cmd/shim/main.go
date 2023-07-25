@@ -346,15 +346,17 @@ func setupBundle() int {
 	}
 
 	var searchDomains []string
-	for _, env := range spec.Process.Env {
+	for i, env := range spec.Process.Env {
 		switch {
 		case strings.HasPrefix(env, "ftp_proxy="):
-			// HACK(vito): passing parent sessions through ftp_proxy so it doesn't
-			// bust caches
-			sessions := strings.Fields(strings.TrimPrefix(env, "ftp_proxy="))
+			val := strings.TrimPrefix(env, "ftp_proxy=")
+			sessions := strings.Fields(val)
 			for _, id := range sessions {
-				searchDomains = append(searchDomains, network.SessionDomain(id))
+				searchDomains = append(searchDomains, network.ClientDomain(id))
 			}
+
+			// remap to _DAGGER_PARENT_CLIENT_IDS
+			spec.Process.Env[i] = "_DAGGER_PARENT_CLIENT_IDS=" + val
 		}
 	}
 
@@ -595,11 +597,11 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		RunnerHost:  "unix:///.runner.sock",
 	}
 
-	if parentSessions, found := os.LookupEnv("_DAGGER_PARENT_SESSIONS"); found {
+	if parents, found := os.LookupEnv("_DAGGER_PARENT_CLIENT_IDS"); found {
 		// NB: don't use internalEnv since it unsets the env var. we keep it around
 		// to propagate to the command, to support running 'dagger do' in dagger,
 		// though this is primarily motivated by tests
-		sessParams.ParentSessions = strings.Fields(parentSessions)
+		sessParams.ParentClientIDs = strings.Fields(parents)
 	}
 
 	if _, err := os.Stat("/.progrock.sock"); err == nil {

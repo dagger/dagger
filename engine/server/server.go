@@ -122,7 +122,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			SecretStore:      secretStore,
 			AuthProvider:     authProvider,
 			MainClientCaller: caller,
-			ParentSessions:   opts.ParentSessions,
+			Metadata:         opts,
 		})
 		if err != nil {
 			e.routerMu.Unlock()
@@ -130,7 +130,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}
 		secretStore.SetBuildkitClient(bkClient)
 
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, opts.ParentSessions)
+		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, opts.ParentClientIDs)
 		if err != nil {
 			e.routerMu.Unlock()
 			return nil, err

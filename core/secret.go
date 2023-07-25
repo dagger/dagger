@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 )
@@ -143,6 +145,15 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 		name = secret.Name
 	} else {
 		name = idOrName
+	}
+
+	if name == "_DAGGER_PARENT_CLIENT_IDS" {
+		opts, err := engine.SessionAPIOptsFromContext(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		return []byte(strings.Join(opts.ClientIDs(), " ")), nil
 	}
 
 	plaintext, ok := store.secrets[name]

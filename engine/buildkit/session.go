@@ -48,9 +48,9 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
 	}))
 
-	searchDomains := []string{network.SessionDomain(sess.ID())}
-	for _, sid := range c.Opts.ParentSessions {
-		searchDomains = append(searchDomains, network.SessionDomain(sid))
+	searchDomains := []string{}
+	for _, id := range c.Metadata.ClientIDs() {
+		searchDomains = append(searchDomains, network.ClientDomain(id))
 	}
 
 	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {

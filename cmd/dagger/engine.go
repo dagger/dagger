@@ -73,10 +73,10 @@ func withEngineAndTUI(
 		params.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
 	}
 
-	envParents := strings.Fields(os.Getenv("_DAGGER_PARENT_SESSIONS"))
-	if len(params.ParentSessions) == 0 {
+	parents := strings.Fields(os.Getenv("_DAGGER_PARENT_CLIENT_IDS"))
+	if len(params.ParentClientIDs) == 0 {
 		// NB(vito): this is to support running the dagger CLI _in_ dagger
-		params.ParentSessions = envParents
+		params.ParentClientIDs = parents
 	}
 
 	if !silent {

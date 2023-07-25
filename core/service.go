@@ -1,11 +1,13 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -13,6 +15,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
@@ -24,6 +27,23 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 )
+
+var debugServices = true
+var debugServicesLogs string = fmt.Sprintf("/tmp/services-%d.log", time.Now().UnixNano())
+var debugServicesLogsW = io.Discard
+var servicesL *log.Logger
+
+func init() {
+	if debugServices {
+		var err error
+		os.MkdirAll("/tmp", 0755)
+		debugServicesLogsW, err = os.Create(debugServicesLogs)
+		if err != nil {
+			panic(err)
+		}
+	}
+	servicesL = log.New(debugServicesLogsW, "", log.LstdFlags)
+}
 
 // DaggerNetwork is the ID of the network used for the Buildkit networks
 // session attachable.
@@ -141,6 +161,12 @@ func solveRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkg
 }
 
 func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		panic(err) // XXX(vito)
+		return nil, err
+	}
+
 	ctr := svc.Container
 	cfg := ctr.Config
 	opts := svc.Exec
@@ -161,14 +187,14 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 		return nil, fmt.Errorf("mounts: %w", err)
 	}
 
-	// XXX(vito): add resolv.conf mount
-
 	args, err := ctr.command(opts)
 	if err != nil {
 		return nil, fmt.Errorf("command: %w", err)
 	}
 
 	env := svc.env(progSock)
+
+	env = append(env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(bk.Metadata.ClientIDs(), " "))
 
 	secretEnv, mounts, env, err := svc.secrets(mounts, env)
 	if err != nil {
@@ -194,7 +220,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
 
-	fullHost := host + "." + network.SessionDomain(bk.ID())
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 
 	health := newHealth(bk, fullHost, svc.Container.Ports)
 
@@ -220,6 +246,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 		checked <- health.Check(ctx)
 	}()
 
+	outBuf := new(bytes.Buffer)
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
 		Args:         args,
 		Env:          env,
@@ -227,8 +254,8 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 		User:         cfg.User,
 		Cwd:          cfg.WorkingDir,
 		Tty:          false,
-		Stdout:       nopCloser{vtx.Stdout()},
-		Stderr:       nopCloser{vtx.Stderr()},
+		Stdout:       nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)},
+		Stderr:       nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)},
 		SecurityMode: securityMode,
 	})
 	if err != nil {
@@ -252,15 +279,15 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 		return &RunningService{
 			Service: svc,
 			Key: ServiceKey{
-				Hostname:  host,
-				SessionID: bk.ID(),
+				Hostname: host,
+				ClientID: clientMetadata.ClientID,
 			},
 			Container: gc,
 			Process:   svcProc,
 		}, nil
 	case err := <-exited:
 		if err != nil {
-			return nil, fmt.Errorf("exited: %w", err)
+			return nil, fmt.Errorf("exited: %w\noutput: %s", err, outBuf.String())
 		}
 
 		return nil, fmt.Errorf("service exited before healthcheck")
@@ -489,8 +516,8 @@ type Services struct {
 }
 
 type ServiceKey struct {
-	Hostname  string
-	SessionID string
+	Hostname string
+	ClientID string
 }
 
 // AllServices is a pesky global variable storing the state of all running
@@ -507,53 +534,63 @@ func InitServices(progSockPath string) {
 }
 
 func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceBinding) (*RunningService, error) {
-	key := ServiceKey{
-		Hostname:  bnd.Hostname,
-		SessionID: bk.ID(),
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		panic(err) // XXX(vito)
+		return nil, err
 	}
 
-	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), key.SessionID, key.Hostname)
+	if bnd.Hostname == "" {
+		return nil, fmt.Errorf("hostname not set")
+	}
 
-	log.Println("!!!!!", lid, "SERVICES.START")
+	key := ServiceKey{
+		Hostname: bnd.Hostname,
+		ClientID: clientMetadata.ClientID,
+	}
+
+	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), key.ClientID, key.Hostname)
+
+	servicesL.Println("!!!!!", lid, "SERVICES.START")
 
 	ss.l.Lock()
 	starting, isStarting := ss.starting[key]
 	running, isRunning := ss.running[key]
 	switch {
 	case !isStarting && !isRunning:
-		log.Println("!!!!!", lid, "SERVICES.START NOT STARTING OR RUNNING")
+		servicesL.Println("!!!!!", lid, "SERVICES.START NOT STARTING OR RUNNING")
 		// not starting or running; start it
 		starting = new(sync.WaitGroup)
 		starting.Add(1)
 		defer starting.Done()
 		ss.starting[key] = starting
 	case isRunning:
-		log.Println("!!!!!", lid, "SERVICES.START ALREADY RUNNING:", ss.bindings[key])
+		servicesL.Println("!!!!!", lid, "SERVICES.START ALREADY RUNNING:", ss.bindings[key])
 		// already running; increment binding count and return
 		ss.bindings[key]++
 		ss.l.Unlock()
 		return running, nil
 	case isStarting:
-		log.Println("!!!!!", lid, "SERVICES.START ALREADY STARTING")
+		servicesL.Println("!!!!!", lid, "SERVICES.START ALREADY STARTING")
 		// already starting; wait for the attempt to finish and check if it
 		// succeeded
 		ss.l.Unlock()
 		starting.Wait()
-		log.Println("!!!!!", lid, "SERVICES.START DONE WAITING")
+		servicesL.Println("!!!!!", lid, "SERVICES.START DONE WAITING")
 		ss.l.Lock()
 		running, didStart := ss.running[key]
 		if didStart {
 			// starting succeeded as normal; return the isntance
 			ss.l.Unlock()
-			log.Println("!!!!!", lid, "SERVICES.START WAIT STARTED OK")
+			servicesL.Println("!!!!!", lid, "SERVICES.START WAIT STARTED OK")
 			return running, nil
 		}
-		log.Println("!!!!!", lid, "SERVICES.START WAIT DID NOT START OK")
+		servicesL.Println("!!!!!", lid, "SERVICES.START WAIT DID NOT START OK")
 		// starting didn't work; give it another go (this might just error again)
 	}
 	ss.l.Unlock()
 
-	log.Println("!!!!!", lid, "SERVICES.START RESPONSIBLE FOR STARTING")
+	servicesL.Println("!!!!!", lid, "SERVICES.START RESPONSIBLE FOR STARTING")
 
 	rec := progrock.RecorderFromContext(ctx).
 		WithGroup(
@@ -563,20 +600,25 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, bnd ServiceB
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+	if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+	} else {
+		panic(err) // XXX(vito)
+	}
 
-	running, err := bnd.Service.Start(svcCtx, bk, ss.progSock)
+	running, err = bnd.Service.Start(svcCtx, bk, ss.progSock)
 	if err != nil {
 		stop()
 		ss.l.Lock()
 		delete(ss.starting, key)
 		ss.l.Unlock()
-		log.Println("!!!!!", lid, "START ERR", err)
+		servicesL.Println("!!!!!", lid, "START ERR", err)
 		return nil, fmt.Errorf("start %s (%s): %w", bnd.Hostname, bnd.Aliases, err)
 	}
 
-	log.Println("!!!!!", lid, "RESPONSIBLE PERSON LOCKING", ss.bindings[key])
+	servicesL.Println("!!!!!", lid, "RESPONSIBLE PERSON LOCKING", ss.bindings[key])
 	ss.l.Lock()
-	log.Println("!!!!!", lid, "RESPONSIBLE PERSON STARTED", ss.bindings[key])
+	servicesL.Println("!!!!!", lid, "RESPONSIBLE PERSON STARTED", ss.bindings[key])
 	delete(ss.starting, key)
 	ss.running[key] = running
 	ss.bindings[key] = 1
@@ -591,46 +633,46 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 	ss.l.Lock()
 	defer ss.l.Unlock()
 
-	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), svc.Key.SessionID, svc.Key.Hostname)
+	lid := fmt.Sprintf("%s:%s:%s", identity.NewID(), svc.Key.ClientID, svc.Key.Hostname)
 
-	log.Println("!!!!!", lid, "SERVICES.DETACH")
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH")
 
 	running, found := ss.running[svc.Key]
 	if !found {
-		log.Println("!!!!!", lid, "SERVICES.DETACH NOT EVEN RUNNING", lid)
+		servicesL.Println("!!!!!", lid, "SERVICES.DETACH NOT EVEN RUNNING", lid)
 		// not even running; ignore
 		return nil
 	}
 
-	log.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTING", ss.bindings[svc.Key])
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTING", ss.bindings[svc.Key])
 	ss.bindings[svc.Key]--
-	log.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTED", ss.bindings[svc.Key])
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH DECREMENTED", ss.bindings[svc.Key])
 
 	if ss.bindings[svc.Key] > 0 {
-		log.Println("!!!!!", lid, "SERVICES.DETACH OTHERS ATTACHED")
+		servicesL.Println("!!!!!", lid, "SERVICES.DETACH OTHERS ATTACHED")
 		// detached, but other instances still active
 		return nil
 	}
 
-	log.Println("!!!!!", lid, "SERVICES.DETACH KILL KILL KILL")
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH KILL KILL KILL")
 
 	// TODO: graceful shutdown?
 	if err := running.Process.Signal(ctx, syscall.SIGKILL); err != nil {
-		log.Println("!!!!!", lid, "SERVICES.DETACH SIGNAL ERR", err)
+		servicesL.Println("!!!!!", lid, "SERVICES.DETACH SIGNAL ERR", err)
 		return err
 	}
 
-	log.Println("!!!!!", lid, "SERVICES.DETACH RELEASE")
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH RELEASE")
 
 	if err := running.Container.Release(ctx); err != nil {
-		log.Println("!!!!!", lid, "SERVICES.DETACH RELEASE ERR", err)
+		servicesL.Println("!!!!!", lid, "SERVICES.DETACH RELEASE ERR", err)
 		return err
 	}
 
 	delete(ss.bindings, svc.Key)
 	delete(ss.running, svc.Key)
 
-	log.Println("!!!!!", lid, "SERVICES.DETACH DONE")
+	servicesL.Println("!!!!!", lid, "SERVICES.DETACH DONE")
 
 	return nil
 }
@@ -638,8 +680,8 @@ func (ss *Services) Detach(ctx context.Context, svc *RunningService) error {
 type ServiceBindings []ServiceBinding
 
 type ServiceBinding struct {
-	Hostname string   `json:"hostname"`
 	Service  *Service `json:"service"`
+	Hostname string   `json:"hostname"`
 	Aliases  AliasSet `json:"aliases"`
 }
 
@@ -813,7 +855,7 @@ func (d *portHealthChecker) Check(ctx context.Context) (err error) {
 	vtx := rec.Vertex(
 		digest.Digest(identity.NewID()),
 		strings.Join(args, " "),
-		progrock.Internal(),
+		// progrock.Internal(),
 	)
 	defer func() {
 		vtx.Done(err)

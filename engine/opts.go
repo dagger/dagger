@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 
 	"google.golang.org/grpc/metadata"
@@ -19,9 +20,14 @@ type ClientMetadata struct {
 	// be useful for debugging and for minimizing occurences of both excessive cache misses and
 	// excessive cache matches.
 	ClientHostname string
-	// ParentSessions is a list of session ids that are parents of the current session. The first
+	// ParentClientIDs is a list of session ids that are parents of the current session. The first
 	// element is the direct parent, the second element is the parent of the parent, and so on.
-	ParentSessions []string
+	ParentClientIDs []string
+}
+
+// ClientIDs returns the ClientID followed by ParentClientIDs.
+func (m ClientMetadata) ClientIDs() []string {
+	return append([]string{m.ClientID}, m.ParentClientIDs...)
 }
 
 func (m ClientMetadata) ToMD() metadata.MD {
@@ -29,7 +35,7 @@ func (m ClientMetadata) ToMD() metadata.MD {
 		ClientIDMetaKey, m.ClientID,
 		RouterIDMetaKey, m.RouterID,
 		ClientHostnameMetaKey, m.ClientHostname,
-		ParentSessionsMetaKey, strings.Join(m.ParentSessions, " "),
+		ParentClientIDsMetaKey, strings.Join(m.ParentClientIDs, " "),
 	)
 }
 
@@ -79,10 +85,10 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	}
 	clientMetadata.ClientHostname = md[ClientHostnameMetaKey][0]
 
-	if len(md[ParentSessionsMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", ParentSessionsMetaKey)
+	if len(md[ParentClientIDsMetaKey]) != 1 {
+		return nil, fmt.Errorf("failed to get %s from metadata", ParentClientIDsMetaKey)
 	}
-	clientMetadata.ParentSessions = strings.Fields(md[ParentSessionsMetaKey][0])
+	clientMetadata.ParentClientIDs = strings.Fields(md[ParentClientIDsMetaKey][0])
 
 	return clientMetadata, nil
 }
@@ -112,17 +118,18 @@ func SessionAPIOptsFromContext(ctx context.Context) (*SessionAPIOpts, error) {
 			BuildkitAttachable: true,
 		}
 
-		// client hostname is the session name
-		if len(md[SessionNameMetaKey]) != 1 {
-			return nil, fmt.Errorf("failed to get %s from metadata", SessionNameMetaKey)
+		if len(md[ClientHostnameMetaKey]) != 1 {
+			return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
 		}
-		opts.ClientHostname = md[SessionNameMetaKey][0]
+		opts.ClientHostname = md[ClientHostnameMetaKey][0]
 
-		// router id is the session shared key
-		if len(md[SessionSharedKeyMetaKey]) != 1 {
-			return nil, fmt.Errorf("failed to get %s from metadata", SessionSharedKeyMetaKey)
+		if len(md[RouterIDMetaKey]) != 1 {
+			return nil, fmt.Errorf("failed to get %s from metadata", RouterIDMetaKey)
 		}
-		opts.RouterID = md[SessionSharedKeyMetaKey][0]
+		opts.RouterID = md[RouterIDMetaKey][0]
+
+		opts.ParentClientIDs = md[ParentClientIDsMetaKey]
+		log.Println("!!! GOT PARENT CLIENT IDS", opts.RouterID, opts.ClientID, opts.ParentClientIDs)
 		return opts, nil
 	}
 

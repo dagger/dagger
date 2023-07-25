@@ -1076,10 +1076,9 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
+		panic(err) // XXX(vito)
 		return nil, err
 	}
-
-	sessions := append([]string{bk.ID()}, clientMetadata.ParentSessions...)
 
 	runOpts = append(runOpts,
 		// HACK(vito): passing parent sessions through ftp_proxy
@@ -1087,7 +1086,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		// actually add proxy support
 		llb.WithProxy(llb.ProxyEnv{
 			// no one uses FTP anymore right?
-			FTPProxy: strings.Join(sessions, " "),
+			FTPProxy: strings.Join(clientMetadata.ClientIDs(), " "),
 		}))
 
 	// this allows executed containers to communicate back to this API

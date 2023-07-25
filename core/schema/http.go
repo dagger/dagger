@@ -52,10 +52,15 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 	if args.ExperimentalServiceHost != nil {
 		svc, err := args.ExperimentalServiceHost.ToService()
 		if err != nil {
-			return nil, nil
+			return nil, err
+		}
+		host, err := svc.Hostname()
+		if err != nil {
+			return nil, err
 		}
 		svcs = append(svcs, core.ServiceBinding{
-			Service: svc,
+			Service:  svc,
+			Hostname: host,
 		})
 	}
 
