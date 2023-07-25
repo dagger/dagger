@@ -38,7 +38,6 @@ import (
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/resolver"
@@ -203,13 +202,6 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	}
 	for k, v := range labels {
 		cfg.Workers.OCI.Labels[k] = v
-	}
-	for _, e := range cfg.Entitlements {
-		if e == string(entitlements.EntitlementSecurityInsecure) {
-			// this is a hacky way of allowing dagger clients to know whether their session
-			// should request the insecure entitlement.
-			cfg.Workers.OCI.Labels[engine.PrivilegedExecLabel] = "true"
-		}
 	}
 
 	if c.GlobalIsSet("oci-worker-snapshotter") {

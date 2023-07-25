@@ -68,7 +68,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			"**/go.sum",
 
 			// embedded files
-			"**/*.go.tmpl",
+			"**/*.tmpl",
 			"**/*.ts.gtpl",
 			"**/*.graphqls",
 			"**/*.graphql",

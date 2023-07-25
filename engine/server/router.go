@@ -50,6 +50,7 @@ func NewRouter(
 	secretStore *core.SecretStore,
 	authProvider *auth.RegistryAuthProvider,
 	parentSessions []string,
+	pipelineLabels []pipeline.Label,
 ) (*Router, error) {
 	rtr := &Router{
 		bkClient: bkClient,
@@ -77,11 +78,15 @@ func NewRouter(
 	// set up global service tracker
 	core.InitServices(progSockPath)
 
-	// TODO: correct progrock labels
-	go pipeline.LoadRootLabels("/", "da-engine")
-	// rtr.recorder = progrock.NewRecorder(progrockLogrusWriter{}, progrock.WithLabels(labels...))
-	rtr.recorder = progrock.NewRecorder(progWriter)
-	ctx = progrock.RecorderToContext(ctx, rtr.recorder)
+	pipeline.SetRootLabels(pipelineLabels)
+	progrockLabels := []*progrock.Label{}
+	for _, label := range pipelineLabels {
+		progrockLabels = append(progrockLabels, &progrock.Label{
+			Name:  label.Name,
+			Value: label.Value,
+		})
+	}
+	rtr.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
 	// TODO: ensure clean flush+shutdown+error-handling
 	statusCh := make(chan *bkclient.SolveStatus, 8)

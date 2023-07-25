@@ -38,7 +38,6 @@ import (
 	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/control"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
@@ -67,7 +66,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"go.etcd.io/bbolt"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -750,11 +748,6 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		return nil, nil, err
 	}
 
-	historyDB, err := bbolt.Open(filepath.Join(cfg.Root, "history.db"), 0o600, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	cacheServiceURL := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_URL")
 	cacheServiceToken := os.Getenv("_EXPERIMENTAL_DAGGER_CACHESERVICE_TOKEN")
 
@@ -799,19 +792,18 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		},
 	}
 
-	ctrler, err := server.NewServer(control.Opt{
-		SessionManager:            sessionManager,
-		WorkerController:          wc,
-		Frontends:                 frontends,
-		ResolveCacheExporterFuncs: remoteCacheExporterFuncs,
-		ResolveCacheImporterFuncs: remoteCacheImporterFuncs,
-		CacheManager:              cacheManager,
-		Entitlements:              cfg.Entitlements,
-		TraceCollector:            tc,
-		HistoryDB:                 historyDB,
-		LeaseManager:              w.LeaseManager(),
-		ContentStore:              w.ContentStore(),
-		HistoryConfig:             cfg.History,
+	ctrler, err := server.NewServer(server.ServerOpts{
+		WorkerController: wc,
+		SessionManager:   sessionManager,
+		CacheManager:     cacheManager,
+		ContentStore:     w.ContentStore(),
+		LeaseManager:     w.LeaseManager(),
+		Frontends:        frontends,
+		Entitlements:     cfg.Entitlements,
+		// TODO: move off this being a worker label
+		EngineName:             w.Labels()[engine.EngineNameLabel],
+		UpstreamCacheExporters: remoteCacheExporterFuncs,
+		UpstreamCacheImporters: remoteCacheImporterFuncs,
 	})
 	if err != nil {
 		return nil, nil, err

@@ -6,6 +6,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/dagger/dagger/core/pipeline"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -20,6 +21,8 @@ type ClientMetadata struct {
 	// be useful for debugging and for minimizing occurences of both excessive cache misses and
 	// excessive cache matches.
 	ClientHostname string
+	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
+	Labels []pipeline.Label
 	// ParentClientIDs is a list of session ids that are parents of the current session. The first
 	// element is the direct parent, the second element is the parent of the parent, and so on.
 	ParentClientIDs []string
@@ -30,13 +33,21 @@ func (m ClientMetadata) ClientIDs() []string {
 	return append([]string{m.ClientID}, m.ParentClientIDs...)
 }
 
-func (m ClientMetadata) ToMD() metadata.MD {
-	return metadata.Pairs(
+func (m ClientMetadata) ToGRPCMD() metadata.MD {
+	md := metadata.Pairs(
 		ClientIDMetaKey, m.ClientID,
 		RouterIDMetaKey, m.RouterID,
 		ClientHostnameMetaKey, m.ClientHostname,
 		ParentClientIDsMetaKey, strings.Join(m.ParentClientIDs, " "),
 	)
+	var labelStrings []string
+	for _, label := range m.Labels {
+		labelStrings = append(labelStrings, fmt.Sprintf("%s=%s", label.Name, label.Value))
+	}
+	if len(labelStrings) > 0 {
+		md[ClientLabelsMetaKey] = labelStrings
+	}
+	return md
 }
 
 func contextWithMD(ctx context.Context, mds ...metadata.MD) context.Context {
@@ -60,7 +71,7 @@ func contextWithMD(ctx context.Context, mds ...metadata.MD) context.Context {
 }
 
 func ContextWithClientMetadata(ctx context.Context, clientMetadata *ClientMetadata) context.Context {
-	return contextWithMD(ctx, clientMetadata.ToMD())
+	return contextWithMD(ctx, clientMetadata.ToGRPCMD())
 }
 
 func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
@@ -84,6 +95,14 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 		return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
 	}
 	clientMetadata.ClientHostname = md[ClientHostnameMetaKey][0]
+
+	for _, kv := range md[ClientLabelsMetaKey] {
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			return nil, fmt.Errorf("failed to parse label string %s", kv)
+		}
+		clientMetadata.Labels = append(clientMetadata.Labels, pipeline.Label{Name: k, Value: v})
+	}
 
 	if len(md[ParentClientIDsMetaKey]) != 1 {
 		return nil, fmt.Errorf("failed to get %s from metadata", ParentClientIDsMetaKey)

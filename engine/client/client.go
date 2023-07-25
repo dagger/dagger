@@ -11,10 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
 	"github.com/cenkalti/backoff/v4"
+	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
@@ -60,7 +62,7 @@ type SessionParams struct {
 	CloudURLCallback   func(string)
 }
 
-// TODO: probably rename Session to something
+// TODO: probably rename Session to something like Client
 type Session struct {
 	SessionParams
 	eg             *errgroup.Group
@@ -81,10 +83,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	if s.RouterID == "" {
 		s.RouterID = identity.NewID()
 	}
-
-	// TODO:
-	fmt.Fprintf(os.Stderr, "Connecting to router %s\n", params.RouterID)
-	defer fmt.Fprintf(os.Stderr, "Connected to router %s\n", params.RouterID)
 
 	// TODO: this is only needed temporarily to work around issue w/
 	// `dagger do` and `dagger project` not picking up env set by nesting
@@ -137,11 +135,16 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 
+	workdir, err := os.Getwd()
+	if err != nil {
+		return nil, fmt.Errorf("get workdir: %w", err)
+	}
 	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
 		ClientID:        s.ID(),
 		RouterID:        s.RouterID,
 		ClientHostname:  s.hostname,
 		ParentClientIDs: s.ParentClientIDs,
+		Labels:          pipeline.LoadVCSLabels(workdir),
 	})
 
 	// filesync
@@ -157,21 +160,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
-
-	/* TODO: do we still need this? or covered serverside now?
-	// oci stores
-	ociStoreDir := filepath.Join(xdg.CacheHome, "dagger", "oci")
-	ociStore, err := local.NewStore(ociStoreDir)
-	if err != nil {
-		return nil, fmt.Errorf("new local oci store: %w", err)
-	}
-	bkSession.Allow(sessioncontent.NewAttachable(map[string]content.Store{
-		// the "oci:" prefix is actually interpreted by buildkit, not just for show
-		"oci:" + OCIStoreName: ociStore,
-	}))
-	*/
-
-	// TODO: more export attachables
 
 	// progress
 	progMultiW := progrock.MultiWriter{}
@@ -275,7 +263,7 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 		RouterID:        s.RouterID,
 		ClientHostname:  s.hostname,
 		ParentClientIDs: s.ParentClientIDs,
-	}.ToMD())
+	}.ToGRPCMD())
 }
 
 func (s *Session) Do(
@@ -386,10 +374,49 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 	dest := destVal[0]
 
+	_, isWriteStream := opts[engine.LocalDirExportWriteStreamMetaKey]
+
+	if isWriteStream {
+		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+			return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
+		}
+		// TODO: set specific permissions?
+		destF, err := os.Create(dest)
+		if err != nil {
+			return fmt.Errorf("failed to create synctarget dest file %s: %w", dest, err)
+		}
+		defer destF.Close()
+		for {
+			msg := filesync.BytesMessage{}
+			if err := stream.RecvMsg(&msg); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return err
+			}
+			if _, err := destF.Write(msg.Data); err != nil {
+				return err
+			}
+		}
+	}
+
+	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
+	_, isFileExport := opts[engine.LocalDirExportIsFileMetaKey]
+	if isFileExport {
+		if stat, err := os.Stat(dest); err == nil {
+			if stat.IsDir() {
+				if !allowParentDirPath {
+					return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
+				}
+			}
+		}
+		dest = filepath.Dir(dest)
+	}
+
 	if err := os.MkdirAll(dest, 0700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
 	}
-	return fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
+	err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
 		Merge: true,
 		Filter: func() func(string, *fstypes.Stat) bool {
 			uid := os.Getuid()
@@ -401,6 +428,10 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 			}
 		}(),
 	})
+	if err != nil {
+		return fmt.Errorf("failed to receive fs changes: %w", err)
+	}
+	return nil
 }
 
 type progRockAttachable struct {

@@ -41,7 +41,7 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
-	sess.Allow(&fileSendServerProxy{c})
+	sess.Allow(&fileSendServerProxy{c: c})
 	sess.Allow(&fileSyncServerProxy{c})
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
@@ -124,6 +124,8 @@ type importLocalDirData struct {
 type exportLocalDirData struct {
 	session bksession.Caller
 	path    string
+	// TODO: this is ugly, but buildkit uses two different message types on the same stream depending on how it's called
+	useBytesMessageType bool
 }
 
 type socketData struct {
@@ -158,10 +160,12 @@ func (c *Client) getSocketDataFromID(ctx context.Context, id string) (*socketDat
 
 // TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
 func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
-	md, ok := metadata.FromIncomingContext(stream.Context())
-	if !ok {
-		return nil, nil, fmt.Errorf("missing metadata")
+	incomingMD, incomingOk := metadata.FromIncomingContext(stream.Context())
+	outgoingMD, outgoingOk := metadata.FromOutgoingContext(stream.Context())
+	if !incomingOk && !outgoingOk {
+		return nil, nil, fmt.Errorf("no grpc metadata")
 	}
+	md := metadata.Join(incomingMD, outgoingMD)
 
 	getVal := func(key string) (string, error) {
 		vals, ok := md[key]

@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine/buildkit"
@@ -2640,7 +2641,7 @@ func TestContainerExport(t *testing.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -2750,7 +2751,6 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From("alpine:3.16.2").
 			WithExec([]string{"uname", "-m"})
-
 		variants = append(variants, ctr)
 	}
 
@@ -2764,10 +2764,29 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	entries := tarEntries(t, dest)
 	require.Contains(t, entries, "oci-layout")
-	require.Contains(t, entries, "index.json")
-
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
+
+	indexBytes := readTarFile(t, dest, "index.json")
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+	// index is nested (search "nested index" in spec here):
+	// https://github.com/opencontainers/image-spec/blob/main/image-index.md
+	nestedIndexDigest := index.Manifests[0].Digest
+	indexBytes = readTarFile(t, dest, "blobs/sha256/"+nestedIndexDigest.Encoded())
+	index = ocispecs.Index{}
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+
+	// make sure all the platforms we expected are there
+	exportedPlatforms := make(map[string]struct{})
+	for _, desc := range index.Manifests {
+		require.NotNil(t, desc.Platform)
+		exportedPlatforms[platforms.Format(*desc.Platform)] = struct{}{}
+	}
+	for platform := range platformToUname {
+		delete(exportedPlatforms, string(platform))
+	}
+	require.Empty(t, exportedPlatforms)
 }
 
 func TestContainerMultiPlatformImport(t *testing.T) {
@@ -2995,8 +3014,8 @@ func TestContainerExecError(t *testing.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stderr)
 	})
 }
 
@@ -3169,7 +3188,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	defer cancel()
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
-	// is trickier since the full list of caps is host dependent.
+	// is trickier since the full list of caps is host dependent based on the kernel version.
 	privilegedCaps := []string{
 		"cap_sys_admin",
 		"cap_net_admin",

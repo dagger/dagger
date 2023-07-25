@@ -6,14 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"runtime/debug"
+	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
-	"github.com/moby/buildkit/client"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -27,6 +28,8 @@ import (
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
+	"github.com/moby/buildkit/util/bklog"
+	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -34,14 +37,20 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+const (
+	// from buildkit, cannot change
+	entitlementsJobKey = "llb.entitlements"
+)
+
 type Opts struct {
-	Worker         bkworker.Worker
-	SessionManager *bksession.Manager
-	LLBSolver      *llbsolver.Solver
-	GenericSolver  *bksolver.Solver
-	Metadata       *engine.ClientMetadata
-	SecretStore    bksecrets.SecretStore
-	AuthProvider   *auth.RegistryAuthProvider
+	Worker                bkworker.Worker
+	SessionManager        *bksession.Manager
+	LLBSolver             *llbsolver.Solver
+	GenericSolver         *bksolver.Solver
+	SecretStore           bksecrets.SecretStore
+	AuthProvider          *auth.RegistryAuthProvider
+	PrivilegedExecEnabled bool
+	Metadata              *engine.ClientMetadata
 	// TODO: give precise definition
 	MainClientCaller bksession.Caller
 }
@@ -85,7 +94,11 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client.job = job
 	client.job.SessionID = client.ID()
 
-	// TODO: entitlements based on engine config
+	entitlementSet := entitlements.Set{}
+	if opts.PrivilegedExecEnabled {
+		entitlementSet[entitlements.EntitlementSecurityInsecure] = struct{}{}
+	}
+	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
 
@@ -153,7 +166,8 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (string, digest.Digest, []byte, error) {
 	ctx = withOutgoingContext(ctx)
-	return c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	_, digest, configBytes, err := c.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	return digest, configBytes, err
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
@@ -260,7 +274,7 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	})
 }
 
-func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *client.SolveStatus) error {
+func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveStatus) error {
 	return c.job.Status(ctx, ch)
 }
 
@@ -328,7 +342,14 @@ func (c *Client) LocalExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
 	destPath string,
+	isFile bool,
+	allowParentDirPath bool,
 ) error {
+	destPath = path.Clean(destPath)
+	if destPath == ".." || strings.HasPrefix(destPath, "../") {
+		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
+	}
+
 	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
 	if err != nil {
 		return fmt.Errorf("failed to solve for local export: %s", err)
@@ -370,11 +391,15 @@ func (c *Client) LocalExport(
 	}
 	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
 	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
+	if isFile {
+		md[engine.LocalDirExportIsFileMetaKey] = []string{"true"}
+	}
+	if allowParentDirPath {
+		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}
+	}
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
-	// TODO: could optimize by just calling relevant session methods directly, not
-	// all that much code involved
 	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
 	if err != nil {
 		return fmt.Errorf("failed to export: %s", err)
@@ -393,7 +418,7 @@ type PublishInput struct {
 func (c *Client) PublishContainerImage(
 	ctx context.Context,
 	inputByPlatform map[string]PublishInput,
-	opts map[string]string,
+	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
 	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
 	expPlatforms := &exptypes.Platforms{
@@ -478,6 +503,133 @@ func (c *Client) PublishContainerImage(
 	if descRef != nil {
 		descRef.Release()
 	}
+	return resp, nil
+}
+
+// TODO: dedupe w/ above
+func (c *Client) ExportContainerImage(
+	ctx context.Context,
+	inputByPlatform map[string]PublishInput, //TODO: publish input as a name makes no sense anymore
+	destPath string,
+	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
+) (map[string]string, error) {
+	destPath = path.Clean(destPath)
+	if destPath == ".." || strings.HasPrefix(destPath, "../") {
+		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
+	}
+
+	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
+	expPlatforms := &exptypes.Platforms{
+		Platforms: make([]exptypes.Platform, 0, len(inputByPlatform)),
+	}
+	// TODO: probably faster to do this in parallel for each platform
+	for platformString, input := range inputByPlatform {
+		// TODO: add util for turning into cacheRes, dedupe w/ above
+		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
+		if err != nil {
+			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
+		}
+		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
+			res, err := rf.Result(ctx)
+			if err != nil {
+				return nil, err
+			}
+			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
+			if !ok {
+				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
+			}
+			return workerRef.ImmutableRef, nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result: %s", err)
+		}
+		ref, err := cacheRes.SingleRef()
+		if err != nil {
+			return nil, err
+		}
+
+		platform, err := platforms.Parse(platformString)
+		if err != nil {
+			return nil, err
+		}
+		cfgBytes, err := json.Marshal(specs.Image{
+			Platform: specs.Platform{
+				Architecture: platform.Architecture,
+				OS:           platform.OS,
+				OSVersion:    platform.OSVersion,
+				OSFeatures:   platform.OSFeatures,
+			},
+			Config: input.Config,
+		})
+		if err != nil {
+			return nil, err
+		}
+		if len(inputByPlatform) == 1 {
+			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
+			combinedResult.SetRef(ref)
+		} else {
+			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
+			expPlatforms.Platforms = append(expPlatforms.Platforms, exptypes.Platform{
+				ID:       platformString,
+				Platform: platform,
+			})
+			combinedResult.AddRef(platformString, ref)
+		}
+	}
+	if len(combinedResult.Refs) > 1 {
+		platformBytes, err := json.Marshal(expPlatforms)
+		if err != nil {
+			return nil, err
+		}
+		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
+	}
+
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("exporting res with metadata %+v", combinedResult.Metadata)
+	bklog.G(ctx).Debugf("exporting res with platforms %s", string(combinedResult.Metadata[exptypes.ExporterPlatformsKey]))
+	bklog.G(ctx).Debugf("exporting res with refs %d(%+v)", len(combinedResult.Refs), combinedResult.Refs)
+
+	exporterName := bkclient.ExporterDocker
+	if len(combinedResult.Refs) > 1 {
+		exporterName = bkclient.ExporterOCI
+	}
+
+	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
+	if err != nil {
+		return nil, err
+	}
+
+	expInstance, err := exporter.Resolve(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
+	}
+
+	// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
+	// TODO: This probably doesn't entirely work yet in the case where the combined result is still
+	// lazy and relies on other session resources to be evaluated. Fix that if merging before upstream
+	// fix in place.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	sess, err := c.newFileSendServerProxySession(ctx, destPath)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, descRef, err := expInstance.Export(ctx, combinedResult, sess.ID())
+	if err != nil {
+		return nil, fmt.Errorf("failed to export: %s", err)
+	}
+	if descRef != nil {
+		descRef.Release()
+	}
+	// TODO:
+	// TODO:
+	// TODO:
+	// TODO:
+	bklog.G(ctx).Debugf("exporting res response %+v", resp)
 	return resp, nil
 }
 

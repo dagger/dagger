@@ -25,6 +25,7 @@ import (
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1375,12 +1376,12 @@ func (container *Container) Publish(
 		mediaTypes = OCIMediaTypes
 	}
 
-	// TODO: the previous implementation did an extra marshal using the containers platform, not sure if needed
 	inputByPlatform := map[string]buildkit.PublishInput{}
 	id, err := container.ID()
 	if err != nil {
 		return "", err
 	}
+	services := ServiceBindings{}
 	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
 		variant, err := variantID.ToContainer()
 		if err != nil {
@@ -1389,16 +1390,24 @@ func (container *Container) Publish(
 		if variant.FS == nil {
 			continue
 		}
+		st, err := variant.FSState()
+		if err != nil {
+			return "", err
+		}
+		def, err := st.Marshal(ctx, llb.Platform(variant.Platform))
+		if err != nil {
+			return "", err
+		}
 
 		platformString := platforms.Format(variant.Platform)
 		if _, ok := inputByPlatform[platformString]; ok {
 			return "", fmt.Errorf("duplicate platform %q", platformString)
 		}
 		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
-			Definition: variant.FS,
+			Definition: def.ToPB(),
 			Config:     container.Config,
 		}
-		// TODO: merge services
+		services.Merge(variant.Services)
 	}
 	if len(inputByPlatform) == 0 {
 		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
@@ -1415,10 +1424,13 @@ func (container *Container) Publish(
 		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
 	}
 
-	resp, err := bk.PublishContainerImage(ctx, inputByPlatform, opts)
+	resp, err := WithServices(ctx, bk, services, func() (map[string]string, error) {
+		return bk.PublishContainerImage(ctx, inputByPlatform, opts)
+	})
 	if err != nil {
 		return "", err
 	}
+
 	refName, err := reference.ParseNormalizedNamed(ref)
 	if err != nil {
 		return "", err
@@ -1444,13 +1456,82 @@ func (container *Container) Publish(
 
 func (container *Container) Export(
 	ctx context.Context,
-	host *Host,
+	bk *buildkit.Client,
 	dest string,
 	platformVariants []ContainerID,
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	panic("reimplement container export")
+	// TODO: de-dupe w/ Publish
+	// TODO: wrap in services, including merging platformVariants
+
+	if mediaTypes == "" {
+		// Modern registry implementations support oci types and docker daemons
+		// have been capable of pulling them since 2018:
+		// https://github.com/moby/moby/pull/37359
+		// So they are a safe default.
+		mediaTypes = OCIMediaTypes
+	}
+
+	// TODO: the previous implementation did an extra marshal using the containers platform, not sure if needed
+	inputByPlatform := map[string]buildkit.PublishInput{}
+	id, err := container.ID()
+	if err != nil {
+		return err
+	}
+	services := ServiceBindings{}
+	for _, variantID := range append([]ContainerID{id}, platformVariants...) {
+		variant, err := variantID.ToContainer()
+		if err != nil {
+			return err
+		}
+		if variant.FS == nil {
+			continue
+		}
+		st, err := variant.FSState()
+		if err != nil {
+			return err
+		}
+
+		// TODO:
+		// TODO:
+		// TODO:
+		// TODO:
+		bklog.G(ctx).Debugf("exporting container with platform %+v", variant.Platform)
+
+		def, err := st.Marshal(ctx, llb.Platform(variant.Platform))
+		if err != nil {
+			return err
+		}
+
+		platformString := platforms.Format(variant.Platform)
+		if _, ok := inputByPlatform[platformString]; ok {
+			return fmt.Errorf("duplicate platform %q", platformString)
+		}
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
+			Definition: def.ToPB(),
+			Config:     container.Config,
+		}
+		services.Merge(variant.Services)
+	}
+	if len(inputByPlatform) == 0 {
+		// Could also just ignore and do nothing, airing on side of error until proven otherwise.
+		return errors.New("no containers to export")
+	}
+
+	opts := map[string]string{
+		"tar":                           strconv.FormatBool(true),
+		string(exptypes.OptKeyOCITypes): strconv.FormatBool(mediaTypes == OCIMediaTypes),
+	}
+	if forcedCompression != "" {
+		opts[string(exptypes.OptKeyLayerCompression)] = strings.ToLower(string(forcedCompression))
+		opts[string(exptypes.OptKeyForceCompression)] = strconv.FormatBool(true)
+	}
+
+	_, err = WithServices(ctx, bk, services, func() (map[string]string, error) {
+		return bk.ExportContainerImage(ctx, inputByPlatform, dest, opts)
+	})
+	return err
 }
 
 var importCache = newCacheMap[uint64, *specs.Descriptor]()
@@ -1496,7 +1577,8 @@ func (container *Container) Import(
 		return resolveIndex(ctx, store, desc, container.Platform, tag)
 	}
 
-	key := cacheKey(file, tag)
+	// TODO: seems ineffecient to recompute for each platform, but do need to get platform-specific manifest stil..
+	key := cacheKey(file, tag, container.Platform)
 
 	manifestDesc, err := importCache.GetOrInitialize(key, loadManifest)
 	if err != nil {

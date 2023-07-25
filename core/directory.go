@@ -595,13 +595,10 @@ func (dir *Directory) Export(
 		defPB = dir.LLB
 	}
 
-	detach, _, err := StartServices(ctx, bk, dir.Services)
-	if err != nil {
-		return err
-	}
-	defer detach()
-
-	return bk.LocalExport(ctx, defPB, destPath)
+	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
+		return nil, bk.LocalExport(ctx, defPB, destPath, false, false)
+	})
+	return err
 }
 
 // Root removes any relative path from the directory.
