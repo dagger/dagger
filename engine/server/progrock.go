@@ -39,7 +39,8 @@ func (g recordingGateway) ResolveImageConfig(ctx context.Context, ref string, op
 
 	rec.Join(digest.FromString(id))
 
-	return g.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	_, digest, configBytes, err := g.llbBridge.ResolveImageConfig(ctx, ref, opt)
+	return digest, configBytes, err
 }
 
 // Solve records the vertexes of the definition and frontend inputs as members

@@ -230,19 +230,7 @@ func (file *File) Export(
 	dest string,
 	allowParentDirPath bool,
 ) error {
-	/* TODO: reimplement support for allowParentDirPath being false, need to pass setting to client and enforce there
-	if stat, err := os.Stat(dest); err == nil {
-		if stat.IsDir() {
-			if !allowParentDirPath {
-				return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
-			}
-			dest = filepath.Join(dest, filepath.Base(file.File))
-		}
-	}
-	*/
-
 	destFilename := filepath.Base(dest)
-	destDir := filepath.Dir(dest)
 
 	src, err := file.State()
 	if err != nil {
@@ -256,7 +244,7 @@ func (file *File) Export(
 		if err != nil {
 			return nil, err
 		}
-		err = bk.LocalExport(ctx, def.ToPB(), destDir)
+		err = bk.LocalExport(ctx, def.ToPB(), dest, true, allowParentDirPath)
 		return nil, err
 	})
 	return err
