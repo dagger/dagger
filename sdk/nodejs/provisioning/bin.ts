@@ -55,7 +55,7 @@ export class Bin implements EngineConn {
   async Connect(opts: ConnectOpts): Promise<Client> {
     if (!this.binPath) {
       if (opts.LogOutput) {
-        opts.LogOutput.write("CLI not found, downloading it... ")
+        opts.LogOutput.write("Downloading CLI... ")
       }
 
       this.binPath = await this.downloadCLI()

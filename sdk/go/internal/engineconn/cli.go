@@ -66,7 +66,7 @@ func FromDownloadedCLI(ctx context.Context, cfg *Config) (EngineConn, error) {
 
 	if _, err := os.Stat(binPath); os.IsNotExist(err) {
 		if cfg.LogOutput != nil {
-			fmt.Fprintf(cfg.LogOutput, "CLI not found, downloading it... ")
+			fmt.Fprintf(cfg.LogOutput, "Downloading CLI... ")
 		}
 
 		tmpbin, err := os.CreateTemp(cacheDir, "temp-"+binName)
