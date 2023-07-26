@@ -323,7 +323,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 	container.FS = def.ToPB()
 
 	// associate vertexes to the 'from' sub-pipeline
-	RecordVertexes(subRecorder, container.FS)
+	buildkit.RecordVertexes(subRecorder, container.FS)
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = digested.String()
@@ -451,7 +451,7 @@ func (container *Container) buildUncached(
 		}
 
 		// associate vertexes to the 'docker build' sub-pipeline
-		RecordVertexes(subRecorder, def.ToPB())
+		buildkit.RecordVertexes(subRecorder, def.ToPB())
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1036,7 +1036,7 @@ func metaMount(stdin string) (llb.State, string) {
 
 	return llb.Scratch().File(
 			meta,
-			llb.WithCustomName(internalPrefix+"creating dagger metadata"),
+			llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata"),
 		),
 		buildkit.MetaSourcePath
 }
@@ -1065,7 +1065,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	var namef string
 	if container.Focused {
-		namef = focusPrefix + "exec %s"
+		namef = buildkit.FocusPrefix + "exec %s"
 	} else {
 		namef = "exec %s"
 	}

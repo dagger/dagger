@@ -65,9 +65,9 @@ func NewRouter(
 	}
 
 	progSockPath := fmt.Sprintf("/run/dagger/router-progrock-%s.sock", routerID)
-	progWriter, progCleanup, err := progrockForwarder(progSockPath, progrock.MultiWriter{
+	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
 		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
-		progrockLogrusWriter{},
+		buildkit.ProgrockLogrusWriter{},
 	})
 	if err != nil {
 		return nil, err
@@ -103,7 +103,7 @@ func NewRouter(
 			if !ok {
 				return
 			}
-			err := rtr.recorder.Record(bk2progrock(status))
+			err := rtr.recorder.Record(buildkit.BK2Progrock(status))
 			if err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to record status update")
 				return

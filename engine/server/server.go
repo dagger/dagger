@@ -28,7 +28,6 @@ import (
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
-	"github.com/moby/buildkit/worker"
 	bkworker "github.com/moby/buildkit/worker"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
@@ -57,9 +56,8 @@ type Server struct {
 	gcmu        sync.Mutex
 }
 
-// TODO: make your own Opt
 type ServerOpts struct {
-	WorkerController       *worker.Controller
+	WorkerController       *bkworker.Controller
 	SessionManager         *session.Manager
 	CacheManager           solver.CacheManager
 	ContentStore           *containerdsnapshot.Store
@@ -380,6 +378,7 @@ func (e *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control_P
 func (e *Server) Info(ctx context.Context, r *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
 	return &controlapi.InfoResponse{
 		BuildkitVersion: &apitypes.BuildkitVersion{
+			Package: e.EngineName,
 			Version: engine.Version,
 		},
 	}, nil

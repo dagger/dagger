@@ -106,6 +106,7 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
+	client.llbBridge = recordingGateway{client.llbBridge}
 
 	return client, nil
 }
@@ -413,7 +414,12 @@ type LocalImportOpts struct {
 	Path          string `json:"path,omitempty"`
 }
 
-func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.LocalOption) (llb.State, error) {
+func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb.LocalOption) (llb.State, error) {
+	srcPath = path.Clean(srcPath)
+	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
+		return llb.State{}, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
+	}
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return llb.State{}, err
@@ -428,7 +434,7 @@ func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.Lo
 		// a new local dir from another session, you can only be passed one
 		// from another session already created).
 		OwnerClientID: clientMetadata.ClientID,
-		Path:          path,
+		Path:          srcPath,
 	})
 	if err != nil {
 		return llb.State{}, err
@@ -436,7 +442,7 @@ func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.Lo
 	name := base64.URLEncoding.EncodeToString(nameBytes)
 
 	opts = append(opts,
-		// synchronize concurrent filesyncs for the same path
+		// synchronize concurrent filesyncs for the same srcPath
 		llb.SharedKeyHint(name),
 		llb.SessionID(c.ID()),
 	)

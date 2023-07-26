@@ -1,22 +1,26 @@
-package server
+package buildkit
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/containerd/containerd/platforms"
-	"github.com/dagger/dagger/core"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/frontend"
+	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+const FocusPrefix = "[focus] "
+const InternalPrefix = "[internal] "
 
 type recordingGateway struct {
 	llbBridge frontend.FrontendLLBBridge
@@ -48,7 +52,7 @@ func (g recordingGateway) Solve(ctx context.Context, req frontend.SolveRequest, 
 	rec := progrock.RecorderFromContext(ctx)
 
 	if req.Definition != nil {
-		core.RecordVertexes(rec, req.Definition)
+		RecordVertexes(rec, req.Definition)
 	}
 
 	for _, input := range req.FrontendInputs {
@@ -58,7 +62,7 @@ func (g recordingGateway) Solve(ctx context.Context, req frontend.SolveRequest, 
 			continue
 		}
 
-		core.RecordVertexes(rec, input)
+		RecordVertexes(rec, input)
 	}
 
 	return g.llbBridge.Solve(ctx, req, sessionID)
@@ -68,9 +72,9 @@ func (g recordingGateway) Warn(ctx context.Context, dgst digest.Digest, msg stri
 	return g.llbBridge.Warn(ctx, dgst, msg, opts)
 }
 
-type progrockLogrusWriter struct{}
+type ProgrockLogrusWriter struct{}
 
-func (w progrockLogrusWriter) WriteStatus(ev *progrock.StatusUpdate) error {
+func (w ProgrockLogrusWriter) WriteStatus(ev *progrock.StatusUpdate) error {
 	l := bklog.G(context.TODO())
 	for _, vtx := range ev.Vertexes {
 		l = l.WithField("vertex-"+vtx.Id, vtx)
@@ -85,11 +89,11 @@ func (w progrockLogrusWriter) WriteStatus(ev *progrock.StatusUpdate) error {
 	return nil
 }
 
-func (w progrockLogrusWriter) Close() error {
+func (w ProgrockLogrusWriter) Close() error {
 	return nil
 }
 
-func progrockForwarder(sockPath string, w progrock.Writer) (progrock.Writer, func() error, error) {
+func ProgrockForwarder(sockPath string, w progrock.Writer) (progrock.Writer, func() error, error) {
 	if err := os.MkdirAll(filepath.Dir(sockPath), 0700); err != nil {
 		return nil, nil, err
 	}
@@ -106,7 +110,33 @@ func progrockForwarder(sockPath string, w progrock.Writer) (progrock.Writer, fun
 	return progW, l.Close, nil
 }
 
-func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
+func RecordVertexes(recorder *progrock.Recorder, def *pb.Definition) {
+	dgsts := []digest.Digest{}
+	for dgst, meta := range def.Metadata {
+		_ = meta
+		if meta.ProgressGroup != nil {
+			// Regular progress group, i.e. from Dockerfile; record it as a subgroup,
+			// with 'weak' annotation so it's distinct from user-configured
+			// pipelines.
+			recorder.WithGroup(meta.ProgressGroup.Name, progrock.Weak()).Join(dgst)
+		} else {
+			dgsts = append(dgsts, dgst)
+		}
+	}
+
+	recorder.Join(dgsts...)
+}
+
+func RecordBuildkitStatus(rec *progrock.Recorder, solveCh <-chan *bkclient.SolveStatus) error {
+	for ev := range solveCh {
+		if err := rec.Record(BK2Progrock(ev)); err != nil {
+			return fmt.Errorf("record: %w", err)
+		}
+	}
+	return nil
+}
+
+func BK2Progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	var status progrock.StatusUpdate
 	for _, v := range event.Vertexes {
 		vtx := &progrock.Vertex{
@@ -114,9 +144,13 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 			Name:   v.Name,
 			Cached: v.Cached,
 		}
-		if strings.HasPrefix(v.Name, "[internal] ") {
+		if strings.HasPrefix(v.Name, InternalPrefix) {
 			vtx.Internal = true
-			vtx.Name = strings.TrimPrefix(v.Name, "[internal] ")
+			vtx.Name = strings.TrimPrefix(v.Name, InternalPrefix)
+		}
+		if strings.HasPrefix(v.Name, FocusPrefix) {
+			vtx.Focused = true
+			vtx.Name = strings.TrimPrefix(v.Name, FocusPrefix)
 		}
 		for _, input := range v.Inputs {
 			vtx.Inputs = append(vtx.Inputs, input.String())
