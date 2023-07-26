@@ -2643,6 +2643,7 @@ export class Host extends BaseClient {
   /**
    * Accesses an environment variable on the host.
    * @param name Name of the environment variable (e.g., "PATH").
+   * @deprecated Use your language's standard library for reading environment variables instead.
    */
   envVariable(name: string): HostVariable {
     return new HostVariable({

@@ -1919,6 +1919,8 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 }
 
 // Accesses an environment variable on the host.
+//
+// Deprecated: Use your language's standard library for reading environment variables instead.
 func (r *Host) EnvVariable(name string) *HostVariable {
 	q := r.q.Select("envVariable")
 	q = q.Arg("name", name)

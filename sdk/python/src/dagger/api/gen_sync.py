@@ -2333,11 +2333,21 @@ class Host(Type):
     def env_variable(self, name: str) -> "HostVariable":
         """Accesses an environment variable on the host.
 
+        .. deprecated::
+            Use your language's standard library for reading environment
+            variables instead.
+
         Parameters
         ----------
         name:
             Name of the environment variable (e.g., "PATH").
         """
+        warnings.warn(
+            'Method "env_variable" is deprecated: Use your language\'s standard library'
+            " for reading environment variables instead.",
+            DeprecationWarning,
+            stacklevel=4,
+        )
         _args = [
             Arg("name", name),
         ]
