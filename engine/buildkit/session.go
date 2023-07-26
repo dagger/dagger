@@ -198,7 +198,7 @@ func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Conte
 		if err != nil {
 			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
 		}
-		var opts localImportOpts
+		var opts LocalImportOpts
 		if err := json.Unmarshal(jsonBytes, &opts); err != nil {
 			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
 		}

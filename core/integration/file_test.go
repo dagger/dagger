@@ -124,7 +124,7 @@ func TestFileExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	file := c.Container().From("alpine:3.16.2").File("/etc/alpine-release")
+	file := c.Container().From(alpineImage).File("/etc/alpine-release")
 
 	t.Run("to absolute path", func(t *testing.T) {
 		dest := filepath.Join(targetDir, "some-file")
@@ -135,7 +135,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(dest)
 		require.NoError(t, err)
-		require.Equal(t, "3.16.2\n", string(contents))
+		require.Equal(t, "3.18.2\n", string(contents))
 
 		entries, err := ls(targetDir)
 		require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestFileExport(t *testing.T) {
 
 		contents, err := os.ReadFile(filepath.Join(wd, "some-file"))
 		require.NoError(t, err)
-		require.Equal(t, "3.16.2\n", string(contents))
+		require.Equal(t, "3.18.2\n", string(contents))
 
 		entries, err := ls(wd)
 		require.NoError(t, err)
@@ -188,7 +188,7 @@ func TestFileWithTimestamps(t *testing.T) {
 		WithTimestamps(int(reallyImportantTime.Unix()))
 
 	ls, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithMountedFile("/file", file).
 		WithEnvVariable("RANDOM", identity.NewID()).
 		WithExec([]string{"stat", "/file"}).
@@ -222,7 +222,7 @@ func TestFileContents(t *testing.T) {
 		for i := 0; i < testFile.size; i++ {
 			buf.WriteByte('a')
 		}
-		err := os.WriteFile(dest, buf.Bytes(), 0600)
+		err := os.WriteFile(dest, buf.Bytes(), 0o600)
 		require.NoError(t, err)
 
 		// Compute and store hash for generated test data:
@@ -231,7 +231,7 @@ func TestFileContents(t *testing.T) {
 
 	hostDir := c.Host().Directory(tempDir)
 	alpine := c.Container().
-		From("alpine:3.16.2").WithDirectory(".", hostDir)
+		From(alpineImage).WithDirectory(".", hostDir)
 
 	// Grab file contents and compare hashes to validate integrity:
 	for i, testFile := range testFiles {
@@ -261,7 +261,7 @@ func TestFileSync(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file")
 
-		_, err = c.Container().From("alpine:3.16.2").File("/bar").Sync(ctx)
+		_, err = c.Container().From(alpineImage).File("/bar").Sync(ctx)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "no such file")
 	})

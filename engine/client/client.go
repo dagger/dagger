@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -70,9 +71,10 @@ type Session struct {
 
 	Recorder *progrock.Recorder
 
-	httpClient *http.Client
-	bkClient   *bkclient.Client
-	bkSession  *bksession.Session
+	httpClient           *http.Client
+	bkClient             *bkclient.Client
+	bkSession            *bksession.Session
+	upstreamCacheOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
 }
@@ -99,6 +101,20 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	}()
 	s.internalCancel = internalCancel
 	s.eg, internalCtx = errgroup.WithContext(internalCtx)
+
+	// Check if any of the upstream cache importers/exporters are enabled.
+	// Note that this is not the cache service support in engine/cache/, that
+	// is a different feature which is configured in the engine daemon.
+	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
+	if err != nil {
+		return nil, fmt.Errorf("cache config from env: %w", err)
+	}
+	if cacheConfigType != "" {
+		s.upstreamCacheOptions = []*controlapi.CacheOptionsEntry{{
+			Type:  cacheConfigType,
+			Attrs: cacheConfigAttrs,
+		}}
+	}
 
 	remote, err := url.Parse(s.RunnerHost)
 	if err != nil {
@@ -197,7 +213,12 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	// start the router if it's not already running, client+router ID are
 	// passed through grpc context
 	s.eg.Go(func() error {
-		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{})
+		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{
+			Cache: controlapi.CacheOptions{
+				// Exports are handled in Close
+				Imports: s.upstreamCacheOptions,
+			},
+		})
 		return err
 	})
 
@@ -224,13 +245,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(ctx, bo.NextBackOff())
 		defer cancel()
-		err := s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
-		if err != nil {
-			// TODO:
-			fmt.Fprintf(os.Stderr, "connect err: %v\n", err)
-		}
-		return err
-	}, backoff.WithContext(bo, ctx))
+		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+	}, backoff.WithContext(bo, ctx)) // TODO: this stops if context is canceled right?
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}
@@ -238,9 +254,31 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	return s, nil
 }
 
-func (s *Session) Close() error {
+func (s *Session) Close() (rerr error) {
+	if len(s.upstreamCacheOptions) > 0 {
+		// TODO: cancelable context here?
+		ctx := engine.ContextWithClientMetadata(context.TODO(), &engine.ClientMetadata{
+			ClientID:       s.ID(),
+			RouterID:       s.RouterID,
+			ClientHostname: s.hostname,
+		})
+		_, err := s.bkClient.ControlClient().Solve(ctx, &controlapi.SolveRequest{
+			Cache: controlapi.CacheOptions{
+				Exports: s.upstreamCacheOptions,
+			},
+		})
+		// TODO:
+		// TODO:
+		// TODO:
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "cache export err: %v\n", err)
+		}
+		rerr = errors.Join(rerr, err)
+	}
+
 	// mark all groups completed
 	// close the recorder so the UI exits
+	// TODO: should this be done after session confirmed close instead?
 	s.Recorder.Complete()
 	s.Recorder.Close()
 
@@ -248,9 +286,11 @@ func (s *Session) Close() error {
 		s.internalCancel()
 		s.bkSession.Close()
 		s.bkClient.Close()
-		return s.eg.Wait()
+		if err := s.eg.Wait(); err != nil {
+			rerr = errors.Join(rerr, err)
+		}
 	}
-	return nil
+	return
 }
 
 func (s *Session) ID() string {
@@ -440,4 +480,35 @@ type progRockAttachable struct {
 
 func (a progRockAttachable) Register(srv *grpc.Server) {
 	progrock.RegisterProgressServiceServer(srv, progrock.NewRPCReceiver(a.writer))
+}
+
+const (
+	cacheConfigEnvName = "_EXPERIMENTAL_DAGGER_CACHE_CONFIG"
+)
+
+func cacheConfigFromEnv() (string, map[string]string, error) {
+	envVal, ok := os.LookupEnv(cacheConfigEnvName)
+	if !ok {
+		return "", nil, nil
+	}
+
+	// env is in form k1=v1,k2=v2,...
+	kvs := strings.Split(envVal, ",")
+	if len(kvs) == 0 {
+		return "", nil, nil
+	}
+	attrs := make(map[string]string)
+	for _, kv := range kvs {
+		parts := strings.SplitN(kv, "=", 2)
+		if len(parts) != 2 {
+			return "", nil, fmt.Errorf("invalid form for cache config %q", kv)
+		}
+		attrs[parts[0]] = parts[1]
+	}
+	typeVal, ok := attrs["type"]
+	if !ok {
+		return "", nil, fmt.Errorf("missing type in cache config: %q", envVal)
+	}
+	delete(attrs, "type")
+	return typeVal, attrs, nil
 }

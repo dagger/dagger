@@ -2,13 +2,16 @@ package core
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/identity"
@@ -291,7 +294,7 @@ func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Dige
 	return nil
 }
 
-func stabilizeOp(op *pb.Op) bool {
+func stabilizeOp(op *pb.Op) (bool, error) {
 	var modified bool
 
 	if src := op.GetSource(); src != nil {
@@ -304,6 +307,18 @@ func stabilizeOp(op *pb.Op) bool {
 				modified = true
 			}
 		}
+		if _, name, ok := strings.Cut(src.Identifier, "local://"); ok {
+			var opts buildkit.LocalImportOpts
+			jsonBytes, err := base64.URLEncoding.DecodeString(name)
+			if err != nil {
+				return false, fmt.Errorf("invalid import local dir name: %q", name)
+			}
+			if err := json.Unmarshal(jsonBytes, &opts); err != nil {
+				return false, fmt.Errorf("invalid import local dir name: %q", name)
+			}
+			src.Identifier = "local://" + opts.Path
+			modified = true
+		}
 	}
 
 	if exe := op.GetExec(); exe != nil {
@@ -313,5 +328,5 @@ func stabilizeOp(op *pb.Op) bool {
 		}
 	}
 
-	return modified
+	return modified, nil
 }

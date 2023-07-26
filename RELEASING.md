@@ -4,8 +4,8 @@ This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
 - [🐹 Go SDK ⏱ `7mins`](#-go-sdk--7mins)
-- [🐍 Python SDK ⏱ `7mins`](#-python-sdk--7mins)
-- [⬢ Node.js SDK ⏱ `7mins`](#-nodejs-sdk--7mins)
+- [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
+- [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
@@ -61,8 +61,8 @@ preferably a few days in advance so that they can react. We do this by:
 
 - [ ] Create a new post in [Discord
   #ask-the-team](https://discord.com/channels/707636530424053791/1098872348570038322),
-  e.g. [`v0.5.3 release - May 18,
-  2023`](https://discord.com/channels/707636530424053791/1108451145258635366/1108451145258635366)
+  e.g. [`v0.6.4 release - July 19,
+  2023`](https://discord.com/channels/707636530424053791/1129488211299815464)
 
 This allows others to weigh in whether:
 - we should go for a patch / minor bump
@@ -91,9 +91,8 @@ In order to keep this relevant & accurate, we improve this doc during the
 release process. It's the best time to pause, observe how it all fits together,
 and improve it. We want small, constant improvements which compound. Therefore:
 
-- [ ] Open this doc in your code editor. As you go through these steps, toggle
-  them - `[x] -> [ ]` or `[ ] -> [x]` **and also** edit the parts which could
-  be better. As inspiration, [see the PR for these
+- [ ] Open this doc in your code editor. As you go through these steps, edit
+  the parts which could be better. As inspiration, [see the PR for these
   changes](https://github.com/dagger/dagger/pull/5056).
 - [ ] Update the date in the shields.io badge, first line in this file.
 
@@ -149,17 +148,35 @@ This will kick off
 After the `publish` job in this workflow passes, a new `draft` PR will
 automatically be created to bump the Engine version in the various SDKs.
 
+- [ ] Run `export CHANGIE_ENGINE_VERSION=${ENGINE_VERSION:?must be set}` so
+  that the release changelog will be correctly generated.
+- [ ] Checkout this branch locally & generate changelogs for all SDKs:
+
+```console
+git fetch origin
+git checkout bump-engine
+
+cd sdk/go
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie batch patch
+changie merge
+
+cd ../python
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie batch patch
+changie merge
+
+cd ../nodejs
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie batch patch
+changie merge
+```
+
 - [ ] `10mins` Open this draft PR in
   [github.com/dagger/dagger/pulls](https://github.com/dagger/dagger/pulls) &
   click on **Ready to review** so that all checks run.
 - [ ] **After all checks pass**, merge this PR. Tip: go to the **Files
   changed** tab on the PR to review without an explicit request.
-- [ ] Go to the [newly created release on
-  GitHub](https://github.com/dagger/dagger/releases/latest)
-- [ ] Click on **✏️ Edit** & then paste the release notes from the matching
-  `.changes/<ENGINE_VERSION>.md`
-- [ ] Check that release notes look good in `Preview`
-- [ ] Click on **Update release**
 
 
 
@@ -175,24 +192,15 @@ automatically be created to bump the Engine version in the various SDKs.
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-
-- [ ] Run `export CHANGIE_ENGINE_VERSION=${ENGINE_VERSION:?must be set}` so
-  that the release changelog will be correctly generated.
 - [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, create
-  `.changes/<GO_SDK_VERSION>.md` by either running `changie batch patch` (or
-  `changie batch minor` if this is a new minor) from within `sdk/go`.
-  `GO_SDK_VERSION` will be automatically generated. If you do not have
-  `changie` installed, see https://changie.dev
-- [ ] Update the SDK `CHANGELOG.md` by running `changie merge`
-- [ ] Now that we have the release changelog, run the following:
+- [ ] Tag & publish:
 
 ```console
-# e.g. cd sdk/go && export GO_SDK_VERSION=$(changie latest)
 # git show --summary
 # e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
+# e.g. cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin "sdk/go/${GO_SDK_VERSION:?must be set}"
 ```
@@ -214,6 +222,7 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
 ```console
 cd internal/mage
 go get -u dagger.io/dagger
+go mod tidy
 
 # Check that everything works as expected:
 go run main.go -w ../.. engine:lint
@@ -229,7 +238,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/go/$GO_SDK_VERSION \
-    --notes-file .changes/$GO_SDK_VERSION.md
+    --notes-file sdk/go/.changes/$GO_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`
@@ -238,7 +247,7 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 
 
 
-## 🐍 Python SDK ⏱ `7mins`
+## 🐍 Python SDK ⏱ `5mins`
 
 - [ ] ⚠️ Ensure that all SDKs have the same Engine version
 
@@ -250,24 +259,16 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-- [ ] Run `export CHANGIE_ENGINE_VERSION=${ENGINE_VERSION:?must be set}` so
-  that the release changelog will be correctly generated.
 - [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, create
-  `.changes/<PYTHON_SDK_VERSION>.md` by either running `changie batch patch`
-  (or `changie batch minor` if this is a new minor) from within `sdk/python`.
-  `PYTHON_SDK_VERSION` will be automatically generated. If you do not have
-  `changie` installed, see https://changie.dev
-- [ ] Update the SDK `CHANGELOG.md` by running `changie merge`
-- [ ] Now that we have the release changelog, run the following:
+- [ ] Tag & publish:
 
 
 ```console
-# e.g. cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest)
 # git show --summary
 # e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
+# e.g. cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/python/${PYTHON_SDK_VERSION}
 ```
@@ -286,16 +287,17 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/python/$PYTHON_SDK_VERSION \
-    --notes-file .changes/$PYTHON_SDK_VERSION.md
+    --notes-file sdk/python/.changes/$PYTHON_SDK_VERSION.md
 ```
 
-- [ ] Check that release notes look good in `Preview`
 - [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Check that release notes look good in `Preview`. FWIW:
+  https://readthedocs.org/projects/dagger-io/builds/
 - [ ] Click on **Publish release**
 
 
 
-## ⬢ Node.js SDK ⏱ `7mins`
+## ⬢ Node.js SDK ⏱ `5mins`
 
 - [ ] ⚠️ Ensure that all SDKs have the same Engine version
 
@@ -307,22 +309,14 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
 > not be able to use multiple SDKs at the same time if the Engine version that
 > they reference differs.
 
-- [ ] Run `export CHANGIE_ENGINE_VERSION=${ENGINE_VERSION:?must be set}` so
-  that the release changelog will be correctly generated.
 - [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
   branch that you are about to release. This will usually be the commit that
   bumps the Engine version, the one that you merged earlier.
-- [ ] When you have confirmed that all checks are green, create
-  `.changes/<NODEJS_SDK_VERSION>.md` by either running `changie batch patch`
-  (or `changie batch minor` if this is a new minor) from within `sdk/nodejs`.
-  `NODEJS_SDK_VERSION` will be automatically generated. If you do not have
-  `changie` installed, see https://changie.dev
-- [ ] Update the SDK `CHANGELOG.md` by running `changie merge`
-- [ ] Now that we have the release changelog, run the following:
+- [ ] Tag & publish:
 
 
 ```console
-# e.g. cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest)
+# e.g. cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
 # git show --summary
 # e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
@@ -343,7 +337,7 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 ```console
 gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/nodejs/$NODEJS_SDK_VERSION \
-    --notes-file .changes/$NODEJS_SDK_VERSION.md
+    --notes-file sdk/nodejs/.changes/$NODEJS_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`
@@ -428,3 +422,12 @@ Follow these steps to retrieve and verify the Playground Dagger version:
 3. Click the **Execute query** button
 4. Click in the `/playgrounds` POST request row in the **Network** tab
 5. Verify that the `x-dagger-engine` response header commit value matches the `ENGINE_GIT_SHA` value from the beginning of this guide
+
+
+## Last step
+
+- [ ] When all the above done, remember to open a PR with all the changes as a
+  result of going through these steps. Here is an example:
+  https://github.com/dagger/dagger/pull/5490
+- [ ] Remember to toggle all the checkboxes back to `[ ]` - in `*vim` it's just
+  a matter of running `:%s/\[x/\[ `

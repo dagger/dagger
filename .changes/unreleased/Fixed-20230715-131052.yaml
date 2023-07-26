@@ -1,0 +1,6 @@
+kind: Fixed
+body: Bump engine alpine version to fix service DNS resolution
+time: 2023-07-15T13:10:52.157510517-03:00
+custom:
+  Author: marcosnils
+  PR: "5470"

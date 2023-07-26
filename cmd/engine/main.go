@@ -622,7 +622,14 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 	case "fd":
 		return listenFD(listenAddr, tlsConfig)
 	case "tcp":
-		l, err := net.Listen("tcp", listenAddr)
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		// TODO: maybe but think more
+		l, err := net.Listen("tcp4", listenAddr)
 		if err != nil {
 			return nil, err
 		}

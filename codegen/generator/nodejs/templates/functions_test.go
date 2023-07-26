@@ -13,7 +13,8 @@ var currentSchema *introspection.Schema
 
 func init() {
 	ctx := context.Background()
-	currentSchema, err := generator.Introspect(ctx)
+	var err error
+	currentSchema, err = generator.Introspect(ctx)
 	if err != nil {
 		panic(err)
 	}

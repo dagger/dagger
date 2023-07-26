@@ -16,6 +16,7 @@ import (
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend"
+	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/grpchijack"
 	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
@@ -129,15 +130,28 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 	defer cancel()
 	caller, err := e.SessionManager.Get(getCallerCtx, opts.ClientID, false)
 	if err != nil {
-		e.routerMu.Unlock()
 		return nil, err
 	}
 
 	e.routerMu.Lock()
 	rtr, ok := e.routers[opts.RouterID]
 	if !ok {
+		bklog.G(ctx).Debugf("creating new router %q for client %s", opts.RouterID, opts.ClientID)
 		secretStore := core.NewSecretStore()
 		authProvider := auth.NewRegistryAuthProvider()
+
+		var cacheImporterCfgs []bkgw.CacheOptionsEntry
+		for _, cacheImportCfg := range req.Cache.Imports {
+			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
+			if !ok {
+				e.routerMu.Unlock()
+				return nil, fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
+			}
+			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
+				Type:  cacheImportCfg.Type,
+				Attrs: cacheImportCfg.Attrs,
+			})
+		}
 
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
 			Worker:                e.worker,
@@ -147,6 +161,7 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 			SecretStore:           secretStore,
 			AuthProvider:          authProvider,
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
+			UpstreamCacheImports:  cacheImporterCfgs,
 			MainClientCaller:      caller,
 			Metadata:              opts,
 		})
@@ -181,16 +196,35 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}()
 	}
 	e.routerMu.Unlock()
+
+	var cacheExporterFuncs []buildkit.ResolveCacheExporterFunc
+	for _, cacheExportCfg := range req.Cache.Exports {
+		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
+		if !ok {
+			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
+		}
+		cacheExporterFuncs = append(cacheExporterFuncs, func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
+			return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
+		})
+	}
+	if len(cacheExporterFuncs) > 0 {
+		// run cache export instead
+		bklog.G(ctx).Debugf("running cache export for client %s", opts.ClientID)
+		err := rtr.bkClient.UpstreamCacheExport(ctx, cacheExporterFuncs)
+		if err != nil {
+			bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", opts.ClientID)
+			return &controlapi.SolveResponse{}, err
+		}
+		bklog.G(ctx).Debugf("done running cache export for client %s", opts.ClientID)
+		return &controlapi.SolveResponse{}, nil
+	}
+
 	rtr.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname)
 	defer rtr.bkClient.DeregisterClientHostname(opts.ClientHostname)
-
-	// TODO: re-add support for upstream cache import/export
-
 	err = rtr.Wait(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	return &controlapi.SolveResponse{}, nil
 }
 

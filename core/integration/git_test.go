@@ -70,7 +70,7 @@ func TestGitSSHAuthSock(t *testing.T) {
 	defer c.Close()
 
 	gitSSH := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "openssh"})
 
 	hostKeyGen := gitSSH.

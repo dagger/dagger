@@ -24,7 +24,7 @@ func TestHostWorkdir(t *testing.T) {
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -37,7 +37,7 @@ func TestHostWorkdir(t *testing.T) {
 		require.NoError(t, err)
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -67,7 +67,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -81,7 +81,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -95,7 +95,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -110,7 +110,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -125,7 +125,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -265,6 +265,8 @@ func TestHostFile(t *testing.T) {
 }
 
 func TestHostVariable(t *testing.T) {
+	require.Fail(t, "Host env variable is proposed to be removed.")
+	/* TODO: make final call on whether to remove this API or not
 	t.Parallel()
 
 	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
@@ -281,7 +283,7 @@ func TestHostVariable(t *testing.T) {
 	require.Equal(t, "hello", varValue)
 
 	env, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		//nolint:staticcheck // SA1019 We want to test this API while we support it.
 		WithSecretVariable("SECRET", secret.Secret()).
 		WithExec([]string{"env"}).
@@ -289,4 +291,5 @@ func TestHostVariable(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, env, "SECRET=***")
+	*/
 }

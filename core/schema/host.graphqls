@@ -60,6 +60,7 @@ type Host {
     """
     name: String!
   ): HostVariable
+    @deprecated(reason: "Use your language's standard library for reading environment variables instead.")
 
   """
   Accesses a Unix socket on the host.
