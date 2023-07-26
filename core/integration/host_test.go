@@ -265,6 +265,8 @@ func TestHostFile(t *testing.T) {
 }
 
 func TestHostVariable(t *testing.T) {
+	require.Fail(t, "Host env variable is proposed to be removed.")
+	/* TODO: make final call on whether to remove this API or not
 	t.Parallel()
 
 	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
@@ -289,4 +291,5 @@ func TestHostVariable(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, env, "SECRET=***")
+	*/
 }
