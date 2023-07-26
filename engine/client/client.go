@@ -32,7 +32,9 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 )
 
 const OCIStoreName = "dagger-oci"
@@ -430,32 +432,94 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 
 	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
-	_, isFileExport := opts[engine.LocalDirExportIsFileMetaKey]
+	fileSourcePathVal, isFileExport := opts[engine.LocalDirExportFileSourcePathMetaKey]
 	if isFileExport {
-		if stat, err := os.Stat(dest); err == nil {
-			if stat.IsDir() {
-				if !allowParentDirPath {
-					return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set true", dest)
+		if len(fileSourcePathVal) != 1 {
+			return fmt.Errorf("expected exactly one "+engine.LocalDirExportFileSourcePathMetaKey+" value, got %d", len(fileSourcePathVal))
+		}
+		fileSourcePath := filepath.Join("/", fileSourcePathVal[0]) // TODO: double check joining with / is correct
+
+		var destParentDir string
+		var syncedDestPath string
+		var finalDestPath string
+		// TODO: lstat correct? what happened with symlinks before? just maintain previous behavior (and add test coverage)
+		stat, err := os.Lstat(dest)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			// we are writing the file to a new path
+			destParentDir = filepath.Dir(dest)
+			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
+			finalDestPath = dest
+		case err != nil:
+			// something went unrecoverably wrong if stat failed and it wasn't just because the path didn't exist
+			return fmt.Errorf("failed to stat synctarget dest %s: %w", dest, err)
+		case !stat.IsDir():
+			// we are overwriting an existing file
+			destParentDir = filepath.Dir(dest)
+			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
+			finalDestPath = dest
+		case !allowParentDirPath:
+			// we are writing to an existing directory, but allowParentDirPath is not set, so fail
+			return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", dest)
+		default:
+			// we are writing to an existing directory, and allowParentDirPath is set,
+			// so write the file under the directory using the same file name as the source file
+			destParentDir = dest
+			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
+			finalDestPath = syncedDestPath
+		}
+		if destParentDir == "" {
+			return fmt.Errorf("failed to determine parent dir of synctarget dest %s", dest)
+		}
+		if syncedDestPath == "" {
+			return fmt.Errorf("failed to determine synced dest path of synctarget dest %s", dest)
+		}
+		if finalDestPath == "" {
+			return fmt.Errorf("failed to determine final dest path of synctarget dest %s", dest)
+		}
+
+		if err := os.MkdirAll(destParentDir, 0700); err != nil {
+			return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
+		}
+
+		err = fsutil.Receive(stream.Context(), stream, destParentDir, fsutil.ReceiveOpt{
+			Merge: true,
+			Filter: func(path string, stat *fstypes.Stat) bool {
+				path = filepath.Join("/", path)
+				if path != fileSourcePath {
+					return false
 				}
+				stat.Uid = uint32(os.Getuid())
+				stat.Gid = uint32(os.Getgid())
+				return true
+			},
+		})
+		if status.Code(err) == codes.Canceled {
+			// TODO: is there a way to be sure that the stream was actually done? as opposed to just canceled?
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to receive fs changes: %w", err)
+		}
+		if syncedDestPath != finalDestPath {
+			if err := os.Rename(syncedDestPath, finalDestPath); err != nil {
+				return fmt.Errorf("failed to rename synced dest path %s to final dest path %s: %w", syncedDestPath, finalDestPath, err)
 			}
 		}
-		dest = filepath.Dir(dest)
+		return nil
 	}
 
 	if err := os.MkdirAll(dest, 0700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
 	}
+
 	err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
 		Merge: true,
-		Filter: func() func(string, *fstypes.Stat) bool {
-			uid := os.Getuid()
-			gid := os.Getgid()
-			return func(p string, st *fstypes.Stat) bool {
-				st.Uid = uint32(uid)
-				st.Gid = uint32(gid)
-				return true
-			}
-		}(),
+		Filter: func(path string, stat *fstypes.Stat) bool {
+			stat.Uid = uint32(os.Getuid())
+			stat.Gid = uint32(os.Getgid())
+			return true
+		},
 	})
 	if err != nil {
 		return fmt.Errorf("failed to receive fs changes: %w", err)

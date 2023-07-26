@@ -301,6 +301,14 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 			}
 			// TODO: better to print this after session closes so there's less overlap with progress output
 			cmd.Println(res)
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			// TODO:
+			fmt.Println(res)
 			return nil
 		},
 	}

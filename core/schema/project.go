@@ -109,7 +109,8 @@ func (s *projectSchema) load(ctx *core.Context, parent *core.Project, args loadA
 		Schema:    proj.Schema,
 		Resolvers: resolvers,
 	})); err != nil {
-		return nil, fmt.Errorf("failed to install project schema: %w", err)
+		// TODO: return nil, fmt.Errorf("failed to install project schema: %w", err)
+		return nil, fmt.Errorf("failed to install project schema: %w: %s", err, proj.Schema)
 	}
 
 	return proj, nil

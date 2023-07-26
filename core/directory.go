@@ -576,8 +576,6 @@ func (dir *Directory) Export(
 	host *Host,
 	destPath string,
 ) (rerr error) {
-	// TODO: wrap in services
-
 	var defPB *pb.Definition
 	if dir.Dir != "" {
 		src, err := dir.State()
@@ -598,7 +596,7 @@ func (dir *Directory) Export(
 	}
 
 	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
-		return nil, bk.LocalExport(ctx, defPB, destPath, false, false)
+		return nil, bk.LocalExport(ctx, defPB, destPath, "", false)
 	})
 	return err
 }
