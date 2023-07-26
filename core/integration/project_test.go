@@ -1,14 +1,12 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core/projectconfig"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
@@ -53,18 +51,16 @@ func TestProjectCmd(t *testing.T) {
 			testName += "/" + tc.projectPath
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
-				c, ctx := connect(t)
+				c, ctx, output := connectWithBufferedLogs(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				_, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(tc.projectPath, testGitProject).
 					CallProject().
-					Stderr(ctx)
+					Sync(ctx)
 				require.NoError(t, err)
-				cfg := projectconfig.Config{}
-				require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
-				require.Equal(t, tc.expectedSDK, cfg.SDK)
-				require.Equal(t, tc.expectedName, cfg.Name)
-				require.Equal(t, tc.expectedRoot, cfg.Root)
+				require.Contains(t, output.String(), fmt.Sprintf(`"root": %q`, tc.expectedRoot))
+				require.Contains(t, output.String(), fmt.Sprintf(`"name": %q`, tc.expectedName))
+				require.Contains(t, output.String(), fmt.Sprintf(`"sdk": %q`, tc.expectedSDK))
 			})
 		}
 	}
@@ -132,7 +128,7 @@ func TestProjectCmdInit(t *testing.T) {
 		tc := tc
 		t.Run(tc.testName, func(t *testing.T) {
 			t.Parallel()
-			c, ctx := connect(t)
+			c, ctx, output := connectWithBufferedLogs(t)
 			defer c.Close()
 			ctr := CLITestContainer(ctx, t, c).
 				WithProjectArg(tc.projectPath).
@@ -153,12 +149,10 @@ func TestProjectCmdInit(t *testing.T) {
 			_, err := ctr.File(expectedConfigPath).Contents(ctx)
 			require.NoError(t, err)
 
-			output, err := ctr.CallProject().Stderr(ctx)
+			_, err = ctr.CallProject().Sync(ctx)
 			require.NoError(t, err)
-			cfg := projectconfig.Config{}
-			require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
-			require.Equal(t, tc.sdk, cfg.SDK)
-			require.Equal(t, tc.name, cfg.Name)
+			require.Contains(t, output.String(), fmt.Sprintf(`"name": %q`, tc.name))
+			require.Contains(t, output.String(), fmt.Sprintf(`"sdk": %q`, tc.sdk))
 		})
 	}
 
@@ -176,6 +170,11 @@ func TestProjectCmdInit(t *testing.T) {
 	})
 }
 
+// TODO: check if the project tests are slower, they feel like they might be.
+// Possible fixes would be to fix needing to create new http server every client http conn,
+// or to not have nested clients go through the whole song and dance and instead serve pre-made
+// sessions over unix socks.
+// Addendum: if you look in the engine logs you see a TON of sessions being opened...
 func TestProjectCommandHierarchy(t *testing.T) {
 	t.Parallel()
 
@@ -184,24 +183,24 @@ func TestProjectCommandHierarchy(t *testing.T) {
 
 		t.Run(projectDir, func(t *testing.T) {
 			t.Parallel()
-			c, ctx := connect(t)
+			c, ctx, output := connectWithBufferedLogs(t)
 			defer c.Close()
 
-			output, err := CLITestContainer(ctx, t, c).
+			_, err := CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:foo").
 				CallDo().
-				Stderr(ctx)
+				Sync(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output, "hello from foo")
+			require.Contains(t, output.String(), "hello from foo")
 
-			output, err = CLITestContainer(ctx, t, c).
+			_, err = CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:bar").
 				CallDo().
-				Stderr(ctx)
+				Sync(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output, "hello from bar")
+			require.Contains(t, output.String(), "hello from bar")
 		})
 	}
 }
@@ -239,15 +238,6 @@ func TestProjectHostExport(t *testing.T) {
 				t.Parallel()
 
 				t.Run("file export implicit output", func(t *testing.T) {
-					// TODO: fix file export to parent dirs
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					t.Skip("file export to parent dirs not fixed yet")
-
 					t.Parallel()
 					c, ctx := connect(t)
 					defer c.Close()
@@ -308,16 +298,11 @@ func TestProjectHostExport(t *testing.T) {
 					require.NoError(t, err)
 				})
 
+				// TODO: add coverage (here or elsewhere) for when exported file is under some subdirs
+				// TODO: also, one where a single file is being exported but there's a ton of others in
+				// the state that have to be filtered out, including some with the same name but diff path
+				// TODO: also that might already exist, double check
 				t.Run("file export explicit output to parent dir", func(t *testing.T) {
-					// TODO: fix file export to parent dirs
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					// TODO:
-					t.Skip("file export to parent dirs not fixed yet")
-
 					t.Parallel()
 					c, ctx := connect(t)
 					defer c.Close()
@@ -409,18 +394,18 @@ func TestProjectDirImported(t *testing.T) {
 			testName += "/" + projectDir
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
-				c, ctx := connect(t)
+				c, ctx, output := connectWithBufferedLogs(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				_, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(projectDir, testGitProject).
 					WithTarget("test-imported-project-dir").
 					CallDo().
-					Stderr(ctx)
+					Sync(ctx)
 				require.NoError(t, err)
-				require.Contains(t, output, "README.md")
-				require.Contains(t, output, projectDir)
-				require.Contains(t, output, projectDir+"/dagger.json")
-				require.Contains(t, output, projectDir+"/"+tc.expectedMainFile)
+				require.Contains(t, output.String(), "README.md")
+				require.Contains(t, output.String(), projectDir)
+				require.Contains(t, output.String(), projectDir+"/dagger.json")
+				require.Contains(t, output.String(), projectDir+"/"+tc.expectedMainFile)
 			})
 		}
 	}

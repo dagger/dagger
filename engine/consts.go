@@ -21,6 +21,6 @@ const (
 	LocalDirExportDestClientIDMetaKey       = "x-dagger-local-dir-export-dest-client-id"
 	LocalDirExportDestPathMetaKey           = "x-dagger-local-dir-export-dest-path"
 	LocalDirExportWriteStreamMetaKey        = "x-dagger-local-dir-export-write-stream"
-	LocalDirExportIsFileMetaKey             = "x-dagger-local-dir-export-is-file"
+	LocalDirExportFileSourcePathMetaKey     = "x-dagger-local-dir-export-file-source-path"
 	LocalDirExportAllowParentDirPathMetaKey = "x-dagger-local-dir-export-allow-parent-dir-path"
 )
