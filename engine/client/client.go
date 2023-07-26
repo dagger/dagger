@@ -192,11 +192,15 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	if s.CloudURLCallback != nil && cloudURL != "" {
 		s.CloudURLCallback(cloudURL)
 	}
-	/* TODO: fix by including engine name in the Info return, then we can get version easily too
-	if s.EngineNameCallback != nil && bkClient.EngineName != "" {
-		s.EngineNameCallback(bkClient.EngineName)
+
+	if s.EngineNameCallback != nil {
+		info, err := s.bkClient.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get info: %w", err)
+		}
+		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
+		s.EngineNameCallback(engineName)
 	}
-	*/
 
 	bkSession.Allow(progRockAttachable{progMultiW})
 	recorder := progrock.NewRecorder(progMultiW)
