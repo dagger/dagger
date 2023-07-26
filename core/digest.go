@@ -116,6 +116,8 @@ func stableDigestInto(value any, dest io.Writer) (err error) {
 	return nil
 }
 
+var stableDefCache = newCacheMap[*pb.Definition, *pb.Definition]()
+
 // digestInner handles digesting inner content, looking for special types and
 // respecting the Digestible interface.
 //
@@ -129,7 +131,9 @@ func digestInner(value any, dest io.Writer) error {
 			return err
 		}
 
-		stabilized, err := stabilizeDef(x)
+		stabilized, err := stableDefCache.GetOrInitialize(x, func() (*pb.Definition, error) {
+			return stabilizeDef(x)
+		})
 		if err != nil {
 			return err
 		}
@@ -216,7 +220,12 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 			return nil, errors.Wrap(err, "failed to parse llb proto op")
 		}
 
-		if modified := stabilizeOp(&op); modified {
+		modified, err := stabilizeOp(&op)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to stabilize op")
+		}
+
+		if modified {
 			stableDt, err := op.Marshal()
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to marshal llb proto op")
@@ -250,8 +259,7 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 // mapping, so stabilizeInputs will keep recursing until no new mappings are
 // yielded.
 func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Digest) error {
-	nextPass := map[digest.Digest]digest.Digest{}
-
+	// swap metadata from old digests to new digests
 	for before, after := range stabilized {
 		meta, found := cp.Metadata[before]
 		if !found {
@@ -262,6 +270,11 @@ func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Dige
 		delete(cp.Metadata, before)
 	}
 
+	nextPass := map[digest.Digest]digest.Digest{}
+
+	// swap inputs from old digests to new digests
+	//
+	// doing so yields a new Op payload and a new digest
 	for i, dt := range cp.Def {
 		digBefore := digest.FromBytes(dt)
 
@@ -269,22 +282,29 @@ func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Dige
 		if err := (&op).Unmarshal(dt); err != nil {
 			return errors.Wrap(err, "failed to parse llb proto op")
 		}
-		for before, after := range stabilized {
-			for _, input := range op.Inputs {
-				if input.Digest == before {
-					input.Digest = after
-				}
+
+		var modified bool
+		for _, input := range op.Inputs {
+			after, found := stabilized[input.Digest]
+			if found {
+				input.Digest = after
+				modified = true
 			}
 		}
-		stableDt, err := op.Marshal()
-		if err != nil {
-			return errors.Wrap(err, "failed to marshal llb proto op")
-		}
-		digAfter := digest.FromBytes(stableDt)
-		if digAfter != digBefore {
+
+		if modified {
+			stableDt, err := op.Marshal()
+			if err != nil {
+				return errors.Wrap(err, "failed to marshal llb proto op")
+			}
+
+			cp.Def[i] = stableDt
+
+			digAfter := digest.FromBytes(stableDt)
+
+			// track the new mapping for any Ops that had this Op as an
 			nextPass[digBefore] = digAfter
 		}
-		cp.Def[i] = stableDt
 	}
 
 	if len(nextPass) > 0 {
@@ -323,6 +343,8 @@ func stabilizeOp(op *pb.Op) (bool, error) {
 
 	if exe := op.GetExec(); exe != nil {
 		if exe.Meta.ProxyEnv != nil {
+			// NB(vito): ProxyEnv is used for passing network configuration along
+			// without busting the cache.
 			exe.Meta.ProxyEnv = nil
 			modified = true
 		}
