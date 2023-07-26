@@ -30,10 +30,22 @@ func TestMain(m *testing.M) {
 }
 
 func connect(t *testing.T) (*dagger.Client, context.Context) {
-	ctx := context.Background()
 	tw := NewTWriter(t)
-	defer tw.Flush()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(tw))
+	t.Cleanup(tw.Flush)
+	return connectWithLogOutput(t, tw)
+}
+
+func connectWithBufferedLogs(t *testing.T) (*dagger.Client, context.Context, *bytes.Buffer) {
+	tw := NewTWriter(t)
+	t.Cleanup(tw.Flush)
+	output := &bytes.Buffer{}
+	c, ctx := connectWithLogOutput(t, io.MultiWriter(tw, output))
+	return c, ctx, output
+}
+
+func connectWithLogOutput(t require.TestingT, logOutput io.Writer) (*dagger.Client, context.Context) {
+	ctx := context.Background()
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(logOutput))
 	require.NoError(t, err)
 	return client, ctx
 }
@@ -252,14 +264,6 @@ func daggerCliPath(t *testing.T) string {
 func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
 	t.Helper()
 	return c.Host().File(daggerCliPath(t))
-}
-
-func lastNLines(str string, n int) string {
-	lines := strings.Split(strings.TrimSpace(str), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
 }
 
 const testCLIBinPath = "/bin/dagger"

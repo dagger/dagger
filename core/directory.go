@@ -596,7 +596,7 @@ func (dir *Directory) Export(
 	}
 
 	_, err := WithServices(ctx, bk, dir.Services, func() (any, error) {
-		return nil, bk.LocalExport(ctx, defPB, destPath, false, false)
+		return nil, bk.LocalExport(ctx, defPB, destPath, "", false)
 	})
 	return err
 }

@@ -453,7 +453,7 @@ func (c *Client) LocalExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
 	destPath string,
-	isFile bool,
+	fileSourcePath string,
 	allowParentDirPath bool,
 ) error {
 	destPath = path.Clean(destPath)
@@ -502,8 +502,8 @@ func (c *Client) LocalExport(
 	}
 	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
 	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
-	if isFile {
-		md[engine.LocalDirExportIsFileMetaKey] = []string{"true"}
+	if fileSourcePath != "" {
+		md[engine.LocalDirExportFileSourcePathMetaKey] = []string{fileSourcePath}
 	}
 	if allowParentDirPath {
 		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}

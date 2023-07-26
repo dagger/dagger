@@ -79,7 +79,7 @@ func (s *MergedSchemas) Schema() *graphql.Schema {
 	return s.compiledSchema
 }
 
-func (s *MergedSchemas) addSchemas(newSchemas ...ExecutableSchema) error {
+func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
 	s.schemaMu.Lock()
 	defer s.schemaMu.Unlock()
 
@@ -89,6 +89,8 @@ func (s *MergedSchemas) addSchemas(newSchemas ...ExecutableSchema) error {
 		separateSchemas[k] = v
 	}
 
+	// add in new schemas, recursively adding dependencies
+	var newSchemas []ExecutableSchema
 	var addOne func(newSchema ExecutableSchema)
 	addOne = func(newSchema ExecutableSchema) {
 		// Skip adding schema if it has already been added, higher callers
@@ -99,26 +101,25 @@ func (s *MergedSchemas) addSchemas(newSchemas ...ExecutableSchema) error {
 			return
 		}
 
+		newSchemas = append(newSchemas, newSchema)
 		separateSchemas[newSchema.Name()] = newSchema
 		for _, dep := range newSchema.Dependencies() {
 			// TODO:(sipsma) guard against infinite recursion
 			addOne(dep)
 		}
 	}
-
-	// Copy the current schemas and append new schemas
-	for _, newSchema := range newSchemas {
-		addOne(newSchema)
+	for _, schemaToAdd := range schemasToAdd {
+		addOne(schemaToAdd)
 	}
-	allSchemas := []ExecutableSchema{}
-	for _, s := range separateSchemas {
-		allSchemas = append(allSchemas, s)
+	if len(newSchemas) == 0 {
+		return nil
 	}
-	sort.Slice(allSchemas, func(i, j int) bool {
-		return allSchemas[i].Name() < allSchemas[j].Name()
+	sort.Slice(newSchemas, func(i, j int) bool {
+		return newSchemas[i].Name() < newSchemas[j].Name()
 	})
 
-	merged, err := mergeExecutableSchemas("", allSchemas...)
+	// merge existing and new schemas together
+	merged, err := mergeExecutableSchemas(s.mergedSchema, newSchemas...)
 	if err != nil {
 		return err
 	}
@@ -186,14 +187,17 @@ func (s *staticSchema) Dependencies() []ExecutableSchema {
 	return s.StaticSchemaParams.Dependencies
 }
 
-func mergeExecutableSchemas(name string, schemas ...ExecutableSchema) (ExecutableSchema, error) {
-	mergedSchema := StaticSchemaParams{
-		Name:      name,
-		Resolvers: Resolvers{},
+func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...ExecutableSchema) (ExecutableSchema, error) {
+	mergedSchema := StaticSchemaParams{Resolvers: make(Resolvers)}
+	if existingSchema != nil {
+		mergedSchema.Name = existingSchema.Name()
+		mergedSchema.Schema = existingSchema.Schema()
+		mergedSchema.Resolvers = existingSchema.Resolvers()
+		mergedSchema.Dependencies = existingSchema.Dependencies()
 	}
-	for _, schema := range schemas {
-		mergedSchema.Schema += schema.Schema() + "\n"
-		for name, resolver := range schema.Resolvers() {
+	for _, newSchema := range newSchemas {
+		mergedSchema.Schema += newSchema.Schema() + "\n"
+		for name, resolver := range newSchema.Resolvers() {
 			switch resolver := resolver.(type) {
 			case FieldResolvers:
 				existing, alreadyExisted := mergedSchema.Resolvers[name]

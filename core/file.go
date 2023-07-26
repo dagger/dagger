@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
@@ -230,21 +229,16 @@ func (file *File) Export(
 	dest string,
 	allowParentDirPath bool,
 ) error {
-	destFilename := filepath.Base(dest)
-
 	src, err := file.State()
 	if err != nil {
 		return err
 	}
-
-	src = llb.Scratch().File(llb.Copy(src, file.File, destFilename))
-
+	def, err := src.Marshal(ctx, llb.Platform(file.Platform))
+	if err != nil {
+		return err
+	}
 	_, err = WithServices(ctx, bk, file.Services, func() (any, error) {
-		def, err := src.Marshal(ctx, llb.Platform(file.Platform))
-		if err != nil {
-			return nil, err
-		}
-		err = bk.LocalExport(ctx, def.ToPB(), dest, true, allowParentDirPath)
+		err = bk.LocalExport(ctx, def.ToPB(), dest, file.File, allowParentDirPath)
 		return nil, err
 	})
 	return err
