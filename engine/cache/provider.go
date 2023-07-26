@@ -102,7 +102,3 @@ func (r *urlReaderAt) Close() error {
 	}
 	return nil
 }
-
-func httpOk(code int) bool {
-	return code >= 200 && code < 300
-}

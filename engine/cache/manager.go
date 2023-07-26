@@ -3,7 +3,6 @@ package cache
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -344,9 +343,8 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 		return err
 	}
 	defer resp.Body.Close()
-	if !httpOk(resp.StatusCode) {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, body)
+	if err := checkResponse(resp); err != nil {
+		return err
 	}
 	return nil
 }
