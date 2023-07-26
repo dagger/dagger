@@ -109,8 +109,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 	var stderrBuf *bytes.Buffer
 	var childStdin io.WriteCloser
 
-	if cfg.EngineLoading {
-		fmt.Printf("Creating new Engine session... ")
+	if cfg.LogOutput != nil {
+		fmt.Fprintf(cfg.LogOutput, "Creating new Engine session... ")
 	}
 
 	for i := 0; i < 10; i++ {
@@ -191,8 +191,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		}
 	}()
 
-	if cfg.EngineLoading {
-		fmt.Printf("OK!\nEstablishing connection to Engine... ")
+	if cfg.LogOutput != nil {
+		fmt.Fprintf(cfg.LogOutput, "OK!\nEstablishing connection to Engine... ")
 	}
 
 	// Read the connect params from stdout.
@@ -224,8 +224,8 @@ func startCLISession(ctx context.Context, binPath string, cfg *Config) (_ Engine
 		return nil, fmt.Errorf("timed out waiting for session params")
 	}
 
-	if cfg.EngineLoading {
-		fmt.Println("OK!")
+	if cfg.LogOutput != nil {
+		fmt.Fprintln(cfg.LogOutput, "OK!")
 	}
 
 	return &cliSessionConn{

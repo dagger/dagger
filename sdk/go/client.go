@@ -42,7 +42,6 @@ func WithWorkdir(path string) ClientOpt {
 func WithLogOutput(writer io.Writer) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.LogOutput = writer
-		cfg.EngineLoading = true
 	})
 }
 
@@ -50,13 +49,6 @@ func WithLogOutput(writer io.Writer) ClientOpt {
 func WithConn(conn engineconn.EngineConn) ClientOpt {
 	return clientOptFunc(func(cfg *engineconn.Config) {
 		cfg.Conn = conn
-	})
-}
-
-// WithEngineLoading outputs engine loading info
-func WithEngineLoading() ClientOpt {
-	return clientOptFunc(func(cfg *engineconn.Config) {
-		cfg.EngineLoading = true
 	})
 }
 

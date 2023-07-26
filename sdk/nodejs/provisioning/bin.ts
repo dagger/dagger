@@ -54,8 +54,17 @@ export class Bin implements EngineConn {
 
   async Connect(opts: ConnectOpts): Promise<Client> {
     if (!this.binPath) {
+      if (opts.LogOutput) {
+        opts.LogOutput.write("CLI not found, downloading it... ")
+      }
+
       this.binPath = await this.downloadCLI()
+
+      if (opts.LogOutput) {
+        opts.LogOutput.write("OK!\n")
+      }
     }
+
     return this.runEngineSession(this.binPath, opts)
   }
 
@@ -174,7 +183,10 @@ export class Bin implements EngineConn {
       }
     })
 
-    process.stdout.write("Creating new Engine session... ")
+    if (opts.LogOutput) {
+      opts.LogOutput.write("Creating new Engine session... ")
+    }
+
     this.subProcess = execaCommand(args.join(" "), {
       stdio: "pipe",
       reject: true,
@@ -194,8 +206,10 @@ export class Bin implements EngineConn {
 
     const timeOutDuration = 300000
 
-    process.stdout.write("OK!\n")
-    process.stdout.write("Establishing connection to Engine... ")
+    if (opts.LogOutput) {
+      opts.LogOutput.write("OK!\nEstablishing connection to Engine... ")
+    }
+
     const connectParams: ConnectParams = (await Promise.race([
       this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
@@ -210,7 +224,10 @@ export class Bin implements EngineConn {
       }),
     ])) as ConnectParams
 
-    process.stdout.write("OK!\n")
+    if (opts.LogOutput) {
+      opts.LogOutput.write("OK!\n")
+    }
+
     return new Client({
       host: `127.0.0.1:${connectParams.port}`,
       sessionToken: connectParams.session_token,
