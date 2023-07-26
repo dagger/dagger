@@ -13,7 +13,10 @@ import (
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
+	"github.com/moby/buildkit/cache"
 	bkcache "github.com/moby/buildkit/cache"
+	bkcacheconfig "github.com/moby/buildkit/cache/config"
+	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -21,6 +24,7 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
+	"github.com/moby/buildkit/session"
 	bksession "github.com/moby/buildkit/session"
 	bksecrets "github.com/moby/buildkit/session/secrets"
 	bksolver "github.com/moby/buildkit/solver"
@@ -49,9 +53,12 @@ type Opts struct {
 	SecretStore           bksecrets.SecretStore
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
+	UpstreamCacheImports  []bkgw.CacheOptionsEntry
 	// TODO: give precise definition
 	MainClientCaller bksession.Caller
 }
+
+type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
 
 // Client is dagger's internal interface to buildkit APIs
 type Client struct {
@@ -139,6 +146,9 @@ func (c *Client) Close() error {
 
 func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, rerr error) {
 	ctx = withOutgoingContext(ctx)
+
+	// include any upstream cache imports, if any
+	req.CacheImports = c.UpstreamCacheImports
 
 	llbRes, err := c.llbBridge.Solve(ctx, req, c.ID())
 	if err != nil {
@@ -246,22 +256,120 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	c.refsMu.Lock()
-	defer c.refsMu.Unlock()
 
 	mergeInputs := make([]llb.State, 0, len(c.refs))
 	for r := range c.refs {
 		state, err := r.ToState()
 		if err != nil {
+			c.refsMu.Unlock()
 			return nil, err
 		}
 		mergeInputs = append(mergeInputs, state)
 	}
+	c.refsMu.Unlock()
 	llbdef, err := llb.Merge(mergeInputs, llb.WithCustomName("combined session result")).Marshal(ctx)
 	if err != nil {
 		return nil, err
 	}
+	// TODO: this also adds to c.refs... which is weird
 	return c.Solve(ctx, bkgw.SolveRequest{
 		Definition: llbdef.ToPB(),
+	})
+}
+
+func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []ResolveCacheExporterFunc) error {
+	if len(cacheExportFuncs) == 0 {
+		return nil
+	}
+	// TODO: have caller embed bklog w/ preset fields for client
+	bklog.G(ctx).Debugf("exporting %d caches", len(cacheExportFuncs))
+
+	combinedResult, err := c.CombinedResult(ctx) // TODO: lock needed now for this method internally
+	if err != nil {
+		return err
+	}
+	// TODO: dedupe with similar conversions
+	bklog.G(ctx).Debugf("converting to cacheRes")
+	cacheRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bkcache.ImmutableRef, error) {
+		res, err := rf.Result(ctx)
+		if err != nil {
+			return nil, err
+		}
+		workerRef, ok := res.Sys().(*bkworker.WorkerRef)
+		if !ok {
+			return nil, fmt.Errorf("invalid ref: %T", res.Sys())
+		}
+		return workerRef.ImmutableRef, nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to convert result: %s", err)
+	}
+	bklog.G(ctx).Debugf("converting to solverRes")
+	solverRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bksolver.CachedResult, error) {
+		return rf.resultProxy.Result(ctx)
+	})
+	if err != nil {
+		return fmt.Errorf("failed to convert result: %s", err)
+	}
+
+	sessionGroup := session.NewGroup(c.ID())
+	eg, ctx := errgroup.WithContext(ctx)
+	// TODO: send progrock statuses
+	for _, exporterFunc := range cacheExportFuncs {
+		exporterFunc := exporterFunc
+		eg.Go(func() error {
+			bklog.G(ctx).Debugf("getting exporter")
+			exporter, err := exporterFunc(ctx, sessionGroup)
+			if err != nil {
+				return err
+			}
+			bklog.G(ctx).Debugf("exporting cache with %T", exporter)
+			compressionCfg := exporter.Config().Compression
+			err = solverresult.EachRef(solverRes, cacheRes, func(res bksolver.CachedResult, ref bkcache.ImmutableRef) error {
+				bklog.G(ctx).Debugf("exporting cache for %s", ref.ID())
+				ctx := withDescHandlerCacheOpts(ctx, ref)
+				bklog.G(ctx).Debugf("calling exporter")
+				_, err = res.CacheKeys()[0].Exporter.ExportTo(ctx, exporter, bksolver.CacheExportOpt{
+					ResolveRemotes: func(ctx context.Context, res bksolver.Result) ([]*bksolver.Remote, error) {
+						ref, ok := res.Sys().(*bkworker.WorkerRef)
+						if !ok {
+							return nil, fmt.Errorf("invalid result: %T", res.Sys())
+						}
+						bklog.G(ctx).Debugf("getting remotes for %s", ref.ID())
+						defer bklog.G(ctx).Debugf("got remotes for %s", ref.ID())
+						return ref.GetRemotes(ctx, true, bkcacheconfig.RefConfig{Compression: compressionCfg}, false, sessionGroup)
+					},
+					Mode:           bksolver.CacheExportModeMax,
+					Session:        sessionGroup,
+					CompressionOpt: &compressionCfg,
+				})
+				return err
+			})
+			if err != nil {
+				return err
+			}
+			bklog.G(ctx).Debugf("finalizing exporter")
+			defer bklog.G(ctx).Debugf("finalized exporter")
+			_, err = exporter.Finalize(ctx)
+			return err
+		})
+	}
+	bklog.G(ctx).Debugf("waiting for cache export")
+	defer bklog.G(ctx).Debugf("waited for cache export")
+	return eg.Wait()
+}
+
+func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) context.Context {
+	return bksolver.WithCacheOptGetter(ctx, func(_ bool, keys ...interface{}) map[interface{}]interface{} {
+		vals := make(map[interface{}]interface{})
+		for _, k := range keys {
+			if key, ok := k.(cache.DescHandlerKey); ok {
+				if handler := ref.DescHandler(digest.Digest(key)); handler != nil {
+					vals[k] = handler
+				}
+			}
+		}
+		return vals
 	})
 }
 

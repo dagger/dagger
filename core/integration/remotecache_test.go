@@ -30,7 +30,6 @@ func getDevEngineForRemoteCache(ctx context.Context, c *dagger.Client, cache *da
 	devEngine = devEngine.
 		WithServiceBinding(cacheName, cache).
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp}).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithEnvVariable("ENGINE_ID", id).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
@@ -57,7 +56,7 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	// This loads the dagger-cli binary from the host into the container, that was set up by
 	// internal/mage/engine.go:test. This is used to communicate with the dev engine.
-	daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
+	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/.dagger-cli"
 
