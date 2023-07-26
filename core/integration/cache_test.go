@@ -131,6 +131,7 @@ func TestLocalImportCacheReuse(t *testing.T) {
 	runExec := func(ctx context.Context, t *testing.T, c *dagger.Client) string {
 		out, err := c.Container().From("alpine:3.16.2").
 			WithDirectory("/fromhost", c.Host().Directory(hostDirPath)).
+			WithExec([]string{"stat", "/fromhost/foo"}).
 			WithExec([]string{"sh", "-c", "head -c 128 /dev/random | sha256sum"}).
 			Stdout(ctx)
 		require.NoError(t, err)

@@ -3,12 +3,15 @@ package core
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
 	"sort"
+	"strings"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -255,6 +258,18 @@ func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, err
 				delete(src.Attrs, k)
 				modified = true
 			}
+		}
+		if _, name, ok := strings.Cut(src.Identifier, "local://"); ok {
+			var opts buildkit.LocalImportOpts
+			jsonBytes, err := base64.URLEncoding.DecodeString(name)
+			if err != nil {
+				return false, fmt.Errorf("invalid import local dir name: %q", name)
+			}
+			if err := json.Unmarshal(jsonBytes, &opts); err != nil {
+				return false, fmt.Errorf("invalid import local dir name: %q", name)
+			}
+			src.Identifier = "local://" + opts.Path
+			modified = true
 		}
 		return modified, nil
 	}
