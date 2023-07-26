@@ -29,8 +29,29 @@
 	{{- /* Write return type */ -}}
 	{{- "" }}): Promise<{{ . | FormatReturnType }}> {
 
+    {{- /* If it's a scalar, make possible to return its already filled value */ -}}
+    {{- if and (.TypeRef.IsScalar) (ne .ParentObject.Name "Query") (not $convertID) }}
+    if (this._{{ .Name }}) {
+      return this._{{ .Name }}
+    }
+{{ "" }}
+    {{- end }}
+
+    {{- /* Store promise return type that might be update in case of array */ -}}
+    {{- $promiseRetType := . | FormatReturnType -}}
+
+    {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
+    type {{ .Name | ToLowerCase }} = {
+            {{- range $v := . | GetArrayField }}
+      {{ $v.Name | ToLowerCase }}: {{ $v.TypeRef | FormatOutputType }}
+            {{- end }}
+    }
+{{ "" }}
+    {{- $promiseRetType = printf "%s[]" (.Name | ToLowerCase) }}
+    {{- end }}
+
 	{{- if .TypeRef }}
-    {{ if not $convertID }}const response: Awaited<{{ . | FormatReturnType }}> = {{ end }}await computeQuery(
+    {{ if not $convertID }}const response: Awaited<{{ $promiseRetType }}> = {{ end }}await computeQuery(
       [
         ...this._queryTree,
         {
@@ -50,6 +71,12 @@
 {{- "" }} },
 		{{- end }}
         },
+        {{- /* Add subfields */ -}}
+        {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
+        {
+          operation: "{{- range $i, $v := . | GetArrayField }}{{if $i }} {{ end }}{{ $v.Name | ToLowerCase }}{{- end }}"
+        },
+        {{- end }}
       ],
       this.client
     )
@@ -57,7 +84,22 @@
     {{ if $convertID -}}
     return this
     {{- else -}}
+        {{- if and .TypeRef.IsList (IsListOfObject .TypeRef) }}
+    return response.map(
+      (r) => new {{ . | FormatReturnType | ToSingleType }}(
+      {
+        queryTree: this.queryTree,
+        host: this.clientHost,
+        sessionToken: this.sessionToken,
+      },
+        {{- range $v := . | GetArrayField }}
+        r.{{ $v.Name | ToLowerCase }},
+        {{- end }}
+      )
+    )
+        {{- else }}
     return response
+        {{- end }}
     {{- end }}
   }
 	{{- end }}

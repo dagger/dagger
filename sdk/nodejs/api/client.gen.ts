@@ -818,17 +818,25 @@ export class Container extends BaseClient {
    * Retrieves the list of environment variables passed to commands.
    */
   async envVariables(): Promise<EnvVariable[]> {
-    const response: Awaited<EnvVariable[]> = await computeQuery(
+    type envVariables = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<envVariables[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "envVariables",
         },
+        {
+          operation: "name value",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map((r) => new EnvVariable(r.name, r.value))
   }
 
   /**
@@ -2258,10 +2266,25 @@ export class Directory extends BaseClient {
  * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
+  private readonly _name?: string = undefined
+
+  private readonly _value?: string = undefined
+
+  constructor(name?: string, value?: string) {
+    super()
+
+    this._name = name
+    this._value = value
+  }
+
   /**
    * The environment variable name.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2279,6 +2302,10 @@ export class EnvVariable extends BaseClient {
    * The environment variable value.
    */
   async value(): Promise<string> {
+    if (this._value) {
+      return this._value
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
