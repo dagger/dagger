@@ -14,6 +14,8 @@ custom:
     label: GitHub Author
     type: string
 kinds:
+  - label: Breaking
+    format: '### :fire: Breaking Changes'
   - label: Added
   - label: Changed
   - label: Deprecated
