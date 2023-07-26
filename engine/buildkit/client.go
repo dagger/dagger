@@ -402,7 +402,7 @@ func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
 	return clientID, nil
 }
 
-type localImportOpts struct {
+type LocalImportOpts struct {
 	OwnerClientID string `json:"ownerClientID,omitempty"`
 	Path          string `json:"path,omitempty"`
 }
@@ -416,7 +416,7 @@ func (c *Client) LocalImportLLB(ctx context.Context, path string, opts ...llb.Lo
 	// TODO: double check that reading the client id from the context here is correct, and that it shouldn't
 	// instead be deser'd from the local name. I think it's okay provided we still do the local dir import
 	// synchronously in the caller of this.
-	nameBytes, err := json.Marshal(localImportOpts{
+	nameBytes, err := json.Marshal(LocalImportOpts{
 		// For now, the requester is always the owner of the local dir
 		// when the dir is initially created in LLB (i.e. you can't request a
 		// a new local dir from another session, you can only be passed one
