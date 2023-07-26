@@ -17,7 +17,9 @@ kinds:
   - label: Added
   - label: Changed
   - label: Deprecated
+  - label: Removed
   - label: Fixed
+  - label: Security
   - label: Dependencies
 footerFormat: |
   ### What to do next?
