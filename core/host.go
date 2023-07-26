@@ -73,7 +73,7 @@ func (host *Host) Directory(
 	defPB := def.ToPB()
 
 	// associate vertexes to the 'host.directory' sub-pipeline
-	RecordVertexes(subRecorder, defPB)
+	buildkit.RecordVertexes(subRecorder, defPB)
 
 	_, err = bk.Solve(ctx, bkgw.SolveRequest{
 		Definition: defPB,
