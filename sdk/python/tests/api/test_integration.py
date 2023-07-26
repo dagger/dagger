@@ -240,7 +240,7 @@ async def test_directory_sync():
 async def test_deprecation_warning():
     async with dagger.Connection() as client:
         with pytest.warns(DeprecationWarning, match="with_exec"):
-            await client.container().from_("alpine:3.16.2").exec(["true"])
+            await client.container().from_("alpine:3.16.2").exec(args=["true"])
 
 
 async def test_return_list_of_objects():

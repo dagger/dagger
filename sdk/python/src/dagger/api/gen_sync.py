@@ -151,6 +151,7 @@ class Container(Type):
     def build(
         self,
         context: "Directory",
+        *,
         dockerfile: Optional[str] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
         target: Optional[str] = None,
@@ -225,6 +226,7 @@ class Container(Type):
     @typecheck
     def endpoint(
         self,
+        *,
         port: Optional[int] = None,
         scheme: Optional[str] = None,
     ) -> str:
@@ -332,6 +334,7 @@ class Container(Type):
     @typecheck
     def exec(
         self,
+        *,
         args: Optional[Sequence[str]] = None,
         stdin: Optional[str] = None,
         redirect_stdout: Optional[str] = None,
@@ -417,6 +420,7 @@ class Container(Type):
     def export(
         self,
         path: str,
+        *,
         platform_variants: Optional[Sequence["Container"]] = None,
         forced_compression: Optional[ImageLayerCompression] = None,
         media_types: Optional[ImageMediaTypes] = None,
@@ -628,6 +632,7 @@ class Container(Type):
     def import_(
         self,
         source: "File",
+        *,
         tag: Optional[str] = None,
     ) -> "Container":
         """Reads the container from an OCI tarball.
@@ -714,6 +719,7 @@ class Container(Type):
     def pipeline(
         self,
         name: str,
+        *,
         description: Optional[str] = None,
         labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Container":
@@ -762,6 +768,7 @@ class Container(Type):
     def publish(
         self,
         address: str,
+        *,
         platform_variants: Optional[Sequence["Container"]] = None,
         forced_compression: Optional[ImageLayerCompression] = None,
         media_types: Optional[ImageMediaTypes] = None,
@@ -921,6 +928,7 @@ class Container(Type):
     @typecheck
     def with_default_args(
         self,
+        *,
         args: Optional[Sequence[str]] = None,
     ) -> "Container":
         """Configures default arguments for future commands.
@@ -942,6 +950,7 @@ class Container(Type):
         self,
         path: str,
         directory: "Directory",
+        *,
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
         owner: Optional[str] = None,
@@ -996,6 +1005,7 @@ class Container(Type):
         self,
         name: str,
         value: str,
+        *,
         expand: Optional[bool] = None,
     ) -> "Container":
         """Retrieves this container plus the given environment variable.
@@ -1023,6 +1033,7 @@ class Container(Type):
     def with_exec(
         self,
         args: Sequence[str],
+        *,
         skip_entrypoint: Optional[bool] = None,
         stdin: Optional[str] = None,
         redirect_stdout: Optional[str] = None,
@@ -1082,6 +1093,7 @@ class Container(Type):
     def with_exposed_port(
         self,
         port: int,
+        *,
         protocol: Optional[NetworkProtocol] = None,
         description: Optional[str] = None,
     ) -> "Container":
@@ -1134,6 +1146,7 @@ class Container(Type):
         self,
         path: str,
         source: "File",
+        *,
         permissions: Optional[int] = None,
         owner: Optional[str] = None,
     ) -> "Container":
@@ -1198,6 +1211,7 @@ class Container(Type):
         self,
         path: str,
         cache: CacheVolume,
+        *,
         source: Optional["Directory"] = None,
         sharing: Optional[CacheSharingMode] = None,
         owner: Optional[str] = None,
@@ -1241,6 +1255,7 @@ class Container(Type):
         self,
         path: str,
         source: "Directory",
+        *,
         owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a directory mounted at the given path.
@@ -1270,6 +1285,7 @@ class Container(Type):
         self,
         path: str,
         source: "File",
+        *,
         owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a file mounted at the given path.
@@ -1299,6 +1315,7 @@ class Container(Type):
         self,
         path: str,
         source: "Secret",
+        *,
         owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a secret mounted into a file at the
@@ -1344,6 +1361,7 @@ class Container(Type):
     def with_new_file(
         self,
         path: str,
+        *,
         contents: Optional[str] = None,
         permissions: Optional[int] = None,
         owner: Optional[str] = None,
@@ -1467,6 +1485,7 @@ class Container(Type):
         self,
         path: str,
         source: "Socket",
+        *,
         owner: Optional[str] = None,
     ) -> "Container":
         """Retrieves this container plus a socket forwarded to the given Unix
@@ -1541,6 +1560,7 @@ class Container(Type):
     def without_exposed_port(
         self,
         port: int,
+        *,
         protocol: Optional[NetworkProtocol] = None,
     ) -> "Container":
         """Unexpose a previously exposed port.
@@ -1705,6 +1725,7 @@ class Directory(Type):
     @typecheck
     def docker_build(
         self,
+        *,
         dockerfile: Optional[str] = None,
         platform: Optional[Platform] = None,
         build_args: Optional[Sequence[BuildArg]] = None,
@@ -1739,7 +1760,7 @@ class Directory(Type):
         return Container(_ctx)
 
     @typecheck
-    def entries(self, path: Optional[str] = None) -> list[str]:
+    def entries(self, *, path: Optional[str] = None) -> list[str]:
         """Returns a list of files and directories at the given path.
 
         Parameters
@@ -1845,6 +1866,7 @@ class Directory(Type):
     def pipeline(
         self,
         name: str,
+        *,
         description: Optional[str] = None,
         labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Directory":
@@ -1889,6 +1911,7 @@ class Directory(Type):
         self,
         path: str,
         directory: "Directory",
+        *,
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
     ) -> "Directory":
@@ -1921,6 +1944,7 @@ class Directory(Type):
         self,
         path: str,
         source: "File",
+        *,
         permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus the contents of the given file copied to
@@ -1948,6 +1972,7 @@ class Directory(Type):
     def with_new_directory(
         self,
         path: str,
+        *,
         permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus a new directory created at the given
@@ -1973,6 +1998,7 @@ class Directory(Type):
         self,
         path: str,
         contents: str,
+        *,
         permissions: Optional[int] = None,
     ) -> "Directory":
         """Retrieves this directory plus a new file written at the given path.
@@ -2140,6 +2166,7 @@ class File(Type):
     def export(
         self,
         path: str,
+        *,
         allow_parent_dir_path: Optional[bool] = None,
     ) -> bool:
         """Writes the file to a file path on the host.
@@ -2292,6 +2319,7 @@ class GitRef(Type):
     @typecheck
     def tree(
         self,
+        *,
         ssh_known_hosts: Optional[str] = None,
         ssh_auth_socket: Optional["Socket"] = None,
     ) -> Directory:
@@ -2361,6 +2389,7 @@ class Host(Type):
     def directory(
         self,
         path: str,
+        *,
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
     ) -> Directory:
@@ -2433,6 +2462,7 @@ class Host(Type):
     @typecheck
     def workdir(
         self,
+        *,
         exclude: Optional[Sequence[str]] = None,
         include: Optional[Sequence[str]] = None,
     ) -> Directory:
@@ -2963,6 +2993,7 @@ class Client(Root):
     @typecheck
     def container(
         self,
+        *,
         id: Optional[ContainerID] = None,
         platform: Optional[Platform] = None,
     ) -> Container:
@@ -3003,7 +3034,11 @@ class Client(Root):
         return _ctx.execute_sync(Platform)
 
     @typecheck
-    def directory(self, id: Optional[DirectoryID] = None) -> Directory:
+    def directory(
+        self,
+        *,
+        id: Optional[DirectoryID] = None,
+    ) -> Directory:
         """Load a directory by ID. No argument produces an empty directory."""
         _args = [
             Arg("id", id, None),
@@ -3024,6 +3059,7 @@ class Client(Root):
     def git(
         self,
         url: str,
+        *,
         keep_git_dir: Optional[bool] = None,
         experimental_service_host: Optional[Container] = None,
     ) -> GitRepository:
@@ -3060,6 +3096,7 @@ class Client(Root):
     def http(
         self,
         url: str,
+        *,
         experimental_service_host: Optional[Container] = None,
     ) -> File:
         """Returns a file containing an http remote url content.
@@ -3082,6 +3119,7 @@ class Client(Root):
     def pipeline(
         self,
         name: str,
+        *,
         description: Optional[str] = None,
         labels: Optional[Sequence[PipelineLabel]] = None,
     ) -> "Client":
@@ -3105,7 +3143,7 @@ class Client(Root):
         return Client(_ctx)
 
     @typecheck
-    def project(self, id: Optional[ProjectID] = None) -> Project:
+    def project(self, *, id: Optional[ProjectID] = None) -> Project:
         """Load a project from ID."""
         _args = [
             Arg("id", id, None),
@@ -3116,6 +3154,7 @@ class Client(Root):
     @typecheck
     def project_command(
         self,
+        *,
         id: Optional[ProjectCommandID] = None,
     ) -> ProjectCommand:
         """Load a project command from ID."""
@@ -3155,7 +3194,7 @@ class Client(Root):
         return Secret(_ctx)
 
     @typecheck
-    def socket(self, id: Optional[SocketID] = None) -> "Socket":
+    def socket(self, *, id: Optional[SocketID] = None) -> "Socket":
         """Loads a socket by its ID."""
         _args = [
             Arg("id", id, None),

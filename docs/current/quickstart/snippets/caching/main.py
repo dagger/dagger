@@ -23,7 +23,7 @@ async def main():
             .with_directory(
                 "/src",
                 client.host().directory("."),
-                ["node_modules/", "ci/"],
+                exclude=["node_modules/", "ci/"],
             )
             .with_mounted_cache("/src/node_modules", node_cache)
         )
