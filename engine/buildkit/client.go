@@ -106,6 +106,7 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client.job.SetValue(entitlementsJobKey, entitlementSet)
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
+	client.llbBridge = recordingGateway{client.llbBridge}
 
 	return client, nil
 }

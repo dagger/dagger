@@ -340,7 +340,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 	container.FS = def.ToPB()
 
 	// associate vertexes to the 'from' sub-pipeline
-	RecordVertexes(subRecorder, container.FS)
+	buildkit.RecordVertexes(subRecorder, container.FS)
 
 	container.Config = mergeImageConfig(container.Config, imgSpec.Config)
 	container.ImageRef = digested.String()
@@ -468,7 +468,7 @@ func (container *Container) buildUncached(
 		}
 
 		// associate vertexes to the 'docker build' sub-pipeline
-		RecordVertexes(subRecorder, def.ToPB())
+		buildkit.RecordVertexes(subRecorder, def.ToPB())
 
 		container.FS = def.ToPB()
 		container.FS.Source = nil
@@ -1054,7 +1054,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 
 	var namef string
 	if container.Focused {
-		namef = focusPrefix + "exec %s"
+		namef = buildkit.FocusPrefix + "exec %s"
 	} else {
 		namef = "exec %s"
 	}
@@ -1090,7 +1090,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 	// create /dagger mount point for the shim to write to
 	runOpts = append(runOpts,
 		llb.AddMount(buildkit.MetaMountDestPath,
-			llb.Scratch().File(meta, llb.WithCustomName(internalPrefix+"creating dagger metadata")),
+			llb.Scratch().File(meta, llb.WithCustomName(buildkit.InternalPrefix+"creating dagger metadata")),
 			llb.SourcePath(buildkit.MetaSourcePath)))
 
 	if opts.RedirectStdout != "" {
