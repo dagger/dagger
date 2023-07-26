@@ -231,13 +231,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(ctx, bo.NextBackOff())
 		defer cancel()
-		err := s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
-		if err != nil {
-			// TODO:
-			fmt.Fprintf(os.Stderr, "connect err: %v\n", err)
-		}
-		return err
-	}, backoff.WithContext(bo, ctx))
+		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+	}, backoff.WithContext(bo, ctx)) // TODO: this stops if context is canceled right?
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}

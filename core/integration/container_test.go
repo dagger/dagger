@@ -466,12 +466,12 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, "goodbye\n", stderr)
 
 	_, err = execWithMount.Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stdout: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
 
 	_, err = execWithMount.Stderr(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stderr: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "goodbye\n", stderr)
 }
 
 func TestContainerExecWithWorkdir(t *testing.T) {

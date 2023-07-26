@@ -70,7 +70,7 @@ func TestMergeFieldExtend(t *testing.T) {
 
 		StaticSchema(StaticSchemaParams{
 			Schema: `
-			extend Type A {
+			extend TypeA {
 				fieldB: String
 			}
 			`,
