@@ -494,18 +494,21 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 				return true
 			},
 		})
-		if status.Code(err) == codes.Canceled {
+		// run this unconditionally, in case the file was successfully exported but something else failed, we
+		// don't want to leave around a file with an unexpected name
+		_, statSyncedPathErr := os.Lstat(syncedDestPath)
+		if statSyncedPathErr == nil && syncedDestPath != finalDestPath {
+			// TODO: double check whether rename resets any metadata we don't want reset
+			if err := os.Rename(syncedDestPath, finalDestPath); err != nil {
+				return fmt.Errorf("failed to rename synced dest path %s to final dest path %s: %w", syncedDestPath, finalDestPath, err)
+			}
+		}
+		if status.Code(err) == codes.Canceled || status.Code(err) == codes.Unavailable {
 			// TODO: is there a way to be sure that the stream was actually done? as opposed to just canceled?
 			err = nil
 		}
 		if err != nil {
 			return fmt.Errorf("failed to receive fs changes: %w", err)
-		}
-		if syncedDestPath != finalDestPath {
-			// TODO: double check whether rename resets any metadata we don't want reset
-			if err := os.Rename(syncedDestPath, finalDestPath); err != nil {
-				return fmt.Errorf("failed to rename synced dest path %s to final dest path %s: %w", syncedDestPath, finalDestPath, err)
-			}
 		}
 		return nil
 	}
