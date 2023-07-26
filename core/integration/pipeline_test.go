@@ -47,7 +47,7 @@ func TestPipeline(t *testing.T) {
 		_, err = c.
 			Container().
 			Pipeline("container pipeline").
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithExec([]string{"echo", cacheBuster}).
 			Sync(ctx)
 
@@ -95,7 +95,7 @@ func TestPipeline(t *testing.T) {
 		require.NoError(t, err)
 
 		client := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithExec([]string{"apk", "add", "curl"}).
 			WithExec([]string{"curl", "-v", url})

@@ -264,7 +264,7 @@ const testCLIBinPath = "/bin/dagger"
 
 func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
 	t.Helper()
-	ctr := c.Container().From("alpine:3.16.2").
+	ctr := c.Container().From(alpineImage).
 		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
 		// TODO: this shouldn't be needed, dagger cli should pick up existing nestedness

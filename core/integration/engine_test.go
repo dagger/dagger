@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const alpineImage = "alpine:3.18.2"
+
 func devEngineContainer(c *dagger.Client) *dagger.Container {
 	// This loads the engine.tar file from the host into the container, that was set up by
 	// internal/mage/engine.go:test or by ./hack/dev. This is used to spin up additional dev engines.
@@ -38,7 +40,7 @@ func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, 
 	if err != nil {
 		return nil, err
 	}
-	return c.Container().From("alpine:3.17").
+	return c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngine).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
@@ -64,7 +66,7 @@ kill -TERM $engine_pid
 wait $engine_pid
 exit $?
 `,
-			Permissions: 0700,
+			Permissions: 0o700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
@@ -91,7 +93,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 	devEngine = devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents:    entrypoint,
-			Permissions: 0700,
+			Permissions: 0o700,
 		}).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
@@ -102,7 +104,8 @@ func TestClientWaitsForEngine(t *testing.T) {
 	require.NoError(t, err)
 	_, err = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`}). // arbitrary valid query
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
 		WithExec([]string{"time", "dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		}).Sync(ctx)
@@ -126,7 +129,8 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 
 	out, err := clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
-			Contents: `{ defaultPlatform }`}). // arbitrary valid query
+			Contents: `{ defaultPlatform }`,
+		}). // arbitrary valid query
 		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).
 		Stderr(ctx)
 	require.NoError(t, err)

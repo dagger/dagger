@@ -24,7 +24,7 @@ func TestHostWorkdir(t *testing.T) {
 
 	t.Run("contains the workdir's content", func(t *testing.T) {
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -37,7 +37,7 @@ func TestHostWorkdir(t *testing.T) {
 		require.NoError(t, err)
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", c.Host().Directory(".")).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -67,7 +67,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -81,7 +81,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -95,7 +95,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -110,7 +110,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -125,7 +125,7 @@ func TestHostWorkdirExcludeInclude(t *testing.T) {
 		})
 
 		contents, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/host", wd).
 			WithExec([]string{"ls", "/host"}).
 			Stdout(ctx)
@@ -281,7 +281,7 @@ func TestHostVariable(t *testing.T) {
 	require.Equal(t, "hello", varValue)
 
 	env, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		//nolint:staticcheck // SA1019 We want to test this API while we support it.
 		WithSecretVariable("SECRET", secret.Secret()).
 		WithExec([]string{"env"}).
