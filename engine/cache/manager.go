@@ -344,7 +344,7 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if !httpOk(resp.StatusCode) {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected status code: %d: %s", resp.StatusCode, body)
 	}

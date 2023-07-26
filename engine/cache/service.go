@@ -270,7 +270,7 @@ func (c *client) GetConfig(ctx context.Context, req GetConfigRequest) (*Config, 
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -310,7 +310,7 @@ func (c *client) UpdateCacheRecords(
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -350,7 +350,7 @@ func (c *client) UpdateCacheLayers(
 		return err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -373,7 +373,7 @@ func (c *client) ImportCache(ctx context.Context) (*remotecache.CacheConfig, err
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -410,7 +410,7 @@ func (c *client) GetLayerDownloadURL(ctx context.Context, req GetLayerDownloadUR
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -447,7 +447,7 @@ func (c *client) GetLayerUploadURL(ctx context.Context, req GetLayerUploadURLReq
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -484,7 +484,7 @@ func (c *client) GetCacheMountConfig(ctx context.Context, req GetCacheMountConfi
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
@@ -521,7 +521,7 @@ func (c *client) GetCacheMountUploadURL(ctx context.Context, req GetCacheMountUp
 		return nil, err
 	}
 	defer httpResp.Body.Close()
-	if httpResp.StatusCode != http.StatusOK {
+	if !httpOk(httpResp.StatusCode) {
 		body, _ := io.ReadAll(httpReq.Body)
 		return nil, fmt.Errorf("unexpected status code: %d: %s", httpResp.StatusCode, body)
 	}
