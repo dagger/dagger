@@ -354,7 +354,7 @@ func TestContainerExecServices(t *testing.T) {
 	require.NoError(t, err)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", url})
@@ -380,7 +380,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	defer c.Close()
 
 	srv := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExposedPort(8080).
 		WithExec([]string{"sh", "-c", "echo nope; exit 42"})
 
@@ -388,7 +388,7 @@ func TestContainerExecServicesError(t *testing.T) {
 	require.NoError(t, err)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
@@ -406,7 +406,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 	defer c.Close()
 
 	srv := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExposedPort(8080).
 		// using error to compare hostname after WithServiceBinding
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
@@ -417,7 +417,7 @@ func TestContainerServiceNoExec(t *testing.T) {
 	require.NoError(t, err)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8080"})
 
@@ -447,7 +447,7 @@ func TestContainerExecUDPServices(t *testing.T) {
 		WithExec([]string{"go", "run", "/src/main.go"})
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "socat"}).
 		WithServiceBinding("echo", srv).
 		WithExec([]string{"socat", "-", "udp:echo:4321"}, dagger.ContainerWithExecOpts{
@@ -473,7 +473,7 @@ func TestContainerExecServiceAlias(t *testing.T) {
 	srv, _ := httpService(ctx, t, c, "Hello, world!")
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("hello", srv).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithExec([]string{"curl", "-v", "http://hello:8000"})
@@ -509,7 +509,7 @@ func TestContainerExecServicesDeduping(t *testing.T) {
 		WithExec([]string{"go", "run", "/src/main.go"})
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "curl"}).
 		WithServiceBinding("www", srv).
 		WithEnvVariable("CACHEBUST", identity.NewID())
@@ -562,7 +562,7 @@ func TestContainerExecServicesChained(t *testing.T) {
 	}
 
 	fileContent, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", "http://www:8000"}).
 		WithExec([]string{"cat", "index.html"}).
@@ -585,7 +585,7 @@ func TestContainerBuildService(t *testing.T) {
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
+				`FROM `+alpineImage+`
 WORKDIR /src
 RUN wget `+httpURL+`
 CMD cat index.html
@@ -605,7 +605,7 @@ CMD cat index.html
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
+				`FROM `+alpineImage+`
 WORKDIR /src
 RUN wget `+httpURL+`
 CMD cat index.html
@@ -631,7 +631,7 @@ CMD cat index.html
 
 		src := c.Directory().
 			WithNewFile("Dockerfile",
-				`FROM alpine:3.16.2
+				`FROM `+alpineImage+`
 WORKDIR /src
 RUN wget `+httpURL+`
 CMD cat index.html
@@ -664,7 +664,7 @@ func TestContainerExportServices(t *testing.T) {
 	srv, httpURL := httpService(ctx, t, c, content)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", httpURL})
 
@@ -687,7 +687,7 @@ func TestContainerMultiPlatformExportServices(t *testing.T) {
 		srv, url := httpService(ctx, t, c, string(platform))
 
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithExec([]string{"wget", url}).
 			WithExec([]string{"uname", "-m"})
@@ -716,7 +716,7 @@ func TestServicesContainerPublish(t *testing.T) {
 
 	testRef := registryRef("services-container-publish")
 	pushedRef, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithExec([]string{"wget", url}).
 		Publish(ctx, testRef)
@@ -742,7 +742,7 @@ func TestContainerRootFSServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	fileContent, err := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url}).
@@ -768,7 +768,7 @@ func TestContainerWithRootFSServices(t *testing.T) {
 	gitDaemon, repoURL := gitService(ctx, t, c,
 		// this little maneuver commits the entire rootfs into a git repo
 		c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithServiceBinding("www", srv).
 			WithWorkdir("/sub/out").
 			WithExec([]string{"wget", url}).
@@ -802,7 +802,7 @@ func TestContainerDirectoryServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	wget := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/sub/out").
 		WithExec([]string{"wget", url})
@@ -850,7 +850,7 @@ func TestContainerFileServices(t *testing.T) {
 	srv, url := httpService(ctx, t, c, content)
 
 	client := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithServiceBinding("www", srv).
 		WithWorkdir("/out").
 		WithExec([]string{"wget", url})
@@ -881,7 +881,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 
 	t.Run("mounting", func(t *testing.T) {
 		useBoth := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedDirectory("/mnt/repo", gitDir).
 			WithMountedFile("/mnt/index.html", httpFile)
 
@@ -896,7 +896,7 @@ func TestContainerWithServiceFileDirectory(t *testing.T) {
 
 	t.Run("copying", func(t *testing.T) {
 		useBoth := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithDirectory("/mnt/repo", gitDir).
 			WithFile("/mnt/index.html", httpFile)
 
@@ -987,7 +987,7 @@ func TestDirectoryServiceTimestamp(t *testing.T) {
 		Tree().
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithDirectory("/repo", stamped).
 		WithExec([]string{"stat", "/repo/README.md"}).
 		Stdout(ctx)
@@ -1155,7 +1155,7 @@ func TestFileServiceTimestamp(t *testing.T) {
 	stamped := c.HTTP(httpURL, dagger.HTTPOpts{ExperimentalServiceHost: httpSrv}).
 		WithTimestamps(int(ts.Unix()))
 
-	stdout, err := c.Container().From("alpine:3.16.2").
+	stdout, err := c.Container().From(alpineImage).
 		WithFile("/index.html", stamped).
 		WithExec([]string{"stat", "/index.html"}).
 		Stdout(ctx)
@@ -1182,7 +1182,7 @@ func TestFileServiceSecret(t *testing.T) {
 
 	t.Run("secret env", func(t *testing.T) {
 		_, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithSecretVariable("SEKRIT", secret).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
 			Sync(ctx)
@@ -1191,7 +1191,7 @@ func TestFileServiceSecret(t *testing.T) {
 
 	t.Run("secret mount", func(t *testing.T) {
 		_, err := c.Container().
-			From("alpine:3.16.2").
+			From(alpineImage).
 			WithMountedSecret("/sekrit", secret).
 			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
 			Sync(ctx)
@@ -1225,7 +1225,7 @@ func gitService(ctx context.Context, t *testing.T, c *dagger.Client, content *da
 
 	const gitPort = 9418
 	gitDaemon := c.Container().
-		From("alpine:3.16.2").
+		From(alpineImage).
 		WithExec([]string{"apk", "add", "git", "git-daemon"}).
 		WithDirectory("/root/repo", content).
 		WithMountedFile("/root/start.sh",
@@ -1244,7 +1244,7 @@ mkdir srv
 cd repo
 	git init
 	git branch -m main
-	git add *
+	git add * || true
 	git commit -m "init"
 cd ..
 

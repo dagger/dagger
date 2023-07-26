@@ -61,22 +61,23 @@ func TestRemoteCacheRegistry(t *testing.T) {
 
 	cliBinPath := "/.dagger-cli"
 
-	outputA, err := c.Container().From("alpine:3.17").
+	outputA, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineA).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
-			}`}).
+			Contents: `{
+				container {
+					from(address: "` + alpineImage + `") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
+			}`,
+		}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 		}).Stdout(ctx)
@@ -87,22 +88,23 @@ func TestRemoteCacheRegistry(t *testing.T) {
 	devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, registry, "registry", cacheEnv, 1)
 	require.NoError(t, err)
 
-	outputB, err := c.Container().From("alpine:3.17").
+	outputB, err := c.Container().From(alpineImage).
 		WithServiceBinding("dev-engine", devEngineB).
 		WithMountedFile(cliBinPath, daggerCli).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", cacheEnv).
 		WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-			Contents: `{ 
-				container { 
-					from(address: "alpine:3.17") { 
-						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-							stdout 
-						} 
-					} 
-				} 
-			}`}).
+			Contents: `{
+				container {
+					from(address: "` + alpineImage + `") {
+						withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+							stdout
+						}
+					}
+				}
+			}`,
+		}).
 		WithExec([]string{
 			"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 		}).Stdout(ctx)
@@ -146,22 +148,23 @@ func TestRemoteCacheS3(t *testing.T) {
 		// internal/mage/engine.go:test. This is used to communicate with the dev engine.
 		daggerCli := c.Host().Directory("/dagger-dev/", dagger.HostDirectoryOpts{Include: []string{"dagger"}}).File("dagger")
 
-		outputA, err := c.Container().From("alpine:3.17").
+		outputA, err := c.Container().From(alpineImage).
 			WithServiceBinding("dev-engine", devEngineA).
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointA).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
-					}`}).
+				Contents: `{
+						container {
+							from(address: "` + alpineImage + `") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
+					}`,
+			}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + ` query --doc .dagger-query.txt`,
 			}).Stdout(ctx)
@@ -172,22 +175,23 @@ func TestRemoteCacheS3(t *testing.T) {
 		devEngineB, endpointB, err := getDevEngineForRemoteCache(ctx, c, s3, "s3", s3Env, 1)
 		require.NoError(t, err)
 
-		outputB, err := c.Container().From("alpine:3.17").
+		outputB, err := c.Container().From(alpineImage).
 			WithServiceBinding("dev-engine", devEngineB).
 			WithMountedFile(cliBinPath, daggerCli).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpointB).
 			WithEnvVariable("_EXPERIMENTAL_DAGGER_CACHE_CONFIG", s3Env).
 			WithNewFile("/.dagger-query.txt", dagger.ContainerWithNewFileOpts{
-				Contents: `{ 
-						container { 
-							from(address: "alpine:3.17") { 
-								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) { 
-									stdout 
-								} 
-							} 
-						} 
-					}`}).
+				Contents: `{
+						container {
+							from(address: "` + alpineImage + `") {
+								withExec(args: ["sh", "-c", "head -c 128 /dev/random | sha256sum"]) {
+									stdout
+								}
+							}
+						}
+					}`,
+			}).
 			WithExec([]string{
 				"sh", "-c", cliBinPath + " query --doc .dagger-query.txt",
 			}).Stdout(ctx)
