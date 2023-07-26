@@ -2,7 +2,6 @@ package core
 
 import (
 	"archive/tar"
-	"bytes"
 	"context"
 	"crypto/md5"
 	"errors"
@@ -33,8 +32,8 @@ func connect(t require.TestingT) (*dagger.Client, context.Context) {
 	return connectWithLogOutput(t, os.Stderr)
 }
 
-func connectWithBufferedLogs(t require.TestingT) (*dagger.Client, context.Context, *bytes.Buffer) {
-	output := &bytes.Buffer{}
+func connectWithBufferedLogs(t require.TestingT) (*dagger.Client, context.Context, *safeBuffer) {
+	output := &safeBuffer{}
 	c, ctx := connectWithLogOutput(t, io.MultiWriter(os.Stderr, output))
 	return c, ctx, output
 }
