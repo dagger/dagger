@@ -580,10 +580,13 @@ class _ObjectField:
 
         self.name = format_name(name)
         self.named_type = get_named_type(field.type)
-        self.args = sorted(
-            (_InputField(ctx, *args, parent=self) for args in field.args.items()),
-            key=attrgetter("has_default"),
-        )
+
+        self.required_args = []
+        self.default_args = []
+        for args in field.args.items():
+            arg = _InputField(ctx, *args, parent=self)
+            (self.default_args if arg.has_default else self.required_args).append(arg)
+        self.args = self.required_args + self.default_args
         self.description = field.description
 
         self.is_custom_scalar = is_custom_scalar_type(field.type)
@@ -659,7 +662,14 @@ class _ObjectField:
                 )
 
     def func_signature(self) -> str:
-        params = ", ".join(chain(("self",), (a.as_param() for a in self.args)))
+        params = ", ".join(
+            chain(
+                ("self",),
+                (a.as_param() for a in self.required_args),
+                ("*",) if self.default_args else (),
+                (a.as_param() for a in self.default_args),
+            )
+        )
         # arbitrary heuristic to force trailing comma in long signatures
         if len(params) > 40:  # noqa: PLR2004
             params = f"{params},"
