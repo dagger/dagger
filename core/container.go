@@ -125,7 +125,11 @@ func (id ContainerID) String() string {
 var _ Digestible = ContainerID("")
 
 func (id ContainerID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	ctr, err := id.ToContainer()
+	if err != nil {
+		return "", err
+	}
+	return ctr.Digest()
 }
 
 func (id ContainerID) ToContainer() (*Container, error) {
@@ -161,11 +165,7 @@ var _ Digestible = (*Container)(nil)
 
 // Digest returns the container's content hash.
 func (container *Container) Digest() (digest.Digest, error) {
-	id, err := container.ID()
-	if err != nil {
-		return "", err
-	}
-	return id.Digest()
+	return stableDigest(container)
 }
 
 type HostAlias struct {
@@ -1320,7 +1320,7 @@ func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) e
 
 func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
 	container = container.Clone()
-	hostname, err := container.HostnameOrErr(bk)
+	hostname, err := container.HostnameOrErr()
 	if err != nil {
 		return nil, err
 	}
@@ -1745,13 +1745,12 @@ func (container *Container) Import(
 	return container, nil
 }
 
-func (container *Container) HostnameOrErr(bk *buildkit.Client) (string, error) {
-	// compute a *stable* digest so that hostnames don't change across sessions
-	ctrDgst, err := stableDigest(container.FS)
+func (container *Container) HostnameOrErr() (string, error) {
+	dig, err := container.Digest()
 	if err != nil {
-		return "", fmt.Errorf("stable digest: %w", err)
+		return "", err
 	}
-	return network.HostHash(ctrDgst), nil
+	return network.HostHash(dig), nil
 }
 
 func (container *Container) Endpoint(bk *buildkit.Client, port int, scheme string) (string, error) {
@@ -1763,7 +1762,7 @@ func (container *Container) Endpoint(bk *buildkit.Client, port int, scheme strin
 		port = container.Ports[0].Port
 	}
 
-	host, err := container.HostnameOrErr(bk)
+	host, err := container.HostnameOrErr()
 	if err != nil {
 		return "", err
 	}
@@ -1836,7 +1835,7 @@ func (container *Container) WithServiceBinding(bk *buildkit.Client, svc *Contain
 	})
 
 	if alias != "" {
-		hn, err := svc.HostnameOrErr(bk)
+		hn, err := svc.HostnameOrErr()
 		if err != nil {
 			return nil, fmt.Errorf("get hostname: %w", err)
 		}

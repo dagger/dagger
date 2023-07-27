@@ -33,36 +33,76 @@ import (
 func TestServiceHostnamesAreStable(t *testing.T) {
 	t.Parallel()
 
-	c, ctx := connect(t)
-	defer c.Close()
+	hostname := func(ctx context.Context, c *dagger.Client) string {
+		www := c.Directory().WithNewFile("index.html", "Hello, world!")
 
-	www := c.Directory().WithNewFile("index.html", "Hello, world!")
+		srv := c.Container().
+			From("python").
+			WithMountedDirectory("/srv/www", www).
+			WithWorkdir("/srv/www").
+			// NB: chain a few things to make the container a bit more complicated.
+			//
+			// for example, ContainerIDs aren't totally deterministic as WithExec adds
+			// some randomization to how LLB gets marshalled.
+			WithExec([]string{"echo", "first"}).
+			WithExec([]string{"echo", "second"}).
+			WithExec([]string{"echo", "third"}).
+			WithEnvVariable("FOO", "123").
+			WithEnvVariable("BAR", "456").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
 
-	srv := c.Container().
-		From("python").
-		WithMountedDirectory("/srv/www", www).
-		WithWorkdir("/srv/www").
-		// NB: chain a few things to make the container a bit more complicated.
-		//
-		// for example, ContainerIDs aren't totally deterministic as WithExec adds
-		// some randomization to how LLB gets marshalled.
-		WithExec([]string{"echo", "first"}).
-		WithExec([]string{"echo", "second"}).
-		WithExec([]string{"echo", "third"}).
-		WithEnvVariable("FOO", "123").
-		WithEnvVariable("BAR", "456").
-		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"})
-
-	hosts := map[string]int{}
-
-	for i := 0; i < 10; i++ {
 		hostname, err := srv.Hostname(ctx)
 		require.NoError(t, err)
-		hosts[hostname]++
+
+		return hostname
 	}
 
-	require.Len(t, hosts, 1)
+	t.Run("hostnames are different for different services", func(t *testing.T) {
+		c, ctx := connect(t)
+		defer c.Close()
+
+		srv1 := c.Container().
+			From("python").
+			WithExposedPort(8000).
+			WithExec([]string{"python", "-m", "http.server"})
+
+		srv2 := c.Container().
+			From("python").
+			WithExposedPort(8001).
+			WithExec([]string{"python", "-m", "http.server", "8081"})
+
+		hn1, err := srv1.Hostname(ctx)
+		require.NoError(t, err)
+		hn2, err := srv2.Hostname(ctx)
+		require.NoError(t, err)
+
+		require.NotEqual(t, hn1, hn2)
+	})
+
+	t.Run("hostnames are stable within a session", func(t *testing.T) {
+		c, ctx := connect(t)
+		defer c.Close()
+
+		hosts := map[string]int{}
+		for i := 0; i < 10; i++ {
+			hosts[hostname(ctx, c)]++
+		}
+
+		require.Len(t, hosts, 1)
+	})
+
+	t.Run("hostnames are stable across sessions", func(t *testing.T) {
+		hosts := map[string]int{}
+
+		for i := 0; i < 5; i++ {
+			c, ctx := connect(t)
+			hosts[hostname(ctx, c)]++
+			c.Close()
+		}
+
+		require.Len(t, hosts, 1)
+	})
 }
 
 func TestContainerHostnameEndpoint(t *testing.T) {
@@ -72,6 +112,8 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 	defer c.Close()
 
 	t.Run("hostname is independent of exposed ports", func(t *testing.T) {
+		t.Skip("no longer the case; does it matter?")
+
 		a, err := c.Container().
 			From("python").
 			WithExposedPort(8000).

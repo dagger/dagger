@@ -2,56 +2,81 @@ package core
 
 import (
 	"bytes"
-	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"reflect"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/network"
+	"github.com/koron-go/prefixw"
+	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
 )
 
+var debugDigest = false
+var debugDigestLogs string = fmt.Sprintf("/tmp/digests-%d.log", time.Now().UnixNano())
+var debugDigestLogsW = io.Discard
+
+func init() {
+	if debugDigest {
+		var err error
+		debugDigestLogsW, err = os.Create(debugDigestLogs)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
+
 func stableDigest(value any) (digest.Digest, error) {
 	buf := new(bytes.Buffer)
 
-	if err := digestInto(value, buf); err != nil {
+	var dest io.Writer = buf
+	var debugTag string
+	var debugW = io.Discard
+
+	if debugDigest {
+		if x, ok := value.(Digestible); ok && x != nil {
+			debugTag = identity.NewID()
+			debugW = prefixw.New(debugDigestLogsW, fmt.Sprintf("%s %T >> ", debugTag, x))
+			fmt.Fprintln(debugW, "BEGIN")
+			dest = io.MultiWriter(dest, debugW)
+		}
+	}
+
+	if err := stableDigestInto(value, dest); err != nil {
 		return "", err
 	}
 
-	return digest.FromReader(buf)
+	dig, err := digest.FromReader(buf)
+	if err != nil {
+		return "", err
+	}
+
+	if debugDigest {
+		if x, ok := value.(Digestible); ok && x != nil {
+			fmt.Fprintln(debugW, "END", network.HostHash(dig))
+		}
+	}
+
+	return dig, nil
 }
 
-func digestInto(value any, dest io.Writer) (err error) {
+// stableDigestInto handles digesting Go built-in types without any sort of
+// specialization.
+func stableDigestInto(value any, dest io.Writer) (err error) {
 	defer func() {
 		if err := recover(); err != nil {
 			panic(fmt.Errorf("digest %T: %v", value, err))
 		}
 	}()
-
-	switch x := value.(type) {
-	case *pb.Definition:
-		if x == nil {
-			break
-		}
-
-		digest, err := digestLLB(context.TODO(), x, stabilizeSourcePolicy{})
-		if err != nil {
-			return err
-		}
-
-		_, err = fmt.Fprintln(dest, digest)
-		return err
-
-	case []byte:
-		// base64-encode bytes rather than treating it like a slice
-		return json.NewEncoder(dest).Encode(value)
-	}
 
 	rt := reflect.TypeOf(value)
 	rv := reflect.ValueOf(value)
@@ -92,11 +117,54 @@ func digestInto(value any, dest io.Writer) (err error) {
 	return nil
 }
 
+var stableDefCache = newCacheMap[*pb.Definition, *pb.Definition]()
+
+// digestInner handles digesting inner content, looking for special types and
+// respecting the Digestible interface.
+//
+// It is separate from digestBuiltin so that Digestible implementations can use
+// digestBuiltin against themselves.
+func digestInner(value any, dest io.Writer) error {
+	switch x := value.(type) {
+	case *pb.Definition:
+		if x == nil {
+			_, err := fmt.Fprintln(dest, "nil")
+			return err
+		}
+
+		stabilized, err := stableDefCache.GetOrInitialize(x, func() (*pb.Definition, error) {
+			return stabilizeDef(x)
+		})
+		if err != nil {
+			return err
+		}
+
+		return stableDigestInto(stabilized, dest)
+
+	case Digestible:
+		digest, err := x.Digest()
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintln(dest, digest)
+		return err
+
+	case []byte:
+		// base64-encode bytes rather than treating it like a slice
+		return json.NewEncoder(dest).Encode(value)
+
+	default:
+		return stableDigestInto(value, dest)
+	}
+}
+
 func digestStructInto(rt reflect.Type, rv reflect.Value, dest io.Writer) error {
 	for i := 0; i < rt.NumField(); i++ {
 		name := rt.Field(i).Name
-		fmt.Fprintln(dest, name)
-		if err := digestInto(rv.Field(i).Interface(), dest); err != nil {
+		if _, err := fmt.Fprintln(dest, name); err != nil {
+			return err
+		}
+		if err := digestInner(rv.Field(i).Interface(), dest); err != nil {
 			return fmt.Errorf("field %s: %w", name, err)
 		}
 	}
@@ -106,8 +174,10 @@ func digestStructInto(rt reflect.Type, rv reflect.Value, dest io.Writer) error {
 
 func digestSliceInto(rv reflect.Value, dest io.Writer) error {
 	for i := 0; i < rv.Len(); i++ {
-		fmt.Fprintln(dest, i)
-		if err := digestInto(rv.Index(i).Interface(), dest); err != nil {
+		if _, err := fmt.Fprintln(dest, i); err != nil {
+			return err
+		}
+		if err := digestInner(rv.Index(i).Interface(), dest); err != nil {
 			return fmt.Errorf("index %d: %w", i, err)
 		}
 	}
@@ -122,10 +192,10 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 	})
 
 	for _, k := range keys {
-		if err := digestInto(k.Interface(), dest); err != nil {
+		if err := digestInner(k.Interface(), dest); err != nil {
 			return fmt.Errorf("key %v: %w", k, err)
 		}
-		if err := digestInto(rv.MapIndex(k).Interface(), dest); err != nil {
+		if err := digestInner(rv.MapIndex(k).Interface(), dest); err != nil {
 			return fmt.Errorf("value for key %v: %w", k, err)
 		}
 	}
@@ -133,123 +203,122 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 	return nil
 }
 
-type sourcePolicyEvaluator interface {
-	Evaluate(ctx context.Context, op *pb.Op) (bool, error)
-}
+// stabilizeDef returns a copy of def that has been pruned of any ephemeral
+// data so that it may be used as a cache key that is stable across sessions.
+func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
+	cp := *def
+	cp.Def = cloneSlice(def.Def)
+	cp.Metadata = cloneMap(def.Metadata)
+	cp.Source = nil // discard source map
 
-// TODO(vito): this is an extracted/trimmed down implementation of
-// llbsolver.Load from upstream Buildkit. Ideally we would use it directly but
-// we have to avoid importing that package because it breaks the Darwin build.
-func digestLLB(ctx context.Context, def *pb.Definition, polEngine sourcePolicyEvaluator) (digest.Digest, error) {
-	if len(def.Def) == 0 {
-		return "", errors.New("invalid empty definition")
-	}
+	stabilized := map[digest.Digest]digest.Digest{}
 
-	allOps := make(map[digest.Digest]*pb.Op)
-	mutatedDigests := make(map[digest.Digest]digest.Digest) // key: old, val: new
-
-	var lastDgst digest.Digest
-
-	for _, dt := range def.Def {
+	// first, stabilize all Ops
+	for i, dt := range cp.Def {
+		digBefore := digest.FromBytes(dt)
 		var op pb.Op
 		if err := (&op).Unmarshal(dt); err != nil {
-			return "", errors.Wrap(err, "failed to parse llb proto op")
+			return nil, errors.Wrap(err, "failed to parse llb proto op")
 		}
-		dgst := digest.FromBytes(dt)
-		if polEngine != nil {
-			mutated, err := polEngine.Evaluate(ctx, &op)
+
+		modified, err := stabilizeOp(&op)
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to stabilize op")
+		}
+
+		if modified {
+			stableDt, err := op.Marshal()
 			if err != nil {
-				return "", errors.Wrap(err, "error evaluating the source policy")
+				return nil, errors.Wrap(err, "failed to marshal llb proto op")
 			}
-			if mutated {
-				dtMutated, err := op.Marshal()
-				if err != nil {
-					return "", err
-				}
-				dgstMutated := digest.FromBytes(dtMutated)
-				mutatedDigests[dgst] = dgstMutated
-				dgst = dgstMutated
+
+			digAfter := digest.FromBytes(stableDt)
+			if digAfter != digBefore {
+				stabilized[digBefore] = digAfter
 			}
-		}
-		allOps[dgst] = &op
-		lastDgst = dgst
-	}
 
-	for dgst := range allOps {
-		_, err := recomputeDigests(ctx, allOps, mutatedDigests, dgst)
-		if err != nil {
-			return "", err
+			cp.Def[i] = stableDt
 		}
 	}
 
-	if len(allOps) < 2 {
-		return "", errors.Errorf("invalid LLB with %d vertexes", len(allOps))
+	// update all inputs to reference the new digests
+	if err := stabilizeInputs(&cp, stabilized); err != nil {
+		return nil, errors.Wrap(err, "failed to stabilize inputs")
 	}
 
-	for {
-		newDgst, ok := mutatedDigests[lastDgst]
-		if !ok || newDgst == lastDgst {
-			break
-		}
-		lastDgst = newDgst
-	}
+	// finally, sort Def since it's in unstable topological order
+	sort.Slice(cp.Def, func(i, j int) bool {
+		return bytes.Compare(cp.Def[i], cp.Def[j]) < 0
+	})
 
-	lastOp := allOps[lastDgst]
-	delete(allOps, lastDgst)
-	if len(lastOp.Inputs) == 0 {
-		return "", errors.Errorf("invalid LLB with no inputs on last vertex")
-	}
-
-	dgst := lastOp.Inputs[0].Digest
-
-	return dgst, nil
+	return &cp, nil
 }
 
-func recomputeDigests(ctx context.Context, all map[digest.Digest]*pb.Op, visited map[digest.Digest]digest.Digest, dgst digest.Digest) (digest.Digest, error) {
-	if dgst, ok := visited[dgst]; ok {
-		return dgst, nil
-	}
-	op := all[dgst]
-
-	var mutated bool
-	for _, input := range op.Inputs {
-		if ctx.Err() != nil {
-			return "", ctx.Err()
+// stabilizeInputs takes a mapping from old digests to new digests and updates
+// all Op inputs to use the new digests instead. Because inputs are addressed
+// by Op digests, any Ops that needed to be updated will thereby yield a new
+// mapping, so stabilizeInputs will keep recursing until no new mappings are
+// yielded.
+func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Digest) error {
+	// swap metadata from old digests to new digests
+	for before, after := range stabilized {
+		meta, found := cp.Metadata[before]
+		if !found {
+			return fmt.Errorf("missing metadata for %s", before)
 		}
 
-		iDgst, err := recomputeDigests(ctx, all, visited, input.Digest)
-		if err != nil {
-			return "", err
+		cp.Metadata[after] = meta
+		delete(cp.Metadata, before)
+	}
+
+	nextPass := map[digest.Digest]digest.Digest{}
+
+	// swap inputs from old digests to new digests
+	//
+	// doing so yields a new Op payload and a new digest
+	for i, dt := range cp.Def {
+		digBefore := digest.FromBytes(dt)
+
+		var op pb.Op
+		if err := (&op).Unmarshal(dt); err != nil {
+			return errors.Wrap(err, "failed to parse llb proto op")
 		}
-		if input.Digest != iDgst {
-			mutated = true
-			input.Digest = iDgst
-		}
-	}
 
-	if !mutated {
-		visited[dgst] = dgst
-		return dgst, nil
-	}
-
-	dt, err := op.Marshal()
-	if err != nil {
-		return "", err
-	}
-	newDgst := digest.FromBytes(dt)
-	visited[dgst] = newDgst
-	all[newDgst] = op
-	delete(all, dgst)
-	return newDgst, nil
-}
-
-// stabilizeSourcePolicy removes ephemeral metadata from ops to prevent it from
-// busting caches.
-type stabilizeSourcePolicy struct{}
-
-func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, error) {
-	if src := op.GetSource(); src != nil {
 		var modified bool
+		for _, input := range op.Inputs {
+			after, found := stabilized[input.Digest]
+			if found {
+				input.Digest = after
+				modified = true
+			}
+		}
+
+		if modified {
+			stableDt, err := op.Marshal()
+			if err != nil {
+				return errors.Wrap(err, "failed to marshal llb proto op")
+			}
+
+			cp.Def[i] = stableDt
+
+			digAfter := digest.FromBytes(stableDt)
+
+			// track the new mapping for any Ops that had this Op as an
+			nextPass[digBefore] = digAfter
+		}
+	}
+
+	if len(nextPass) > 0 {
+		return stabilizeInputs(cp, nextPass)
+	}
+
+	return nil
+}
+
+func stabilizeOp(op *pb.Op) (bool, error) {
+	var modified bool
+
+	if src := op.GetSource(); src != nil {
 		for k := range src.Attrs {
 			switch k {
 			case pb.AttrLocalSessionID,
@@ -271,8 +340,16 @@ func (stabilizeSourcePolicy) Evaluate(ctx context.Context, op *pb.Op) (bool, err
 			src.Identifier = "local://" + opts.Path
 			modified = true
 		}
-		return modified, nil
 	}
 
-	return false, nil
+	if exe := op.GetExec(); exe != nil {
+		if exe.Meta.ProxyEnv != nil {
+			// NB(vito): ProxyEnv is used for passing network configuration along
+			// without busting the cache.
+			exe.Meta.ProxyEnv = nil
+			modified = true
+		}
+	}
+
+	return modified, nil
 }

@@ -708,7 +708,7 @@ func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, ar
 		return "", err
 	}
 
-	return parent.HostnameOrErr(s.bk)
+	return parent.HostnameOrErr()
 }
 
 type containerEndpointArgs struct {

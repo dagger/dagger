@@ -80,7 +80,11 @@ func (id DirectoryID) String() string {
 var _ Digestible = DirectoryID("")
 
 func (id DirectoryID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	dir, err := id.ToDirectory()
+	if err != nil {
+		return "", err
+	}
+	return dir.Digest()
 }
 
 // ToDirectory converts the ID into a real Directory.
@@ -116,11 +120,7 @@ var _ Digestible = (*Directory)(nil)
 
 // Digest returns the directory's content hash.
 func (dir *Directory) Digest() (digest.Digest, error) {
-	id, err := dir.ID()
-	if err != nil {
-		return "", err
-	}
-	return id.Digest()
+	return stableDigest(dir)
 }
 
 func (dir *Directory) State() (llb.State, error) {

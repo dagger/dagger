@@ -69,7 +69,11 @@ func (id FileID) String() string {
 var _ Digestible = FileID("")
 
 func (id FileID) Digest() (digest.Digest, error) {
-	return digest.FromString(id.String()), nil
+	file, err := id.ToFile()
+	if err != nil {
+		return "", err
+	}
+	return file.Digest()
 }
 
 func (id FileID) ToFile() (*File, error) {
@@ -99,11 +103,7 @@ var _ Digestible = (*File)(nil)
 
 // Digest returns the file's content hash.
 func (file *File) Digest() (digest.Digest, error) {
-	id, err := file.ID()
-	if err != nil {
-		return "", err
-	}
-	return id.Digest()
+	return stableDigest(file)
 }
 
 func (file *File) State() (llb.State, error) {
