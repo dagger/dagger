@@ -1228,9 +1228,9 @@ func (r *Container) WithRegistryAuth(address string, username string, secret *Se
 }
 
 // Initializes this container from this DirectoryID.
-func (r *Container) WithRootfs(id *Directory) *Container {
+func (r *Container) WithRootfs(directory *Directory) *Container {
 	q := r.q.Select("withRootfs")
-	q = q.Arg("id", id)
+	q = q.Arg("directory", directory)
 
 	return &Container{
 		q: q,

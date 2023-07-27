@@ -507,8 +507,7 @@ class _InputField:
 
         # On object type fields, don't replace ID scalar with object
         # only if field name is `id` and the corresponding type is different
-        # from the output type (e.g., `file(id: FileID) -> File`, but also
-        # `with_rootfs(id: Directory) -> Container`).
+        # from the output type (e.g., `file(id: FileID) -> File`).
         id_map = ctx.id_map
         if (
             name == "id"

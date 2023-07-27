@@ -1425,10 +1425,10 @@ class Container(Type):
         return Container(_ctx)
 
     @typecheck
-    def with_rootfs(self, id: "Directory") -> "Container":
+    def with_rootfs(self, directory: "Directory") -> "Container":
         """Initializes this container from this DirectoryID."""
         _args = [
-            Arg("id", id),
+            Arg("directory", directory),
         ]
         _ctx = self._select("withRootfs", _args)
         return Container(_ctx)

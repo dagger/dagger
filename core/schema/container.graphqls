@@ -86,7 +86,7 @@ type Container {
   fs: Directory! @deprecated(reason: "Replaced by `rootfs`.")
 
   "Initializes this container from this DirectoryID."
-  withRootfs(id: DirectoryID!): Container!
+  withRootfs(directory: DirectoryID!): Container!
 
   "Initializes this container from this DirectoryID."
   withFS(id: DirectoryID!): Container!
