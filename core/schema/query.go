@@ -67,7 +67,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {
-		recorder.Warn("Using Engine in development version, skip version compatibility check.")
+		recorder.Warn("Using development engine; skipping version compatibility check.")
 
 		return true, nil
 	}
@@ -93,7 +93,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 	// If the Engine is a major version above the SDK version, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.Major > sdkVersion.Major {
-		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is not compatible with the SDK (%s), please update your SDK.", engineVersion, sdkVersion))
+		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is significantly newer than the SDK's required version (%s). Please update your SDK.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("Dagger engine version (%s) is not compatible with the SDK (%s)", engineVersion, sdkVersion)
 		return true, nil
@@ -102,7 +102,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 	// If the Engine is older than the SDK, fails
 	// TODO: throw an error and abort the session
 	if engineVersion.LT(sdkVersion) {
-		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK (%s), please update your Dagger CLI.", engineVersion, sdkVersion))
+		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("API version is older than the SDK, please update your Dagger CLI")
 		return true, nil
@@ -110,7 +110,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 
 	// If the Engine is a minor version newer, warn
 	if engineVersion.Minor > sdkVersion.Minor {
-		recorder.Warn(fmt.Sprintf("API (%s) and SDK (%s) versions mismatchs.", engineVersion, sdkVersion))
+		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is newer than the SDK's required version (%s). Consider updating your SDK.", engineVersion, sdkVersion))
 	}
 
 	return true, nil
