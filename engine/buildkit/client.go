@@ -1,16 +1,22 @@
 package buildkit
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/platforms"
+	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/cache"
@@ -26,7 +32,9 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/session"
 	bksession "github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/filesync"
 	bksecrets "github.com/moby/buildkit/session/secrets"
+	"github.com/moby/buildkit/snapshot"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -443,12 +451,10 @@ func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb
 	return llb.Local(name, opts...), nil
 }
 
-func (c *Client) LocalExport(
+func (c *Client) LocalDirExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
 	destPath string,
-	fileSourcePath string,
-	allowParentDirPath bool,
 ) error {
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
@@ -496,12 +502,6 @@ func (c *Client) LocalExport(
 	}
 	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
 	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
-	if fileSourcePath != "" {
-		md[engine.LocalDirExportFileSourcePathMetaKey] = []string{fileSourcePath}
-	}
-	if allowParentDirPath {
-		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}
-	}
 
 	ctx = metadata.NewOutgoingContext(ctx, md)
 
@@ -511,6 +511,112 @@ func (c *Client) LocalExport(
 	}
 	if descRef != nil {
 		descRef.Release()
+	}
+	return nil
+}
+
+func (c *Client) LocalFileExport(
+	ctx context.Context,
+	def *bksolverpb.Definition,
+	destPath string,
+	filePath string,
+	allowParentDirPath bool,
+) error {
+	destPath = path.Clean(destPath)
+	if destPath == ".." || strings.HasPrefix(destPath, "../") {
+		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
+	}
+
+	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def, Evaluate: true})
+	if err != nil {
+		return fmt.Errorf("failed to solve for local export: %s", err)
+	}
+	ref, err := res.SingleRef()
+	if err != nil {
+		return fmt.Errorf("failed to get single ref: %s", err)
+	}
+
+	mountable, err := ref.getMountable(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get mountable: %s", err)
+	}
+	mounter := snapshot.LocalMounter(mountable)
+	mountPath, err := mounter.Mount()
+	if err != nil {
+		return fmt.Errorf("failed to mount: %s", err)
+	}
+	defer mounter.Unmount()
+	mntFilePath, err := fs.RootPath(mountPath, filePath)
+	if err != nil {
+		return fmt.Errorf("failed to get root path: %s", err)
+	}
+	file, err := os.Open(mntFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %s", err)
+	}
+	defer file.Close()
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get requester session ID: %s", err)
+	}
+
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	}
+	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
+	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
+	md[engine.LocalDirExportIsFileStreamMetaKey] = []string{"true"}
+	md[engine.LocalDirExportFileOriginalNameMetaKey] = []string{filepath.Base(filePath)}
+	if allowParentDirPath {
+		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}
+	}
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		return fmt.Errorf("failed to get requester session: %s", err)
+	}
+	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create diff copy client: %s", err)
+	}
+	defer diffCopyClient.CloseSend()
+
+	fileStat, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat file: %s", err)
+	}
+	fileSizeLeft := fileStat.Size()
+	chunkSize := int64(MaxFileContentsChunkSize)
+	for fileSizeLeft > 0 {
+		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
+		n, err := io.CopyN(buf, file, chunkSize)
+		if errors.Is(err, io.EOF) {
+			err = nil
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read file: %s", err)
+		}
+		fileSizeLeft -= n
+		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
+		if errors.Is(err, io.EOF) {
+			err := diffCopyClient.RecvMsg(struct{}{})
+			if err != nil {
+				return fmt.Errorf("diff copy client error: %s", err)
+			}
+		} else if err != nil {
+			return fmt.Errorf("failed to send file chunk: %s", err)
+		}
+	}
+	if err := diffCopyClient.CloseSend(); err != nil {
+		return fmt.Errorf("failed to close send: %s", err)
+	}
+	// wait for receiver to finish
+	var msg filesync.BytesMessage
+	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
+		return fmt.Errorf("unexpected closing recv msg: %s", err)
 	}
 	return nil
 }
@@ -689,14 +795,6 @@ func (c *Client) ExportContainerImage(
 		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
 	}
 
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	bklog.G(ctx).Debugf("exporting res with metadata %+v", combinedResult.Metadata)
-	bklog.G(ctx).Debugf("exporting res with platforms %s", string(combinedResult.Metadata[exptypes.ExporterPlatformsKey]))
-	bklog.G(ctx).Debugf("exporting res with refs %d(%+v)", len(combinedResult.Refs), combinedResult.Refs)
-
 	exporterName := bkclient.ExporterDocker
 	if len(combinedResult.Refs) > 1 {
 		exporterName = bkclient.ExporterOCI
@@ -730,11 +828,6 @@ func (c *Client) ExportContainerImage(
 	if descRef != nil {
 		descRef.Release()
 	}
-	// TODO:
-	// TODO:
-	// TODO:
-	// TODO:
-	bklog.G(ctx).Debugf("exporting res response %+v", resp)
 	return resp, nil
 }
 

@@ -32,9 +32,7 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
-	"google.golang.org/grpc/status"
 )
 
 const OCIStoreName = "dagger-oci"
@@ -405,130 +403,99 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	}
 	dest := destVal[0]
 
-	_, isWriteStream := opts[engine.LocalDirExportWriteStreamMetaKey]
+	_, isFileStream := opts[engine.LocalDirExportIsFileStreamMetaKey]
 
-	if isWriteStream {
-		if err := os.MkdirAll(filepath.Dir(dest), 0700); err != nil {
+	if !isFileStream {
+		// we're writing a full directory tree, normal fsutil.Receive is good
+		if err := os.MkdirAll(dest, 0700); err != nil {
 			return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
 		}
-		// TODO: set specific permissions?
-		destF, err := os.Create(dest)
-		if err != nil {
-			return fmt.Errorf("failed to create synctarget dest file %s: %w", dest, err)
-		}
-		defer destF.Close()
-		for {
-			msg := filesync.BytesMessage{}
-			if err := stream.RecvMsg(&msg); err != nil {
-				if errors.Is(err, io.EOF) {
-					return nil
-				}
-				return err
-			}
-			if _, err := destF.Write(msg.Data); err != nil {
-				return err
-			}
-		}
-	}
 
-	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
-	fileSourcePathVal, isFileExport := opts[engine.LocalDirExportFileSourcePathMetaKey]
-	if isFileExport {
-		if len(fileSourcePathVal) != 1 {
-			return fmt.Errorf("expected exactly one "+engine.LocalDirExportFileSourcePathMetaKey+" value, got %d", len(fileSourcePathVal))
-		}
-		fileSourcePath := filepath.Join("/", fileSourcePathVal[0]) // TODO: double check joining with / is correct
-
-		var destParentDir string
-		var syncedDestPath string
-		var finalDestPath string
-		// TODO: lstat correct? what happened with symlinks before? just maintain previous behavior (and add test coverage)
-		stat, err := os.Lstat(dest)
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			// we are writing the file to a new path
-			destParentDir = filepath.Dir(dest)
-			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
-			finalDestPath = dest
-		case err != nil:
-			// something went unrecoverably wrong if stat failed and it wasn't just because the path didn't exist
-			return fmt.Errorf("failed to stat synctarget dest %s: %w", dest, err)
-		case !stat.IsDir():
-			// we are overwriting an existing file
-			destParentDir = filepath.Dir(dest)
-			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
-			finalDestPath = dest
-		case !allowParentDirPath:
-			// we are writing to an existing directory, but allowParentDirPath is not set, so fail
-			return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", dest)
-		default:
-			// we are writing to an existing directory, and allowParentDirPath is set,
-			// so write the file under the directory using the same file name as the source file
-			destParentDir = dest
-			syncedDestPath = filepath.Join(destParentDir, filepath.Base(fileSourcePath))
-			finalDestPath = syncedDestPath
-		}
-		if destParentDir == "" {
-			return fmt.Errorf("failed to determine parent dir of synctarget dest %s", dest)
-		}
-		if syncedDestPath == "" {
-			return fmt.Errorf("failed to determine synced dest path of synctarget dest %s", dest)
-		}
-		if finalDestPath == "" {
-			return fmt.Errorf("failed to determine final dest path of synctarget dest %s", dest)
-		}
-
-		if err := os.MkdirAll(destParentDir, 0700); err != nil {
-			return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
-		}
-
-		err = fsutil.Receive(stream.Context(), stream, destParentDir, fsutil.ReceiveOpt{
+		err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
 			Merge: true,
 			Filter: func(path string, stat *fstypes.Stat) bool {
-				path = filepath.Join("/", path)
-				if path != fileSourcePath {
-					return false
-				}
 				stat.Uid = uint32(os.Getuid())
 				stat.Gid = uint32(os.Getgid())
 				return true
 			},
 		})
-		// run this unconditionally, in case the file was successfully exported but something else failed, we
-		// don't want to leave around a file with an unexpected name
-		_, statSyncedPathErr := os.Lstat(syncedDestPath)
-		if statSyncedPathErr == nil && syncedDestPath != finalDestPath {
-			// TODO: double check whether rename resets any metadata we don't want reset
-			if err := os.Rename(syncedDestPath, finalDestPath); err != nil {
-				return fmt.Errorf("failed to rename synced dest path %s to final dest path %s: %w", syncedDestPath, finalDestPath, err)
-			}
-		}
-		if status.Code(err) == codes.Canceled || status.Code(err) == codes.Unavailable {
-			// TODO: is there a way to be sure that the stream was actually done? as opposed to just canceled?
-			err = nil
-		}
 		if err != nil {
 			return fmt.Errorf("failed to receive fs changes: %w", err)
 		}
 		return nil
 	}
 
-	if err := os.MkdirAll(dest, 0700); err != nil {
-		return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
+	// This is either a file export or a container tarball export, we'll just be receiving BytesMessages with
+	// the contents and can write them directly to the destination path.
+
+	// If the dest is a directory that already exists, we will never delete it and replace it with the file.
+	// However, if allowParentDirPath is set, we will write the file underneath that existing directory.
+	// But if allowParentDirPath is not set, which is the default setting in our API right now, we will return
+	// an error when path is a pre-existing directory.
+	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
+
+	// File exports specifically (as opposed to container tar exports) have an original filename that we will
+	// use in the case where dest is a directory and allowParentDirPath is set, in which case we need to know
+	// what to name the file underneath the pre-existing directory.
+	var fileOriginalName string
+	fileOriginalNameVal, hasFileOriginalName := opts[engine.LocalDirExportFileOriginalNameMetaKey]
+	if hasFileOriginalName {
+		if len(fileOriginalNameVal) != 1 {
+			return fmt.Errorf("expected exactly one "+engine.LocalDirExportFileOriginalNameMetaKey+" value, got %d", len(fileOriginalNameVal))
+		}
+		fileOriginalName = filepath.Join("/", fileOriginalNameVal[0])
 	}
 
-	err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
-		Merge: true,
-		Filter: func(path string, stat *fstypes.Stat) bool {
-			stat.Uid = uint32(os.Getuid())
-			stat.Gid = uint32(os.Getgid())
-			return true
-		},
-	})
-	if err != nil {
-		return fmt.Errorf("failed to receive fs changes: %w", err)
+	var destParentDir string
+	var finalDestPath string
+	stat, err := os.Lstat(dest)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		// we are writing the file to a new path
+		destParentDir = filepath.Dir(dest)
+		finalDestPath = dest
+	case err != nil:
+		// something went unrecoverably wrong if stat failed and it wasn't just because the path didn't exist
+		return fmt.Errorf("failed to stat synctarget dest %s: %w", dest, err)
+	case !stat.IsDir():
+		// we are overwriting an existing file
+		destParentDir = filepath.Dir(dest)
+		finalDestPath = dest
+	case !allowParentDirPath:
+		// we are writing to an existing directory, but allowParentDirPath is not set, so fail
+		return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", dest)
+	default:
+		// we are writing to an existing directory, and allowParentDirPath is set,
+		// so write the file under the directory using the same file name as the source file
+		if !hasFileOriginalName {
+			// NOTE: we could instead just default to some name like container.tar or something if desired
+			return fmt.Errorf("cannot export container tar to existing directory %q", dest)
+		}
+		destParentDir = dest
+		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
-	return nil
+
+	if err := os.MkdirAll(destParentDir, 0700); err != nil {
+		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
+	}
+	// TODO: set specific permissions?
+	destF, err := os.Create(finalDestPath)
+	if err != nil {
+		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
+	}
+	defer destF.Close()
+	for {
+		msg := filesync.BytesMessage{}
+		if err := stream.RecvMsg(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if _, err := destF.Write(msg.Data); err != nil {
+			return err
+		}
+	}
 }
 
 type progRockAttachable struct {

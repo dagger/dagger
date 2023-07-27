@@ -27,7 +27,6 @@ import (
 	"github.com/moby/buildkit/frontend/dockerui"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -1570,12 +1569,6 @@ func (container *Container) Export(
 		if err != nil {
 			return err
 		}
-
-		// TODO:
-		// TODO:
-		// TODO:
-		// TODO:
-		bklog.G(ctx).Debugf("exporting container with platform %+v", variant.Platform)
 
 		def, err := st.Marshal(ctx, llb.Platform(variant.Platform))
 		if err != nil {

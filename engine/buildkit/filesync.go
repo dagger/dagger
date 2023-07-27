@@ -256,7 +256,7 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 		}
 		md[engine.LocalDirExportDestClientIDMetaKey] = []string{p.destClientID}
 		md[engine.LocalDirExportDestPathMetaKey] = []string{p.destPath}
-		md[engine.LocalDirExportWriteStreamMetaKey] = []string{"true"}
+		md[engine.LocalDirExportIsFileStreamMetaKey] = []string{"true"}
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		destCaller, err := p.c.SessionManager.Get(ctx, p.destClientID, false)
 		if err != nil {
