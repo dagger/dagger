@@ -1,65 +1,56 @@
-from pathlib import Path
-from typing import Annotated, Optional
+import contextlib
+import sys
 
-import rich
-import typer
+import anyio
 from graphql import GraphQLSchema
 
 import dagger
-from dagger import codegen
-from dagger.engine import Engine
-from dagger.session import Session
 
-app = typer.Typer()
+from . import codegen
 
 
-@app.callback()
 def main():
-    """Dagger client."""
+    path = None
+    match sys.argv[1:]:
+        case ["generate", arg]:
+            if arg != "-":
+                path = anyio.Path(arg)
+        case _:
+            sys.stderr.write("usage: python -m dagger generate PATH\n")
+            sys.exit(1)
+    anyio.run(generate, path)
 
 
-@app.command()
-def generate(
-    output: Annotated[
-        Optional[Path],  # noqa: UP007
-        typer.Option(help="File to write generated code"),
-    ] = None,
-    sync: Annotated[
-        bool,
-        typer.Option(help="Generate a client for sync code"),
-    ] = False,
-):
+async def generate(output: anyio.Path | None = None):
     """Generate a client for the Dagger API."""
-    # not using `dagger.Connection` because codegen is
-    # generating the client that it returns
-
-    schema = _get_schema()
-    code = codegen.generate(schema, sync)
+    schema = await _get_schema()
+    code = codegen.generate(schema)
 
     if output:
-        output.write_text(code)
-        _update_gitattributes(output)
-        rich.print(f"[green]Client generated successfully to[/green] {output} :rocket:")
+        await output.write_text(code)
+        await _update_gitattributes(output)
+        sys.stdout.write(f"Client generated successfully to {output}\n")
     else:
-        rich.print(code)
+        sys.stdout.write(f"{code}\n")
 
 
-def _get_schema() -> GraphQLSchema:
-    cfg = dagger.Config()
-    with Engine(cfg) as conn, Session(conn, cfg) as session:
+async def _get_schema() -> GraphQLSchema:
+    # Get session because codegen is generating the client.
+    async with contextlib.aclosing(dagger.Connection()) as connection:
+        session = await connection.start()
         if not session.client.schema:
             msg = "Schema not initialized. Make sure the dagger engine is running."
-            raise typer.BadParameter(msg)
+            raise dagger.DaggerError(msg)
         return session.client.schema
 
 
-def _update_gitattributes(output: Path) -> None:
+async def _update_gitattributes(output: anyio.Path) -> None:
     git_attrs = output.with_name(".gitattributes")
     contents = f"/{output.name} linguist-generated=true\n"
 
-    if git_attrs.exists():
-        if contents in (text := git_attrs.read_text()):
+    if await git_attrs.exists():
+        if contents in (text := await git_attrs.read_text()):
             return
         contents = f"{text}{contents}"
 
-    git_attrs.write_text(contents)
+    await git_attrs.write_text(contents)

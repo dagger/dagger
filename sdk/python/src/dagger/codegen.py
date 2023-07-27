@@ -115,9 +115,6 @@ class Scalars(enum.Enum):
 class Context:
     """Shared state during execution."""
 
-    sync: bool
-    """Sync or async client."""
-
     id_map: IDMap
     """Map to convert ids (custom scalars) to corresponding types."""
 
@@ -178,10 +175,7 @@ class Handler(ABC, Generic[_H]):
 
 
 @joiner
-def generate(
-    schema: GraphQLSchema,
-    sync: bool = False,  # noqa: FBT001, FBT002
-) -> Iterator[str]:
+def generate(schema: GraphQLSchema) -> Iterator[str]:
     """Code generation main function."""
     yield textwrap.dedent(
         """\
@@ -203,7 +197,6 @@ def generate(
 
     # shared state between all handler instances
     ctx = Context(
-        sync=sync,
         id_map=id_map,
         id_query_map=id_query_map,
         simple_objects_map=simple_objects_map,
@@ -638,7 +631,7 @@ class _ObjectField:
 
         # convenience to await any object that has a sync method
         # without having to call it explicitly
-        if not self.ctx.sync and self.is_leaf and self.name == "sync":
+        if self.is_leaf and self.name == "sync":
             yield from (
                 "",
                 "def __await__(self):",
@@ -673,7 +666,7 @@ class _ObjectField:
         if len(params) > 40:  # noqa: PLR2004
             params = f"{params},"
         sig = f"def {self.name}({params}) -> {self.type}:"
-        if self.is_exec and not self.ctx.sync:
+        if self.is_exec:
             sig = f"async {sig}"
         # Add quotes around types that haven't been defined yet (forward references).
         if self.ctx.remaining:
@@ -711,21 +704,20 @@ class _ObjectField:
         yield f'_ctx = self._select("{self.graphql_name}", _args)'
 
         if self.is_exec:
-            exec_ = "_ctx.execute_sync" if self.ctx.sync else "await _ctx.execute"
             if self.convert_id:
                 if _field := self.id_query_field:
-                    yield f"_id = {exec_}({self.named_type.name})"
+                    yield f"_id = await _ctx.execute({self.named_type.name})"
                     yield f'_ctx = self._root_select("{_field}", [Arg("id", _id)])'
                     yield f"return {self.type}(_ctx)"
                 else:
-                    yield f"{exec_}()"
+                    yield "await _ctx.execute()"
                     yield "return self"
             else:
                 if slots := self.sub_select_slots:
                     target = self.named_type.name
                     kwargs = ", ".join(s.as_kwarg() for s in slots)
                     yield f"_ctx = {target}(_ctx)._select_multiple({kwargs},)"
-                yield f"return {exec_}({self.type})"
+                yield f"return await _ctx.execute({self.type})"
         else:
             yield f"return {self.type}(_ctx)"
 

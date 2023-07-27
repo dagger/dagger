@@ -1,13 +1,13 @@
-import warnings
+from gql.client import AsyncClientSession
 
-from dagger import Client, Config, SyncClient
+from dagger import Config
 
-from .context import ResourceManager, SyncResourceManager
+from .context import ResourceManager
 from .engine import Engine
 from .session import Session
 
 
-class Connection(ResourceManager, SyncResourceManager):
+class Connection(ResourceManager):
     """
     Connect to a Dagger Engine.
 
@@ -40,21 +40,15 @@ class Connection(ResourceManager, SyncResourceManager):
         super().__init__()
         self.cfg = config or Config()
 
-    async def __aenter__(self) -> Client:
+    async def start(self) -> AsyncClientSession:
         async with self.get_stack() as stack:
             conn = await stack.enter_async_context(Engine(self.cfg))
-            session = await stack.enter_async_context(Session(conn, self.cfg))
-        return Client.from_session(session)
+            return await stack.enter_async_context(Session(conn, self.cfg))
 
-    def __enter__(self) -> SyncClient:
-        warnings.warn(
-            "The synchronous API is deprecated and will be removed in a future"
-            " release. See https://github.com/dagger/dagger/issues/5192"
-            " for more information.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        with self.get_sync_stack() as stack:
-            conn = stack.enter_context(Engine(self.cfg))
-            session = stack.enter_context(Session(conn, self.cfg))
-        return SyncClient.from_session(session)
+    async def aclose(self) -> None:
+        await self.stack.aclose()
+
+    async def __aenter__(self):
+        from dagger import Client
+
+        return Client.from_session(await self.start())

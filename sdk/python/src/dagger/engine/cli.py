@@ -30,8 +30,6 @@ class CLISession(SyncResourceManager):
         super().__init__()
         self.cfg = cfg
         self.path = path
-        # no constructor param intentional
-        self.is_async = True
 
     def __enter__(self) -> ConnectParams:
         with self.get_sync_stack() as stack:
@@ -51,8 +49,6 @@ class CLISession(SyncResourceManager):
             "dagger.io/sdk.name:python",
             "--label",
             f"dagger.io/sdk.version:{get_sdk_version()}",
-            "--label",
-            f"dagger.io/sdk.async:{str(self.is_async).lower()}",
         ]
         if self.cfg.workdir:
             args.extend(["--workdir", str(Path(self.cfg.workdir).absolute())])

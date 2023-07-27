@@ -2959,17 +2959,17 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-    pushedRef, err := container.
-        WithRegistryAuth(
-            privateRegistryHost,
-            "john",
-            c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-        ).
-        Publish(ctx, testRef)
+	pushedRef, err := container.
+		WithRegistryAuth(
+			privateRegistryHost,
+			"john",
+			c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+		).
+		Publish(ctx, testRef)
 
-    require.NoError(t, err)
-    require.NotEqual(t, testRef, pushedRef)
-    require.Contains(t, pushedRef, "@sha256:")
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 }
 
 func TestContainerImageRef(t *testing.T) {

@@ -40,9 +40,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cli = [
-    "typer[all]>=0.6.1",
-]
 server = [
     "typer[all]>=0.6.1",
     "strawberry-graphql>=0.187.0",
@@ -73,7 +70,7 @@ only-include = [
 packages = ["src/dagger"]
 
 [tool.hatch.envs.default]
-features = ["cli", "server"]
+features = ["server"]
 dependencies = [
     "black>=22.3.0",
     "ruff>=0.0.218",
@@ -85,11 +82,6 @@ dependencies = [
 ]
 
 [tool.hatch.envs.default.scripts]
-generate = [
-    "python -m dagger generate --output src/dagger/api/gen.py",
-    "python -m dagger generate --output src/dagger/api/gen_sync.py --sync",
-    "black --preview src/dagger/api/gen*.py",
-]
 fmt = [
     "ruff --fix-only -e {args:. ../../docs/current}",
     "black --preview {args:. ../../docs/current}",
@@ -208,7 +200,7 @@ extend-immutable-calls = ["typer.Option"]
 
 [tool.ruff.per-file-ignores]
 "./examples/*" = ["T201"]
-"./src/dagger/api/gen*.py" = [
+"./src/dagger/api/gen.py" = [
     # Not much control over field names and docs coming from the API.
     # Note: We could detect built-in shadowing like the reserved
     # keywords but these built-ins aren't being used in the generated

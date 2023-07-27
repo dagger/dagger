@@ -181,9 +181,8 @@ func HostSecretVar(c *dagger.Client, name string) dagger.WithContainerFunc {
 func GetHostEnv(name string) string {
 	value, ok := os.LookupEnv(name)
 	if !ok {
-		fmt.Fprintf(os.Stderr, "env var %s must be set", name)
+		fmt.Fprintf(os.Stderr, "env var %s must be set\n", name)
 		os.Exit(1)
 	}
 	return value
 }
-
