@@ -1746,13 +1746,13 @@ export class Container extends BaseClient {
   /**
    * Initializes this container from this DirectoryID.
    */
-  withRootfs(id: Directory): Container {
+  withRootfs(directory: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withRootfs",
-          args: { id },
+          args: { directory },
         },
       ],
       host: this.clientHost,

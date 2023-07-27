@@ -165,11 +165,11 @@ func (s *containerSchema) build(ctx *router.Context, parent *core.Container, arg
 }
 
 type containerWithRootFSArgs struct {
-	ID core.DirectoryID
+	Directory core.DirectoryID
 }
 
 func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.ID.ToDirectory()
+	dir, err := args.Directory.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
