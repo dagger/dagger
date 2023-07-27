@@ -82,7 +82,7 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	// Call version compatibility.
 	// If versions are not compatible, a warning will be displayed.
 	if _, err = c.CheckVersionCompatibility(ctx, engineconn.CLIVersion); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "failed to check version compatibility:", err)
 	}
 
 	return c, nil
