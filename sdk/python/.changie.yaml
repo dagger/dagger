@@ -14,10 +14,14 @@ custom:
     label: GitHub Author
     type: string
 kinds:
+  - label: Breaking
+    format: '### 🔥 Breaking Changes'
   - label: Added
   - label: Changed
   - label: Deprecated
+  - label: Removed
   - label: Fixed
+  - label: Security
   - label: Dependencies
 headerFormat: |
   This SDK uses 🚙 Engine + 🚗 CLI version `{{.Env.ENGINE_VERSION}}`. [See what changed in that release](https://github.com/dagger/dagger/releases/tag/{{.Env.ENGINE_VERSION}}).
