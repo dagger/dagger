@@ -54,6 +54,7 @@ const (
 )
 
 type Opts struct {
+	Metadata              *engine.ClientMetadata
 	Worker                bkworker.Worker
 	SessionManager        *bksession.Manager
 	LLBSolver             *llbsolver.Solver

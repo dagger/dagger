@@ -11,6 +11,8 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/session/networks"
+	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -21,6 +23,8 @@ import (
 	"google.golang.org/grpc/metadata"
 )
 
+// OCIStoreName is the name of the OCI content store used for OCI tarball
+// imports.
 const OCIStoreName = "dagger-oci"
 
 func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
@@ -38,6 +42,20 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
+	}))
+
+	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {
+		switch id {
+		case network.DaggerNetwork:
+			return &networks.Config{
+				Dns: &networks.DNSConfig{
+					// TODO(vito): use ClientID instead?
+					SearchDomains: []string{network.ClientDomain(c.ID())},
+				},
+			}
+		default:
+			return nil
+		}
 	}))
 
 	clientConn, serverConn := net.Pipe()

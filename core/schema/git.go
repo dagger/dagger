@@ -5,6 +5,8 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -132,6 +134,23 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 	if parent.Repository.ServiceHost != nil {
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
-	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
+
+	useDNS := len(svcs) > 0 // TODO(vito): or if session has parent
+
+	var st llb.State
+	if useDNS {
+		// NB: only configure search domains if we're directly using a service, or
+		// if we're nested beneath another search domain.
+		//
+		// we have to be a bit selective here to avoid breaking Dockerfile builds
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap.
+		//
+		// TODO: add API cap
+		st = gitdns.State(parent.Repository.URL, parent.Name, network.DaggerNetwork, opts...)
+	} else {
+		st = llb.Git(parent.Repository.URL, parent.Name, opts...)
+	}
+
 	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

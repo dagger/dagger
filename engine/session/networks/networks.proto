@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package moby.buildkit.networks.v1;
+
+option go_package = "networks";
+
+service Networks {
+  rpc GetNetwork(GetNetworkRequest) returns (GetNetworkResponse);
+}
+
+message GetNetworkRequest {
+	string ID = 1;
+}
+
+message GetNetworkResponse {
+  Config config = 1;
+}
+
+message Config {
+	DNSConfig dns = 1;
+  repeated IPHosts ipHosts = 2;
+}
+
+message DNSConfig {
+  repeated string nameservers = 1;
+  repeated string options = 2;
+  repeated string searchDomains = 3;
+}
+
+message IPHosts {
+  string ip = 1;
+  repeated string hosts = 2;
+}

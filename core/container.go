@@ -21,6 +21,7 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/network"
 	"github.com/docker/distribution/reference"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/exporter/containerimage/exptypes"
@@ -1059,6 +1060,15 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
+	runOpts = append(runOpts,
+		// HACK(vito): passing parent sessions through ftp_proxy
+		// so it doesn't bust caches, reconsider if/when we
+		// actually add proxy support
+		llb.WithProxy(llb.ProxyEnv{
+			// no one uses FTP anymore right?
+			FTPProxy: bk.ID(),
+		}))
+
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
 		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -1309,6 +1319,8 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 	if err != nil {
 		return nil, err
 	}
+
+	hostname += "." + network.ClientDomain(bk.ID()) // TODO(vito) make this ClientID?
 
 	// TODO: cleanup
 	def := container.FS
@@ -1728,8 +1740,7 @@ func (container *Container) HostnameOrErr(bk *buildkit.Client) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("stable digest: %w", err)
 	}
-	hostname := hostHash(ctrDgst) + bk.ID()
-	return hostname, nil
+	return network.HostHash(ctrDgst), nil
 }
 
 func (container *Container) Endpoint(bk *buildkit.Client, port int, scheme string) (string, error) {
