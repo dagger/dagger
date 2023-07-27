@@ -45,11 +45,11 @@ public class DaggerCodegenMojo extends AbstractMojo {
     @Parameter(property = "dagger.version", required = true)
     protected String version;
 
-    @Parameter(property = "dagger.introspectionQuertyURL")
-    protected String introspectionQuertyURL;
+    @Parameter(property = "dagger.introspectionQueryURL")
+    protected String introspectionQueryURL;
 
-    @Parameter(property = "dagger.introspectionQuertyPath")
-    protected String introspectionQuertyPath;
+    @Parameter(property = "dagger.introspectionQueryPath")
+    protected String introspectionQueryPath;
 
     @Parameter(property = "dagger.regenerateSchema", defaultValue = "false")
     protected boolean online;
@@ -65,7 +65,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         outputEncoding = validateEncoding(outputEncoding);
 
-        // Ensure that the output directory path is all in tact so that
+        // Ensure that the output directory path is all intact so that
         // ANTLR can just write into it.
         //
         File outputDir = getOutputDirectory();
@@ -73,6 +73,8 @@ public class DaggerCodegenMojo extends AbstractMojo {
         if (!outputDir.exists()) {
             outputDir.mkdirs();
         }
+
+        setCLIBinary();
 
         Path dest = outputDir.toPath();
         try (InputStream in = daggerSchema()) {
@@ -116,33 +118,44 @@ public class DaggerCodegenMojo extends AbstractMojo {
         }
     }
 
-    private InputStream daggerSchema() throws IOException, InterruptedException, MojoFailureException {
-        if (!online) {
-            InputStream in = getClass().getClassLoader().getResourceAsStream(String.format("schemas/schema-v%s.json", version));
-            if (in == null) {
-                throw new MojoFailureException(String.format("GraphQL schema not available for version %s", version));
+    private void setCLIBinary() {
+        if (this.bin == null) {
+            this.bin = System.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN");
+            if (this.bin == null) {
+                this.bin = "dagger";
             }
-            return in;
         }
-        if (introspectionQuertyPath != null) {
-            return new FileInputStream(introspectionQuertyPath);
-        }
-        InputStream in;
-        if (introspectionQuertyPath != null) {
-            return new FileInputStream(introspectionQuertyPath);
-        } else if (introspectionQuertyURL == null) {
-            in = new URL(String.format("https://raw.githubusercontent.com/dagger/dagger/v%s/codegen/introspection/introspection.graphql", version)).openStream();
-        } else if (introspectionQuertyURL != null) {
-            in = new URL(introspectionQuertyURL).openStream();
-        } else {
-            throw new MojoFailureException("Could not locate, download or generate GraphQL schema");
-        }
+    }
+
+    private InputStream queryForSchema(InputStream introspectionQuery) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         FluentProcess.start(bin, "query")
                 .withTimeout(Duration.of(60, ChronoUnit.SECONDS))
-                .inputStream(in)
+                .inputStream(introspectionQuery)
                 .writeToOutputStream(out);
         return new ByteArrayInputStream(out.toByteArray());
+    }
+
+    private InputStream daggerSchema()
+            throws IOException, InterruptedException, MojoFailureException {
+        if (!online) {
+            InputStream in = getClass().getClassLoader().getResourceAsStream(String.format("schemas/schema-v%s.json", version));
+            if (in == null) {
+                in = queryForSchema(getClass().getClassLoader().getResourceAsStream("introspection/introspection.graphql"));
+            }
+            return in;
+        }
+        InputStream in;
+        if (introspectionQueryPath != null) {
+            return new FileInputStream(introspectionQueryPath);
+        } else if (introspectionQueryURL == null) {
+            in = new URL(String.format("https://raw.githubusercontent.com/dagger/dagger/v%s/codegen/introspection/introspection.graphql",version)).openStream();
+        } else if (introspectionQueryURL != null) {
+            in = new URL(introspectionQueryURL).openStream();
+        } else {
+            throw new MojoFailureException("Could not locate, download or generate GraphQL schema");
+        }
+        return queryForSchema(in);
     }
 
     public File getOutputDirectory() {

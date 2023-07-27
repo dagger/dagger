@@ -94,6 +94,26 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>de.m3y.maven</groupId>
+                <artifactId>inject-maven-plugin</artifactId>
+                <configuration>
+                    <injections>
+                        <injection>
+                            <value>${daggerengine.version}</value>
+                            <pointCut>io.dagger.client.engineconn.Provisioning.getCLIVersion</pointCut>
+                        </injection>
+                    </injections>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>inject</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <executions>
@@ -109,7 +129,7 @@
                 <groupId>io.dagger</groupId>
                 <artifactId>dagger-codegen-maven-plugin</artifactId>
                 <configuration>
-                    <version>0.6.2</version>
+                    <version>${daggerengine.version}</version>
                 </configuration>
                 <executions>
                     <execution>

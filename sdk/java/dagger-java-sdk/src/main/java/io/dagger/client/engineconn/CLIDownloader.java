@@ -28,8 +28,6 @@ class CLIDownloader {
 
     private static final File CACHE_DIR = Paths.get(BaseDirectory.get(BaseDirectory.XDG_CACHE_HOME), "dagger").toFile();
 
-    public static final String CLI_VERSION = "0.6.2";
-
     private static final String DAGGER_CLI_BIN_PREFIX = "dagger-";
 
     private final FileFetcher fetcher;
@@ -62,7 +60,7 @@ class CLIDownloader {
     }
 
     public String downloadCLI() throws IOException {
-        return downloadCLI(CLI_VERSION);
+        return downloadCLI(Provisioning.getCLIVersion());
     }
 
     private void downloadCLI(String version, Path binPath) throws IOException {

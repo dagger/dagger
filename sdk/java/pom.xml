@@ -162,24 +162,52 @@
                     <version>${exec-maven-plugin.version}</version>
                 </plugin>
                 <plugin>
+                    <groupId>de.m3y.maven</groupId>
+                    <artifactId>inject-maven-plugin</artifactId>
+                    <version>${inject-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>com.spotify.fmt</groupId>
+                    <artifactId>fmt-maven-plugin</artifactId>
+                    <version>${fmt-maven-plugin.version}</version>
+                </plugin>
+                <plugin>
                     <groupId>io.dagger</groupId>
                     <artifactId>dagger-codegen-maven-plugin</artifactId>
                     <version>${project.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
+        <plugins>
+            <plugin>
+                <groupId>com.spotify.fmt</groupId>
+                <artifactId>fmt-maven-plugin</artifactId>
+                <!--
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>format</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                -->
+            </plugin>
+        </plugins>
     </build>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <daggerengine.version>0.6.4</daggerengine.version>
 
         <assertj-core.version>3.24.2</assertj-core.version>
         <commons-compress.version>1.21</commons-compress.version>
         <commons-lang.version>3.12.0</commons-lang.version>
         <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
         <fluent-process.version>1.0.1</fluent-process.version>
+        <fmt-maven-plugin.version>2.19</fmt-maven-plugin.version>
+        <inject-maven-plugin.version>1.4</inject-maven-plugin.version>
         <jakarta.json-api.version>2.1.2</jakarta.json-api.version>
         <jakarta.json.bind-api.version>3.0.0</jakarta.json.bind-api.version>
         <javapoet.version>1.13.0</javapoet.version>

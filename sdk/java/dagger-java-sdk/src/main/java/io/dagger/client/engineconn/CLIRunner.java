@@ -26,6 +26,7 @@ class CLIRunner implements Runnable {
         if (cliBinPath == null) {
             cliBinPath = new CLIDownloader().downloadCLI();
         }
+        LOG.info("Set dagger CLI to " + cliBinPath);
         return cliBinPath;
     }
 
@@ -34,7 +35,7 @@ class CLIRunner implements Runnable {
         this.process = FluentProcess.start(bin, "session",
                         "--workdir", workingDir,
                         "--label", "dagger.io/sdk.name:java",
-                        "--label", "dagger.io/sdk.version:" + CLIDownloader.CLI_VERSION)
+                        "--label", "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
                 .withAllowedExitCodes(137);
         this.executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
 
