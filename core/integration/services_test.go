@@ -427,6 +427,9 @@ func TestContainerExecUDPServices(t *testing.T) {
 		WithExposedPort(4321, dagger.ContainerWithExposedPortOpts{
 			Protocol: dagger.Udp,
 		}).
+		// use TCP :4322 for health-check to avoid test flakiness, since UDP dial
+		// health-checks aren't really a thing
+		WithExposedPort(4322).
 		WithExec([]string{"go", "run", "/src/main.go"})
 
 	client := c.Container().
