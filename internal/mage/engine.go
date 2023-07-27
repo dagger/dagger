@@ -82,7 +82,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	c = c.Pipeline("engine").Pipeline("publish")
 
 	var (
-		engineImage = util.GetHostEnv("ENGINE_IMAGE")
+		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
 		ref         = fmt.Sprintf("%s:%s", engineImage, version)
 	)
 
