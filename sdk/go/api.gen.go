@@ -102,7 +102,6 @@ type Container struct {
 
 	endpoint    *string
 	envVariable *string
-	exitCode    *int
 	export      *bool
 	hostname    *string
 	id          *ContainerID
@@ -286,73 +285,6 @@ func (r *Container) EnvVariables(ctx context.Context) ([]EnvVariable, error) {
 	return convert(response), nil
 }
 
-// ContainerExecOpts contains options for Container.Exec
-type ContainerExecOpts struct {
-	// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-	Args []string
-	// Content to write to the command's standard input before closing (e.g., "Hello world").
-	Stdin string
-	// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-	RedirectStdout string
-	// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-	RedirectStderr string
-	// Provide dagger access to the executed command.
-	// Do not use this option unless you trust the command being executed.
-	// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-	ExperimentalPrivilegedNesting bool
-}
-
-// Retrieves this container after executing the specified command inside it.
-//
-// Deprecated: Replaced by WithExec.
-func (r *Container) Exec(opts ...ContainerExecOpts) *Container {
-	q := r.q.Select("exec")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `args` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Args) {
-			q = q.Arg("args", opts[i].Args)
-		}
-		// `stdin` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Stdin) {
-			q = q.Arg("stdin", opts[i].Stdin)
-		}
-		// `redirectStdout` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RedirectStdout) {
-			q = q.Arg("redirectStdout", opts[i].RedirectStdout)
-		}
-		// `redirectStderr` optional argument
-		if !querybuilder.IsZeroValue(opts[i].RedirectStderr) {
-			q = q.Arg("redirectStderr", opts[i].RedirectStderr)
-		}
-		// `experimentalPrivilegedNesting` optional argument
-		if !querybuilder.IsZeroValue(opts[i].ExperimentalPrivilegedNesting) {
-			q = q.Arg("experimentalPrivilegedNesting", opts[i].ExperimentalPrivilegedNesting)
-		}
-	}
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Exit code of the last executed command. Zero means success.
-//
-// Will execute default command if none is set, or error if there's no default.
-//
-// Deprecated: Use Sync instead.
-func (r *Container) ExitCode(ctx context.Context) (int, error) {
-	if r.exitCode != nil {
-		return *r.exitCode, nil
-	}
-	q := r.q.Select("exitCode")
-
-	var response int
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
-}
-
 // ContainerExportOpts contains options for Container.Export
 type ContainerExportOpts struct {
 	// Identifiers for other platform specific containers.
@@ -458,18 +390,6 @@ func (r *Container) From(address string) *Container {
 	q = q.Arg("address", address)
 
 	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Retrieves this container's root filesystem. Mounts are not included.
-//
-// Deprecated: Replaced by Rootfs.
-func (r *Container) FS() *Directory {
-	q := r.q.Select("fs")
-
-	return &Directory{
 		q: q,
 		c: r.c,
 	}
@@ -955,19 +875,6 @@ func (r *Container) WithExposedPort(port int, opts ...ContainerWithExposedPortOp
 		}
 	}
 	q = q.Arg("port", port)
-
-	return &Container{
-		q: q,
-		c: r.c,
-	}
-}
-
-// Initializes this container from this DirectoryID.
-//
-// Deprecated: Replaced by WithRootfs.
-func (r *Container) WithFS(id *Directory) *Container {
-	q := r.q.Select("withFS")
-	q = q.Arg("id", id)
 
 	return &Container{
 		q: q,
@@ -1899,18 +1806,6 @@ func (r *File) XXX_GraphQLID(ctx context.Context) (string, error) {
 	return string(id), nil
 }
 
-// Retrieves a secret referencing the contents of this file.
-//
-// Deprecated: insecure, leaves secret in cache. Superseded by SetSecret
-func (r *File) Secret() *Secret {
-	q := r.q.Select("secret")
-
-	return &Secret{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Gets the size of the file, in bytes.
 func (r *File) Size(ctx context.Context) (int, error) {
 	if r.size != nil {
@@ -2049,17 +1944,6 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
-// Accesses an environment variable on the host.
-func (r *Host) EnvVariable(name string) *HostVariable {
-	q := r.q.Select("envVariable")
-	q = q.Arg("name", name)
-
-	return &HostVariable{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Accesses a file on the host.
 func (r *Host) File(path string) *File {
 	q := r.q.Select("file")
@@ -2080,69 +1964,6 @@ func (r *Host) UnixSocket(path string) *Socket {
 		q: q,
 		c: r.c,
 	}
-}
-
-// HostWorkdirOpts contains options for Host.Workdir
-type HostWorkdirOpts struct {
-	// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-	Exclude []string
-	// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-	Include []string
-}
-
-// Retrieves the current working directory on the host.
-//
-// Deprecated: Use Directory with path set to '.' instead.
-func (r *Host) Workdir(opts ...HostWorkdirOpts) *Directory {
-	q := r.q.Select("workdir")
-	for i := len(opts) - 1; i >= 0; i-- {
-		// `exclude` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Exclude) {
-			q = q.Arg("exclude", opts[i].Exclude)
-		}
-		// `include` optional argument
-		if !querybuilder.IsZeroValue(opts[i].Include) {
-			q = q.Arg("include", opts[i].Include)
-		}
-	}
-
-	return &Directory{
-		q: q,
-		c: r.c,
-	}
-}
-
-// An environment variable on the host environment.
-type HostVariable struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	value *string
-}
-
-// A secret referencing the value of this variable.
-//
-// Deprecated: been superseded by SetSecret
-func (r *HostVariable) Secret() *Secret {
-	q := r.q.Select("secret")
-
-	return &Secret{
-		q: q,
-		c: r.c,
-	}
-}
-
-// The value of this variable.
-func (r *HostVariable) Value(ctx context.Context) (string, error) {
-	if r.value != nil {
-		return *r.value, nil
-	}
-	q := r.q.Select("value")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A simple key value object that represents a label.

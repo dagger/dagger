@@ -108,6 +108,7 @@ async def test_container_with_mounted_cache():
             .with_mounted_cache("/cache", client.cache_volume(cache_key))
         )
 
+        out = ""
         for i in range(5):
             out = await container.with_exec(
                 [
@@ -235,12 +236,6 @@ async def test_directory_sync():
         # chaining
         entries = await (await base.sync()).entries()
         assert entries == ["foo"]
-
-
-async def test_deprecation_warning():
-    async with dagger.Connection() as client:
-        with pytest.warns(DeprecationWarning, match="with_exec"):
-            await client.container().from_("alpine:3.16.2").exec(args=["true"])
 
 
 async def test_return_list_of_objects():

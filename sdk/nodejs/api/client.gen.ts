@@ -127,35 +127,6 @@ export type ContainerEndpointOpts = {
   scheme?: string
 }
 
-export type ContainerExecOpts = {
-  /**
-   * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   */
-  args?: string[]
-
-  /**
-   * Content to write to the command's standard input before closing (e.g., "Hello world").
-   */
-  stdin?: string
-
-  /**
-   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   */
-  redirectStdout?: string
-
-  /**
-   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   */
-  redirectStderr?: string
-
-  /**
-   * Provide dagger access to the executed command.
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   */
-  experimentalPrivilegedNesting?: boolean
-}
-
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -561,18 +532,6 @@ export type HostDirectoryOpts = {
   include?: string[]
 }
 
-export type HostWorkdirOpts = {
-  /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   */
-  exclude?: string[]
-
-  /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   */
-  include?: string[]
-}
-
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
@@ -873,51 +832,6 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container after executing the specified command inside it.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   * @deprecated Replaced by withExec.
-   */
-  exec(opts?: ContainerExecOpts): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "exec",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Exit code of the last executed command. Zero means success.
-   *
-   * Will execute default command if none is set, or error if there's no default.
-   * @deprecated Use sync instead.
-   */
-  async exitCode(): Promise<number> {
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "exitCode",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
    * Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
    *
    * Return true on success.
@@ -1005,23 +919,6 @@ export class Container extends BaseClient {
         {
           operation: "from",
           args: { address },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Retrieves this container's root filesystem. Mounts are not included.
-   * @deprecated Replaced by rootfs.
-   */
-  fs(): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "fs",
         },
       ],
       host: this.clientHost,
@@ -1463,24 +1360,6 @@ export class Container extends BaseClient {
         {
           operation: "withExposedPort",
           args: { port, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Initializes this container from this DirectoryID.
-   * @deprecated Replaced by withRootfs.
-   */
-  withFS(id: Directory): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withFS",
-          args: { id },
         },
       ],
       host: this.clientHost,
@@ -2474,23 +2353,6 @@ export class File extends BaseClient {
   }
 
   /**
-   * Retrieves a secret referencing the contents of this file.
-   * @deprecated insecure, leaves secret in cache. Superseded by setSecret
-   */
-  secret(): Secret {
-    return new Secret({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "secret",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Gets the size of the file, in bytes.
    */
   async size(): Promise<number> {
@@ -2660,24 +2522,6 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Accesses an environment variable on the host.
-   * @param name Name of the environment variable (e.g., "PATH").
-   */
-  envVariable(name: string): HostVariable {
-    return new HostVariable({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "envVariable",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Accesses a file on the host.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
@@ -2711,65 +2555,6 @@ export class Host extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-
-  /**
-   * Retrieves the current working directory on the host.
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   * @deprecated Use directory with path set to '.' instead.
-   */
-  workdir(opts?: HostWorkdirOpts): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "workdir",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-}
-
-/**
- * An environment variable on the host environment.
- */
-export class HostVariable extends BaseClient {
-  /**
-   * A secret referencing the value of this variable.
-   * @deprecated been superseded by setSecret
-   */
-  secret(): Secret {
-    return new Secret({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "secret",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The value of this variable.
-   */
-  async value(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "value",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 }
 

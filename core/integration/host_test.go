@@ -264,29 +264,3 @@ func TestHostFile(t *testing.T) {
 	})
 }
 
-func TestHostVariable(t *testing.T) {
-	t.Parallel()
-
-	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
-
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
-
-	secret := c.Host().EnvVariable("HELLO_TEST")
-
-	varValue, err := secret.Value(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello", varValue)
-
-	env, err := c.Container().
-		From(alpineImage).
-		//nolint:staticcheck // SA1019 We want to test this API while we support it.
-		WithSecretVariable("SECRET", secret.Secret()).
-		WithExec([]string{"env"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-
-	require.Contains(t, env, "SECRET=***")
-}

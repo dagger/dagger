@@ -26,10 +26,6 @@ func NewHost(workdir string, disableRW bool) *Host {
 	}
 }
 
-type HostVariable struct {
-	Name string `json:"name"`
-}
-
 type CopyFilter struct {
 	Exclude []string
 	Include []string
@@ -129,7 +125,7 @@ func (host *Host) File(ctx context.Context, gw bkgw.Client, path string, p pipel
 	return parentDir.File(ctx, gw, filepath.Base(path))
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
+func (host *Host) Socket(_ context.Context, sockPath string) (*Socket, error) {
 	if host.DisableRW {
 		return nil, ErrHostRWDisabled
 	}

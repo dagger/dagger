@@ -30,27 +30,6 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 	}
 	defer c.Close()
 
-	wd := c.Host().Directory(".")
-	container := c.Container().
-		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
-		WithEntrypoint([]string{}).
-		WithExec([]string{"apk", "add", "aws-cli"}).
-		WithWorkdir("/app").
-		WithMountedDirectory("/app", wd).
-		WithSecretVariable("GITHUB_TOKEN", util.WithSetHostVar(ctx, c.Host(), "GITHUB_TOKEN").Secret()).
-		WithSecretVariable("GORELEASER_KEY", util.WithSetHostVar(ctx, c.Host(), "GORELEASER_KEY").Secret()).
-		WithSecretVariable("AWS_ACCESS_KEY_ID", util.WithSetHostVar(ctx, c.Host(), "AWS_ACCESS_KEY_ID").Secret()).
-		WithSecretVariable("AWS_SECRET_ACCESS_KEY", util.WithSetHostVar(ctx, c.Host(), "AWS_SECRET_ACCESS_KEY").Secret()).
-		WithSecretVariable("AWS_REGION", util.WithSetHostVar(ctx, c.Host(), "AWS_REGION").Secret()).
-		WithSecretVariable("AWS_BUCKET", util.WithSetHostVar(ctx, c.Host(), "AWS_BUCKET").Secret()).
-		WithSecretVariable("ARTEFACTS_FQDN", util.WithSetHostVar(ctx, c.Host(), "ARTEFACTS_FQDN").Secret()).
-		WithSecretVariable("HOMEBREW_TAP_OWNER", util.WithSetHostVar(ctx, c.Host(), "HOMEBREW_TAP_OWNER").Secret())
-
-	if devRelease {
-		// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
-		container = container.WithExec([]string{"git", "tag", "0.0.0"})
-	}
-
 	args := []string{"release", "--clean", "--skip-validate", "--debug"}
 	if devRelease {
 		args = append(args,
@@ -63,7 +42,28 @@ func (cl Cli) Publish(ctx context.Context, version string) error {
 		args = append(args, "--release-notes", fmt.Sprintf(".changes/%s.md", version))
 	}
 
-	_, err = container.
+	wd := c.Host().Directory(".")
+	_, err = c.Container().
+		From(fmt.Sprintf("ghcr.io/goreleaser/goreleaser-pro:%s", goReleaserVersion)).
+		WithEntrypoint([]string{}).
+		WithExec([]string{"apk", "add", "aws-cli"}).
+		WithWorkdir("/app").
+		WithMountedDirectory("/app", wd).
+		With(util.HostSecretVar(c, "GITHUB_TOKEN")).
+		With(util.HostSecretVar(c, "GORELEASER_KEY")).
+		With(util.HostSecretVar(c, "AWS_ACCESS_KEY_ID")).
+		With(util.HostSecretVar(c, "AWS_SECRET_ACCESS_KEY")).
+		With(util.HostSecretVar(c, "AWS_REGION")).
+		With(util.HostSecretVar(c, "AWS_BUCKET")).
+		With(util.HostSecretVar(c, "ARTEFACTS_FQDN")).
+		With(util.HostSecretVar(c, "HOMEBREW_TAP_OWNER")).
+		With(func(ctr *dagger.Container) *dagger.Container {
+			if devRelease {
+				// goreleaser refuses to run if there isn't a tag, so set it to a dummy but valid semver
+				return ctr.WithExec([]string{"git", "tag", "0.0.0"})
+			}
+			return ctr
+		}).
 		WithEntrypoint([]string{"/sbin/tini", "--", "/entrypoint.sh"}).
 		WithExec(args).
 		Sync(ctx)

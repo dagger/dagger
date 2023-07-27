@@ -1163,42 +1163,6 @@ func TestFileServiceTimestamp(t *testing.T) {
 	require.Contains(t, stdout, "1991-06-03")
 }
 
-func TestFileServiceSecret(t *testing.T) {
-	t.Parallel()
-
-	checkNotDisabled(t, engine.ServicesDNSEnvName)
-
-	c, ctx := connect(t)
-	defer c.Close()
-
-	content := identity.NewID()
-
-	httpSrv, httpURL := httpService(ctx, t, c, content)
-
-	//nolint:staticcheck // SA1019 We want to test this API while we support it.
-	secret := c.HTTP(httpURL, dagger.HTTPOpts{
-		ExperimentalServiceHost: httpSrv,
-	}).Secret()
-
-	t.Run("secret env", func(t *testing.T) {
-		_, err := c.Container().
-			From(alpineImage).
-			WithSecretVariable("SEKRIT", secret).
-			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$SEKRIT" = "%s"`, content)}).
-			Sync(ctx)
-		require.NoError(t, err)
-	})
-
-	t.Run("secret mount", func(t *testing.T) {
-		_, err := c.Container().
-			From(alpineImage).
-			WithMountedSecret("/sekrit", secret).
-			WithExec([]string{"sh", "-c", fmt.Sprintf(`test "$(cat /sekrit)" = "%s"`, content)}).
-			Sync(ctx)
-		require.NoError(t, err)
-	})
-}
-
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Container, string) {
 	t.Helper()
 

@@ -141,8 +141,8 @@ func (t Nodejs) Publish(ctx context.Context, tag string) error {
 	c = c.Pipeline("sdk").Pipeline("nodejs").Pipeline("publish")
 
 	var (
-		version  = strings.TrimPrefix(tag, "sdk/nodejs/v")
-		token, _ = util.WithSetHostVar(ctx, c.Host(), "NPM_TOKEN").Secret().Plaintext(ctx)
+		version = strings.TrimPrefix(tag, "sdk/nodejs/v")
+		token   = os.Getenv("NPM_TOKEN")
 	)
 
 	build := nodeJsBase(c).WithExec([]string{"npm", "run", "build"})
@@ -165,7 +165,7 @@ always-auth=true`, token)
 }
 
 // Bump the Node.js SDK's Engine dependency
-func (t Nodejs) Bump(ctx context.Context, version string) error {
+func (t Nodejs) Bump(_ context.Context, version string) error {
 	// trim leading v from version
 	version = strings.TrimPrefix(version, "v")
 

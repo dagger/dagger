@@ -82,15 +82,8 @@ type Container {
   "Retrieves this container's root filesystem. Mounts are not included."
   rootfs: Directory!
 
-  "Retrieves this container's root filesystem. Mounts are not included."
-  fs: Directory! @deprecated(reason: "Replaced by `rootfs`.")
-
   "Initializes this container from this DirectoryID."
   withRootfs(directory: DirectoryID!): Container!
-
-  "Initializes this container from this DirectoryID."
-  withFS(id: DirectoryID!): Container!
-    @deprecated(reason: "Replaced by `withRootfs`.")
 
   """
   Retrieves a directory at the given path.
@@ -566,45 +559,6 @@ type Container {
     """
     insecureRootCapabilities: Boolean
   ): Container!
-
-  """
-  Retrieves this container after executing the specified command inside it.
-  """
-  exec(
-    """
-    Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-    """
-    args: [String!]
-
-    """
-    Content to write to the command's standard input before closing (e.g., "Hello world").
-    """
-    stdin: String
-
-    """
-    Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    """
-    redirectStdout: String
-
-    """
-    Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    """
-    redirectStderr: String
-
-    """
-    Provide dagger access to the executed command.
-    Do not use this option unless you trust the command being executed.
-    The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    """
-    experimentalPrivilegedNesting: Boolean
-  ): Container! @deprecated(reason: "Replaced by `withExec`.")
-
-  """
-  Exit code of the last executed command. Zero means success.
-
-  Will execute default command if none is set, or error if there's no default.
-  """
-  exitCode: Int! @deprecated(reason: "Use `sync` instead.")
 
   """
   The output stream of the last executed command.

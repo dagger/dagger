@@ -73,11 +73,6 @@ func (s *secretSchema) setSecret(ctx *router.Context, parent any, args setSecret
 }
 
 func (s *secretSchema) plaintext(ctx *router.Context, parent *core.Secret, args any) (string, error) {
-	if parent.IsOldFormat() {
-		bytes, err := parent.LegacyPlaintext(ctx, s.gw)
-		return string(bytes), err
-	}
-
 	id, err := parent.ID()
 	if err != nil {
 		return "", err

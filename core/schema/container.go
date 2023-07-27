@@ -45,9 +45,7 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"build":                router.ToResolver(s.build),
 			"rootfs":               router.ToResolver(s.rootfs),
 			"pipeline":             router.ToResolver(s.pipeline),
-			"fs":                   router.ToResolver(s.rootfs), // deprecated
 			"withRootfs":           router.ToResolver(s.withRootfs),
-			"withFS":               router.ToResolver(s.withRootfs), // deprecated
 			"file":                 router.ToResolver(s.file),
 			"directory":            router.ToResolver(s.directory),
 			"user":                 router.ToResolver(s.user),
@@ -80,8 +78,6 @@ func (s *containerSchema) Resolvers() router.Resolvers {
 			"withNewFile":          router.ToResolver(s.withNewFile),
 			"withDirectory":        router.ToResolver(s.withDirectory),
 			"withExec":             router.ToResolver(s.withExec),
-			"exec":                 router.ToResolver(s.withExec), // deprecated
-			"exitCode":             router.ToResolver(s.exitCode),
 			"stdout":               router.ToResolver(s.stdout),
 			"stderr":               router.ToResolver(s.stderr),
 			"publish":              router.ToResolver(s.publish),
@@ -204,11 +200,6 @@ func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Cont
 		return s.withExec(ctx, parent, containerExecArgs{})
 	}
 	return parent, nil
-}
-
-func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
-	progSock := &core.Socket{HostPath: s.progSock}
-	return parent.ExitCode(ctx, s.gw, progSock)
 }
 
 func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
