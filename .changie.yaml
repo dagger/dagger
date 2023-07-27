@@ -15,7 +15,7 @@ custom:
     type: string
 kinds:
   - label: Breaking
-    format: '### :fire: Breaking Changes'
+    format: '### 🔥 Breaking Changes'
   - label: Added
   - label: Changed
   - label: Deprecated
