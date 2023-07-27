@@ -74,20 +74,12 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 
 	engineVersion, err := semver.Parse(engine.Version)
 	if err != nil {
-		recorder.Error("Could not compare engine and SDK version, they might be incompatible!")
-
-		// TODO: throw an error and abort the session
-		// return false, err
-		return true, nil
+		return false, err
 	}
 
 	sdkVersion, err := semver.Parse(args.Version)
 	if err != nil {
-		recorder.Error("Could not compare engine and SDK version, they might be incompatible!")
-
-		// TODO: throw an error and abort the session
-		// return false, err
-		return true, nil
+		return false, err
 	}
 
 	// If the Engine is a major version above the SDK version, fails
