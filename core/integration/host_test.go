@@ -263,4 +263,3 @@ func TestHostFile(t *testing.T) {
 		require.Equal(t, "hello world", content)
 	})
 }
-

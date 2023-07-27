@@ -16,7 +16,7 @@ import (
 
 var (
 	pythonGeneratedAPIPath = "sdk/python/src/dagger/api/gen.py"
-	pythonDefaultVersion = "3.11"
+	pythonDefaultVersion   = "3.11"
 )
 
 var _ SDK = Python{}
@@ -146,14 +146,14 @@ func (t Python) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-        WithWorkdir("/").
-        WithExec([]string{"python", "-m", "dagger", "generate", pythonGeneratedAPIPath}).
-        WithExec([]string{"black", "--preview", pythonGeneratedAPIPath}).
-        File(pythonGeneratedAPIPath).
-        Contents(ctx)
-    if err != nil {
-        return err
-    }
+		WithWorkdir("/").
+		WithExec([]string{"python", "-m", "dagger", "generate", pythonGeneratedAPIPath}).
+		WithExec([]string{"black", "--preview", pythonGeneratedAPIPath}).
+		File(pythonGeneratedAPIPath).
+		Contents(ctx)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0o600)
 }
 
