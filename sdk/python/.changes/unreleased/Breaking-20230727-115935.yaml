@@ -1,0 +1,6 @@
+kind: Breaking
+body: Remove sync client
+time: 2023-07-27T11:59:35.18251Z
+custom:
+  Author: helderco
+  PR: "5514"
