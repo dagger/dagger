@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -76,20 +77,28 @@ type Session struct {
 	upstreamCacheOptions []*controlapi.CacheOptionsEntry
 
 	hostname string
+
+	// TODO:cleanup
+	nestedSessionPort int
 }
 
 func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error) {
 	s := &Session{SessionParams: params}
 
-	if s.RouterID == "" {
-		s.RouterID = identity.NewID()
+	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
+	if isNestedSession {
+		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
+		if err != nil {
+			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
+		}
+		s.nestedSessionPort = nestedSessionPort
+		s.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.NestedDialContext}}
+		return s, nil
 	}
 
-	// TODO: this is only needed temporarily to work around issue w/
-	// `dagger do` and `dagger project` not picking up env set by nesting
-	// (which impacts project tests). Remove ASAP
-	if v, ok := os.LookupEnv("_DAGGER_ROUTER_ID"); ok {
-		s.RouterID = v
+	if s.RouterID == "" {
+		s.RouterID = identity.NewID()
 	}
 
 	// TODO: this is only needed temporarily to work around issue w/
@@ -290,8 +299,10 @@ func (s *Session) Close() (rerr error) {
 	// mark all groups completed
 	// close the recorder so the UI exits
 	// TODO: should this be done after session confirmed close instead?
-	s.Recorder.Complete()
-	s.Recorder.Close()
+	if s.Recorder != nil {
+		s.Recorder.Complete()
+		s.Recorder.Close()
+	}
 
 	if s.internalCancel != nil {
 		s.internalCancel()
@@ -315,6 +326,10 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 		ClientHostname:  s.hostname,
 		ParentClientIDs: s.ParentClientIDs,
 	}.ToGRPCMD())
+}
+
+func (s *Session) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	return net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
 }
 
 func (s *Session) Do(

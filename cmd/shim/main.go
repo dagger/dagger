@@ -587,13 +587,9 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	if engineErr != nil {
 		return fmt.Errorf("error listening on session socket: %w", engineErr)
 	}
+	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	// TODO:
-	// routerID, ok := internalEnv("_DAGGER_ROUTER_ID")
-	routerID, ok := os.LookupEnv("_DAGGER_ROUTER_ID")
-	if !ok {
-		return fmt.Errorf("missing _DAGGER_ROUTER_ID")
-	}
+	routerID, _ := internalEnv("_DAGGER_ROUTER_ID")
 	sessParams := client.SessionParams{
 		RouterID:    routerID,
 		SecretToken: sessionToken.String(),
@@ -608,10 +604,6 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		sessParams.ProgrockWriter = progW
 	}
 
-	// pass dagger session along to command
-	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(l.Addr().(*net.TCPAddr).Port))
-	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
-
 	sess, err := client.Connect(ctx, sessParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
@@ -619,6 +611,10 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	defer sess.Close()
 
 	go http.Serve(l, sess) //nolint:gosec
+
+	// pass dagger session along to any SDKs that run in the container
+	os.Setenv("DAGGER_SESSION_PORT", strconv.Itoa(sessionPort))
+	os.Setenv("DAGGER_SESSION_TOKEN", sessionToken.String())
 	err = cmd.Start()
 	if err != nil {
 		return err
