@@ -16,7 +16,7 @@
 {{""}}
 
 			{{- /* Write object name. */ -}}
-export {{- if eq .Name "Query" }} default{{ end }} class {{ .Name | FormatName }} extends BaseClient {
+export class {{ .Name | FormatName }} extends BaseClient {
 			{{- /* Write methods. */ -}}
 			{{- "" }}{{ range $field := .Fields }}
 				{{- if Solve . }}
