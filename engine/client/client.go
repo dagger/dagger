@@ -92,6 +92,18 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		s.RouterID = v
 	}
 
+	// TODO: this is only needed temporarily to work around issue w/
+	// `dagger do` and `dagger project` not picking up env set by nesting
+	// (which impacts project tests). Remove ASAP
+	parents := strings.Fields(os.Getenv("_DAGGER_PARENT_CLIENT_IDS"))
+	if len(s.ParentClientIDs) == 0 {
+		// NB(vito): this is to support running the dagger CLI _in_ dagger
+		// TODO(vito): add a test that actually depends on this; Project tests
+		// don't need it, because they only depend on the root level domain, which
+		// they currently inherit via the networks.ConfigProvider attachable.
+		s.ParentClientIDs = parents
+	}
+
 	internalCtx, internalCancel := context.WithCancel(context.Background())
 	defer func() {
 		if rerr != nil {

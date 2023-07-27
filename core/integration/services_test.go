@@ -551,6 +551,88 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
+func TestContainerExecServicesNestedExec(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+	})
+
+	content := identity.NewID()
+	srv, svcURL := httpService(ctx, t, c, content)
+
+	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
+	// search domain config
+	depth := 5
+
+	fileContent, err := c.Container().
+		From("golang:1.20.6-alpine").
+		WithServiceBinding("www", srv).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithEnvVariable("GOCACHE", "/go/build-cache").
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/nested/",
+			"exec", strconv.Itoa(depth), svcURL,
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
+}
+
+func TestContainerExecServicesNestedHTTP(t *testing.T) {
+	t.Parallel()
+
+	t.Skip("TODO(vito): this doesn't currently work because the network config is for the entire session and not per-client, so it only returns the toplevel search domains")
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	thisRepoPath, err := filepath.Abs("../..")
+	require.NoError(t, err)
+
+	code := c.Host().Directory(thisRepoPath, dagger.HostDirectoryOpts{
+		Include: []string{"core/integration/testdata/nested/", "sdk/go/", "go.mod", "go.sum"},
+	})
+
+	content := identity.NewID()
+	srv, svcURL := httpService(ctx, t, c, content)
+
+	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
+	// search domain config
+	depth := 5
+
+	fileContent, err := c.Container().
+		From("golang:1.20.6-alpine").
+		WithServiceBinding("www", srv).
+		WithMountedDirectory("/src", code).
+		WithWorkdir("/src").
+		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+		WithEnvVariable("GOCACHE", "/go/build-cache").
+		WithExec([]string{
+			"go", "run", "./core/integration/testdata/nested/",
+			"http", strconv.Itoa(depth), svcURL,
+		}, dagger.ContainerWithExecOpts{
+			ExperimentalPrivilegedNesting: true,
+		}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, content, fileContent)
+}
+
 func TestContainerBuildService(t *testing.T) {
 	t.Parallel()
 
