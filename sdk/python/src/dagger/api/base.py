@@ -26,7 +26,7 @@ from beartype.door import TypeHint
 from beartype.roar import BeartypeCallHintViolation
 from beartype.vale import Is, IsInstance, IsSubclass
 from cattrs.preconf.json import make_converter
-from gql.client import AsyncClientSession, SyncClientSession
+from gql.client import AsyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
 from gql.transport.exceptions import (
     TransportClosed,
@@ -70,7 +70,7 @@ class Field:
 
 @dataclass(slots=True)
 class Context:
-    session: AsyncClientSession | SyncClientSession
+    session: AsyncClientSession
     schema: DSLSchema
     selections: deque[Field] = field(default_factory=deque)
     converter: cattrs.Converter = field(init=False)
@@ -150,27 +150,38 @@ class Context:
         ...
 
     async def execute(self, return_type: type[T] | None = None) -> T | None:
-        assert isinstance(self.session, AsyncClientSession)
         await self.resolve_ids()
         query = self.query()
-        with self._handle_execute(query):
+
+        try:
             result = await self.session.execute(query)
-        return self.get_value(result, return_type) if return_type else None
+        except httpx.TimeoutException as e:
+            msg = (
+                "Request timed out. Try setting a higher value in 'execute_timeout' "
+                "config for this `dagger.Connection()`."
+            )
+            raise ExecuteTimeoutError(msg) from e
 
-    @overload
-    def execute_sync(self, return_type: None) -> None:
-        ...
+        except httpx.RequestError as e:
+            msg = f"Failed to make request: {e}"
+            raise TransportError(msg) from e
 
-    @overload
-    def execute_sync(self, return_type: type[T]) -> T:
-        ...
+        except TransportClosed as e:
+            msg = (
+                "Connection to engine has been closed. Make sure you're "
+                "calling the API within a `dagger.Connection()` context."
+            )
+            raise TransportError(msg) from e
 
-    def execute_sync(self, return_type: type[T] | None = None) -> T | None:
-        assert isinstance(self.session, SyncClientSession)
-        self.resolve_ids_sync()
-        query = self.query()
-        with self._handle_execute(query):
-            result = self.session.execute(query)
+        except (TransportProtocolError, TransportServerError) as e:
+            msg = f"Unexpected response from engine: {e}"
+            raise TransportError(msg) from e
+
+        except TransportQueryError as e:
+            if error := QueryError.from_transport(e, query):
+                raise error from e
+            raise
+
         return self.get_value(result, return_type) if return_type else None
 
     @overload
@@ -222,53 +233,6 @@ class Context:
                                 tg.start_soon(_resolve_seq_id, i, seq_i, k, seq_v)
                     elif is_id_type(v):
                         tg.start_soon(_resolve_id, i, k, v)
-
-    def resolve_ids_sync(self) -> None:
-        """Replace Type object instances with their ID implicitly."""
-        for sel in self.selections:
-            for k, v in sel.args.items():
-                # check if it's a sequence of Type objects
-                if is_id_type_sequence(v):
-                    # make sure it's a list, to mutate by index
-                    sel.args[k] = list(v)
-                    for seq_i, seq_v in enumerate(sel.args[k]):
-                        if is_id_type(seq_v):
-                            sel.args[k][seq_i] = seq_v.id()
-                elif is_id_type(v):
-                    sel.args[k] = v.id()
-
-    @contextlib.contextmanager
-    def _handle_execute(self, query: graphql.DocumentNode):
-        # Reduces duplication when handling errors, between sync and async.
-        try:
-            yield
-
-        except httpx.TimeoutException as e:
-            msg = (
-                "Request timed out. Try setting a higher value in 'execute_timeout' "
-                "config for this `dagger.Connection()`."
-            )
-            raise ExecuteTimeoutError(msg) from e
-
-        except httpx.RequestError as e:
-            msg = f"Failed to make request: {e}"
-            raise TransportError(msg) from e
-
-        except TransportClosed as e:
-            msg = (
-                "Connection to engine has been closed. Make sure you're "
-                "calling the API within a `dagger.Connection()` context."
-            )
-            raise TransportError(msg) from e
-
-        except (TransportProtocolError, TransportServerError) as e:
-            msg = f"Unexpected response from engine: {e}"
-            raise TransportError(msg) from e
-
-        except TransportQueryError as e:
-            if error := QueryError.from_transport(e, query):
-                raise error from e
-            raise
 
 
 class Arg(typing.NamedTuple):

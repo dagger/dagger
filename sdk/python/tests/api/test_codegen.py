@@ -28,7 +28,6 @@ from dagger.codegen import Scalar as ScalarHandler
 @pytest.fixture()
 def ctx():
     return Context(
-        sync=False,
         id_map={
             "CacheID": "CacheVolume",
             "FileID": "File",
