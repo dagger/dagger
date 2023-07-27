@@ -69,9 +69,6 @@ type Container struct {
 	// Image reference
 	ImageRef string `json:"image_ref,omitempty"`
 
-	// Hostname is the computed hostname for the container.
-	Hostname string `json:"hostname,omitempty"`
-
 	// Ports to expose from the container.
 	Ports []ContainerPort `json:"ports,omitempty"`
 
@@ -1072,6 +1069,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		routerID := clientMetadata.RouterID
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
+			// TODO: these both result in the cache being invalidated all the time
 			llb.AddEnv("_DAGGER_ROUTER_ID", routerID),
 			llb.AddEnv("_DAGGER_PROG_SOCK_PATH", progSock),
 		)
@@ -1242,24 +1240,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		return nil, fmt.Errorf("fs state: %w", err)
 	}
 
-	// first, build without a hostname
-	execStNoHostname := fsSt.Run(runOpts...)
-
-	// next, marshal it to compute a deterministic hostname
-	execDefNoHostname, err := execStNoHostname.Root().Marshal(ctx, llb.Platform(platform))
-	if err != nil {
-		return nil, fmt.Errorf("marshal root: %w", err)
-	}
-	// compute a *stable* digest so that hostnames don't change across sessions
-	digest, err := stableDigest(execDefNoHostname.ToPB())
-	if err != nil {
-		return nil, fmt.Errorf("stable digest: %w", err)
-	}
-	hostname := hostHash(digest)
-	container.Hostname = hostname
-
-	// finally, build with the hostname set
-	runOpts = append(runOpts, llb.Hostname(hostname))
 	execSt := fsSt.Run(runOpts...)
 
 	execDef, err := execSt.Root().Marshal(ctx, llb.Platform(platform))
@@ -1325,17 +1305,71 @@ func (container *Container) Evaluate(ctx context.Context, bk *buildkit.Client) e
 }
 
 func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Service, error) {
-	if container.Hostname == "" {
-		return nil, ErrContainerNoExec
+	container = container.Clone()
+	hostname, err := container.HostnameOrErr(bk)
+	if err != nil {
+		return nil, err
 	}
 
-	health := newHealth(bk, container.Hostname, container.Ports)
+	// TODO: cleanup
+	def := container.FS
+	dgstToOp := make(map[digest.Digest]*pb.Op)
+	dgstToIndex := make(map[digest.Digest]int)
+	for i, d := range def.Def {
+		op := new(pb.Op)
+		if err := op.Unmarshal(d); err != nil {
+			return nil, err
+		}
+		dgst := digest.FromBytes(d)
+		dgstToOp[dgst] = op
+		dgstToIndex[dgst] = i
+	}
+	lastOpBytes := def.Def[len(def.Def)-1]
+	lastOpDigest := digest.FromBytes(lastOpBytes)
+	var lastOp pb.Op
+	if err := (&lastOp).Unmarshal(lastOpBytes); err != nil {
+		return nil, err
+	}
+	// TODO: this should instead recurse to find the most recent exec op, to handle e.g. fileop on top of exec op
+	// TODO: also handle no exec default args? Or is that good already?
+	for i, input := range lastOp.Inputs {
+		opDgst := input.Digest
+		op := dgstToOp[opDgst]
+		execOp, ok := op.Op.(*pb.Op_Exec)
+		if !ok {
+			return nil, errors.New("expected exec op")
+		}
+		execOp.Exec.Meta.Hostname = hostname
+
+		newOpBytes, err := op.Marshal()
+		if err != nil {
+			return nil, err
+		}
+		newOpDgst := digest.FromBytes(newOpBytes)
+		def.Def[dgstToIndex[opDgst]] = newOpBytes
+		def.Metadata[newOpDgst] = def.Metadata[opDgst]
+		delete(def.Metadata, opDgst)
+
+		lastOp.Inputs[i].Digest = newOpDgst
+	}
+	newLastOpBytes, err := lastOp.Marshal()
+	if err != nil {
+		return nil, err
+	}
+	newLastOpDgst := digest.FromBytes(newLastOpBytes)
+	def.Def[len(def.Def)-1] = newLastOpBytes
+	def.Metadata[newLastOpDgst] = def.Metadata[lastOpDigest]
+	delete(def.Metadata, lastOpDigest)
+
+	container.FS = def
+
+	health := newHealth(bk, hostname, container.Ports)
 
 	// annotate the container as a service so they can be treated differently
 	// in the UI
 	rec := progrock.RecorderFromContext(ctx).
 		WithGroup(
-			fmt.Sprintf("service %s", container.Hostname),
+			fmt.Sprintf("service %s", hostname),
 			progrock.Weak(),
 		)
 
@@ -1695,15 +1729,17 @@ func (container *Container) Import(
 	return container, nil
 }
 
-func (container *Container) HostnameOrErr() (string, error) {
-	if container.Hostname == "" {
-		return "", ErrContainerNoExec
+func (container *Container) HostnameOrErr(bk *buildkit.Client) (string, error) {
+	// compute a *stable* digest so that hostnames don't change across sessions
+	ctrDgst, err := stableDigest(container.FS)
+	if err != nil {
+		return "", fmt.Errorf("stable digest: %w", err)
 	}
-
-	return container.Hostname, nil
+	hostname := hostHash(ctrDgst) + bk.ID()
+	return hostname, nil
 }
 
-func (container *Container) Endpoint(port int, scheme string) (string, error) {
+func (container *Container) Endpoint(bk *buildkit.Client, port int, scheme string) (string, error) {
 	if port == 0 {
 		if len(container.Ports) == 0 {
 			return "", fmt.Errorf("no ports exposed")
@@ -1712,7 +1748,7 @@ func (container *Container) Endpoint(port int, scheme string) (string, error) {
 		port = container.Ports[0].Port
 	}
 
-	host, err := container.HostnameOrErr()
+	host, err := container.HostnameOrErr(bk)
 	if err != nil {
 		return "", err
 	}
@@ -1772,7 +1808,7 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(svc *Container, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(bk *buildkit.Client, svc *Container, alias string) (*Container, error) {
 	container = container.Clone()
 
 	svcID, err := svc.ID()
@@ -1785,7 +1821,7 @@ func (container *Container) WithServiceBinding(svc *Container, alias string) (*C
 	})
 
 	if alias != "" {
-		hn, err := svc.HostnameOrErr()
+		hn, err := svc.HostnameOrErr(bk)
 		if err != nil {
 			return nil, fmt.Errorf("get hostname: %w", err)
 		}

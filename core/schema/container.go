@@ -708,7 +708,7 @@ func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, ar
 		return "", err
 	}
 
-	return parent.HostnameOrErr()
+	return parent.HostnameOrErr(s.bk)
 }
 
 type containerEndpointArgs struct {
@@ -722,7 +722,7 @@ func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, ar
 		return "", err
 	}
 
-	return parent.Endpoint(args.Port, args.Scheme)
+	return parent.Endpoint(s.bk, args.Port, args.Scheme)
 }
 
 type containerWithServiceDependencyArgs struct {
@@ -741,7 +741,7 @@ func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Con
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(svc, args.Alias)
+	return parent.WithServiceBinding(s.bk, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {

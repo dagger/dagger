@@ -92,7 +92,7 @@ func WithServices[T any](ctx context.Context, bk *buildkit.Client, svcs ServiceB
 			return zero, err
 		}
 
-		host, err := svc.HostnameOrErr()
+		host, err := svc.HostnameOrErr(bk)
 		if err != nil {
 			return zero, err
 		}
