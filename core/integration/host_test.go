@@ -264,19 +264,3 @@ func TestHostFile(t *testing.T) {
 	})
 }
 
-func TestHostVariable(t *testing.T) {
-	t.Parallel()
-
-	require.NoError(t, os.Setenv("HELLO_TEST", "hello"))
-
-	ctx := context.Background()
-	c, err := dagger.Connect(ctx)
-	require.NoError(t, err)
-	defer c.Close()
-
-	envVar := c.Host().EnvVariable("HELLO_TEST")
-
-	varValue, err := envVar.Value(ctx)
-	require.NoError(t, err)
-	require.Equal(t, "hello", varValue)
-}

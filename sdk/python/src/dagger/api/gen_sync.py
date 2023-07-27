@@ -2278,21 +2278,6 @@ class Host(Type):
         return Directory(_ctx)
 
     @typecheck
-    def env_variable(self, name: str) -> "HostVariable":
-        """Accesses an environment variable on the host.
-
-        Parameters
-        ----------
-        name:
-            Name of the environment variable (e.g., "PATH").
-        """
-        _args = [
-            Arg("name", name),
-        ]
-        _ctx = self._select("envVariable", _args)
-        return HostVariable(_ctx)
-
-    @typecheck
     def file(self, path: str) -> File:
         """Accesses a file on the host.
 
@@ -2321,32 +2306,6 @@ class Host(Type):
         ]
         _ctx = self._select("unixSocket", _args)
         return Socket(_ctx)
-
-
-class HostVariable(Type):
-    """An environment variable on the host environment."""
-
-    @typecheck
-    def value(self) -> str:
-        """The value of this variable.
-
-        Returns
-        -------
-        str
-            The `String` scalar type represents textual data, represented as
-            UTF-8 character sequences. The String type is most often used by
-            GraphQL to represent free-form human-readable text.
-
-        Raises
-        ------
-        ExecuteTimeoutError
-            If the time to execute the query exceeds the configured timeout.
-        QueryError
-            If the API returns an error.
-        """
-        _args: list[Arg] = []
-        _ctx = self._select("value", _args)
-        return _ctx.execute_sync(str)
 
 
 class Label(Type):
@@ -3132,7 +3091,6 @@ __all__ = [
     "GitRef",
     "GitRepository",
     "Host",
-    "HostVariable",
     "ImageLayerCompression",
     "ImageMediaTypes",
     "Label",

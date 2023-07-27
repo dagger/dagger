@@ -36,16 +36,6 @@ type Host {
   ): File!
 
   """
-  Accesses an environment variable on the host.
-  """
-  envVariable(
-    """
-    Name of the environment variable (e.g., "PATH").
-    """
-    name: String!
-  ): HostVariable
-
-  """
   Accesses a Unix socket on the host.
   """
   unixSocket(
@@ -54,10 +44,4 @@ type Host {
     """
     path: String!
   ): Socket!
-}
-
-"An environment variable on the host environment."
-type HostVariable {
-  "The value of this variable."
-  value: String!
 }

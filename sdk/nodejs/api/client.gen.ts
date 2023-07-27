@@ -2522,24 +2522,6 @@ export class Host extends BaseClient {
   }
 
   /**
-   * Accesses an environment variable on the host.
-   * @param name Name of the environment variable (e.g., "PATH").
-   */
-  envVariable(name: string): HostVariable {
-    return new HostVariable({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "envVariable",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Accesses a file on the host.
    * @param path Location of the file to retrieve (e.g., "README.md").
    */
@@ -2573,28 +2555,6 @@ export class Host extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
-  }
-}
-
-/**
- * An environment variable on the host environment.
- */
-export class HostVariable extends BaseClient {
-  /**
-   * The value of this variable.
-   */
-  async value(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "value",
-        },
-      ],
-      this.client
-    )
-
-    return response
   }
 }
 

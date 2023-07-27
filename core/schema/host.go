@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"os"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/router"
 )
@@ -29,33 +27,15 @@ func (s *hostSchema) Resolvers() router.Resolvers {
 			"host": router.PassthroughResolver,
 		},
 		"Host": router.ObjectResolver{
-			"directory":   router.ToResolver(s.directory),
-			"file":        router.ToResolver(s.file),
-			"envVariable": router.ToResolver(s.envVariable),
-			"unixSocket":  router.ToResolver(s.socket),
-		},
-		"HostVariable": router.ObjectResolver{
-			"value": router.ToResolver(s.envVariableValue),
+			"directory":  router.ToResolver(s.directory),
+			"file":       router.ToResolver(s.file),
+			"unixSocket": router.ToResolver(s.socket),
 		},
 	}
 }
 
 func (s *hostSchema) Dependencies() []router.ExecutableSchema {
 	return nil
-}
-
-type hostVariableArgs struct {
-	Name string
-}
-
-func (s *hostSchema) envVariable(ctx *router.Context, parent any, args hostVariableArgs) (*core.HostVariable, error) {
-	return &core.HostVariable{
-		Name: args.Name,
-	}, nil
-}
-
-func (s *hostSchema) envVariableValue(ctx *router.Context, parent *core.HostVariable, args any) (string, error) {
-	return os.Getenv(parent.Name), nil
 }
 
 type hostDirectoryArgs struct {

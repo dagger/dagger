@@ -1944,17 +1944,6 @@ func (r *Host) Directory(path string, opts ...HostDirectoryOpts) *Directory {
 	}
 }
 
-// Accesses an environment variable on the host.
-func (r *Host) EnvVariable(name string) *HostVariable {
-	q := r.q.Select("envVariable")
-	q = q.Arg("name", name)
-
-	return &HostVariable{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Accesses a file on the host.
 func (r *Host) File(path string) *File {
 	q := r.q.Select("file")
@@ -1975,27 +1964,6 @@ func (r *Host) UnixSocket(path string) *Socket {
 		q: q,
 		c: r.c,
 	}
-}
-
-// An environment variable on the host environment.
-type HostVariable struct {
-	q *querybuilder.Selection
-	c graphql.Client
-
-	value *string
-}
-
-// The value of this variable.
-func (r *HostVariable) Value(ctx context.Context) (string, error) {
-	if r.value != nil {
-		return *r.value, nil
-	}
-	q := r.q.Select("value")
-
-	var response string
-
-	q = q.Bind(&response)
-	return response, q.Execute(ctx, r.c)
 }
 
 // A simple key value object that represents a label.
