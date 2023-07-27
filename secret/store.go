@@ -55,17 +55,12 @@ func (store *Store) AddSecret(_ context.Context, name, plaintext string) (core.S
 // build.
 //
 // In all other cases, a SecretID is expected.
-func (store *Store) GetSecret(ctx context.Context, idOrName string) ([]byte, error) {
+func (store *Store) GetSecret(_ context.Context, idOrName string) ([]byte, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 
 	var name string
 	if secret, err := core.SecretID(idOrName).ToSecret(); err == nil {
-		if secret.IsOldFormat() {
-			// use the legacy SecretID format
-			return secret.LegacyPlaintext(ctx, store.gw)
-		}
-
 		name = secret.Name
 	} else {
 		name = idOrName

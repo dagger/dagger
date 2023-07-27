@@ -44,10 +44,10 @@ func getField(t *introspection.Type, name string) *introspection.Field {
 }
 
 func TestSplitRequiredOptionalArgs(t *testing.T) {
-	t.Run("container exec", func(t *testing.T) {
+	t.Run("container withDefaultArgs", func(t *testing.T) {
 		container := currentSchema.Types.Get("Container")
 		require.NotNil(t, container)
-		execField := getField(container, "exec")
+		execField := getField(container, "withDefaultArgs")
 
 		t.Log(container)
 		required, optional := splitRequiredOptionalArgs(execField.Args)

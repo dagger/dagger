@@ -1,7 +1,6 @@
 package util
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -171,11 +170,20 @@ func HostDockerDir(c *dagger.Client) *dagger.Directory {
 	return c.Host().Directory(path)
 }
 
-func WithSetHostVar(ctx context.Context, h *dagger.Host, varName string) *dagger.HostVariable {
-	hv := h.EnvVariable(varName)
-	if val, _ := hv.Secret().Plaintext(ctx); val == "" {
-		fmt.Fprintf(os.Stderr, "env var %s must be set", varName)
+// HostSecretVar is a chainable util for setting a secret env var from the host in a container.
+func HostSecretVar(c *dagger.Client, name string) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.WithSecretVariable(name, c.SetSecret(name, GetHostEnv(name)))
+	}
+}
+
+// GetHostEnv is like os.Getenv but ensures that the env var is set.
+func GetHostEnv(name string) string {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "env var %s must be set", name)
 		os.Exit(1)
 	}
-	return hv
+	return value
 }
+

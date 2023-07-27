@@ -1322,15 +1322,6 @@ func (container *Container) Evaluate(ctx context.Context, gw bkgw.Client) error 
 	return err
 }
 
-func (container *Container) ExitCode(ctx context.Context, gw bkgw.Client, progSock *Socket) (int, error) {
-	content, err := container.MetaFileContents(ctx, gw, progSock, "exitCode")
-	if err != nil {
-		return 0, err
-	}
-
-	return strconv.Atoi(content)
-}
-
 func (container *Container) Start(ctx context.Context, gw bkgw.Client) (*Service, error) {
 	if container.Hostname == "" {
 		return nil, ErrContainerNoExec

@@ -350,62 +350,6 @@ func TestContainerExecSync(t *testing.T) {
 	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
 }
 
-func TestContainerExecExitCode(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					ExitCode *int
-				}
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`{
-			container {
-				from(address: "`+alpineImage+`") {
-					withExec(args: ["true"]) {
-						exitCode
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotNil(t, res.Container.From.WithExec.ExitCode)
-	require.Equal(t, 0, *res.Container.From.WithExec.ExitCode)
-
-	/*
-		It's not currently possible to get a nonzero exit code back because
-		Buildkit raises an error.
-
-		We could perhaps have the shim mask the exit status and always exit 0, but
-		we would have to be careful not to let that happen in a big chained LLB
-		since it would prevent short-circuiting.
-
-		We could only do it when the user requests the exitCode, but then we would
-		actually need to run the command _again_ since we'd need some way to tell
-		the shim what to do.
-
-		Hmm...
-
-		err = testutil.Query(
-			`{
-				container {
-					from(address: "`+alpineImage+`") {
-						withExec(args: ["false"]) {
-							exitCode
-						}
-					}
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-		require.Equal(t, res.Container.From.WithExec.ExitCode, 1)
-	*/
-}
-
 func TestContainerExecStdoutStderr(t *testing.T) {
 	t.Parallel()
 
@@ -2304,7 +2248,6 @@ func TestContainerFileErrors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
 
-	secretID := newSecret(t, "some-secret")
 	err = testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
@@ -2316,8 +2259,8 @@ func TestContainerFileErrors(t *testing.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
+		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+			"secret": "some-secret",
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sekret: no such file or directory")
@@ -3016,36 +2959,17 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	t.Run("legacy secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				//nolint:staticcheck // SA1019 We want to test this API while we support it.
-				c.Container().
-					WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
-					File("secret.txt").
-					Secret(),
-			).
-			Publish(ctx, testRef)
+    pushedRef, err := container.
+        WithRegistryAuth(
+            privateRegistryHost,
+            "john",
+            c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+        ).
+        Publish(ctx, testRef)
 
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
-	t.Run("new secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-			).
-			Publish(ctx, testRef)
-
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
+    require.NoError(t, err)
+    require.NotEqual(t, testRef, pushedRef)
+    require.Contains(t, pushedRef, "@sha256:")
 }
 
 func TestContainerImageRef(t *testing.T) {
@@ -3252,10 +3176,6 @@ func TestContainerNoExec(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	code, err := c.Container().From(alpineImage).ExitCode(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, code)
-
 	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", stdout)
@@ -3269,7 +3189,7 @@ func TestContainerNoExec(t *testing.T) {
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: nil,
 		}).
-		ExitCode(ctx)
+		Stdout(ctx)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no command has been set")

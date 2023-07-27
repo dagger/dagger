@@ -1175,10 +1175,13 @@ func TestFileServiceSecret(t *testing.T) {
 
 	httpSrv, httpURL := httpService(ctx, t, c, content)
 
-	//nolint:staticcheck // SA1019 We want to test this API while we support it.
-	secret := c.HTTP(httpURL, dagger.HTTPOpts{
+    // TODO: This is unsafe as it gets cached.
+	plaintext, err := c.HTTP(httpURL, dagger.HTTPOpts{
 		ExperimentalServiceHost: httpSrv,
-	}).Secret()
+	}).Contents(ctx)
+    require.NoError(t, err)
+
+    secret := c.SetSecret("sekrit", plaintext)
 
 	t.Run("secret env", func(t *testing.T) {
 		_, err := c.Container().

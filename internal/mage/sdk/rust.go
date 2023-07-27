@@ -147,15 +147,13 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 	c = c.Pipeline("sdk").Pipeline("rust").Pipeline("publish")
 
 	var (
-		version  = strings.TrimPrefix(tag, "sdk/rust/v")
-		token, _ = util.WithSetHostVar(ctx, c.Host(), "CARGO_REGISTRY_TOKEN").
-				Secret().
-				Plaintext(ctx)
-		dry_run = os.Getenv("CARGO_PUBLISH_DRYRUN")
+		version = strings.TrimPrefix(tag, "sdk/rust/v")
+		token   = os.Getenv("CARGO_REGISTRY_TOKEN")
+		dryRun  = os.Getenv("CARGO_PUBLISH_DRYRUN")
 		crate   = "dagger-sdk"
 	)
 
-	if token == "" && dry_run == "false" {
+	if token == "" && dryRun == "false" {
 		return errors.New("CARGO_TOKEN environment variable must be set")
 	}
 
@@ -171,7 +169,7 @@ func (r Rust) Publish(ctx context.Context, tag string) error {
 		"cargo", "publish", "-p", crate, "-v", "--all-features",
 	}
 
-	if dry_run == "false" {
+	if dryRun == "false" {
 		base = base.
 			WithEnvVariable("CARGO_REGISTRY_TOKEN", token).
 			WithExec(args)

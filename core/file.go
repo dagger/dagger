@@ -170,15 +170,6 @@ func (file *File) Contents(ctx context.Context, gw bkgw.Client) ([]byte, error) 
 	})
 }
 
-func (file *File) Secret(ctx context.Context) (*Secret, error) {
-	id, err := file.ID()
-	if err != nil {
-		return nil, err
-	}
-
-	return NewSecretFromFile(id), nil
-}
-
 func (file *File) Stat(ctx context.Context, gw bkgw.Client) (*fstypes.Stat, error) {
 	return WithServices(ctx, gw, file.Services, func() (*fstypes.Stat, error) {
 		ref, err := gwRef(ctx, gw, file.LLB)

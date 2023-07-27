@@ -6,22 +6,6 @@ extend type Query {
 "Information about the host execution environment."
 type Host {
   """
-  Retrieves the current working directory on the host.
-  """
-  workdir(
-    """
-    Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    """
-    exclude: [String!],
-
-    """
-    Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    """
-    include: [String!]
-  ): Directory!
-    @deprecated(reason: "Use `directory` with path set to '.' instead.")
-
-  """
   Accesses a directory on the host.
   """
   directory(
@@ -76,7 +60,4 @@ type Host {
 type HostVariable {
   "The value of this variable."
   value: String!
-
-  "A secret referencing the value of this variable."
-  secret: Secret! @deprecated(reason: "been superseded by `setSecret`")
 }

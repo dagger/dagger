@@ -82,41 +82,6 @@ func newDirWithFile(t *testing.T, path, contents string) core.DirectoryID {
 	return dirRes.Directory.WithNewFile.ID
 }
 
-func newSecret(t *testing.T, content string) core.SecretID {
-	var secretRes struct {
-		Directory struct {
-			WithNewFile struct {
-				File struct {
-					Secret struct {
-						ID core.SecretID
-					}
-				}
-			}
-		}
-	}
-
-	err := testutil.Query(
-		`query Test($content: String!) {
-			directory {
-				withNewFile(path: "some-file", contents: $content) {
-					file(path: "some-file") {
-						secret {
-							id
-						}
-					}
-				}
-			}
-		}`, &secretRes, &testutil.QueryOptions{Variables: map[string]any{
-			"content": content,
-		}})
-	require.NoError(t, err)
-
-	secretID := secretRes.Directory.WithNewFile.File.Secret.ID
-	require.NotEmpty(t, secretID)
-
-	return secretID
-}
-
 func newFile(t *testing.T, path, contents string) core.FileID {
 	var secretRes struct {
 		Directory struct {

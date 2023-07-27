@@ -274,19 +274,9 @@ func TestHostVariable(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	secret := c.Host().EnvVariable("HELLO_TEST")
+	envVar := c.Host().EnvVariable("HELLO_TEST")
 
-	varValue, err := secret.Value(ctx)
+	varValue, err := envVar.Value(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "hello", varValue)
-
-	env, err := c.Container().
-		From(alpineImage).
-		//nolint:staticcheck // SA1019 We want to test this API while we support it.
-		WithSecretVariable("SECRET", secret.Secret()).
-		WithExec([]string{"env"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-
-	require.Contains(t, env, "SECRET=***")
 }
