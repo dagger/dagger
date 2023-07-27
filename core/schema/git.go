@@ -5,6 +5,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
@@ -135,7 +136,13 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
 
-	useDNS := len(svcs) > 0 // TODO(vito): or if session has parent
+	useDNS := len(svcs) > 0
+
+	if !useDNS {
+		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
+			useDNS = len(clientMetadata.ParentClientIDs) > 0
+		}
+	}
 
 	var st llb.State
 	if useDNS {

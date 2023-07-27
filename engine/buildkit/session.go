@@ -44,13 +44,17 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
 	}))
 
+	searchDomains := []string{}
+	for _, id := range c.Metadata.ClientIDs() {
+		searchDomains = append(searchDomains, network.ClientDomain(id))
+	}
+
 	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {
 		switch id {
 		case network.DaggerNetwork:
 			return &networks.Config{
 				Dns: &networks.DNSConfig{
-					// TODO(vito): use ClientID instead?
-					SearchDomains: []string{network.ClientDomain(c.ID())},
+					SearchDomains: searchDomains,
 				},
 			}
 		default:

@@ -1060,13 +1060,18 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		llb.WithCustomNamef(namef, strings.Join(args, " ")),
 	}
 
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	runOpts = append(runOpts,
 		// HACK(vito): passing parent sessions through ftp_proxy
 		// so it doesn't bust caches, reconsider if/when we
 		// actually add proxy support
 		llb.WithProxy(llb.ProxyEnv{
 			// no one uses FTP anymore right?
-			FTPProxy: bk.ID(),
+			FTPProxy: strings.Join(clientMetadata.ClientIDs(), " "),
 		}))
 
 	// this allows executed containers to communicate back to this API
@@ -1320,7 +1325,12 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 		return nil, err
 	}
 
-	hostname += "." + network.ClientDomain(bk.ID()) // TODO(vito) make this ClientID?
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	hostname += "." + network.ClientDomain(clientMetadata.ClientID)
 
 	// TODO: cleanup
 	def := container.FS
@@ -1386,6 +1396,7 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 
 	svcCtx, stop := context.WithCancel(context.Background())
 	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 
 	checked := make(chan error, 1)
 	go func() {

@@ -42,6 +42,12 @@ type SessionParams struct {
 	// should be started.
 	RouterID string
 
+	// Parent client IDs of this Dagger client.
+	//
+	// Used by Dagger-in-Dagger so that nested sessions can resolve addresses
+	// passed from the parent.
+	ParentClientIDs []string
+
 	// TODO: re-add support
 	SecretToken string
 
@@ -149,10 +155,11 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		return nil, fmt.Errorf("get workdir: %w", err)
 	}
 	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
-		ClientID:       s.ID(),
-		RouterID:       s.RouterID,
-		ClientHostname: s.hostname,
-		Labels:         pipeline.LoadVCSLabels(workdir),
+		ClientID:        s.ID(),
+		RouterID:        s.RouterID,
+		ClientHostname:  s.hostname,
+		Labels:          pipeline.LoadVCSLabels(workdir),
+		ParentClientIDs: s.ParentClientIDs,
 	})
 
 	// filesync
@@ -220,11 +227,13 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	// run the client session
 	s.eg.Go(func() error {
-		// client ID and router ID get passed via the session ID and session shared key respectively,
-		// this is because in order to explicitly set those in our own code we'd need to copy
-		// a lot of internal code; could be addressed with upstream tweaks to make some types
-		// public
-		return bkSession.Run(internalCtx, grpchijack.Dialer(s.bkClient.ControlClient()))
+		// client ID gets passed via the session ID
+		return bkSession.Run(internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			meta[engine.RouterIDMetaKey] = []string{s.RouterID}
+			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
+			meta[engine.ClientHostnameMetaKey] = []string{hostname}
+			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, meta)
+		})
 	})
 
 	// Try connecting to the session server to make sure it's running
@@ -289,9 +298,10 @@ func (s *Session) ID() string {
 
 func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:       s.ID(),
-		RouterID:       s.RouterID,
-		ClientHostname: s.hostname,
+		ClientID:        s.ID(),
+		RouterID:        s.RouterID,
+		ClientHostname:  s.hostname,
+		ParentClientIDs: s.ParentClientIDs,
 	}.ToGRPCMD())
 }
 
