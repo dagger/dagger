@@ -238,7 +238,7 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 	opts, err := engine.SessionAPIOptsFromContext(stream.Context())
 	if err != nil {
 		lg.WithError(err).Error("failed to get session api opts")
-		return err
+		return fmt.Errorf("failed to get session api opts: %w", err)
 	}
 
 	lg = lg.
@@ -266,6 +266,9 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 		lg.Debug("passing through to buildkit session manager")
 		// pass through to buildkit's session manager for handling the attachables
 		err = e.SessionManager.HandleConn(ctx, conn, md)
+		if err != nil {
+			err = fmt.Errorf("session manager failed to handle conn: %w", err)
+		}
 	} else {
 		// TODO:
 		lg.Debug("passing through to graphql api")
@@ -281,6 +284,9 @@ func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
 		// default to connecting to the graphql api
 		// TODO: make sure this unblocks and has reasonable error if router is closed, I don't think either are true rn
 		err = rtr.ServeClientConn(ctx, opts.ClientMetadata, conn)
+		if err != nil {
+			err = fmt.Errorf("router failed to serve client conn: %w", err)
+		}
 	}
 
 	return err

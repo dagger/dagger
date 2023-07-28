@@ -104,7 +104,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 		s.nestedSessionPort = nestedSessionPort
 		s.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.NestedDialContext}}
+		s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.NestedDialContext, DisableKeepAlives: true}}
 		return s, nil
 	}
 
@@ -259,7 +259,13 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	})
 
 	// Try connecting to the session server to make sure it's running
-	s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.DialContext}}
+	s.httpClient = &http.Client{Transport: &http.Transport{
+		DialContext: s.DialContext,
+		// connection re-use in combination with the underlying grpc stream makes
+		// managing the lifetime of connections very confusing, so disabling for now
+		// TODO: For performance, it would be better to figure out a way to re-enable this
+		DisableKeepAlives: true,
+	}}
 
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 100 * time.Millisecond
@@ -277,13 +283,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 func (s *Session) Close() (rerr error) {
 	if len(s.upstreamCacheOptions) > 0 {
-		// TODO: cancelable context here?
-		ctx := engine.ContextWithClientMetadata(context.TODO(), &engine.ClientMetadata{
-			ClientID:       s.ID(),
-			RouterID:       s.RouterID,
-			ClientHostname: s.hostname,
-		})
-		_, err := s.bkClient.ControlClient().Solve(ctx, &controlapi.SolveRequest{
+		// TODO: timeout context here? or have close accept context?
+		_, err := s.bkClient.ControlClient().Solve(s.internalCtx, &controlapi.SolveRequest{
 			Cache: controlapi.CacheOptions{
 				Exports: s.upstreamCacheOptions,
 			},
@@ -328,6 +329,8 @@ func (s *Session) ID() string {
 }
 
 func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
+	// If http connection re-use is enabled, that can be far past this DialContext call.
 	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
 		ClientID:        s.ID(),
 		RouterID:        s.RouterID,
@@ -362,7 +365,7 @@ func (s *Session) Do(
 	opName string,
 	variables map[string]any,
 	data any,
-) error {
+) (rerr error) {
 	gqlClient := graphql.NewClient("http://dagger/query", s.httpClient)
 
 	req := &graphql.Request{
