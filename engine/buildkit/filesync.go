@@ -30,7 +30,7 @@ func (p *fileSyncServerProxy) Register(srv *grpc.Server) {
 }
 
 func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	ctx, baseData, err := p.c.GetSessionResourceData(stream)
+	ctx, baseData, err := p.c.getSessionResourceData(stream)
 	if err != nil {
 		return err
 	}
@@ -103,7 +103,7 @@ func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) 
 }
 
 func (p *fileSyncServerProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
-	ctx, baseData, err := p.c.GetSessionResourceData(stream)
+	ctx, baseData, err := p.c.getSessionResourceData(stream)
 	if err != nil {
 		return err
 	}
@@ -235,7 +235,7 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 	var useBytesMessageType bool
 	if p.destClientID == "" {
 		var baseData *sessionStreamResourceData
-		ctx, baseData, err = p.c.GetSessionResourceData(stream)
+		ctx, baseData, err = p.c.getSessionResourceData(stream)
 		if err != nil {
 			return err
 		}

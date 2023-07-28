@@ -100,8 +100,6 @@ type importLocalDirData struct {
 type exportLocalDirData struct {
 	session bksession.Caller
 	path    string
-	// TODO: this is ugly, but buildkit uses two different message types on the same stream depending on how it's called
-	useBytesMessageType bool
 }
 
 type socketData struct {
@@ -135,7 +133,7 @@ func (c *Client) getSocketDataFromID(ctx context.Context, id string) (*socketDat
 }
 
 // TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
-func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
+func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
 	incomingMD, incomingOk := metadata.FromIncomingContext(stream.Context())
 	outgoingMD, outgoingOk := metadata.FromOutgoingContext(stream.Context())
 	if !incomingOk && !outgoingOk {

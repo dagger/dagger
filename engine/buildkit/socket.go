@@ -31,7 +31,7 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 }
 
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
-	ctx, baseData, err := p.c.GetSessionResourceData(stream)
+	ctx, baseData, err := p.c.getSessionResourceData(stream)
 	if err != nil {
 		return err
 	}

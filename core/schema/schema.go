@@ -3,7 +3,6 @@ package schema
 import (
 	"fmt"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/containerd/containerd/content"
@@ -140,12 +139,6 @@ func (s *MergedSchemas) resolvers() Resolvers {
 	return s.mergedSchema.Resolvers()
 }
 
-func (s *MergedSchemas) mergedSchemas() string {
-	s.schemaMu.RLock()
-	defer s.schemaMu.RUnlock()
-	return s.mergedSchema.Schema()
-}
-
 type ExecutableSchema interface {
 	Name() string
 	Schema() string
@@ -238,18 +231,6 @@ func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...Execu
 	}
 
 	return StaticSchema(mergedSchema), nil
-}
-
-func mergeSchemas(name string, schemas ...StaticSchemaParams) StaticSchemaParams {
-	merged := StaticSchemaParams{Name: name}
-
-	defs := []string{}
-	for _, r := range schemas {
-		defs = append(defs, r.Schema)
-	}
-	merged.Schema = strings.Join(defs, "\n")
-
-	return merged
 }
 
 func compile(s ExecutableSchema) (*graphql.Schema, error) {
