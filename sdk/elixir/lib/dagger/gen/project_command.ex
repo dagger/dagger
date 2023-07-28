@@ -7,7 +7,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Documentation for what this command does."
-    @spec description(t()) :: String.t()
+    @spec description(t()) :: String.t() | nil
     def description(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "description")
       execute(selection, project_command.client)
@@ -16,7 +16,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Flags accepted by this command."
-    @spec flags(t()) :: [Dagger.ProjectCommandFlag.t()]
+    @spec flags(t()) :: [Dagger.ProjectCommandFlag.t()] | nil
     def flags(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "flags")
       execute(selection, project_command.client)
@@ -43,7 +43,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "The name of the type returned by this command."
-    @spec result_type(t()) :: String.t()
+    @spec result_type(t()) :: String.t() | nil
     def result_type(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "resultType")
       execute(selection, project_command.client)
@@ -52,7 +52,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Subcommands, if any, that this command provides."
-    @spec subcommands(t()) :: [Dagger.ProjectCommand.t()]
+    @spec subcommands(t()) :: [Dagger.ProjectCommand.t()] | nil
     def subcommands(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "subcommands")
       execute(selection, project_command.client)

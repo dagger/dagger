@@ -54,21 +54,34 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
         desc
       end
 
-    struct_fields =
-      fields
-      |> Enum.map(fn %{"name" => name} -> name end)
-      |> Enum.map(&Macro.underscore/1)
-      |> Enum.map(&String.to_atom/1)
+    struct_fields = Enum.map(fields, &to_struct_field/1)
+
+    data_type_t =
+      {:%, [],
+       [
+         {:__MODULE__, [], Elixir},
+         {:%{}, [],
+          fields
+          |> Enum.map(fn %{"type" => type} = field ->
+            {to_struct_field(field), render_return_type(type)}
+          end)}
+       ]}
 
     quote do
       defmodule unquote(mod_name) do
         @moduledoc unquote(desc)
 
-        @type t() :: %__MODULE__{}
+        @type t() :: unquote(data_type_t)
 
         defstruct unquote(struct_fields)
       end
     end
+  end
+
+  defp to_struct_field(%{"name" => name}) do
+    name
+    |> Macro.underscore()
+    |> String.to_atom()
   end
 
   defp render_api_module(
@@ -308,10 +321,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_return_type(%{"kind" => "NON_NULL", "ofType" => type}) do
-    render_return_type(type)
+    render_type(type)
   end
 
-  defp render_return_type(%{"kind" => "OBJECT", "name" => type}) do
+  defp render_return_type(type) do
+    {:|, [], [render_type(type), nil]}
+  end
+
+  defp render_type(%{"kind" => "OBJECT", "name" => type}) do
     mod_name = Module.concat([Dagger, Mod.format_name(type)])
 
     quote do
@@ -319,15 +336,19 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp render_return_type(%{"kind" => "LIST", "ofType" => type}) do
-    type = render_return_type(type)
+  defp render_type(%{"kind" => "NON_NULL", "ofType" => type}) do
+    render_type(type)
+  end
+
+  defp render_type(%{"kind" => "LIST", "ofType" => type}) do
+    type = render_type(type)
 
     quote do
       [unquote(type)]
     end
   end
 
-  defp render_return_type(%{"kind" => "ENUM", "name" => type}) do
+  defp render_type(%{"kind" => "ENUM", "name" => type}) do
     mod_name = Module.concat([Dagger, Mod.format_name(type)])
 
     quote do
@@ -335,31 +356,31 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp render_return_type(%{"kind" => "SCALAR", "name" => "String"}) do
+  defp render_type(%{"kind" => "SCALAR", "name" => "String"}) do
     quote do
       String.t()
     end
   end
 
-  defp render_return_type(%{"kind" => "SCALAR", "name" => "Int"}) do
+  defp render_type(%{"kind" => "SCALAR", "name" => "Int"}) do
     quote do
       integer()
     end
   end
 
-  defp render_return_type(%{"kind" => "SCALAR", "name" => "Float"}) do
+  defp render_type(%{"kind" => "SCALAR", "name" => "Float"}) do
     quote do
       float()
     end
   end
 
-  defp render_return_type(%{"kind" => "SCALAR", "name" => "Boolean"}) do
+  defp render_type(%{"kind" => "SCALAR", "name" => "Boolean"}) do
     quote do
       boolean()
     end
   end
 
-  defp render_return_type(%{"kind" => "SCALAR", "name" => type}) do
+  defp render_type(%{"kind" => "SCALAR", "name" => type}) do
     # Convert *ID type into object type.
     mod_name = Module.concat([Dagger, type |> String.trim_trailing("ID") |> Mod.format_name()])
 

@@ -67,7 +67,7 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec file(t(), Dagger.File.t()) :: Dagger.File.t()
+    @spec file(t(), Dagger.File.t()) :: Dagger.File.t() | nil
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")
 

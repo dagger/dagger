@@ -7,7 +7,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Commands provided by this project"
-    @spec commands(t()) :: [Dagger.ProjectCommand.t()]
+    @spec commands(t()) :: [Dagger.ProjectCommand.t()] | nil
     def commands(%__MODULE__{} = project) do
       selection = select(project.selection, "commands")
       execute(selection, project.client)

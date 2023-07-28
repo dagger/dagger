@@ -50,7 +50,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves default arguments for future commands."
-    @spec default_args(t()) :: [String.t()]
+    @spec default_args(t()) :: [String.t()] | nil
     def default_args(%__MODULE__{} = container) do
       selection = select(container.selection, "defaultArgs")
       execute(selection, container.client)
@@ -93,7 +93,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
-    @spec entrypoint(t()) :: [String.t()]
+    @spec entrypoint(t()) :: [String.t()] | nil
     def entrypoint(%__MODULE__{} = container) do
       selection = select(container.selection, "entrypoint")
       execute(selection, container.client)
@@ -102,7 +102,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable to retrieve (e.g., \"PATH\")."
-    @spec env_variable(t(), String.t()) :: String.t()
+    @spec env_variable(t(), String.t()) :: String.t() | nil
     def env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "envVariable")
       selection = arg(selection, "name", name)
@@ -264,7 +264,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
-    @spec image_ref(t()) :: String.t()
+    @spec image_ref(t()) :: String.t() | nil
     def image_ref(%__MODULE__{} = container) do
       selection = select(container.selection, "imageRef")
       execute(selection, container.client)
@@ -295,7 +295,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified label.\n\n## Required Arguments\n\n* `name` -"
-    @spec label(t(), String.t()) :: String.t()
+    @spec label(t(), String.t()) :: String.t() | nil
     def label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "label")
       selection = arg(selection, "name", name)
@@ -419,7 +419,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the user to be set for all commands."
-    @spec user(t()) :: String.t()
+    @spec user(t()) :: String.t() | nil
     def user(%__MODULE__{} = container) do
       selection = select(container.selection, "user")
       execute(selection, container.client)
@@ -976,7 +976,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the working directory for all commands."
-    @spec workdir(t()) :: String.t()
+    @spec workdir(t()) :: String.t() | nil
     def workdir(%__MODULE__{} = container) do
       selection = select(container.selection, "workdir")
       execute(selection, container.client)
