@@ -4,52 +4,58 @@ import jakarta.json.bind.annotation.JsonbProperty;
 
 public class EnumValue {
 
-    private String name;
-    private String description;
+  private String name;
+  private String description;
 
-    @JsonbProperty("isDeprecated")
-    private boolean deprecated; // isDeprecated
-    private String DeprecationReason;
+  @JsonbProperty("isDeprecated")
+  private boolean deprecated; // isDeprecated
 
-    public String getName() {
-        return name;
-    }
+  private String DeprecationReason;
 
-    public void setName(String name) {
-        this.name = name;
-    }
+  public String getName() {
+    return name;
+  }
 
-    public String getDescription() {
-        return description;
-    }
+  public void setName(String name) {
+    this.name = name;
+  }
 
-    public void setDescription(String description) {
-        this.description = description.replace("\n", "<br/>");
-    }
+  public String getDescription() {
+    return description;
+  }
 
-    public boolean isDeprecated() {
-        return deprecated;
-    }
+  public void setDescription(String description) {
+    this.description = description.replace("\n", "<br/>");
+  }
 
-    public void setDeprecated(boolean deprecated) {
-        this.deprecated = deprecated;
-    }
+  public boolean isDeprecated() {
+    return deprecated;
+  }
 
-    public String getDeprecationReason() {
-        return DeprecationReason;
-    }
+  public void setDeprecated(boolean deprecated) {
+    this.deprecated = deprecated;
+  }
 
-    public void setDeprecationReason(String deprecationReason) {
-        DeprecationReason = deprecationReason;
-    }
+  public String getDeprecationReason() {
+    return DeprecationReason;
+  }
 
-    @Override
-    public String toString() {
-        return "EnumValue{" +
-                "name='" + name + '\'' +
-                // ", Description='" + Description + '\'' +
-                ", deprecated=" + deprecated +
-                // ", DeprecationReason='" + DeprecationReason + '\'' +
-                '}';
-    }
+  public void setDeprecationReason(String deprecationReason) {
+    DeprecationReason = deprecationReason;
+  }
+
+  @Override
+  public String toString() {
+    return "EnumValue{"
+        + "name='"
+        + name
+        + '\''
+        +
+        // ", Description='" + Description + '\'' +
+        ", deprecated="
+        + deprecated
+        +
+        // ", DeprecationReason='" + DeprecationReason + '\'' +
+        '}';
+  }
 }

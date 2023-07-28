@@ -1,14 +1,14 @@
 package io.dagger.codegen.introspection;
 
 public enum Scalar {
-    ScalarInt("Int"),
-    ScalarFloat("Float"),
-    ScalarString("String"),
-    ScalarBoolean("Boolean");
+  ScalarInt("Int"),
+  ScalarFloat("Float"),
+  ScalarString("String"),
+  ScalarBoolean("Boolean");
 
-    private String type;
+  private String type;
 
-    Scalar(String scalarType) {
-        this.type = scalarType;
-    }
+  Scalar(String scalarType) {
+    this.type = scalarType;
+  }
 }

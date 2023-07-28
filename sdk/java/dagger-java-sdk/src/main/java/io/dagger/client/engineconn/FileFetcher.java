@@ -6,5 +6,5 @@ import java.io.InputStream;
 @FunctionalInterface
 interface FileFetcher {
 
-    InputStream fetch(String url) throws IOException;
+  InputStream fetch(String url) throws IOException;
 }
