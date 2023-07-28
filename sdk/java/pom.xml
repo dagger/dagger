@@ -157,7 +157,7 @@
                     <version>${maven-source-plugin.version}</version>
                 </plugin>
                 <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
+                    <groupId>org.codehaus.mojo</groupId>
                     <artifactId>maven-versions-plugin</artifactId>
                     <version>${maven-versions-plugin.version}</version>
                 </plugin>
