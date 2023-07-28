@@ -625,6 +625,31 @@ Set the Hashicorp Vault URI, namespace, role and secret identifiers as host envi
 
 [Learn more](./guides/723462-use-secrets.md)
 
+### Mount directories as secrets in a container
+
+The following code listing demonstrates how to securely mount directories as secrets in a container. The directory structure/file names will be accessible, but contents of the secrets will be scrubbed:
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/mount-directories-as-secrets/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/mount-directories-as-secrets/index.ts
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/mount-directories-as-secrets/main.py
+```
+
+</TabItem>
+</Tabs>
+
 ## Optimizations
 
 ### Cache dependencies
