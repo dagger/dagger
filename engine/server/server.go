@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -219,6 +220,9 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 	rtr.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname)
 	defer rtr.bkClient.DeregisterClientHostname(opts.ClientHostname)
 	err = rtr.Wait(ctx)
+	if errors.Is(err, context.Canceled) {
+		err = nil
+	}
 	if err != nil {
 		return nil, err
 	}
