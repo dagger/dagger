@@ -15,15 +15,71 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     "SocketID"
   ]
 
-  def render(
-        %{
-          "name" => name,
-          "fields" => fields,
-          "description" => desc,
-          "private" => %{mod_name: mod_name}
-        } = _full_type,
-        types
-      ) do
+  def render(full_type, types) do
+    if is_simple_object?(full_type) do
+      render_data_module(full_type, types)
+    else
+      render_api_module(full_type, types)
+    end
+  end
+
+  defp is_simple_object?(%{"fields" => fields}) do
+    not has_id_fields?(fields) and empty_args?(fields)
+  end
+
+  defp has_id_fields?(fields) do
+    fields
+    |> Enum.any?(fn %{"name" => name} -> name == "id" end)
+  end
+
+  defp empty_args?(fields) do
+    fields
+    |> Enum.all?(fn %{"args" => args} -> args == [] end)
+  end
+
+  defp render_data_module(
+         %{
+           "name" => name,
+           "fields" => fields,
+           "description" => desc,
+           "private" => %{mod_name: mod_name}
+         },
+         _
+       )
+       when name not in @id_modules do
+    desc =
+      if desc == "" do
+        name
+      else
+        desc
+      end
+
+    struct_fields =
+      fields
+      |> Enum.map(fn %{"name" => name} -> name end)
+      |> Enum.map(&Macro.underscore/1)
+      |> Enum.map(&String.to_atom/1)
+
+    quote do
+      defmodule unquote(mod_name) do
+        @moduledoc unquote(desc)
+
+        @type t() :: %__MODULE__{}
+
+        defstruct unquote(struct_fields)
+      end
+    end
+  end
+
+  defp render_api_module(
+         %{
+           "name" => name,
+           "fields" => fields,
+           "description" => desc,
+           "private" => %{mod_name: mod_name}
+         },
+         types
+       ) do
     defs = render_functions(Function.format_var_name(name), fields, types)
 
     desc =
@@ -141,19 +197,19 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   defp deprecated_reason(_), do: nil
 
   defp format_doc(%{"description" => desc, "args" => args}) do
-    sep = ['\n', '\n']
+    sep = [~c"\n", ~c"\n"]
     doc = [desc]
 
     required_args_doc =
       case format_required_args_doc(args) do
         [] -> []
-        args_doc -> ["## Required Arguments", '\n', '\n', args_doc]
+        args_doc -> ["## Required Arguments", ~c"\n", ~c"\n", args_doc]
       end
 
     optional_args_doc =
       case format_optional_args_doc(args) do
         [] -> []
-        args_doc -> ["## Optional Arguments", '\n', '\n', args_doc]
+        args_doc -> ["## Optional Arguments", ~c"\n", ~c"\n", args_doc]
       end
 
     (doc ++ sep ++ required_args_doc ++ sep ++ optional_args_doc)
@@ -165,14 +221,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     args
     |> Enum.filter(&required_arg?/1)
     |> Enum.map(&format_arg_doc/1)
-    |> Enum.intersperse('\n')
+    |> Enum.intersperse(~c"\n")
   end
 
   defp format_optional_args_doc(args) do
     args
     |> Enum.filter(&(not required_arg?(&1)))
     |> Enum.map(&format_arg_doc/1)
-    |> Enum.intersperse('\n')
+    |> Enum.intersperse(~c"\n")
   end
 
   defp required_arg?(arg) do

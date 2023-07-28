@@ -39,13 +39,13 @@ defmodule Dagger.QueryBuilder.Selection do
   end
 
   defp build_alias(""), do: []
-  defp build_alias(alias), do: [alias, ':']
+  defp build_alias(alias), do: [alias, ~c":"]
 
   defp build_args(nil), do: []
 
   defp build_args(args) do
-    fun = fn {name, value} -> [name, ':', Jason.encode!(value)] end
-    ['(', Enum.map_join(args, ",", fun), ')']
+    fun = fn {name, value} -> [name, ~c":", Jason.encode!(value)] end
+    [~c"(", Enum.map_join(args, ",", fun), ~c")"]
   end
 
   def path(selection) do
