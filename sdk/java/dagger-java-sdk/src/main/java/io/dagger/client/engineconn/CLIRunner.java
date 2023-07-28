@@ -59,16 +59,16 @@ class CLIRunner implements Runnable {
 
   public void start() throws IOException {
     this.process =
-            FluentProcess.start(
-                            getCLIPath(),
-                            "session",
-                            "--workdir",
-                            workingDir,
-                            "--label",
-                            "dagger.io/sdk.name:java",
-                            "--label",
-                            "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
-                    .withAllowedExitCodes(137);
+        FluentProcess.start(
+                getCLIPath(),
+                "session",
+                "--workdir",
+                workingDir,
+                "--label",
+                "dagger.io/sdk.name:java",
+                "--label",
+                "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
+            .withAllowedExitCodes(137);
     executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
     executorService.execute(this);
   }
