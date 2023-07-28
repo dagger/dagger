@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/cache"
@@ -160,10 +161,11 @@ func (gs *gitSource) mountRemote(ctx context.Context, remote string, auth []stri
 
 type gitSourceHandler struct {
 	*gitSource
-	src      source.GitIdentifier
-	cacheKey string
-	sm       *session.Manager
-	auth     []string
+	src       source.GitIdentifier
+	clientIDs []string
+	cacheKey  string
+	sm        *session.Manager
+	auth      []string
 }
 
 func (gs *gitSourceHandler) shaToCacheKey(sha string) string {
@@ -177,14 +179,33 @@ func (gs *gitSourceHandler) shaToCacheKey(sha string) string {
 	return key
 }
 
+// TODO(vito): this can be cleaned up if/when
+// https://github.com/moby/buildkit/pull/4035 is merged
+type DaggerGitURLHack struct {
+	Remote    string   `json:"remote"`
+	ClientIDs []string `json:"client_ids"`
+}
+
 func (gs *gitSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
 	gitIdentifier, ok := id.(*source.GitIdentifier)
 	if !ok {
 		return nil, errors.Errorf("invalid git identifier %v", id)
 	}
 
+	var clientIDs []string
+	var hack DaggerGitURLHack
+	if err := buildkit.DecodeIDHack("git", gitIdentifier.Remote, &hack); err != nil {
+		// ignore error; we have to handle both scenarios because this Source
+		// entirely _replaces_ the HTTP source, so we have to handle usage from
+		// Dockerfile frontends too
+	} else {
+		gitIdentifier.Remote = hack.Remote
+		clientIDs = hack.ClientIDs
+	}
+
 	return &gitSourceHandler{
 		src:       *gitIdentifier,
+		clientIDs: clientIDs,
 		gitSource: gs,
 		sm:        sm,
 	}, nil
@@ -305,23 +326,19 @@ func (gs *gitSourceHandler) mountKnownHosts(ctx context.Context) (string, func()
 	return knownHosts.Name(), cleanup, nil
 }
 
-func (gs *gitSourceHandler) networkConfig(ctx context.Context, g session.Group) (*networks.Config, error) {
+func (gs *gitSourceHandler) networkConfig(ctx context.Context, g session.Group) *networks.Config {
+	clientDomains := []string{}
+	for _, clientID := range gs.clientIDs {
+		clientDomains = append(clientDomains, network.ClientDomain(clientID))
+	}
+
 	// base network config inherits from system-wide config
-	netConfig := &networks.Config{
-		// TODO(vito): this is awkward, but unlikely to break
-		Dns: (*networks.DNSConfig)(gs.dns),
-	}
+	dns := networks.DNSConfig(*gs.dns)
+	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 
-	err := gs.sm.Any(ctx, g, func(ctx context.Context, _ string, caller session.Caller) error {
-		var err error
-		netConfig, err = networks.MergeConfig(ctx, caller, netConfig, network.DaggerNetwork)
-		return err
-	})
-	if err != nil {
-		return nil, err
+	return &networks.Config{
+		Dns: &dns,
 	}
-
-	return netConfig, nil
 }
 
 func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
@@ -363,10 +380,7 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 		defer unmountKnownHosts()
 	}
 
-	netConf, err := gs.networkConfig(ctx, g)
-	if err != nil {
-		return "", "", nil, false, err
-	}
+	netConf := gs.networkConfig(ctx, g)
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {
@@ -455,10 +469,7 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 		defer unmountKnownHosts()
 	}
 
-	netConf, err := gs.networkConfig(ctx, g)
-	if err != nil {
-		return nil, err
-	}
+	netConf := gs.networkConfig(ctx, g)
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {

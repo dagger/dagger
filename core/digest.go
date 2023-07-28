@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/network"
 	"github.com/koron-go/prefixw"
@@ -337,6 +338,12 @@ func stabilizeOp(op *pb.Op) (bool, error) {
 		var httpHack httpdns.DaggerHTTPURLHack
 		if err := buildkit.DecodeIDHack("https", src.Identifier, &httpHack); err == nil {
 			src.Identifier = httpHack.URL
+			modified = true
+		}
+
+		var gitHack gitdns.DaggerGitURLHack
+		if err := buildkit.DecodeIDHack("git", src.Attrs[pb.AttrFullRemoteURL], &gitHack); err == nil {
+			src.Attrs[pb.AttrFullRemoteURL] = gitHack.Remote
 			modified = true
 		}
 	}

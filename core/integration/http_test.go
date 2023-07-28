@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,8 +45,9 @@ func TestHTTPService(t *testing.T) {
 func TestHTTPServiceStableDigest(t *testing.T) {
 	t.Parallel()
 
+	content := identity.NewID()
 	hostname := func(ctx context.Context, c *dagger.Client) string {
-		svc, url := httpService(ctx, t, c, "Hello, world!")
+		svc, url := httpService(ctx, t, c, content)
 
 		hn, err := c.Container().
 			From(alpineImage).

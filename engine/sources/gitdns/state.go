@@ -3,6 +3,7 @@ package gitdns
 import (
 	"strings"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/moby/buildkit/util/gitutil"
@@ -13,15 +14,13 @@ const AttrNetConfig = "gitdns.netconfig"
 
 // Git is a helper mimicking the llb.Git function, but with the ability to
 // set additional attributes.
-func State(remote, ref, netConfID string, opts ...llb.GitOption) llb.State {
+func State(remote, ref string, clientIDs []string, opts ...llb.GitOption) llb.State {
 	hi := &llb.GitInfo{}
 	for _, o := range opts {
 		o.SetGitOption(hi)
 	}
 
-	attrs := map[string]string{
-		AttrNetConfig: netConfID,
-	}
+	attrs := map[string]string{}
 	url := strings.Split(remote, "#")[0]
 
 	var protocolType int
@@ -39,6 +38,16 @@ func State(remote, ref, netConfID string, opts ...llb.GitOption) llb.State {
 	if protocolType == gitutil.UnknownProtocol {
 		url = "https://" + url
 	}
+
+	// TODO(vito): replace when custom sources are supported
+	hack, err := buildkit.EncodeIDHack(DaggerGitURLHack{
+		Remote:    url,
+		ClientIDs: clientIDs,
+	})
+	if err != nil {
+		panic(err)
+	}
+	url = "git://" + hack
 
 	id := remote
 

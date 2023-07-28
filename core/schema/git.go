@@ -7,7 +7,6 @@ import (
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
-	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 )
 
@@ -138,10 +137,9 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 
 	useDNS := len(svcs) > 0
 
-	if !useDNS {
-		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-			useDNS = len(clientMetadata.ParentClientIDs) > 0
-		}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil && !useDNS {
+		useDNS = len(clientMetadata.ParentClientIDs) > 0
 	}
 
 	var st llb.State
@@ -154,7 +152,7 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 		// networks API cap.
 		//
 		// TODO: add API cap
-		st = gitdns.State(parent.Repository.URL, parent.Name, network.DaggerNetwork, opts...)
+		st = gitdns.State(parent.Repository.URL, parent.Name, clientMetadata.ClientIDs(), opts...)
 	} else {
 		st = llb.Git(parent.Repository.URL, parent.Name, opts...)
 	}

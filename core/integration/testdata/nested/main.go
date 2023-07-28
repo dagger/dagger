@@ -114,22 +114,21 @@ func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger
 	switch mode {
 	case "exec":
 		srv = srv.WithExec([]string{"wget", svcURL})
+		return httpService(ctx, c,
+			c.Container().
+				From("alpine:3.16.2").
+				WithWorkdir("/srv/www").
+				WithExec([]string{"wget", svcURL}).
+				Directory("."))
 	case "http":
-		srv = srv.WithMountedFile("/srv/www/index.html", c.HTTP(svcURL))
+		return httpService(ctx, c,
+			c.Directory().WithFile("index.html", c.HTTP(svcURL)))
+	case "git":
+		return gitService(ctx, c, c.Git(svcURL).Branch("main").Tree())
+	default:
+		fatal(fmt.Errorf("unknown mode: %q", mode))
+		return nil, ""
 	}
-
-	srv = srv.
-		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"})
-
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
-		Scheme: "http",
-	})
-	if err != nil {
-		fatal(err)
-	}
-
-	return srv, httpURL
 }
 
 func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, error) {
@@ -143,6 +142,8 @@ func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, 
 			Stdout(ctx)
 	case "http":
 		return c.HTTP(svcURL).Contents(ctx)
+	case "git":
+		return c.Git(svcURL).Branch("main").Tree().File("index.html").Contents(ctx)
 	default:
 		return "", fmt.Errorf("unknown mode: %q", mode)
 	}
@@ -151,4 +152,68 @@ func fetch(ctx context.Context, c *dagger.Client, mode, svcURL string) (string, 
 func fatal(err any) {
 	fmt.Fprintf(os.Stderr, "\x1b[31m%s\x1b[0m\n", err)
 	os.Exit(1)
+}
+
+func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (*dagger.Container, string) {
+	srv := c.Container().
+		From("python").
+		WithMountedDirectory("/srv/www", dir).
+		WithWorkdir("/srv/www").
+		WithExposedPort(8000).
+		WithExec([]string{"python", "-m", "http.server"})
+
+	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+		Scheme: "http",
+	})
+	if err != nil {
+		fatal(err)
+	}
+
+	return srv, httpURL
+}
+
+func gitService(ctx context.Context, c *dagger.Client, content *dagger.Directory) (*dagger.Container, string) {
+	const gitPort = 9418
+	gitDaemon := c.Container().
+		From("alpine:3.16.2").
+		WithExec([]string{"apk", "add", "git", "git-daemon"}).
+		WithDirectory("/root/repo", content).
+		WithMountedFile("/root/start.sh",
+			c.Directory().
+				WithNewFile("start.sh", `#!/bin/sh
+
+set -e -u -x
+
+cd /root
+
+git config --global user.email "root@localhost"
+git config --global user.name "Test User"
+
+mkdir srv
+
+cd repo
+	git init
+	git branch -m main
+	git add * || true
+	git commit -m "init"
+cd ..
+
+cd srv
+	git clone --bare ../repo repo.git
+cd ..
+
+git daemon --verbose --export-all --base-path=/root/srv
+`).
+				File("start.sh")).
+		WithExposedPort(gitPort).
+		WithExec([]string{"sh", "/root/start.sh"})
+
+	gitHost, err := gitDaemon.Hostname(ctx)
+	if err != nil {
+		fatal(err)
+	}
+
+	repoURL := fmt.Sprintf("git://%s/repo.git", gitHost)
+
+	return gitDaemon, repoURL
 }
