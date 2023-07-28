@@ -1,0 +1,6 @@
+kind: Added
+body: Add status updates during automatic provisioning
+time: 2023-07-28T18:27:00.11106Z
+custom:
+  Author: helderco
+  PR: "5522"
