@@ -1955,6 +1955,19 @@ func (r *Host) File(path string) *File {
 	}
 }
 
+// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+// The file is limited to a size of 512000 bytes.
+func (r *Host) SetSecretFile(name string, path string) *Secret {
+	q := r.q.Select("setSecretFile")
+	q = q.Arg("name", name)
+	q = q.Arg("path", path)
+
+	return &Secret{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Accesses a Unix socket on the host.
 func (r *Host) UnixSocket(path string) *Socket {
 	q := r.q.Select("unixSocket")

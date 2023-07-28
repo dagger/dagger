@@ -2540,6 +2540,26 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+   * The file is limited to a size of 512000 bytes.
+   * @param name The user defined name for this secret.
+   * @param path Location of the file to set as a secret.
+   */
+  setSecretFile(name: string, path: string): Secret {
+    return new Secret({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setSecretFile",
+          args: { name, path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Accesses a Unix socket on the host.
    * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
    */

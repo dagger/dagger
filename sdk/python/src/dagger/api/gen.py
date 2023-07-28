@@ -2302,6 +2302,26 @@ class Host(Type):
         return File(_ctx)
 
     @typecheck
+    def set_secret_file(self, name: str, path: str) -> "Secret":
+        """Sets a secret given a user-defined name and the file path on the host,
+        and returns the secret.
+        The file is limited to a size of 512000 bytes.
+
+        Parameters
+        ----------
+        name:
+            The user defined name for this secret.
+        path:
+            Location of the file to set as a secret.
+        """
+        _args = [
+            Arg("name", name),
+            Arg("path", path),
+        ]
+        _ctx = self._select("setSecretFile", _args)
+        return Secret(_ctx)
+
+    @typecheck
     def unix_socket(self, path: str) -> "Socket":
         """Accesses a Unix socket on the host.
 
