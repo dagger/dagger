@@ -23,6 +23,7 @@ func main() {
 	val, err := client.Container().
 		From("python").
 		WithExec([]string{"python", "-m", "http.server"}).
+		Service().
 		Hostname(ctx)
 
 	if err != nil {

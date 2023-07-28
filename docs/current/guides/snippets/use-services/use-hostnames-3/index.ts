@@ -7,6 +7,7 @@ connect(
       .container()
       .from("python")
       .withExec(["python", "-m", "http.server"])
+      .service()
       .hostname()
     console.log(val)
   },

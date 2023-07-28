@@ -13,6 +13,7 @@ connect(
       .withWorkdir("/srv")
       .withExec(["python", "-m", "http.server", "8080"])
       .withExposedPort(8080)
+      .service()
 
     // create client container with service binding
     // access HTTP service and print result

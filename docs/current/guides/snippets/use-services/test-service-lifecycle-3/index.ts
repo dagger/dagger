@@ -3,7 +3,11 @@ import { connect, Client } from "@dagger.io/dagger"
 connect(
   async (client: Client) => {
     // create Redis service container
-    const redisSrv = client.container().from("redis").withExposedPort(6379)
+    const redisSrv = client
+      .container()
+      .from("redis")
+      .withExposedPort(6379)
+      .service()
 
     // create Redis client container
     const redisCLI = client
