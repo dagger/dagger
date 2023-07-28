@@ -17,6 +17,7 @@ from typing import IO
 import httpx
 import platformdirs
 
+from dagger._progress import Progress
 from dagger.context import SyncResourceManager
 from dagger.exceptions import DownloadError
 
@@ -147,7 +148,7 @@ class Downloader:
         cache_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         return cache_dir
 
-    def get(self) -> str:
+    def get(self, progress: Progress) -> str:
         """Download CLI to cache and return its path."""
         cli_bin_path = self.cache_dir / f"{self.CLI_BIN_PREFIX}{self.version}"
 
@@ -155,6 +156,7 @@ class Downloader:
             cli_bin_path = cli_bin_path.with_suffix(".exe")
 
         if not cli_bin_path.exists():
+            progress.update("Downloading dagger CLI")
             cli_bin_path = self._download(cli_bin_path)
 
         # garbage collection of old binaries

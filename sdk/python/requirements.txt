@@ -90,7 +90,9 @@ pytest-subprocess==1.5.0
 python-dateutil==2.8.2
     # via strawberry-graphql
 rich==13.4.2
-    # via typer
+    # via
+    #   -r -
+    #   typer
 ruff==0.0.280
     # via -r -
 shellingham==1.5.0.post1

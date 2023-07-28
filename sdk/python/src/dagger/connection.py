@@ -1,7 +1,8 @@
 from gql.client import AsyncClientSession
 
-from dagger import Config
+from dagger import Client, Config
 
+from ._progress import Progress
 from .context import ResourceManager
 from .engine import Engine
 from .session import Session
@@ -42,13 +43,22 @@ class Connection(ResourceManager):
 
     async def start(self) -> AsyncClientSession:
         async with self.get_stack() as stack:
-            conn = await stack.enter_async_context(Engine(self.cfg))
-            return await stack.enter_async_context(Session(conn, self.cfg))
+            progress = await stack.enter_async_context(Progress(self.cfg.console))
+            conn = await stack.enter_async_context(Engine(self.cfg, progress))
+
+            progress.update("Establishing connection to Engine")
+            session = await stack.enter_async_context(Session(conn, self.cfg))
+
+            # If log_output is set, we don't need to show any more progress.
+            if self.cfg.log_output:
+                progress.stop()
+            else:
+                progress.update("Running pipelines")
+
+            return session
 
     async def aclose(self) -> None:
         await self.stack.aclose()
 
     async def __aenter__(self):
-        from dagger import Client
-
         return Client.from_session(await self.start())

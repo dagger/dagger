@@ -133,7 +133,7 @@ async def test_download_bin(cache_dir: Path):
             assert await client.container().from_("alpine:3.16.2").id()
 
     async with anyio.create_task_group() as tg:
-        for _ in range(os.cpu_count()):
+        for _ in range(os.cpu_count() or 4):
             tg.start_soon(connect_once)
 
     # assert that there's only one dagger binary in the cache
