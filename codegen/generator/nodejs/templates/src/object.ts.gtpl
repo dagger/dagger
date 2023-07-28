@@ -31,7 +31,7 @@ export class {{ .Name | FormatName }} extends BaseClient {
    * Constructor is used for internal usage only, do not create object from it.
    */
    constructor(
-    parent: { queryTree: QueryTree[], host: string, sessionToken: string },
+    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
             {{- range $i, $field := .Fields }}
                {{- if $field.TypeRef.IsScalar }}
      _{{ $field.Name }}?: {{ $field.TypeRef | FormatOutputType }},

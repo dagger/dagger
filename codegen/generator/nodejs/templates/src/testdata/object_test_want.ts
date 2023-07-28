@@ -1,5 +1,15 @@
 
 export class Container extends BaseClient {
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+   constructor(
+    parent?: { queryTree?: QueryTree[], host?: string, sessionToken?: string },
+   ) {
+     super(parent)
+
+   }
   exec(opts?: ContainerExecOpts): Container {
     return new Container({
       queryTree: [
