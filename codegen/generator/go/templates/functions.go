@@ -161,9 +161,12 @@ func fieldFunction(f introspection.Field) string {
 	signature += "(" + strings.Join(args, ", ") + ")"
 
 	retType := commonFunc.FormatReturnType(f)
-	if f.TypeRef.IsScalar() || f.TypeRef.IsList() {
+	switch {
+	case f.TypeRef.IsVoid():
+		retType = "error"
+	case f.TypeRef.IsScalar() || f.TypeRef.IsList():
 		retType = fmt.Sprintf("(%s, error)", retType)
-	} else {
+	default:
 		retType = "*" + retType
 	}
 	signature += " " + retType

@@ -30,3 +30,6 @@ input PipelineLabel {
   """
   value: String!
 }
+
+"Nothing. Used by SDK codegen to skip the return value."
+scalar Void
