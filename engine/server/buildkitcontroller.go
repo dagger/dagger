@@ -190,15 +190,15 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 	}
 	e.serverMu.Unlock()
 
-	var cacheExporterFuncs []buildkit.ResolveCacheExporterFunc
-	for _, cacheExportCfg := range req.Cache.Exports {
+	cacheExporterFuncs := make([]buildkit.ResolveCacheExporterFunc, len(req.Cache.Exports))
+	for i, cacheExportCfg := range req.Cache.Exports {
 		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
 		if !ok {
 			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
 		}
-		cacheExporterFuncs = append(cacheExporterFuncs, func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
+		cacheExporterFuncs[i] = func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
 			return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
-		})
+		}
 	}
 	if len(cacheExporterFuncs) > 0 {
 		// run cache export instead

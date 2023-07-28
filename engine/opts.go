@@ -12,18 +12,20 @@ import (
 type ClientMetadata struct {
 	// ClientID is unique to every session created by every client
 	ClientID string
-	// ServerID is the id of the server that a client and any of its nested environment clients
-	// connect to
+	// ServerID is the id of the server that a client and any of its nested
+	// environment clients connect to
 	ServerID string
-	// ClientHostname is the hostname of the client that made the request. It's used opportunisticly
-	// as a best-effort, semi-stable identifier for the client across multiple sessions, which can
-	// be useful for debugging and for minimizing occurences of both excessive cache misses and
-	// excessive cache matches.
+	// ClientHostname is the hostname of the client that made the request. It's
+	// used opportunisticly as a best-effort, semi-stable identifier for the
+	// client across multiple sessions, which can be useful for debugging and for
+	// minimizing occurrences of both excessive cache misses and excessive cache
+	// matches.
 	ClientHostname string
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
 	Labels []pipeline.Label
-	// ParentClientIDs is a list of session ids that are parents of the current session. The first
-	// element is the direct parent, the second element is the parent of the parent, and so on.
+	// ParentClientIDs is a list of session ids that are parents of the current
+	// session. The first element is the direct parent, the second element is the
+	// parent of the parent, and so on.
 	ParentClientIDs []string
 }
 
@@ -39,9 +41,9 @@ func (m ClientMetadata) ToGRPCMD() metadata.MD {
 		ClientHostnameMetaKey, m.ClientHostname,
 		ParentClientIDsMetaKey, strings.Join(m.ParentClientIDs, " "),
 	)
-	var labelStrings []string
-	for _, label := range m.Labels {
-		labelStrings = append(labelStrings, fmt.Sprintf("%s=%s", label.Name, label.Value))
+	labelStrings := make([]string, len(m.Labels))
+	for i, label := range m.Labels {
+		labelStrings[i] = fmt.Sprintf("%s=%s", label.Name, label.Value)
 	}
 	if len(labelStrings) > 0 {
 		md[ClientLabelsMetaKey] = labelStrings

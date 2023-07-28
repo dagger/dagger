@@ -104,5 +104,5 @@ func (store *SecretStore) GetSecret(ctx context.Context, idOrName string) ([]byt
 		return nil, ErrNotFound
 	}
 
-	return []byte(plaintext), nil
+	return plaintext, nil
 }

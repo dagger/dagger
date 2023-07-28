@@ -12,7 +12,7 @@ func EncodeIDHack(val any) (string, error) {
 		return "", err
 	}
 
-	return base64.URLEncoding.EncodeToString([]byte(hack)), nil
+	return base64.URLEncoding.EncodeToString(hack), nil
 }
 
 func DecodeIDHack(scheme string, id string, val any) error {

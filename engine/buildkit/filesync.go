@@ -183,7 +183,7 @@ func (c *Client) newFileSendServerProxySession(ctx context.Context, destPath str
 	sess.Allow(proxy)
 
 	clientConn, serverConn := net.Pipe()
-	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+	dialer := func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) { // nolint: unparam
 		go func() {
 			defer serverConn.Close()
 			err := c.SessionManager.HandleConn(ctx, serverConn, meta)

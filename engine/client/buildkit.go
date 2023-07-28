@@ -8,12 +8,14 @@ import (
 	"time"
 
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/util/tracing/detect"
+	"go.opentelemetry.io/otel"
+
+	// load connection helpers
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer"
 	_ "github.com/moby/buildkit/client/connhelper/kubepod"
 	_ "github.com/moby/buildkit/client/connhelper/podmancontainer"
 	_ "github.com/moby/buildkit/client/connhelper/ssh"
-	"github.com/moby/buildkit/util/tracing/detect"
-	"go.opentelemetry.io/otel"
 )
 
 // TODO: re-add ability to get engine name

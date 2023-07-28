@@ -321,7 +321,8 @@ func (s *Session) Close() (rerr error) {
 		s.Recorder.Complete()
 		s.Recorder.Close()
 	}
-	return
+
+	return rerr
 }
 
 func (s *Session) ID() string {

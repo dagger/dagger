@@ -103,7 +103,7 @@ func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *ses
 	}, nil
 }
 
-func (hs *httpSourceHandler) client(ctx context.Context, g session.Group) (*http.Client, error) {
+func (hs *httpSourceHandler) client(g session.Group) *http.Client {
 	clientDomains := []string{}
 	for _, clientID := range hs.clientIDs {
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
@@ -112,7 +112,7 @@ func (hs *httpSourceHandler) client(ctx context.Context, g session.Group) (*http
 	dns := *hs.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 
-	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, &dns)}, nil
+	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, &dns)}
 }
 
 // urlHash is internal hash the etag is stored by that doesn't leak outside
@@ -153,7 +153,7 @@ func (hs *httpSourceHandler) formatCacheKey(filename string, dgst digest.Digest,
 	return digest.FromBytes(dt)
 }
 
-func (hs *httpSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
+func (hs *httpSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) { // nolint: gocyclo
 	if hs.src.Checksum != "" {
 		hs.cacheKey = hs.src.Checksum
 		return hs.formatCacheKey(getFileName(hs.src.URL, hs.src.Filename, nil), hs.src.Checksum, "").String(), hs.src.Checksum.String(), nil, true, nil
@@ -205,10 +205,7 @@ func (hs *httpSourceHandler) CacheKey(ctx context.Context, g session.Group, inde
 		}
 	}
 
-	client, err := hs.client(ctx, g)
-	if err != nil {
-		return "", "", nil, false, err
-	}
+	client := hs.client(g)
 
 	// Some servers seem to have trouble supporting If-None-Match properly even
 	// though they return ETag-s. So first, optionally try a HEAD request with
@@ -352,8 +349,8 @@ func (hs *httpSourceHandler) save(ctx context.Context, resp *http.Response, s se
 	gid := hs.src.GID
 	if idmap := mount.IdentityMapping(); idmap != nil {
 		identity, err := idmap.ToHost(idtools.Identity{
-			UID: int(uid),
-			GID: int(gid),
+			UID: uid,
+			GID: gid,
 		})
 		if err != nil {
 			return nil, "", err
@@ -430,10 +427,7 @@ func (hs *httpSourceHandler) Snapshot(ctx context.Context, g session.Group) (cac
 	}
 	req = req.WithContext(ctx)
 
-	client, err := hs.client(ctx, g)
-	if err != nil {
-		return nil, err
-	}
+	client := hs.client(g)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -480,13 +474,13 @@ func getFileName(urlStr, manualFilename string, resp *http.Response) string {
 }
 
 func searchHTTPURLDigest(ctx context.Context, store cache.MetadataStore, dgst digest.Digest) ([]cacheRefMetadata, error) {
-	var results []cacheRefMetadata
 	mds, err := store.Search(ctx, string(dgst))
 	if err != nil {
 		return nil, err
 	}
-	for _, md := range mds {
-		results = append(results, cacheRefMetadata{md})
+	results := make([]cacheRefMetadata, len(mds))
+	for i, md := range mds {
+		results[i] = cacheRefMetadata{md}
 	}
 	return results, nil
 }

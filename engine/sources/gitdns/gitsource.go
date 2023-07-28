@@ -301,7 +301,7 @@ func (gs *gitSourceHandler) mountSSHAuthSock(ctx context.Context, sshID string, 
 	return sock, cleanup, nil
 }
 
-func (gs *gitSourceHandler) mountKnownHosts(ctx context.Context) (string, func() error, error) {
+func (gs *gitSourceHandler) mountKnownHosts() (string, func() error, error) {
 	if gs.src.KnownSSHHosts == "" {
 		return "", nil, errors.Errorf("no configured known hosts forwarded from the client")
 	}
@@ -325,7 +325,7 @@ func (gs *gitSourceHandler) mountKnownHosts(ctx context.Context) (string, func()
 	return knownHosts.Name(), cleanup, nil
 }
 
-func (gs *gitSourceHandler) dnsConfig(ctx context.Context, g session.Group) *oci.DNSConfig {
+func (gs *gitSourceHandler) dnsConfig() *oci.DNSConfig {
 	clientDomains := []string{}
 	for _, clientID := range gs.clientIDs {
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
@@ -368,14 +368,14 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	var knownHosts string
 	if gs.src.KnownSSHHosts != "" {
 		var unmountKnownHosts func() error
-		knownHosts, unmountKnownHosts, err = gs.mountKnownHosts(ctx)
+		knownHosts, unmountKnownHosts, err = gs.mountKnownHosts()
 		if err != nil {
 			return "", "", nil, false, err
 		}
 		defer unmountKnownHosts()
 	}
 
-	netConf := gs.dnsConfig(ctx, g)
+	netConf := gs.dnsConfig()
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {
@@ -400,10 +400,10 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	out := buf.String()
 	idx := strings.Index(out, "\t")
 	if idx == -1 {
-		return "", "", nil, false, errors.Errorf("repository does not contain ref %s, output: %q", ref, string(out))
+		return "", "", nil, false, errors.Errorf("repository does not contain ref %s, output: %q", ref, out)
 	}
 
-	sha := string(out[:idx])
+	sha := out[:idx]
 	if !isCommitSHA(sha) {
 		return "", "", nil, false, errors.Errorf("invalid commit sha %q", sha)
 	}
@@ -412,7 +412,7 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 	return cacheKey, sha, nil, true, nil
 }
 
-func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out cache.ImmutableRef, retErr error) {
+func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out cache.ImmutableRef, retErr error) { // nolint: gocyclo
 	cacheKey := gs.cacheKey
 	if cacheKey == "" {
 		var err error
@@ -457,14 +457,14 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 	var knownHosts string
 	if gs.src.KnownSSHHosts != "" {
 		var unmountKnownHosts func() error
-		knownHosts, unmountKnownHosts, err = gs.mountKnownHosts(ctx)
+		knownHosts, unmountKnownHosts, err = gs.mountKnownHosts()
 		if err != nil {
 			return nil, err
 		}
 		defer unmountKnownHosts()
 	}
 
-	netConf := gs.dnsConfig(ctx, g)
+	netConf := gs.dnsConfig()
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {
@@ -572,15 +572,16 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 		isAnnotatedTag := strings.TrimSpace(gitCatFileBuf.String()) == "tag"
 
 		pullref := ref
-		if isAnnotatedTag {
+		switch {
+		case isAnnotatedTag:
 			pullref += ":refs/tags/" + pullref
-		} else if isCommitSHA(ref) {
+		case isCommitSHA(ref):
 			pullref = "refs/buildkit/" + identity.NewID()
 			_, err = git.run(ctx, "update-ref", pullref, ref)
 			if err != nil {
 				return nil, err
 			}
-		} else {
+		default:
 			pullref += ":" + pullref
 		}
 		_, err = checkoutGit.run(ctx, "fetch", "-u", "--depth=1", "origin", pullref)
@@ -716,13 +717,13 @@ const keyGitSnapshot = "git-snapshot"
 const gitSnapshotIndex = keyGitSnapshot + "::"
 
 func search(ctx context.Context, store cache.MetadataStore, key string, idx string) ([]cacheRefMetadata, error) {
-	var results []cacheRefMetadata
 	mds, err := store.Search(ctx, idx+key)
 	if err != nil {
 		return nil, err
 	}
-	for _, md := range mds {
-		results = append(results, cacheRefMetadata{md})
+	results := make([]cacheRefMetadata, len(mds))
+	for i, md := range mds {
+		results[i] = cacheRefMetadata{md}
 	}
 	return results, nil
 }

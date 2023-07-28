@@ -19,7 +19,6 @@ import (
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
-	"github.com/moby/buildkit/cache"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
@@ -30,7 +29,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
-	"github.com/moby/buildkit/session"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/filesync"
 	bksecrets "github.com/moby/buildkit/session/secrets"
@@ -321,7 +319,7 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 		return fmt.Errorf("failed to convert result: %s", err)
 	}
 
-	sessionGroup := session.NewGroup(c.ID())
+	sessionGroup := bksession.NewGroup(c.ID())
 	eg, ctx := errgroup.WithContext(ctx)
 	// TODO: send progrock statuses
 	for _, exporterFunc := range cacheExportFuncs {
@@ -372,7 +370,7 @@ func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) con
 	return bksolver.WithCacheOptGetter(ctx, func(_ bool, keys ...interface{}) map[interface{}]interface{} {
 		vals := make(map[interface{}]interface{})
 		for _, k := range keys {
-			if key, ok := k.(cache.DescHandlerKey); ok {
+			if key, ok := k.(bkcache.DescHandlerKey); ok {
 				if handler := ref.DescHandler(digest.Digest(key)); handler != nil {
 					vals[k] = handler
 				}

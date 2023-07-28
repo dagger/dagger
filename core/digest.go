@@ -22,7 +22,7 @@ import (
 )
 
 var debugDigest = false
-var debugDigestLogs string = fmt.Sprintf("/tmp/digests-%d.log", time.Now().UnixNano())
+var debugDigestLogs = fmt.Sprintf("/tmp/digests-%d.log", time.Now().UnixNano())
 var debugDigestLogsW = io.Discard
 
 func init() {
@@ -221,12 +221,7 @@ func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
 			return nil, errors.Wrap(err, "failed to parse llb proto op")
 		}
 
-		modified, err := stabilizeOp(&op)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to stabilize op")
-		}
-
-		if modified {
+		if stabilizeOp(&op) {
 			stableDt, err := op.Marshal()
 			if err != nil {
 				return nil, errors.Wrap(err, "failed to marshal llb proto op")
@@ -315,7 +310,7 @@ func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Dige
 	return nil
 }
 
-func stabilizeOp(op *pb.Op) (bool, error) {
+func stabilizeOp(op *pb.Op) bool {
 	var modified bool
 
 	if src := op.GetSource(); src != nil {
@@ -357,5 +352,5 @@ func stabilizeOp(op *pb.Op) (bool, error) {
 		}
 	}
 
-	return modified, nil
+	return modified
 }

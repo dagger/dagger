@@ -62,7 +62,7 @@ func (host *Host) Directory(
 	// mount when possible
 	st := llb.Scratch().File(
 		llb.Copy(localLLB, "/", "/"),
-		llb.WithCustomNamef("copy %s", dirPath),
+		llb.WithCustomNamef(opName),
 	)
 
 	def, err := st.Marshal(ctx, llb.Platform(platform))

@@ -2,9 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/base32"
-	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -1902,22 +1899,6 @@ type ContainerExecOpts struct {
 type BuildArg struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
-}
-
-func hostHash(val digest.Digest) string {
-	b, err := hex.DecodeString(val.Encoded())
-	if err != nil {
-		panic(err)
-	}
-	return b32(xxh3.Hash(b))
-}
-
-func b32(n uint64) string {
-	var sum [8]byte
-	binary.BigEndian.PutUint64(sum[:], n)
-	return base32.HexEncoding.
-		WithPadding(base32.NoPadding).
-		EncodeToString(sum[:])
 }
 
 // OCI manifest annotation that specifies an image's tag

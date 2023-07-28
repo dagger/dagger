@@ -92,15 +92,15 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	return nil
 }
 
-func (s *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
+func (cli *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
 	if dnsConf == nil {
 		return nil
 	}
 
-	return s.generateResolv(dnsConf)
+	return cli.generateResolv(dnsConf)
 }
 
-func (s *gitCLI) generateResolv(dns *oci.DNSConfig) error {
+func (cli *gitCLI) generateResolv(dns *oci.DNSConfig) error {
 	src, err := os.Open("/etc/resolv.conf")
 	if err != nil {
 		return err
@@ -112,7 +112,7 @@ func (s *gitCLI) generateResolv(dns *oci.DNSConfig) error {
 		return errors.Wrap(err, "create hosts override")
 	}
 
-	s.resolvPath = override.Name()
+	cli.resolvPath = override.Name()
 
 	defer override.Close()
 
