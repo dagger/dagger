@@ -106,7 +106,7 @@ func weHaveToGoDeeper(ctx context.Context, c *dagger.Client, depth int, mode str
 	fmt.Print(out)
 }
 
-func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger.Container, string) {
+func mirror(ctx context.Context, c *dagger.Client, mode, svcURL string) (*dagger.Service, string) {
 	srv := c.Container().
 		From("python:alpine").
 		WithWorkdir("/srv/www")
@@ -154,15 +154,16 @@ func fatal(err any) {
 	os.Exit(1)
 }
 
-func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (*dagger.Container, string) {
+func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (*dagger.Service, string) {
 	srv := c.Container().
 		From("python").
 		WithMountedDirectory("/srv/www", dir).
 		WithWorkdir("/srv/www").
 		WithExposedPort(8000).
-		WithExec([]string{"python", "-m", "http.server"})
+		WithExec([]string{"python", "-m", "http.server"}).
+		Service()
 
-	httpURL, err := srv.Endpoint(ctx, dagger.ContainerEndpointOpts{
+	httpURL, err := srv.Endpoint(ctx, dagger.ServiceEndpointOpts{
 		Scheme: "http",
 	})
 	if err != nil {
@@ -172,7 +173,7 @@ func httpService(ctx context.Context, c *dagger.Client, dir *dagger.Directory) (
 	return srv, httpURL
 }
 
-func gitService(ctx context.Context, c *dagger.Client, content *dagger.Directory) (*dagger.Container, string) {
+func gitService(ctx context.Context, c *dagger.Client, content *dagger.Directory) (*dagger.Service, string) {
 	const gitPort = 9418
 	gitDaemon := c.Container().
 		From("alpine:3.16.2").
@@ -206,7 +207,8 @@ git daemon --verbose --export-all --base-path=/root/srv
 `).
 				File("start.sh")).
 		WithExposedPort(gitPort).
-		WithExec([]string{"sh", "/root/start.sh"})
+		WithExec([]string{"sh", "/root/start.sh"}).
+		Service()
 
 	gitHost, err := gitDaemon.Hostname(ctx)
 	if err != nil {

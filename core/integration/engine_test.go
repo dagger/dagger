@@ -30,11 +30,11 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
-func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Container) (*dagger.Container, error) {
+func engineClientContainer(ctx context.Context, t *testing.T, c *dagger.Client, devEngine *dagger.Service) (*dagger.Container, error) {
 	daggerCli := daggerCliFile(t, c)
 
 	cliBinPath := "/bin/dagger"
-	endpoint, err := devEngine.Endpoint(ctx, dagger.ContainerEndpointOpts{Port: 1234, Scheme: "tcp"})
+	endpoint, err := devEngine.Endpoint(ctx, dagger.ServiceEndpointOpts{Port: 1234, Scheme: "tcp"})
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +86,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 	require.True(t, found, "missing set -e in entrypoint")
 	entrypoint = before + "set -e \n" + "sleep 15\n" + "echo my hostname is $(hostname)\n" + after
 
-	devEngine = devEngine.
+	devEngineSvc := devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
 			Contents:    entrypoint,
 			Permissions: 0o700,
@@ -94,9 +94,9 @@ func TestClientWaitsForEngine(t *testing.T) {
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).Service()
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
 	_, err = clientCtr.
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
@@ -111,14 +111,14 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	c, ctx := connect(t)
 
 	engineName := "my-special-engine"
-	devEngine := devEngineContainer(c).
+	devEngineSvc := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).Service()
 
-	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngineSvc)
 	require.NoError(t, err)
 
 	out, err := clientCtr.
@@ -140,7 +140,8 @@ func TestDaggerRun(t *testing.T) {
 		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec(nil, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).
+		Service()
 
 	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
 	require.NoError(t, err)
@@ -178,7 +179,8 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 			"--network-name", "daglabels",
 		}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
-		})
+		}).
+		Service()
 
 	thisRepoPath, err := filepath.Abs("../..")
 	require.NoError(t, err)
@@ -207,7 +209,8 @@ func TestClientSendsLabelsInTelemetry(t *testing.T) {
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/telemetry/",
 		}).
-		WithExposedPort(8080)
+		WithExposedPort(8080).
+		Service()
 
 	eventsID := identity.NewID()
 

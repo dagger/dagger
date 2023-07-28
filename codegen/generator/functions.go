@@ -24,6 +24,7 @@ var CustomScalar = map[string]string{
 	"CacheID":          "CacheVolume",
 	"ProjectID":        "Project",
 	"ProjectCommandID": "ProjectCommand",
+	"ServiceID":        "Service",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.

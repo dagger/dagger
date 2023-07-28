@@ -54,6 +54,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		},
 		&cacheSchema{merged},
 		&secretSchema{merged},
+		&serviceSchema{merged},
 		&hostSchema{merged, host},
 		&projectSchema{merged},
 		&httpSchema{merged},

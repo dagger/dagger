@@ -37,3 +37,6 @@ var Socket string
 
 //go:embed project.graphqls
 var Project string
+
+//go:embed service.graphqls
+var Service string

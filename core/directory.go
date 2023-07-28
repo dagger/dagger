@@ -68,7 +68,7 @@ func NewDirectorySt(ctx context.Context, st llb.State, dir string, pipeline pipe
 func (dir *Directory) Clone() *Directory {
 	cp := *dir
 	cp.Pipeline = cloneSlice(cp.Pipeline)
-	cp.Services = cloneMap(cp.Services)
+	cp.Services = cloneSlice(cp.Services)
 	return &cp
 }
 
