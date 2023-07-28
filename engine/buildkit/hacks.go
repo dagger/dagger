@@ -16,6 +16,8 @@ func EncodeIDHack(val any) (string, error) {
 }
 
 func DecodeIDHack(scheme string, id string, val any) error {
+	// NB: convenience; sometimes it won't be there (e.g. local dirs), sometimes
+	// it will (e.g. http)
 	id = strings.TrimPrefix(id, scheme+"://")
 
 	jsonBytes, err := base64.URLEncoding.DecodeString(id)

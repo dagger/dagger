@@ -190,12 +190,8 @@ func (c *Client) GetSessionResourceData(stream grpc.ServerStream) (context.Conte
 		return nil, nil, err
 	}
 	if localDirImportDirName != "" {
-		jsonBytes, err := base64.URLEncoding.DecodeString(localDirImportDirName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
-		}
 		var opts LocalImportOpts
-		if err := json.Unmarshal(jsonBytes, &opts); err != nil {
+		if err := DecodeIDHack("local", localDirImportDirName, &opts); err != nil {
 			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
 		}
 		sess, err := c.SessionManager.Get(stream.Context(), opts.OwnerClientID, false)
