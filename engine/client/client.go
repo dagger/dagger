@@ -157,10 +157,9 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		return nil, fmt.Errorf("get hostname: %w", err)
 	}
 	s.hostname = hostname
-	bkSessionName := s.hostname
-	sharedKey := s.RouterID
 
-	bkSession, err := bksession.NewSession(ctx, bkSessionName, sharedKey)
+	sharedKey := s.RouterID // share a session across routers
+	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
 		return nil, fmt.Errorf("new s: %w", err)
 	}
