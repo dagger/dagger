@@ -305,7 +305,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 	ref := reference.TagNameOnly(refName).String()
 
-	digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
+	_, digest, cfgBytes, err := bk.ResolveImageConfig(ctx, ref, llb.ResolveImageConfigOpt{
 		Platform:    &platform,
 		ResolveMode: llb.ResolveModeDefault.String(),
 	})
