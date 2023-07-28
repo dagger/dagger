@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.dagger.client.Client.ContainerArguments;
-import io.dagger.client.Container.ExecArguments;
 import java.util.List;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -49,11 +48,10 @@ public class ClientIT {
   public void testContainer() throws Exception {
     try (Client client = Dagger.connect()) {
       Container alpine = client.container().from("alpine:3.16.2");
-      String contents = alpine.fs().file("/etc/alpine-release").contents();
+      String contents = alpine.rootfs().file("/etc/alpine-release").contents();
       assertEquals("3.16.2\n", contents);
 
-      String stdout =
-          alpine.exec(new ExecArguments().withArgs(List.of("cat", "/etc/alpine-release"))).stdout();
+      String stdout = alpine.withExec(List.of("cat", "/etc/alpine-release")).stdout();
       assertEquals("3.16.2\n", stdout);
 
       // Ensure we can grab the container ID back and re-run the same query
@@ -61,7 +59,7 @@ public class ClientIT {
       contents =
           client
               .container(new ContainerArguments().withId(id))
-              .fs()
+              .rootfs()
               .file("/etc/alpine-release")
               .contents();
       assertEquals("3.16.2\n", contents);
