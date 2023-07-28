@@ -2,467 +2,270 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	controlapi "github.com/moby/buildkit/api/services/control"
-	apitypes "github.com/moby/buildkit/api/types"
-	"github.com/moby/buildkit/cache/remotecache"
+	"github.com/dagger/graphql"
+	"github.com/dagger/graphql/gqlerrors"
 	bkclient "github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/frontend"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/grpchijack"
-	containerdsnapshot "github.com/moby/buildkit/snapshot/containerd"
-	"github.com/moby/buildkit/solver"
-	"github.com/moby/buildkit/solver/llbsolver"
-	"github.com/moby/buildkit/solver/pb"
+	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
-	"github.com/moby/buildkit/util/imageutil"
-	"github.com/moby/buildkit/util/leaseutil"
-	"github.com/moby/buildkit/util/throttle"
 	bkworker "github.com/moby/buildkit/worker"
-	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc"
+	"github.com/vito/progrock"
 )
 
-/* TODO: renaming idea:
-* Server becomes EngineServer
-* Router becomes DaggerAPIServer or maybe SessionServer?
- */
+type DaggerServer struct {
+	bkClient *buildkit.Client
+	worker   bkworker.Worker
 
-// TODO: just hit a panic in Server.Serve but client just sat blocked, fix that
-type Server struct {
-	ServerOpts
-	llbSolver             *llbsolver.Solver
-	genericSolver         *solver.Solver
-	cacheManager          solver.CacheManager
-	worker                bkworker.Worker
-	privilegedExecEnabled bool
+	schema      *schema.MergedSchemas
+	recorder    *progrock.Recorder
+	progCleanup func() error
 
-	// router id -> router
-	routers  map[string]*Router
-	routerMu sync.Mutex
-
-	throttledGC func()
-	gcmu        sync.Mutex
+	doneCh    chan struct{}
+	doneErr   error // TODO: actually set this
+	closeOnce sync.Once
 }
 
-type ServerOpts struct {
-	WorkerController       *bkworker.Controller
-	SessionManager         *session.Manager
-	CacheManager           solver.CacheManager
-	ContentStore           *containerdsnapshot.Store
-	LeaseManager           *leaseutil.Manager
-	Entitlements           []string
-	EngineName             string
-	Frontends              map[string]frontend.Frontend
-	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
-	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
-}
-
-// TODO: setup cache manager here instead of cmd/engine/main.go
-func NewServer(opts ServerOpts) (*Server, error) {
-	w, err := opts.WorkerController.GetDefault()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get default worker: %w", err)
+func NewDaggerServer(
+	ctx context.Context,
+	bkClient *buildkit.Client,
+	worker bkworker.Worker,
+	caller bksession.Caller,
+	serverID string,
+	secretStore *core.SecretStore,
+	authProvider *auth.RegistryAuthProvider,
+	pipelineLabels []pipeline.Label,
+) (*DaggerServer, error) {
+	rtr := &DaggerServer{
+		bkClient: bkClient,
+		worker:   worker,
+		doneCh:   make(chan struct{}, 1),
 	}
 
-	llbSolver, err := llbsolver.New(llbsolver.Opt{
-		WorkerController: opts.WorkerController,
-		Frontends:        opts.Frontends,
-		CacheManager:     opts.CacheManager,
-		SessionManager:   opts.SessionManager,
-		CacheResolvers:   opts.UpstreamCacheImporters,
-		Entitlements:     opts.Entitlements,
+	clientConn := caller.Conn()
+	progClient := progrock.NewProgressServiceClient(clientConn)
+	progUpdates, err := progClient.WriteUpdates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", serverID)
+	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
+		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
+		buildkit.ProgrockLogrusWriter{},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create solver: %w", err)
-	}
-
-	genericSolver := solver.NewSolver(solver.SolverOpt{
-		ResolveOpFunc: func(vtx solver.Vertex, builder solver.Builder) (solver.Op, error) {
-			return w.ResolveOp(vtx, llbSolver.Bridge(builder), opts.SessionManager)
-		},
-		DefaultCache: opts.CacheManager,
-	})
-
-	e := &Server{
-		ServerOpts:    opts,
-		llbSolver:     llbSolver,
-		genericSolver: genericSolver,
-		cacheManager:  opts.CacheManager,
-		worker:        w,
-		routers:       make(map[string]*Router),
-	}
-
-	for _, entitlementStr := range opts.Entitlements {
-		if entitlementStr == string(entitlements.EntitlementSecurityInsecure) {
-			e.privilegedExecEnabled = true
-		}
-	}
-
-	e.throttledGC = throttle.After(time.Minute, e.gc)
-	defer func() {
-		time.AfterFunc(time.Second, e.throttledGC)
-	}()
-
-	return e, nil
-}
-
-func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*controlapi.SolveResponse, error) {
-	opts, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
 		return nil, err
 	}
+	rtr.progCleanup = progCleanup
 
-	getCallerCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	caller, err := e.SessionManager.Get(getCallerCtx, opts.ClientID, false)
-	if err != nil {
-		return nil, err
-	}
-
-	e.routerMu.Lock()
-	rtr, ok := e.routers[opts.RouterID]
-	if !ok {
-		bklog.G(ctx).Debugf("creating new router %q for client %s", opts.RouterID, opts.ClientID)
-		secretStore := core.NewSecretStore()
-		authProvider := auth.NewRegistryAuthProvider()
-
-		var cacheImporterCfgs []bkgw.CacheOptionsEntry
-		for _, cacheImportCfg := range req.Cache.Imports {
-			_, ok := e.UpstreamCacheImporters[cacheImportCfg.Type]
-			if !ok {
-				e.routerMu.Unlock()
-				return nil, fmt.Errorf("unknown cache importer type %q", cacheImportCfg.Type)
-			}
-			cacheImporterCfgs = append(cacheImporterCfgs, bkgw.CacheOptionsEntry{
-				Type:  cacheImportCfg.Type,
-				Attrs: cacheImportCfg.Attrs,
-			})
-		}
-
-		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Worker:                e.worker,
-			SessionManager:        e.SessionManager,
-			LLBSolver:             e.llbSolver,
-			GenericSolver:         e.genericSolver,
-			SecretStore:           secretStore,
-			AuthProvider:          authProvider,
-			PrivilegedExecEnabled: e.privilegedExecEnabled,
-			UpstreamCacheImports:  cacheImporterCfgs,
-			MainClientCaller:      caller,
-		})
-		if err != nil {
-			e.routerMu.Unlock()
-			return nil, err
-		}
-		secretStore.SetBuildkitClient(bkClient)
-
-		labels := opts.Labels
-		labels = append(labels, pipeline.EngineLabel(e.EngineName))
-		rtr, err = NewRouter(ctx, bkClient, e.worker, caller, opts.RouterID, secretStore, authProvider, labels)
-		if err != nil {
-			e.routerMu.Unlock()
-			return nil, err
-		}
-		e.routers[opts.RouterID] = rtr
-
-		// delete the router after the initial client who created it exits
-		defer func() {
-			e.routerMu.Lock()
-			rtr.Close()
-			delete(e.routers, opts.RouterID)
-			e.routerMu.Unlock()
-
-			if err := bkClient.Close(); err != nil {
-				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for router %s", opts.RouterID)
-			}
-
-			// TODO: synchronous? or put this in a goroutine?
-			time.AfterFunc(time.Second, e.throttledGC)
-		}()
-	}
-	e.routerMu.Unlock()
-
-	var cacheExporterFuncs []buildkit.ResolveCacheExporterFunc
-	for _, cacheExportCfg := range req.Cache.Exports {
-		exporterFunc, ok := e.UpstreamCacheExporters[cacheExportCfg.Type]
-		if !ok {
-			return nil, fmt.Errorf("unknown cache exporter type %q", cacheExportCfg.Type)
-		}
-		cacheExporterFuncs = append(cacheExporterFuncs, func(ctx context.Context, sessionGroup session.Group) (remotecache.Exporter, error) {
-			return exporterFunc(ctx, sessionGroup, cacheExportCfg.Attrs)
+	pipeline.SetRootLabels(pipelineLabels)
+	progrockLabels := []*progrock.Label{}
+	for _, label := range pipelineLabels {
+		progrockLabels = append(progrockLabels, &progrock.Label{
+			Name:  label.Name,
+			Value: label.Value,
 		})
 	}
-	if len(cacheExporterFuncs) > 0 {
-		// run cache export instead
-		bklog.G(ctx).Debugf("running cache export for client %s", opts.ClientID)
-		err := rtr.bkClient.UpstreamCacheExport(ctx, cacheExporterFuncs)
-		if err != nil {
-			bklog.G(ctx).WithError(err).Errorf("error running cache export for client %s", opts.ClientID)
-			return &controlapi.SolveResponse{}, err
-		}
-		bklog.G(ctx).Debugf("done running cache export for client %s", opts.ClientID)
-		return &controlapi.SolveResponse{}, nil
-	}
+	rtr.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
-	rtr.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname)
-	defer rtr.bkClient.DeregisterClientHostname(opts.ClientHostname)
-	err = rtr.Wait(ctx)
-	if errors.Is(err, context.Canceled) {
-		err = nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &controlapi.SolveResponse{}, nil
-}
-
-func (e *Server) Session(stream controlapi.Control_SessionServer) (rerr error) {
-	lg := bklog.G(stream.Context())
-
-	// TODO: should think through case where evil client lies about its ID
-	// maybe maintain a map of secret session token -> client ID and verify against that or something
-	// Also, may be good idea to have one secret token per client rather than shared across multiple
-	opts, err := engine.SessionAPIOptsFromContext(stream.Context())
-	if err != nil {
-		lg.WithError(err).Error("failed to get session api opts")
-		return fmt.Errorf("failed to get session api opts: %w", err)
-	}
-
-	lg = lg.
-		WithField("client_id", opts.ClientID).
-		WithField("client_hostname", opts.ClientHostname).
-		WithField("router_id", opts.RouterID).
-		WithField("buildkit_attachable", opts.BuildkitAttachable)
-	lg.Debug("session starting")
-	defer lg.WithError(rerr).Debug("session finished")
-
-	conn, closeCh, md := grpchijack.Hijack(stream)
-	defer conn.Close()
-
-	// TODO:
-	lg.Debug("session hijacked")
-
-	ctx, cancel := context.WithCancel(stream.Context())
+	// TODO: ensure clean flush+shutdown+error-handling
+	statusCh := make(chan *bkclient.SolveStatus, 8)
 	go func() {
-		<-closeCh
-		cancel()
-	}()
-
-	if opts.BuildkitAttachable {
-		// TODO:
-		lg.Debug("passing through to buildkit session manager")
-		// pass through to buildkit's session manager for handling the attachables
-		err = e.SessionManager.HandleConn(ctx, conn, md)
+		err := bkClient.WriteStatusesTo(ctx, statusCh)
 		if err != nil {
-			err = fmt.Errorf("session manager failed to handle conn: %w", err)
-		}
-	} else {
-		// TODO:
-		lg.Debug("passing through to graphql api")
-
-		e.routerMu.Lock()
-		rtr, ok := e.routers[opts.RouterID]
-		if !ok {
-			e.routerMu.Unlock()
-			return fmt.Errorf("router %q not found", opts.RouterID)
-		}
-		e.routerMu.Unlock()
-
-		// default to connecting to the graphql api
-		// TODO: make sure this unblocks and has reasonable error if router is closed, I don't think either are true rn
-		err = rtr.ServeClientConn(ctx, opts.ClientMetadata, conn)
-		if err != nil {
-			err = fmt.Errorf("router failed to serve client conn: %w", err)
-		}
-	}
-
-	return err
-}
-
-func (e *Server) DiskUsage(ctx context.Context, r *controlapi.DiskUsageRequest) (*controlapi.DiskUsageResponse, error) {
-	resp := &controlapi.DiskUsageResponse{}
-	du, err := e.worker.DiskUsage(ctx, bkclient.DiskUsageInfo{
-		Filter: r.Filter,
-	})
-	if err != nil {
-		return nil, err
-	}
-	for _, r := range du {
-		resp.Record = append(resp.Record, &controlapi.UsageRecord{
-			ID:          r.ID,
-			Mutable:     r.Mutable,
-			InUse:       r.InUse,
-			Size_:       r.Size,
-			Parents:     r.Parents,
-			UsageCount:  int64(r.UsageCount),
-			Description: r.Description,
-			CreatedAt:   r.CreatedAt,
-			LastUsedAt:  r.LastUsedAt,
-			RecordType:  string(r.RecordType),
-			Shared:      r.Shared,
-		})
-	}
-	return resp, nil
-}
-
-func (e *Server) Prune(req *controlapi.PruneRequest, stream controlapi.Control_PruneServer) error {
-	eg, ctx := errgroup.WithContext(stream.Context())
-
-	e.routerMu.Lock()
-	if len(e.routers) == 0 {
-		e.routerMu.Unlock()
-		imageutil.CancelCacheLeases()
-	}
-	e.routerMu.Unlock()
-
-	didPrune := false
-	defer func() {
-		if didPrune {
-			// TODO: we could fix this one off interface definition now...
-			if e, ok := e.cacheManager.(interface {
-				ReleaseUnreferenced(context.Context) error
-			}); ok {
-				if err := e.ReleaseUnreferenced(ctx); err != nil {
-					bklog.G(ctx).Errorf("failed to release cache metadata: %+v", err)
-				}
-			}
+			bklog.G(ctx).WithError(err).Error("failed to write status updates")
 		}
 	}()
-
-	ch := make(chan bkclient.UsageInfo, 32)
-
-	eg.Go(func() error {
-		defer close(ch)
-		return e.worker.Prune(ctx, ch, bkclient.PruneInfo{
-			Filter:       req.Filter,
-			All:          req.All,
-			KeepDuration: time.Duration(req.KeepDuration),
-			KeepBytes:    req.KeepBytes,
-		})
-	})
-
-	eg.Go(func() error {
+	go func() {
 		defer func() {
 			// drain channel on error
-			for range ch {
+			for range statusCh {
 			}
 		}()
-		for r := range ch {
-			didPrune = true
-			if err := stream.Send(&controlapi.UsageRecord{
-				ID:          r.ID,
-				Mutable:     r.Mutable,
-				InUse:       r.InUse,
-				Size_:       r.Size,
-				Parents:     r.Parents,
-				UsageCount:  int64(r.UsageCount),
-				Description: r.Description,
-				CreatedAt:   r.CreatedAt,
-				LastUsedAt:  r.LastUsedAt,
-				RecordType:  string(r.RecordType),
-				Shared:      r.Shared,
-			}); err != nil {
-				return err
+		for {
+			status, ok := <-statusCh
+			if !ok {
+				return
+			}
+			err := rtr.recorder.Record(buildkit.BK2Progrock(status))
+			if err != nil {
+				bklog.G(ctx).WithError(err).Error("failed to record status update")
+				return
 			}
 		}
-		return nil
+	}()
+
+	apiSchema, err := schema.New(schema.InitializeArgs{
+		BuildkitClient: rtr.bkClient,
+		Platform:       rtr.worker.Platforms(true)[0],
+		ProgSockPath:   progSockPath,
+		OCIStore:       rtr.worker.ContentStore(),
+		LeaseManager:   rtr.worker.LeaseManager(),
+		Secrets:        secretStore,
+		Auth:           authProvider,
 	})
-
-	return eg.Wait()
-}
-
-func (e *Server) Info(ctx context.Context, r *controlapi.InfoRequest) (*controlapi.InfoResponse, error) {
-	return &controlapi.InfoResponse{
-		BuildkitVersion: &apitypes.BuildkitVersion{
-			Package: e.EngineName,
-			Version: engine.Version,
-		},
-	}, nil
-}
-
-func (e *Server) ListWorkers(ctx context.Context, r *controlapi.ListWorkersRequest) (*controlapi.ListWorkersResponse, error) {
-	resp := &controlapi.ListWorkersResponse{
-		Record: []*apitypes.WorkerRecord{{
-			ID:        e.worker.ID(),
-			Labels:    e.worker.Labels(),
-			Platforms: pb.PlatformsFromSpec(e.worker.Platforms(true)),
-		}},
-	}
-	return resp, nil
-}
-
-func (e *Server) Register(server *grpc.Server) {
-	controlapi.RegisterControlServer(server, e)
-	// TODO: needed?
-	// tracev1.RegisterTraceServiceServer(server, e)
-	// e.gatewayForwarder.Register(server)
-}
-
-func (e *Server) Close() error {
-	// TODO: ensure all routers are closed
-	return e.WorkerController.Close()
-}
-
-// TODO: just inline this so we have less fields?
-func (e *Server) gc() {
-	e.gcmu.Lock()
-	defer e.gcmu.Unlock()
-
-	ch := make(chan bkclient.UsageInfo)
-	eg, ctx := errgroup.WithContext(context.TODO())
-
-	var size int64
-	eg.Go(func() error {
-		for ui := range ch {
-			size += ui.Size
-		}
-		return nil
-	})
-
-	eg.Go(func() error {
-		defer close(ch)
-		if policy := e.worker.GCPolicy(); len(policy) > 0 {
-			return e.worker.Prune(ctx, ch, policy...)
-		}
-		return nil
-	})
-
-	err := eg.Wait()
 	if err != nil {
-		bklog.G(ctx).Errorf("gc error: %+v", err)
+		return nil, err
 	}
-	if size > 0 {
-		bklog.G(ctx).Debugf("gc cleaned up %d bytes", size)
+	rtr.schema = apiSchema
+	return rtr, nil
+}
+
+func (rtr *DaggerServer) Close() {
+	defer rtr.closeOnce.Do(func() {
+		close(rtr.doneCh)
+	})
+
+	// mark all groups completed
+	rtr.recorder.Complete()
+	// close the recorder so the UI exits
+	rtr.recorder.Close()
+
+	rtr.progCleanup()
+}
+
+func (rtr *DaggerServer) Wait(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-rtr.doneCh:
+		return fmt.Errorf("server closed: %w", rtr.doneErr)
 	}
 }
 
-func (e *Server) Status(req *controlapi.StatusRequest, stream controlapi.Control_StatusServer) error {
-	// we send status updates over progrock session attachables instead
-	return fmt.Errorf("status not implemented")
+func (rtr *DaggerServer) ServeClientConn(
+	ctx context.Context,
+	clientMetadata *engine.ClientMetadata,
+	conn net.Conn,
+) error {
+	// TODO: use fields in logs
+	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+
+	l := &singleConnListener{conn: nopCloserConn{conn}, closeCh: make(chan struct{})}
+	go func() {
+		<-ctx.Done()
+		l.Close()
+	}()
+
+	// TODO: not sure how inefficient making a new server per-request is, fix if it's meaningful
+	// maybe you could dynamically mux in more endpoints for each client or something?
+	srv := http.Server{
+		Handler:           rtr.HTTPHandlerForClient(clientMetadata),
+		ReadHeaderTimeout: 30 * time.Second,
+	}
+	defer srv.Close()
+	return srv.Serve(l)
 }
 
-func (e *Server) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	// TODO: not sure if we ever use this
-	return nil, fmt.Errorf("export not implemented")
+func (rtr *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// TODO:
+		bklog.G(req.Context()).Debugf("http handler for client conn: %s", clientMetadata.ClientID)
+		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
+
+		w.Header().Add("x-dagger-engine", engine.Version)
+
+		/* TODO: re-add session token, here or in an upper caller
+		if rtr.sessionToken != "" {
+			username, _, ok := req.BasicAuth()
+			if !ok || username != rtr.sessionToken {
+				w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
+		*/
+
+		defer func() {
+			if v := recover(); v != nil {
+				msg := "Internal Server Error"
+				code := http.StatusInternalServerError
+				switch v := v.(type) {
+				case error:
+					msg = v.Error()
+					if errors.As(v, &schema.InvalidInputError{}) {
+						// panics can happen on invalid input in scalar serde
+						code = http.StatusBadRequest
+					}
+				case string:
+					msg = v
+				}
+				res := graphql.Result{
+					Errors: []gqlerrors.FormattedError{
+						gqlerrors.NewFormattedError(msg),
+					},
+				}
+				bytes, err := json.Marshal(res)
+				if err != nil {
+					panic(err)
+				}
+				http.Error(w, string(bytes), code)
+			}
+		}()
+
+		req = req.WithContext(progrock.RecorderToContext(req.Context(), rtr.recorder))
+		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
+
+		mux := http.NewServeMux()
+		mux.Handle("/query", NewHandler(&HandlerConfig{
+			Schema: rtr.schema.Schema(),
+		}))
+		mux.ServeHTTP(w, req)
+	})
 }
 
-func (e *Server) ListenBuildHistory(req *controlapi.BuildHistoryRequest, srv controlapi.Control_ListenBuildHistoryServer) error {
-	return fmt.Errorf("listen build history not implemented")
+// converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
+type singleConnListener struct {
+	conn      net.Conn
+	l         sync.Mutex
+	closeCh   chan struct{}
+	closeOnce sync.Once
 }
 
-func (e *Server) UpdateBuildHistory(ctx context.Context, req *controlapi.UpdateBuildHistoryRequest) (*controlapi.UpdateBuildHistoryResponse, error) {
-	return nil, fmt.Errorf("update build history not implemented")
+func (l *singleConnListener) Accept() (net.Conn, error) {
+	l.l.Lock()
+	if l.conn == nil {
+		l.l.Unlock()
+		<-l.closeCh
+		return nil, io.ErrClosedPipe
+	}
+	defer l.l.Unlock()
+
+	c := l.conn
+	l.conn = nil
+	return c, nil
+}
+
+func (l *singleConnListener) Addr() net.Addr {
+	return nil
+}
+
+func (l *singleConnListener) Close() error {
+	l.closeOnce.Do(func() {
+		close(l.closeCh)
+	})
+	return nil
+}
+
+type nopCloserConn struct {
+	net.Conn
+}
+
+func (nopCloserConn) Close() error {
+	return nil
 }

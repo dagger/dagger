@@ -1,4 +1,4 @@
-package handler
+package server
 
 import (
 	"context"
@@ -194,7 +194,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // RootObjectFn allows a user to generate a RootObject per request
 type RootObjectFn func(ctx context.Context, r *http.Request) map[string]interface{}
 
-type Config struct {
+type HandlerConfig struct {
 	Schema           *graphql.Schema
 	Pretty           bool
 	RootObjectFn     RootObjectFn
@@ -202,14 +202,14 @@ type Config struct {
 	FormatErrorFn    func(err error) gqlerrors.FormattedError
 }
 
-func NewConfig() *Config {
-	return &Config{
+func NewConfig() *HandlerConfig {
+	return &HandlerConfig{
 		Schema: nil,
 		Pretty: true,
 	}
 }
 
-func New(p *Config) *Handler {
+func NewHandler(p *HandlerConfig) *Handler {
 	if p == nil {
 		p = NewConfig()
 	}

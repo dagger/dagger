@@ -1080,11 +1080,11 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		if err != nil {
 			return nil, err
 		}
-		routerID := clientMetadata.RouterID
+		serverID := clientMetadata.ServerID
 		runOpts = append(runOpts,
 			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
 			// TODO: these both result in the cache being invalidated all the time
-			llb.AddEnv("_DAGGER_ROUTER_ID", routerID),
+			llb.AddEnv("_DAGGER_SERVER_ID", serverID),
 			llb.AddEnv("_DAGGER_PROG_SOCK_PATH", progSock),
 		)
 	}

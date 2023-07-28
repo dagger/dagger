@@ -713,7 +713,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 }
 
 // TODO: change name of newController
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*server.Server, cache.Manager, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*server.BuildkitController, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
@@ -799,7 +799,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		},
 	}
 
-	ctrler, err := server.NewServer(server.ServerOpts{
+	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
 		WorkerController: wc,
 		SessionManager:   sessionManager,
 		CacheManager:     cacheManager,

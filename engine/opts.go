@@ -12,9 +12,9 @@ import (
 type ClientMetadata struct {
 	// ClientID is unique to every session created by every client
 	ClientID string
-	// RouterID is the id of the router that a client and any of its nested environment clients
+	// ServerID is the id of the server that a client and any of its nested environment clients
 	// connect to
-	RouterID string
+	ServerID string
 	// ClientHostname is the hostname of the client that made the request. It's used opportunisticly
 	// as a best-effort, semi-stable identifier for the client across multiple sessions, which can
 	// be useful for debugging and for minimizing occurences of both excessive cache misses and
@@ -35,7 +35,7 @@ func (m ClientMetadata) ClientIDs() []string {
 func (m ClientMetadata) ToGRPCMD() metadata.MD {
 	md := metadata.Pairs(
 		ClientIDMetaKey, m.ClientID,
-		RouterIDMetaKey, m.RouterID,
+		ServerIDMetaKey, m.ServerID,
 		ClientHostnameMetaKey, m.ClientHostname,
 		ParentClientIDsMetaKey, strings.Join(m.ParentClientIDs, " "),
 	)
@@ -85,10 +85,10 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	}
 	clientMetadata.ClientID = md[ClientIDMetaKey][0]
 
-	if len(md[RouterIDMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", RouterIDMetaKey)
+	if len(md[ServerIDMetaKey]) != 1 {
+		return nil, fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
 	}
-	clientMetadata.RouterID = md[RouterIDMetaKey][0]
+	clientMetadata.ServerID = md[ServerIDMetaKey][0]
 
 	if len(md[ClientHostnameMetaKey]) != 1 {
 		return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
@@ -141,10 +141,10 @@ func SessionAPIOptsFromContext(ctx context.Context) (*SessionAPIOpts, error) {
 		}
 		opts.ClientHostname = md[ClientHostnameMetaKey][0]
 
-		if len(md[RouterIDMetaKey]) != 1 {
-			return nil, fmt.Errorf("failed to get %s from metadata", RouterIDMetaKey)
+		if len(md[ServerIDMetaKey]) != 1 {
+			return nil, fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
 		}
-		opts.RouterID = md[RouterIDMetaKey][0]
+		opts.ServerID = md[ServerIDMetaKey][0]
 
 		opts.ParentClientIDs = md[ParentClientIDsMetaKey]
 

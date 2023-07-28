@@ -49,7 +49,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	labels := &sessionLabels
 
-	workdir, err = engine.NormalizeWorkdir(workdir)
+	workdir, err = NormalizeWorkdir(workdir)
 	if err != nil {
 		return err
 	}

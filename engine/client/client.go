@@ -39,9 +39,9 @@ import (
 const OCIStoreName = "dagger-oci"
 
 type SessionParams struct {
-	// The id of the router to connect to, or if blank a new one
+	// The id of the server to connect to, or if blank a new one
 	// should be started.
-	RouterID string
+	ServerID string
 
 	// Parent client IDs of this Dagger client.
 	//
@@ -108,8 +108,8 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		return s, nil
 	}
 
-	if s.RouterID == "" {
-		s.RouterID = identity.NewID()
+	if s.ServerID == "" {
+		s.ServerID = identity.NewID()
 	}
 
 	// TODO: this is only needed temporarily to work around issue w/
@@ -160,7 +160,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	}
 	s.hostname = hostname
 
-	sharedKey := s.RouterID // share a session across routers
+	sharedKey := s.ServerID // share a session across servers
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
 		return nil, fmt.Errorf("new s: %w", err)
@@ -178,7 +178,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	}
 	s.internalCtx = engine.ContextWithClientMetadata(s.internalCtx, &engine.ClientMetadata{
 		ClientID:        s.ID(),
-		RouterID:        s.RouterID,
+		ServerID:        s.ServerID,
 		ClientHostname:  s.hostname,
 		Labels:          pipeline.LoadVCSLabels(workdir),
 		ParentClientIDs: s.ParentClientIDs,
@@ -235,7 +235,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	recorder := progrock.NewRecorder(progMultiW)
 	s.Recorder = recorder
 
-	// start the router if it's not already running, client+router ID are
+	// start the server if it's not already running, client+server ID are
 	// passed through grpc context
 	s.eg.Go(func() error {
 		_, err := s.bkClient.ControlClient().Solve(s.internalCtx, &controlapi.SolveRequest{
@@ -251,7 +251,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	s.eg.Go(func() error {
 		// client ID gets passed via the session ID
 		return bkSession.Run(s.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			meta[engine.RouterIDMetaKey] = []string{s.RouterID}
+			meta[engine.ServerIDMetaKey] = []string{s.ServerID}
 			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
 			meta[engine.ClientHostnameMetaKey] = []string{hostname}
 			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, meta)
@@ -333,7 +333,7 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 	// If http connection re-use is enabled, that can be far past this DialContext call.
 	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
 		ClientID:        s.ID(),
-		RouterID:        s.RouterID,
+		ServerID:        s.ServerID,
 		ClientHostname:  s.hostname,
 		ParentClientIDs: s.ParentClientIDs,
 	}.ToGRPCMD())

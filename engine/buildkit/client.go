@@ -389,7 +389,7 @@ func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveSta
 func (c *Client) RegisterClient(clientID, clientHostname string) {
 	c.clientHostnameToIDMu.Lock()
 	defer c.clientHostnameToIDMu.Unlock()
-	// TODO: error out if clientID already exists? How would a user accomplish that? They'd need to somehow connect to the same router id
+	// TODO: error out if clientID already exists? How would a user accomplish that? They'd need to somehow connect to the same server id
 	c.clientHostnameToID[clientHostname] = clientID
 }
 

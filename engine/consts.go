@@ -3,7 +3,7 @@ package engine
 // shared consts between engine subpackages
 // TODO: it's hella annoying to add one of these, just pass json structs around to make it easier
 const (
-	RouterIDMetaKey        = "x-dagger-router-id"
+	ServerIDMetaKey        = "x-dagger-server-id"
 	ClientIDMetaKey        = "x-dagger-client-id"
 	ClientHostnameMetaKey  = "x-dagger-client-hostname"
 	ClientLabelsMetaKey    = "x-dagger-client-labels"

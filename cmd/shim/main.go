@@ -589,9 +589,9 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	routerID, _ := internalEnv("_DAGGER_ROUTER_ID")
+	serverID, _ := internalEnv("_DAGGER_SERVER_ID")
 	sessParams := client.SessionParams{
-		RouterID:    routerID,
+		ServerID:    serverID,
 		SecretToken: sessionToken.String(),
 		RunnerHost:  "unix:///.runner.sock",
 	}
