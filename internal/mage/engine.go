@@ -241,6 +241,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedDirectory("/root/.docker", util.HostDockerDir(c)).
+		WithFocus().
 		WithExec(args).
 		WithExec([]string{"gotestsum", "tool", "slowest", "--jsonfile=./tests.log", "--threshold=1s"}).
 		Sync(ctx)
