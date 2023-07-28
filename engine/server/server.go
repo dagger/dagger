@@ -152,7 +152,6 @@ func (e *Server) Solve(ctx context.Context, req *controlapi.SolveRequest) (*cont
 		}
 
 		bkClient, err := buildkit.NewClient(ctx, buildkit.Opts{
-			Metadata:              opts,
 			Worker:                e.worker,
 			SessionManager:        e.SessionManager,
 			LLBSolver:             e.llbSolver,

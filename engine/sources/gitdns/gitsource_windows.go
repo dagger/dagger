@@ -25,8 +25,8 @@ func runWithStandardUmaskAndNetOverride(ctx context.Context, cmd *exec.Cmd, host
 	return cmd.Wait()
 }
 
-func (s *gitCLI) initConfig(netConf *networks.Config) error {
-	if netConf == nil {
+func (s *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
+	if dnsConf == nil {
 		return nil
 	}
 

@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/dagger/dagger/engine/session/networks"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/util/progress/logs"
 	"github.com/pkg/errors"
 )
@@ -37,7 +37,7 @@ func newGitCLI(
 	sshAuthSock,
 	knownHosts string,
 	auth []string,
-	netConf *networks.Config,
+	dnsConf *oci.DNSConfig,
 ) (*gitCLI, func(), error) {
 	cli := &gitCLI{
 		gitDir:      gitDir,
@@ -46,7 +46,7 @@ func newGitCLI(
 		knownHosts:  knownHosts,
 		auth:        auth,
 	}
-	if err := cli.initConfig(netConf); err != nil {
+	if err := cli.initConfig(dnsConf); err != nil {
 		cli.cleanup()
 		return nil, nil, err
 	}

@@ -11,8 +11,6 @@ import (
 
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/session/networks"
-	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
@@ -42,24 +40,6 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	sess.Allow(sessioncontent.NewAttachable(map[string]content.Store{
 		// the "oci:" prefix is actually interpreted by buildkit, not just for show
 		"oci:" + OCIStoreName: c.Worker.ContentStore(),
-	}))
-
-	searchDomains := []string{}
-	for _, id := range c.Metadata.ClientIDs() {
-		searchDomains = append(searchDomains, network.ClientDomain(id))
-	}
-
-	sess.Allow(networks.NewConfigProvider(func(id string) *networks.Config {
-		switch id {
-		case network.DaggerNetwork:
-			return &networks.Config{
-				Dns: &networks.DNSConfig{
-					SearchDomains: searchDomains,
-				},
-			}
-		default:
-			return nil
-		}
 	}))
 
 	clientConn, serverConn := net.Pipe()

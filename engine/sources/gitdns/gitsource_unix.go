@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/dagger/dagger/engine/session/networks"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/sys/mount"
 	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
@@ -92,49 +92,15 @@ func overrideNetworkConfig(hostsOverride, resolvOverride string) error {
 	return nil
 }
 
-func (s *gitCLI) initConfig(netConf *networks.Config) error {
-	if netConf == nil {
+func (s *gitCLI) initConfig(dnsConf *oci.DNSConfig) error {
+	if dnsConf == nil {
 		return nil
 	}
 
-	if len(netConf.IpHosts) > 0 {
-		if err := s.generateHosts(netConf.IpHosts); err != nil {
-			return err
-		}
-	}
-
-	if netConf.Dns != nil {
-		if err := s.generateResolv(netConf.Dns); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return s.generateResolv(dnsConf)
 }
 
-func (s *gitCLI) generateHosts(extraHosts []*networks.IPHosts) error {
-	src, err := os.Open("/etc/hosts")
-	if err != nil {
-		return errors.Wrap(err, "read current hosts")
-	}
-	defer src.Close()
-
-	override, err := os.CreateTemp("", "buildkit-git-extra-hosts")
-	if err != nil {
-		return errors.Wrap(err, "create hosts override")
-	}
-	defer override.Close()
-
-	s.hostsPath = override.Name()
-
-	if err := mergeHosts(override, src, extraHosts); err != nil {
-		return err
-	}
-
-	return override.Close()
-}
-
-func (s *gitCLI) generateResolv(dns *networks.DNSConfig) error {
+func (s *gitCLI) generateResolv(dns *oci.DNSConfig) error {
 	src, err := os.Open("/etc/resolv.conf")
 	if err != nil {
 		return err
@@ -157,30 +123,7 @@ func (s *gitCLI) generateResolv(dns *networks.DNSConfig) error {
 	return nil
 }
 
-func mergeHosts(override *os.File, currentHosts io.Reader, extraHosts []*networks.IPHosts) error {
-	if _, err := io.Copy(override, currentHosts); err != nil {
-		return errors.Wrap(err, "write current hosts")
-	}
-
-	if _, err := fmt.Fprintln(override); err != nil {
-		return errors.Wrap(err, "write newline")
-	}
-
-	for _, host := range extraHosts {
-		hosts := strings.Join(host.Hosts, " ")
-		if _, err := fmt.Fprintf(override, "%s\t%s\n", host.Ip, hosts); err != nil {
-			return errors.Wrap(err, "write extra host")
-		}
-	}
-
-	if err := override.Close(); err != nil {
-		return errors.Wrap(err, "close hosts override")
-	}
-
-	return nil
-}
-
-func mergeResolv(dst *os.File, src io.Reader, dns *networks.DNSConfig) error {
+func mergeResolv(dst *os.File, src io.Reader, dns *oci.DNSConfig) error {
 	srcScan := bufio.NewScanner(src)
 
 	var replacedSearch bool

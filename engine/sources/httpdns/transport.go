@@ -5,16 +5,16 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/engine/sources/netconfhttp"
+	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/upload"
 	"github.com/pkg/errors"
 )
 
-func newTransport(rt http.RoundTripper, sm *session.Manager, g session.Group, netConfig *networks.Config) http.RoundTripper {
+func newTransport(rt http.RoundTripper, sm *session.Manager, g session.Group, dns *oci.DNSConfig) http.RoundTripper {
 	return &sessionHandler{
-		rt: netconfhttp.NewTransport(rt, netConfig),
+		rt: netconfhttp.NewTransport(rt, dns),
 		sm: sm,
 		g:  g,
 	}

@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/cache"
 	"github.com/moby/buildkit/client"
@@ -326,19 +325,15 @@ func (gs *gitSourceHandler) mountKnownHosts(ctx context.Context) (string, func()
 	return knownHosts.Name(), cleanup, nil
 }
 
-func (gs *gitSourceHandler) networkConfig(ctx context.Context, g session.Group) *networks.Config {
+func (gs *gitSourceHandler) dnsConfig(ctx context.Context, g session.Group) *oci.DNSConfig {
 	clientDomains := []string{}
 	for _, clientID := range gs.clientIDs {
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
 	}
 
-	// base network config inherits from system-wide config
-	dns := networks.DNSConfig(*gs.dns)
+	dns := *gs.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
-
-	return &networks.Config{
-		Dns: &dns,
-	}
+	return &dns
 }
 
 func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index int) (string, string, solver.CacheOpts, bool, error) {
@@ -380,7 +375,7 @@ func (gs *gitSourceHandler) CacheKey(ctx context.Context, g session.Group, index
 		defer unmountKnownHosts()
 	}
 
-	netConf := gs.networkConfig(ctx, g)
+	netConf := gs.dnsConfig(ctx, g)
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {
@@ -469,7 +464,7 @@ func (gs *gitSourceHandler) Snapshot(ctx context.Context, g session.Group) (out 
 		defer unmountKnownHosts()
 	}
 
-	netConf := gs.networkConfig(ctx, g)
+	netConf := gs.dnsConfig(ctx, g)
 
 	git, cleanup, err := newGitCLI(gitDir, "", sock, knownHosts, gs.auth, netConf)
 	if err != nil {

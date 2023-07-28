@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/moby/buildkit/cache"
@@ -42,7 +41,7 @@ type httpSource struct {
 	cache     cache.Accessor
 	locker    *locker.Locker
 	transport http.RoundTripper
-	dns       *networks.DNSConfig
+	dns       *oci.DNSConfig
 }
 
 func NewSource(opt Opt) (source.Source, error) {
@@ -54,8 +53,7 @@ func NewSource(opt Opt) (source.Source, error) {
 		cache:     opt.CacheAccessor,
 		locker:    locker.New(),
 		transport: transport,
-		// TODO(vito): this is awkward, but unlikely to break
-		dns: (*networks.DNSConfig)(opt.BaseDNSConfig),
+		dns:       opt.BaseDNSConfig,
 	}
 	return hs, nil
 }
@@ -111,15 +109,10 @@ func (hs *httpSourceHandler) client(ctx context.Context, g session.Group) (*http
 		clientDomains = append(clientDomains, network.ClientDomain(clientID))
 	}
 
-	// base network config inherits from system-wide config
 	dns := *hs.dns
 	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
 
-	netConfig := &networks.Config{
-		Dns: &dns,
-	}
-
-	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, netConfig)}, nil
+	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, &dns)}, nil
 }
 
 // urlHash is internal hash the etag is stored by that doesn't leak outside
