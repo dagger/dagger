@@ -7,9 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/docker/cli/cli/config/configfile"
 	bkauth "github.com/moby/buildkit/session/auth"
 	"github.com/moby/buildkit/session/auth/authprovider"
@@ -190,28 +187,13 @@ func (r *RegistryAuthProvider) Credentials(ctx context.Context, req *bkauth.Cred
 }
 
 func (r *RegistryAuthProvider) FetchToken(ctx context.Context, req *bkauth.FetchTokenRequest) (*bkauth.FetchTokenResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
 	return r.dockerAuthProvider.FetchToken(ctx, req)
 }
 
 func (r *RegistryAuthProvider) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenAuthorityRequest) (*bkauth.GetTokenAuthorityResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
 	return r.dockerAuthProvider.GetTokenAuthority(ctx, req)
 }
 
 func (r *RegistryAuthProvider) VerifyTokenAuthority(ctx context.Context, req *bkauth.VerifyTokenAuthorityRequest) (*bkauth.VerifyTokenAuthorityResponse, error) {
-	memoryCredential := r.credential(req.GetHost())
-	if memoryCredential != nil {
-		return nil, status.Errorf(codes.Unavailable, "secret is store in memory")
-	}
-
 	return r.dockerAuthProvider.VerifyTokenAuthority(ctx, req)
 }
