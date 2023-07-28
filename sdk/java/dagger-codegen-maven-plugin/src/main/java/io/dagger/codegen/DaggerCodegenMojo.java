@@ -35,7 +35,7 @@ public class DaggerCodegenMojo extends AbstractMojo {
   @Parameter(property = "project", required = true, readonly = true)
   protected MavenProject project;
 
-  @Parameter(property = "dagger.bin", defaultValue = "dagger")
+  @Parameter(property = "dagger.bin")
   protected String bin;
 
   @Parameter(property = "dagger.version", required = true)

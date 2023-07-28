@@ -15,34 +15,23 @@ class CLIRunner implements Runnable {
 
   static final Logger LOG = LoggerFactory.getLogger(CLIRunner.class);
 
-  private final FluentProcess process;
+  private final String workingDir;
+  private FluentProcess process;
   private ConnectParams params;
   private boolean failed = false;
-  private final ExecutorService executorService;
+  private ExecutorService executorService;
 
   private static String getCLIPath() throws IOException {
     String cliBinPath = System.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN");
     if (cliBinPath == null) {
       cliBinPath = new CLIDownloader().downloadCLI();
     }
-    LOG.info("Set dagger CLI to " + cliBinPath);
+    LOG.info("Found dagger CLI: " + cliBinPath);
     return cliBinPath;
   }
 
   public CLIRunner(String workingDir) throws IOException {
-    String bin = getCLIPath();
-    this.process =
-        FluentProcess.start(
-                bin,
-                "session",
-                "--workdir",
-                workingDir,
-                "--label",
-                "dagger.io/sdk.name:java",
-                "--label",
-                "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
-            .withAllowedExitCodes(137);
-    this.executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
+    this.workingDir = workingDir;
   }
 
   synchronized ConnectParams getConnectionParams() throws IOException {
@@ -68,7 +57,19 @@ class CLIRunner implements Runnable {
     notifyAll();
   }
 
-  public void start() {
+  public void start() throws IOException {
+    this.process =
+            FluentProcess.start(
+                            getCLIPath(),
+                            "session",
+                            "--workdir",
+                            workingDir,
+                            "--label",
+                            "dagger.io/sdk.name:java",
+                            "--label",
+                            "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
+                    .withAllowedExitCodes(137);
+    executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
     executorService.execute(this);
   }
 
