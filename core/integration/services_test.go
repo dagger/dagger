@@ -636,8 +636,6 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	t.Parallel()
 
-	t.Skip("TODO(vito): this doesn't currently work because the network config is for the entire session and not per-client, so it only returns the toplevel search domains")
-
 	c, ctx := connect(t)
 	defer c.Close()
 

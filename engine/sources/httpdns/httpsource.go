@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/session/networks"
 	"github.com/dagger/dagger/network"
 	"github.com/docker/docker/pkg/idtools"
@@ -65,10 +66,18 @@ func (hs *httpSource) ID() string {
 
 type httpSourceHandler struct {
 	*httpSource
-	src      source.HTTPIdentifier
-	refID    string
-	cacheKey digest.Digest
-	sm       *session.Manager
+	src       source.HTTPIdentifier
+	clientIDs []string
+	refID     string
+	cacheKey  digest.Digest
+	sm        *session.Manager
+}
+
+// TODO(vito): this can be cleaned up if/when
+// https://github.com/moby/buildkit/pull/4035 is merged
+type DaggerHTTPURLHack struct {
+	URL       string   `json:"url"`
+	ClientIDs []string `json:"client_ids"`
 }
 
 func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *session.Manager, _ solver.Vertex) (source.SourceInstance, error) {
@@ -77,24 +86,37 @@ func (hs *httpSource) Resolve(ctx context.Context, id source.Identifier, sm *ses
 		return nil, errors.Errorf("invalid http identifier %v", id)
 	}
 
+	var clientIDs []string
+	var hack DaggerHTTPURLHack
+	if err := buildkit.DecodeIDHack(srctypes.HTTPSScheme, httpIdentifier.URL, &hack); err != nil {
+		// ignore error; we have to handle both scenarios because this Source
+		// entirely _replaces_ the HTTP source, so we have to handle usage from
+		// Dockerfile frontends too
+	} else {
+		httpIdentifier.URL = hack.URL
+		clientIDs = hack.ClientIDs
+	}
+
 	return &httpSourceHandler{
 		src:        *httpIdentifier,
+		clientIDs:  clientIDs,
 		httpSource: hs,
 		sm:         sm,
 	}, nil
 }
 
 func (hs *httpSourceHandler) client(ctx context.Context, g session.Group) (*http.Client, error) {
-	// base network config inherits from system-wide config
-	netConfig := &networks.Config{Dns: hs.dns}
+	clientDomains := []string{}
+	for _, clientID := range hs.clientIDs {
+		clientDomains = append(clientDomains, network.ClientDomain(clientID))
+	}
 
-	err := hs.sm.Any(ctx, g, func(ctx context.Context, _ string, caller session.Caller) error {
-		var err error
-		netConfig, err = networks.MergeConfig(ctx, caller, netConfig, network.DaggerNetwork)
-		return err
-	})
-	if err != nil {
-		return nil, err
+	// base network config inherits from system-wide config
+	dns := *hs.dns
+	dns.SearchDomains = append(clientDomains, dns.SearchDomains...)
+
+	netConfig := &networks.Config{
+		Dns: &dns,
 	}
 
 	return &http.Client{Transport: newTransport(hs.transport, hs.sm, g, netConfig)}, nil

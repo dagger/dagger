@@ -4,7 +4,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/httpdns"
-	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 	"github.com/opencontainers/go-digest"
 )
@@ -60,10 +59,9 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 
 	useDNS := len(svcs) > 0
 
-	if !useDNS {
-		if clientMetadata, err := engine.ClientMetadataFromContext(ctx); err == nil {
-			useDNS = len(clientMetadata.ParentClientIDs) > 0
-		}
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil && !useDNS {
+		useDNS = len(clientMetadata.ParentClientIDs) > 0
 	}
 
 	var st llb.State
@@ -75,7 +73,7 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		// that use a Buildkit frontend (# syntax = ...).
 		//
 		// TODO: add API cap
-		st = httpdns.State(args.URL, network.DaggerNetwork, opts...)
+		st = httpdns.State(args.URL, clientMetadata.ClientIDs(), opts...)
 	} else {
 		st = llb.HTTP(args.URL, opts...)
 	}

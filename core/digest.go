@@ -2,17 +2,16 @@ package core
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/dagger/dagger/engine/buildkit"
+	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/dagger/dagger/network"
 	"github.com/koron-go/prefixw"
 	"github.com/moby/buildkit/identity"
@@ -328,16 +327,16 @@ func stabilizeOp(op *pb.Op) (bool, error) {
 				modified = true
 			}
 		}
-		if _, name, ok := strings.Cut(src.Identifier, "local://"); ok {
-			var opts buildkit.LocalImportOpts
-			jsonBytes, err := base64.URLEncoding.DecodeString(name)
-			if err != nil {
-				return false, fmt.Errorf("invalid import local dir name: %q", name)
-			}
-			if err := json.Unmarshal(jsonBytes, &opts); err != nil {
-				return false, fmt.Errorf("invalid import local dir name: %q", name)
-			}
+
+		var opts buildkit.LocalImportOpts
+		if err := buildkit.DecodeIDHack("local", src.Identifier, &opts); err == nil {
 			src.Identifier = "local://" + opts.Path
+			modified = true
+		}
+
+		var httpHack httpdns.DaggerHTTPURLHack
+		if err := buildkit.DecodeIDHack("https", src.Identifier, &httpHack); err == nil {
+			src.Identifier = httpHack.URL
 			modified = true
 		}
 	}
