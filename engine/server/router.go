@@ -158,7 +158,7 @@ func (rtr *Router) ServeClientConn(
 	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
 	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
 
-	l := &singleConnListener{conn: conn}
+	l := &singleConnListener{conn: nopCloserConn{conn}, closeCh: make(chan struct{})}
 	go func() {
 		<-ctx.Done()
 		l.Close()
@@ -170,13 +170,8 @@ func (rtr *Router) ServeClientConn(
 		Handler:           rtr.HTTPHandlerForClient(clientMetadata),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
-	err := srv.Serve(l)
-	// if error is "use of closed network connection", it's from the context being canceled
-	if err != nil && !errors.Is(err, net.ErrClosed) && !errors.Is(err, io.ErrClosedPipe) {
-		srv.Close()
-		return err
-	}
-	return srv.Shutdown(ctx)
+	defer srv.Close()
+	return srv.Serve(l)
 }
 
 func (rtr *Router) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
@@ -238,17 +233,21 @@ func (rtr *Router) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) h
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
 type singleConnListener struct {
-	conn net.Conn
-	l    sync.Mutex
+	conn      net.Conn
+	l         sync.Mutex
+	closeCh   chan struct{}
+	closeOnce sync.Once
 }
 
 func (l *singleConnListener) Accept() (net.Conn, error) {
 	l.l.Lock()
-	defer l.l.Unlock()
-
 	if l.conn == nil {
+		l.l.Unlock()
+		<-l.closeCh
 		return nil, io.ErrClosedPipe
 	}
+	defer l.l.Unlock()
+
 	c := l.conn
 	l.conn = nil
 	return c, nil
@@ -259,5 +258,16 @@ func (l *singleConnListener) Addr() net.Addr {
 }
 
 func (l *singleConnListener) Close() error {
+	l.closeOnce.Do(func() {
+		close(l.closeCh)
+	})
+	return nil
+}
+
+type nopCloserConn struct {
+	net.Conn
+}
+
+func (nopCloserConn) Close() error {
 	return nil
 }

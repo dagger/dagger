@@ -67,7 +67,10 @@ type SessionParams struct {
 type Session struct {
 	SessionParams
 	eg             *errgroup.Group
+	internalCtx    context.Context
 	internalCancel context.CancelFunc
+	apiConnCtx     context.Context
+	apiConnCancel  context.CancelFunc
 
 	Recorder *progrock.Recorder
 
@@ -85,6 +88,14 @@ type Session struct {
 func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error) {
 	s := &Session{SessionParams: params}
 
+	s.internalCtx, s.internalCancel = context.WithCancel(context.Background())
+	s.eg, s.internalCtx = errgroup.WithContext(s.internalCtx)
+	defer func() {
+		if rerr != nil {
+			s.internalCancel()
+		}
+	}()
+	s.apiConnCtx, s.apiConnCancel = context.WithCancel(context.Background())
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
@@ -112,15 +123,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		// they currently inherit via the networks.ConfigProvider attachable.
 		s.ParentClientIDs = parents
 	}
-
-	internalCtx, internalCancel := context.WithCancel(context.Background())
-	defer func() {
-		if rerr != nil {
-			internalCancel()
-		}
-	}()
-	s.internalCancel = internalCancel
-	s.eg, internalCtx = errgroup.WithContext(internalCtx)
 
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
@@ -174,7 +176,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	if err != nil {
 		return nil, fmt.Errorf("get workdir: %w", err)
 	}
-	internalCtx = engine.ContextWithClientMetadata(internalCtx, &engine.ClientMetadata{
+	s.internalCtx = engine.ContextWithClientMetadata(s.internalCtx, &engine.ClientMetadata{
 		ClientID:        s.ID(),
 		RouterID:        s.RouterID,
 		ClientHostname:  s.hostname,
@@ -236,7 +238,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	// start the router if it's not already running, client+router ID are
 	// passed through grpc context
 	s.eg.Go(func() error {
-		_, err := s.bkClient.ControlClient().Solve(internalCtx, &controlapi.SolveRequest{
+		_, err := s.bkClient.ControlClient().Solve(s.internalCtx, &controlapi.SolveRequest{
 			Cache: controlapi.CacheOptions{
 				// Exports are handled in Close
 				Imports: s.upstreamCacheOptions,
@@ -248,7 +250,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	// run the client session
 	s.eg.Go(func() error {
 		// client ID gets passed via the session ID
-		return bkSession.Run(internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+		return bkSession.Run(s.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			meta[engine.RouterIDMetaKey] = []string{s.RouterID}
 			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
 			meta[engine.ClientHostnameMetaKey] = []string{hostname}
@@ -286,30 +288,37 @@ func (s *Session) Close() (rerr error) {
 				Exports: s.upstreamCacheOptions,
 			},
 		})
-		// TODO:
-		// TODO:
-		// TODO:
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "cache export err: %v\n", err)
-		}
+		rerr = errors.Join(rerr, err)
+	}
+
+	if s.internalCancel != nil {
+		s.internalCancel()
+	}
+
+	if s.httpClient != nil {
+		s.eg.Go(func() error {
+			s.apiConnCancel()
+			s.httpClient.CloseIdleConnections()
+			// TODO: better sync so if stray conns come in at last second they get closed too
+			return nil
+		})
+	}
+
+	if s.bkSession != nil {
+		s.eg.Go(s.bkSession.Close)
+	}
+	if s.bkClient != nil {
+		s.eg.Go(s.bkClient.Close)
+	}
+	if err := s.eg.Wait(); err != nil {
 		rerr = errors.Join(rerr, err)
 	}
 
 	// mark all groups completed
 	// close the recorder so the UI exits
-	// TODO: should this be done after session confirmed close instead?
 	if s.Recorder != nil {
 		s.Recorder.Complete()
 		s.Recorder.Close()
-	}
-
-	if s.internalCancel != nil {
-		s.internalCancel()
-		s.bkSession.Close()
-		s.bkClient.Close()
-		if err := s.eg.Wait(); err != nil {
-			rerr = errors.Join(rerr, err)
-		}
 	}
 	return
 }
@@ -319,16 +328,32 @@ func (s *Session) ID() string {
 }
 
 func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
+	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
 		ClientID:        s.ID(),
 		RouterID:        s.RouterID,
 		ClientHostname:  s.hostname,
 		ParentClientIDs: s.ParentClientIDs,
 	}.ToGRPCMD())
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		<-s.apiConnCtx.Done()
+		conn.Close()
+	}()
+	return conn, nil
 }
 
 func (s *Session) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	return net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
+	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
+	if err != nil {
+		return nil, err
+	}
+	go func() {
+		<-s.apiConnCtx.Done()
+		conn.Close()
+	}()
+	return conn, nil
 }
 
 func (s *Session) Do(
