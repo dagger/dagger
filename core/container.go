@@ -1063,28 +1063,23 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		return nil, err
 	}
 
-	runOpts = append(runOpts,
-		// HACK(vito): passing parent sessions through ftp_proxy
-		// so it doesn't bust caches, reconsider if/when we
-		// actually add proxy support
-		llb.WithProxy(llb.ProxyEnv{
-			// no one uses FTP anymore right?
-			FTPProxy: strings.Join(clientMetadata.ClientIDs(), " "),
-		}))
+	// NB(vito): this is to support running the dagger CLI _in_ dagger
+	// TODO(vito): add a test that actually depends on this; Project tests
+	// don't need it, because they only depend on the root level domain, which
+	// they currently inherit via the networks.ConfigProvider attachable.
+	uncachedExecMetadataOpt, err := ContainerExecUncachedMetadata{
+		ParentClientIDs: clientMetadata.ClientIDs(),
+		ServerID:        clientMetadata.ServerID,
+		ProgSockPath:    progSock,
+	}.ToLLBRunOpt()
+	if err != nil {
+		return nil, err
+	}
+	runOpts = append(runOpts, uncachedExecMetadataOpt)
 
 	// this allows executed containers to communicate back to this API
 	if opts.ExperimentalPrivilegedNesting {
-		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-		if err != nil {
-			return nil, err
-		}
-		serverID := clientMetadata.ServerID
-		runOpts = append(runOpts,
-			llb.AddEnv("_DAGGER_ENABLE_NESTING", ""),
-			// TODO: these both result in the cache being invalidated all the time
-			llb.AddEnv("_DAGGER_SERVER_ID", serverID),
-			llb.AddEnv("_DAGGER_PROG_SOCK_PATH", progSock),
-		)
+		runOpts = append(runOpts, llb.AddEnv("_DAGGER_ENABLE_NESTING", ""))
 	}
 
 	// because the shim might run as non-root, we need to make a world-writable
@@ -1973,3 +1968,46 @@ const (
 	OCIMediaTypes    ImageMediaTypes = "OCIMediaTypes"
 	DockerMediaTypes ImageMediaTypes = "DockerMediaTypes"
 )
+
+// Metadata passed to an exec that doesn't count towards the cache key.
+// This should be used with great caution; only for metadata that is
+// safe to be de-duplicated across execs.
+//
+// Currently, this uses the FTPProxy LLB option to pass without becoming
+// part of the cache key. This is a hack that, while ugly to look at,
+// is simple and robust. Alternatives would be to use secrets or sockets,
+// but they are more complicated, or to create a custom buildkit
+// worker/executor, which is MUCH more complicated.
+//
+// If a need to add ftp proxy support arises, then we can just also embed
+// the "real" ftp proxy setting in here too and have the shim handle
+// leaving only that set in the actual env var.
+type ContainerExecUncachedMetadata struct {
+	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
+	ServerID        string   `json:"serverID,omitempty"`
+	ProgSockPath    string   `json:"progSockPath,omitempty"`
+}
+
+func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {
+	b, err := json.Marshal(md)
+	if err != nil {
+		return nil, err
+	}
+
+	return llb.WithProxy(llb.ProxyEnv{
+		// no one uses FTP anymore right?
+		FTPProxy: string(b),
+	}), nil
+}
+
+func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
+	_, val, ok := strings.Cut(envKV, "ftp_proxy=")
+	if !ok {
+		return false, nil
+	}
+	err := json.Unmarshal([]byte(val), md)
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}

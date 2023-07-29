@@ -348,19 +348,26 @@ func setupBundle() int {
 		spec.Process.Args = append([]string{shimPath}, spec.Process.Args...)
 	}
 
-	var searchDomains []string
+	execMetadata := new(core.ContainerExecUncachedMetadata)
 	for i, env := range spec.Process.Env {
-		switch {
-		case strings.HasPrefix(env, "ftp_proxy="):
-			val := strings.TrimPrefix(env, "ftp_proxy=")
-			sessions := strings.Fields(val)
-			for _, id := range sessions {
-				searchDomains = append(searchDomains, network.ClientDomain(id))
-			}
-
-			// remap to _DAGGER_PARENT_CLIENT_IDS
-			spec.Process.Env[i] = "_DAGGER_PARENT_CLIENT_IDS=" + val
+		found, err := execMetadata.FromEnv(env)
+		if err != nil {
+			fmt.Printf("Error parsing env: %v\n", err)
+			return 1
 		}
+		if found {
+			// remove the ftp_proxy env var from being set in the container
+			spec.Process.Env = append(spec.Process.Env[:i], spec.Process.Env[i+1:]...)
+			break
+		}
+	}
+
+	var searchDomains []string
+	for _, parentClientID := range execMetadata.ParentClientIDs {
+		searchDomains = append(searchDomains, network.ClientDomain(parentClientID))
+	}
+	if len(searchDomains) > 0 {
+		spec.Process.Env = append(spec.Process.Env, "_DAGGER_PARENT_CLIENT_IDS="+strings.Join(execMetadata.ParentClientIDs, " "))
 	}
 
 	var hostsFilePath string
@@ -398,6 +405,12 @@ func setupBundle() int {
 		case strings.HasPrefix(env, "_DAGGER_ENABLE_NESTING="):
 			// keep the env var; we use it at runtime
 			keepEnv = append(keepEnv, env)
+			// provide the server id to connect back to
+			if execMetadata.ServerID == "" {
+				fmt.Fprintln(os.Stderr, "missing server id")
+				return 1
+			}
+			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -406,21 +419,18 @@ func setupBundle() int {
 				Options:     []string{"rbind"},
 				Source:      "/run/buildkit/buildkitd.sock",
 			})
-			// also need the progsock path
-			// TODO: re-looping feels dumb
-			var progSockSrcPath string
-			for _, env := range spec.Process.Env {
-				if strings.HasPrefix(env, "_DAGGER_PROG_SOCK_PATH=") {
-					progSockSrcPath = strings.TrimPrefix(env, "_DAGGER_PROG_SOCK_PATH=")
-				}
+			// also need the progsock path for forwarding progress
+			if execMetadata.ProgSockPath == "" {
+				fmt.Fprintln(os.Stderr, "missing progsock path")
+				return 1
 			}
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: "/.progrock.sock",
 				Type:        "bind",
 				Options:     []string{"rbind"},
-				Source:      progSockSrcPath,
+				Source:      execMetadata.ProgSockPath,
 			})
-		case strings.HasPrefix(env, "_DAGGER_PROG_SOCK_PATH="):
+		case strings.HasPrefix(env, "_DAGGER_SERVER_ID="):
 		case strings.HasPrefix(env, aliasPrefix):
 			// NB: don't keep this env var, it's only for the bundling step
 			// keepEnv = append(keepEnv, env)
@@ -589,20 +599,23 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 	}
 	sessionPort := l.Addr().(*net.TCPAddr).Port
 
-	serverID, _ := internalEnv("_DAGGER_SERVER_ID")
+	serverID, ok := internalEnv("_DAGGER_SERVER_ID")
+	if !ok {
+		return fmt.Errorf("missing _DAGGER_SERVER_ID")
+	}
+	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
 	sessParams := client.SessionParams{
-		ServerID:    serverID,
-		SecretToken: sessionToken.String(),
-		RunnerHost:  "unix:///.runner.sock",
+		ServerID:        serverID,
+		SecretToken:     sessionToken.String(),
+		RunnerHost:      "unix:///.runner.sock",
+		ParentClientIDs: strings.Fields(parentClientIDsVal),
 	}
 
-	if _, err := os.Stat("/.progrock.sock"); err == nil {
-		progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
-		if err != nil {
-			return fmt.Errorf("error connecting to progrock: %w", err)
-		}
-		sessParams.ProgrockWriter = progW
+	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")
+	if err != nil {
+		return fmt.Errorf("error connecting to progrock: %w", err)
 	}
+	sessParams.ProgrockWriter = progW
 
 	sess, ctx, err := client.Connect(ctx, sessParams)
 	if err != nil {

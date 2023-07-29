@@ -51,16 +51,16 @@ func TestProjectCmd(t *testing.T) {
 			testName += "/" + tc.projectPath
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
-				c, ctx, output := connectWithBufferedLogs(t)
+				c, ctx := connect(t)
 				defer c.Close()
-				_, err := CLITestContainer(ctx, t, c).
+				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(tc.projectPath, testGitProject).
 					CallProject().
-					Sync(ctx)
+					Stderr(ctx)
 				require.NoError(t, err)
-				require.Contains(t, output.String(), fmt.Sprintf(`"root": %q`, tc.expectedRoot))
-				require.Contains(t, output.String(), fmt.Sprintf(`"name": %q`, tc.expectedName))
-				require.Contains(t, output.String(), fmt.Sprintf(`"sdk": %q`, tc.expectedSDK))
+				require.Contains(t, stderr, fmt.Sprintf(`"root": %q`, tc.expectedRoot))
+				require.Contains(t, stderr, fmt.Sprintf(`"name": %q`, tc.expectedName))
+				require.Contains(t, stderr, fmt.Sprintf(`"sdk": %q`, tc.expectedSDK))
 			})
 		}
 	}
@@ -128,7 +128,7 @@ func TestProjectCmdInit(t *testing.T) {
 		tc := tc
 		t.Run(tc.testName, func(t *testing.T) {
 			t.Parallel()
-			c, ctx, output := connectWithBufferedLogs(t)
+			c, ctx := connect(t)
 			defer c.Close()
 			ctr := CLITestContainer(ctx, t, c).
 				WithProjectArg(tc.projectPath).
@@ -149,10 +149,10 @@ func TestProjectCmdInit(t *testing.T) {
 			_, err := ctr.File(expectedConfigPath).Contents(ctx)
 			require.NoError(t, err)
 
-			_, err = ctr.CallProject().Sync(ctx)
+			stderr, err := ctr.CallProject().Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output.String(), fmt.Sprintf(`"name": %q`, tc.name))
-			require.Contains(t, output.String(), fmt.Sprintf(`"sdk": %q`, tc.sdk))
+			require.Contains(t, stderr, fmt.Sprintf(`"name": %q`, tc.name))
+			require.Contains(t, stderr, fmt.Sprintf(`"sdk": %q`, tc.sdk))
 		})
 	}
 
@@ -183,24 +183,24 @@ func TestProjectCommandHierarchy(t *testing.T) {
 
 		t.Run(projectDir, func(t *testing.T) {
 			t.Parallel()
-			c, ctx, output := connectWithBufferedLogs(t)
+			c, ctx := connect(t)
 			defer c.Close()
 
-			_, err := CLITestContainer(ctx, t, c).
+			stderr, err := CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:foo").
 				CallDo().
-				Sync(ctx)
+				Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output.String(), "hello from foo")
+			require.Contains(t, stderr, "hello from foo")
 
-			_, err = CLITestContainer(ctx, t, c).
+			stderr, err = CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:bar").
 				CallDo().
-				Sync(ctx)
+				Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output.String(), "hello from bar")
+			require.Contains(t, stderr, "hello from bar")
 		})
 	}
 }
@@ -394,18 +394,18 @@ func TestProjectDirImported(t *testing.T) {
 			testName += "/" + projectDir
 			t.Run(testName, func(t *testing.T) {
 				t.Parallel()
-				c, ctx, output := connectWithBufferedLogs(t)
+				c, ctx := connect(t)
 				defer c.Close()
-				_, err := CLITestContainer(ctx, t, c).
+				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(projectDir, testGitProject).
 					WithTarget("test-imported-project-dir").
 					CallDo().
-					Sync(ctx)
+					Stderr(ctx)
 				require.NoError(t, err)
-				require.Contains(t, output.String(), "README.md")
-				require.Contains(t, output.String(), projectDir)
-				require.Contains(t, output.String(), projectDir+"/dagger.json")
-				require.Contains(t, output.String(), projectDir+"/"+tc.expectedMainFile)
+				require.Contains(t, stderr, "README.md")
+				require.Contains(t, stderr, projectDir)
+				require.Contains(t, stderr, projectDir+"/dagger.json")
+				require.Contains(t, stderr, projectDir+"/"+tc.expectedMainFile)
 			})
 		}
 	}

@@ -21,7 +21,6 @@ import (
 	"github.com/containerd/containerd/remotes/docker"
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/cache"
 	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/network"
@@ -760,7 +759,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		MountManager: mounts.NewMountManager("dagger-cache", w.CacheManager(), sessionManager),
 		ServiceURL:   cacheServiceURL,
 		Token:        cacheServiceToken,
-		EngineID:     w.Labels()[engine.EngineNameLabel],
+		EngineID:     engineName,
 	})
 	if err != nil {
 		return nil, nil, err
