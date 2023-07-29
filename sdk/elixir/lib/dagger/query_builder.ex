@@ -44,9 +44,35 @@ defmodule Dagger.QueryBuilder.Selection do
   defp build_args(nil), do: []
 
   defp build_args(args) do
-    fun = fn {name, value} -> [name, ~c":", Jason.encode!(value)] end
-    [~c"(", Enum.map_join(args, ",", fun), ~c")"]
+    fun = fn {name, value} -> [name, ~c":", encode_value(value)] end
+    [~c"(", Enum.map(args, fun) |> Enum.intersperse(","), ~c")"]
   end
+
+  defp encode_value(value) when is_atom(value), do: encode_value(to_string(value))
+
+  defp encode_value(value) when is_binary(value) do
+    string =
+      value
+      |> String.replace("\n", "\\n")
+      |> String.replace("\t", "\\t")
+      |> String.replace("\"", "\\\"")
+
+    [~c"\"", string, ~c"\""]
+  end
+
+  defp encode_value(value) when is_list(value) do
+    [~c"[", Enum.map(value, &encode_value/1) |> Enum.intersperse(","), ~c"]"]
+  end
+
+  defp encode_value(value) when is_map(value) do
+    fun = fn {name, value} ->
+      [name, ~c":", encode_value(value)]
+    end
+
+    [~c"{", Enum.map(value, fun) |> Enum.intersperse(","), ~c"}"]
+  end
+
+  defp encode_value(value), do: [to_string(value)]
 
   def path(selection) do
     path(selection, [])
