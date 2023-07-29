@@ -117,7 +117,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def render_function(
+  defp render_function(
         %{
           "name" => name,
           "args" => args,
@@ -137,7 +137,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     )
   end
 
-  def format_function_body(
+  defp format_function_body(
         field_name,
         {mod_var_name, args},
         %{"kind" => "OBJECT", "name" => name},
@@ -158,7 +158,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def format_function_body(
+  defp format_function_body(
         field_name,
         {mod_var_name, args},
         %{
@@ -185,7 +185,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def format_function_body(field_name, {mod_var_name, args}, _type_ref, _types) do
+  defp format_function_body(field_name, {mod_var_name, args}, _type_ref, _types) do
     args = render_args(args)
 
     quote do
