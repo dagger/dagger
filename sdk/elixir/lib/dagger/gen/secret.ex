@@ -7,7 +7,7 @@ defmodule Dagger.Secret do
 
   (
     @doc "The identifier for this secret."
-    @spec id(t()) :: Dagger.Secret.t()
+    @spec id(t()) :: {:ok, Dagger.SecretID.t()} | {:error, term()}
     def id(%__MODULE__{} = secret) do
       selection = select(secret.selection, "id")
       execute(selection, secret.client)
@@ -16,7 +16,7 @@ defmodule Dagger.Secret do
 
   (
     @doc "The value of this secret."
-    @spec plaintext(t()) :: String.t()
+    @spec plaintext(t()) :: {:ok, String.t()} | {:error, term()}
     def plaintext(%__MODULE__{} = secret) do
       selection = select(secret.selection, "plaintext")
       execute(selection, secret.client)

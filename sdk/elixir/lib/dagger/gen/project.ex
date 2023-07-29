@@ -7,7 +7,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Commands provided by this project"
-    @spec commands(t()) :: [Dagger.ProjectCommand.t()] | nil
+    @spec commands(t()) :: {:ok, [Dagger.ProjectCommand.t()] | nil} | {:error, term()}
     def commands(%__MODULE__{} = project) do
       selection = select(project.selection, "commands")
       execute(selection, project.client)
@@ -16,7 +16,7 @@ defmodule Dagger.Project do
 
   (
     @doc "A unique identifier for this project."
-    @spec id(t()) :: Dagger.Project.t()
+    @spec id(t()) :: {:ok, Dagger.ProjectID.t()} | {:error, term()}
     def id(%__MODULE__{} = project) do
       selection = select(project.selection, "id")
       execute(selection, project.client)
@@ -41,7 +41,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Name of the project"
-    @spec name(t()) :: String.t()
+    @spec name(t()) :: {:ok, String.t()} | {:error, term()}
     def name(%__MODULE__{} = project) do
       selection = select(project.selection, "name")
       execute(selection, project.client)

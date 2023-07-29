@@ -17,7 +17,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Lists of branches on the repository."
-    @spec branches(t()) :: [String.t()]
+    @spec branches(t()) :: {:ok, [String.t()]} | {:error, term()}
     def branches(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "branches")
       execute(selection, git_repository.client)
@@ -46,7 +46,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Lists of tags on the repository."
-    @spec tags(t()) :: [String.t()]
+    @spec tags(t()) :: {:ok, [String.t()]} | {:error, term()}
     def tags(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "tags")
       execute(selection, git_repository.client)

@@ -32,7 +32,7 @@ defmodule Dagger.Host do
 
   (
     @doc "Accesses an environment variable on the host.\n\n## Required Arguments\n\n* `name` - Name of the environment variable (e.g., \"PATH\")."
-    @spec env_variable(t(), String.t()) :: Dagger.HostVariable.t() | nil
+    @spec env_variable(t(), String.t()) :: {:ok, Dagger.HostVariable.t() | nil} | {:error, term()}
     def env_variable(%__MODULE__{} = host, name) do
       selection = select(host.selection, "envVariable")
       selection = arg(selection, "name", name)

@@ -50,7 +50,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves default arguments for future commands."
-    @spec default_args(t()) :: [String.t()] | nil
+    @spec default_args(t()) :: {:ok, [String.t()] | nil} | {:error, term()}
     def default_args(%__MODULE__{} = container) do
       selection = select(container.selection, "defaultArgs")
       execute(selection, container.client)
@@ -69,7 +69,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
-    @spec endpoint(t(), keyword()) :: String.t()
+    @spec endpoint(t(), keyword()) :: {:ok, String.t()} | {:error, term()}
     def endpoint(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "endpoint")
 
@@ -93,7 +93,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
-    @spec entrypoint(t()) :: [String.t()] | nil
+    @spec entrypoint(t()) :: {:ok, [String.t()] | nil} | {:error, term()}
     def entrypoint(%__MODULE__{} = container) do
       selection = select(container.selection, "entrypoint")
       execute(selection, container.client)
@@ -102,7 +102,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable to retrieve (e.g., \"PATH\")."
-    @spec env_variable(t(), String.t()) :: String.t() | nil
+    @spec env_variable(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
     def env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "envVariable")
       selection = arg(selection, "name", name)
@@ -112,7 +112,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the list of environment variables passed to commands."
-    @spec env_variables(t()) :: [Dagger.EnvVariable.t()]
+    @spec env_variables(t()) :: {:ok, [Dagger.EnvVariable.t()]} | {:error, term()}
     def env_variables(%__MODULE__{} = container) do
       selection = select(container.selection, "envVariables")
       selection = select(selection, "name value")
@@ -175,7 +175,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Exit code of the last executed command. Zero means success.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec exit_code(t()) :: integer()
+    @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
     def exit_code(%__MODULE__{} = container) do
       selection = select(container.selection, "exitCode")
       execute(selection, container.client)
@@ -184,7 +184,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
-    @spec export(t(), String.t(), keyword()) :: boolean()
+    @spec export(t(), String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
     def export(%__MODULE__{} = container, path, optional_args \\ []) do
       selection = select(container.selection, "export")
       selection = arg(selection, "path", path)
@@ -209,7 +209,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the list of exposed ports.\n\nThis includes ports already exposed by the image, even if not\nexplicitly added with dagger.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
-    @spec exposed_ports(t()) :: [Dagger.Port.t()]
+    @spec exposed_ports(t()) :: {:ok, [Dagger.Port.t()]} | {:error, term()}
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
       selection = select(selection, "description port protocol")
@@ -252,7 +252,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
-    @spec hostname(t()) :: String.t()
+    @spec hostname(t()) :: {:ok, String.t()} | {:error, term()}
     def hostname(%__MODULE__{} = container) do
       selection = select(container.selection, "hostname")
       execute(selection, container.client)
@@ -261,7 +261,7 @@ defmodule Dagger.Container do
 
   (
     @doc "A unique identifier for this container."
-    @spec id(t()) :: Dagger.Container.t()
+    @spec id(t()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
     def id(%__MODULE__{} = container) do
       selection = select(container.selection, "id")
       execute(selection, container.client)
@@ -270,7 +270,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
-    @spec image_ref(t()) :: String.t() | nil
+    @spec image_ref(t()) :: {:ok, String.t() | nil} | {:error, term()}
     def image_ref(%__MODULE__{} = container) do
       selection = select(container.selection, "imageRef")
       execute(selection, container.client)
@@ -301,7 +301,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified label.\n\n## Required Arguments\n\n* `name` -"
-    @spec label(t(), String.t()) :: String.t() | nil
+    @spec label(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
     def label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "label")
       selection = arg(selection, "name", name)
@@ -311,7 +311,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the list of labels passed to container."
-    @spec labels(t()) :: [Dagger.Label.t()]
+    @spec labels(t()) :: {:ok, [Dagger.Label.t()]} | {:error, term()}
     def labels(%__MODULE__{} = container) do
       selection = select(container.selection, "labels")
       selection = select(selection, "name value")
@@ -324,7 +324,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the list of paths where a directory is mounted."
-    @spec mounts(t()) :: [String.t()]
+    @spec mounts(t()) :: {:ok, [String.t()]} | {:error, term()}
     def mounts(%__MODULE__{} = container) do
       selection = select(container.selection, "mounts")
       execute(selection, container.client)
@@ -358,7 +358,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The platform this container executes and publishes as."
-    @spec platform(t()) :: Dagger.Platform.t()
+    @spec platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def platform(%__MODULE__{} = container) do
       selection = select(container.selection, "platform")
       execute(selection, container.client)
@@ -367,7 +367,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the published image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
-    @spec publish(t(), String.t(), keyword()) :: String.t()
+    @spec publish(t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
     def publish(%__MODULE__{} = container, address, optional_args \\ []) do
       selection = select(container.selection, "publish")
       selection = arg(selection, "address", address)
@@ -401,7 +401,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec stderr(t()) :: String.t()
+    @spec stderr(t()) :: {:ok, String.t()} | {:error, term()}
     def stderr(%__MODULE__{} = container) do
       selection = select(container.selection, "stderr")
       execute(selection, container.client)
@@ -410,7 +410,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The output stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec stdout(t()) :: String.t()
+    @spec stdout(t()) :: {:ok, String.t()} | {:error, term()}
     def stdout(%__MODULE__{} = container) do
       selection = select(container.selection, "stdout")
       execute(selection, container.client)
@@ -419,7 +419,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Forces evaluation of the pipeline in the engine.\n\nIt doesn't run the default command if no exec has been set."
-    @spec sync(t()) :: Dagger.Container.t()
+    @spec sync(t()) :: {:ok, Dagger.ContainerID.t()} | {:error, term()}
     def sync(%__MODULE__{} = container) do
       selection = select(container.selection, "sync")
       execute(selection, container.client)
@@ -428,7 +428,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the user to be set for all commands."
-    @spec user(t()) :: String.t() | nil
+    @spec user(t()) :: {:ok, String.t() | nil} | {:error, term()}
     def user(%__MODULE__{} = container) do
       selection = select(container.selection, "user")
       execute(selection, container.client)
@@ -985,7 +985,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the working directory for all commands."
-    @spec workdir(t()) :: String.t() | nil
+    @spec workdir(t()) :: {:ok, String.t() | nil} | {:error, term()}
     def workdir(%__MODULE__{} = container) do
       selection = select(container.selection, "workdir")
       execute(selection, container.client)

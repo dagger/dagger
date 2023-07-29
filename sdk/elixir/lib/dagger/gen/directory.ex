@@ -77,7 +77,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Returns a list of files and directories at the given path.\n\n\n\n## Optional Arguments\n\n* `path` - Location of the directory to look at (e.g., \"/src\")."
-    @spec entries(t(), keyword()) :: [String.t()]
+    @spec entries(t(), keyword()) :: {:ok, [String.t()]} | {:error, term()}
     def entries(%__MODULE__{} = directory, optional_args \\ []) do
       selection = select(directory.selection, "entries")
 
@@ -94,7 +94,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "Writes the contents of the directory to a path on the host.\n\n## Required Arguments\n\n* `path` - Location of the copied directory (e.g., \"logs/\")."
-    @spec export(t(), String.t()) :: boolean()
+    @spec export(t(), String.t()) :: {:ok, boolean()} | {:error, term()}
     def export(%__MODULE__{} = directory, path) do
       selection = select(directory.selection, "export")
       selection = arg(selection, "path", path)
@@ -114,7 +114,7 @@ defmodule Dagger.Directory do
 
   (
     @doc "The content-addressed identifier of the directory."
-    @spec id(t()) :: Dagger.Directory.t()
+    @spec id(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
     def id(%__MODULE__{} = directory) do
       selection = select(directory.selection, "id")
       execute(selection, directory.client)

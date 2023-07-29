@@ -41,7 +41,7 @@ defmodule Dagger.Query do
 
   (
     @doc "The default platform of the builder."
-    @spec default_platform(t()) :: Dagger.Platform.t()
+    @spec default_platform(t()) :: {:ok, Dagger.Platform.t()} | {:error, term()}
     def default_platform(%__MODULE__{} = query) do
       selection = select(query.selection, "defaultPlatform")
       execute(selection, query.client)
@@ -67,7 +67,7 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec file(t(), Dagger.File.t()) :: Dagger.File.t() | nil
+    @spec file(t(), Dagger.File.t()) :: {:ok, Dagger.File.t() | nil} | {:error, term()}
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")
 

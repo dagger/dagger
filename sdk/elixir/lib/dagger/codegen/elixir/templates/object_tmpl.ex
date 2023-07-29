@@ -63,7 +63,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          {:%{}, [],
           fields
           |> Enum.map(fn %{"type" => type} = field ->
-            {to_struct_field(field), render_return_type(type)}
+            type =
+              case type do
+                %{"kind" => "NON_NULL", "ofType" => type} -> render_type(type)
+                type -> render_type(type) |> render_nullable_type()
+              end
+
+            {to_struct_field(field), type}
           end)}
        ]}
 
@@ -330,8 +336,23 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp format_spec(field) do
-    {[quote(do: t()) | render_arg_types(field["args"])], render_return_type(field["type"])}
+  defp format_spec(%{"type" => type} = field) do
+    return_type =
+      case type do
+        %{"kind" => "NON_NULL", "ofType" => %{"kind" => "OBJECT"} = type} ->
+          render_type(type)
+
+        %{"kind" => "NON_NULL", "ofType" => type} ->
+          render_type(type)
+          |> render_result_type()
+
+        type ->
+          render_type(type)
+          |> render_nullable_type()
+          |> render_result_type()
+      end
+
+    {[quote(do: t()) | render_arg_types(field["args"])], return_type}
   end
 
   defp render_arg_types(args) do
@@ -341,7 +362,18 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
     required_arg_types =
       for %{"type" => type} <- required_args do
-        render_return_type(type)
+        type =
+          case type do
+            %{"kind" => "NON_NULL", "ofType" => %{"kind" => "SCALAR"}} = type ->
+              update_in(type, ["ofType", "name"], fn name ->
+                String.trim_trailing(name, "ID")
+              end)
+
+            type ->
+              type
+          end
+
+        render_type(type)
       end
 
     if optional_args != [] do
@@ -351,12 +383,20 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp render_return_type(%{"kind" => "NON_NULL", "ofType" => type}) do
-    render_type(type)
+  defp render_result_type(type) do
+    quote do
+      {:ok, unquote(type)} | {:error, term()}
+    end
   end
 
-  defp render_return_type(type) do
-    {:|, [], [render_type(type), nil]}
+  defp render_nullable_type(type) do
+    quote do
+      unquote(type) | nil
+    end
+  end
+
+  defp render_type(%{"kind" => "NON_NULL", "ofType" => type}) do
+    render_type(type)
   end
 
   defp render_type(%{"kind" => "OBJECT", "name" => type}) do
@@ -365,10 +405,6 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     quote do
       unquote(mod_name).t()
     end
-  end
-
-  defp render_type(%{"kind" => "NON_NULL", "ofType" => type}) do
-    render_type(type)
   end
 
   defp render_type(%{"kind" => "LIST", "ofType" => type}) do
@@ -411,9 +447,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp render_type(%{"kind" => "SCALAR", "name" => type}) do
-    # Convert *ID type into object type.
-    mod_name = Module.concat([Dagger, type |> String.trim_trailing("ID") |> Mod.format_name()])
+  defp render_type(%{"kind" => "SCALAR", "name" => name}) do
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
 
     quote do
       unquote(mod_name).t()
