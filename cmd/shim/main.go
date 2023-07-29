@@ -604,7 +604,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		sessParams.ProgrockWriter = progW
 	}
 
-	sess, err := client.Connect(ctx, sessParams)
+	sess, ctx, err := client.Connect(ctx, sessParams)
 	if err != nil {
 		return fmt.Errorf("error connecting to engine: %w", err)
 	}

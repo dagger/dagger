@@ -92,7 +92,7 @@ func withEngineAndTUI(
 		}
 	}
 
-	sess, err := client.Connect(ctx, params)
+	sess, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		return err
 	}
@@ -137,7 +137,7 @@ func interactiveTUI(
 		tuiDone <- err
 	}()
 
-	sess, err := client.Connect(ctx, params)
+	sess, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		tuiErr := <-tuiDone
 		return errors.Join(tuiErr, err)
@@ -187,7 +187,7 @@ func inlineTUI(
 		})
 	}
 
-	sess, err := client.Connect(ctx, params)
+	sess, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		return err
 	}

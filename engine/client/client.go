@@ -85,7 +85,7 @@ type Session struct {
 	nestedSessionPort int
 }
 
-func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error) {
+func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.Context, rerr error) {
 	s := &Session{SessionParams: params}
 
 	s.internalCtx, s.internalCancel = context.WithCancel(context.Background())
@@ -96,16 +96,45 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		}
 	}()
 	s.apiConnCtx, s.apiConnCancel = context.WithCancel(context.Background())
+
+	// progress
+	progMultiW := progrock.MultiWriter{}
+	if s.ProgrockWriter != nil {
+		progMultiW = append(progMultiW, s.ProgrockWriter)
+	}
+	if s.JournalFile != "" {
+		fw, err := newProgrockFileWriter(s.JournalFile)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		progMultiW = append(progMultiW, fw)
+	}
+
+	tel := telemetry.New()
+	var cloudURL string
+	if tel.Enabled() {
+		cloudURL = tel.URL()
+		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
+	}
+	if s.CloudURLCallback != nil && cloudURL != "" {
+		s.CloudURLCallback(cloudURL)
+	}
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
 		if err != nil {
-			return nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
+			return nil, nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
 		}
 		s.nestedSessionPort = nestedSessionPort
 		s.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
 		s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.NestedDialContext, DisableKeepAlives: true}}
-		return s, nil
+
+		recorder := progrock.NewRecorder(progMultiW)
+		s.Recorder = recorder
+		ctx = progrock.RecorderToContext(ctx, s.Recorder)
+		return s, ctx, nil
 	}
 
 	if s.ServerID == "" {
@@ -129,7 +158,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 	// is a different feature which is configured in the engine daemon.
 	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
 	if err != nil {
-		return nil, fmt.Errorf("cache config from env: %w", err)
+		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 	if cacheConfigType != "" {
 		s.upstreamCacheOptions = []*controlapi.CacheOptionsEntry{{
@@ -140,12 +169,12 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	remote, err := url.Parse(s.RunnerHost)
 	if err != nil {
-		return nil, fmt.Errorf("parse runner host: %w", err)
+		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
 	bkClient, err := newBuildkitClient(ctx, remote, s.UserAgent)
 	if err != nil {
-		return nil, fmt.Errorf("new client: %w", err)
+		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
 	s.bkClient = bkClient
 	defer func() {
@@ -156,14 +185,14 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, fmt.Errorf("get hostname: %w", err)
+		return nil, nil, fmt.Errorf("get hostname: %w", err)
 	}
 	s.hostname = hostname
 
 	sharedKey := s.ServerID // share a session across servers
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
-		return nil, fmt.Errorf("new s: %w", err)
+		return nil, nil, fmt.Errorf("new s: %w", err)
 	}
 	s.bkSession = bkSession
 	defer func() {
@@ -174,7 +203,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	workdir, err := os.Getwd()
 	if err != nil {
-		return nil, fmt.Errorf("get workdir: %w", err)
+		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 	s.internalCtx = engine.ContextWithClientMetadata(s.internalCtx, &engine.ClientMetadata{
 		ClientID:        s.ID(),
@@ -183,6 +212,18 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		Labels:          pipeline.LoadVCSLabels(workdir),
 		ParentClientIDs: s.ParentClientIDs,
 	})
+
+	// progress
+	if s.EngineNameCallback != nil {
+		info, err := s.bkClient.Info(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get info: %w", err)
+		}
+		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
+		s.EngineNameCallback(engineName)
+	}
+
+	bkSession.Allow(progRockAttachable{progMultiW})
 
 	// filesync
 	if !s.DisableHostRW {
@@ -197,43 +238,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
-
-	// progress
-	progMultiW := progrock.MultiWriter{}
-	if s.ProgrockWriter != nil {
-		progMultiW = append(progMultiW, s.ProgrockWriter)
-	}
-	if s.JournalFile != "" {
-		fw, err := newProgrockFileWriter(s.JournalFile)
-		if err != nil {
-			return nil, err
-		}
-
-		progMultiW = append(progMultiW, fw)
-	}
-
-	tel := telemetry.New()
-	var cloudURL string
-	if tel.Enabled() {
-		cloudURL = tel.URL()
-		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
-	}
-	if s.CloudURLCallback != nil && cloudURL != "" {
-		s.CloudURLCallback(cloudURL)
-	}
-
-	if s.EngineNameCallback != nil {
-		info, err := s.bkClient.Info(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("get info: %w", err)
-		}
-		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
-		s.EngineNameCallback(engineName)
-	}
-
-	bkSession.Allow(progRockAttachable{progMultiW})
-	recorder := progrock.NewRecorder(progMultiW)
-	s.Recorder = recorder
 
 	// start the server if it's not already running, client+server ID are
 	// passed through grpc context
@@ -275,10 +279,10 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, rerr error)
 		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 	}, backoff.WithContext(bo, ctx)) // TODO: this stops if context is canceled right?
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
-	return s, nil
+	return s, ctx, nil
 }
 
 func (s *Session) Close() (rerr error) {

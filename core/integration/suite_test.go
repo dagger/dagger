@@ -330,7 +330,7 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "do"}
+	args := []string{testCLIBinPath, "--debug", "do"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
