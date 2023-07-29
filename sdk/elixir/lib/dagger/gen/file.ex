@@ -43,7 +43,7 @@ defmodule Dagger.File do
 
   (
     @doc "Retrieves a secret referencing the contents of this file."
-    @deprecated "insecure, leaves secret in cache. Superseded by `setSecret`"
+    @deprecated "insecure, leaves secret in cache. Superseded by `set_secret`"
     @spec secret(t()) :: Dagger.Secret.t()
     def secret(%__MODULE__{} = file) do
       selection = select(file.selection, "secret")

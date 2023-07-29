@@ -118,14 +118,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_function(
-        %{
-          "name" => name,
-          "args" => args,
-          "type" => %{"ofType" => type_ref}
-        } = field,
-        mod_var_name,
-        types
-      ) do
+         %{
+           "name" => name,
+           "args" => args,
+           "type" => %{"ofType" => type_ref}
+         } = field,
+         mod_var_name,
+         types
+       ) do
     mod_var_name = to_macro_var(mod_var_name)
     fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
     fun_body = format_function_body(name, {mod_var_name, args}, type_ref, types)
@@ -138,11 +138,11 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp format_function_body(
-        field_name,
-        {mod_var_name, args},
-        %{"kind" => "OBJECT", "name" => name},
-        _types
-      ) do
+         field_name,
+         {mod_var_name, args},
+         %{"kind" => "OBJECT", "name" => name},
+         _types
+       ) do
     mod_name = Module.concat([Dagger, Mod.format_name(name)])
     args = render_args(args)
 
@@ -159,14 +159,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp format_function_body(
-        field_name,
-        {mod_var_name, args},
-        %{
-          "kind" => "LIST",
-          "ofType" => %{"ofType" => %{"kind" => "OBJECT", "name" => name}}
-        },
-        types
-      ) do
+         field_name,
+         {mod_var_name, args},
+         %{
+           "kind" => "LIST",
+           "ofType" => %{"ofType" => %{"kind" => "OBJECT", "name" => name}}
+         },
+         types
+       ) do
     args = render_args(args)
 
     selection_fields =
@@ -198,7 +198,12 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp deprecated_reason(%{"isDeprecated" => true, "deprecationReason" => reason}) do
-    String.trim_trailing(reason, ".")
+    reason = String.trim_trailing(reason, ".")
+
+    for [text, api] <- Regex.scan(~r/`(?<name>[a-zA-Z0-9]+)`/, reason),
+        reduce: reason do
+      reason -> String.replace(reason, text, "`#{Macro.underscore(api)}`")
+    end
   end
 
   defp deprecated_reason(_), do: nil
