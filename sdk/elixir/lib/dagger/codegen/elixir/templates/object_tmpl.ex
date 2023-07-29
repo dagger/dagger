@@ -93,7 +93,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          },
          types
        ) do
-    defs = render_functions(Function.format_var_name(name), fields, types)
+    defs = Enum.map(fields, &render_function(&1, Function.format_var_name(name), types))
 
     desc =
       if desc == "" do
@@ -117,19 +117,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  def render_functions(mod_var_name, fields, types) do
-    for field <- fields do
-      render_function(mod_var_name, field, types)
-    end
-  end
-
   def render_function(
-        mod_var_name,
         %{
           "name" => name,
           "args" => args,
           "type" => %{"ofType" => type_ref}
         } = field,
+        mod_var_name,
         types
       ) do
     mod_var_name = to_macro_var(mod_var_name)
