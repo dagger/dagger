@@ -1,6 +1,7 @@
 package core
 
 import (
+	_ "embed"
 	"errors"
 	"io"
 	"net"
