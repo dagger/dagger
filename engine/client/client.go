@@ -182,6 +182,14 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 			s.bkClient.Close()
 		}
 	}()
+	if s.EngineNameCallback != nil {
+		info, err := s.bkClient.Info(ctx)
+		if err != nil {
+			return nil, nil, fmt.Errorf("get info: %w", err)
+		}
+		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
+		s.EngineNameCallback(engineName)
+	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
@@ -214,15 +222,6 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 	})
 
 	// progress
-	if s.EngineNameCallback != nil {
-		info, err := s.bkClient.Info(ctx)
-		if err != nil {
-			return nil, nil, fmt.Errorf("get info: %w", err)
-		}
-		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
-		s.EngineNameCallback(engineName)
-	}
-
 	bkSession.Allow(progRockAttachable{progMultiW})
 
 	// filesync

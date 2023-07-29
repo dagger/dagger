@@ -322,7 +322,6 @@ func main() { //nolint:gocyclo
 			os.RemoveAll(lockPath)
 		}()
 
-		// TODO: update controller term
 		bklog.G(ctx).Debug("creating engine controller")
 		controller, cacheManager, err := newController(ctx, c, &cfg)
 		if err != nil {
@@ -622,14 +621,7 @@ func getListener(addr string, uid, gid int, tlsConfig *tls.Config) (net.Listener
 	case "fd":
 		return listenFD(listenAddr, tlsConfig)
 	case "tcp":
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		// TODO: maybe but think more
-		l, err := net.Listen("tcp4", listenAddr)
+		l, err := net.Listen("tcp", listenAddr)
 		if err != nil {
 			return nil, err
 		}
@@ -799,16 +791,16 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		},
 	}
 
+	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
 	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
-		WorkerController: wc,
-		SessionManager:   sessionManager,
-		CacheManager:     cacheManager,
-		ContentStore:     w.ContentStore(),
-		LeaseManager:     w.LeaseManager(),
-		Frontends:        frontends,
-		Entitlements:     cfg.Entitlements,
-		// TODO: move off this being a worker label
-		EngineName:             w.Labels()[engine.EngineNameLabel],
+		WorkerController:       wc,
+		SessionManager:         sessionManager,
+		CacheManager:           cacheManager,
+		ContentStore:           w.ContentStore(),
+		LeaseManager:           w.LeaseManager(),
+		Frontends:              frontends,
+		Entitlements:           cfg.Entitlements,
+		EngineName:             engineName,
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
 	})

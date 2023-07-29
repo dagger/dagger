@@ -31,13 +31,11 @@ import (
 	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
-	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/resolver"
@@ -281,10 +279,6 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	}
 
 	cfg := common.config.Workers.OCI
-
-	// Add a name for this engine to the labels that clients can use to log who they are connected to
-	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
-	cfg.Labels[engine.EngineNameLabel] = engineName
 
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
 		return nil, nil
