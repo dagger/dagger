@@ -76,7 +76,11 @@ defmodule Dagger.Query do
         selection = arg(selection, "id", id)
       )
 
-      execute(selection, query.client)
+      case execute(selection, query.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.File)
+        error -> error
+      end
     end
   )
 

@@ -73,6 +73,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
         @type t() :: unquote(data_type_t)
 
+        @derive Nestru.Decoder
         defstruct unquote(struct_fields)
       end
     end
@@ -121,14 +122,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          %{
            "name" => name,
            "args" => args,
-           "type" => %{"ofType" => type_ref}
+           "type" => type
          } = field,
          mod_var_name,
          types
        ) do
     mod_var_name = to_macro_var(mod_var_name)
     fun_args = [module_fun_arg(mod_var_name) | fun_args(args)]
-    fun_body = format_function_body(name, {mod_var_name, args}, type_ref, types)
+    fun_body = format_function_body(name, {mod_var_name, args}, type, types)
 
     Function.define(name, fun_args, nil, fun_body,
       doc: format_doc(field),
@@ -140,7 +141,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   defp format_function_body(
          field_name,
          {mod_var_name, args},
-         %{"kind" => "OBJECT", "name" => name},
+         %{"kind" => "NON_NULL", "ofType" => %{"kind" => "OBJECT", "name" => name}},
          _types
        ) do
     mod_name = Module.concat([Dagger, Mod.format_name(name)])
@@ -162,8 +163,11 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          field_name,
          {mod_var_name, args},
          %{
-           "kind" => "LIST",
-           "ofType" => %{"ofType" => %{"kind" => "OBJECT", "name" => name}}
+           "kind" => "NON_NULL",
+           "ofType" => %{
+             "kind" => "LIST",
+             "ofType" => %{"ofType" => %{"kind" => "OBJECT", "name" => name}}
+           }
          },
          types
        ) do
@@ -175,25 +179,53 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       |> then(fn %{"fields" => fields} -> get_in(fields, [Access.all(), "name"]) end)
       |> Enum.join(" ")
 
+    return_module = Module.concat([Dagger, Mod.format_name(name)])
+
     quote do
       selection = select(unquote(mod_var_name).selection, unquote(field_name))
       selection = select(selection, unquote(selection_fields))
 
       unquote_splicing(args)
 
-      execute(selection, unquote(mod_var_name).client)
+      with {:ok, data} <- execute(selection, unquote(mod_var_name).client) do
+        Nestru.decode_from_list_of_maps(data, unquote(return_module))
+      end
     end
   end
 
-  defp format_function_body(field_name, {mod_var_name, args}, _type_ref, _types) do
+  defp format_function_body(field_name, {mod_var_name, args}, type_ref, _types) do
     args = render_args(args)
+
+    execute_block =
+      case type_ref do
+        %{"kind" => "OBJECT", "name" => name} ->
+          return_module = Module.concat([Dagger, Mod.format_name(name)])
+
+          quote do
+            case execute(selection, unquote(mod_var_name).client) do
+              {:ok, nil} ->
+                {:ok, nil}
+
+              {:ok, data} ->
+                Nestru.decode_from_map(data, unquote(return_module))
+
+              error ->
+                error
+            end
+          end
+
+        _ ->
+          quote do
+            execute(selection, unquote(mod_var_name).client)
+          end
+      end
 
     quote do
       selection = select(unquote(mod_var_name).selection, unquote(field_name))
 
       unquote_splicing(args)
 
-      execute(selection, unquote(mod_var_name).client)
+      unquote(execute_block)
     end
   end
 

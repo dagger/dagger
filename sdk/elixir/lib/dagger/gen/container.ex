@@ -116,7 +116,10 @@ defmodule Dagger.Container do
     def env_variables(%__MODULE__{} = container) do
       selection = select(container.selection, "envVariables")
       selection = select(selection, "name value")
-      execute(selection, container.client)
+
+      with {:ok, data} <- execute(selection, container.client) do
+        Nestru.decode_from_list_of_maps(data, Dagger.EnvVariable)
+      end
     end
   )
 
@@ -210,7 +213,10 @@ defmodule Dagger.Container do
     def exposed_ports(%__MODULE__{} = container) do
       selection = select(container.selection, "exposedPorts")
       selection = select(selection, "description port protocol")
-      execute(selection, container.client)
+
+      with {:ok, data} <- execute(selection, container.client) do
+        Nestru.decode_from_list_of_maps(data, Dagger.Port)
+      end
     end
   )
 
@@ -309,7 +315,10 @@ defmodule Dagger.Container do
     def labels(%__MODULE__{} = container) do
       selection = select(container.selection, "labels")
       selection = select(selection, "name value")
-      execute(selection, container.client)
+
+      with {:ok, data} <- execute(selection, container.client) do
+        Nestru.decode_from_list_of_maps(data, Dagger.Label)
+      end
     end
   )
 

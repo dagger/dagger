@@ -36,7 +36,12 @@ defmodule Dagger.Host do
     def env_variable(%__MODULE__{} = host, name) do
       selection = select(host.selection, "envVariable")
       selection = arg(selection, "name", name)
-      execute(selection, host.client)
+
+      case execute(selection, host.client) do
+        {:ok, nil} -> {:ok, nil}
+        {:ok, data} -> Nestru.decode_from_map(data, Dagger.HostVariable)
+        error -> error
+      end
     end
   )
 

@@ -2,5 +2,6 @@
 defmodule Dagger.HostVariable do
   @moduledoc "An environment variable on the host environment."
   @type t() :: %__MODULE__{secret: Dagger.Secret.t(), value: String.t()}
+  @derive Nestru.Decoder
   defstruct [:secret, :value]
 end

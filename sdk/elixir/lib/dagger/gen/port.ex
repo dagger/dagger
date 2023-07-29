@@ -6,5 +6,6 @@ defmodule Dagger.Port do
           port: integer(),
           protocol: Dagger.NetworkProtocol.t()
         }
+  @derive Nestru.Decoder
   defstruct [:description, :port, :protocol]
 end
