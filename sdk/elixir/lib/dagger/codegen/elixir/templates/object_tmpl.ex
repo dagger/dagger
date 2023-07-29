@@ -100,7 +100,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          },
          types
        ) do
-    defs = Enum.map(fields, &render_function(&1, Function.format_var_name(name), types))
+    funs = Enum.map(fields, &render_function(&1, Function.format_var_name(name), types))
 
     desc =
       if desc == "" do
@@ -119,7 +119,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
         defstruct [:selection, :client]
 
-        unquote_splicing(defs)
+        unquote_splicing(funs)
       end
     end
   end
@@ -142,6 +142,36 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       deprecated: deprecated_reason(field),
       spec: format_spec(field)
     )
+  end
+
+  defp format_function_body(
+         field_name,
+         {mod_var_name, [%{"name" => "id"} = arg]},
+         type_ref,
+         _types
+       )
+       when field_name in ["file", "secret"] do
+    name =
+      case type_ref do
+        %{"kind" => "OBJECT", "name" => name} ->
+          name
+
+        %{"kind" => "NON_NULL", "ofType" => %{"kind" => "OBJECT", "name" => name}} ->
+          name
+      end
+
+    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+    arg_name = arg |> fun_arg_name() |> Function.format_var_name()
+
+    quote do
+      selection = select(unquote(mod_var_name).selection, unquote(field_name))
+      selection = arg(selection, "id", unquote(to_macro_var(arg_name)))
+
+      %unquote(mod_name){
+        selection: selection,
+        client: unquote(mod_var_name).client
+      }
+    end
   end
 
   defp format_function_body(
@@ -336,7 +366,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp format_spec(%{"type" => type} = field) do
+  defp format_spec(%{"name" => name, "type" => type} = field) do
     return_type =
       case type do
         %{"kind" => "NON_NULL", "ofType" => %{"kind" => "OBJECT"} = type} ->
@@ -352,10 +382,11 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
           |> render_result_type()
       end
 
-    {[quote(do: t()) | render_arg_types(field["args"])], return_type}
+    {[quote(do: t()) | render_arg_types(field["args"], name not in ["file", "secret"])],
+     return_type}
   end
 
-  defp render_arg_types(args) do
+  defp render_arg_types(args, strip_id?) do
     {required_args, optional_args} =
       args
       |> Enum.split_with(&required_arg?/1)
@@ -365,9 +396,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
         type =
           case type do
             %{"kind" => "NON_NULL", "ofType" => %{"kind" => "SCALAR"}} = type ->
-              update_in(type, ["ofType", "name"], fn name ->
-                String.trim_trailing(name, "ID")
-              end)
+              if strip_id? do
+                update_in(type, ["ofType", "name"], fn name ->
+                  String.trim_trailing(name, "ID")
+                end)
+              else
+                type
+              end
 
             type ->
               type

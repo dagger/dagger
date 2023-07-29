@@ -67,20 +67,11 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a file by ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec file(t(), Dagger.File.t()) :: {:ok, Dagger.File.t() | nil} | {:error, term()}
+    @spec file(t(), Dagger.FileID.t()) :: {:ok, Dagger.File.t() | nil} | {:error, term()}
     def file(%__MODULE__{} = query, file) do
       selection = select(query.selection, "file")
-
-      (
-        {:ok, id} = Dagger.File.id(file)
-        selection = arg(selection, "id", id)
-      )
-
-      case execute(selection, query.client) do
-        {:ok, nil} -> {:ok, nil}
-        {:ok, data} -> Nestru.decode_from_map(data, Dagger.File)
-        error -> error
-      end
+      selection = arg(selection, "id", file)
+      %Dagger.File{selection: selection, client: query.client}
     end
   )
 
@@ -197,15 +188,10 @@ defmodule Dagger.Query do
 
   (
     @doc "Loads a secret from its ID.\n\n## Required Arguments\n\n* `id` -"
-    @spec secret(t(), Dagger.Secret.t()) :: Dagger.Secret.t()
+    @spec secret(t(), Dagger.SecretID.t()) :: Dagger.Secret.t()
     def secret(%__MODULE__{} = query, secret) do
       selection = select(query.selection, "secret")
-
-      (
-        {:ok, id} = Dagger.Secret.id(secret)
-        selection = arg(selection, "id", id)
-      )
-
+      selection = arg(selection, "id", secret)
       %Dagger.Secret{selection: selection, client: query.client}
     end
   )

@@ -9,6 +9,7 @@ defmodule Dagger.ClientTest do
     GitRef,
     GitRepository,
     Host,
+    Secret,
     Query
   }
 
@@ -59,8 +60,6 @@ defmodule Dagger.ClientTest do
     assert ["dagger" | _] = out |> String.trim() |> String.split(" ")
   end
 
-  # FIXME: this is a bug.
-  @tag :test_failure
   test "container build args", %{client: client} do
     dockerfile = """
     FROM alpine:3.16.2
@@ -188,5 +187,31 @@ defmodule Dagger.ClientTest do
              |> Query.container()
              |> Container.from("alpine:3.16.2")
              |> Container.env_variable("NOTHING")
+  end
+
+  test "load file", %{client: client} do
+    {:ok, id} =
+      client
+      |> Query.directory()
+      |> Directory.with_new_file("hello.txt", "Hello, world!")
+      |> Directory.file("hello.txt")
+      |> File.id()
+
+    assert {:ok, "Hello, world!"} =
+             client
+             |> Query.file(id)
+             |> File.contents()
+  end
+
+  test "load secret", %{client: client} do
+    {:ok, id} =
+      client
+      |> Query.set_secret("foo", "bar")
+      |> Secret.id()
+
+    assert {:ok, "bar"} =
+             client
+             |> Query.secret(id)
+             |> Secret.plaintext()
   end
 end
