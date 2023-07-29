@@ -4,22 +4,6 @@ defmodule Dagger.ImageLayerCompression do
   @type t() :: :Gzip | :Zstd | :EStarGZ | :Uncompressed
   (
     @doc ""
-    @spec gzip() :: :Gzip
-    def gzip() do
-      :Gzip
-    end
-  )
-
-  (
-    @doc ""
-    @spec zstd() :: :Zstd
-    def zstd() do
-      :Zstd
-    end
-  )
-
-  (
-    @doc ""
     @spec e_star_gz() :: :EStarGZ
     def e_star_gz() do
       :EStarGZ
@@ -28,9 +12,25 @@ defmodule Dagger.ImageLayerCompression do
 
   (
     @doc ""
+    @spec gzip() :: :Gzip
+    def gzip() do
+      :Gzip
+    end
+  )
+
+  (
+    @doc ""
     @spec uncompressed() :: :Uncompressed
     def uncompressed() do
       :Uncompressed
+    end
+  )
+
+  (
+    @doc ""
+    @spec zstd() :: :Zstd
+    def zstd() do
+      :Zstd
     end
   )
 end
