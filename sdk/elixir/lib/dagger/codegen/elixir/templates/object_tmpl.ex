@@ -393,22 +393,20 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
     required_arg_types =
       for %{"type" => type} <- required_args do
-        type =
-          case type do
-            %{"kind" => "NON_NULL", "ofType" => %{"kind" => "SCALAR"}} = type ->
-              if strip_id? do
-                update_in(type, ["ofType", "name"], fn name ->
-                  String.trim_trailing(name, "ID")
-                end)
-              else
-                type
-              end
-
-            type ->
+        case type do
+          %{"kind" => "NON_NULL", "ofType" => %{"kind" => "SCALAR"}} = type ->
+            if strip_id? do
+              update_in(type, ["ofType", "name"], fn name ->
+                String.trim_trailing(name, "ID")
+              end)
+            else
               type
-          end
+            end
 
-        render_type(type)
+          type ->
+            type
+        end
+        |> render_type()
       end
 
     if optional_args != [] do
