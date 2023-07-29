@@ -8,11 +8,14 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
         "enumValues" => enum_values,
         "private" => %{mod_name: mod_name}
       }) do
+    enum_values =
+      enum_values
+      |> Enum.sort_by(fn %{"name" => name} -> name end)
+
     type = render_possible_enum_values(enum_values)
 
     funs =
       enum_values
-      |> Enum.sort_by(fn %{"name" => name} -> name end)
       |> Enum.map(&render_function/1)
 
     quote do
