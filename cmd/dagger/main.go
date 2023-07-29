@@ -80,6 +80,9 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := os.Chdir(workdir); err != nil {
+			return err
+		}
 		return nil
 	},
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
@@ -97,7 +100,6 @@ func main() {
 	closer.Close()
 }
 
-// TODO: needed still?
 func NormalizeWorkdir(workdir string) (string, error) {
 	if workdir == "" {
 		workdir = os.Getenv("DAGGER_WORKDIR")

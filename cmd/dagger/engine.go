@@ -55,13 +55,6 @@ func withEngineAndTUI(
 	params client.SessionParams,
 	fn runSessionCallback,
 ) error {
-	// TODO: update for workdir being gone
-	/*
-		if engineConf.Workdir == "" {
-			engineConf.Workdir = workdir
-		}
-	*/
-
 	if params.RunnerHost == "" {
 		params.RunnerHost = engine.RunnerHost()
 	}

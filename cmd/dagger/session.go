@@ -49,18 +49,6 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	labels := &sessionLabels
 
-	workdir, err = NormalizeWorkdir(workdir)
-	if err != nil {
-		return err
-	}
-
-	// TODO: if this works, make same change apply to every command
-	if workdir != "" {
-		if err := os.Chdir(workdir); err != nil {
-			return err
-		}
-	}
-
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 
