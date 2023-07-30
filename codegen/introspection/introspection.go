@@ -147,28 +147,6 @@ func (r TypeRef) IsList() bool {
 	return false
 }
 
-func (r TypeRef) IsVoid() bool {
-	ref := r
-	if r.Kind == TypeKindNonNull {
-		ref = *ref.OfType
-	}
-	if ref.Kind != TypeKindScalar {
-		return false
-	}
-	return ref.Name == "Void"
-}
-
-func (r TypeRef) IsClient() bool {
-	ref := r
-	if r.Kind == TypeKindNonNull {
-		ref = *ref.OfType
-	}
-	if ref.Kind != TypeKindObject {
-		return false
-	}
-	return ref.Name == "Query"
-}
-
 type InputValues []InputValue
 
 func (i InputValues) HasOptionals() bool {

@@ -10,7 +10,6 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/graphql/language/ast"
 )
 
 type querySchema struct {
@@ -32,17 +31,6 @@ func (s *querySchema) Resolvers() Resolvers {
 		"Query": ObjectResolver{
 			"pipeline":                  ToResolver(s.pipeline),
 			"checkVersionCompatibility": ToResolver(s.checkVersionCompatibility),
-		},
-		"Void": ScalarResolver{
-			Serialize: func(_ any) any {
-				return core.Void("")
-			},
-			ParseValue: func(_ any) any {
-				return core.Void("")
-			},
-			ParseLiteral: func(_ ast.Value) any {
-				return core.Void("")
-			},
 		},
 	}
 }
