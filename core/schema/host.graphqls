@@ -46,6 +46,18 @@ type Host {
   ): Socket!
 
   """
+  Creates a proxy forwarding traffic via the host to a specified address.
+  """
+  reverseProxy(
+    "Backend server host:port for traffic forwarding."
+    upstreamAddress: String!,
+    "Listening port for incoming connections."
+    servicePort: Int!,
+    "Traffic protocol. Defaults to TCP."
+    protocol: NetworkProtocol = TCP,
+  ): Service!
+
+  """
   Sets a secret given a user-defined name and the file path on the host, and returns the secret.
   The file is limited to a size of 512000 bytes.
   """

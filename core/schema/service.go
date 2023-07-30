@@ -1,6 +1,9 @@
 package schema
 
 import (
+	"errors"
+	"runtime/debug"
+
 	"github.com/dagger/dagger/core"
 )
 
@@ -59,7 +62,7 @@ func (s *serviceSchema) id(ctx *core.Context, parent *core.Service, args any) (c
 }
 
 func (s *serviceSchema) hostname(ctx *core.Context, parent *core.Service, args any) (string, error) {
-	return parent.Hostname()
+	return parent.Hostname(ctx)
 }
 
 type serviceEndpointArgs struct {
@@ -68,50 +71,53 @@ type serviceEndpointArgs struct {
 }
 
 func (s *serviceSchema) endpoint(ctx *core.Context, parent *core.Service, args serviceEndpointArgs) (string, error) {
-	return parent.Endpoint(args.Port, args.Scheme)
+	return parent.Endpoint(ctx, args.Port, args.Scheme)
 }
 
-func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any) (core.Void, error) {
-	bnd := core.ServiceBinding{
-		Service: parent,
-	}
+func (s *serviceSchema) start(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
+	defer func() {
+		if err := recover(); err != nil {
+			debug.PrintStack()
+			panic(err)
+		}
+	}()
 
-	var err error
-
-	// TODO(vito): AllServices.Start takes a Binding, which is normally helpful
-	// as it has a precomputed Hostname, but in this case it's a tad clunky
-	bnd.Hostname, err = parent.Hostname()
+	running, err := core.AllServices.Start(ctx, s.bk, parent)
 	if err != nil {
 		return "", err
 	}
 
-	_, err = core.AllServices.Start(ctx, s.bk, bnd)
-	if err != nil {
-		return "", err
-	}
-
-	return "", nil
+	return running.Service.ID()
 }
 
-func (s *serviceSchema) stop(ctx *core.Context, parent *core.Service, args any) (core.Void, error) {
+func (s *serviceSchema) stop(ctx *core.Context, parent *core.Service, args any) (core.ServiceID, error) {
 	err := core.AllServices.Stop(ctx, s.bk, parent)
 	if err != nil {
 		return "", err
 	}
 
-	return "", nil
+	return parent.ID()
 }
 
 type serviceProxyArgs struct {
-	Address string
-	// TODO: family, target
+	HostListenAddress string
+	ServicePort       int
+	Protocol          core.NetworkProtocol
 }
 
-func (s *serviceSchema) proxy(ctx *core.Context, parent *core.Service, args serviceProxyArgs) (core.Void, error) {
-	// err := core.AllServices.Proxy(ctx, s.bk, parent, args.Address)
-	// if err != nil {
-	// 	return "", err
-	// }
+func (s *serviceSchema) proxy(ctx *core.Context, parent *core.Service, args serviceProxyArgs) (*core.Service, error) {
+	if args.ServicePort == 0 {
+		if parent.Container == nil {
+			return nil, errors.New("TODO: invalid")
+		}
 
-	return "", nil
+		ports := parent.Container.Ports
+		if len(ports) == 0 {
+			return nil, errors.New("TODO: no ports")
+		}
+
+		args.ServicePort = ports[0].Port
+	}
+
+	return core.NewProxyService(parent, args.HostListenAddress, args.ServicePort, args.Protocol), nil
 }

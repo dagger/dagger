@@ -52,7 +52,7 @@ func (s *httpSchema) http(ctx *core.Context, parent *core.Query, args httpArgs) 
 		if err != nil {
 			return nil, err
 		}
-		host, err := svc.Hostname()
+		host, err := svc.Hostname(ctx)
 		if err != nil {
 			return nil, err
 		}

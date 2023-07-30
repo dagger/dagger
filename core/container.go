@@ -1016,10 +1016,7 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, progSock string, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
 	stripped := *container
 	stripped.ServiceExec = nil
-	svc := &Service{
-		Container: &stripped,
-		Exec:      opts,
-	}
+	svc := NewContainerService(&stripped, opts)
 	container = container.Clone()
 	container.ServiceExec = svc
 
@@ -1649,10 +1646,10 @@ func (container *Container) WithoutExposedPort(port int, protocol NetworkProtoco
 	return container, nil
 }
 
-func (container *Container) WithServiceBinding(svc *Service, alias string) (*Container, error) {
+func (container *Container) WithServiceBinding(ctx context.Context, svc *Service, alias string) (*Container, error) {
 	container = container.Clone()
 
-	host, err := svc.Hostname()
+	host, err := svc.Hostname(ctx)
 	if err != nil {
 		return nil, err
 	}

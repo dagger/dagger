@@ -16,6 +16,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -1167,14 +1171,14 @@ func TestServiceStartStop(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, out)
 
-	err = httpSrv.Start(ctx)
+	_, err = httpSrv.Start(ctx)
 	require.NoError(t, err)
 
 	out, err = fetch()
 	require.NoError(t, err)
 	require.Equal(t, out, content)
 
-	err = httpSrv.Stop(ctx)
+	_, err = httpSrv.Stop(ctx)
 	require.NoError(t, err)
 
 	out, err = fetch()
@@ -1205,7 +1209,7 @@ func TestServiceNoCrossTalk(t *testing.T) {
 			Stdout(ctx)
 	}
 
-	err := httpSrv1.Start(ctx1)
+	_, err := httpSrv1.Start(ctx1)
 	require.NoError(t, err)
 
 	out, err := fetch(ctx1, c1)
@@ -1215,6 +1219,76 @@ func TestServiceNoCrossTalk(t *testing.T) {
 	out, err = fetch(ctx2, c2)
 	require.Error(t, err)
 	require.Empty(t, out)
+}
+
+func TestServiceHostToContainer(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	content := identity.NewID()
+
+	srv := c.Container().
+		From("python").
+		WithMountedDirectory(
+			"/srv/www",
+			c.Directory().WithNewFile("index.html", content),
+		).
+		WithWorkdir("/srv/www").
+		WithExposedPort(8000).
+		WithExec([]string{"python", "-m", "http.server"}).
+		Service()
+
+	localBindAddr := "127.0.0.1:0"
+	proxy, err := srv.Proxy(localBindAddr).Start(ctx)
+	require.NoError(t, err)
+
+	defer func() {
+		_, err := proxy.Stop(ctx)
+		require.NoError(t, err)
+	}()
+
+	srvURL, err := proxy.Endpoint(ctx)
+	require.NoError(t, err)
+
+	log.Println("!!! SRV URL", srvURL)
+
+	res, err := http.Get("http://" + srvURL)
+	require.NoError(t, err)
+
+	body, err := io.ReadAll(res.Body)
+	require.NoError(t, err)
+
+	require.Equal(t, content, string(body))
+}
+
+func TestServiceContainerToHost(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	defer l.Close()
+
+	go http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "hello")
+	}))
+
+	localDialAddr := l.Addr().String()
+
+	host := c.Host().ReverseProxy(localDialAddr, 80)
+
+	out, err := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", host).
+		WithExec([]string{"wget", "-O-", "http://www"}).
+		Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, out, "hello\n")
 }
 
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Service, string) {

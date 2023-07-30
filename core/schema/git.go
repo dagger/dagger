@@ -131,7 +131,7 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
-		host, err := parent.Repository.ServiceHost.Hostname()
+		host, err := parent.Repository.ServiceHost.Hostname(ctx)
 		if err != nil {
 			return nil, err
 		}
