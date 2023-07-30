@@ -3,7 +3,6 @@ defmodule Dagger.Codegen.Compiler do
 
   # Compile GraphQL introspection into Elixir code.
 
-  alias Dagger.Codegen.Compiler.Mutator
   alias Dagger.Codegen.Elixir.Templates.Enum, as: EnumTmpl
   alias Dagger.Codegen.Elixir.Templates.Object
   alias Dagger.Codegen.Elixir.Templates.Scalar
@@ -21,7 +20,6 @@ defmodule Dagger.Codegen.Compiler do
     |> Enum.filter(fn type ->
       only_supported_kinds(type) and not_graphql_introspection_types(type)
     end)
-    |> Enum.map(&Mutator.mutate/1)
     |> Enum.map(&render(&1, types))
   end
 
@@ -64,6 +62,8 @@ defmodule Dagger.Codegen.Compiler do
         "ENUM" ->
           EnumTmpl.render(full_type)
       end
+
+    name = if(name == "Query", do: "Client", else: name)
 
     {"#{Macro.underscore(name)}.ex", q}
   end

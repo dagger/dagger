@@ -2,6 +2,7 @@ defmodule Dagger.ClientTest do
   use ExUnit.Case, async: true
 
   alias Dagger.{
+    Client,
     Container,
     Directory,
     EnvVariable,
@@ -9,8 +10,7 @@ defmodule Dagger.ClientTest do
     GitRef,
     GitRepository,
     Host,
-    Secret,
-    Query
+    Secret
   }
 
   setup do
@@ -23,7 +23,7 @@ defmodule Dagger.ClientTest do
   test "container", %{client: client} do
     assert {:ok, version} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.with_exec(["cat", "/etc/alpine-release"])
              |> Container.stdout()
@@ -34,7 +34,7 @@ defmodule Dagger.ClientTest do
   test "git_repository", %{client: client} do
     assert {:ok, readme} =
              client
-             |> Query.git("https://github.com/dagger/dagger")
+             |> Client.git("https://github.com/dagger/dagger")
              |> GitRepository.tag("v0.3.0")
              |> GitRef.tree()
              |> Directory.file("README.md")
@@ -46,13 +46,13 @@ defmodule Dagger.ClientTest do
   test "container build", %{client: client} do
     repo =
       client
-      |> Query.git("https://github.com/dagger/dagger")
+      |> Client.git("https://github.com/dagger/dagger")
       |> GitRepository.tag("v0.3.0")
       |> GitRef.tree()
 
     assert {:ok, out} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.build(repo)
              |> Container.with_exec(["version"])
              |> Container.stdout()
@@ -70,10 +70,10 @@ defmodule Dagger.ClientTest do
 
     assert {:ok, out} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.build(
                client
-               |> Query.directory()
+               |> Client.directory()
                |> Directory.with_new_file("Dockerfile", dockerfile),
                # TODO: support InputField.
                build_args: [%{"name" => "SPAM", "value" => "egg"}]
@@ -87,7 +87,7 @@ defmodule Dagger.ClientTest do
     for val <- ["spam", ""] do
       assert {:ok, out} =
                client
-               |> Query.container()
+               |> Client.container()
                |> Container.from("alpine:3.16.2")
                |> Container.with_env_variable("FOO", val)
                |> Container.with_exec(["sh", "-c", "echo -n $FOO"])
@@ -100,13 +100,13 @@ defmodule Dagger.ClientTest do
   test "container with mounted directory", %{client: client} do
     dir =
       client
-      |> Query.directory()
+      |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.with_new_file("goodbye.txt", "Goodbye, world!")
 
     assert {:ok, out} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.with_mounted_directory("/mnt", dir)
              |> Container.with_exec(["ls", "/mnt"])
@@ -124,9 +124,9 @@ defmodule Dagger.ClientTest do
 
     container =
       client
-      |> Query.container()
+      |> Client.container()
       |> Container.from("alpine:3.16.2")
-      |> Container.with_mounted_cache("/cache", Query.cache_volume(client, cache_key))
+      |> Container.with_mounted_cache("/cache", Client.cache_volume(client, cache_key))
 
     out =
       for i <- 1..5 do
@@ -152,7 +152,7 @@ defmodule Dagger.ClientTest do
   test "directory", %{client: client} do
     {:ok, entries} =
       client
-      |> Query.directory()
+      |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.with_new_file("goodbye.txt", "Goodbye, world!")
       |> Directory.entries()
@@ -163,7 +163,7 @@ defmodule Dagger.ClientTest do
   test "host directory", %{client: client} do
     assert {:ok, readme} =
              client
-             |> Query.host()
+             |> Client.host()
              |> Host.directory(".")
              |> Directory.file("README.md")
              |> File.contents()
@@ -174,7 +174,7 @@ defmodule Dagger.ClientTest do
   test "return list of objects", %{client: client} do
     assert {:ok, envs} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.env_variables()
 
@@ -184,7 +184,7 @@ defmodule Dagger.ClientTest do
   test "nullable", %{client: client} do
     assert {:ok, nil} =
              client
-             |> Query.container()
+             |> Client.container()
              |> Container.from("alpine:3.16.2")
              |> Container.env_variable("NOTHING")
   end
@@ -192,26 +192,26 @@ defmodule Dagger.ClientTest do
   test "load file", %{client: client} do
     {:ok, id} =
       client
-      |> Query.directory()
+      |> Client.directory()
       |> Directory.with_new_file("hello.txt", "Hello, world!")
       |> Directory.file("hello.txt")
       |> File.id()
 
     assert {:ok, "Hello, world!"} =
              client
-             |> Query.file(id)
+             |> Client.file(id)
              |> File.contents()
   end
 
   test "load secret", %{client: client} do
     {:ok, id} =
       client
-      |> Query.set_secret("foo", "bar")
+      |> Client.set_secret("foo", "bar")
       |> Secret.id()
 
     assert {:ok, "bar"} =
              client
-             |> Query.secret(id)
+             |> Client.secret(id)
              |> Secret.plaintext()
   end
 end

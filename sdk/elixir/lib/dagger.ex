@@ -17,7 +17,7 @@ defmodule Dagger do
   def connect(opts \\ []) do
     with {:ok, client} <- Dagger.Internal.Client.connect(opts) do
       {:ok,
-       %Dagger.Query{
+       %Dagger.Client{
          client: client,
          selection: Dagger.QueryBuilder.Selection.query()
        }}
@@ -37,7 +37,7 @@ defmodule Dagger do
   @doc """
   Disconnecting Dagger.
   """
-  def close(%Dagger.Query{client: client}) do
+  def close(%Dagger.Client{client: client}) do
     Dagger.Internal.Client.close(client)
   end
 end

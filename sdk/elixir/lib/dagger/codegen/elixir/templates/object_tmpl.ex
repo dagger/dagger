@@ -41,12 +41,13 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          %{
            "name" => name,
            "fields" => fields,
-           "description" => desc,
-           "private" => %{mod_name: mod_name}
+           "description" => desc
          },
          _
        )
        when name not in @id_modules do
+    mod_name = Mod.from_name(name)
+
     desc =
       if desc == "" do
         name
@@ -95,11 +96,11 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          %{
            "name" => name,
            "fields" => fields,
-           "description" => desc,
-           "private" => %{mod_name: mod_name}
+           "description" => desc
          },
          types
        ) do
+    mod_name = Mod.from_name(name)
     funs = Enum.map(fields, &render_function(&1, Function.format_var_name(name), types))
 
     desc =
@@ -160,7 +161,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
           name
       end
 
-    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+    mod_name = Mod.from_name(name)
     arg_name = arg |> fun_arg_name() |> Function.format_var_name()
 
     quote do
@@ -180,7 +181,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
          %{"kind" => "NON_NULL", "ofType" => %{"kind" => "OBJECT", "name" => name}},
          _types
        ) do
-    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+    name = if(name == "Query", do: "Client", else: name)
+    mod_name = Mod.from_name(name)
     args = render_args(args)
 
     quote do
@@ -215,7 +217,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       |> then(fn %{"fields" => fields} -> get_in(fields, [Access.all(), "name"]) end)
       |> Enum.join(" ")
 
-    return_module = Module.concat([Dagger, Mod.format_name(name)])
+    return_module = Mod.from_name(name)
 
     quote do
       selection = select(unquote(mod_var_name).selection, unquote(field_name))
@@ -235,7 +237,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     execute_block =
       case type_ref do
         %{"kind" => "OBJECT", "name" => name} ->
-          return_module = Module.concat([Dagger, Mod.format_name(name)])
+          return_module = Mod.from_name(name)
 
           quote do
             case execute(selection, unquote(mod_var_name).client) do
@@ -335,7 +337,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
       case arg do
         %{"type" => %{"ofType" => %{"name" => type_name}}}
         when type_name in @id_modules ->
-          mod = Module.concat([Dagger, Mod.format_name(Mod.id_module_to_module(type_name))])
+          mod = Mod.from_name(Mod.id_module_to_module(type_name))
 
           quote do
             {:ok, id} = unquote(mod).id(unquote(to_macro_var(name)))
@@ -433,7 +435,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_type(%{"kind" => "OBJECT", "name" => type}) do
-    mod_name = Module.concat([Dagger, Mod.format_name(type)])
+    mod_name = Mod.from_name(type)
 
     quote do
       unquote(mod_name).t()
@@ -449,7 +451,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_type(%{"kind" => "ENUM", "name" => type}) do
-    mod_name = Module.concat([Dagger, Mod.format_name(type)])
+    mod_name = Mod.from_name(type)
 
     quote do
       unquote(mod_name).t()
@@ -481,7 +483,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
   end
 
   defp render_type(%{"kind" => "SCALAR", "name" => name}) do
-    mod_name = Module.concat([Dagger, Mod.format_name(name)])
+    mod_name = Mod.from_name(name)
 
     quote do
       unquote(mod_name).t()

@@ -2,12 +2,15 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
+  alias Dagger.Codegen.Elixir.Module, as: Mod
 
   def render(%{
+        "name" => name,
         "description" => desc,
-        "enumValues" => enum_values,
-        "private" => %{mod_name: mod_name}
+        "enumValues" => enum_values
       }) do
+    mod_name = Mod.from_name(name)
+
     enum_values =
       enum_values
       |> Enum.sort_by(fn %{"name" => name} -> name end)
