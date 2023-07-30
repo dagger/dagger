@@ -1888,3 +1888,12 @@ func (md *ContainerExecUncachedMetadata) FromEnv(envKV string) (bool, error) {
 	}
 	return true, nil
 }
+
+func (md ContainerExecUncachedMetadata) ToEnv() ([]string, error) {
+	b, err := json.Marshal(md)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{"ftp_proxy=" + string(b)}, nil
+}

@@ -273,14 +273,17 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 		return nil, fmt.Errorf("command: %w", err)
 	}
 
-	env := svc.env(progSock)
+	env := svc.env()
 
-	// HACK(vito): we use ftp_proxy in core/container.go to avoid busting caches,
-	// so just set the same thing here even though cache busting isn't a concern.
-	//
-	// Ideally we can find a less hacky way to do this. We can't even use a
-	// session.Attachable with nesting a single session spans the entire stack.
-	env = append(env, "ftp_proxy="+strings.Join(clientMetadata.ClientIDs(), " "))
+	metaEnv, err := ContainerExecUncachedMetadata{
+		ParentClientIDs: clientMetadata.ClientIDs(),
+		ServerID:        clientMetadata.ServerID,
+		ProgSockPath:    progSock,
+	}.ToEnv()
+	if err != nil {
+		return nil, fmt.Errorf("uncached metadata: %w", err)
+	}
+	env = append(env, metaEnv...)
 
 	secretEnv, mounts, env, err := svc.secrets(mounts, env)
 	if err != nil {
@@ -564,7 +567,7 @@ func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client) ([]bkgw.Mou
 	return mounts, nil
 }
 
-func (svc *Service) env(progSock string) []string {
+func (svc *Service) env() []string {
 	ctr := svc.Container
 	opts := svc.ContainerExecOpts
 	cfg := ctr.Config
@@ -579,10 +582,6 @@ func (svc *Service) env(progSock string) []string {
 		default:
 			env = append(env, e)
 		}
-	}
-
-	if opts.ExperimentalPrivilegedNesting {
-		env = append(env, "_DAGGER_PROG_SOCK_PATH="+progSock)
 	}
 
 	if opts.ExperimentalPrivilegedNesting {

@@ -802,6 +802,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		TraceCollector:         tc,
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
+		DNSConfig:              getDNSConfig(cfg.DNS),
 	})
 	if err != nil {
 		return nil, nil, err
