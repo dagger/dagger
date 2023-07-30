@@ -3,6 +3,7 @@ defmodule Dagger.Secret do
   @moduledoc "A reference to a secret value, which can be handled more safely than the value itself."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  nil
   defstruct [:selection, :client]
 
   (

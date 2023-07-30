@@ -3,6 +3,7 @@ defmodule Dagger.Socket do
   @moduledoc "Socket"
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  nil
   defstruct [:selection, :client]
 
   (

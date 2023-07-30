@@ -3,6 +3,7 @@ defmodule Dagger.Container do
   @moduledoc "An OCI-compatible container, also known as a docker container."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   (

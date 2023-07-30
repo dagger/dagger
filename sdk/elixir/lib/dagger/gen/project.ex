@@ -3,6 +3,7 @@ defmodule Dagger.Project do
   @moduledoc "A collection of Dagger resources that can be queried and invoked."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  nil
   defstruct [:selection, :client]
 
   (

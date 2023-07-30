@@ -104,6 +104,16 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     mod_name = Mod.from_name(name)
     funs = Enum.map(fields, &render_function(&1, Function.format_var_name(name), types))
 
+    derive_sync =
+      if Enum.any?(fields, fn %{"name" => name} -> name == "sync" end) do
+        quote do
+          @derive Dagger.Sync
+        end
+      else
+        quote do
+        end
+      end
+
     desc =
       if desc == "" do
         name
@@ -119,6 +129,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
 
         @type t() :: %__MODULE__{}
 
+        unquote(derive_sync)
         defstruct [:selection, :client]
 
         unquote_splicing(funs)

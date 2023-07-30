@@ -11,7 +11,9 @@ defmodule Dagger.ClientTest do
     GitRef,
     GitRepository,
     Host,
-    Secret
+    QueryError,
+    Secret,
+    Sync
   }
 
   setup do
@@ -214,5 +216,20 @@ defmodule Dagger.ClientTest do
              client
              |> Client.secret(id)
              |> Secret.plaintext()
+  end
+
+  test "container sync", %{client: client} do
+    container =
+      client
+      |> Client.container()
+      |> Container.from("alpine:3.16.2")
+
+    assert {:error, %QueryError{}} =
+             container |> Container.with_exec(["foobar"]) |> Sync.sync()
+
+    assert {:ok, %Container{} = container} =
+             container |> Container.with_exec(["echo", "spam"]) |> Sync.sync()
+
+    assert {:ok, "spam\n"} = Container.stdout(container)
   end
 end

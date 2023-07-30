@@ -3,6 +3,7 @@ defmodule Dagger.CacheVolume do
   @moduledoc "A directory whose contents persist across runs."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  nil
   defstruct [:selection, :client]
 
   (
