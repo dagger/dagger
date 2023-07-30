@@ -3,6 +3,5 @@ defmodule Dagger.PipelineLabel do
   @moduledoc "Key value object that represents a Pipeline label."
   @type t() :: %__MODULE__{name: Dagger.String.t(), value: Dagger.String.t()}
   @derive Nestru.Decoder
-  @derive Jason.Encoder
   defstruct [:name, :value]
 end

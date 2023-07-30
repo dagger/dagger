@@ -48,7 +48,6 @@ defmodule Dagger.Codegen.Elixir.Templates.Input do
         @type t() :: unquote(data_type_t)
 
         @derive Nestru.Decoder
-        @derive Jason.Encoder
         defstruct unquote(struct_fields)
       end
     end
