@@ -251,7 +251,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
 	// host=>container networking
-	bkSession.Allow(session.NewProxyListenerAttachable())
+	progMessages := progrock.NewPassthroughRecorder(progMultiW)
+	bkSession.Allow(session.NewProxyListenerAttachable(progMessages))
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started

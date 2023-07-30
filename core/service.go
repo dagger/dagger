@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"sort"
 	"strconv"
@@ -353,8 +352,6 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 	}()
 
 	stopSvc := func(ctx context.Context) error {
-		log.Println("!!! STOPPING SVC", fullHost)
-
 		// TODO(vito): graceful shutdown?
 		if err := svcProc.Signal(ctx, syscall.SIGKILL); err != nil {
 			return fmt.Errorf("signal: %w", err)
@@ -418,18 +415,12 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSoc
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
 
-	log.Println("!!! STARTED", upstream.Addr)
-
-	x, err := net.LookupIP(upstream.Addr)
-	log.Println("!!! START LOOKUP", x, err)
-
 	// rec := rec.WithGroup(
 	// 	fmt.Sprintf("proxy %s => %s", svc.ProxyListenAddress, upstream.Addr),
 	// 	progrock.Weak(),
 	// )
 
-	log.Println("!!! STARTING PROXY")
-	res, err := bk.ListenHostToContainer(
+	res, closeListener, err := bk.ListenHostToContainer(
 		svcCtx,
 		svc.ProxyListenAddress,
 		svc.ProxyProtocol.Network(),
@@ -454,11 +445,10 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSoc
 		},
 		Addr: res.GetAddr(),
 		Stop: func(context.Context) error {
-			log.Println("!!! STOPPING PROXY")
 			stop()
 			// HACK(vito): do this async to prevent deadlock (this is called in Detach)
 			go AllServices.Detach(svcCtx, upstream)
-			return nil
+			return closeListener()
 		},
 	}, nil
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"sync"
 	"time"
@@ -496,15 +495,15 @@ func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) con
 func (c *Client) ListenHostToContainer(
 	ctx context.Context,
 	hostListenAddr, proto, upstream string,
-) (*session.ListenResponse, error) {
+) (*session.ListenResponse, func() error, error) {
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
+		return nil, nil, fmt.Errorf("failed to get requester session ID: %s", err)
 	}
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session: %s", err)
+		return nil, nil, fmt.Errorf("failed to get requester session: %s", err)
 	}
 
 	conn := clientCaller.Conn()
@@ -513,7 +512,7 @@ func (c *Client) ListenHostToContainer(
 
 	listener, err := proxyClient.Listen(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %s", err)
+		return nil, nil, fmt.Errorf("failed to listen: %s", err)
 	}
 
 	err = listener.Send(&session.ListenRequest{
@@ -521,32 +520,28 @@ func (c *Client) ListenHostToContainer(
 		Protocol: proto,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %s", err)
+		return nil, nil, fmt.Errorf("failed to send listen request: %s", err)
 	}
-
-	log.Println("!!! RECEIVING")
 
 	listenRes, err := listener.Recv()
 	if err != nil {
-		return nil, fmt.Errorf("failed to listen: %s", err)
+		return nil, nil, fmt.Errorf("failed to receive listen response: %s", err)
 	}
-	log.Println("!!! RECEIVED", listenRes)
 
 	conns := map[string]net.Conn{}
 	connsL := &sync.Mutex{}
 	sendL := &sync.Mutex{}
 
+	wg := new(sync.WaitGroup)
+	wg.Add(1)
 	go func() {
-		log.Println("!!! LUPIN III")
+		defer wg.Done()
 		for {
-			log.Println("!!! LUPIN IIII")
 			res, err := listener.Recv()
 			if err != nil {
-				log.Println("!!! ERR", err)
+				bklog.G(ctx).Warnf("listener recv err: %s", err)
 				return
 			}
-
-			log.Println("!!! LISTENER RECV", res)
 
 			connId := res.GetConnId()
 			if connId == "" {
@@ -558,13 +553,9 @@ func (c *Client) ListenHostToContainer(
 			connsL.Unlock()
 
 			if !found {
-				h, _, _ := net.SplitHostPort(upstream)
-				x, err := net.LookupIP(h)
-				log.Println("!!! BK CLIENT LOOKUP", x, err)
-				log.Println("!!! DIALING", proto, upstream)
 				conn, err := c.dialer.Dial(proto, upstream)
 				if err != nil {
-					log.Println("!!! ERR", err)
+					bklog.G(ctx).Warnf("failed to dial %s %s: %s", proto, upstream, err)
 					return
 				}
 
@@ -572,16 +563,16 @@ func (c *Client) ListenHostToContainer(
 				conns[connId] = conn
 				connsL.Unlock()
 
+				wg.Add(1)
 				go func() {
+					defer wg.Done()
+
 					for {
-						// Read data from the connection
-						data := make([]byte, 1024)
+						data := make([]byte, 1024) // TODO larger?
 						n, err := conn.Read(data)
 						if err != nil {
 							return
 						}
-
-						log.Printf("!!! BKCLIENT CONN READ: %q", data[:n])
 
 						sendL.Lock()
 						err = listener.Send(&session.ListenRequest{
@@ -597,17 +588,23 @@ func (c *Client) ListenHostToContainer(
 			}
 
 			if res.Data != nil {
-				log.Println("!!! BKCLIENT WRITE", len(res.Data))
 				_, err = conn.Write(res.Data)
 				if err != nil {
-					log.Println("!!! ERR", err)
 					return
 				}
 			}
 		}
 	}()
 
-	return listenRes, nil
+	return listenRes, func() error {
+		sendL.Lock()
+		err := listener.CloseSend()
+		sendL.Unlock()
+		if err == nil {
+			wg.Wait()
+		}
+		return err
+	}, nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {

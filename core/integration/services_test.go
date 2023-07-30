@@ -17,7 +17,6 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -1252,15 +1251,16 @@ func TestServiceHostToContainer(t *testing.T) {
 	srvURL, err := proxy.Endpoint(ctx)
 	require.NoError(t, err)
 
-	log.Println("!!! SRV URL", srvURL)
+	for i := 0; i < 10; i++ {
+		res, err := http.Get("http://" + srvURL)
+		require.NoError(t, err)
+		defer res.Body.Close()
 
-	res, err := http.Get("http://" + srvURL)
-	require.NoError(t, err)
+		body, err := io.ReadAll(res.Body)
+		require.NoError(t, err)
 
-	body, err := io.ReadAll(res.Body)
-	require.NoError(t, err)
-
-	require.Equal(t, content, string(body))
+		require.Equal(t, content, string(body))
+	}
 }
 
 func TestServiceContainerToHost(t *testing.T) {

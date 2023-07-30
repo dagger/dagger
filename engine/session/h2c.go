@@ -1,11 +1,13 @@
 package session
 
 import (
+	"errors"
 	"io"
-	"log"
 	"net"
 	"sync"
 
+	"github.com/containerd/containerd/errdefs"
+	"github.com/vito/progrock"
 	"google.golang.org/grpc"
 )
 
@@ -64,11 +66,14 @@ import (
 // }
 
 type ProxyListenerAttachable struct {
+	rec *progrock.Recorder
 	UnimplementedProxyListenerServer
 }
 
-func NewProxyListenerAttachable() ProxyListenerAttachable {
-	return ProxyListenerAttachable{}
+func NewProxyListenerAttachable(rec *progrock.Recorder) ProxyListenerAttachable {
+	return ProxyListenerAttachable{
+		rec: rec,
+	}
 }
 
 func (s ProxyListenerAttachable) Register(srv *grpc.Server) {
@@ -81,13 +86,11 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 		return err
 	}
 
-	log.Println("!!! LISTEN", req.GetProtocol(), req.GetAddr())
 	l, err := net.Listen(req.GetProtocol(), req.GetAddr())
 	if err != nil {
 		return err
 	}
-
-	log.Println("!!! LISTENING", l.Addr().String())
+	defer l.Close()
 
 	err = srv.Send(&ListenResponse{
 		Addr: l.Addr().String(),
@@ -100,15 +103,23 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 	connsL := &sync.Mutex{}
 	sendL := &sync.Mutex{}
 
+	defer func() {
+		connsL.Lock()
+		for _, conn := range conns {
+			conn.Close()
+		}
+		connsL.Unlock()
+	}()
+
 	go func() {
 		for {
 			conn, err := l.Accept()
 			if err != nil {
-				log.Println("!!! ERR", err)
+				if !errors.Is(err, net.ErrClosed) {
+					s.rec.Warn("accept error", progrock.ErrorLabel(err))
+				}
 				return
 			}
-
-			log.Println("!!! ACCEPTED", conn.RemoteAddr().String())
 
 			connId := conn.RemoteAddr().String()
 
@@ -117,13 +128,12 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 			connsL.Unlock()
 
 			sendL.Lock()
-			log.Println("!!! SEND CONNID", connId)
 			err = srv.Send(&ListenResponse{
 				ConnId: connId,
 			})
 			sendL.Unlock()
 			if err != nil {
-				log.Println("!!! ERR", err)
+				s.rec.Warn("failed to send connId", progrock.ErrorLabel(err))
 				return
 			}
 
@@ -133,10 +143,14 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 					data := make([]byte, 1024)
 					n, err := conn.Read(data)
 					if err != nil {
+						if errors.Is(err, io.EOF) {
+							// conn closed
+							return
+						}
+
+						s.rec.Warn("conn read error", progrock.ErrorLabel(err))
 						return
 					}
-
-					log.Printf("!!! CONN READ: %q", string(data[:n]))
 
 					sendL.Lock()
 					err = srv.Send(&ListenResponse{
@@ -144,9 +158,8 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 						Data:   data[:n],
 					})
 					sendL.Unlock()
-					log.Println("!!! DATA SENT")
 					if err != nil {
-						log.Println("!!! SEND ERR", err)
+						s.rec.Warn("listener send response error", progrock.ErrorLabel(err))
 						return
 					}
 				}
@@ -156,19 +169,19 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 
 	for {
 		req, err := srv.Recv()
-		log.Println("!!! RECV", req, err)
-		if err == io.EOF {
-			// Client closed the stream
-			return nil
-		}
 		if err != nil {
-			// An error occurred
+			if errdefs.IsCanceled(err) || errors.Is(err, io.EOF) {
+				// stopped
+				return nil
+			}
+
+			s.rec.Error("listener receive request error", progrock.ErrorLabel(err))
 			return err
 		}
 
 		connId := req.GetConnId()
 		if req.GetConnId() == "" {
-			log.Println("!!! ERR", err)
+			s.rec.Warn("listener request had blank ConnId")
 			continue
 		}
 
@@ -176,24 +189,23 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 		conn, ok := conns[connId]
 		connsL.Unlock()
 		if !ok {
-			log.Println("!!! ERR", err)
+			s.rec.Warn("listener request had unknown ConnId", progrock.Labelf("connId", connId))
 			continue
 		}
 
 		switch {
 		case req.GetClose():
 			if err := conn.Close(); err != nil {
-				log.Println("!!! ERR", err)
+				s.rec.Warn("failed to close conn", progrock.ErrorLabel(err))
 				continue
 			}
 			connsL.Lock()
 			delete(conns, connId)
 			connsL.Unlock()
 		case req.Data != nil:
-			log.Println("!!! CONN WRITE", connId, string(req.GetData()))
 			_, err = conn.Write(req.GetData())
 			if err != nil {
-				log.Println("!!! ERR", err)
+				s.rec.Warn("failed to write conn data", progrock.ErrorLabel(err))
 				continue
 			}
 		}
