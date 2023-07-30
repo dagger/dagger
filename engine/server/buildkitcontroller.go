@@ -46,7 +46,7 @@ type BuildkitController struct {
 
 	// server id -> server
 	servers  map[string]*DaggerServer
-	serverMu sync.Mutex
+	serverMu sync.RWMutex
 
 	throttledGC func()
 	gcmu        sync.Mutex
@@ -316,12 +316,11 @@ func (e *BuildkitController) DiskUsage(ctx context.Context, r *controlapi.DiskUs
 func (e *BuildkitController) Prune(req *controlapi.PruneRequest, stream controlapi.Control_PruneServer) error {
 	eg, ctx := errgroup.WithContext(stream.Context())
 
-	e.serverMu.Lock()
+	e.serverMu.RLock()
 	if len(e.servers) == 0 {
-		e.serverMu.Unlock()
 		imageutil.CancelCacheLeases()
 	}
-	e.serverMu.Unlock()
+	e.serverMu.RUnlock()
 
 	didPrune := false
 	defer func() {
