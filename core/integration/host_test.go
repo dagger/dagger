@@ -2,11 +2,16 @@ package core
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
 
@@ -171,7 +176,6 @@ func TestHostDirectoryRelative(t *testing.T) {
 	})
 }
 
-/* TODO: re-incorporate
 func TestHostSetSecretFile(t *testing.T) {
 	t.Parallel()
 
@@ -212,7 +216,6 @@ func TestHostSetSecretFile(t *testing.T) {
 		require.Equal(t, hashStr, hashStrCmd)
 	})
 }
-*/
 
 func TestHostDirectoryAbsolute(t *testing.T) {
 	t.Parallel()

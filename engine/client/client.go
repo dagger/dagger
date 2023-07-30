@@ -19,6 +19,7 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
 	controlapi "github.com/moby/buildkit/api/services/control"
@@ -214,7 +215,7 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 
 	// filesync
 	if !s.DisableHostRW {
-		bkSession.Allow(filesync.NewFSSyncProvider(AnyDirSource{}))
+		bkSession.Allow(AnyDirSource{})
 		bkSession.Allow(AnyDirTarget{})
 	}
 
@@ -426,15 +427,53 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Local dir imports
 type AnyDirSource struct{}
 
-func (AnyDirSource) LookupDir(name string) (filesync.SyncedDir, bool) {
-	return filesync.SyncedDir{
-		Dir: name,
+func (s AnyDirSource) Register(server *grpc.Server) {
+	filesync.RegisterFileSyncServer(server, s)
+}
+
+func (s AnyDirSource) TarStream(stream filesync.FileSync_TarStreamServer) error {
+	// TODO: double check this is actually never used
+	return fmt.Errorf("tarstream not supported")
+}
+
+func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
+	md, _ := metadata.FromIncomingContext(stream.Context()) // if no metadata continue with empty object
+
+	readSingleFileVals, ok := md[engine.LocalDirImportReadSingleFileMetaKey]
+	if ok {
+		if len(readSingleFileVals) != 1 {
+			return fmt.Errorf("expected exactly one %s, got %d", engine.LocalDirImportReadSingleFileMetaKey, len(readSingleFileVals))
+		}
+		filePath := readSingleFileVals[0]
+		fileContents, err := os.ReadFile(filePath)
+		if err != nil {
+			return fmt.Errorf("read file: %w", err)
+		}
+		if len(fileContents) > buildkit.MaxFileContentsChunkSize {
+			// TODO: can lift this size restriction by chunking
+			return fmt.Errorf("file contents too large: %d > %d", len(fileContents), buildkit.MaxFileContentsChunkSize)
+		}
+		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})
+	}
+
+	dirNameVals := md[engine.LocalDirImportDirNameMetaKey]
+	if len(dirNameVals) != 1 {
+		return fmt.Errorf("expected exactly one %s, got %d", engine.LocalDirImportDirNameMetaKey, len(dirNameVals))
+	}
+	dirName := dirNameVals[0]
+	includePatterns := md[engine.LocalDirImportIncludePatternsMetaKey]
+	excludePatterns := md[engine.LocalDirImportExcludePatternsMetaKey]
+	followPaths := md[engine.LocalDirImportFollowPathsMetaKey]
+	return fsutil.Send(stream.Context(), stream, fsutil.NewFS(dirName, &fsutil.WalkOpt{
+		IncludePatterns: includePatterns,
+		ExcludePatterns: excludePatterns,
+		FollowPaths:     followPaths,
 		Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
 			st.Uid = 0
 			st.Gid = 0
 			return fsutil.MapResultKeep
 		},
-	}, true
+	}), nil)
 }
 
 // Local dir exports

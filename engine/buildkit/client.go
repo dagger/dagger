@@ -451,6 +451,36 @@ func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb
 	return llb.Local(name, opts...), nil
 }
 
+func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
+	}
+
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		md = metadata.MD{}
+	}
+	md[engine.LocalDirImportReadSingleFileMetaKey] = []string{path}
+	ctx = metadata.NewOutgoingContext(ctx, md)
+
+	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get requester session: %s", err)
+	}
+	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create diff copy client: %s", err)
+	}
+	defer diffCopyClient.CloseSend()
+	msg := filesync.BytesMessage{}
+	err = diffCopyClient.RecvMsg(&msg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
+	}
+	return msg.Data, nil
+}
+
 func (c *Client) LocalDirExport(
 	ctx context.Context,
 	def *bksolverpb.Definition,
