@@ -131,6 +131,8 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 	rtr, ok := e.servers[opts.ServerID]
 	if !ok {
 		bklog.G(ctx).Debugf("creating new server %q for client %s", opts.ServerID, opts.ClientID)
+		ctx, cancel := context.WithCancel(ctx)
+		defer cancel()
 		secretStore := core.NewSecretStore()
 		authProvider := auth.NewRegistryAuthProvider()
 

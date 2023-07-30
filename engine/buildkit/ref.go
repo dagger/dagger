@@ -157,6 +157,14 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 }
 
 func wrapError(ctx context.Context, baseErr error, sessionID string) error {
+	var execErr *llberror.ExecError
+	if errors.As(baseErr, &execErr) {
+		defer func() {
+			execErr.Release()
+			execErr.OwnerBorrowed = true
+		}()
+	}
+
 	var fileErr *llberror.FileActionError
 	if errors.As(baseErr, &fileErr) {
 		return solvererror.WithSolveError(baseErr, fileErr.ToSubject(), nil, nil)
@@ -168,8 +176,7 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 		return solvererror.WithSolveError(baseErr, slowCacheErr.ToSubject(), nil, nil)
 	}
 
-	var execErr *llberror.ExecError
-	if !errors.As(baseErr, &execErr) {
+	if execErr == nil {
 		return baseErr
 	}
 

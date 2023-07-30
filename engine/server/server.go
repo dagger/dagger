@@ -85,7 +85,9 @@ func NewDaggerServer(
 	// TODO: ensure clean flush+shutdown+error-handling
 	statusCh := make(chan *bkclient.SolveStatus, 8)
 	go func() {
-		err := bkClient.WriteStatusesTo(ctx, statusCh)
+		// NOTE: context.Background is used because if the provided context is canceled, buildkit can
+		// leave internal progress contexts open and leak goroutines.
+		err := bkClient.WriteStatusesTo(context.Background(), statusCh)
 		if err != nil {
 			bklog.G(ctx).WithError(err).Error("failed to write status updates")
 		}

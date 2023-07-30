@@ -165,6 +165,9 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 		return newRef(rp, c), nil
 	})
 	if err != nil {
+		llbRes.EachRef(func(rp bksolver.ResultProxy) error {
+			return rp.Release(context.Background())
+		})
 		return nil, err
 	}
 
