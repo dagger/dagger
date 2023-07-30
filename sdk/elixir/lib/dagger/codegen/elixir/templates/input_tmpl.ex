@@ -2,6 +2,7 @@ defmodule Dagger.Codegen.Elixir.Templates.Input do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Module, as: Mod
+  alias Dagger.Codegen.Elixir.Type
 
   def render(%{
         "name" => name,
@@ -32,8 +33,8 @@ defmodule Dagger.Codegen.Elixir.Templates.Input do
           |> Enum.map(fn %{"type" => type} = field ->
             type =
               case type do
-                %{"kind" => "NON_NULL", "ofType" => type} -> render_type(type)
-                type -> render_type(type) |> render_nullable_type()
+                %{"kind" => "NON_NULL", "ofType" => type} -> Type.render_type(type)
+                type -> Type.render_type(type) |> Type.render_nullable_type()
               end
 
             {to_struct_field(field), type}
@@ -57,47 +58,5 @@ defmodule Dagger.Codegen.Elixir.Templates.Input do
     name
     |> Macro.underscore()
     |> String.to_atom()
-  end
-
-  defp render_type(%{"kind" => "NON_NULL", "ofType" => type}) do
-    render_type(type)
-  end
-
-  defp render_type(%{"kind" => "OBJECT", "name" => type}) do
-    mod_name = Mod.from_name(type)
-
-    quote do
-      unquote(mod_name).t()
-    end
-  end
-
-  defp render_nullable_type(type) do
-    quote do
-      unquote(type) | nil
-    end
-  end
-
-  defp render_type(%{"kind" => "LIST", "ofType" => type}) do
-    type = render_type(type)
-
-    quote do
-      [unquote(type)]
-    end
-  end
-
-  defp render_type(%{"kind" => "ENUM", "name" => type}) do
-    mod_name = Mod.from_name(type)
-
-    quote do
-      unquote(mod_name).t()
-    end
-  end
-
-  defp render_type(%{"kind" => "SCALAR", "name" => name}) do
-    mod_name = Mod.from_name(name)
-
-    quote do
-      unquote(mod_name).t()
-    end
   end
 end

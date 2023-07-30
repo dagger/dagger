@@ -20,12 +20,4 @@ defmodule Dagger.Codegen.Elixir.Templates.Scalar do
   defp name_to_type("Boolean"), do: quote(do: boolean())
   defp name_to_type("DateTime"), do: quote(do: DateTime.t())
   defp name_to_type(_), do: quote(do: String.t())
-
-  defp normalize_name(name) do
-    if String.ends_with?(name, "ID") do
-      String.trim_trailing(name, "ID")
-    else
-      name
-    end
-  end
 end
