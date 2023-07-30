@@ -2,6 +2,7 @@ defmodule Dagger.ClientTest do
   use ExUnit.Case, async: true
 
   alias Dagger.{
+    BuildArg,
     Client,
     Container,
     Directory,
@@ -76,7 +77,7 @@ defmodule Dagger.ClientTest do
                |> Client.directory()
                |> Directory.with_new_file("Dockerfile", dockerfile),
                # TODO: support InputField.
-               build_args: [%{"name" => "SPAM", "value" => "egg"}]
+               build_args: [%BuildArg{name: "SPAM", value: "egg"}]
              )
              |> Container.stdout()
 

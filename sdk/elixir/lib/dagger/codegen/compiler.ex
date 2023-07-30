@@ -4,6 +4,7 @@ defmodule Dagger.Codegen.Compiler do
   # Compile GraphQL introspection into Elixir code.
 
   alias Dagger.Codegen.Elixir.Templates.Enum, as: EnumTmpl
+  alias Dagger.Codegen.Elixir.Templates.Input
   alias Dagger.Codegen.Elixir.Templates.Object
   alias Dagger.Codegen.Elixir.Templates.Scalar
 
@@ -14,17 +15,11 @@ defmodule Dagger.Codegen.Compiler do
           }
         } = _introspection
       ) do
-    # TODO: We should have a rewrite phase to rewrite type, annotate module information, etc. before
-    # rendering type into module.
     types
     |> Enum.filter(fn type ->
-      only_supported_kinds(type) and not_graphql_introspection_types(type)
+      not_graphql_introspection_types(type)
     end)
     |> Enum.map(&render(&1, types))
-  end
-
-  defp only_supported_kinds(%{"kind" => kind}) do
-    kind in ["ENUM", "OBJECT", "SCALAR"]
   end
 
   defp not_graphql_introspection_types(%{"name" => name}) do
@@ -55,6 +50,9 @@ defmodule Dagger.Codegen.Compiler do
 
         "ENUM" ->
           EnumTmpl.render(full_type)
+
+        "INPUT_OBJECT" ->
+          Input.render(full_type)
       end
 
     name = if(name == "Query", do: "Client", else: name)
