@@ -1,7 +1,7 @@
 defmodule Dagger.MixProject do
   use Mix.Project
 
-  @version File.read!("VERSION") |> String.trim()
+  @version "0.0.0-dev"
   @source_url "https://github.com/dagger/dagger"
 
   def project do
@@ -48,17 +48,7 @@ defmodule Dagger.MixProject do
       links: %{
         "GitHub" => @source_url,
         "Changelog" => "#{@source_url}/releases/tag/sdk%2Felixir%2Fv#{@version}"
-      },
-      files: [
-        "lib",
-        "priv",
-        ".formatter.exs",
-        "mix.exs",
-        "README*",
-        "LICENSE*",
-        "CHANGELOG*",
-        "VERSION"
-      ]
+      }
     }
   end
 
