@@ -40,13 +40,7 @@ defmodule Dagger.Codegen.Compiler do
       "__EnumValue",
       "__Schema",
       "__TypeKind",
-      "__DirectiveLocation",
-      "Int",
-      "Float",
-      "String",
-      "ID",
-      "Boolean",
-      "DateTime"
+      "__DirectiveLocation"
     ]
   end
 

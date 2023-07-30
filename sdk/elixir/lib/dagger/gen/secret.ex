@@ -16,7 +16,7 @@ defmodule Dagger.Secret do
 
   (
     @doc "The value of this secret."
-    @spec plaintext(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec plaintext(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def plaintext(%__MODULE__{} = secret) do
       selection = select(secret.selection, "plaintext")
       execute(selection, secret.client)

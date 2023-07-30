@@ -25,7 +25,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Initialize this project from the given directory and config path\n\n## Required Arguments\n\n* `source` - \n* `config_path` -"
-    @spec load(t(), Dagger.Directory.t(), String.t()) :: Dagger.Project.t()
+    @spec load(t(), Dagger.Directory.t(), Dagger.String.t()) :: Dagger.Project.t()
     def load(%__MODULE__{} = project, source, config_path) do
       selection = select(project.selection, "load")
 
@@ -41,7 +41,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Name of the project"
-    @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = project) do
       selection = select(project.selection, "name")
       execute(selection, project.client)

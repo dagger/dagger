@@ -7,7 +7,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Documentation for what this command does."
-    @spec description(t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec description(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def description(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "description")
       execute(selection, project_command.client)
@@ -34,7 +34,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "The name of the command."
-    @spec name(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "name")
       execute(selection, project_command.client)
@@ -43,7 +43,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "The name of the type returned by this command."
-    @spec result_type(t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec result_type(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def result_type(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "resultType")
       execute(selection, project_command.client)

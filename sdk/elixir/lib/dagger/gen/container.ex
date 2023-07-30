@@ -50,7 +50,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves default arguments for future commands."
-    @spec default_args(t()) :: {:ok, [String.t()] | nil} | {:error, term()}
+    @spec default_args(t()) :: {:ok, [Dagger.String.t()] | nil} | {:error, term()}
     def default_args(%__MODULE__{} = container) do
       selection = select(container.selection, "defaultArgs")
       execute(selection, container.client)
@@ -59,7 +59,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves a directory at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the directory to retrieve (e.g., \"./src\")."
-    @spec directory(t(), String.t()) :: Dagger.Directory.t()
+    @spec directory(t(), Dagger.String.t()) :: Dagger.Directory.t()
     def directory(%__MODULE__{} = container, path) do
       selection = select(container.selection, "directory")
       selection = arg(selection, "path", path)
@@ -69,7 +69,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves an endpoint that clients can use to reach this container.\n\nIf no port is specified, the first exposed port is used. If none exist an error is returned.\n\nIf a scheme is specified, a URL is returned. Otherwise, a host:port pair is returned.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n\n\n## Optional Arguments\n\n* `port` - The exposed port number for the endpoint\n* `scheme` - Return a URL with the given scheme, eg. http for http://"
-    @spec endpoint(t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+    @spec endpoint(t(), keyword()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def endpoint(%__MODULE__{} = container, optional_args \\ []) do
       selection = select(container.selection, "endpoint")
 
@@ -93,7 +93,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves entrypoint to be prepended to the arguments of all commands."
-    @spec entrypoint(t()) :: {:ok, [String.t()] | nil} | {:error, term()}
+    @spec entrypoint(t()) :: {:ok, [Dagger.String.t()] | nil} | {:error, term()}
     def entrypoint(%__MODULE__{} = container) do
       selection = select(container.selection, "entrypoint")
       execute(selection, container.client)
@@ -102,7 +102,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable to retrieve (e.g., \"PATH\")."
-    @spec env_variable(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec env_variable(t(), Dagger.String.t()) ::
+            {:ok, Dagger.String.t() | nil} | {:error, term()}
     def env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "envVariable")
       selection = arg(selection, "name", name)
@@ -175,7 +176,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Exit code of the last executed command. Zero means success.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec exit_code(t()) :: {:ok, integer()} | {:error, term()}
+    @spec exit_code(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def exit_code(%__MODULE__{} = container) do
       selection = select(container.selection, "exitCode")
       execute(selection, container.client)
@@ -184,7 +185,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
-    @spec export(t(), String.t(), keyword()) :: {:ok, boolean()} | {:error, term()}
+    @spec export(t(), Dagger.String.t(), keyword()) ::
+            {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = container, path, optional_args \\ []) do
       selection = select(container.selection, "export")
       selection = arg(selection, "path", path)
@@ -222,7 +224,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves a file at the given path.\n\nMounts are included.\n\n## Required Arguments\n\n* `path` - The path of the file to retrieve (e.g., \"./README.md\")."
-    @spec file(t(), String.t()) :: Dagger.File.t()
+    @spec file(t(), Dagger.String.t()) :: Dagger.File.t()
     def file(%__MODULE__{} = container, path) do
       selection = select(container.selection, "file")
       selection = arg(selection, "path", path)
@@ -232,7 +234,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Initializes this container from a pulled base image.\n\n## Required Arguments\n\n* `address` - Image's address from its registry.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g., \"docker.io/dagger/dagger:main\")."
-    @spec from(t(), String.t()) :: Dagger.Container.t()
+    @spec from(t(), Dagger.String.t()) :: Dagger.Container.t()
     def from(%__MODULE__{} = container, address) do
       selection = select(container.selection, "from")
       selection = arg(selection, "address", address)
@@ -252,7 +254,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves a hostname which can be used by clients to reach this container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable."
-    @spec hostname(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec hostname(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def hostname(%__MODULE__{} = container) do
       selection = select(container.selection, "hostname")
       execute(selection, container.client)
@@ -270,7 +272,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The unique image reference which can only be retrieved immediately after the 'Container.From' call."
-    @spec image_ref(t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec image_ref(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def image_ref(%__MODULE__{} = container) do
       selection = select(container.selection, "imageRef")
       execute(selection, container.client)
@@ -301,7 +303,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the value of the specified label.\n\n## Required Arguments\n\n* `name` -"
-    @spec label(t(), String.t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec label(t(), Dagger.String.t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "label")
       selection = arg(selection, "name", name)
@@ -324,7 +326,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the list of paths where a directory is mounted."
-    @spec mounts(t()) :: {:ok, [String.t()]} | {:error, term()}
+    @spec mounts(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def mounts(%__MODULE__{} = container) do
       selection = select(container.selection, "mounts")
       execute(selection, container.client)
@@ -333,7 +335,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Creates a named sub-pipeline\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
-    @spec pipeline(t(), String.t(), keyword()) :: Dagger.Container.t()
+    @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Container.t()
     def pipeline(%__MODULE__{} = container, name, optional_args \\ []) do
       selection = select(container.selection, "pipeline")
       selection = arg(selection, "name", name)
@@ -367,7 +369,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the published image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
-    @spec publish(t(), String.t(), keyword()) :: {:ok, String.t()} | {:error, term()}
+    @spec publish(t(), Dagger.String.t(), keyword()) ::
+            {:ok, Dagger.String.t()} | {:error, term()}
     def publish(%__MODULE__{} = container, address, optional_args \\ []) do
       selection = select(container.selection, "publish")
       selection = arg(selection, "address", address)
@@ -401,7 +404,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The error stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec stderr(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec stderr(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def stderr(%__MODULE__{} = container) do
       selection = select(container.selection, "stderr")
       execute(selection, container.client)
@@ -410,7 +413,7 @@ defmodule Dagger.Container do
 
   (
     @doc "The output stream of the last executed command.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec stdout(t()) :: {:ok, String.t()} | {:error, term()}
+    @spec stdout(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def stdout(%__MODULE__{} = container) do
       selection = select(container.selection, "stdout")
       execute(selection, container.client)
@@ -428,7 +431,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the user to be set for all commands."
-    @spec user(t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec user(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def user(%__MODULE__{} = container) do
       selection = select(container.selection, "user")
       execute(selection, container.client)
@@ -454,7 +457,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a directory written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written directory (e.g., \"/tmp/directory\").\n* `directory` - Identifier of the directory to write\n\n## Optional Arguments\n\n* `exclude` - Patterns to exclude in the written directory (e.g., [\"node_modules/**\", \".gitignore\", \".git/\"]).\n* `include` - Patterns to include in the written directory (e.g., [\"*.go\", \"go.mod\", \"go.sum\"]).\n* `owner` - A user:group to set for the directory and its contents.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_directory(t(), String.t(), Dagger.Directory.t(), keyword()) :: Dagger.Container.t()
+    @spec with_directory(t(), Dagger.String.t(), Dagger.Directory.t(), keyword()) ::
+            Dagger.Container.t()
     def with_directory(%__MODULE__{} = container, path, directory, optional_args \\ []) do
       selection = select(container.selection, "withDirectory")
       selection = arg(selection, "path", path)
@@ -491,7 +495,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container but with a different command entrypoint.\n\n## Required Arguments\n\n* `args` - Entrypoint to use for future executions (e.g., [\"go\", \"run\"])."
-    @spec with_entrypoint(t(), [String.t()]) :: Dagger.Container.t()
+    @spec with_entrypoint(t(), [Dagger.String.t()]) :: Dagger.Container.t()
     def with_entrypoint(%__MODULE__{} = container, args) do
       selection = select(container.selection, "withEntrypoint")
       selection = arg(selection, "args", args)
@@ -501,7 +505,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\").\n* `value` - The value of the environment variable. (e.g., \"localhost\").\n\n## Optional Arguments\n\n* `expand` - Replace ${VAR} or $VAR in the value according to the current environment\nvariables defined in the container (e.g., \"/opt/bin:$PATH\")."
-    @spec with_env_variable(t(), String.t(), String.t(), keyword()) :: Dagger.Container.t()
+    @spec with_env_variable(t(), Dagger.String.t(), Dagger.String.t(), keyword()) ::
+            Dagger.Container.t()
     def with_env_variable(%__MODULE__{} = container, name, value, optional_args \\ []) do
       selection = select(container.selection, "withEnvVariable")
       selection = arg(selection, "name", name)
@@ -520,7 +525,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container after executing the specified command inside it.\n\n## Required Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n\nIf empty, the container's default command is used.\n\n## Optional Arguments\n\n* `skip_entrypoint` - If the container has an entrypoint, ignore it for args rather than using it to wrap them.\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provides dagger access to the executed command.\n\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.\n* `insecure_root_capabilities` - Execute the command with all root capabilities. This is similar to running a command\nwith \"sudo\" or executing `docker run` with the `--privileged` flag. Containerization\ndoes not provide any security guarantees when using this option. It should only be used\nwhen absolutely necessary and only with trusted commands."
-    @spec with_exec(t(), [String.t()], keyword()) :: Dagger.Container.t()
+    @spec with_exec(t(), [Dagger.String.t()], keyword()) :: Dagger.Container.t()
     def with_exec(%__MODULE__{} = container, args, optional_args \\ []) do
       selection = select(container.selection, "withExec")
       selection = arg(selection, "args", args)
@@ -577,7 +582,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Expose a network port.\n\nExposed ports serve two purposes:\n  - For health checks and introspection, when running services\n  - For setting the EXPOSE OCI field when publishing the container\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `port` - Port number to expose\n\n## Optional Arguments\n\n* `protocol` - Transport layer network protocol\n* `description` - Optional port description"
-    @spec with_exposed_port(t(), integer(), keyword()) :: Dagger.Container.t()
+    @spec with_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def with_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withExposedPort")
       selection = arg(selection, "port", port)
@@ -618,7 +623,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644.\n* `owner` - A user:group to set for the file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_file(t(), String.t(), Dagger.File.t(), keyword()) :: Dagger.Container.t()
+    @spec with_file(t(), Dagger.String.t(), Dagger.File.t(), keyword()) :: Dagger.Container.t()
     def with_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withFile")
       selection = arg(selection, "path", path)
@@ -648,7 +653,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus the given label.\n\n## Required Arguments\n\n* `name` - The name of the label (e.g., \"org.opencontainers.artifact.created\").\n* `value` - The value of the label (e.g., \"2023-01-01T00:00:00Z\")."
-    @spec with_label(t(), String.t(), String.t()) :: Dagger.Container.t()
+    @spec with_label(t(), Dagger.String.t(), Dagger.String.t()) :: Dagger.Container.t()
     def with_label(%__MODULE__{} = container, name, value) do
       selection = select(container.selection, "withLabel")
       selection = arg(selection, "name", name)
@@ -659,7 +664,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a cache volume mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\").\n* `cache` - Identifier of the cache volume to mount.\n\n## Optional Arguments\n\n* `source` - Identifier of the directory to use as the cache volume's root.\n* `sharing` - Sharing mode of the cache volume.\n* `owner` - A user:group to set for the mounted cache directory.\n\nNote that this changes the ownership of the specified mount along with the\ninitial filesystem provided by source (if any). It does not have any effect\nif/when the cache has already been created.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_mounted_cache(t(), String.t(), Dagger.Cache.t(), keyword()) :: Dagger.Container.t()
+    @spec with_mounted_cache(t(), Dagger.String.t(), Dagger.Cache.t(), keyword()) ::
+            Dagger.Container.t()
     def with_mounted_cache(%__MODULE__{} = container, path, cache, optional_args \\ []) do
       selection = select(container.selection, "withMountedCache")
       selection = arg(selection, "path", path)
@@ -696,7 +702,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted directory (e.g., \"/mnt/directory\").\n* `source` - Identifier of the mounted directory.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted directory and its contents.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_mounted_directory(t(), String.t(), Dagger.Directory.t(), keyword()) ::
+    @spec with_mounted_directory(t(), Dagger.String.t(), Dagger.Directory.t(), keyword()) ::
             Dagger.Container.t()
     def with_mounted_directory(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedDirectory")
@@ -720,7 +726,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a file mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the mounted file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the mounted file.\n\n## Optional Arguments\n\n* `owner` - A user or user:group to set for the mounted file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_mounted_file(t(), String.t(), Dagger.File.t(), keyword()) :: Dagger.Container.t()
+    @spec with_mounted_file(t(), Dagger.String.t(), Dagger.File.t(), keyword()) ::
+            Dagger.Container.t()
     def with_mounted_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedFile")
       selection = arg(selection, "path", path)
@@ -743,7 +750,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a secret mounted into a file at the given path.\n\n## Required Arguments\n\n* `path` - Location of the secret file (e.g., \"/tmp/secret.txt\").\n* `source` - Identifier of the secret to mount.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted secret.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_mounted_secret(t(), String.t(), Dagger.Secret.t(), keyword()) ::
+    @spec with_mounted_secret(t(), Dagger.String.t(), Dagger.Secret.t(), keyword()) ::
             Dagger.Container.t()
     def with_mounted_secret(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withMountedSecret")
@@ -767,7 +774,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a temporary directory mounted at the given path.\n\n## Required Arguments\n\n* `path` - Location of the temporary directory (e.g., \"/tmp/temp_dir\")."
-    @spec with_mounted_temp(t(), String.t()) :: Dagger.Container.t()
+    @spec with_mounted_temp(t(), Dagger.String.t()) :: Dagger.Container.t()
     def with_mounted_temp(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withMountedTemp")
       selection = arg(selection, "path", path)
@@ -777,7 +784,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a new file written at the given path.\n\n## Required Arguments\n\n* `path` - Location of the written file (e.g., \"/tmp/file.txt\").\n\n## Optional Arguments\n\n* `contents` - Content of the file to write (e.g., \"Hello world!\").\n* `permissions` - Permission given to the written file (e.g., 0600).\n\nDefault: 0644.\n* `owner` - A user:group to set for the file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_new_file(t(), String.t(), keyword()) :: Dagger.Container.t()
+    @spec with_new_file(t(), Dagger.String.t(), keyword()) :: Dagger.Container.t()
     def with_new_file(%__MODULE__{} = container, path, optional_args \\ []) do
       selection = select(container.selection, "withNewFile")
       selection = arg(selection, "path", path)
@@ -809,7 +816,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container with a registry authentication for a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to bind the authentication to.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main).\n* `username` - The username of the registry's account (e.g., \"Dagger\").\n* `secret` - The API key, password or token to authenticate to this registry."
-    @spec with_registry_auth(t(), String.t(), String.t(), Dagger.Secret.t()) ::
+    @spec with_registry_auth(t(), Dagger.String.t(), Dagger.String.t(), Dagger.Secret.t()) ::
             Dagger.Container.t()
     def with_registry_auth(%__MODULE__{} = container, address, username, secret) do
       selection = select(container.selection, "withRegistryAuth")
@@ -842,7 +849,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus an env variable containing the given secret.\n\n## Required Arguments\n\n* `name` - The name of the secret variable (e.g., \"API_SECRET\").\n* `secret` - The identifier of the secret value."
-    @spec with_secret_variable(t(), String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
+    @spec with_secret_variable(t(), Dagger.String.t(), Dagger.Secret.t()) :: Dagger.Container.t()
     def with_secret_variable(%__MODULE__{} = container, name, secret) do
       selection = select(container.selection, "withSecretVariable")
       selection = arg(selection, "name", name)
@@ -858,7 +865,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Establish a runtime dependency on a service.\n\nThe service will be started automatically when needed and detached when it is\nno longer needed, executing the default command if none is set.\n\nThe service will be reachable from the container via the provided hostname alias.\n\nThe service dependency will also convey to any files or directories produced by the container.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `alias` - A name that can be used to reach the service from the container\n* `service` - Identifier of the service container"
-    @spec with_service_binding(t(), String.t(), Dagger.Container.t()) :: Dagger.Container.t()
+    @spec with_service_binding(t(), Dagger.String.t(), Dagger.Container.t()) ::
+            Dagger.Container.t()
     def with_service_binding(%__MODULE__{} = container, alias, service) do
       selection = select(container.selection, "withServiceBinding")
       selection = arg(selection, "alias", alias)
@@ -874,7 +882,8 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container plus a socket forwarded to the given Unix socket path.\n\n## Required Arguments\n\n* `path` - Location of the forwarded Unix socket (e.g., \"/tmp/socket\").\n* `source` - Identifier of the socket to forward.\n\n## Optional Arguments\n\n* `owner` - A user:group to set for the mounted socket.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
-    @spec with_unix_socket(t(), String.t(), Dagger.Socket.t(), keyword()) :: Dagger.Container.t()
+    @spec with_unix_socket(t(), Dagger.String.t(), Dagger.Socket.t(), keyword()) ::
+            Dagger.Container.t()
     def with_unix_socket(%__MODULE__{} = container, path, source, optional_args \\ []) do
       selection = select(container.selection, "withUnixSocket")
       selection = arg(selection, "path", path)
@@ -897,7 +906,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container with a different command user.\n\n## Required Arguments\n\n* `name` - The user to set (e.g., \"root\")."
-    @spec with_user(t(), String.t()) :: Dagger.Container.t()
+    @spec with_user(t(), Dagger.String.t()) :: Dagger.Container.t()
     def with_user(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withUser")
       selection = arg(selection, "name", name)
@@ -907,7 +916,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container with a different working directory.\n\n## Required Arguments\n\n* `path` - The path to set as the working directory (e.g., \"/app\")."
-    @spec with_workdir(t(), String.t()) :: Dagger.Container.t()
+    @spec with_workdir(t(), Dagger.String.t()) :: Dagger.Container.t()
     def with_workdir(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withWorkdir")
       selection = arg(selection, "path", path)
@@ -917,7 +926,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container minus the given environment variable.\n\n## Required Arguments\n\n* `name` - The name of the environment variable (e.g., \"HOST\")."
-    @spec without_env_variable(t(), String.t()) :: Dagger.Container.t()
+    @spec without_env_variable(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_env_variable(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withoutEnvVariable")
       selection = arg(selection, "name", name)
@@ -927,7 +936,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Unexpose a previously exposed port.\n\nCurrently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.\n\n## Required Arguments\n\n* `port` - Port number to unexpose\n\n## Optional Arguments\n\n* `protocol` - Port protocol to unexpose"
-    @spec without_exposed_port(t(), integer(), keyword()) :: Dagger.Container.t()
+    @spec without_exposed_port(t(), Dagger.Int.t(), keyword()) :: Dagger.Container.t()
     def without_exposed_port(%__MODULE__{} = container, port, optional_args \\ []) do
       selection = select(container.selection, "withoutExposedPort")
       selection = arg(selection, "port", port)
@@ -945,7 +954,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container minus the given environment label.\n\n## Required Arguments\n\n* `name` - The name of the label to remove (e.g., \"org.opencontainers.artifact.created\")."
-    @spec without_label(t(), String.t()) :: Dagger.Container.t()
+    @spec without_label(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_label(%__MODULE__{} = container, name) do
       selection = select(container.selection, "withoutLabel")
       selection = arg(selection, "name", name)
@@ -955,7 +964,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container after unmounting everything at the given path.\n\n## Required Arguments\n\n* `path` - Location of the cache directory (e.g., \"/cache/node_modules\")."
-    @spec without_mount(t(), String.t()) :: Dagger.Container.t()
+    @spec without_mount(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_mount(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withoutMount")
       selection = arg(selection, "path", path)
@@ -965,7 +974,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container without the registry authentication of a given address.\n\n## Required Arguments\n\n* `address` - Registry's address to remove the authentication from.\nFormatted as [host]/[user]/[repo]:[tag] (e.g. docker.io/dagger/dagger:main)."
-    @spec without_registry_auth(t(), String.t()) :: Dagger.Container.t()
+    @spec without_registry_auth(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_registry_auth(%__MODULE__{} = container, address) do
       selection = select(container.selection, "withoutRegistryAuth")
       selection = arg(selection, "address", address)
@@ -975,7 +984,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves this container with a previously added Unix socket removed.\n\n## Required Arguments\n\n* `path` - Location of the socket to remove (e.g., \"/tmp/socket\")."
-    @spec without_unix_socket(t(), String.t()) :: Dagger.Container.t()
+    @spec without_unix_socket(t(), Dagger.String.t()) :: Dagger.Container.t()
     def without_unix_socket(%__MODULE__{} = container, path) do
       selection = select(container.selection, "withoutUnixSocket")
       selection = arg(selection, "path", path)
@@ -985,7 +994,7 @@ defmodule Dagger.Container do
 
   (
     @doc "Retrieves the working directory for all commands."
-    @spec workdir(t()) :: {:ok, String.t() | nil} | {:error, term()}
+    @spec workdir(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def workdir(%__MODULE__{} = container) do
       selection = select(container.selection, "workdir")
       execute(selection, container.client)

@@ -7,7 +7,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Constructs a cache volume for a given cache key.\n\n## Required Arguments\n\n* `key` - A string identifier to target this cache volume (e.g., \"modules-cache\")."
-    @spec cache_volume(t(), String.t()) :: Dagger.CacheVolume.t()
+    @spec cache_volume(t(), Dagger.String.t()) :: Dagger.CacheVolume.t()
     def cache_volume(%__MODULE__{} = query, key) do
       selection = select(query.selection, "cacheVolume")
       selection = arg(selection, "key", key)
@@ -77,7 +77,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Queries a git repository.\n\n## Required Arguments\n\n* `url` - Url of the git repository.\nCan be formatted as https://{host}/{owner}/{repo}, git@{host}/{owner}/{repo}\nSuffix \".git\" is optional.\n\n## Optional Arguments\n\n* `keep_git_dir` - Set to true to keep .git directory.\n* `experimental_service_host` - A service which must be started before the repo is fetched."
-    @spec git(t(), String.t(), keyword()) :: Dagger.GitRepository.t()
+    @spec git(t(), Dagger.String.t(), keyword()) :: Dagger.GitRepository.t()
     def git(%__MODULE__{} = query, url, optional_args \\ []) do
       selection = select(query.selection, "git")
       selection = arg(selection, "url", url)
@@ -111,7 +111,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Returns a file containing an http remote url content.\n\n## Required Arguments\n\n* `url` - HTTP url to get the content from (e.g., \"https://docs.dagger.io\").\n\n## Optional Arguments\n\n* `experimental_service_host` - A service which must be started before the URL is fetched."
-    @spec http(t(), String.t(), keyword()) :: Dagger.File.t()
+    @spec http(t(), Dagger.String.t(), keyword()) :: Dagger.File.t()
     def http(%__MODULE__{} = query, url, optional_args \\ []) do
       selection = select(query.selection, "http")
       selection = arg(selection, "url", url)
@@ -129,7 +129,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Creates a named sub-pipeline.\n\n## Required Arguments\n\n* `name` - Pipeline name.\n\n## Optional Arguments\n\n* `description` - Pipeline description.\n* `labels` - Pipeline labels."
-    @spec pipeline(t(), String.t(), keyword()) :: Dagger.Client.t()
+    @spec pipeline(t(), Dagger.String.t(), keyword()) :: Dagger.Client.t()
     def pipeline(%__MODULE__{} = query, name, optional_args \\ []) do
       selection = select(query.selection, "pipeline")
       selection = arg(selection, "name", name)
@@ -198,7 +198,7 @@ defmodule Dagger.Client do
 
   (
     @doc "Sets a secret given a user defined name to its plaintext and returns the secret.\nThe plaintext value is limited to a size of 128000 bytes.\n\n## Required Arguments\n\n* `name` - The user defined name for this secret\n* `plaintext` - The plaintext of the secret"
-    @spec set_secret(t(), String.t(), String.t()) :: Dagger.Secret.t()
+    @spec set_secret(t(), Dagger.String.t(), Dagger.String.t()) :: Dagger.Secret.t()
     def set_secret(%__MODULE__{} = query, name, plaintext) do
       selection = select(query.selection, "setSecret")
       selection = arg(selection, "name", name)

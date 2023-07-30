@@ -2,8 +2,8 @@
 defmodule Dagger.Port do
   @moduledoc "A port exposed by a container."
   @type t() :: %__MODULE__{
-          description: String.t() | nil,
-          port: integer(),
+          description: Dagger.String.t() | nil,
+          port: Dagger.Int.t(),
           protocol: Dagger.NetworkProtocol.t()
         }
   @derive Nestru.Decoder

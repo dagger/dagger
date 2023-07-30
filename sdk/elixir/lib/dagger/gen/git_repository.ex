@@ -7,7 +7,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Returns details on one branch.\n\n## Required Arguments\n\n* `name` - Branch's name (e.g., \"main\")."
-    @spec branch(t(), String.t()) :: Dagger.GitRef.t()
+    @spec branch(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def branch(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "branch")
       selection = arg(selection, "name", name)
@@ -17,7 +17,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Lists of branches on the repository."
-    @spec branches(t()) :: {:ok, [String.t()]} | {:error, term()}
+    @spec branches(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def branches(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "branches")
       execute(selection, git_repository.client)
@@ -26,7 +26,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Returns details on one commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\")."
-    @spec commit(t(), String.t()) :: Dagger.GitRef.t()
+    @spec commit(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def commit(%__MODULE__{} = git_repository, id) do
       selection = select(git_repository.selection, "commit")
       selection = arg(selection, "id", id)
@@ -36,7 +36,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Returns details on one tag.\n\n## Required Arguments\n\n* `name` - Tag's name (e.g., \"v0.3.9\")."
-    @spec tag(t(), String.t()) :: Dagger.GitRef.t()
+    @spec tag(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def tag(%__MODULE__{} = git_repository, name) do
       selection = select(git_repository.selection, "tag")
       selection = arg(selection, "name", name)
@@ -46,7 +46,7 @@ defmodule Dagger.GitRepository do
 
   (
     @doc "Lists of tags on the repository."
-    @spec tags(t()) :: {:ok, [String.t()]} | {:error, term()}
+    @spec tags(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
     def tags(%__MODULE__{} = git_repository) do
       selection = select(git_repository.selection, "tags")
       execute(selection, git_repository.client)

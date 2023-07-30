@@ -458,30 +458,6 @@ defmodule Dagger.Codegen.Elixir.Templates.Object do
     end
   end
 
-  defp render_type(%{"kind" => "SCALAR", "name" => "String"}) do
-    quote do
-      String.t()
-    end
-  end
-
-  defp render_type(%{"kind" => "SCALAR", "name" => "Int"}) do
-    quote do
-      integer()
-    end
-  end
-
-  defp render_type(%{"kind" => "SCALAR", "name" => "Float"}) do
-    quote do
-      float()
-    end
-  end
-
-  defp render_type(%{"kind" => "SCALAR", "name" => "Boolean"}) do
-    quote do
-      boolean()
-    end
-  end
-
   defp render_type(%{"kind" => "SCALAR", "name" => name}) do
     mod_name = Mod.from_name(name)
 
