@@ -3,7 +3,6 @@ defmodule Dagger.File do
   @moduledoc "A file."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

@@ -3,7 +3,6 @@ defmodule Dagger.Host do
   @moduledoc "Information about the host execution environment."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

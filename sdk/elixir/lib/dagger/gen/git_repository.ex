@@ -3,7 +3,6 @@ defmodule Dagger.GitRepository do
   @moduledoc "A git repository."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

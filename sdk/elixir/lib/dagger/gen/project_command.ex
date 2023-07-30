@@ -3,7 +3,6 @@ defmodule Dagger.ProjectCommand do
   @moduledoc "A command defined in a project that can be invoked from the CLI."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

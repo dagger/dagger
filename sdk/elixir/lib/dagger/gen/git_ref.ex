@@ -3,7 +3,6 @@ defmodule Dagger.GitRef do
   @moduledoc "A git ref (tag, branch or commit)."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

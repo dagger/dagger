@@ -3,7 +3,6 @@ defmodule Dagger.Client do
   @moduledoc "Query"
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (

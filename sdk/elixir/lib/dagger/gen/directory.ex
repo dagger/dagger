@@ -3,7 +3,6 @@ defmodule Dagger.Directory do
   @moduledoc "A directory."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
-  nil
   defstruct [:selection, :client]
 
   (
