@@ -6,8 +6,9 @@ package gitdns
 import (
 	"context"
 	"errors"
-	"github.com/dagger/dagger/engine/session/networks"
 	"os/exec"
+
+	"github.com/moby/buildkit/executor/oci"
 )
 
 func runWithStandardUmaskAndNetOverride(ctx context.Context, cmd *exec.Cmd, hosts, resolv string) error {

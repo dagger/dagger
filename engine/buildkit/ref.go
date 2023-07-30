@@ -190,7 +190,6 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 	// it in the error message
 
 	// get the mnt corresponding to the metadata where stdout/stderr are stored
-	// TODO: support redirected stdout/stderr again too, maybe just have shim write to both?
 	var metaMountResult bksolver.Result
 	for i, mnt := range execOp.Exec.Mounts {
 		if mnt.Dest == MetaMountDestPath {

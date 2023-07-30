@@ -18,7 +18,6 @@ import (
 	_ "github.com/moby/buildkit/client/connhelper/ssh"
 )
 
-// TODO: re-add ability to get engine name
 func newBuildkitClient(ctx context.Context, remote *url.URL, userAgent string) (*bkclient.Client, error) {
 	buildkitdHost := remote.String()
 	if remote.Scheme == DockerImageProvider {
