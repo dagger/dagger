@@ -12,11 +12,13 @@ import (
 	"github.com/dagger/dagger/auth"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/session"
+	"github.com/hashicorp/go-multierror"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/executor/oci"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
@@ -54,6 +56,7 @@ type Opts struct {
 	// that registry auth and sockets are currently only ever sourced from this caller,
 	// not any nested clients (may change in future).
 	MainClientCaller bksession.Caller
+	DNSConfig        *oci.DNSConfig
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -72,6 +75,8 @@ type Client struct {
 	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
+
+	dialer *net.Dialer
 
 	closeCtx context.Context
 	cancel   context.CancelFunc
@@ -110,6 +115,32 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 
 	client.llbBridge = client.LLBSolver.Bridge(client.job)
 	client.llbBridge = recordingGateway{client.llbBridge}
+
+	client.dialer = &net.Dialer{}
+
+	if opts.DNSConfig != nil {
+		client.dialer.Resolver = &net.Resolver{
+			PreferGo: true,
+			Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+				if len(opts.DNSConfig.Nameservers) == 0 {
+					return nil, errors.New("no nameservers configured")
+				}
+
+				var errs error
+				for _, ns := range opts.DNSConfig.Nameservers {
+					conn, err := client.dialer.DialContext(ctx, network, net.JoinHostPort(ns, "53"))
+					if err != nil {
+						errs = multierror.Append(errs, err)
+						continue
+					}
+
+					return conn, nil
+				}
+
+				return nil, errs
+			},
+		}
+	}
 
 	return client, nil
 }
@@ -531,7 +562,7 @@ func (c *Client) ListenHostToContainer(
 				x, err := net.LookupIP(h)
 				log.Println("!!! BK CLIENT LOOKUP", x, err)
 				log.Println("!!! DIALING", proto, upstream)
-				conn, err := net.Dial(proto, upstream)
+				conn, err := c.dialer.Dial(proto, upstream)
 				if err != nil {
 					log.Println("!!! ERR", err)
 					return
