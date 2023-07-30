@@ -78,7 +78,6 @@ defmodule Dagger.ClientTest do
                client
                |> Client.directory()
                |> Directory.with_new_file("Dockerfile", dockerfile),
-               # TODO: support InputField.
                build_args: [%BuildArg{name: "SPAM", value: "egg"}]
              )
              |> Container.stdout()
