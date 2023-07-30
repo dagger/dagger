@@ -18,7 +18,6 @@ import (
 	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
-	"github.com/pkg/errors"
 )
 
 var debugDigest = false
@@ -206,113 +205,29 @@ func digestMapInto(rv reflect.Value, dest io.Writer) error {
 // stabilizeDef returns a copy of def that has been pruned of any ephemeral
 // data so that it may be used as a cache key that is stable across sessions.
 func stabilizeDef(def *pb.Definition) (*pb.Definition, error) {
-	cp := *def
-	cp.Def = cloneSlice(def.Def)
-	cp.Metadata = cloneMap(def.Metadata)
-	cp.Source = nil // discard source map
-
-	stabilized := map[digest.Digest]digest.Digest{}
-
-	// first, stabilize all Ops
-	for i, dt := range cp.Def {
-		digBefore := digest.FromBytes(dt)
-		var op pb.Op
-		if err := (&op).Unmarshal(dt); err != nil {
-			return nil, errors.Wrap(err, "failed to parse llb proto op")
-		}
-
-		if stabilizeOp(&op) {
-			stableDt, err := op.Marshal()
-			if err != nil {
-				return nil, errors.Wrap(err, "failed to marshal llb proto op")
-			}
-
-			digAfter := digest.FromBytes(stableDt)
-			if digAfter != digBefore {
-				stabilized[digBefore] = digAfter
-			}
-
-			cp.Def[i] = stableDt
-		}
+	def.Source = nil // discard source map
+	dag, err := defToDAG(def)
+	if err != nil {
+		return nil, err
+	}
+	err = dag.Walk(stabilizeOp)
+	if err != nil {
+		return nil, err
+	}
+	def, err = dag.Marshal()
+	if err != nil {
+		return nil, err
 	}
 
-	// update all inputs to reference the new digests
-	if err := stabilizeInputs(&cp, stabilized); err != nil {
-		return nil, errors.Wrap(err, "failed to stabilize inputs")
-	}
-
-	// finally, sort Def since it's in unstable topological order
-	sort.Slice(cp.Def, func(i, j int) bool {
-		return bytes.Compare(cp.Def[i], cp.Def[j]) < 0
+	// sort Def since it's in unstable topological order
+	sort.Slice(def.Def, func(i, j int) bool {
+		return bytes.Compare(def.Def[i], def.Def[j]) < 0
 	})
 
-	return &cp, nil
+	return def, nil
 }
 
-// stabilizeInputs takes a mapping from old digests to new digests and updates
-// all Op inputs to use the new digests instead. Because inputs are addressed
-// by Op digests, any Ops that needed to be updated will thereby yield a new
-// mapping, so stabilizeInputs will keep recursing until no new mappings are
-// yielded.
-func stabilizeInputs(cp *pb.Definition, stabilized map[digest.Digest]digest.Digest) error {
-	// swap metadata from old digests to new digests
-	for before, after := range stabilized {
-		meta, found := cp.Metadata[before]
-		if !found {
-			return fmt.Errorf("missing metadata for %s", before)
-		}
-
-		cp.Metadata[after] = meta
-		delete(cp.Metadata, before)
-	}
-
-	nextPass := map[digest.Digest]digest.Digest{}
-
-	// swap inputs from old digests to new digests
-	//
-	// doing so yields a new Op payload and a new digest
-	for i, dt := range cp.Def {
-		digBefore := digest.FromBytes(dt)
-
-		var op pb.Op
-		if err := (&op).Unmarshal(dt); err != nil {
-			return errors.Wrap(err, "failed to parse llb proto op")
-		}
-
-		var modified bool
-		for _, input := range op.Inputs {
-			after, found := stabilized[input.Digest]
-			if found {
-				input.Digest = after
-				modified = true
-			}
-		}
-
-		if modified {
-			stableDt, err := op.Marshal()
-			if err != nil {
-				return errors.Wrap(err, "failed to marshal llb proto op")
-			}
-
-			cp.Def[i] = stableDt
-
-			digAfter := digest.FromBytes(stableDt)
-
-			// track the new mapping for any Ops that had this Op as an
-			nextPass[digBefore] = digAfter
-		}
-	}
-
-	if len(nextPass) > 0 {
-		return stabilizeInputs(cp, nextPass)
-	}
-
-	return nil
-}
-
-func stabilizeOp(op *pb.Op) bool {
-	var modified bool
-
+func stabilizeOp(op *opDAG) error {
 	if src := op.GetSource(); src != nil {
 		for k := range src.Attrs {
 			switch k {
@@ -320,26 +235,22 @@ func stabilizeOp(op *pb.Op) bool {
 				pb.AttrLocalUniqueID,
 				pb.AttrSharedKeyHint: // contains session ID
 				delete(src.Attrs, k)
-				modified = true
 			}
 		}
 
 		var opts buildkit.LocalImportOpts
 		if err := buildkit.DecodeIDHack("local", src.Identifier, &opts); err == nil {
 			src.Identifier = "local://" + opts.Path
-			modified = true
 		}
 
 		var httpHack httpdns.DaggerHTTPURLHack
 		if err := buildkit.DecodeIDHack("https", src.Identifier, &httpHack); err == nil {
 			src.Identifier = httpHack.URL
-			modified = true
 		}
 
 		var gitHack gitdns.DaggerGitURLHack
 		if err := buildkit.DecodeIDHack("git", src.Attrs[pb.AttrFullRemoteURL], &gitHack); err == nil {
 			src.Attrs[pb.AttrFullRemoteURL] = gitHack.Remote
-			modified = true
 		}
 	}
 
@@ -348,9 +259,8 @@ func stabilizeOp(op *pb.Op) bool {
 			// NB(vito): ProxyEnv is used for passing network configuration along
 			// without busting the cache.
 			exe.Meta.ProxyEnv = nil
-			modified = true
 		}
 	}
 
-	return modified
+	return nil
 }

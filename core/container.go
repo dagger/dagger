@@ -1325,57 +1325,27 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 
 	hostname += "." + network.ClientDomain(clientMetadata.ClientID)
 
-	// TODO: cleanup
-	def := container.FS
-	dgstToOp := make(map[digest.Digest]*pb.Op)
-	dgstToIndex := make(map[digest.Digest]int)
-	for i, d := range def.Def {
-		op := new(pb.Op)
-		if err := op.Unmarshal(d); err != nil {
-			return nil, err
-		}
-		dgst := digest.FromBytes(d)
-		dgstToOp[dgst] = op
-		dgstToIndex[dgst] = i
-	}
-	lastOpBytes := def.Def[len(def.Def)-1]
-	lastOpDigest := digest.FromBytes(lastOpBytes)
-	var lastOp pb.Op
-	if err := (&lastOp).Unmarshal(lastOpBytes); err != nil {
-		return nil, err
-	}
-	// TODO: this should instead recurse to find the most recent exec op, to handle e.g. fileop on top of exec op
-	// TODO: also handle no exec default args? Or is that good already?
-	for i, input := range lastOp.Inputs {
-		opDgst := input.Digest
-		op := dgstToOp[opDgst]
-		execOp, ok := op.Op.(*pb.Op_Exec)
-		if !ok {
-			return nil, errors.New("expected exec op")
-		}
-		execOp.Exec.Meta.Hostname = hostname
-
-		newOpBytes, err := op.Marshal()
-		if err != nil {
-			return nil, err
-		}
-		newOpDgst := digest.FromBytes(newOpBytes)
-		def.Def[dgstToIndex[opDgst]] = newOpBytes
-		def.Metadata[newOpDgst] = def.Metadata[opDgst]
-		delete(def.Metadata, opDgst)
-
-		lastOp.Inputs[i].Digest = newOpDgst
-	}
-	newLastOpBytes, err := lastOp.Marshal()
+	// TODO: add test for case where a container provided as service dep
+	// is an exec plus something else like fileop on top, should error
+	// Also note that this is technically a breaking change sort of but
+	// the fact that it ever worked was not intentional afaik
+	// TODO: also make sure default args are tested+handled
+	dag, err := defToDAG(container.FS)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to convert container def to dag: %w", err)
 	}
-	newLastOpDgst := digest.FromBytes(newLastOpBytes)
-	def.Def[len(def.Def)-1] = newLastOpBytes
-	def.Metadata[newLastOpDgst] = def.Metadata[lastOpDigest]
-	delete(def.Metadata, lastOpDigest)
-
-	container.FS = def
+	if len(dag.inputs) == 0 {
+		return nil, fmt.Errorf("service container must be result of withExec or have default args set")
+	}
+	execOp, ok := dag.inputs[0].AsExec()
+	if !ok {
+		return nil, fmt.Errorf("service container must be result of withExec or have default args set")
+	}
+	execOp.Meta.Hostname = hostname
+	container.FS, err = dag.Marshal()
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal dag: %w", err)
+	}
 
 	health := newHealth(bk, hostname, container.Ports)
 
