@@ -379,7 +379,7 @@ describe("NodeJS SDK api", function () {
           .container()
           .from("alpine:3.16.2")
           .withEnvVariable("FOO", "BAR")
-          .withEnvVariable("BAR", "BAZ")
+          .withEnvVariable("BAR", "BOOL")
 
         const envs = await ctr.envVariables()
 
@@ -387,7 +387,7 @@ describe("NodeJS SDK api", function () {
         assert.strictEqual(await envs[1].value(), "BAR")
 
         assert.strictEqual(await envs[2].name(), "BAR")
-        assert.strictEqual(await envs[2].value(), "BAZ")
+        assert.strictEqual(await envs[2].value(), "BOOL")
       },
       { LogOutput: process.stderr }
     )
