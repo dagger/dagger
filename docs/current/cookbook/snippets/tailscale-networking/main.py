@@ -8,7 +8,7 @@ async def main():
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
 
         # create Tailscale authentication key as secret
-        auth_key_secret: Secret = client.set_secret("tailscaleAuthkey", "TS-KEY")
+        auth_key_secret = client.set_secret("tailscaleAuthkey", "TS-KEY")
 
         # create Tailscale service container
         tailscale = (

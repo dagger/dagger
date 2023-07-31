@@ -16,7 +16,7 @@ connect(
       .withExposedPort(1055)
 
     // access Tailscale network
-    out = await client
+    const out = await client
       .container()
       .from("alpine:3.17")
       .withExec(["apk", "add", "curl"])
