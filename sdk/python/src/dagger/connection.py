@@ -7,8 +7,8 @@ from dagger import Client, Config
 
 from ._progress import Progress
 from .context import ResourceManager
-from .engine._version import CLI_VERSION
 from .engine import Engine
+from .engine._version import CLI_VERSION
 from .exceptions import QueryError, VersionMismatch
 from .session import Session
 
