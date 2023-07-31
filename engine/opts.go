@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	EngineVersionMetaKey = "x-dagger-engine" // don't change, would be backwards incompatible
+	EngineVersionMetaKey = "x-dagger-engine"
 
 	clientMetadataMetaKey  = "x-dagger-client-metadata"
 	localImportOptsMetaKey = "x-dagger-local-import-opts"
@@ -103,15 +103,6 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 		return nil, fmt.Errorf("failed to unmarshal %s: %v", clientMetadataMetaKey, err)
 	}
 	return clientMetadata, nil
-}
-
-func OptionalClientMetadataFromContext(ctx context.Context) (*ClientMetadata, bool) {
-	clientMetadata, err := ClientMetadataFromContext(ctx)
-	if err != nil {
-		// TODO: should check actual err types
-		return nil, false
-	}
-	return clientMetadata, true
 }
 
 type LocalImportOpts struct {

@@ -77,80 +77,68 @@ func (c *Client) GetSessionCaller(ctx context.Context, clientID string) (bksessi
 	return c.SessionManager.Get(ctx, clientID, !waitForSession)
 }
 
-type sessionStreamResourceData struct {
-	// the id of the client that made the request
-	requesterClientID string
-
-	//
-	// only one of these should be set
-	//
-	importLocalDirData *importLocalDirData
-	exportLocalDirData *exportLocalDirData
-}
-
-type importLocalDirData struct {
+type localImportOpts struct {
 	*engine.LocalImportOpts
 	session bksession.Caller
 }
 
-type exportLocalDirData struct {
+func (c *Client) getLocalImportOpts(stream grpc.ServerStream) (context.Context, *localImportOpts, error) {
+	opts, err := engine.LocalImportOptsFromContext(stream.Context())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get local import opts: %w", err)
+	}
+
+	if err := DecodeIDHack("local", opts.Path, opts); err != nil {
+		return nil, nil, fmt.Errorf("invalid import local dir name: %q", opts.Path)
+	}
+	sess, err := c.SessionManager.Get(stream.Context(), opts.OwnerClientID, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	md := opts.ToGRPCMD()
+	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
+	ctx = metadata.NewOutgoingContext(ctx, md)
+	return ctx, &localImportOpts{
+		LocalImportOpts: opts,
+		session:         sess,
+	}, nil
+}
+
+type localExportOpts struct {
 	*engine.LocalExportOpts
 	session bksession.Caller
 }
 
-// TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
-func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
-	sessData := &sessionStreamResourceData{}
-
-	clientMetadata, ok := engine.OptionalClientMetadataFromContext(stream.Context())
-	if ok {
-		sessData.requesterClientID = clientMetadata.ClientID
+func (c *Client) getLocalExportOpts(stream grpc.ServerStream) (context.Context, *localExportOpts, error) {
+	opts, err := engine.LocalExportOptsFromContext(stream.Context())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get local export opts: %w", err)
 	}
 
-	localImportOpts, err := engine.LocalImportOptsFromContext(stream.Context())
-	if err == nil {
-		if err := DecodeIDHack("local", localImportOpts.Path, localImportOpts); err != nil {
-			return nil, nil, fmt.Errorf("invalid import local dir name: %q", localImportOpts.Path)
-		}
-		sess, err := c.SessionManager.Get(stream.Context(), localImportOpts.OwnerClientID, false)
-		if err != nil {
-			return nil, nil, err
-		}
-		sessData.importLocalDirData = &importLocalDirData{
-			LocalImportOpts: localImportOpts,
-			session:         sess,
-		}
-		md := localImportOpts.ToGRPCMD()
-		ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-		ctx = metadata.NewOutgoingContext(ctx, md)
-		return ctx, sessData, nil
+	clientMetadata, err := engine.ClientMetadataFromContext(stream.Context())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get client metadata: %w", err)
 	}
 
-	localExportOpts, err := engine.LocalExportOptsFromContext(stream.Context())
-	if err == nil {
-		// for now, require that the requester is the owner of the session, i.e. you
-		// can only export to yourself, not to others
-		if sessData.requesterClientID != localExportOpts.DestClientID {
-			return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
-		}
-
-		if localExportOpts.Path == "" {
-			return nil, nil, fmt.Errorf("missing local dir export path")
-		}
-
-		sess, err := c.SessionManager.Get(stream.Context(), localExportOpts.DestClientID, false)
-		if err != nil {
-			return nil, nil, err
-		}
-		sessData.exportLocalDirData = &exportLocalDirData{
-			LocalExportOpts: localExportOpts,
-			session:         sess,
-		}
-		md := localExportOpts.ToGRPCMD()
-		ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-		ctx = metadata.NewOutgoingContext(ctx, md)
-		return ctx, sessData, nil
+	// for now, require that the requester is the owner of the session, i.e. you
+	// can only export to yourself, not to others
+	if clientMetadata.ClientID != opts.DestClientID {
+		return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
 	}
 
-	return nil, nil, fmt.Errorf("unhandled session resource stream %T", stream)
+	if opts.Path == "" {
+		return nil, nil, fmt.Errorf("missing local dir export path")
+	}
+
+	sess, err := c.SessionManager.Get(stream.Context(), opts.DestClientID, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	md := opts.ToGRPCMD()
+	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
+	ctx = metadata.NewOutgoingContext(ctx, md)
+	return ctx, &localExportOpts{
+		LocalExportOpts: opts,
+		session:         sess,
+	}, nil
 }

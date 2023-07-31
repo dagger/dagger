@@ -29,16 +29,12 @@ func (p *fileSyncServerProxy) Register(srv *grpc.Server) {
 }
 
 func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	ctx, baseData, err := p.c.getSessionResourceData(stream)
+	ctx, opts, err := p.c.getLocalImportOpts(stream)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	opts := baseData.importLocalDirData
-	if opts == nil {
-		return fmt.Errorf("expected import local dir opts")
-	}
 	diffCopyClient, err := filesync.NewFileSyncClient(opts.session.Conn()).DiffCopy(ctx)
 	if err != nil {
 		return err
@@ -102,16 +98,12 @@ func (p *fileSyncServerProxy) DiffCopy(stream filesync.FileSync_DiffCopyServer) 
 }
 
 func (p *fileSyncServerProxy) TarStream(stream filesync.FileSync_TarStreamServer) error {
-	ctx, baseData, err := p.c.getSessionResourceData(stream)
+	ctx, opts, err := p.c.getLocalImportOpts(stream)
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	opts := baseData.importLocalDirData
-	if opts == nil {
-		return fmt.Errorf("expected import local dir opts")
-	}
 	tarStreamClient, err := filesync.NewFileSyncClient(opts.session.Conn()).TarStream(ctx)
 	if err != nil {
 		return err
@@ -233,14 +225,10 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 	var err error
 	var useBytesMessageType bool
 	if p.destClientID == "" {
-		var baseData *sessionStreamResourceData
-		ctx, baseData, err = p.c.getSessionResourceData(stream)
+		var opts *localExportOpts
+		ctx, opts, err = p.c.getLocalExportOpts(stream)
 		if err != nil {
 			return err
-		}
-		opts := baseData.exportLocalDirData
-		if opts == nil {
-			return fmt.Errorf("expected export local dir opts")
 		}
 		diffCopyClient, err = filesync.NewFileSendClient(opts.session.Conn()).DiffCopy(ctx)
 		if err != nil {
