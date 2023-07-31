@@ -3,6 +3,7 @@ package dagger
 import (
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -99,46 +100,49 @@ func TestContainer(t *testing.T) {
 // TODO: fix this test, it's actually broken, the result is an empty string
 // We could use a buffer, however the regexp want need to be updated, the
 // display of Dagger has change since.
-// func TestConnectOption(t *testing.T) {
-// 	t.Parallel()
-// 	ctx := context.Background()
-//
-// 	r, w := io.Pipe()
-// 	c, err := Connect(ctx, WithLogOutput(w))
-// 	require.NoError(t, err)
-//
-// 	_, err = c.
-// 		Container().
-// 		From("alpine:3.16.1").
-// 		File("/etc/alpine-release").
-// 		Contents(ctx)
-// 	require.NoError(t, err)
-//
-// 	err = c.Close()
-// 	w.Close()
-// 	require.NoError(t, err)
-//
-// 	wants := []string{
-// 		"#1 resolve image config for docker.io/library/alpine:3.16.1",
-// 		"#1 DONE [0-9.]+s",
-// 		"#2 docker-image://docker.io/library/alpine:3.16.1",
-// 		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
-// 		"#2 (DONE [0-9.]+s|CACHED)",
-// 	}
-//
-// 	logOutput, err := io.ReadAll(r)
-// 	require.NoError(t, err)
-//
-// 	// Empty
-// 	// fmt.Println(string(logOutput))
-//
-// 	for _, want := range wants {
-// 		// NOTE: the string is empty
-// 		// This pass the test
-// 		// require.Regexp(t, "", want)
-// 		require.Regexp(t, string(logOutput), want)
-// 	}
-// }
+func TestConnectOption(t *testing.T) {
+	t.Skip("test broken with io.Pipe and empty string on the standard output." +
+		"We need to update the test with new output and use a buffer to catch" +
+		"output.")
+	t.Parallel()
+	ctx := context.Background()
+
+	r, w := io.Pipe()
+	c, err := Connect(ctx, WithLogOutput(w))
+	require.NoError(t, err)
+
+	_, err = c.
+		Container().
+		From("alpine:3.16.1").
+		File("/etc/alpine-release").
+		Contents(ctx)
+	require.NoError(t, err)
+
+	err = c.Close()
+	w.Close()
+	require.NoError(t, err)
+
+	wants := []string{
+		"#1 resolve image config for docker.io/library/alpine:3.16.1",
+		"#1 DONE [0-9.]+s",
+		"#2 docker-image://docker.io/library/alpine:3.16.1",
+		"#2 resolve docker.io/library/alpine:3.16.1 [0-9.]+s done",
+		"#2 (DONE [0-9.]+s|CACHED)",
+	}
+
+	logOutput, err := io.ReadAll(r)
+	require.NoError(t, err)
+
+	// Empty
+	// fmt.Println(string(logOutput))
+
+	for _, want := range wants {
+		// NOTE: the string is empty
+		// This pass the test
+		// require.Regexp(t, "", want)
+		require.Regexp(t, string(logOutput), want)
+	}
+}
 
 func TestContainerWith(t *testing.T) {
 	t.Parallel()
