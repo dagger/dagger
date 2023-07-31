@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/containerd/containerd/platforms"
 	"github.com/containerd/continuity/fs"
@@ -155,8 +156,11 @@ func (c *Client) Close() error {
 	c.containersMu.Lock()
 	for ctr := range c.containers {
 		if ctr != nil {
-			// TODO: can this block a long time on accident? should we have a timeout?
-			ctr.Release(context.Background())
+			// in theory this shouldn't block very long and just kill the container,
+			// but add a safeguard just in case
+			releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancelRelease()
+			ctr.Release(releaseCtx)
 		}
 	}
 	c.containers = nil
