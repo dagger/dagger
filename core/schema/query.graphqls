@@ -10,7 +10,7 @@ type Query {
   ): Query!
 
   checkVersionCompatibility(
-    "SDK's version"
+    "The SDK's required version."
     version: String!
   ): Boolean!
 }
