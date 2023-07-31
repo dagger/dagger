@@ -3,9 +3,10 @@ from dataclasses import dataclass, field
 from os import PathLike
 
 import httpx
+from rich.console import Console
 
 
-@dataclass
+@dataclass(slots=True, kw_only=True)
 class Config:
     """Options for connecting to the Dagger engine.
 
@@ -30,9 +31,16 @@ class Config:
     log_output: typing.TextIO | None = None
     timeout: int = 10
     execute_timeout: int | float | None = None
+    console: Console = field(init=False)
+
+    def __post_init__(self):
+        self.console = Console(
+            file=self.log_output,
+            stderr=True,
+        )
 
 
-@dataclass(kw_only=True)
+@dataclass(slots=True, kw_only=True)
 class ConnectParams:
     """Options for making a session connection. For internal use only."""
 

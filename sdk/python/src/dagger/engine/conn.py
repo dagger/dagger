@@ -3,6 +3,7 @@ import os
 
 import anyio
 
+from dagger._progress import Progress
 from dagger.config import Config, ConnectParams
 from dagger.context import SyncResourceManager
 from dagger.exceptions import ProvisionError
@@ -16,9 +17,10 @@ logger = logging.getLogger(__name__)
 class Engine(SyncResourceManager):
     """Start engine, provisioning if needed."""
 
-    def __init__(self, cfg: Config) -> None:
+    def __init__(self, cfg: Config, progress: Progress) -> None:
         super().__init__()
         self.cfg = cfg
+        self.progress = progress
 
     def from_env(self) -> ConnectParams | None:
         if not (port := os.environ.get("DAGGER_SESSION_PORT")):
@@ -34,7 +36,15 @@ class Engine(SyncResourceManager):
             raise ProvisionError(msg) from e
 
     def from_cli(self) -> ConnectParams:
-        cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN") or Downloader().get()
+        # Only start progress if we are provisioning, not on active sessions
+        # like `dagger run`.
+        self.progress.start("Provisioning engine")
+
+        cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN") or Downloader().get(
+            self.progress
+        )
+
+        self.progress.update("Creating new Engine session")
         with self.get_sync_stack() as stack:
             return stack.enter_context(CLISession(self.cfg, cli_bin))
 
