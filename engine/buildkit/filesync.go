@@ -102,6 +102,7 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 		OwnerClientID:      clientMetadata.ClientID,
 		Path:               path,
 		ReadSingleFileOnly: true,
+		MaxFileSize:        MaxFileContentsChunkSize,
 	}.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)

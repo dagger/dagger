@@ -21,7 +21,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
 	"github.com/google/uuid"
@@ -518,9 +517,9 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 		if err != nil {
 			return fmt.Errorf("read file: %w", err)
 		}
-		if len(fileContents) > buildkit.MaxFileContentsChunkSize {
+		if len(fileContents) > int(opts.MaxFileSize) {
 			// NOTE: can lift this size restriction by chunking if ever needed
-			return fmt.Errorf("file contents too large: %d > %d", len(fileContents), buildkit.MaxFileContentsChunkSize)
+			return fmt.Errorf("file contents too large: %d > %d", len(fileContents), opts.MaxFileSize)
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})
 	}
