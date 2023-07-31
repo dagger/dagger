@@ -22,7 +22,11 @@ async def main():
         )
 
 
-async def mounted_secret_directory(client: dagger.Client, target_path: str, source_path: str):
+async def mounted_secret_directory(
+    client: dagger.Client,
+    target_path: str,
+    source_path: str,
+):
     target = anyio.Path(target_path)
     base = await anyio.Path(source_path).expanduser()
     files = [path async for path in base.rglob("*") if await path.is_file()]
