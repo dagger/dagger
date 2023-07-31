@@ -199,9 +199,8 @@ func (srv *DaggerServer) ServeClientConn(
 
 func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// TODO:
-		bklog.G(req.Context()).Debugf("http handler for client conn: %s", clientMetadata.ClientID)
-		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
+		bklog.G(req.Context()).Tracef("http handler for client conn")
+		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
 
 		w.Header().Add(engine.EngineVersionMetaKey, engine.Version)
 

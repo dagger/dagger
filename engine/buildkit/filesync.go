@@ -330,9 +330,6 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 // withContext adapts a blocking function to a context-aware function. It's
 // up to the caller to ensure that the blocking function f will unblock at
 // some time, otherwise there can be a goroutine leak.
-// TODO: this appears to be potentially leaking a lot based on stacks from some tests,
-// not sure if it's just because the job is still open, but look at this again carefully.
-// Addendum, just fixed problem of using unbuffered chan, may have fixed but still double check.
 func withContext[T any](ctx context.Context, f func() (T, error)) (T, error) {
 	type result struct {
 		v   T

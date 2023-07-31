@@ -66,7 +66,6 @@ type BuildkitControllerOpts struct {
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 }
 
-// TODO: setup cache manager here instead of cmd/engine/main.go
 func NewBuildkitController(opts BuildkitControllerOpts) (*BuildkitController, error) {
 	w, err := opts.WorkerController.GetDefault()
 	if err != nil {
@@ -283,6 +282,10 @@ func (e *BuildkitController) Solve(ctx context.Context, req *controlapi.SolveReq
 	if err != nil {
 		return nil, err
 	}
+	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
+		WithField("client_id", opts.ClientID).
+		WithField("client_hostname", opts.ClientHostname).
+		WithField("server_id", opts.ServerID))
 
 	e.serverMu.Lock()
 	srv, ok := e.servers[opts.ServerID]
@@ -435,7 +438,6 @@ func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
 	// TODO: needed?
 	// tracev1.RegisterTraceServiceServer(server, e)
-	// e.gatewayForwarder.Register(server)
 }
 
 func (e *BuildkitController) Close() error {

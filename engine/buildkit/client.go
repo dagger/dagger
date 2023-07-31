@@ -11,7 +11,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime/debug"
 	"strings"
 	"sync"
 
@@ -120,11 +119,9 @@ func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 }
 
 func (c *Client) ID() string {
-	// TODO: ? if you change this, be sure to change the session ID provide to llbBridge methods too
 	return c.session.ID()
 }
 
-// TODO: Integ test for all cache being releasable at end of every integ test suite
 func (c *Client) Close() error {
 	c.job.Discard()
 	c.job.CloseProgress()
@@ -293,15 +290,13 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 	if len(cacheExportFuncs) == 0 {
 		return nil
 	}
-	// TODO: have caller embed bklog w/ preset fields for client
 	bklog.G(ctx).Debugf("exporting %d caches", len(cacheExportFuncs))
 
-	combinedResult, err := c.CombinedResult(ctx) // TODO: lock needed now for this method internally
+	combinedResult, err := c.CombinedResult(ctx)
 	if err != nil {
 		return err
 	}
 	// TODO: dedupe with similar conversions
-	bklog.G(ctx).Debugf("converting to cacheRes")
 	cacheRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bkcache.ImmutableRef, error) {
 		res, err := rf.Result(ctx)
 		if err != nil {
@@ -430,9 +425,7 @@ func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
 	defer c.clientMu.RUnlock()
 	clientID, ok := c.clientHostnameToID[clientHostname]
 	if !ok {
-		// TODO:
-		// return "", fmt.Errorf("client hostname %q not found", clientHostname)
-		return "", fmt.Errorf("client hostname %q not found: %s", clientHostname, string(debug.Stack()))
+		return "", fmt.Errorf("client hostname %q not found", clientHostname)
 	}
 	return clientID, nil
 }
@@ -453,9 +446,8 @@ func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb
 		return llb.State{}, err
 	}
 
-	// TODO: double check that reading the client id from the context here is correct, and that it shouldn't
-	// instead be deser'd from the local name. I think it's okay provided we still do the local dir import
-	// synchronously in the caller of this.
+	// NOTE: this relies on the fact that the local source is evaluated synchronously in the caller, otherwise
+	// the caller client ID may not be correct.
 	name, err := EncodeIDHack(LocalImportOpts{
 		// For now, the requester is always the owner of the local dir
 		// when the dir is initially created in LLB (i.e. you can't request a

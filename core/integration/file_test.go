@@ -173,6 +173,30 @@ func TestFileExport(t *testing.T) {
 		require.Error(t, err)
 		require.False(t, ok)
 	})
+
+	t.Run("file under subdir", func(t *testing.T) {
+		dir := c.Directory().
+			WithNewFile("/file", "content1").
+			WithNewFile("/subdir/file", "content2")
+		file := dir.File("/subdir/file")
+
+		dest := filepath.Join(targetDir, "da-file")
+		_, err := file.Export(ctx, dest)
+		require.NoError(t, err)
+		contents, err := os.ReadFile(dest)
+		require.NoError(t, err)
+		require.Equal(t, "content2", string(contents))
+
+		dir = dir.Directory("/subdir")
+		file = dir.File("file")
+
+		dest = filepath.Join(targetDir, "da-file-2")
+		_, err = file.Export(ctx, dest)
+		require.NoError(t, err)
+		contents, err = os.ReadFile(dest)
+		require.NoError(t, err)
+		require.Equal(t, "content2", string(contents))
+	})
 }
 
 func TestFileWithTimestamps(t *testing.T) {

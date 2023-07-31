@@ -443,7 +443,6 @@ func (s AnyDirSource) Register(server *grpc.Server) {
 }
 
 func (s AnyDirSource) TarStream(stream filesync.FileSync_TarStreamServer) error {
-	// TODO: double check this is actually never used
 	return fmt.Errorf("tarstream not supported")
 }
 
@@ -461,7 +460,7 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 			return fmt.Errorf("read file: %w", err)
 		}
 		if len(fileContents) > buildkit.MaxFileContentsChunkSize {
-			// TODO: can lift this size restriction by chunking
+			// NOTE: can lift this size restriction by chunking if ever needed
 			return fmt.Errorf("file contents too large: %d > %d", len(fileContents), buildkit.MaxFileContentsChunkSize)
 		}
 		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})

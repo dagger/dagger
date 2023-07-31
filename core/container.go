@@ -1329,17 +1329,16 @@ func (container *Container) Start(ctx context.Context, bk *buildkit.Client) (*Se
 	// is an exec plus something else like fileop on top, should error
 	// Also note that this is technically a breaking change sort of but
 	// the fact that it ever worked was not intentional afaik
-	// TODO: also make sure default args are tested+handled
 	dag, err := defToDAG(container.FS)
 	if err != nil {
 		return nil, fmt.Errorf("failed to convert container def to dag: %w", err)
 	}
 	if len(dag.inputs) == 0 {
-		return nil, fmt.Errorf("service container must be result of withExec or have default args set")
+		return nil, fmt.Errorf("service container must be result of withExec")
 	}
 	execOp, ok := dag.inputs[0].AsExec()
 	if !ok {
-		return nil, fmt.Errorf("service container must be result of withExec or have default args set")
+		return nil, fmt.Errorf("service container must be result of withExec")
 	}
 	execOp.Meta.Hostname = hostname
 	container.FS, err = dag.Marshal()
@@ -1429,8 +1428,6 @@ func (container *Container) Publish(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) (string, error) {
-	// TODO: wrap in services, including merging platformVariants
-
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
 		// have been capable of pulling them since 2018:
@@ -1525,9 +1522,6 @@ func (container *Container) Export(
 	forcedCompression ImageLayerCompression,
 	mediaTypes ImageMediaTypes,
 ) error {
-	// TODO: de-dupe w/ Publish
-	// TODO: wrap in services, including merging platformVariants
-
 	if mediaTypes == "" {
 		// Modern registry implementations support oci types and docker daemons
 		// have been capable of pulling them since 2018:
@@ -1536,7 +1530,6 @@ func (container *Container) Export(
 		mediaTypes = OCIMediaTypes
 	}
 
-	// TODO: the previous implementation did an extra marshal using the containers platform, not sure if needed
 	inputByPlatform := map[string]buildkit.PublishInput{}
 	id, err := container.ID()
 	if err != nil {
