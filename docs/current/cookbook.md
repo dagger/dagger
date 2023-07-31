@@ -910,11 +910,7 @@ The following code listing demonstrates how to add multiple environment variable
 
 ### Docker Engine
 
-The following code shows different ways to integrate with the Docker Engine.
-
-#### Connecting to Docker Engine on the host
-
-This shows how to connect to a Docker Engine on the host machine, by mounting the Docker unix socket into a container, and running the `docker` CLI.
+The following code listing shows how to connect to a Docker Engine on the host machine, by mounting the Docker UNIX socket into a container, and running the `docker` CLI.
 
 <Tabs groupId="language">
 <TabItem value="Go">
@@ -937,7 +933,33 @@ This shows how to connect to a Docker Engine on the host machine, by mounting th
 ```
 
 </TabItem>
+</Tabs>
 
+### Tailscale
+
+The following code listing shows how to have a container running in a Dagger pipeline access a Tailscale network using Tailscale's [userspace networking](https://tailscale.com/kb/1112/userspace-networking/). Replace the `TS-KEY` placeholder with a Tailscale authentication key and the `https://TS-NETWORK-URL` placeholder with a URL accessibly only over the Tailscale network.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/tailscale-networking/main.go
+```
+
+</TabItem>
+
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/tailscale-networking/index.mjs
+```
+
+</TabItem>
+
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/tailscale-networking/main.py
+```
+
+</TabItem>
 </Tabs>
 
 ### AWS Cloud Development Kit
