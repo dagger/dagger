@@ -73,8 +73,9 @@ type Client struct {
 	job       *bksolver.Job
 	llbBridge bkfrontend.FrontendLLBBridge
 
-	clientHostnameToID   map[string]string
-	clientHostnameToIDMu sync.RWMutex
+	clientMu              sync.RWMutex
+	clientHostnameToID    map[string]string // TODO: this is super broken unless we set nested execs to have hostnames
+	clientIDToSecretToken map[string]string
 
 	refs         map[*ref]struct{}
 	refsMu       sync.Mutex
@@ -86,10 +87,11 @@ type Result = solverresult.Result[*ref]
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client := &Client{
-		Opts:               opts,
-		clientHostnameToID: make(map[string]string),
-		refs:               make(map[*ref]struct{}),
-		containers:         make(map[bkgw.Container]struct{}),
+		Opts:                  opts,
+		clientHostnameToID:    make(map[string]string),
+		clientIDToSecretToken: make(map[string]string),
+		refs:                  make(map[*ref]struct{}),
+		containers:            make(map[bkgw.Container]struct{}),
 	}
 
 	session, err := client.newSession(ctx)
@@ -387,22 +389,45 @@ func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveSta
 	return c.job.Status(ctx, ch)
 }
 
-func (c *Client) RegisterClient(clientID, clientHostname string) {
-	c.clientHostnameToIDMu.Lock()
-	defer c.clientHostnameToIDMu.Unlock()
-	// TODO: error out if clientID already exists? How would a user accomplish that? They'd need to somehow connect to the same server id
+func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) (func(), error) {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+	existingToken, ok := c.clientIDToSecretToken[clientID]
+	if ok {
+		if existingToken != secretToken {
+			return nil, fmt.Errorf("client ID %q already registered with different secret token", clientID)
+		}
+		return func() {}, nil
+	}
+	c.clientIDToSecretToken[clientID] = secretToken
 	c.clientHostnameToID[clientHostname] = clientID
+	return func() {
+		c.clientMu.Lock()
+		defer c.clientMu.Unlock()
+		delete(c.clientHostnameToID, clientHostname)
+		// Purposely don't delete the secret token, it should never be reused and will be released from
+		// memory once the dagger server instance corresponding to this buildkit client shuts down.
+		// Deleting it would make it easier to create race conditions around using the client's session
+		// before it is fully closed.
+	}, nil
 }
 
-func (c *Client) DeregisterClientHostname(clientHostname string) {
-	c.clientHostnameToIDMu.Lock()
-	defer c.clientHostnameToIDMu.Unlock()
-	delete(c.clientHostnameToID, clientHostname)
+func (c *Client) VerifyClient(clientID, secretToken string) error {
+	c.clientMu.RLock()
+	defer c.clientMu.RUnlock()
+	existingToken, ok := c.clientIDToSecretToken[clientID]
+	if !ok {
+		return fmt.Errorf("client ID %q not registered", clientID)
+	}
+	if existingToken != secretToken {
+		return fmt.Errorf("client ID %q registered with different secret token", clientID)
+	}
+	return nil
 }
 
 func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
-	c.clientHostnameToIDMu.RLock()
-	defer c.clientHostnameToIDMu.RUnlock()
+	c.clientMu.RLock()
+	defer c.clientMu.RUnlock()
 	clientID, ok := c.clientHostnameToID[clientHostname]
 	if !ok {
 		// TODO:

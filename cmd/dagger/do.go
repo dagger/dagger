@@ -420,10 +420,11 @@ func (m commandAnnotations) getCommandSpecificFlags() []string {
 	return split
 }
 
-func EngineConn(r http.Handler) DirectConn {
+func EngineConn(sess *client.Session) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(sess.SecretToken, "")
 		resp := httptest.NewRecorder()
-		r.ServeHTTP(resp, req)
+		sess.ServeHTTP(resp, req)
 		return resp.Result(), nil
 	}
 }

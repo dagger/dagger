@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/telemetry"
 	"github.com/docker/cli/cli/config"
+	"github.com/google/uuid"
 	controlapi "github.com/moby/buildkit/api/services/control"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/identity"
@@ -50,7 +52,6 @@ type SessionParams struct {
 	// passed from the parent.
 	ParentClientIDs []string
 
-	// TODO: re-add support
 	SecretToken string
 
 	RunnerHost string // host of dagger engine runner serving buildkit apis
@@ -82,12 +83,17 @@ type Session struct {
 
 	hostname string
 
-	// TODO:cleanup
 	nestedSessionPort int
 }
 
 func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.Context, rerr error) {
 	s := &Session{SessionParams: params}
+	if s.SecretToken == "" {
+		s.SecretToken = uuid.New().String()
+	}
+	if s.ServerID == "" {
+		s.ServerID = identity.NewID()
+	}
 
 	s.internalCtx, s.internalCancel = context.WithCancel(context.Background())
 	s.eg, s.internalCtx = errgroup.WithContext(s.internalCtx)
@@ -130,16 +136,17 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 		}
 		s.nestedSessionPort = nestedSessionPort
 		s.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		s.httpClient = &http.Client{Transport: &http.Transport{DialContext: s.NestedDialContext, DisableKeepAlives: true}}
+		s.httpClient = &http.Client{
+			Transport: &http.Transport{
+				DialContext:       s.NestedDialContext,
+				DisableKeepAlives: true,
+			},
+		}
 
 		recorder := progrock.NewRecorder(progMultiW)
 		s.Recorder = recorder
 		ctx = progrock.RecorderToContext(ctx, s.Recorder)
 		return s, ctx, nil
-	}
-
-	if s.ServerID == "" {
-		s.ServerID = identity.NewID()
 	}
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -203,11 +210,12 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
 	s.internalCtx = engine.ContextWithClientMetadata(s.internalCtx, &engine.ClientMetadata{
-		ClientID:        s.ID(),
-		ServerID:        s.ServerID,
-		ClientHostname:  s.hostname,
-		Labels:          pipeline.LoadVCSLabels(workdir),
-		ParentClientIDs: s.ParentClientIDs,
+		ClientID:          s.ID(),
+		ClientSecretToken: s.SecretToken,
+		ServerID:          s.ServerID,
+		ClientHostname:    s.hostname,
+		Labels:            pipeline.LoadVCSLabels(workdir),
+		ParentClientIDs:   s.ParentClientIDs,
 	})
 
 	// progress
@@ -227,26 +235,19 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
 
-	// start the server if it's not already running, client+server ID are
-	// passed through grpc context
+	// connect to the server, registering our session attachables and starting the server if not
+	// already started
 	s.eg.Go(func() error {
-		_, err := s.bkClient.ControlClient().Solve(s.internalCtx, &controlapi.SolveRequest{
-			Cache: controlapi.CacheOptions{
-				// Exports are handled in Close
-				Imports: s.upstreamCacheOptions,
-			},
-		})
-		return err
-	})
-
-	// run the client session
-	s.eg.Go(func() error {
-		// client ID gets passed via the session ID
 		return bkSession.Run(s.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			meta[engine.ServerIDMetaKey] = []string{s.ServerID}
-			meta[engine.ParentClientIDsMetaKey] = s.ParentClientIDs
-			meta[engine.ClientHostnameMetaKey] = []string{hostname}
-			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, meta)
+			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
+				RegisterClient:      true,
+				ClientID:            s.ID(),
+				ClientSecretToken:   s.SecretToken,
+				ServerID:            s.ServerID,
+				ParentClientIDs:     s.ParentClientIDs,
+				ClientHostname:      hostname,
+				UpstreamCacheConfig: s.upstreamCacheOptions,
+			}.AppendToMD(meta))
 		})
 	})
 
@@ -325,10 +326,11 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
 	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:        s.ID(),
-		ServerID:        s.ServerID,
-		ClientHostname:  s.hostname,
-		ParentClientIDs: s.ParentClientIDs,
+		ClientID:          s.ID(),
+		ClientSecretToken: s.SecretToken,
+		ServerID:          s.ServerID,
+		ClientHostname:    s.hostname,
+		ParentClientIDs:   s.ParentClientIDs,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
@@ -359,7 +361,12 @@ func (s *Session) Do(
 	variables map[string]any,
 	data any,
 ) (rerr error) {
-	gqlClient := graphql.NewClient("http://dagger/query", s.httpClient)
+	gqlClient := graphql.NewClient("http://dagger/query", doerWithHeaders{
+		inner: s.httpClient,
+		headers: http.Header{
+			"Authorization": []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(s.SecretToken+":"))},
+		},
+	})
 
 	req := &graphql.Request{
 		Query:     query,
@@ -394,8 +401,15 @@ func (s *Session) Do(
 }
 
 func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO: thought httputil.ReverseProxy would do this, but got weird errors and gave up, try again?
-	newReq := &http.Request{
+	if s.SecretToken != "" {
+		username, _, ok := r.BasicAuth()
+		if !ok || username != s.SecretToken {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+	}
+	resp, err := s.httpClient.Do(&http.Request{
 		Method: r.Method,
 		URL: &url.URL{
 			Scheme: "http",
@@ -404,10 +418,7 @@ func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		},
 		Header: r.Header,
 		Body:   r.Body,
-		// TODO:
-		// Body: io.NopCloser(io.TeeReader(r.Body, os.Stderr)),
-	}
-	resp, err := s.httpClient.Do(newReq)
+	})
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("http do: " + err.Error()))
@@ -630,4 +641,16 @@ func cacheConfigFromEnv() (string, map[string]string, error) {
 	}
 	delete(attrs, "type")
 	return typeVal, attrs, nil
+}
+
+type doerWithHeaders struct {
+	inner   graphql.Doer
+	headers http.Header
+}
+
+func (d doerWithHeaders) Do(req *http.Request) (*http.Response, error) {
+	for k, v := range d.headers {
+		req.Header[k] = v
+	}
+	return d.inner.Do(req)
 }

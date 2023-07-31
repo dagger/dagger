@@ -141,6 +141,7 @@ func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Conte
 	}
 	md := metadata.Join(incomingMD, outgoingMD)
 
+	// TODO: use same approach as client metdata for the rest of this stuff
 	getVal := func(key string) (string, error) {
 		vals, ok := md[key]
 		if !ok || len(vals) == 0 {
@@ -155,12 +156,9 @@ func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Conte
 
 	sessData := &sessionStreamResourceData{}
 
-	requesterClientID, err := getVal(engine.ClientIDMetaKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if requesterClientID != "" {
-		sessData.requesterClientID = requesterClientID
+	clientMetadata, ok := engine.OptionalClientMetadataFromContext(stream.Context())
+	if ok {
+		sessData.requesterClientID = clientMetadata.ClientID
 	}
 
 	localDirImportDirName, err := getVal(engine.LocalDirImportDirNameMetaKey)

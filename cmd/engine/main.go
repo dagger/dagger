@@ -297,11 +297,6 @@ func main() { //nolint:gocyclo
 		}
 		cfg.Root = root
 
-		go logMetrics(context.Background(), cfg.Root)
-		if cfg.Trace {
-			go logTraceMetrics(context.Background())
-		}
-
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return errors.Wrapf(err, "failed to create %s", root)
 		}
@@ -329,6 +324,11 @@ func main() { //nolint:gocyclo
 		defer controller.Close()
 
 		controller.Register(server)
+
+		go logMetrics(context.Background(), cfg.Root, controller)
+		if cfg.Trace {
+			go logTraceMetrics(context.Background())
+		}
 
 		ents := c.GlobalStringSlice("allow-insecure-entitlement")
 		if len(ents) > 0 {

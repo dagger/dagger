@@ -30,7 +30,7 @@ func TestEmptyDirectory(t *testing.T) {
 			directory {
 				entries
 			}
-		}`, &res, nil)
+		}`, &res, nil, dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
 }

@@ -2,31 +2,52 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dagger/dagger/core/pipeline"
+	controlapi "github.com/moby/buildkit/api/services/control"
 	"google.golang.org/grpc/metadata"
 )
 
+const clientMetadataMetaKey = "x-dagger-client-metadata"
+
 type ClientMetadata struct {
 	// ClientID is unique to every session created by every client
-	ClientID string
+	ClientID string `json:"client_id"`
+
+	// ClientSecretToken is a secret token that is unique to every client. It's
+	// initially provided to the server in the controller.Solve request. Every
+	// other request w/ that client ID must also include the same token.
+	ClientSecretToken string `json:"client_secret_token"`
+
 	// ServerID is the id of the server that a client and any of its nested
 	// environment clients connect to
-	ServerID string
+	ServerID string `json:"server_id"`
+
+	// If RegisterClient is true, then a call to Session will initialize the
+	// server if it hasn't already been initialized and register the session's
+	// attachables with it either way. If false, then the session conn will be
+	// forwarded to the server
+	RegisterClient bool `json:"register_client"`
+
 	// ClientHostname is the hostname of the client that made the request. It's
 	// used opportunisticly as a best-effort, semi-stable identifier for the
 	// client across multiple sessions, which can be useful for debugging and for
 	// minimizing occurrences of both excessive cache misses and excessive cache
 	// matches.
-	ClientHostname string
+	ClientHostname string `json:"client_hostname"`
+
 	// (Optional) Pipeline labels for e.g. vcs info like branch, commit, etc.
-	Labels []pipeline.Label
+	Labels []pipeline.Label `json:"labels"`
+
 	// ParentClientIDs is a list of session ids that are parents of the current
 	// session. The first element is the direct parent, the second element is the
 	// parent of the parent, and so on.
-	ParentClientIDs []string
+	ParentClientIDs []string `json:"parent_client_ids"`
+
+	// Import configuration for Buildkit's remote cache
+	UpstreamCacheConfig []*controlapi.CacheOptionsEntry
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.
@@ -35,18 +56,16 @@ func (m ClientMetadata) ClientIDs() []string {
 }
 
 func (m ClientMetadata) ToGRPCMD() metadata.MD {
-	md := metadata.Pairs(
-		ClientIDMetaKey, m.ClientID,
-		ServerIDMetaKey, m.ServerID,
-		ClientHostnameMetaKey, m.ClientHostname,
-		ParentClientIDsMetaKey, strings.Join(m.ParentClientIDs, " "),
-	)
-	labelStrings := make([]string, len(m.Labels))
-	for i, label := range m.Labels {
-		labelStrings[i] = fmt.Sprintf("%s=%s", label.Name, label.Value)
+	b, err := json.Marshal(m)
+	if err != nil {
+		panic(err)
 	}
-	if len(labelStrings) > 0 {
-		md[ClientLabelsMetaKey] = labelStrings
+	return metadata.Pairs(clientMetadataMetaKey, string(b))
+}
+
+func (m ClientMetadata) AppendToMD(md metadata.MD) metadata.MD {
+	for k, v := range m.ToGRPCMD() {
+		md[k] = append(md[k], v...)
 	}
 	return md
 }
@@ -81,83 +100,24 @@ func ClientMetadataFromContext(ctx context.Context) (*ClientMetadata, error) {
 	if !ok {
 		return nil, fmt.Errorf("failed to get metadata from context")
 	}
-
-	if len(md[ClientIDMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", ClientIDMetaKey)
+	vals, ok := md[clientMetadataMetaKey]
+	if !ok {
+		return nil, fmt.Errorf("failed to get %s from metadata", clientMetadataMetaKey)
 	}
-	clientMetadata.ClientID = md[ClientIDMetaKey][0]
-
-	if len(md[ServerIDMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
+	if len(vals) != 1 {
+		return nil, fmt.Errorf("expected exactly one %s value, got %d", clientMetadataMetaKey, len(vals))
 	}
-	clientMetadata.ServerID = md[ServerIDMetaKey][0]
-
-	if len(md[ClientHostnameMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
+	if err := json.Unmarshal([]byte(vals[0]), clientMetadata); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal %s: %v", clientMetadataMetaKey, err)
 	}
-	clientMetadata.ClientHostname = md[ClientHostnameMetaKey][0]
-
-	for _, kv := range md[ClientLabelsMetaKey] {
-		k, v, ok := strings.Cut(kv, "=")
-		if !ok {
-			return nil, fmt.Errorf("failed to parse label string %s", kv)
-		}
-		clientMetadata.Labels = append(clientMetadata.Labels, pipeline.Label{Name: k, Value: v})
-	}
-
-	if len(md[ParentClientIDsMetaKey]) != 1 {
-		return nil, fmt.Errorf("failed to get %s from metadata", ParentClientIDsMetaKey)
-	}
-	clientMetadata.ParentClientIDs = strings.Fields(md[ParentClientIDsMetaKey][0])
-
 	return clientMetadata, nil
 }
 
-// opts when calling the Session method in Server (part of the controller grpc API)
-type SessionAPIOpts struct {
-	*ClientMetadata
-	// If true, this session call is for buildkit attachables rather than the default
-	// of connecting the the Dagger GraphQL API
-	BuildkitAttachable bool
-}
-
-func SessionAPIOptsFromContext(ctx context.Context) (*SessionAPIOpts, error) {
-	// first check to see if it's a header set by buildkit's session.Run method, in which
-	// case it's an attempt to connect session attachables rather than connect to dagger's
-	// graphql api
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		return nil, fmt.Errorf("failed to get metadata from context")
-	}
-	if len(md[SessionIDMetaKey]) > 0 {
-		opts := &SessionAPIOpts{
-			ClientMetadata: &ClientMetadata{
-				// client id is the session id
-				ClientID: md[SessionIDMetaKey][0],
-			},
-			BuildkitAttachable: true,
-		}
-
-		if len(md[ClientHostnameMetaKey]) != 1 {
-			return nil, fmt.Errorf("failed to get %s from metadata", ClientHostnameMetaKey)
-		}
-		opts.ClientHostname = md[ClientHostnameMetaKey][0]
-
-		if len(md[ServerIDMetaKey]) != 1 {
-			return nil, fmt.Errorf("failed to get %s from metadata", ServerIDMetaKey)
-		}
-		opts.ServerID = md[ServerIDMetaKey][0]
-
-		opts.ParentClientIDs = md[ParentClientIDsMetaKey]
-
-		return opts, nil
-	}
-
+func OptionalClientMetadataFromContext(ctx context.Context) (*ClientMetadata, bool) {
 	clientMetadata, err := ClientMetadataFromContext(ctx)
 	if err != nil {
-		// TODO:
-		// return nil, err
-		return nil, fmt.Errorf("failed to get client metadata from context: %w: %+v", err, md)
+		// TODO: should check actual err types
+		return nil, false
 	}
-	return &SessionAPIOpts{ClientMetadata: clientMetadata}, nil
+	return clientMetadata, true
 }

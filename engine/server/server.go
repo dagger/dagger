@@ -23,10 +23,12 @@ import (
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
+	"github.com/sirupsen/logrus"
 	"github.com/vito/progrock"
 )
 
 type DaggerServer struct {
+	serverID string
 	bkClient *buildkit.Client
 	worker   bkworker.Worker
 
@@ -37,6 +39,9 @@ type DaggerServer struct {
 	doneCh    chan struct{}
 	doneErr   error // TODO: actually set this
 	closeOnce sync.Once
+
+	connectedClients int
+	clientMu         sync.RWMutex
 }
 
 func NewDaggerServer(
@@ -49,7 +54,8 @@ func NewDaggerServer(
 	authProvider *auth.RegistryAuthProvider,
 	pipelineLabels []pipeline.Label,
 ) (*DaggerServer, error) {
-	rtr := &DaggerServer{
+	srv := &DaggerServer{
+		serverID: serverID,
 		bkClient: bkClient,
 		worker:   worker,
 		doneCh:   make(chan struct{}, 1),
@@ -70,7 +76,7 @@ func NewDaggerServer(
 	if err != nil {
 		return nil, err
 	}
-	rtr.progCleanup = progCleanup
+	srv.progCleanup = progCleanup
 
 	pipeline.SetRootLabels(pipelineLabels)
 	progrockLabels := []*progrock.Label{}
@@ -80,7 +86,7 @@ func NewDaggerServer(
 			Value: label.Value,
 		})
 	}
-	rtr.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
+	srv.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
 	// TODO: ensure clean flush+shutdown+error-handling
 	statusCh := make(chan *bkclient.SolveStatus, 8)
@@ -103,7 +109,7 @@ func NewDaggerServer(
 			if !ok {
 				return
 			}
-			err := rtr.recorder.Record(buildkit.BK2Progrock(status))
+			err := srv.recorder.Record(buildkit.BK2Progrock(status))
 			if err != nil {
 				bklog.G(ctx).WithError(err).Error("failed to record status update")
 				return
@@ -112,44 +118,53 @@ func NewDaggerServer(
 	}()
 
 	apiSchema, err := schema.New(schema.InitializeArgs{
-		BuildkitClient: rtr.bkClient,
-		Platform:       rtr.worker.Platforms(true)[0],
+		BuildkitClient: srv.bkClient,
+		Platform:       srv.worker.Platforms(true)[0],
 		ProgSockPath:   progSockPath,
-		OCIStore:       rtr.worker.ContentStore(),
-		LeaseManager:   rtr.worker.LeaseManager(),
+		OCIStore:       srv.worker.ContentStore(),
+		LeaseManager:   srv.worker.LeaseManager(),
 		Secrets:        secretStore,
 		Auth:           authProvider,
 	})
 	if err != nil {
 		return nil, err
 	}
-	rtr.schema = apiSchema
-	return rtr, nil
+	srv.schema = apiSchema
+	return srv, nil
 }
 
-func (rtr *DaggerServer) Close() {
-	defer rtr.closeOnce.Do(func() {
-		close(rtr.doneCh)
+func (srv *DaggerServer) LogMetrics(l *logrus.Entry) *logrus.Entry {
+	srv.clientMu.RLock()
+	defer srv.clientMu.RUnlock()
+	return l.WithField(fmt.Sprintf("server-%s-client-count", srv.serverID), srv.connectedClients)
+}
+
+func (srv *DaggerServer) Close() {
+	defer srv.closeOnce.Do(func() {
+		close(srv.doneCh)
 	})
 
 	// mark all groups completed
-	rtr.recorder.Complete()
+	srv.recorder.Complete()
 	// close the recorder so the UI exits
-	rtr.recorder.Close()
+	srv.recorder.Close()
 
-	rtr.progCleanup()
+	srv.progCleanup()
 }
 
-func (rtr *DaggerServer) Wait(ctx context.Context) error {
+func (srv *DaggerServer) Wait(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-rtr.doneCh:
-		return fmt.Errorf("server closed: %w", rtr.doneErr)
+	case <-srv.doneCh:
+		if srv.doneErr != nil {
+			return fmt.Errorf("server closed: %w", srv.doneErr)
+		}
+		return nil
 	}
 }
 
-func (rtr *DaggerServer) ServeClientConn(
+func (srv *DaggerServer) ServeClientConn(
 	ctx context.Context,
 	clientMetadata *engine.ClientMetadata,
 	conn net.Conn,
@@ -157,6 +172,14 @@ func (rtr *DaggerServer) ServeClientConn(
 	// TODO: use fields in logs
 	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
 	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+	srv.clientMu.Lock()
+	srv.connectedClients++
+	defer func() {
+		srv.clientMu.Lock()
+		srv.connectedClients--
+		srv.clientMu.Unlock()
+	}()
+	srv.clientMu.Unlock()
 
 	l := &singleConnListener{conn: nopCloserConn{conn}, closeCh: make(chan struct{})}
 	go func() {
@@ -166,32 +189,21 @@ func (rtr *DaggerServer) ServeClientConn(
 
 	// TODO: not sure how inefficient making a new server per-request is, fix if it's meaningful
 	// maybe you could dynamically mux in more endpoints for each client or something?
-	srv := http.Server{
-		Handler:           rtr.HTTPHandlerForClient(clientMetadata),
+	httpSrv := http.Server{
+		Handler:           srv.HTTPHandlerForClient(clientMetadata),
 		ReadHeaderTimeout: 30 * time.Second,
 	}
-	defer srv.Close()
-	return srv.Serve(l)
+	defer httpSrv.Close()
+	return httpSrv.Serve(l)
 }
 
-func (rtr *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
+func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		// TODO:
 		bklog.G(req.Context()).Debugf("http handler for client conn: %s", clientMetadata.ClientID)
 		defer bklog.G(req.Context()).Debugf("http handler for client conn done: %s", clientMetadata.ClientID)
 
-		w.Header().Add("x-dagger-engine", engine.Version)
-
-		/* TODO: re-add session token, here or in an upper caller
-		if rtr.sessionToken != "" {
-			username, _, ok := req.BasicAuth()
-			if !ok || username != rtr.sessionToken {
-				w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-		}
-		*/
+		w.Header().Add(engine.EngineVersionMetaKey, engine.Version)
 
 		defer func() {
 			if v := recover(); v != nil {
@@ -220,12 +232,12 @@ func (rtr *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetad
 			}
 		}()
 
-		req = req.WithContext(progrock.RecorderToContext(req.Context(), rtr.recorder))
+		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
 		mux := http.NewServeMux()
 		mux.Handle("/query", NewHandler(&HandlerConfig{
-			Schema: rtr.schema.Schema(),
+			Schema: srv.schema.Schema(),
 		}))
 		mux.ServeHTTP(w, req)
 	})
