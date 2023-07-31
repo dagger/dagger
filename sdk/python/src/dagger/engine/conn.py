@@ -8,6 +8,7 @@ from dagger.config import Config, ConnectParams
 from dagger.context import SyncResourceManager
 from dagger.exceptions import ProvisionError
 
+from ._version import CLI_VERSION
 from .cli import CLISession
 from .download import Downloader
 
@@ -21,6 +22,7 @@ class Engine(SyncResourceManager):
         super().__init__()
         self.cfg = cfg
         self.progress = progress
+        self.version_mismatch_msg = ""
 
     def from_env(self) -> ConnectParams | None:
         if not (port := os.environ.get("DAGGER_SESSION_PORT")):
@@ -40,9 +42,16 @@ class Engine(SyncResourceManager):
         # like `dagger run`.
         self.progress.start("Provisioning engine")
 
-        cli_bin = os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN") or Downloader().get(
-            self.progress
-        )
+        if cli_bin := os.environ.get("_EXPERIMENTAL_DAGGER_CLI_BIN"):
+            # Warn if engine version is incompatible only if an explicit
+            # binary is provided. It's already done by the API when
+            # using the TUI, and using the Downloader ensures the correct
+            # version is used.
+            self.version_mismatch_msg = (
+                f'Dagger CLI version mismatch (required {CLI_VERSION}): "{cli_bin}"'
+            )
+        else:
+            cli_bin = Downloader().get(self.progress)
 
         self.progress.update("Creating new Engine session")
         with self.get_sync_stack() as stack:
