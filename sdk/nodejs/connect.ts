@@ -71,7 +71,7 @@ export async function connect(
   try {
     await client.checkVersionCompatibility(CLI_VERSION)
   } catch (e) {
-    console.log("failed to check version compatibility:", e)
+    console.error("failed to check version compatibility:", e)
   }
 
   await cb(client).finally(async () => {
