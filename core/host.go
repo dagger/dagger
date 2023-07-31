@@ -102,6 +102,6 @@ func (host *Host) File(
 	return parentDir.File(ctx, bk, filepath.Base(path))
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath, clientHostname string) (*Socket, error) {
-	return NewHostSocket(sockPath, clientHostname), nil
+func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
+	return NewHostSocket(sockPath), nil
 }

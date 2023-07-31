@@ -37,7 +37,6 @@ import (
 	"github.com/vito/progrock"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 const OCIStoreName = "dagger-oci"
@@ -508,15 +507,14 @@ func (s AnyDirSource) TarStream(stream filesync.FileSync_TarStreamServer) error 
 }
 
 func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
-	md, _ := metadata.FromIncomingContext(stream.Context()) // if no metadata continue with empty object
+	opts, err := engine.LocalImportOptsFromContext(stream.Context())
+	if err != nil {
+		return fmt.Errorf("get local import opts: %w", err)
+	}
 
-	readSingleFileVals, ok := md[engine.LocalDirImportReadSingleFileMetaKey]
-	if ok {
-		if len(readSingleFileVals) != 1 {
-			return fmt.Errorf("expected exactly one %s, got %d", engine.LocalDirImportReadSingleFileMetaKey, len(readSingleFileVals))
-		}
-		filePath := readSingleFileVals[0]
-		fileContents, err := os.ReadFile(filePath)
+	if opts.ReadSingleFileOnly {
+		// just stream the file bytes to the caller
+		fileContents, err := os.ReadFile(opts.Path)
 		if err != nil {
 			return fmt.Errorf("read file: %w", err)
 		}
@@ -527,18 +525,11 @@ func (s AnyDirSource) DiffCopy(stream filesync.FileSync_DiffCopyServer) error {
 		return stream.SendMsg(&filesync.BytesMessage{Data: fileContents})
 	}
 
-	dirNameVals := md[engine.LocalDirImportDirNameMetaKey]
-	if len(dirNameVals) != 1 {
-		return fmt.Errorf("expected exactly one %s, got %d", engine.LocalDirImportDirNameMetaKey, len(dirNameVals))
-	}
-	dirName := dirNameVals[0]
-	includePatterns := md[engine.LocalDirImportIncludePatternsMetaKey]
-	excludePatterns := md[engine.LocalDirImportExcludePatternsMetaKey]
-	followPaths := md[engine.LocalDirImportFollowPathsMetaKey]
-	return fsutil.Send(stream.Context(), stream, fsutil.NewFS(dirName, &fsutil.WalkOpt{
-		IncludePatterns: includePatterns,
-		ExcludePatterns: excludePatterns,
-		FollowPaths:     followPaths,
+	// otherwise, do the whole directory sync back to the caller
+	return fsutil.Send(stream.Context(), stream, fsutil.NewFS(opts.Path, &fsutil.WalkOpt{
+		IncludePatterns: opts.IncludePatterns,
+		ExcludePatterns: opts.ExcludePatterns,
+		FollowPaths:     opts.FollowPaths,
 		Map: func(p string, st *fstypes.Stat) fsutil.MapResult {
 			st.Uid = 0
 			st.Gid = 0
@@ -555,29 +546,18 @@ func (t AnyDirTarget) Register(server *grpc.Server) {
 }
 
 func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr error) {
-	opts, ok := metadata.FromIncomingContext(stream.Context())
-	if !ok {
-		return fmt.Errorf("diff copy missing metadata")
+	opts, err := engine.LocalExportOptsFromContext(stream.Context())
+	if err != nil {
+		return fmt.Errorf("get local export opts: %w", err)
 	}
 
-	destVal, ok := opts[engine.LocalDirExportDestPathMetaKey]
-	if !ok {
-		return fmt.Errorf("missing " + engine.LocalDirExportDestPathMetaKey)
-	}
-	if len(destVal) != 1 {
-		return fmt.Errorf("expected exactly one "+engine.LocalDirExportDestPathMetaKey+" value, got %d", len(destVal))
-	}
-	dest := destVal[0]
-
-	_, isFileStream := opts[engine.LocalDirExportIsFileStreamMetaKey]
-
-	if !isFileStream {
+	if !opts.IsFileStream {
 		// we're writing a full directory tree, normal fsutil.Receive is good
-		if err := os.MkdirAll(dest, 0700); err != nil {
-			return fmt.Errorf("failed to create synctarget dest dir %s: %w", dest, err)
+		if err := os.MkdirAll(opts.Path, 0700); err != nil {
+			return fmt.Errorf("failed to create synctarget dest dir %s: %w", opts.Path, err)
 		}
 
-		err := fsutil.Receive(stream.Context(), stream, dest, fsutil.ReceiveOpt{
+		err := fsutil.Receive(stream.Context(), stream, opts.Path, fsutil.ReceiveOpt{
 			Merge: true,
 			Filter: func(path string, stat *fstypes.Stat) bool {
 				stat.Uid = uint32(os.Getuid())
@@ -598,46 +578,39 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	// However, if allowParentDirPath is set, we will write the file underneath that existing directory.
 	// But if allowParentDirPath is not set, which is the default setting in our API right now, we will return
 	// an error when path is a pre-existing directory.
-	_, allowParentDirPath := opts[engine.LocalDirExportAllowParentDirPathMetaKey]
+	allowParentDirPath := opts.AllowParentDirPath
 
 	// File exports specifically (as opposed to container tar exports) have an original filename that we will
 	// use in the case where dest is a directory and allowParentDirPath is set, in which case we need to know
 	// what to name the file underneath the pre-existing directory.
-	var fileOriginalName string
-	fileOriginalNameVal, hasFileOriginalName := opts[engine.LocalDirExportFileOriginalNameMetaKey]
-	if hasFileOriginalName {
-		if len(fileOriginalNameVal) != 1 {
-			return fmt.Errorf("expected exactly one "+engine.LocalDirExportFileOriginalNameMetaKey+" value, got %d", len(fileOriginalNameVal))
-		}
-		fileOriginalName = filepath.Join("/", fileOriginalNameVal[0])
-	}
+	fileOriginalName := opts.FileOriginalName
 
 	var destParentDir string
 	var finalDestPath string
-	stat, err := os.Lstat(dest)
+	stat, err := os.Lstat(opts.Path)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		// we are writing the file to a new path
-		destParentDir = filepath.Dir(dest)
-		finalDestPath = dest
+		destParentDir = filepath.Dir(opts.Path)
+		finalDestPath = opts.Path
 	case err != nil:
 		// something went unrecoverably wrong if stat failed and it wasn't just because the path didn't exist
-		return fmt.Errorf("failed to stat synctarget dest %s: %w", dest, err)
+		return fmt.Errorf("failed to stat synctarget dest %s: %w", opts.Path, err)
 	case !stat.IsDir():
 		// we are overwriting an existing file
-		destParentDir = filepath.Dir(dest)
-		finalDestPath = dest
+		destParentDir = filepath.Dir(opts.Path)
+		finalDestPath = opts.Path
 	case !allowParentDirPath:
 		// we are writing to an existing directory, but allowParentDirPath is not set, so fail
-		return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", dest)
+		return fmt.Errorf("destination %q is a directory; must be a file path unless allowParentDirPath is set", opts.Path)
 	default:
 		// we are writing to an existing directory, and allowParentDirPath is set,
 		// so write the file under the directory using the same file name as the source file
-		if !hasFileOriginalName {
+		if fileOriginalName == "" {
 			// NOTE: we could instead just default to some name like container.tar or something if desired
-			return fmt.Errorf("cannot export container tar to existing directory %q", dest)
+			return fmt.Errorf("cannot export container tar to existing directory %q", opts.Path)
 		}
-		destParentDir = dest
+		destParentDir = opts.Path
 		finalDestPath = filepath.Join(destParentDir, fileOriginalName)
 	}
 

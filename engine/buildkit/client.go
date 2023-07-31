@@ -479,11 +479,6 @@ func (c *Client) VerifyClient(clientID, secretToken string) error {
 	return nil
 }
 
-type LocalImportOpts struct {
-	OwnerClientID string `json:"ownerClientID,omitempty"`
-	Path          string `json:"path,omitempty"`
-}
-
 func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb.LocalOption) (llb.State, error) {
 	srcPath = path.Clean(srcPath)
 	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
@@ -495,16 +490,40 @@ func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb
 		return llb.State{}, err
 	}
 
-	// NOTE: this relies on the fact that the local source is evaluated synchronously in the caller, otherwise
-	// the caller client ID may not be correct.
-	name, err := EncodeIDHack(LocalImportOpts{
+	localImportOpts := engine.LocalImportOpts{
 		// For now, the requester is always the owner of the local dir
 		// when the dir is initially created in LLB (i.e. you can't request a
 		// a new local dir from another session, you can only be passed one
 		// from another session already created).
 		OwnerClientID: clientMetadata.ClientID,
 		Path:          srcPath,
-	})
+	}
+
+	// set any buildkit llb options too
+	llbLocalOpts := &llb.LocalInfo{}
+	for _, opt := range opts {
+		opt.SetLocalOption(llbLocalOpts)
+	}
+	// llb marshals lists as json for some reason
+	if len(llbLocalOpts.IncludePatterns) > 0 {
+		if err := json.Unmarshal([]byte(llbLocalOpts.IncludePatterns), &localImportOpts.IncludePatterns); err != nil {
+			return llb.State{}, err
+		}
+	}
+	if len(llbLocalOpts.ExcludePatterns) > 0 {
+		if err := json.Unmarshal([]byte(llbLocalOpts.ExcludePatterns), &localImportOpts.ExcludePatterns); err != nil {
+			return llb.State{}, err
+		}
+	}
+	if len(llbLocalOpts.FollowPaths) > 0 {
+		if err := json.Unmarshal([]byte(llbLocalOpts.FollowPaths), &localImportOpts.FollowPaths); err != nil {
+			return llb.State{}, err
+		}
+	}
+
+	// NOTE: this relies on the fact that the local source is evaluated synchronously in the caller, otherwise
+	// the caller client ID may not be correct.
+	name, err := EncodeIDHack(localImportOpts)
 	if err != nil {
 		return llb.State{}, err
 	}
@@ -529,12 +548,11 @@ func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, e
 		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		md = metadata.MD{}
-	}
-	md[engine.LocalDirImportReadSingleFileMetaKey] = []string{path}
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = engine.LocalImportOpts{
+		OwnerClientID:      clientMetadata.ClientID,
+		Path:               path,
+		ReadSingleFileOnly: true,
+	}.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {
@@ -604,14 +622,10 @@ func (c *Client) LocalDirExport(
 		return fmt.Errorf("failed to get requester session ID: %s", err)
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		md = metadata.MD{}
-	}
-	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
-	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
-
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = engine.LocalExportOpts{
+		DestClientID: clientMetadata.ClientID,
+		Path:         destPath,
+	}.AppendToOutgoingContext(ctx)
 
 	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
 	if err != nil {
@@ -675,18 +689,13 @@ func (c *Client) LocalFileExport(
 		return fmt.Errorf("failed to get requester session ID: %s", err)
 	}
 
-	md, ok := metadata.FromIncomingContext(ctx)
-	if !ok {
-		md = metadata.MD{}
-	}
-	md[engine.LocalDirExportDestClientIDMetaKey] = []string{clientMetadata.ClientID}
-	md[engine.LocalDirExportDestPathMetaKey] = []string{destPath}
-	md[engine.LocalDirExportIsFileStreamMetaKey] = []string{"true"}
-	md[engine.LocalDirExportFileOriginalNameMetaKey] = []string{filepath.Base(filePath)}
-	if allowParentDirPath {
-		md[engine.LocalDirExportAllowParentDirPathMetaKey] = []string{"true"}
-	}
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = engine.LocalExportOpts{
+		DestClientID:       clientMetadata.ClientID,
+		Path:               destPath,
+		IsFileStream:       true,
+		FileOriginalName:   filepath.Base(filePath),
+		AllowParentDirPath: allowParentDirPath,
+	}.AppendToOutgoingContext(ctx)
 
 	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
 	if err != nil {

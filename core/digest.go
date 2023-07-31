@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/dagger/dagger/engine/sources/httpdns"
@@ -238,9 +239,9 @@ func stabilizeOp(op *opDAG) error {
 			}
 		}
 
-		var opts buildkit.LocalImportOpts
-		if err := buildkit.DecodeIDHack("local", src.Identifier, &opts); err == nil {
-			src.Identifier = "local://" + opts.Path
+		var localImportOps engine.LocalImportOpts
+		if err := buildkit.DecodeIDHack("local", src.Identifier, &localImportOps); err == nil {
+			src.Identifier = "local://" + localImportOps.Path
 		}
 
 		var httpHack httpdns.DaggerHTTPURLHack

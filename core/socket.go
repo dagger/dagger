@@ -25,7 +25,7 @@ func (id SocketID) ToSocket() (*Socket, error) {
 	return &socket, nil
 }
 
-func NewHostSocket(absPath, clientHostname string) *Socket {
+func NewHostSocket(absPath string) *Socket {
 	return &Socket{
 		HostPath: absPath,
 	}

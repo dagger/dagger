@@ -13,7 +13,6 @@ import (
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
-	"github.com/moby/buildkit/session/sshforward"
 	"github.com/moby/buildkit/util/bklog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -87,46 +86,20 @@ type sessionStreamResourceData struct {
 	//
 	importLocalDirData *importLocalDirData
 	exportLocalDirData *exportLocalDirData
-	socketData         *socketData
 }
 
 type importLocalDirData struct {
+	*engine.LocalImportOpts
 	session bksession.Caller
-	path    string
 }
 
 type exportLocalDirData struct {
+	*engine.LocalExportOpts
 	session bksession.Caller
-	path    string
-}
-
-type socketData struct {
-	session bksession.Caller
-	id      string
 }
 
 // TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
 func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Context, *sessionStreamResourceData, error) {
-	incomingMD, incomingOk := metadata.FromIncomingContext(stream.Context())
-	outgoingMD, outgoingOk := metadata.FromOutgoingContext(stream.Context())
-	if !incomingOk && !outgoingOk {
-		return nil, nil, fmt.Errorf("no grpc metadata")
-	}
-	md := metadata.Join(incomingMD, outgoingMD)
-
-	// TODO: use same approach as client metdata for the rest of this stuff
-	getVal := func(key string) (string, error) {
-		vals, ok := md[key]
-		if !ok || len(vals) == 0 {
-			return "", nil
-		}
-		if len(vals) != 1 {
-			return "", fmt.Errorf("expected exactly one %s, got %d", key, len(vals))
-		}
-		return vals[0], nil
-	}
-	ctx := metadata.NewOutgoingContext(stream.Context(), md)
-
 	sessData := &sessionStreamResourceData{}
 
 	clientMetadata, ok := engine.OptionalClientMetadataFromContext(stream.Context())
@@ -134,72 +107,47 @@ func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Conte
 		sessData.requesterClientID = clientMetadata.ClientID
 	}
 
-	localDirImportDirName, err := getVal(engine.LocalDirImportDirNameMetaKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if localDirImportDirName != "" {
-		var opts LocalImportOpts
-		if err := DecodeIDHack("local", localDirImportDirName, &opts); err != nil {
-			return nil, nil, fmt.Errorf("invalid import local dir name: %q", engine.LocalDirImportDirNameMetaKey)
+	localImportOpts, err := engine.LocalImportOptsFromContext(stream.Context())
+	if err == nil {
+		if err := DecodeIDHack("local", localImportOpts.Path, localImportOpts); err != nil {
+			return nil, nil, fmt.Errorf("invalid import local dir name: %q", localImportOpts.Path)
 		}
-		sess, err := c.SessionManager.Get(stream.Context(), opts.OwnerClientID, false)
+		sess, err := c.SessionManager.Get(stream.Context(), localImportOpts.OwnerClientID, false)
 		if err != nil {
 			return nil, nil, err
 		}
 		sessData.importLocalDirData = &importLocalDirData{
-			session: sess,
-			path:    opts.Path,
+			LocalImportOpts: localImportOpts,
+			session:         sess,
 		}
-		// TODO: validation that requester has access
-		md[engine.LocalDirImportDirNameMetaKey] = []string{sessData.importLocalDirData.path}
-		ctx = metadata.NewIncomingContext(ctx, md) // TODO: needed too?
+		md := localImportOpts.ToGRPCMD()
+		ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return ctx, sessData, nil
 	}
 
-	localDirExportDestClientID, err := getVal(engine.LocalDirExportDestClientIDMetaKey)
-	if err != nil {
-		return nil, nil, err
-	}
-	if localDirExportDestClientID != "" {
+	localExportOpts, err := engine.LocalExportOptsFromContext(stream.Context())
+	if err == nil {
 		// for now, require that the requester is the owner of the session, i.e. you
 		// can only export to yourself, not to others
-		if sessData.requesterClientID != localDirExportDestClientID {
+		if sessData.requesterClientID != localExportOpts.DestClientID {
 			return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
 		}
 
-		localDirExportDestPath, err := getVal(engine.LocalDirExportDestPathMetaKey)
-		if err != nil {
-			return nil, nil, err
-		}
-		if localDirExportDestPath == "" {
-			return nil, nil, fmt.Errorf("missing %s", engine.LocalDirExportDestPathMetaKey)
+		if localExportOpts.Path == "" {
+			return nil, nil, fmt.Errorf("missing local dir export path")
 		}
 
-		sess, err := c.SessionManager.Get(stream.Context(), localDirExportDestClientID, false)
+		sess, err := c.SessionManager.Get(stream.Context(), localExportOpts.DestClientID, false)
 		if err != nil {
 			return nil, nil, err
 		}
 		sessData.exportLocalDirData = &exportLocalDirData{
-			session: sess,
-			path:    localDirExportDestPath,
+			LocalExportOpts: localExportOpts,
+			session:         sess,
 		}
-		return ctx, sessData, nil
-	}
-
-	socketID, err := getVal(sshforward.KeySSHID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if socketID != "" {
-		// NOTE: currently just always assuming socket refers to main client, will need updates if/when
-		// we support passing sockets to/from nested clients
-		sessData.socketData = &socketData{
-			session: c.MainClientCaller,
-			id:      socketID,
-		}
-		ctx = metadata.NewIncomingContext(ctx, md) // TODO: needed too?
+		md := localExportOpts.ToGRPCMD()
+		ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return ctx, sessData, nil
 	}

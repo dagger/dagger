@@ -15,7 +15,6 @@ import (
 	filesynctypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 // TODO: could make generic func to reduce tons of below boilerplate
@@ -250,14 +249,12 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 	} else {
 		// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
 		useBytesMessageType = true
-		md, ok := metadata.FromOutgoingContext(ctx)
-		if !ok {
-			md = metadata.MD{}
-		}
-		md[engine.LocalDirExportDestClientIDMetaKey] = []string{p.destClientID}
-		md[engine.LocalDirExportDestPathMetaKey] = []string{p.destPath}
-		md[engine.LocalDirExportIsFileStreamMetaKey] = []string{"true"}
-		ctx = metadata.NewOutgoingContext(ctx, md)
+		ctx = engine.LocalExportOpts{
+			DestClientID: p.destClientID,
+			Path:         p.destPath,
+			IsFileStream: true,
+		}.AppendToOutgoingContext(ctx)
+
 		destCaller, err := p.c.SessionManager.Get(ctx, p.destClientID, false)
 		if err != nil {
 			return fmt.Errorf("failed to get requester client session: %s", err)

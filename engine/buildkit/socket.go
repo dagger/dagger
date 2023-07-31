@@ -3,13 +3,13 @@ package buildkit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 
 	"github.com/moby/buildkit/session/sshforward"
 	"github.com/moby/buildkit/util/bklog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // TODO: could make generic func to reduce tons of below boilerplate
@@ -29,17 +29,13 @@ func (p *socketProxy) CheckAgent(ctx context.Context, req *sshforward.CheckAgent
 }
 
 func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) error {
-	ctx, baseData, err := p.c.getSessionResourceData(stream)
-	if err != nil {
-		return err
-	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
-	opts := baseData.socketData
-	if opts == nil {
-		return fmt.Errorf("expected socket opts")
-	}
-	forwardAgentClient, err := sshforward.NewSSHClient(opts.session.Conn()).ForwardAgent(ctx)
+
+	incomingMD, _ := metadata.FromIncomingContext(ctx)
+	ctx = metadata.NewOutgoingContext(ctx, incomingMD)
+
+	forwardAgentClient, err := sshforward.NewSSHClient(p.c.MainClientCaller.Conn()).ForwardAgent(ctx)
 	if err != nil {
 		return err
 	}
