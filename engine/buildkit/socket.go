@@ -2,17 +2,11 @@ package buildkit
 
 import (
 	"context"
-	"errors"
-	"io"
 
 	"github.com/moby/buildkit/session/sshforward"
-	"github.com/moby/buildkit/util/bklog"
-	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
-
-// TODO: could make generic func to reduce tons of below boilerplate
 
 type socketProxy struct {
 	c *Client
@@ -39,60 +33,5 @@ func (p *socketProxy) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) err
 	if err != nil {
 		return err
 	}
-
-	var eg errgroup.Group
-	var done bool
-	eg.Go(func() (rerr error) {
-		defer func() {
-			bklog.G(ctx).WithError(rerr).Debug("forward agent receiver done")
-			if rerr == io.EOF {
-				rerr = nil
-			}
-			if errors.Is(rerr, context.Canceled) && done {
-				rerr = nil
-			}
-			if rerr != nil {
-				cancel()
-			}
-		}()
-		for {
-			pkt, err := withContext(ctx, func() (*sshforward.BytesMessage, error) {
-				var pkt sshforward.BytesMessage
-				err := stream.RecvMsg(&pkt)
-				return &pkt, err
-			})
-			if err != nil {
-				return err
-			}
-			if err := forwardAgentClient.SendMsg(pkt); err != nil {
-				return err
-			}
-		}
-	})
-	eg.Go(func() (rerr error) {
-		defer func() {
-			bklog.G(ctx).WithError(rerr).Debug("forward agent sender done")
-			if rerr == io.EOF {
-				rerr = nil
-			}
-			if rerr == nil {
-				done = true
-			}
-			cancel()
-		}()
-		for {
-			pkt, err := withContext(ctx, func() (*sshforward.BytesMessage, error) {
-				var pkt sshforward.BytesMessage
-				err := forwardAgentClient.RecvMsg(&pkt)
-				return &pkt, err
-			})
-			if err != nil {
-				return err
-			}
-			if err := stream.SendMsg(pkt); err != nil {
-				return err
-			}
-		}
-	})
-	return eg.Wait()
+	return proxyStream[sshforward.BytesMessage](ctx, forwardAgentClient, stream)
 }

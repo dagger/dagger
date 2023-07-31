@@ -175,6 +175,15 @@ func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*r
 }
 
 func wrapError(ctx context.Context, baseErr error, sessionID string) error {
+	var slowCacheErr *bksolver.SlowCacheError
+	if errors.As(baseErr, &slowCacheErr) {
+		if slowCacheErr.Result != nil {
+			defer slowCacheErr.Result.Release(context.Background())
+		}
+		// TODO: include input IDs? Or does that not matter for us?
+		return solvererror.WithSolveError(baseErr, slowCacheErr.ToSubject(), nil, nil)
+	}
+
 	var execErr *llberror.ExecError
 	if errors.As(baseErr, &execErr) {
 		defer func() {
@@ -186,12 +195,6 @@ func wrapError(ctx context.Context, baseErr error, sessionID string) error {
 	var fileErr *llberror.FileActionError
 	if errors.As(baseErr, &fileErr) {
 		return solvererror.WithSolveError(baseErr, fileErr.ToSubject(), nil, nil)
-	}
-
-	var slowCacheErr *bksolver.SlowCacheError
-	if errors.As(baseErr, &slowCacheErr) {
-		// TODO: include input IDs? Or does that not matter for us?
-		return solvererror.WithSolveError(baseErr, slowCacheErr.ToSubject(), nil, nil)
 	}
 
 	if execErr == nil {
