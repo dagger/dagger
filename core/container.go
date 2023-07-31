@@ -1428,7 +1428,7 @@ func (container *Container) Publish(
 		mediaTypes = OCIMediaTypes
 	}
 
-	inputByPlatform := map[string]buildkit.PublishInput{}
+	inputByPlatform := map[string]buildkit.ContainerExport{}
 	id, err := container.ID()
 	if err != nil {
 		return "", err
@@ -1455,7 +1455,7 @@ func (container *Container) Publish(
 		if _, ok := inputByPlatform[platformString]; ok {
 			return "", fmt.Errorf("duplicate platform %q", platformString)
 		}
-		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
 			Config:     container.Config,
 		}
@@ -1522,7 +1522,7 @@ func (container *Container) Export(
 		mediaTypes = OCIMediaTypes
 	}
 
-	inputByPlatform := map[string]buildkit.PublishInput{}
+	inputByPlatform := map[string]buildkit.ContainerExport{}
 	id, err := container.ID()
 	if err != nil {
 		return err
@@ -1550,7 +1550,7 @@ func (container *Container) Export(
 		if _, ok := inputByPlatform[platformString]; ok {
 			return fmt.Errorf("duplicate platform %q", platformString)
 		}
-		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.PublishInput{
+		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
 			Config:     container.Config,
 		}
