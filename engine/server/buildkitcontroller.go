@@ -30,11 +30,15 @@ import (
 	"github.com/moby/buildkit/util/imageutil"
 	"github.com/moby/buildkit/util/leaseutil"
 	"github.com/moby/buildkit/util/throttle"
+	"github.com/moby/buildkit/util/tracing/transform"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/sirupsen/logrus"
+	"go.opentelemetry.io/otel/sdk/trace"
 	tracev1 "go.opentelemetry.io/proto/otlp/collector/trace/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type BuildkitController struct {
@@ -62,6 +66,7 @@ type BuildkitControllerOpts struct {
 	Entitlements           []string
 	EngineName             string
 	Frontends              map[string]frontend.Frontend
+	TraceCollector         trace.SpanExporter
 	UpstreamCacheExporters map[string]remotecache.ResolveCacheExporterFunc
 	UpstreamCacheImporters map[string]remotecache.ResolveCacheImporterFunc
 }
@@ -363,7 +368,6 @@ func (e *BuildkitController) Prune(req *controlapi.PruneRequest, stream controla
 	didPrune := false
 	defer func() {
 		if didPrune {
-			// TODO: we could fix this one off interface definition now...
 			if e, ok := e.cacheManager.(interface {
 				ReleaseUnreferenced(context.Context) error
 			}); ok {
@@ -436,10 +440,20 @@ func (e *BuildkitController) ListWorkers(ctx context.Context, r *controlapi.List
 	return resp, nil
 }
 
+func (e *BuildkitController) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
+	if e.TraceCollector == nil {
+		return nil, status.Errorf(codes.Unavailable, "trace collector not configured")
+	}
+	err := e.TraceCollector.ExportSpans(ctx, transform.Spans(req.GetResourceSpans()))
+	if err != nil {
+		return nil, err
+	}
+	return &tracev1.ExportTraceServiceResponse{}, nil
+}
+
 func (e *BuildkitController) Register(server *grpc.Server) {
 	controlapi.RegisterControlServer(server, e)
-	// TODO: needed?
-	// tracev1.RegisterTraceServiceServer(server, e)
+	tracev1.RegisterTraceServiceServer(server, e)
 }
 
 func (e *BuildkitController) Close() error {
@@ -482,11 +496,6 @@ func (e *BuildkitController) gc() {
 func (e *BuildkitController) Status(req *controlapi.StatusRequest, stream controlapi.Control_StatusServer) error {
 	// we send status updates over progrock session attachables instead
 	return fmt.Errorf("status not implemented")
-}
-
-func (e *BuildkitController) Export(ctx context.Context, req *tracev1.ExportTraceServiceRequest) (*tracev1.ExportTraceServiceResponse, error) {
-	// TODO: not sure if we ever use this
-	return nil, fmt.Errorf("export not implemented")
 }
 
 func (e *BuildkitController) ListenBuildHistory(req *controlapi.BuildHistoryRequest, srv controlapi.Control_ListenBuildHistoryServer) error {

@@ -796,9 +796,10 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*se
 		CacheManager:           cacheManager,
 		ContentStore:           w.ContentStore(),
 		LeaseManager:           w.LeaseManager(),
-		Frontends:              frontends,
 		Entitlements:           cfg.Entitlements,
 		EngineName:             engineName,
+		Frontends:              frontends,
+		TraceCollector:         tc,
 		UpstreamCacheExporters: remoteCacheExporterFuncs,
 		UpstreamCacheImporters: remoteCacheImporterFuncs,
 	})
