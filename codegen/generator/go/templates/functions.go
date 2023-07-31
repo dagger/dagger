@@ -2,11 +2,12 @@ package templates
 
 import (
 	"fmt"
-	"github.com/iancoleman/strcase"
 	"regexp"
 	"sort"
 	"strings"
 	"text/template"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
