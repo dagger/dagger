@@ -1,37 +1,24 @@
 package buildkit
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/containerd/containerd/platforms"
-	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/auth"
-	"github.com/dagger/dagger/engine"
 	bkcache "github.com/moby/buildkit/cache"
 	bkcacheconfig "github.com/moby/buildkit/cache/config"
 	"github.com/moby/buildkit/cache/remotecache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
-	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	bkfrontend "github.com/moby/buildkit/frontend"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bkcontainer "github.com/moby/buildkit/frontend/gateway/container"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/session/filesync"
 	bksecrets "github.com/moby/buildkit/session/secrets"
-	"github.com/moby/buildkit/snapshot"
 	bksolver "github.com/moby/buildkit/solver"
 	"github.com/moby/buildkit/solver/llbsolver"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
@@ -40,7 +27,6 @@ import (
 	"github.com/moby/buildkit/util/entitlements"
 	bkworker "github.com/moby/buildkit/worker"
 	"github.com/opencontainers/go-digest"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/metadata"
 )
@@ -321,6 +307,41 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 	return ctr, nil
 }
 
+func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveStatus) error {
+	return c.job.Status(ctx, ch)
+}
+
+func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
+	c.clientMu.Lock()
+	defer c.clientMu.Unlock()
+	existingToken, ok := c.clientIDToSecretToken[clientID]
+	if ok {
+		if existingToken != secretToken {
+			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
+		}
+		return nil
+	}
+	c.clientIDToSecretToken[clientID] = secretToken
+	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
+	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
+	// Deleting it would make it easier to create race conditions around using the client's session
+	// before it is fully closed.
+	return nil
+}
+
+func (c *Client) VerifyClient(clientID, secretToken string) error {
+	c.clientMu.RLock()
+	defer c.clientMu.RUnlock()
+	existingToken, ok := c.clientIDToSecretToken[clientID]
+	if !ok {
+		return fmt.Errorf("client ID %q not registered", clientID)
+	}
+	if existingToken != secretToken {
+		return fmt.Errorf("client ID %q registered with different secret token", clientID)
+	}
+	return nil
+}
+
 // CombinedResult returns a buildkit result with all the refs solved by this client so far.
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
@@ -442,526 +463,6 @@ func withDescHandlerCacheOpts(ctx context.Context, ref bkcache.ImmutableRef) con
 		}
 		return vals
 	})
-}
-
-func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveStatus) error {
-	return c.job.Status(ctx, ch)
-}
-
-func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
-	c.clientMu.Lock()
-	defer c.clientMu.Unlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if ok {
-		if existingToken != secretToken {
-			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
-		}
-		return nil
-	}
-	c.clientIDToSecretToken[clientID] = secretToken
-	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
-	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
-	// Deleting it would make it easier to create race conditions around using the client's session
-	// before it is fully closed.
-	return nil
-}
-
-func (c *Client) VerifyClient(clientID, secretToken string) error {
-	c.clientMu.RLock()
-	defer c.clientMu.RUnlock()
-	existingToken, ok := c.clientIDToSecretToken[clientID]
-	if !ok {
-		return fmt.Errorf("client ID %q not registered", clientID)
-	}
-	if existingToken != secretToken {
-		return fmt.Errorf("client ID %q registered with different secret token", clientID)
-	}
-	return nil
-}
-
-func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb.LocalOption) (llb.State, error) {
-	srcPath = path.Clean(srcPath)
-	if srcPath == ".." || strings.HasPrefix(srcPath, "../") {
-		return llb.State{}, fmt.Errorf("path %q escapes workdir; use an absolute path instead", srcPath)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	localImportOpts := engine.LocalImportOpts{
-		// For now, the requester is always the owner of the local dir
-		// when the dir is initially created in LLB (i.e. you can't request a
-		// a new local dir from another session, you can only be passed one
-		// from another session already created).
-		OwnerClientID: clientMetadata.ClientID,
-		Path:          srcPath,
-	}
-
-	// set any buildkit llb options too
-	llbLocalOpts := &llb.LocalInfo{}
-	for _, opt := range opts {
-		opt.SetLocalOption(llbLocalOpts)
-	}
-	// llb marshals lists as json for some reason
-	if len(llbLocalOpts.IncludePatterns) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.IncludePatterns), &localImportOpts.IncludePatterns); err != nil {
-			return llb.State{}, err
-		}
-	}
-	if len(llbLocalOpts.ExcludePatterns) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.ExcludePatterns), &localImportOpts.ExcludePatterns); err != nil {
-			return llb.State{}, err
-		}
-	}
-	if len(llbLocalOpts.FollowPaths) > 0 {
-		if err := json.Unmarshal([]byte(llbLocalOpts.FollowPaths), &localImportOpts.FollowPaths); err != nil {
-			return llb.State{}, err
-		}
-	}
-
-	// NOTE: this relies on the fact that the local source is evaluated synchronously in the caller, otherwise
-	// the caller client ID may not be correct.
-	name, err := EncodeIDHack(localImportOpts)
-	if err != nil {
-		return llb.State{}, err
-	}
-
-	opts = append(opts,
-		// synchronize concurrent filesyncs for the same srcPath
-		llb.SharedKeyHint(name),
-		llb.SessionID(c.ID()),
-	)
-	return llb.Local(name, opts...), nil
-}
-
-func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	ctx = engine.LocalImportOpts{
-		OwnerClientID:      clientMetadata.ClientID,
-		Path:               path,
-		ReadSingleFileOnly: true,
-	}.AppendToOutgoingContext(ctx)
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get requester session: %s", err)
-	}
-	diffCopyClient, err := filesync.NewFileSyncClient(clientCaller.Conn()).DiffCopy(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create diff copy client: %s", err)
-	}
-	defer diffCopyClient.CloseSend()
-	msg := filesync.BytesMessage{}
-	err = diffCopyClient.RecvMsg(&msg)
-	if err != nil {
-		return nil, fmt.Errorf("failed to receive file bytes message: %s", err)
-	}
-	return msg.Data, nil
-}
-
-func (c *Client) LocalDirExport(
-	ctx context.Context,
-	def *bksolverpb.Definition,
-	destPath string,
-) error {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
-
-	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def})
-	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %s", err)
-	}
-
-	cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-		cachedRes, err := rf.Result(ctx)
-		if err != nil {
-			return nil, err
-		}
-		workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-		if !ok {
-			return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-		}
-		return workerRef.ImmutableRef, nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to convert result: %s", err)
-	}
-
-	exporter, err := c.Worker.Exporter(bkclient.ExporterLocal, c.SessionManager)
-	if err != nil {
-		return err
-	}
-
-	expInstance, err := exporter.Resolve(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to resolve exporter: %s", err)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	ctx = engine.LocalExportOpts{
-		DestClientID: clientMetadata.ClientID,
-		Path:         destPath,
-	}.AppendToOutgoingContext(ctx)
-
-	_, descRef, err := expInstance.Export(ctx, cacheRes, c.ID())
-	if err != nil {
-		return fmt.Errorf("failed to export: %s", err)
-	}
-	if descRef != nil {
-		descRef.Release()
-	}
-	return nil
-}
-
-func (c *Client) LocalFileExport(
-	ctx context.Context,
-	def *bksolverpb.Definition,
-	destPath string,
-	filePath string,
-	allowParentDirPath bool,
-) error {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
-
-	res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: def, Evaluate: true})
-	if err != nil {
-		return fmt.Errorf("failed to solve for local export: %s", err)
-	}
-	ref, err := res.SingleRef()
-	if err != nil {
-		return fmt.Errorf("failed to get single ref: %s", err)
-	}
-
-	mountable, err := ref.getMountable(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get mountable: %s", err)
-	}
-	mounter := snapshot.LocalMounter(mountable)
-	mountPath, err := mounter.Mount()
-	if err != nil {
-		return fmt.Errorf("failed to mount: %s", err)
-	}
-	defer mounter.Unmount()
-	mntFilePath, err := fs.RootPath(mountPath, filePath)
-	if err != nil {
-		return fmt.Errorf("failed to get root path: %s", err)
-	}
-	file, err := os.Open(mntFilePath)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %s", err)
-	}
-	defer file.Close()
-
-	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session ID: %s", err)
-	}
-
-	ctx = engine.LocalExportOpts{
-		DestClientID:       clientMetadata.ClientID,
-		Path:               destPath,
-		IsFileStream:       true,
-		FileOriginalName:   filepath.Base(filePath),
-		AllowParentDirPath: allowParentDirPath,
-	}.AppendToOutgoingContext(ctx)
-
-	clientCaller, err := c.SessionManager.Get(ctx, clientMetadata.ClientID, false)
-	if err != nil {
-		return fmt.Errorf("failed to get requester session: %s", err)
-	}
-	diffCopyClient, err := filesync.NewFileSendClient(clientCaller.Conn()).DiffCopy(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create diff copy client: %s", err)
-	}
-	defer diffCopyClient.CloseSend()
-
-	fileStat, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("failed to stat file: %s", err)
-	}
-	fileSizeLeft := fileStat.Size()
-	chunkSize := int64(MaxFileContentsChunkSize)
-	for fileSizeLeft > 0 {
-		buf := new(bytes.Buffer) // TODO: more efficient to use bufio.Writer, reuse buffers, sync.Pool, etc.
-		n, err := io.CopyN(buf, file, chunkSize)
-		if errors.Is(err, io.EOF) {
-			err = nil
-		}
-		if err != nil {
-			return fmt.Errorf("failed to read file: %s", err)
-		}
-		fileSizeLeft -= n
-		err = diffCopyClient.SendMsg(&filesync.BytesMessage{Data: buf.Bytes()})
-		if errors.Is(err, io.EOF) {
-			err := diffCopyClient.RecvMsg(struct{}{})
-			if err != nil {
-				return fmt.Errorf("diff copy client error: %s", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("failed to send file chunk: %s", err)
-		}
-	}
-	if err := diffCopyClient.CloseSend(); err != nil {
-		return fmt.Errorf("failed to close send: %s", err)
-	}
-	// wait for receiver to finish
-	var msg filesync.BytesMessage
-	if err := diffCopyClient.RecvMsg(&msg); err != io.EOF {
-		return fmt.Errorf("unexpected closing recv msg: %s", err)
-	}
-	return nil
-}
-
-type PublishInput struct {
-	Definition *bksolverpb.Definition
-	Config     specs.ImageConfig
-}
-
-func (c *Client) PublishContainerImage(
-	ctx context.Context,
-	inputByPlatform map[string]PublishInput,
-	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
-) (map[string]string, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
-	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
-	expPlatforms := &exptypes.Platforms{
-		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
-	}
-	// TODO: probably faster to do this in parallel for each platform
-	for platformString, input := range inputByPlatform {
-		// TODO: add util for turning into cacheRes, dedupe w/ above
-		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
-		if err != nil {
-			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
-		}
-		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-			res, err := rf.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
-			if !ok {
-				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
-			}
-			return workerRef.ImmutableRef, nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert result: %s", err)
-		}
-		ref, err := cacheRes.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		platform, err := platforms.Parse(platformString)
-		if err != nil {
-			return nil, err
-		}
-		cfgBytes, err := json.Marshal(specs.Image{
-			Platform: specs.Platform{
-				Architecture: platform.Architecture,
-				OS:           platform.OS,
-				OSVersion:    platform.OSVersion,
-				OSFeatures:   platform.OSFeatures,
-			},
-			Config: input.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if len(inputByPlatform) == 1 {
-			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
-			combinedResult.SetRef(ref)
-		} else {
-			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
-			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
-				ID:       platformString,
-				Platform: platform,
-			}
-			combinedResult.AddRef(platformString, ref)
-		}
-	}
-	if len(combinedResult.Refs) > 1 {
-		platformBytes, err := json.Marshal(expPlatforms)
-		if err != nil {
-			return nil, err
-		}
-		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-	}
-
-	exporter, err := c.Worker.Exporter(bkclient.ExporterImage, c.SessionManager)
-	if err != nil {
-		return nil, err
-	}
-
-	expInstance, err := exporter.Resolve(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
-	}
-
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, c.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to export: %s", err)
-	}
-	if descRef != nil {
-		descRef.Release()
-	}
-	return resp, nil
-}
-
-// TODO: dedupe w/ above
-func (c *Client) ExportContainerImage(
-	ctx context.Context,
-	inputByPlatform map[string]PublishInput, //TODO: publish input as a name makes no sense anymore
-	destPath string,
-	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
-) (map[string]string, error) {
-	ctx, cancel, err := c.withClientCloseCancel(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
-	destPath = path.Clean(destPath)
-	if destPath == ".." || strings.HasPrefix(destPath, "../") {
-		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
-	}
-
-	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
-	expPlatforms := &exptypes.Platforms{
-		Platforms: make([]exptypes.Platform, 0, len(inputByPlatform)),
-	}
-	// TODO: probably faster to do this in parallel for each platform
-	for platformString, input := range inputByPlatform {
-		// TODO: add util for turning into cacheRes, dedupe w/ above
-		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
-		if err != nil {
-			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
-		}
-		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-			res, err := rf.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
-			if !ok {
-				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
-			}
-			return workerRef.ImmutableRef, nil
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert result: %s", err)
-		}
-		ref, err := cacheRes.SingleRef()
-		if err != nil {
-			return nil, err
-		}
-
-		platform, err := platforms.Parse(platformString)
-		if err != nil {
-			return nil, err
-		}
-		cfgBytes, err := json.Marshal(specs.Image{
-			Platform: specs.Platform{
-				Architecture: platform.Architecture,
-				OS:           platform.OS,
-				OSVersion:    platform.OSVersion,
-				OSFeatures:   platform.OSFeatures,
-			},
-			Config: input.Config,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if len(inputByPlatform) == 1 {
-			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
-			combinedResult.SetRef(ref)
-		} else {
-			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
-			expPlatforms.Platforms = append(expPlatforms.Platforms, exptypes.Platform{
-				ID:       platformString,
-				Platform: platform,
-			})
-			combinedResult.AddRef(platformString, ref)
-		}
-	}
-	if len(combinedResult.Refs) > 1 {
-		platformBytes, err := json.Marshal(expPlatforms)
-		if err != nil {
-			return nil, err
-		}
-		combinedResult.AddMeta(exptypes.ExporterPlatformsKey, platformBytes)
-	}
-
-	exporterName := bkclient.ExporterDocker
-	if len(combinedResult.Refs) > 1 {
-		exporterName = bkclient.ExporterOCI
-	}
-
-	exporter, err := c.Worker.Exporter(exporterName, c.SessionManager)
-	if err != nil {
-		return nil, err
-	}
-
-	expInstance, err := exporter.Resolve(ctx, opts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve exporter: %s", err)
-	}
-
-	// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-	// TODO: This probably doesn't entirely work yet in the case where the combined result is still
-	// lazy and relies on other session resources to be evaluated. Fix that if merging before upstream
-	// fix in place.
-	sess, err := c.newFileSendServerProxySession(ctx, destPath)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, descRef, err := expInstance.Export(ctx, combinedResult, sess.ID())
-	if err != nil {
-		return nil, fmt.Errorf("failed to export: %s", err)
-	}
-	if descRef != nil {
-		descRef.Release()
-	}
-	return resp, nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {

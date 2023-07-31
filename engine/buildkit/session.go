@@ -3,19 +3,15 @@ package buildkit
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 
 	"github.com/containerd/containerd/content"
-	"github.com/dagger/dagger/engine"
 	"github.com/moby/buildkit/identity"
 	bksession "github.com/moby/buildkit/session"
 	sessioncontent "github.com/moby/buildkit/session/content"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/moby/buildkit/util/bklog"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 )
 
 // OCIStoreName is the name of the OCI content store used for OCI tarball
@@ -75,70 +71,4 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 func (c *Client) GetSessionCaller(ctx context.Context, clientID string) (bksession.Caller, error) {
 	waitForSession := true
 	return c.SessionManager.Get(ctx, clientID, !waitForSession)
-}
-
-type localImportOpts struct {
-	*engine.LocalImportOpts
-	session bksession.Caller
-}
-
-func (c *Client) getLocalImportOpts(stream grpc.ServerStream) (context.Context, *localImportOpts, error) {
-	opts, err := engine.LocalImportOptsFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get local import opts: %w", err)
-	}
-
-	if err := DecodeIDHack("local", opts.Path, opts); err != nil {
-		return nil, nil, fmt.Errorf("invalid import local dir name: %q", opts.Path)
-	}
-	sess, err := c.SessionManager.Get(stream.Context(), opts.OwnerClientID, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	md := opts.ToGRPCMD()
-	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-	ctx = metadata.NewOutgoingContext(ctx, md)
-	return ctx, &localImportOpts{
-		LocalImportOpts: opts,
-		session:         sess,
-	}, nil
-}
-
-type localExportOpts struct {
-	*engine.LocalExportOpts
-	session bksession.Caller
-}
-
-func (c *Client) getLocalExportOpts(stream grpc.ServerStream) (context.Context, *localExportOpts, error) {
-	opts, err := engine.LocalExportOptsFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get local export opts: %w", err)
-	}
-
-	clientMetadata, err := engine.ClientMetadataFromContext(stream.Context())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get client metadata: %w", err)
-	}
-
-	// for now, require that the requester is the owner of the session, i.e. you
-	// can only export to yourself, not to others
-	if clientMetadata.ClientID != opts.DestClientID {
-		return nil, nil, errors.New("local dir export requester is not the owner of the dest session")
-	}
-
-	if opts.Path == "" {
-		return nil, nil, fmt.Errorf("missing local dir export path")
-	}
-
-	sess, err := c.SessionManager.Get(stream.Context(), opts.DestClientID, false)
-	if err != nil {
-		return nil, nil, err
-	}
-	md := opts.ToGRPCMD()
-	ctx := metadata.NewIncomingContext(stream.Context(), md) // TODO: needed too?
-	ctx = metadata.NewOutgoingContext(ctx, md)
-	return ctx, &localExportOpts{
-		LocalExportOpts: opts,
-		session:         sess,
-	}, nil
 }
