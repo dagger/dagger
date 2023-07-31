@@ -10,6 +10,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
@@ -619,7 +620,7 @@ func (s *containerSchema) withNewFile(ctx *core.Context, parent *core.Container,
 
 type containerWithUnixSocketArgs struct {
 	Path   string
-	Source core.SocketID
+	Source socket.ID
 	Owner  string
 }
 

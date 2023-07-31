@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/session/secrets"
 )
@@ -26,7 +27,7 @@ func NewDynamicSecret(name string) *Secret {
 
 func (id SecretID) ToSecret() (*Secret, error) {
 	var secret Secret
-	if err := decodeID(&secret, id); err != nil {
+	if err := resourceid.Decode(&secret, id); err != nil {
 		return nil, err
 	}
 
@@ -41,7 +42,7 @@ func (secret *Secret) Clone() *Secret {
 }
 
 func (secret *Secret) ID() (SecretID, error) {
-	return encodeID[SecretID](secret)
+	return resourceid.Encode[SecretID](secret)
 }
 
 // ErrNotFound indicates a secret can not be found.

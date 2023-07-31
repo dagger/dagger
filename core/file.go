@@ -9,6 +9,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/reffs"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -78,7 +79,7 @@ func (id FileID) Digest() (digest.Digest, error) {
 
 func (id FileID) ToFile() (*File, error) {
 	var file File
-	if err := decodeID(&file, id); err != nil {
+	if err := resourceid.Decode(&file, id); err != nil {
 		return nil, err
 	}
 
@@ -87,7 +88,7 @@ func (id FileID) ToFile() (*File, error) {
 
 // ID marshals the file into a content-addressed ID.
 func (file *File) ID() (FileID, error) {
-	return encodeID[FileID](file)
+	return resourceid.Encode[FileID](file)
 }
 
 var _ pipeline.Pipelineable = (*File)(nil)

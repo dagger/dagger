@@ -3,7 +3,7 @@ package client
 import (
 	"context"
 
-	"github.com/dagger/dagger/core"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/moby/buildkit/session/sshforward"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,7 +26,7 @@ func (p SocketProvider) CheckAgent(ctx context.Context, req *sshforward.CheckAge
 	if req.ID == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := core.SocketID(req.ID).ToSocket()
+	socket, err := socket.ID(req.ID).ToSocket()
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}
@@ -51,7 +51,7 @@ func (p SocketProvider) ForwardAgent(stream sshforward.SSH_ForwardAgentServer) e
 	if id == "" {
 		return status.Errorf(codes.InvalidArgument, "id is not set")
 	}
-	socket, err := core.SocketID(id).ToSocket()
+	socket, err := socket.ID(id).ToSocket()
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid id: %v", err)
 	}

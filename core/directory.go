@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -95,7 +96,7 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 		return &dir, nil
 	}
 
-	if err := decodeID(&dir, id); err != nil {
+	if err := resourceid.Decode(&dir, id); err != nil {
 		return nil, err
 	}
 
@@ -104,7 +105,7 @@ func (id DirectoryID) ToDirectory() (*Directory, error) {
 
 // ID marshals the directory into a content-addressed ID.
 func (dir *Directory) ID() (DirectoryID, error) {
-	return encodeID[DirectoryID](dir)
+	return resourceid.Encode[DirectoryID](dir)
 }
 
 var _ pipeline.Pipelineable = (*Directory)(nil)

@@ -8,6 +8,7 @@ import (
 
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/projectconfig"
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -35,7 +36,7 @@ func (id ProjectID) ToProject() (*Project, error) {
 	if id == "" {
 		return &project, nil
 	}
-	if err := decodeID(&project, id); err != nil {
+	if err := resourceid.Decode(&project, id); err != nil {
 		return nil, err
 	}
 	return &project, nil
@@ -52,7 +53,7 @@ func (id ProjectCommandID) ToProjectCommand() (*ProjectCommand, error) {
 	if id == "" {
 		return &projectCommand, nil
 	}
-	if err := decodeID(&projectCommand, id); err != nil {
+	if err := resourceid.Decode(&projectCommand, id); err != nil {
 		return nil, err
 	}
 	return &projectCommand, nil
@@ -81,7 +82,7 @@ func NewProject(id ProjectID, platform specs.Platform) (*Project, error) {
 }
 
 func (p *Project) ID() (ProjectID, error) {
-	return encodeID[ProjectID](p)
+	return resourceid.Encode[ProjectID](p)
 }
 
 func (p *Project) Clone() *Project {
@@ -317,5 +318,5 @@ func NewProjectCommand(id ProjectCommandID) (*ProjectCommand, error) {
 }
 
 func (p *ProjectCommand) ID() (ProjectCommandID, error) {
-	return encodeID[ProjectCommandID](p)
+	return resourceid.Encode[ProjectCommandID](p)
 }

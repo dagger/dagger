@@ -3,6 +3,7 @@ package schema
 import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
@@ -104,8 +105,8 @@ func (s *gitSchema) tag(ctx *core.Context, parent gitRepository, args tagArgs) (
 }
 
 type gitTreeArgs struct {
-	SSHKnownHosts string        `json:"sshKnownHosts"`
-	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
+	SSHKnownHosts string    `json:"sshKnownHosts"`
+	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
 func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -102,6 +103,6 @@ func (host *Host) File(
 	return parentDir.File(ctx, bk, filepath.Base(path))
 }
 
-func (host *Host) Socket(ctx context.Context, sockPath string) (*Socket, error) {
-	return NewHostSocket(sockPath), nil
+func (host *Host) Socket(ctx context.Context, sockPath string) (*socket.Socket, error) {
+	return socket.NewHostSocket(sockPath), nil
 }

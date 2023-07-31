@@ -17,6 +17,8 @@ import (
 	"github.com/containerd/containerd/pkg/transfer/archive"
 	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
@@ -138,7 +140,7 @@ func (id ContainerID) ToContainer() (*Container, error) {
 		return &container, nil
 	}
 
-	if err := decodeID(&container, id); err != nil {
+	if err := resourceid.Decode(&container, id); err != nil {
 		return nil, err
 	}
 
@@ -147,7 +149,7 @@ func (id ContainerID) ToContainer() (*Container, error) {
 
 // ID marshals the container into a content-addressed ID.
 func (container *Container) ID() (ContainerID, error) {
-	return encodeID[ContainerID](container)
+	return resourceid.Encode[ContainerID](container)
 }
 
 var _ pipeline.Pipelineable = (*Container)(nil)
@@ -195,7 +197,7 @@ type ContainerSecret struct {
 // ContainerSocket configures a socket to expose, currently as a Unix socket,
 // but potentially as a TCP or UDP address in the future.
 type ContainerSocket struct {
-	SocketID SocketID   `json:"socket"`
+	SocketID socket.ID  `json:"socket"`
 	UnixPath string     `json:"unix_path,omitempty"`
 	Owner    *Ownership `json:"owner,omitempty"`
 }
@@ -692,7 +694,7 @@ func (container *Container) MountTargets(ctx context.Context) ([]string, error) 
 	return mounts, nil
 }
 
-func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Client, target string, source *Socket, owner string) (*Container, error) {
+func (container *Container) WithUnixSocket(ctx context.Context, bk *buildkit.Client, target string, source *socket.Socket, owner string) (*Container, error) {
 	container = container.Clone()
 
 	target = absPath(container.Config.WorkingDir, target)

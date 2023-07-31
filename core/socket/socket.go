@@ -1,10 +1,11 @@
-package core
+package socket
 
 import (
 	"context"
 	"io"
 	"net"
 
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/moby/buildkit/session/sshforward"
 )
 
@@ -12,13 +13,13 @@ type Socket struct {
 	HostPath string `json:"host_path,omitempty"`
 }
 
-type SocketID string
+type ID string
 
-func (id SocketID) String() string { return string(id) }
+func (id ID) String() string { return string(id) }
 
-func (id SocketID) ToSocket() (*Socket, error) {
+func (id ID) ToSocket() (*Socket, error) {
 	var socket Socket
-	if err := decodeID(&socket, id); err != nil {
+	if err := resourceid.Decode(&socket, id); err != nil {
 		return nil, err
 	}
 
@@ -31,8 +32,8 @@ func NewHostSocket(absPath string) *Socket {
 	}
 }
 
-func (socket *Socket) ID() (SocketID, error) {
-	return encodeID[SocketID](socket)
+func (socket *Socket) ID() (ID, error) {
+	return resourceid.Encode[ID](socket)
 }
 
 func (socket *Socket) IsHost() bool {
