@@ -3,7 +3,6 @@ package buildkit
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +58,10 @@ type Opts struct {
 	AuthProvider          *auth.RegistryAuthProvider
 	PrivilegedExecEnabled bool
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
-	// TODO: give precise definition
+	// MainClientCaller is the caller who initialized the server associated with this
+	// client. It is special in that when it shuts down, the client will be closed and
+	// that registry auth is currently only ever sourced from this caller, not any nested
+	// clients.
 	MainClientCaller bksession.Caller
 }
 
@@ -73,7 +75,6 @@ type Client struct {
 	llbBridge bkfrontend.FrontendLLBBridge
 
 	clientMu              sync.RWMutex
-	clientHostnameToID    map[string]string // TODO: this is super broken unless we set nested execs to have hostnames
 	clientIDToSecretToken map[string]string
 
 	refs         map[*ref]struct{}
@@ -87,7 +88,6 @@ type Result = solverresult.Result[*ref]
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	client := &Client{
 		Opts:                  opts,
-		clientHostnameToID:    make(map[string]string),
 		clientIDToSecretToken: make(map[string]string),
 		refs:                  make(map[*ref]struct{}),
 		containers:            make(map[bkgw.Container]struct{}),
@@ -384,27 +384,22 @@ func (c *Client) WriteStatusesTo(ctx context.Context, ch chan *bkclient.SolveSta
 	return c.job.Status(ctx, ch)
 }
 
-func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) (func(), error) {
+func (c *Client) RegisterClient(clientID, clientHostname, secretToken string) error {
 	c.clientMu.Lock()
 	defer c.clientMu.Unlock()
 	existingToken, ok := c.clientIDToSecretToken[clientID]
 	if ok {
 		if existingToken != secretToken {
-			return nil, fmt.Errorf("client ID %q already registered with different secret token", clientID)
+			return fmt.Errorf("client ID %q already registered with different secret token", clientID)
 		}
-		return func() {}, nil
+		return nil
 	}
 	c.clientIDToSecretToken[clientID] = secretToken
-	c.clientHostnameToID[clientHostname] = clientID
-	return func() {
-		c.clientMu.Lock()
-		defer c.clientMu.Unlock()
-		delete(c.clientHostnameToID, clientHostname)
-		// Purposely don't delete the secret token, it should never be reused and will be released from
-		// memory once the dagger server instance corresponding to this buildkit client shuts down.
-		// Deleting it would make it easier to create race conditions around using the client's session
-		// before it is fully closed.
-	}, nil
+	// NOTE: we purposely don't delete the secret token, it should never be reused and will be released
+	// from memory once the dagger server instance corresponding to this buildkit client shuts down.
+	// Deleting it would make it easier to create race conditions around using the client's session
+	// before it is fully closed.
+	return nil
 }
 
 func (c *Client) VerifyClient(clientID, secretToken string) error {
@@ -418,16 +413,6 @@ func (c *Client) VerifyClient(clientID, secretToken string) error {
 		return fmt.Errorf("client ID %q registered with different secret token", clientID)
 	}
 	return nil
-}
-
-func (c *Client) getClientIDByHostname(clientHostname string) (string, error) {
-	c.clientMu.RLock()
-	defer c.clientMu.RUnlock()
-	clientID, ok := c.clientHostnameToID[clientHostname]
-	if !ok {
-		return "", fmt.Errorf("client hostname %q not found", clientHostname)
-	}
-	return clientID, nil
 }
 
 type LocalImportOpts struct {
@@ -876,22 +861,6 @@ func (c *Client) ExportContainerImage(
 		descRef.Release()
 	}
 	return resp, nil
-}
-
-type hostSocketOpts struct {
-	HostPath       string `json:"host_path,omitempty"`
-	ClientHostname string `json:"client_hostname,omitempty"`
-}
-
-func (c *Client) SocketLLBID(hostPath, clientHostname string) (string, error) {
-	idBytes, err := json.Marshal(hostSocketOpts{
-		HostPath:       hostPath,
-		ClientHostname: clientHostname,
-	})
-	if err != nil {
-		return "", err
-	}
-	return base64.URLEncoding.EncodeToString(idBytes), nil
 }
 
 func withOutgoingContext(ctx context.Context) context.Context {

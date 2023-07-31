@@ -2,8 +2,6 @@ package buildkit
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -104,32 +102,7 @@ type exportLocalDirData struct {
 
 type socketData struct {
 	session bksession.Caller
-	path    string
-}
-
-func (c *Client) getSocketDataFromID(ctx context.Context, id string) (*socketData, error) {
-	jsonBytes, err := base64.URLEncoding.DecodeString(id)
-	if err != nil {
-		return nil, fmt.Errorf("invalid socket id: %q", id)
-	}
-	var opts hostSocketOpts
-	if err := json.Unmarshal(jsonBytes, &opts); err != nil {
-		return nil, fmt.Errorf("invalid socket id: %q", id)
-	}
-	data := &socketData{
-		path: opts.HostPath,
-	}
-	clientID, err := c.getClientIDByHostname(opts.ClientHostname)
-	if err != nil {
-		// TODO:
-		return nil, fmt.Errorf("failed to get client hostname for socket: %w: %s", err, string(jsonBytes))
-	}
-	sess, err := c.SessionManager.Get(ctx, clientID, false)
-	if err != nil {
-		return nil, err
-	}
-	data.session = sess
-	return data, nil
+	id      string
 }
 
 // TODO: just split this method out into one for each resource type, never need multiple at once, cleanup with above method too
@@ -220,12 +193,12 @@ func (c *Client) getSessionResourceData(stream grpc.ServerStream) (context.Conte
 		return nil, nil, err
 	}
 	if socketID != "" {
-		data, err := c.getSocketDataFromID(stream.Context(), socketID)
-		if err != nil {
-			return nil, nil, err
+		// NOTE: currently just always assuming socket refers to main client, will need updates if/when
+		// we support passing sockets to/from nested clients
+		sessData.socketData = &socketData{
+			session: c.MainClientCaller,
+			id:      socketID,
 		}
-		sessData.socketData = data
-		// TODO: validation that requester has access
 		ctx = metadata.NewIncomingContext(ctx, md) // TODO: needed too?
 		ctx = metadata.NewOutgoingContext(ctx, md)
 		return ctx, sessData, nil

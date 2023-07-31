@@ -245,22 +245,16 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			}
 			bklog.G(ctx).Trace("closed buildkit client")
 
-			// TODO: synchronous? or put this in a goroutine?
 			time.AfterFunc(time.Second, e.throttledGC)
 			bklog.G(ctx).Trace("server removed")
 		}()
 	}
 
-	releaseClient, err := srv.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
+	err = srv.bkClient.RegisterClient(opts.ClientID, opts.ClientHostname, opts.ClientSecretToken)
 	if err != nil {
 		e.serverMu.Unlock()
 		return fmt.Errorf("failed to register client: %w", err)
 	}
-	defer func() {
-		bklog.G(ctx).Trace("releasing client")
-		releaseClient()
-		bklog.G(ctx).Trace("released client")
-	}()
 	e.serverMu.Unlock()
 
 	eg.Go(func() error {

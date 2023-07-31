@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"fmt"
-
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/engine"
@@ -120,15 +118,7 @@ func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*c
 		opts = append(opts, llb.KnownSSHHosts(args.SSHKnownHosts))
 	}
 	if args.SSHAuthSocket != "" {
-		socket, err := args.SSHAuthSocket.ToSocket()
-		if err != nil {
-			return nil, fmt.Errorf("socket %s: %w", args.SSHAuthSocket, err)
-		}
-		socketID, err := s.bk.SocketLLBID(socket.HostPath, socket.ClientHostname)
-		if err != nil {
-			return nil, fmt.Errorf("socket %s: %w", args.SSHAuthSocket, err)
-		}
-		opts = append(opts, llb.MountSSHSock(socketID))
+		opts = append(opts, llb.MountSSHSock(string(args.SSHAuthSocket)))
 	}
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {

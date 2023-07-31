@@ -293,10 +293,6 @@ func TestProjectHostExport(t *testing.T) {
 					require.NoError(t, err)
 				})
 
-				// TODO: add coverage (here or elsewhere) for when exported file is under some subdirs
-				// TODO: also, one where a single file is being exported but there's a ton of others in
-				// the state that have to be filtered out, including some with the same name but diff path
-				// TODO: also that might already exist, double check
 				t.Run("file export explicit output to parent dir", func(t *testing.T) {
 					t.Parallel()
 					c, ctx := connect(t)

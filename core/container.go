@@ -1177,16 +1177,8 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
 		}
 
-		socket, err := ctrSocket.SocketID.ToSocket()
-		if err != nil {
-			return nil, fmt.Errorf("socket %s: %w", ctrSocket.UnixPath, err)
-		}
-		socketID, err := bk.SocketLLBID(socket.HostPath, socket.ClientHostname)
-		if err != nil {
-			return nil, fmt.Errorf("socket %s: %w", ctrSocket.UnixPath, err)
-		}
 		socketOpts := []llb.SSHOption{
-			llb.SSHID(socketID),
+			llb.SSHID(string(ctrSocket.SocketID)),
 			llb.SSHSocketTarget(ctrSocket.UnixPath),
 		}
 
