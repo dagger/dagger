@@ -154,14 +154,21 @@ func (c *Client) Close() error {
 	c.refsMu.Unlock()
 
 	c.containersMu.Lock()
+	var containerReleaseGroup errgroup.Group
 	for ctr := range c.containers {
-		if ctr != nil {
-			// in theory this shouldn't block very long and just kill the container,
-			// but add a safeguard just in case
-			releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancelRelease()
-			ctr.Release(releaseCtx)
+		if ctr := ctr; ctr != nil {
+			containerReleaseGroup.Go(func() error {
+				// in theory this shouldn't block very long and just kill the container,
+				// but add a safeguard just in case
+				releaseCtx, cancelRelease := context.WithTimeout(context.Background(), 30*time.Second)
+				defer cancelRelease()
+				return ctr.Release(releaseCtx)
+			})
 		}
+	}
+	err := containerReleaseGroup.Wait()
+	if err != nil {
+		bklog.G(context.Background()).WithError(err).Error("failed to release containers")
 	}
 	c.containers = nil
 	c.containersMu.Unlock()
