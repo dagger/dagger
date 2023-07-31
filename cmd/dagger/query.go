@@ -90,8 +90,8 @@ func Query(cmd *cobra.Command, args []string) {
 
 func doQuery(ctx context.Context, query, op string, vars map[string]interface{}) ([]byte, error) {
 	res := make(map[string]interface{})
-	err := withEngineAndTUI(ctx, client.SessionParams{}, func(ctx context.Context, sess *client.Session) error {
-		err := sess.Do(ctx, query, op, vars, &res)
+	err := withEngineAndTUI(ctx, client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
+		err := engineClient.Do(ctx, query, op, vars, &res)
 		return err
 	})
 	if err != nil {

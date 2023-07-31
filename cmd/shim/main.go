@@ -604,7 +604,7 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("missing _DAGGER_SERVER_ID")
 	}
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
-	sessParams := client.SessionParams{
+	sessParams := client.ClientParams{
 		ServerID:        serverID,
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",

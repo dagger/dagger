@@ -64,8 +64,8 @@ var projectCmd = &cobra.Command{
 			}
 		case proj.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, client.SessionParams{}, func(ctx context.Context, sess *client.Session) error {
-				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(sess)))
+			err = withEngineAndTUI(ctx, client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
+				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to dagger: %w", err)
 				}

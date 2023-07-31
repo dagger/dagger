@@ -34,7 +34,7 @@ func init() {
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngineAndTUI(ctx, client.SessionParams{}, func(ctx context.Context, sess *client.Session) error {
+	if err := withEngineAndTUI(ctx, client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
 		rec := progrock.RecorderFromContext(ctx)
 
 		var stderr io.Writer
@@ -52,7 +52,7 @@ func Listen(cmd *cobra.Command, args []string) {
 		defer sessionL.Close()
 
 		srv := &http.Server{
-			Handler: sess,
+			Handler: engineClient,
 			// Gosec G112: prevent slowloris attacks
 			ReadHeaderTimeout: 10 * time.Second,
 		}

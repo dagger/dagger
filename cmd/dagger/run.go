@@ -90,9 +90,9 @@ func run(ctx context.Context, args []string) error {
 	sessionToken := u.String()
 
 	focus = runFocus
-	return withEngineAndTUI(ctx, client.SessionParams{
+	return withEngineAndTUI(ctx, client.ClientParams{
 		SecretToken: sessionToken,
-	}, func(ctx context.Context, sess *client.Session) error {
+	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return fmt.Errorf("session listen: %w", err)
@@ -113,7 +113,7 @@ func run(ctx context.Context, args []string) error {
 		// shell because Ctrl+C sends to the process group.)
 		ensureChildProcessesAreKilled(subCmd)
 
-		go http.Serve(sessionL, sess) // nolint:gosec
+		go http.Serve(sessionL, engineClient) // nolint:gosec
 
 		var cmdErr error
 		if !silent {

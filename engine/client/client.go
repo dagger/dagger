@@ -41,7 +41,7 @@ import (
 
 const OCIStoreName = "dagger-oci"
 
-type SessionParams struct {
+type ClientParams struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
 	ServerID string
@@ -65,9 +65,8 @@ type SessionParams struct {
 	CloudURLCallback   func(string)
 }
 
-// TODO: probably rename Session to something like Client
-type Session struct {
-	SessionParams
+type Client struct {
+	ClientParams
 	eg             *errgroup.Group
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
@@ -86,8 +85,8 @@ type Session struct {
 	nestedSessionPort int
 }
 
-func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.Context, rerr error) {
-	s := &Session{SessionParams: params}
+func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Context, rerr error) {
+	s := &Client{ClientParams: params}
 	if s.SecretToken == "" {
 		s.SecretToken = uuid.New().String()
 	}
@@ -262,11 +261,13 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 
 	bo := backoff.NewExponentialBackOff()
 	bo.InitialInterval = 100 * time.Millisecond
+	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
+	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(ctx, bo.NextBackOff())
 		defer cancel()
 		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
-	}, backoff.WithContext(bo, ctx)) // TODO: this stops if context is canceled right?
+	}, backoff.WithContext(bo, connectRetryCtx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
@@ -274,10 +275,11 @@ func Connect(ctx context.Context, params SessionParams) (_ *Session, _ context.C
 	return s, ctx, nil
 }
 
-func (s *Session) Close() (rerr error) {
+func (s *Client) Close() (rerr error) {
 	if len(s.upstreamCacheOptions) > 0 {
-		// TODO: timeout context here? or have close accept context?
-		_, err := s.bkClient.ControlClient().Solve(s.internalCtx, &controlapi.SolveRequest{
+		cacheExportCtx, cacheExportCancel := context.WithTimeout(s.internalCtx, 600*time.Second)
+		defer cacheExportCancel()
+		_, err := s.bkClient.ControlClient().Solve(cacheExportCtx, &controlapi.SolveRequest{
 			Cache: controlapi.CacheOptions{
 				Exports: s.upstreamCacheOptions,
 			},
@@ -318,11 +320,11 @@ func (s *Session) Close() (rerr error) {
 	return rerr
 }
 
-func (s *Session) ID() string {
+func (s *Client) ID() string {
 	return s.bkSession.ID()
 }
 
-func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+func (s *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
 	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
@@ -342,7 +344,7 @@ func (s *Session) DialContext(ctx context.Context, _, _ string) (net.Conn, error
 	return conn, nil
 }
 
-func (s *Session) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+func (s *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
 	if err != nil {
 		return nil, err
@@ -354,7 +356,7 @@ func (s *Session) NestedDialContext(ctx context.Context, _, _ string) (net.Conn,
 	return conn, nil
 }
 
-func (s *Session) Do(
+func (s *Client) Do(
 	ctx context.Context,
 	query string,
 	opName string,
@@ -400,7 +402,7 @@ func (s *Session) Do(
 	return nil
 }
 
-func (s *Session) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
 		if !ok || username != s.SecretToken {

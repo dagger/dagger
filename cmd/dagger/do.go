@@ -52,7 +52,7 @@ var doCmd = &cobra.Command{
 		dynamicCmdArgs := flags.Args()
 
 		focus = doFocus
-		return withEngineAndTUI(cmd.Context(), client.SessionParams{}, func(ctx context.Context, sess *client.Session) error {
+		return withEngineAndTUI(cmd.Context(), client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
 			if !silent {
@@ -64,7 +64,7 @@ var doCmd = &cobra.Command{
 			cmd.Println("Loading+installing project...")
 
 			opts := []dagger.ClientOpt{
-				dagger.WithConn(EngineConn(sess)),
+				dagger.WithConn(EngineConn(engineClient)),
 			}
 			c, err := dagger.Connect(ctx, opts...)
 			if err != nil {
@@ -94,7 +94,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to get project commands: %w", err)
 			}
 			for _, projCmd := range projCmds {
-				subCmds, err := addCmd(ctx, nil, projCmd, c, sess)
+				subCmds, err := addCmd(ctx, nil, projCmd, c, engineClient)
 				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
@@ -130,7 +130,7 @@ var doCmd = &cobra.Command{
 }
 
 // nolint:gocyclo
-func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *client.Session) ([]*cobra.Command, error) {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *client.Client) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	projCmdID, err := projCmd.ID(ctx)
@@ -420,11 +420,11 @@ func (m commandAnnotations) getCommandSpecificFlags() []string {
 	return split
 }
 
-func EngineConn(sess *client.Session) DirectConn {
+func EngineConn(engineClient *client.Client) DirectConn {
 	return func(req *http.Request) (*http.Response, error) {
-		req.SetBasicAuth(sess.SecretToken, "")
+		req.SetBasicAuth(engineClient.SecretToken, "")
 		resp := httptest.NewRecorder()
-		sess.ServeHTTP(resp, req)
+		engineClient.ServeHTTP(resp, req)
 		return resp.Result(), nil
 	}
 }

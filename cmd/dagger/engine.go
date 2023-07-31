@@ -48,12 +48,12 @@ var focus bool
 
 var interactive = os.Getenv("_EXPERIMENTAL_DAGGER_INTERACTIVE_TUI") != ""
 
-type runSessionCallback func(context.Context, *client.Session) error
+type runClientCallback func(context.Context, *client.Client) error
 
 func withEngineAndTUI(
 	ctx context.Context,
-	params client.SessionParams,
-	fn runSessionCallback,
+	params client.ClientParams,
+	fn runClientCallback,
 ) error {
 	if params.RunnerHost == "" {
 		params.RunnerHost = engine.RunnerHost()
@@ -85,12 +85,12 @@ func withEngineAndTUI(
 		}
 	}
 
-	sess, ctx, err := client.Connect(ctx, params)
+	engineClient, ctx, err := client.Connect(ctx, params)
 	if err != nil {
 		return err
 	}
-	defer sess.Close()
-	return fn(ctx, sess)
+	defer engineClient.Close()
+	return fn(ctx, engineClient)
 }
 
 func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
@@ -108,8 +108,8 @@ func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
 
 func interactiveTUI(
 	ctx context.Context,
-	params client.SessionParams,
-	fn runSessionCallback,
+	params client.ClientParams,
+	fn runClientCallback,
 ) error {
 	progR, progW := progrock.Pipe()
 	progW, err := progrockTee(progW)
@@ -144,8 +144,8 @@ func interactiveTUI(
 
 func inlineTUI(
 	ctx context.Context,
-	params client.SessionParams,
-	fn runSessionCallback,
+	params client.ClientParams,
+	fn runClientCallback,
 ) error {
 	tape := progrock.NewTape()
 	tape.ShowInternal(debug)

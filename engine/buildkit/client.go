@@ -61,8 +61,8 @@ type Opts struct {
 	UpstreamCacheImports  []bkgw.CacheOptionsEntry
 	// MainClientCaller is the caller who initialized the server associated with this
 	// client. It is special in that when it shuts down, the client will be closed and
-	// that registry auth is currently only ever sourced from this caller, not any nested
-	// clients.
+	// that registry auth and sockets are currently only ever sourced from this caller,
+	// not any nested clients (may change in future).
 	MainClientCaller bksession.Caller
 }
 
