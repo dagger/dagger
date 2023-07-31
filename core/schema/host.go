@@ -33,6 +33,7 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"file":          ToResolver(s.file),
 			"unixSocket":    ToResolver(s.socket),
 			"setSecretFile": ToResolver(s.setSecretFile),
+			"reverseProxy":  ToResolver(s.reverseProxy),
 		},
 	}
 }
@@ -84,4 +85,14 @@ type hostFileArgs struct {
 
 func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
 	return s.host.File(ctx, s.bk, args.Path, parent.PipelinePath(), s.platform)
+}
+
+type hostReverseProxyArgs struct {
+	UpstreamAddress string
+	ServicePort     int
+	Protocol        core.NetworkProtocol
+}
+
+func (s *hostSchema) reverseProxy(ctx *core.Context, parent *core.Host, args hostReverseProxyArgs) (*core.Service, error) {
+	return core.NewReverseProxyService(args.UpstreamAddress, args.ServicePort, args.Protocol), nil
 }

@@ -84,6 +84,12 @@ func internalCommand() int {
 			return 1
 		}
 		return 0
+	case "proxy":
+		if err := proxy(args); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		return 0
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", cmd)
 		return 1

@@ -1264,8 +1264,6 @@ func TestServiceHostToContainer(t *testing.T) {
 }
 
 func TestServiceContainerToHost(t *testing.T) {
-	t.Skip("not implemented yet")
-
 	t.Parallel()
 
 	c, ctx := connect(t)
@@ -1277,20 +1275,22 @@ func TestServiceContainerToHost(t *testing.T) {
 	defer l.Close()
 
 	go http.Serve(l, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "hello")
+		fmt.Fprintln(w, r.URL.Query().Get("content"))
 	}))
 
 	localDialAddr := l.Addr().String()
 
 	host := c.Host().ReverseProxy(localDialAddr, 80)
 
-	out, err := c.Container().
-		From(alpineImage).
-		WithServiceBinding("www", host).
-		WithExec([]string{"wget", "-O-", "http://www"}).
-		Stdout(ctx)
-	require.NoError(t, err)
-	require.Equal(t, out, "hello\n")
+	for _, content := range []string{"yes", "no", "maybe", "so"} {
+		out, err := c.Container().
+			From(alpineImage).
+			WithServiceBinding("www", host).
+			WithExec([]string{"wget", "-O-", "http://www/?content=" + content}).
+			Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, content+"\n", out)
+	}
 }
 
 func httpService(ctx context.Context, t *testing.T, c *dagger.Client, content string) (*dagger.Service, string) {

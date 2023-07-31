@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+option go_package = "session";
+
+service ReverseProxyDialer {
+  rpc Dial(stream DialRequest) returns (stream DialResponse);
+}
+
+message DialRequest {
+	string addr = 1;
+	string protocol = 2;
+
+	bytes data = 3;
+	bool close = 4;
+}
+
+message DialResponse {
+	bytes data = 1;
+}

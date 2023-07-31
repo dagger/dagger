@@ -22,13 +22,3 @@ message ListenResponse {
 	bytes data = 3;
 	bool close = 4;
 }
-
-message DialRequest {
-	string addr = 1;
-	string protocol = 2;
-	bytes data = 3;
-}
-
-message DialResponse {
-	bytes data = 1;
-}

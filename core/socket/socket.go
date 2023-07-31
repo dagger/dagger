@@ -10,7 +10,12 @@ import (
 )
 
 type Socket struct {
+	// Unix
 	HostPath string `json:"host_path,omitempty"`
+
+	// IP
+	HostProtocol string `json:"host_protocol,omitempty"`
+	HostAddr     string `json:"host_addr,omitempty"`
 }
 
 type ID string
@@ -26,7 +31,7 @@ func (id ID) ToSocket() (*Socket, error) {
 	return &socket, nil
 }
 
-func NewHostSocket(absPath string) *Socket {
+func NewHostUnixSocket(absPath string) *Socket {
 	return &Socket{
 		HostPath: absPath,
 	}
@@ -36,16 +41,40 @@ func (socket *Socket) ID() (ID, error) {
 	return resourceid.Encode[ID](socket)
 }
 
+func NewHostIPSocket(proto string, addr string) *Socket {
+	return &Socket{
+		HostAddr:     addr,
+		HostProtocol: proto,
+	}
+}
+
 func (socket *Socket) IsHost() bool {
-	return socket.HostPath != ""
+	return socket.HostPath != "" || socket.HostAddr != ""
 }
 
 func (socket *Socket) Server() (sshforward.SSHServer, error) {
+	// TODO udp
 	return &socketProxy{
 		dial: func() (io.ReadWriteCloser, error) {
-			return net.Dial("unix", socket.HostPath)
+			return net.Dial(socket.Network(), socket.Addr())
 		},
 	}, nil
+}
+
+func (socket *Socket) Network() string {
+	if socket.HostPath != "" {
+		return "unix"
+	} else {
+		return socket.HostProtocol
+	}
+}
+
+func (socket *Socket) Addr() string {
+	if socket.HostPath != "" {
+		return socket.HostPath
+	} else {
+		return socket.HostAddr
+	}
 }
 
 type socketProxy struct {

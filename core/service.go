@@ -21,7 +21,6 @@ import (
 	"github.com/dagger/dagger/network"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
-	"github.com/moby/buildkit/identity"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
 	"github.com/pkg/errors"
@@ -35,6 +34,11 @@ type Service struct {
 	// ContainerExecOpts is the command to run in the container.
 	ContainerExecOpts ContainerExecOpts `json:"exec"`
 
+	// TODO: consider putting ClientID in here for both of the following to
+	// intentionally prevent sharing across clients?
+	// TODONE: services are already scoped per-client, just like everything else,
+	// so technically this shuold be fine
+
 	// Upstream is the service that this service is proxying to.
 	ProxyUpstream *Service `json:"upstream,omitempty"`
 	// ProxyUpstreamPort is the port for the proxy to send traffic to.
@@ -43,6 +47,14 @@ type Service struct {
 	ProxyListenAddress string `json:"proxy_listen_address,omitempty"`
 	// ProxyProtocol is the protocol for traffic proxied to upstream.
 	ProxyProtocol NetworkProtocol `json:"proxy_protocol,omitempty"`
+
+	// ReverseProxyUpstreamAddr is the address for the reverse proxy to request
+	// through the host.
+	ReverseProxyUpstreamAddr string `json:"reverse_proxy_upstream_addr,omitempty"`
+	// ReverseProxyExposedPort is the port for the reverse proxy service to expose
+	ReverseProxyExposedPort int `json:"reverse_proxy_exposed_port,omitempty"`
+	// ReverseProxyProtocol is the protocol for traffic proxied to upstream.
+	ReverseProxyProtocol NetworkProtocol `json:"reverse_proxy_protocol,omitempty"`
 }
 
 func NewContainerService(ctr *Container, opts ContainerExecOpts) *Service {
@@ -58,6 +70,14 @@ func NewProxyService(upstream *Service, addr string, port int, proto NetworkProt
 		ProxyUpstreamPort:  port,
 		ProxyListenAddress: addr,
 		ProxyProtocol:      proto,
+	}
+}
+
+func NewReverseProxyService(upstreamAddr string, exposedPort int, proto NetworkProtocol) *Service {
+	return &Service{
+		ReverseProxyUpstreamAddr: upstreamAddr,
+		ReverseProxyExposedPort:  exposedPort,
+		ReverseProxyProtocol:     proto,
 	}
 }
 
@@ -121,10 +141,7 @@ func (svc *Service) PipelinePath() pipeline.Path {
 	} else if svc.ProxyUpstream != nil {
 		return svc.ProxyUpstream.PipelinePath()
 	} else {
-		// must be impossible
-		return pipeline.Path{
-			{Name: "you found a bug!"},
-		}
+		return pipeline.Path{}
 	}
 }
 
@@ -138,7 +155,8 @@ func (svc *Service) Digest() (digest.Digest, error) {
 }
 
 func (svc *Service) Hostname(ctx context.Context) (string, error) {
-	if svc.ProxyUpstream != nil {
+	switch {
+	case svc.ProxyUpstream != nil:
 		upstream, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
@@ -150,26 +168,29 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 		}
 
 		return host, nil
-	}
+	case svc.Container != nil,
+		svc.ReverseProxyUpstreamAddr != "":
+		dig, err := svc.Digest()
+		if err != nil {
+			return "", err
+		}
 
-	dig, err := svc.Digest()
-	if err != nil {
-		return "", err
+		return network.HostHash(dig), nil
+	default:
+		return "", errors.New("unknown service type")
 	}
-
-	return network.HostHash(dig), nil
 }
 
 func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (string, error) {
-	dig, err := svc.Digest()
-	if err != nil {
-		return "", err
-	}
-
 	var host string
+	var err error
 	switch {
 	case svc.Container != nil:
-		host = network.HostHash(dig)
+		host, err = svc.Hostname(ctx)
+		if err != nil {
+			return "", err
+		}
+
 		if port == 0 {
 			if len(svc.Container.Ports) == 0 {
 				return "", fmt.Errorf("no ports exposed")
@@ -195,7 +216,15 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 				return "", err
 			}
 		}
+	case svc.ReverseProxyUpstreamAddr != "":
+		host, err = svc.Hostname(ctx)
+		if err != nil {
+			return "", err
+		}
 
+		if port == 0 {
+			port = svc.ReverseProxyExposedPort
+		}
 	default:
 		return "", fmt.Errorf("unknown service type")
 	}
@@ -226,12 +255,19 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 		return svc.startContainer(ctx, bk, progSock)
 	case svc.ProxyUpstream != nil:
 		return svc.startProxy(ctx, bk, progSock)
+	case svc.ReverseProxyUpstreamAddr != "":
+		return svc.startReverseProxy(ctx, bk, progSock)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
 }
 
 func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+	dig, err := svc.Digest()
+	if err != nil {
+		return nil, err
+	}
+
 	host, err := svc.Hostname(ctx)
 	if err != nil {
 		return nil, err
@@ -292,11 +328,6 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 	var securityMode pb.SecurityMode
 	if opts.InsecureRootCapabilities {
 		securityMode = pb.SecurityMode_INSECURE
-	}
-
-	dig, err := svc.Digest()
-	if err != nil {
-		return nil, err
 	}
 
 	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
@@ -368,11 +399,6 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 		return nil
 	}
 
-	digest, err := svc.Digest()
-	if err != nil {
-		return nil, err
-	}
-
 	select {
 	case err := <-checked:
 		if err != nil {
@@ -383,7 +409,7 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 			Service: svc,
 			Addr:    fullHost,
 			Key: ServiceKey{
-				Digest:   digest,
+				Digest:   dig,
 				ClientID: clientMetadata.ClientID,
 			},
 			Stop: stopSvc,
@@ -414,11 +440,6 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSoc
 		stop()
 		return nil, fmt.Errorf("start upstream: %w", err)
 	}
-
-	// rec := rec.WithGroup(
-	// 	fmt.Sprintf("proxy %s => %s", svc.ProxyListenAddress, upstream.Addr),
-	// 	progrock.Weak(),
-	// )
 
 	res, closeListener, err := bk.ListenHostToContainer(
 		svcCtx,
@@ -451,6 +472,84 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSoc
 			return closeListener()
 		},
 	}, nil
+}
+
+func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+	dig, err := svc.Digest()
+	if err != nil {
+		return nil, err
+	}
+
+	host, err := svc.Hostname(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	rec := progrock.RecorderFromContext(ctx)
+
+	svcCtx, stop := context.WithCancel(context.Background())
+	svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
+	svcCtx = progrock.RecorderToContext(svcCtx, rec)
+
+	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
+
+	proxy := newC2HProxy(
+		bk,
+		fullHost,
+		svc.ReverseProxyProtocol,
+		svc.ReverseProxyUpstreamAddr,
+		svc.ReverseProxyExposedPort,
+	)
+
+	check := newHealth(
+		bk,
+		fullHost,
+		[]ContainerPort{
+			{
+				Port:     svc.ReverseProxyExposedPort,
+				Protocol: svc.ReverseProxyProtocol,
+			},
+		},
+	)
+
+	exited := make(chan error, 1)
+	go func() {
+		exited <- proxy.Proxy(svcCtx)
+	}()
+
+	checked := make(chan error, 1)
+	go func() {
+		checked <- check.Check(svcCtx)
+	}()
+
+	select {
+	case err := <-checked:
+		if err != nil {
+			stop()
+			return nil, fmt.Errorf("health check errored: %w", err)
+		}
+
+		return &RunningService{
+			Service: svc,
+			Key: ServiceKey{
+				Digest:   dig,
+				ClientID: clientMetadata.ClientID,
+			},
+			Addr: fullHost,
+			Stop: func(context.Context) error {
+				stop()
+				return nil
+			},
+		}, nil
+	case err := <-exited:
+		stop()
+		return nil, fmt.Errorf("proxy exited: %w", err)
+	}
 }
 
 func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client) ([]bkgw.Mount, error) {
@@ -1001,117 +1100,4 @@ func WithServices[T any](ctx context.Context, bk *buildkit.Client, bindings Serv
 	defer detach()
 
 	return fn()
-}
-
-type portHealthChecker struct {
-	bk    *buildkit.Client
-	host  string
-	ports []ContainerPort
-}
-
-func newHealth(bk *buildkit.Client, host string, ports []ContainerPort) *portHealthChecker {
-	return &portHealthChecker{
-		bk:    bk,
-		host:  host,
-		ports: ports,
-	}
-}
-
-type marshalable interface {
-	Marshal(ctx context.Context, co ...llb.ConstraintsOpt) (*llb.Definition, error)
-}
-
-func result(ctx context.Context, bk *buildkit.Client, st marshalable) (*buildkit.Result, error) {
-	def, err := st.Marshal(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def.ToPB(),
-	})
-}
-
-func (d *portHealthChecker) Check(ctx context.Context) (err error) {
-	rec := progrock.FromContext(ctx)
-
-	args := []string{"check", d.host}
-	for _, port := range d.ports {
-		args = append(args, fmt.Sprintf("%d/%s", port.Port, port.Protocol.Network()))
-	}
-
-	// show health-check logs in a --debug vertex
-	vtx := rec.Vertex(
-		digest.Digest(identity.NewID()),
-		strings.Join(args, " "),
-		progrock.Internal(),
-	)
-	defer func() {
-		vtx.Done(err)
-	}()
-
-	scratchRes, err := result(ctx, d.bk, llb.Scratch())
-	if err != nil {
-		return err
-	}
-
-	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Mounts: []bkgw.Mount{
-			{
-				Dest:      "/",
-				MountType: pb.MountType_BIND,
-				Ref:       scratchRes.Ref,
-			},
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	// NB: use a different ctx than the one that'll be interrupted for anything
-	// that needs to run as part of post-interruption cleanup
-	cleanupCtx := context.Background()
-
-	defer container.Release(cleanupCtx)
-
-	proc, err := container.Start(ctx, bkgw.StartRequest{
-		Args:   args,
-		Env:    []string{"_DAGGER_INTERNAL_COMMAND="},
-		Stdout: nopCloser{vtx.Stdout()},
-		Stderr: nopCloser{vtx.Stderr()},
-	})
-	if err != nil {
-		return err
-	}
-
-	exited := make(chan error, 1)
-	go func() {
-		exited <- proc.Wait()
-	}()
-
-	select {
-	case err := <-exited:
-		if err != nil {
-			return err
-		}
-
-		return nil
-	case <-ctx.Done():
-		err := proc.Signal(cleanupCtx, syscall.SIGKILL)
-		if err != nil {
-			return fmt.Errorf("interrupt check: %w", err)
-		}
-
-		<-exited
-
-		return ctx.Err()
-	}
-}
-
-type nopCloser struct {
-	io.Writer
-}
-
-func (nopCloser) Close() error {
-	return nil
 }
