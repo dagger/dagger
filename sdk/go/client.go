@@ -5,10 +5,11 @@ import (
 	"context"
 	"io"
 
-	"dagger.io/dagger/internal/engineconn"
-	"dagger.io/dagger/internal/querybuilder"
 	"github.com/Khan/genqlient/graphql"
 	"github.com/vektah/gqlparser/v2/gqlerror"
+
+	"dagger.io/dagger/internal/engineconn"
+	"dagger.io/dagger/internal/querybuilder"
 )
 
 // Client is the Dagger Engine Client
