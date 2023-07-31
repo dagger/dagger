@@ -1,14 +1,16 @@
 package session
 
 import (
+	context "context"
 	"errors"
 	"io"
 	"net"
 	"sync"
 
-	"github.com/containerd/containerd/errdefs"
+	"github.com/moby/buildkit/util/grpcerrors"
 	"github.com/vito/progrock"
 	"google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
 )
 
 // type ProxyDialerAttachable struct {
@@ -133,7 +135,7 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 			})
 			sendL.Unlock()
 			if err != nil {
-				s.rec.Warn("failed to send connId", progrock.ErrorLabel(err))
+				s.rec.Warn("send connId error", progrock.ErrorLabel(err))
 				return
 			}
 
@@ -143,7 +145,7 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 					data := make([]byte, 1024)
 					n, err := conn.Read(data)
 					if err != nil {
-						if errors.Is(err, io.EOF) {
+						if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 							// conn closed
 							return
 						}
@@ -170,8 +172,18 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 	for {
 		req, err := srv.Recv()
 		if err != nil {
-			if errdefs.IsCanceled(err) || errors.Is(err, io.EOF) {
+			if errors.Is(err, context.Canceled) || grpcerrors.Code(err) == codes.Canceled {
+				// canceled
+				return nil
+			}
+
+			if errors.Is(err, io.EOF) {
 				// stopped
+				return nil
+			}
+
+			if grpcerrors.Code(err) == codes.Unavailable {
+				// client disconnected (i.e. quitting Dagger out)
 				return nil
 			}
 
@@ -181,7 +193,7 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 
 		connId := req.GetConnId()
 		if req.GetConnId() == "" {
-			s.rec.Warn("listener request had blank ConnId")
+			s.rec.Warn("listener request with no connId")
 			continue
 		}
 
@@ -189,14 +201,14 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 		conn, ok := conns[connId]
 		connsL.Unlock()
 		if !ok {
-			s.rec.Warn("listener request had unknown ConnId", progrock.Labelf("connId", connId))
+			s.rec.Warn("listener request for unknown connId", progrock.Labelf("connId", connId))
 			continue
 		}
 
 		switch {
 		case req.GetClose():
 			if err := conn.Close(); err != nil {
-				s.rec.Warn("failed to close conn", progrock.ErrorLabel(err))
+				s.rec.Warn("conn close error", progrock.ErrorLabel(err))
 				continue
 			}
 			connsL.Lock()
@@ -205,7 +217,12 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 		case req.Data != nil:
 			_, err = conn.Write(req.GetData())
 			if err != nil {
-				s.rec.Warn("failed to write conn data", progrock.ErrorLabel(err))
+				if errors.Is(err, net.ErrClosed) {
+					// conn closed
+					return nil
+				}
+
+				s.rec.Warn("conn write error", progrock.ErrorLabel(err))
 				continue
 			}
 		}
