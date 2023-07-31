@@ -43,6 +43,8 @@ import (
 
 type BuildkitController struct {
 	BuildkitControllerOpts
+	*tracev1.UnimplementedTraceServiceServer // needed for grpc service register to not complain
+
 	llbSolver             *llbsolver.Solver
 	genericSolver         *solver.Solver
 	cacheManager          solver.CacheManager
@@ -457,8 +459,13 @@ func (e *BuildkitController) Register(server *grpc.Server) {
 }
 
 func (e *BuildkitController) Close() error {
-	// TODO: ensure all servers are closed
-	return e.WorkerController.Close()
+	err := e.WorkerController.Close()
+	e.serverMu.RLock()
+	defer e.serverMu.RUnlock()
+	for _, s := range e.servers {
+		s.Close()
+	}
+	return err
 }
 
 func (e *BuildkitController) gc() {
