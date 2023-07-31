@@ -2793,10 +2793,13 @@ class Client(Root):
 
     @typecheck
     async def check_version_compatibility(self, version: str) -> bool:
-        """Parameters
+        """Checks if the current Dagger Engine is compatible with an SDK's
+        required version.
+
+        Parameters
         ----------
         version:
-            SDK's version
+            The SDK's required version.
 
         Returns
         -------

@@ -3455,7 +3455,8 @@ export class Client extends BaseClient {
   }
 
   /**
-   * @param version SDK's version
+   * Checks if the current Dagger Engine is compatible with an SDK's required version.
+   * @param version The SDK's required version.
    */
   async checkVersionCompatibility(version: string): Promise<boolean> {
     const response: Awaited<boolean> = await computeQuery(
