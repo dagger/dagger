@@ -52,7 +52,7 @@ var doCmd = &cobra.Command{
 		dynamicCmdArgs := flags.Args()
 
 		focus = doFocus
-		return withEngineAndTUI(cmd.Context(), client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
+		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
 			if !silent {

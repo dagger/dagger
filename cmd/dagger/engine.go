@@ -52,7 +52,7 @@ type runClientCallback func(context.Context, *client.Client) error
 
 func withEngineAndTUI(
 	ctx context.Context,
-	params client.ClientParams,
+	params client.Params,
 	fn runClientCallback,
 ) error {
 	if params.RunnerHost == "" {
@@ -108,7 +108,7 @@ func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
 
 func interactiveTUI(
 	ctx context.Context,
-	params client.ClientParams,
+	params client.Params,
 	fn runClientCallback,
 ) error {
 	progR, progW := progrock.Pipe()
@@ -144,7 +144,7 @@ func interactiveTUI(
 
 func inlineTUI(
 	ctx context.Context,
-	params client.ClientParams,
+	params client.Params,
 	fn runClientCallback,
 ) error {
 	tape := progrock.NewTape()

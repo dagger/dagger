@@ -71,7 +71,7 @@ func EngineSession(cmd *cobra.Command, args []string) error {
 
 	port := l.Addr().(*net.TCPAddr).Port
 
-	sess, _, err := client.Connect(ctx, client.ClientParams{
+	sess, _, err := client.Connect(ctx, client.Params{
 		SecretToken:    sessionToken.String(),
 		RunnerHost:     engine.RunnerHost(),
 		UserAgent:      labels.AppendCILabel().AppendAnonymousGitLabels(workdir).String(),

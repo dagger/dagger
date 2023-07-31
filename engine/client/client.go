@@ -41,7 +41,7 @@ import (
 
 const OCIStoreName = "dagger-oci"
 
-type ClientParams struct {
+type Params struct {
 	// The id of the server to connect to, or if blank a new one
 	// should be started.
 	ServerID string
@@ -66,7 +66,7 @@ type ClientParams struct {
 }
 
 type Client struct {
-	ClientParams
+	Params
 	eg             *errgroup.Group
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
@@ -87,31 +87,31 @@ type Client struct {
 	nestedSessionPort int
 }
 
-func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Context, rerr error) {
-	s := &Client{ClientParams: params}
-	if s.SecretToken == "" {
-		s.SecretToken = uuid.New().String()
+func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
+	c := &Client{Params: params}
+	if c.SecretToken == "" {
+		c.SecretToken = uuid.New().String()
 	}
-	if s.ServerID == "" {
-		s.ServerID = identity.NewID()
+	if c.ServerID == "" {
+		c.ServerID = identity.NewID()
 	}
 
-	s.internalCtx, s.internalCancel = context.WithCancel(context.Background())
-	s.eg, s.internalCtx = errgroup.WithContext(s.internalCtx)
+	c.internalCtx, c.internalCancel = context.WithCancel(context.Background())
+	c.eg, c.internalCtx = errgroup.WithContext(c.internalCtx)
 	defer func() {
 		if rerr != nil {
-			s.internalCancel()
+			c.internalCancel()
 		}
 	}()
-	s.closeCtx, s.closeRequests = context.WithCancel(context.Background())
+	c.closeCtx, c.closeRequests = context.WithCancel(context.Background())
 
 	// progress
 	progMultiW := progrock.MultiWriter{}
-	if s.ProgrockWriter != nil {
-		progMultiW = append(progMultiW, s.ProgrockWriter)
+	if c.ProgrockWriter != nil {
+		progMultiW = append(progMultiW, c.ProgrockWriter)
 	}
-	if s.JournalFile != "" {
-		fw, err := newProgrockFileWriter(s.JournalFile)
+	if c.JournalFile != "" {
+		fw, err := newProgrockFileWriter(c.JournalFile)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -125,8 +125,8 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	if s.CloudURLCallback != nil && cloudURL != "" {
-		s.CloudURLCallback(cloudURL)
+	if c.CloudURLCallback != nil && cloudURL != "" {
+		c.CloudURLCallback(cloudURL)
 	}
 
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
@@ -135,19 +135,19 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 		if err != nil {
 			return nil, nil, fmt.Errorf("parse DAGGER_SESSION_PORT: %w", err)
 		}
-		s.nestedSessionPort = nestedSessionPort
-		s.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
-		s.httpClient = &http.Client{
+		c.nestedSessionPort = nestedSessionPort
+		c.SecretToken = os.Getenv("DAGGER_SESSION_TOKEN")
+		c.httpClient = &http.Client{
 			Transport: &http.Transport{
-				DialContext:       s.NestedDialContext,
+				DialContext:       c.NestedDialContext,
 				DisableKeepAlives: true,
 			},
 		}
 
 		recorder := progrock.NewRecorder(progMultiW)
-		s.Recorder = recorder
-		ctx = progrock.RecorderToContext(ctx, s.Recorder)
-		return s, ctx, nil
+		c.Recorder = recorder
+		ctx = progrock.RecorderToContext(ctx, c.Recorder)
+		return c, ctx, nil
 	}
 
 	// Check if any of the upstream cache importers/exporters are enabled.
@@ -158,51 +158,51 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
 	}
 	if cacheConfigType != "" {
-		s.upstreamCacheOptions = []*controlapi.CacheOptionsEntry{{
+		c.upstreamCacheOptions = []*controlapi.CacheOptionsEntry{{
 			Type:  cacheConfigType,
 			Attrs: cacheConfigAttrs,
 		}}
 	}
 
-	remote, err := url.Parse(s.RunnerHost)
+	remote, err := url.Parse(c.RunnerHost)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	bkClient, err := newBuildkitClient(ctx, remote, s.UserAgent)
+	bkClient, err := newBuildkitClient(ctx, remote, c.UserAgent)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
-	s.bkClient = bkClient
+	c.bkClient = bkClient
 	defer func() {
 		if rerr != nil {
-			s.bkClient.Close()
+			c.bkClient.Close()
 		}
 	}()
-	if s.EngineNameCallback != nil {
-		info, err := s.bkClient.Info(ctx)
+	if c.EngineNameCallback != nil {
+		info, err := c.bkClient.Info(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("get info: %w", err)
 		}
 		engineName := fmt.Sprintf("%s (version %s)", info.BuildkitVersion.Package, info.BuildkitVersion.Version)
-		s.EngineNameCallback(engineName)
+		c.EngineNameCallback(engineName)
 	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, nil, fmt.Errorf("get hostname: %w", err)
 	}
-	s.hostname = hostname
+	c.hostname = hostname
 
-	sharedKey := s.ServerID // share a session across servers
+	sharedKey := c.ServerID // share a session across servers
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new s: %w", err)
 	}
-	s.bkSession = bkSession
+	c.bkSession = bkSession
 	defer func() {
 		if rerr != nil {
-			s.bkSession.Close()
+			c.bkSession.Close()
 		}
 	}()
 
@@ -210,27 +210,27 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 	if err != nil {
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
-	s.internalCtx = engine.ContextWithClientMetadata(s.internalCtx, &engine.ClientMetadata{
-		ClientID:          s.ID(),
-		ClientSecretToken: s.SecretToken,
-		ServerID:          s.ServerID,
-		ClientHostname:    s.hostname,
+	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
+		ClientID:          c.ID(),
+		ClientSecretToken: c.SecretToken,
+		ServerID:          c.ServerID,
+		ClientHostname:    c.hostname,
 		Labels:            pipeline.LoadVCSLabels(workdir),
-		ParentClientIDs:   s.ParentClientIDs,
+		ParentClientIDs:   c.ParentClientIDs,
 	})
 
 	// progress
 	bkSession.Allow(progRockAttachable{progMultiW})
 
 	// filesync
-	if !s.DisableHostRW {
+	if !c.DisableHostRW {
 		bkSession.Allow(AnyDirSource{})
 		bkSession.Allow(AnyDirTarget{})
 	}
 
 	// sockets
 	bkSession.Allow(SocketProvider{
-		EnableHostNetworkAccess: !s.DisableHostRW,
+		EnableHostNetworkAccess: !c.DisableHostRW,
 	})
 
 	// registry auth
@@ -238,23 +238,23 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
-	s.eg.Go(func() error {
-		return bkSession.Run(s.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
-			return grpchijack.Dialer(s.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
+	c.eg.Go(func() error {
+		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
+			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:      true,
-				ClientID:            s.ID(),
-				ClientSecretToken:   s.SecretToken,
-				ServerID:            s.ServerID,
-				ParentClientIDs:     s.ParentClientIDs,
+				ClientID:            c.ID(),
+				ClientSecretToken:   c.SecretToken,
+				ServerID:            c.ServerID,
+				ParentClientIDs:     c.ParentClientIDs,
 				ClientHostname:      hostname,
-				UpstreamCacheConfig: s.upstreamCacheOptions,
+				UpstreamCacheConfig: c.upstreamCacheOptions,
 			}.AppendToMD(meta))
 		})
 	})
 
 	// Try connecting to the session server to make sure it's running
-	s.httpClient = &http.Client{Transport: &http.Transport{
-		DialContext: s.DialContext,
+	c.httpClient = &http.Client{Transport: &http.Transport{
+		DialContext: c.DialContext,
 		// connection re-use in combination with the underlying grpc stream makes
 		// managing the lifetime of connections very confusing, so disabling for now
 		// TODO: For performance, it would be better to figure out a way to re-enable this
@@ -268,63 +268,63 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 	err = backoff.Retry(func() error {
 		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
 		defer cancel()
-		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
+		return c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 	}, backoff.WithContext(bo, connectRetryCtx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
 
-	return s, ctx, nil
+	return c, ctx, nil
 }
 
-func (s *Client) Close() (rerr error) {
-	s.closeMu.Lock()
-	defer s.closeMu.Unlock()
+func (c *Client) Close() (rerr error) {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
 	select {
-	case <-s.closeCtx.Done():
+	case <-c.closeCtx.Done():
 		// already closed
 		return nil
 	default:
 	}
-	if len(s.upstreamCacheOptions) > 0 {
-		cacheExportCtx, cacheExportCancel := context.WithTimeout(s.internalCtx, 600*time.Second)
+	if len(c.upstreamCacheOptions) > 0 {
+		cacheExportCtx, cacheExportCancel := context.WithTimeout(c.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
-		_, err := s.bkClient.ControlClient().Solve(cacheExportCtx, &controlapi.SolveRequest{
+		_, err := c.bkClient.ControlClient().Solve(cacheExportCtx, &controlapi.SolveRequest{
 			Cache: controlapi.CacheOptions{
-				Exports: s.upstreamCacheOptions,
+				Exports: c.upstreamCacheOptions,
 			},
 		})
 		rerr = errors.Join(rerr, err)
 	}
 
-	s.closeRequests()
+	c.closeRequests()
 
-	if s.internalCancel != nil {
-		s.internalCancel()
+	if c.internalCancel != nil {
+		c.internalCancel()
 	}
 
-	if s.httpClient != nil {
-		s.eg.Go(func() error {
-			s.httpClient.CloseIdleConnections()
+	if c.httpClient != nil {
+		c.eg.Go(func() error {
+			c.httpClient.CloseIdleConnections()
 			return nil
 		})
 	}
 
-	if s.bkSession != nil {
-		s.eg.Go(s.bkSession.Close)
+	if c.bkSession != nil {
+		c.eg.Go(c.bkSession.Close)
 	}
-	if s.bkClient != nil {
-		s.eg.Go(s.bkClient.Close)
+	if c.bkClient != nil {
+		c.eg.Go(c.bkClient.Close)
 	}
-	if err := s.eg.Wait(); err != nil {
+	if err := c.eg.Wait(); err != nil {
 		rerr = errors.Join(rerr, err)
 	}
 
 	// mark all groups completed
 	// close the recorder so the UI exits
-	if s.Recorder != nil {
-		s.Recorder.Complete()
-		s.Recorder.Close()
+	if c.Recorder != nil {
+		c.Recorder.Complete()
+		c.Recorder.Close()
 	}
 
 	return rerr
@@ -349,37 +349,37 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	return ctx, cancel, nil
 }
 
-func (s *Client) ID() string {
-	return s.bkSession.ID()
+func (c *Client) ID() string {
+	return c.bkSession.ID()
 }
 
-func (s *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
-	ctx, cancel, err := s.withClientCloseCancel(ctx)
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
-	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
-		ClientID:          s.ID(),
-		ClientSecretToken: s.SecretToken,
-		ServerID:          s.ServerID,
-		ClientHostname:    s.hostname,
-		ParentClientIDs:   s.ParentClientIDs,
+	conn, err := grpchijack.Dialer(c.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
+		ClientID:          c.ID(),
+		ClientSecretToken: c.SecretToken,
+		ServerID:          c.ServerID,
+		ClientHostname:    c.hostname,
+		ParentClientIDs:   c.ParentClientIDs,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		<-s.closeCtx.Done()
+		<-c.closeCtx.Done()
 		cancel()
 		conn.Close()
 	}()
 	return conn, nil
 }
 
-func (s *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	ctx, cancel, err := s.withClientCloseCancel(ctx)
+func (c *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -387,35 +387,35 @@ func (s *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, 
 	conn, err := (&net.Dialer{
 		Cancel:    ctx.Done(),
 		KeepAlive: -1, // disable for now
-	}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
+	}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(c.nestedSessionPort))
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		<-s.closeCtx.Done()
+		<-c.closeCtx.Done()
 		cancel()
 		conn.Close()
 	}()
 	return conn, nil
 }
 
-func (s *Client) Do(
+func (c *Client) Do(
 	ctx context.Context,
 	query string,
 	opName string,
 	variables map[string]any,
 	data any,
 ) (rerr error) {
-	ctx, cancel, err := s.withClientCloseCancel(ctx)
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
 	if err != nil {
 		return err
 	}
 	defer cancel()
 
 	gqlClient := graphql.NewClient("http://dagger/query", doerWithHeaders{
-		inner: s.httpClient,
+		inner: c.httpClient,
 		headers: http.Header{
-			"Authorization": []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(s.SecretToken+":"))},
+			"Authorization": []string{"Basic " + base64.StdEncoding.EncodeToString([]byte(c.SecretToken+":"))},
 		},
 	})
 
@@ -451,8 +451,8 @@ func (s *Client) Do(
 	return nil
 }
 
-func (s *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel, err := s.withClientCloseCancel(r.Context())
+func (c *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel, err := c.withClientCloseCancel(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusBadGateway)
 		w.Write([]byte("client has closed: " + err.Error()))
@@ -461,15 +461,15 @@ func (s *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r = r.WithContext(ctx)
 	defer cancel()
 
-	if s.SecretToken != "" {
+	if c.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
-		if !ok || username != s.SecretToken {
+		if !ok || username != c.SecretToken {
 			w.Header().Set("WWW-Authenticate", `Basic realm="Access to the Dagger engine session"`)
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
 	}
-	resp, err := s.httpClient.Do(&http.Request{
+	resp, err := c.httpClient.Do(&http.Request{
 		Method: r.Method,
 		URL: &url.URL{
 			Scheme: "http",

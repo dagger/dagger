@@ -482,7 +482,6 @@ func (p *fileSendServerProxy) DiffCopy(stream filesync.FileSend_DiffCopyServer) 
 	defer cancel()
 	if useBytesMessageType {
 		return proxyStream[filesync.BytesMessage](ctx, diffCopyClient, stream)
-	} else {
-		return proxyStream[filesynctypes.Packet](ctx, diffCopyClient, stream)
 	}
+	return proxyStream[filesynctypes.Packet](ctx, diffCopyClient, stream)
 }

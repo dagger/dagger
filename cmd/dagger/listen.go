@@ -34,7 +34,7 @@ func init() {
 
 func Listen(cmd *cobra.Command, args []string) {
 	ctx := context.Background()
-	if err := withEngineAndTUI(ctx, client.ClientParams{}, func(ctx context.Context, engineClient *client.Client) error {
+	if err := withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 		rec := progrock.RecorderFromContext(ctx)
 
 		var stderr io.Writer

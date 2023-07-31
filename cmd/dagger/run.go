@@ -90,7 +90,7 @@ func run(ctx context.Context, args []string) error {
 	sessionToken := u.String()
 
 	focus = runFocus
-	return withEngineAndTUI(ctx, client.ClientParams{
+	return withEngineAndTUI(ctx, client.Params{
 		SecretToken: sessionToken,
 	}, func(ctx context.Context, engineClient *client.Client) error {
 		sessionL, err := net.Listen("tcp", "127.0.0.1:0")
