@@ -203,7 +203,7 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 	defer cancel()
 	ctx = withOutgoingContext(ctx)
 
-	// include any upstream cache imports, if any
+	// include upstream cache imports, if any
 	req.CacheImports = c.UpstreamCacheImports
 
 	llbRes, err := c.llbBridge.Solve(ctx, req, c.ID())
@@ -339,7 +339,6 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	// TODO: this also adds to c.refs... which is weird
 	return c.Solve(ctx, bkgw.SolveRequest{
 		Definition: llbdef.ToPB(),
 	})
