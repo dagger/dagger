@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
@@ -70,8 +71,10 @@ type Client struct {
 	eg             *errgroup.Group
 	internalCtx    context.Context
 	internalCancel context.CancelFunc
-	apiConnCtx     context.Context
-	apiConnCancel  context.CancelFunc
+
+	closeCtx      context.Context
+	closeRequests context.CancelFunc
+	closeMu       sync.RWMutex
 
 	Recorder *progrock.Recorder
 
@@ -101,7 +104,7 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 			s.internalCancel()
 		}
 	}()
-	s.apiConnCtx, s.apiConnCancel = context.WithCancel(context.Background())
+	s.closeCtx, s.closeRequests = context.WithCancel(context.Background())
 
 	// progress
 	progMultiW := progrock.MultiWriter{}
@@ -264,7 +267,7 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 	connectRetryCtx, connectRetryCancel := context.WithTimeout(ctx, 300*time.Second)
 	defer connectRetryCancel()
 	err = backoff.Retry(func() error {
-		ctx, cancel := context.WithTimeout(ctx, bo.NextBackOff())
+		ctx, cancel := context.WithTimeout(connectRetryCtx, bo.NextBackOff())
 		defer cancel()
 		return s.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 	}, backoff.WithContext(bo, connectRetryCtx))
@@ -276,6 +279,14 @@ func Connect(ctx context.Context, params ClientParams) (_ *Client, _ context.Con
 }
 
 func (s *Client) Close() (rerr error) {
+	s.closeMu.Lock()
+	defer s.closeMu.Unlock()
+	select {
+	case <-s.closeCtx.Done():
+		// already closed
+		return nil
+	default:
+	}
 	if len(s.upstreamCacheOptions) > 0 {
 		cacheExportCtx, cacheExportCancel := context.WithTimeout(s.internalCtx, 600*time.Second)
 		defer cacheExportCancel()
@@ -287,15 +298,15 @@ func (s *Client) Close() (rerr error) {
 		rerr = errors.Join(rerr, err)
 	}
 
+	s.closeRequests()
+
 	if s.internalCancel != nil {
 		s.internalCancel()
 	}
 
 	if s.httpClient != nil {
 		s.eg.Go(func() error {
-			s.apiConnCancel()
 			s.httpClient.CloseIdleConnections()
-			// TODO: better sync so if stray conns come in at last second they get closed too
 			return nil
 		})
 	}
@@ -320,6 +331,25 @@ func (s *Client) Close() (rerr error) {
 	return rerr
 }
 
+func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	c.closeMu.RLock()
+	defer c.closeMu.RUnlock()
+	select {
+	case <-c.closeCtx.Done():
+		return nil, nil, errors.New("client closed")
+	default:
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-c.closeCtx.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel, nil
+}
+
 func (s *Client) ID() string {
 	return s.bkSession.ID()
 }
@@ -327,6 +357,10 @@ func (s *Client) ID() string {
 func (s *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error) {
 	// NOTE: the context given to grpchijack.Dialer is for the lifetime of the stream.
 	// If http connection re-use is enabled, that can be far past this DialContext call.
+	ctx, cancel, err := s.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
 	conn, err := grpchijack.Dialer(s.bkClient.ControlClient())(ctx, "", engine.ClientMetadata{
 		ClientID:          s.ID(),
 		ClientSecretToken: s.SecretToken,
@@ -338,19 +372,29 @@ func (s *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		return nil, err
 	}
 	go func() {
-		<-s.apiConnCtx.Done()
+		<-s.closeCtx.Done()
+		cancel()
 		conn.Close()
 	}()
 	return conn, nil
 }
 
 func (s *Client) NestedDialContext(ctx context.Context, _, _ string) (net.Conn, error) {
-	conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
+	ctx, cancel, err := s.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	conn, err := (&net.Dialer{
+		Cancel:    ctx.Done(),
+		KeepAlive: -1, // disable for now
+	}).Dial("tcp", "127.0.0.1:"+strconv.Itoa(s.nestedSessionPort))
 	if err != nil {
 		return nil, err
 	}
 	go func() {
-		<-s.apiConnCtx.Done()
+		<-s.closeCtx.Done()
+		cancel()
 		conn.Close()
 	}()
 	return conn, nil
@@ -363,6 +407,12 @@ func (s *Client) Do(
 	variables map[string]any,
 	data any,
 ) (rerr error) {
+	ctx, cancel, err := s.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	gqlClient := graphql.NewClient("http://dagger/query", doerWithHeaders{
 		inner: s.httpClient,
 		headers: http.Header{
@@ -377,7 +427,7 @@ func (s *Client) Do(
 	}
 	resp := &graphql.Response{}
 
-	err := gqlClient.MakeRequest(ctx, req, resp)
+	err = gqlClient.MakeRequest(ctx, req, resp)
 	if err != nil {
 		return fmt.Errorf("make request: %w", err)
 	}
@@ -403,6 +453,15 @@ func (s *Client) Do(
 }
 
 func (s *Client) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel, err := s.withClientCloseCancel(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		w.Write([]byte("client has closed: " + err.Error()))
+		return
+	}
+	r = r.WithContext(ctx)
+	defer cancel()
+
 	if s.SecretToken != "" {
 		username, _, ok := r.BasicAuth()
 		if !ok || username != s.SecretToken {
@@ -585,8 +644,7 @@ func (AnyDirTarget) DiffCopy(stream filesync.FileSend_DiffCopyServer) (rerr erro
 	if err := os.MkdirAll(destParentDir, 0700); err != nil {
 		return fmt.Errorf("failed to create synctarget dest dir %s: %w", destParentDir, err)
 	}
-	// TODO: set specific permissions?
-	destF, err := os.Create(finalDestPath)
+	destF, err := os.OpenFile(finalDestPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create synctarget dest file %s: %w", finalDestPath, err)
 	}
