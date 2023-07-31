@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -36,7 +37,6 @@ import (
 	"google.golang.org/grpc"
 )
 
-// TODO: just hit a panic in BuildkitController.Serve but client just sat blocked, fix that
 type BuildkitController struct {
 	BuildkitControllerOpts
 	llbSolver             *llbsolver.Solver
@@ -125,6 +125,14 @@ func (e *BuildkitController) LogMetrics(l *logrus.Entry) *logrus.Entry {
 }
 
 func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (rerr error) {
+	defer func() {
+		// a panic would indicate a bug, but we don't want to take down the entire server
+		if err := recover(); err != nil {
+			bklog.G(context.Background()).WithError(fmt.Errorf("%v", err)).Errorf("panic in session call")
+			rerr = fmt.Errorf("panic in session call, please report a bug: %v %s", err, string(debug.Stack()))
+		}
+	}()
+
 	ctx, cancel := context.WithCancel(stream.Context())
 	defer cancel()
 

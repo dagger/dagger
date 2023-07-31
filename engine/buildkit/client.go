@@ -81,16 +81,23 @@ type Client struct {
 	refsMu       sync.Mutex
 	containers   map[bkgw.Container]struct{}
 	containersMu sync.Mutex
+
+	closeCtx context.Context
+	cancel   context.CancelFunc
+	closeMu  sync.RWMutex
 }
 
 type Result = solverresult.Result[*ref]
 
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
+	closeCtx, cancel := context.WithCancel(context.Background())
 	client := &Client{
 		Opts:                  opts,
 		clientIDToSecretToken: make(map[string]string),
 		refs:                  make(map[*ref]struct{}),
 		containers:            make(map[bkgw.Container]struct{}),
+		closeCtx:              closeCtx,
+		cancel:                cancel,
 	}
 
 	session, err := client.newSession(ctx)
@@ -123,6 +130,16 @@ func (c *Client) ID() string {
 }
 
 func (c *Client) Close() error {
+	c.closeMu.Lock()
+	defer c.closeMu.Unlock()
+	select {
+	case <-c.closeCtx.Done():
+		// already closed
+		return nil
+	default:
+	}
+	c.cancel()
+
 	c.job.Discard()
 	c.job.CloseProgress()
 
@@ -132,7 +149,7 @@ func (c *Client) Close() error {
 			rf.resultProxy.Release(context.Background())
 		}
 	}
-	c.refs = nil // TODO: make sure everything else handles this in case there's so other request happening for some reason and we don't get a panic. Or maybe just have a RWMutex for checks whether we have closed everywhere
+	c.refs = nil
 	c.refsMu.Unlock()
 
 	c.containersMu.Lock()
@@ -142,15 +159,37 @@ func (c *Client) Close() error {
 			ctr.Release(context.Background())
 		}
 	}
-	c.containers = nil // TODO: same as above about handling this
+	c.containers = nil
 	c.containersMu.Unlock()
-
-	// TODO: ensure session is fully closed by goroutines started in client.newSession
 
 	return nil
 }
 
+func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, context.CancelFunc, error) {
+	c.closeMu.RLock()
+	defer c.closeMu.RUnlock()
+	select {
+	case <-c.closeCtx.Done():
+		return nil, nil, errors.New("client closed")
+	default:
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-c.closeCtx.Done():
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, cancel, nil
+}
+
 func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, rerr error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
 	ctx = withOutgoingContext(ctx)
 
 	// include any upstream cache imports, if any
@@ -182,15 +221,25 @@ func (c *Client) Solve(ctx context.Context, req bkgw.SolveRequest) (_ *Result, r
 }
 
 func (c *Client) ResolveImageConfig(ctx context.Context, ref string, opt llb.ResolveImageConfigOpt) (digest.Digest, []byte, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer cancel()
 	ctx = withOutgoingContext(ctx)
 	_, digest, configBytes, err := c.llbBridge.ResolveImageConfig(ctx, ref, opt)
 	return digest, configBytes, err
 }
 
 func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest) (bkgw.Container, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
 	ctx = withOutgoingContext(ctx)
 	ctrReq := bkcontainer.NewContainerRequest{
-		ContainerID: identity.NewID(), // TODO: give a meaningful name?
+		ContainerID: identity.NewID(),
 		NetMode:     req.NetMode,
 		Hostname:    req.Hostname,
 		Mounts:      make([]bkcontainer.Mount, len(req.Mounts)),
@@ -265,7 +314,6 @@ func (c *Client) NewContainer(ctx context.Context, req bkgw.NewContainerRequest)
 // This is useful for constructing a result for upstream remote caching.
 func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 	c.refsMu.Lock()
-
 	mergeInputs := make([]llb.State, 0, len(c.refs))
 	for r := range c.refs {
 		state, err := r.ToState()
@@ -287,6 +335,12 @@ func (c *Client) CombinedResult(ctx context.Context) (*Result, error) {
 }
 
 func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []ResolveCacheExporterFunc) error {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	if len(cacheExportFuncs) == 0 {
 		return nil
 	}
@@ -321,7 +375,7 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 
 	sessionGroup := bksession.NewGroup(c.ID())
 	eg, ctx := errgroup.WithContext(ctx)
-	// TODO: send progrock statuses
+	// TODO: send progrock statuses for cache export progress
 	for _, exporterFunc := range cacheExportFuncs {
 		exporterFunc := exporterFunc
 		eg.Go(func() error {
@@ -454,6 +508,12 @@ func (c *Client) LocalImportLLB(ctx context.Context, srcPath string, opts ...llb
 }
 
 func (c *Client) ReadCallerHostFile(ctx context.Context, path string) ([]byte, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get requester session ID: %s", err)
@@ -488,6 +548,12 @@ func (c *Client) LocalDirExport(
 	def *bksolverpb.Definition,
 	destPath string,
 ) error {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
 		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
@@ -554,6 +620,12 @@ func (c *Client) LocalFileExport(
 	filePath string,
 	allowParentDirPath bool,
 ) error {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
 		return fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
@@ -663,6 +735,12 @@ func (c *Client) PublishContainerImage(
 	inputByPlatform map[string]PublishInput,
 	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
 	combinedResult := &solverresult.Result[bkcache.ImmutableRef]{}
 	expPlatforms := &exptypes.Platforms{
 		Platforms: make([]exptypes.Platform, len(inputByPlatform)),
@@ -756,6 +834,12 @@ func (c *Client) ExportContainerImage(
 	destPath string,
 	opts map[string]string, // TODO: make this an actual type, this leaks too much untyped buildkit api
 ) (map[string]string, error) {
+	ctx, cancel, err := c.withClientCloseCancel(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
 	destPath = path.Clean(destPath)
 	if destPath == ".." || strings.HasPrefix(destPath, "../") {
 		return nil, fmt.Errorf("path %q escapes workdir; use an absolute path instead", destPath)
@@ -846,8 +930,6 @@ func (c *Client) ExportContainerImage(
 	// TODO: This probably doesn't entirely work yet in the case where the combined result is still
 	// lazy and relies on other session resources to be evaluated. Fix that if merging before upstream
 	// fix in place.
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	sess, err := c.newFileSendServerProxySession(ctx, destPath)
 	if err != nil {
 		return nil, err

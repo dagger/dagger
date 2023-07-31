@@ -37,7 +37,6 @@ type DaggerServer struct {
 	progCleanup func() error
 
 	doneCh    chan struct{}
-	doneErr   error // TODO: actually set this
 	closeOnce sync.Once
 
 	connectedClients int
@@ -88,7 +87,6 @@ func NewDaggerServer(
 	}
 	srv.recorder = progrock.NewRecorder(progWriter, progrock.WithLabels(progrockLabels...))
 
-	// TODO: ensure clean flush+shutdown+error-handling
 	statusCh := make(chan *bkclient.SolveStatus, 8)
 	go func() {
 		// NOTE: context.Background is used because if the provided context is canceled, buildkit can
@@ -157,9 +155,6 @@ func (srv *DaggerServer) Wait(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-srv.doneCh:
-		if srv.doneErr != nil {
-			return fmt.Errorf("server closed: %w", srv.doneErr)
-		}
 		return nil
 	}
 }
@@ -169,9 +164,8 @@ func (srv *DaggerServer) ServeClientConn(
 	clientMetadata *engine.ClientMetadata,
 	conn net.Conn,
 ) error {
-	// TODO: use fields in logs
-	bklog.G(ctx).Debugf("serve client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
-	defer bklog.G(ctx).Debugf("done serving client conn: %s (%s)", clientMetadata.ClientID, clientMetadata.ClientHostname)
+	bklog.G(ctx).Trace("serve client conn")
+	defer bklog.G(ctx).Trace("done serving client conn")
 	srv.clientMu.Lock()
 	srv.connectedClients++
 	defer func() {
@@ -187,8 +181,8 @@ func (srv *DaggerServer) ServeClientConn(
 		l.Close()
 	}()
 
-	// TODO: not sure how inefficient making a new server per-request is, fix if it's meaningful
-	// maybe you could dynamically mux in more endpoints for each client or something?
+	// NOTE: not sure how inefficient making a new server per-request is, fix if it's meaningful.
+	// Maybe we could dynamically mux in more endpoints for each client or something
 	httpSrv := http.Server{
 		Handler:           srv.HTTPHandlerForClient(clientMetadata),
 		ReadHeaderTimeout: 30 * time.Second,

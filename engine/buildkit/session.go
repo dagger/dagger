@@ -29,7 +29,6 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 		return nil, err
 	}
 
-	// TODO: enforce that callers are granted access to the given resources.
 	sess.Allow(secretsprovider.NewSecretProvider(c.SecretStore))
 	sess.Allow(&socketProxy{c})
 	sess.Allow(&authProxy{c})
@@ -50,7 +49,6 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 					lg.Debug("session conn ended")
 				} else {
-					// TODO: cancel the whole buildkit client
 					lg.Error("failed to handle session conn")
 				}
 			}
@@ -60,13 +58,15 @@ func (c *Client) newSession(ctx context.Context) (*bksession.Session, error) {
 	go func() {
 		defer clientConn.Close()
 		defer sess.Close()
+		// this ctx is okay because it's from the "main client" caller, so if it's canceled
+		// then we want to shutdown anyways
 		err := sess.Run(ctx, dialer)
 		if err != nil {
 			lg := bklog.G(ctx).WithError(err)
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				lg.Debug("client session in dagger frontend ended")
 			} else {
-				lg.Fatal("failed to run dagger frontend session")
+				lg.Error("failed to run dagger frontend session")
 			}
 		}
 	}()
