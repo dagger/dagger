@@ -97,7 +97,7 @@ func (s *querySchema) checkVersionCompatibility(ctx *router.Context, _ *core.Que
 		recorder.Warn(fmt.Sprintf("Dagger engine version (%s) is older than the SDK's required version (%s). Please update your Dagger CLI.", engineVersion, sdkVersion))
 
 		// return false, fmt.Errorf("API version is older than the SDK, please update your Dagger CLI")
-		return true, nil
+		return false, nil
 	}
 
 	// If the Engine is a minor version newer, warn
