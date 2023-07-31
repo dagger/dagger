@@ -13,60 +13,6 @@ import (
 	codes "google.golang.org/grpc/codes"
 )
 
-// type ProxyDialerAttachable struct {
-// 	UnimplementedProxyDialerServer
-// }
-
-// func (s ProxyDialerAttachable) Register(srv *grpc.Server) {
-// 	RegisterProxyDialerServer(srv, s)
-// }
-
-// func (s ProxyDialerAttachable) Dial(stream ProxyDialer_DialServer) error {
-// 	var conn net.Conn
-// 	for {
-// 		req, err := stream.Recv()
-// 		if err == io.EOF {
-// 			// Client closed the stream
-// 			return nil
-// 		}
-// 		if err != nil {
-// 			// An error occurred
-// 			return err
-// 		}
-
-// 		if conn == nil {
-// 			conn, err = net.Dial(req.GetProtocol(), req.GetAddr())
-// 			if err != nil {
-// 				return err
-// 			}
-
-// 			go func() {
-// 				for {
-// 					// Read data from the connection
-// 					data := make([]byte, 1024)
-// 					n, err := conn.Read(data)
-// 					if err != nil {
-// 						return
-// 					}
-
-// 					err = stream.Send(&DialResponse{
-// 						Data: data[:n],
-// 					})
-// 					if err != nil {
-// 						return
-// 					}
-// 				}
-// 			}()
-// 		}
-
-// 		// Write the received data to the connection
-// 		_, err = conn.Write(req.Data)
-// 		if err != nil {
-// 			return err
-// 		}
-// 	}
-// }
-
 type ProxyListenerAttachable struct {
 	rec *progrock.Recorder
 	UnimplementedProxyListenerServer
