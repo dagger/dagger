@@ -11,7 +11,7 @@ import readline from "readline"
 import * as tar from "tar"
 import { fileURLToPath } from "url"
 
-import Client from "../api/client.gen.js"
+import { Client } from "../api/client.gen.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,

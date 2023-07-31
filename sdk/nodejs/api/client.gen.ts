@@ -2901,7 +2901,7 @@ export class ProjectCommandFlag extends BaseClient {
   }
 }
 
-export default class Client extends BaseClient {
+export class Client extends BaseClient {
   /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").

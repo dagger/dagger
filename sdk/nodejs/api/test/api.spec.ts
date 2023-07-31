@@ -7,8 +7,9 @@ import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
-import Client, {
+import {
   connect,
+  Client,
   ClientContainerOpts,
   Container,
   Directory,
