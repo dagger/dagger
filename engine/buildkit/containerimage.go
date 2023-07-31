@@ -14,7 +14,6 @@ import (
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
 	solverresult "github.com/moby/buildkit/solver/result"
-	bkworker "github.com/moby/buildkit/worker"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -40,22 +39,11 @@ func (c *Client) PublishContainerImage(
 	}
 	// TODO: probably faster to do this in parallel for each platform
 	for platformString, input := range inputByPlatform {
-		// TODO: add util for turning into cacheRes, dedupe w/ above
 		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
 		if err != nil {
 			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
 		}
-		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-			res, err := rf.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
-			if !ok {
-				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
-			}
-			return workerRef.ImmutableRef, nil
-		})
+		cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert result: %s", err)
 		}
@@ -144,22 +132,14 @@ func (c *Client) ExportContainerImage(
 	}
 	// TODO: probably faster to do this in parallel for each platform
 	for platformString, input := range inputByPlatform {
-		// TODO: add util for turning into cacheRes, dedupe w/ above
 		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
 		if err != nil {
 			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
 		}
-		cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-			res, err := rf.Result(ctx)
-			if err != nil {
-				return nil, err
-			}
-			workerRef, ok := res.Sys().(*bkworker.WorkerRef)
-			if !ok {
-				return nil, fmt.Errorf("invalid ref: %T", res.Sys())
-			}
-			return workerRef.ImmutableRef, nil
-		})
+		cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result: %s", err)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to convert result: %s", err)
 		}

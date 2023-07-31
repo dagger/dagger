@@ -74,8 +74,6 @@ type Client struct {
 	closeMu  sync.RWMutex
 }
 
-type Result = solverresult.Result[*ref]
-
 func NewClient(ctx context.Context, opts Opts) (*Client, error) {
 	closeCtx, cancel := context.WithCancel(context.Background())
 	client := &Client{
@@ -381,18 +379,7 @@ func (c *Client) UpstreamCacheExport(ctx context.Context, cacheExportFuncs []Res
 	if err != nil {
 		return err
 	}
-	// TODO: dedupe with similar conversions
-	cacheRes, err := solverresult.ConvertResult(combinedResult, func(rf *ref) (bkcache.ImmutableRef, error) {
-		res, err := rf.Result(ctx)
-		if err != nil {
-			return nil, err
-		}
-		workerRef, ok := res.Sys().(*bkworker.WorkerRef)
-		if !ok {
-			return nil, fmt.Errorf("invalid ref: %T", res.Sys())
-		}
-		return workerRef.ImmutableRef, nil
-	})
+	cacheRes, err := ConvertToWorkerCacheResult(ctx, combinedResult)
 	if err != nil {
 		return fmt.Errorf("failed to convert result: %s", err)
 	}

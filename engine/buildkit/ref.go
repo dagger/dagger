@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	bkcache "github.com/moby/buildkit/cache"
 	cacheutil "github.com/moby/buildkit/cache/util"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -17,6 +18,7 @@ import (
 	solvererror "github.com/moby/buildkit/solver/errdefs"
 	llberror "github.com/moby/buildkit/solver/llbsolver/errdefs"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
+	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
 	bkworker "github.com/moby/buildkit/worker"
 	fstypes "github.com/tonistiigi/fsutil/types"
@@ -44,6 +46,8 @@ const (
 	// MetaSourcePath is a world-writable directory created and mounted to /dagger.
 	MetaSourcePath = "meta"
 )
+
+type Result = solverresult.Result[*ref]
 
 func newRef(res bksolver.ResultProxy, c *Client) *ref {
 	return &ref{
@@ -154,6 +158,20 @@ func (r *ref) Result(ctx context.Context) (bksolver.CachedResult, error) {
 		return nil, wrapError(ctx, err, r.c.ID())
 	}
 	return res, nil
+}
+
+func ConvertToWorkerCacheResult(ctx context.Context, res *solverresult.Result[*ref]) (*solverresult.Result[bkcache.ImmutableRef], error) {
+	return solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
+		res, err := rf.Result(ctx)
+		if err != nil {
+			return nil, err
+		}
+		workerRef, ok := res.Sys().(*bkworker.WorkerRef)
+		if !ok {
+			return nil, fmt.Errorf("invalid ref: %T", res.Sys())
+		}
+		return workerRef.ImmutableRef, nil
+	})
 }
 
 func wrapError(ctx context.Context, baseErr error, sessionID string) error {

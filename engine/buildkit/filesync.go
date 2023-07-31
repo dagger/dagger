@@ -15,7 +15,6 @@ import (
 
 	"github.com/containerd/continuity/fs"
 	"github.com/dagger/dagger/engine"
-	bkcache "github.com/moby/buildkit/cache"
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
@@ -24,9 +23,7 @@ import (
 	"github.com/moby/buildkit/session/filesync"
 	"github.com/moby/buildkit/snapshot"
 	bksolverpb "github.com/moby/buildkit/solver/pb"
-	solverresult "github.com/moby/buildkit/solver/result"
 	"github.com/moby/buildkit/util/bklog"
-	bkworker "github.com/moby/buildkit/worker"
 	filesynctypes "github.com/tonistiigi/fsutil/types"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
@@ -145,18 +142,7 @@ func (c *Client) LocalDirExport(
 	if err != nil {
 		return fmt.Errorf("failed to solve for local export: %s", err)
 	}
-
-	cacheRes, err := solverresult.ConvertResult(res, func(rf *ref) (bkcache.ImmutableRef, error) {
-		cachedRes, err := rf.Result(ctx)
-		if err != nil {
-			return nil, err
-		}
-		workerRef, ok := cachedRes.Sys().(*bkworker.WorkerRef)
-		if !ok {
-			return nil, fmt.Errorf("invalid ref: %T", cachedRes.Sys())
-		}
-		return workerRef.ImmutableRef, nil
-	})
+	cacheRes, err := ConvertToWorkerCacheResult(ctx, res)
 	if err != nil {
 		return fmt.Errorf("failed to convert result: %s", err)
 	}
