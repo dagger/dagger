@@ -33,7 +33,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/vito/progrock"
-	"github.com/zeebo/xxh3"
 )
 
 var ErrContainerNoExec = errors.New("no command has been executed")
@@ -347,17 +346,6 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 const defaultDockerfileName = "Dockerfile"
 
 var buildCache = newCacheMap[uint64, *Container]()
-
-func cacheKey(keys ...any) uint64 {
-	hash := xxh3.New()
-
-	enc := json.NewEncoder(hash)
-	for _, key := range keys {
-		enc.Encode(key)
-	}
-
-	return hash.Sum64()
-}
 
 func (container *Container) Build(
 	ctx context.Context,

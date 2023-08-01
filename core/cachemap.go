@@ -1,7 +1,10 @@
 package core
 
 import (
+	"fmt"
 	"sync"
+
+	"github.com/zeebo/xxh3"
 )
 
 type cacheMap[K comparable, T any] struct {
@@ -13,6 +16,20 @@ type cache[T any] struct {
 	wg  sync.WaitGroup
 	val T
 	err error
+}
+
+func cacheKey(keys ...any) uint64 {
+	hash := xxh3.New()
+
+	for _, key := range keys {
+		dig, err := stableDigest(key)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintln(hash, dig)
+	}
+
+	return hash.Sum64()
 }
 
 func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
