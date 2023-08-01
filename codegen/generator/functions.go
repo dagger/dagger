@@ -25,6 +25,7 @@ var CustomScalar = map[string]string{
 	"EnvironmentID":        "Environment",
 	"EnvironmentCommandID": "EnvironmentCommand",
 	"EnvironmentCheckID":   "EnvironmentCheck",
+	"EnvironmentShellID":   "EnvironmentShell",
 }
 
 // FormatTypeFuncs is an interface to format any GraphQL type.

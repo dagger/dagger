@@ -242,3 +242,11 @@ type nopCloser struct {
 func (nopCloser) Close() error {
 	return nil
 }
+
+type nopReadCloser struct {
+	io.Reader
+}
+
+func (nopReadCloser) Close() error {
+	return nil
+}

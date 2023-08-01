@@ -35,6 +35,10 @@ class EnvironmentID(Scalar):
     """A unique environment identifier."""
 
 
+class EnvironmentShellID(Scalar):
+    """A unique environment shell identifier."""
+
+
 class FileID(Scalar):
     """A file identifier."""
 
@@ -738,6 +742,28 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("rootfs", _args)
         return Directory(_ctx)
+
+    @typecheck
+    async def shell_endpoint(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("shellEndpoint", _args)
+        return await _ctx.execute(str)
 
     @typecheck
     async def stderr(self) -> str:
@@ -2153,6 +2179,27 @@ class Environment(Type):
         return await _ctx.execute(str)
 
     @typecheck
+    def shell(self, name: str) -> "EnvironmentShell":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("shell", _args)
+        return EnvironmentShell(_ctx)
+
+    @typecheck
+    async def shells(self) -> list["EnvironmentShell"]:
+        """TODO"""
+        _args: list[Arg] = []
+        _ctx = self._select("shells", _args)
+        _ctx = EnvironmentShell(_ctx)._select_multiple(
+            _description="description",
+            _endpoint="endpoint",
+            _name="name",
+        )
+        return await _ctx.execute(list[EnvironmentShell])
+
+    @typecheck
     def with_check(self, id: "EnvironmentCheck") -> "Environment":
         """TODO"""
         _args = [
@@ -2178,6 +2225,15 @@ class Environment(Type):
             Arg("namespace", namespace),
         ]
         _ctx = self._select("withExtension", _args)
+        return Environment(_ctx)
+
+    @typecheck
+    def with_shell(self, id: "EnvironmentShell") -> "Environment":
+        """TODO"""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("withShell", _args)
         return Environment(_ctx)
 
     def with_(self, cb: Callable[["Environment"], "Environment"]) -> "Environment":
@@ -2713,6 +2769,247 @@ class EnvironmentCommand(Type):
 
 class EnvironmentCommandFlag(Type):
     """A flag accepted by a environment command."""
+
+    __slots__ = (
+        "_description",
+        "_name",
+    )
+
+    _description: Optional[str]
+    _name: Optional[str]
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """Documentation for what this flag sets.
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the flag.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+
+class EnvironmentShell(Type):
+    """TODO"""
+
+    __slots__ = (
+        "_description",
+        "_endpoint",
+        "_name",
+    )
+
+    _description: Optional[str]
+    _endpoint: Optional[str]
+    _name: Optional[str]
+
+    @typecheck
+    async def description(self) -> Optional[str]:
+        """Documentation for what this shell shells. TODO: fix
+
+        Returns
+        -------
+        Optional[str]
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_description"):
+            return self._description
+        _args: list[Arg] = []
+        _ctx = self._select("description", _args)
+        return await _ctx.execute(Optional[str])
+
+    @typecheck
+    async def endpoint(self) -> str:
+        """TODO
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_endpoint"):
+            return self._endpoint
+        _args: list[Arg] = []
+        _ctx = self._select("endpoint", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    async def flags(self) -> list["EnvironmentShellFlag"]:
+        """Flags accepted by this shell."""
+        _args: list[Arg] = []
+        _ctx = self._select("flags", _args)
+        _ctx = EnvironmentShellFlag(_ctx)._select_multiple(
+            _description="description",
+            _name="name",
+        )
+        return await _ctx.execute(list[EnvironmentShellFlag])
+
+    @typecheck
+    async def id(self) -> EnvironmentShellID:
+        """A unique identifier for this shell.
+
+        Note
+        ----
+        This is lazyly evaluated, no operation is actually run.
+
+        Returns
+        -------
+        EnvironmentShellID
+            A unique environment shell identifier.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("id", _args)
+        return await _ctx.execute(EnvironmentShellID)
+
+    @classmethod
+    def _id_type(cls) -> type[Scalar]:
+        return EnvironmentShellID
+
+    @classmethod
+    def _from_id_query_field(cls):
+        return "environmentShell"
+
+    @typecheck
+    async def name(self) -> str:
+        """The name of the shell.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        if hasattr(self, "_name"):
+            return self._name
+        _args: list[Arg] = []
+        _ctx = self._select("name", _args)
+        return await _ctx.execute(str)
+
+    @typecheck
+    def set_string_flag(self, name: str, value: str) -> "EnvironmentShell":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+            Arg("value", value),
+        ]
+        _ctx = self._select("setStringFlag", _args)
+        return EnvironmentShell(_ctx)
+
+    @typecheck
+    def with_description(self, description: str) -> "EnvironmentShell":
+        """TODO"""
+        _args = [
+            Arg("description", description),
+        ]
+        _ctx = self._select("withDescription", _args)
+        return EnvironmentShell(_ctx)
+
+    @typecheck
+    def with_flag(
+        self,
+        name: str,
+        *,
+        description: Optional[str] = None,
+    ) -> "EnvironmentShell":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+            Arg("description", description, None),
+        ]
+        _ctx = self._select("withFlag", _args)
+        return EnvironmentShell(_ctx)
+
+    @typecheck
+    def with_name(self, name: str) -> "EnvironmentShell":
+        """TODO"""
+        _args = [
+            Arg("name", name),
+        ]
+        _ctx = self._select("withName", _args)
+        return EnvironmentShell(_ctx)
+
+    def with_(
+        self, cb: Callable[["EnvironmentShell"], "EnvironmentShell"]
+    ) -> "EnvironmentShell":
+        """Call the provided callable with current EnvironmentShell.
+
+        This is useful for reusability and readability by not breaking the calling chain.
+        """
+        return cb(self)
+
+
+class EnvironmentShellFlag(Type):
+    """A flag accepted by a environment shell."""
 
     __slots__ = (
         "_description",
@@ -3433,6 +3730,19 @@ class Client(Root):
         return EnvironmentCommand(_ctx)
 
     @typecheck
+    def environment_shell(
+        self,
+        *,
+        id: Optional[EnvironmentShellID] = None,
+    ) -> EnvironmentShell:
+        """Load a environment shell from ID."""
+        _args = [
+            Arg("id", id, None),
+        ]
+        _ctx = self._select("environmentShell", _args)
+        return EnvironmentShell(_ctx)
+
+    @typecheck
     def extensions(self) -> Extensions:
         """TODO"""
         _args: list[Arg] = []
@@ -3694,6 +4004,9 @@ __all__ = [
     "EnvironmentCommandFlag",
     "EnvironmentCommandID",
     "EnvironmentID",
+    "EnvironmentShell",
+    "EnvironmentShellFlag",
+    "EnvironmentShellID",
     "Extensions",
     "File",
     "FileID",

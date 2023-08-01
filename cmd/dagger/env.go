@@ -35,6 +35,7 @@ func init() {
 	environmentCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	doCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	checkCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	shellCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	listenCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	queryCmd.PersistentFlags().AddFlagSet(environmentFlags)
 

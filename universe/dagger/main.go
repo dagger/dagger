@@ -11,6 +11,7 @@ func main() {
 	ctx.Client().Environment().
 		WithCommand_(Cli).
 		WithCheck_(Lint).
+		WithShell_(DevShell).
 		// WithExtension(ctx.Client().Environment().LoadFromUniverse("dagger/gosdk"), "go").
 		Serve(ctx)
 }

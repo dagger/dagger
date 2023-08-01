@@ -27,6 +27,9 @@ type EnvironmentCommandID string
 // A unique environment identifier.
 type EnvironmentID string
 
+// A unique environment shell identifier.
+type EnvironmentShellID string
+
 // A file identifier.
 type FileID string
 
@@ -103,20 +106,21 @@ type Container struct {
 	q *querybuilder.Selection
 	c graphql.Client
 
-	endpoint    *string
-	envVariable *string
-	export      *bool
-	hostname    *string
-	id          *ContainerID
-	imageRef    *string
-	label       *string
-	platform    *Platform
-	publish     *string
-	stderr      *string
-	stdout      *string
-	sync        *ContainerID
-	user        *string
-	workdir     *string
+	endpoint      *string
+	envVariable   *string
+	export        *bool
+	hostname      *string
+	id            *ContainerID
+	imageRef      *string
+	label         *string
+	platform      *Platform
+	publish       *string
+	shellEndpoint *string
+	stderr        *string
+	stdout        *string
+	sync          *ContainerID
+	user          *string
+	workdir       *string
 }
 type WithContainerFunc func(r *Container) *Container
 
@@ -639,6 +643,19 @@ func (r *Container) Rootfs() *Directory {
 		q: q,
 		c: r.c,
 	}
+}
+
+// TODO
+func (r *Container) ShellEndpoint(ctx context.Context) (string, error) {
+	if r.shellEndpoint != nil {
+		return *r.shellEndpoint, nil
+	}
+	q := r.q.Select("shellEndpoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
 }
 
 // The error stream of the last executed command.
@@ -1892,6 +1909,51 @@ func (r *Environment) Name(ctx context.Context) (string, error) {
 }
 
 // TODO
+func (r *Environment) Shell(name string) *EnvironmentShell {
+	q := r.q.Select("shell")
+	q = q.Arg("name", name)
+
+	return &EnvironmentShell{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) Shells(ctx context.Context) ([]EnvironmentShell, error) {
+	q := r.q.Select("shells")
+
+	q = q.Select("description endpoint id name")
+
+	type shells struct {
+		Description string
+		Endpoint    string
+		Id          EnvironmentShellID
+		Name        string
+	}
+
+	convert := func(fields []shells) []EnvironmentShell {
+		out := []EnvironmentShell{}
+
+		for i := range fields {
+			out = append(out, EnvironmentShell{description: &fields[i].Description, endpoint: &fields[i].Endpoint, id: &fields[i].Id, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []shells
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// TODO
 func (r *Environment) WithCheck(id *EnvironmentCheck) *Environment {
 	q := r.q.Select("withCheck")
 	q = q.Arg("id", id)
@@ -1918,6 +1980,17 @@ func (r *Environment) WithExtension(id *Environment, namespace string) *Environm
 	q := r.q.Select("withExtension")
 	q = q.Arg("id", id)
 	q = q.Arg("namespace", namespace)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) WithShell(id *EnvironmentShell) *Environment {
+	q := r.q.Select("withShell")
+	q = q.Arg("id", id)
 
 	return &Environment{
 		q: q,
@@ -2470,6 +2543,219 @@ func (r *EnvironmentCommandFlag) Description(ctx context.Context) (string, error
 
 // The name of the flag.
 func (r *EnvironmentCommandFlag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+type EnvironmentShell struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	endpoint    *string
+	id          *EnvironmentShellID
+	name        *string
+}
+type WithEnvironmentShellFunc func(r *EnvironmentShell) *EnvironmentShell
+
+// With calls the provided function with current EnvironmentShell.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentShell) With(f WithEnvironmentShellFunc) *EnvironmentShell {
+	return f(r)
+}
+
+// Documentation for what this shell shells. TODO: fix
+func (r *EnvironmentShell) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+func (r *EnvironmentShell) Endpoint(ctx context.Context) (string, error) {
+	if r.endpoint != nil {
+		return *r.endpoint, nil
+	}
+	q := r.q.Select("endpoint")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Flags accepted by this shell.
+func (r *EnvironmentShell) Flags(ctx context.Context) ([]EnvironmentShellFlag, error) {
+	q := r.q.Select("flags")
+
+	q = q.Select("description name")
+
+	type flags struct {
+		Description string
+		Name        string
+	}
+
+	convert := func(fields []flags) []EnvironmentShellFlag {
+		out := []EnvironmentShellFlag{}
+
+		for i := range fields {
+			out = append(out, EnvironmentShellFlag{description: &fields[i].Description, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []flags
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// A unique identifier for this shell.
+func (r *EnvironmentShell) ID(ctx context.Context) (EnvironmentShellID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentShellID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentShell) XXX_GraphQLType() string {
+	return "EnvironmentShell"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentShell) XXX_GraphQLIDType() string {
+	return "EnvironmentShellID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentShell) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// The name of the shell.
+func (r *EnvironmentShell) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+func (r *EnvironmentShell) SetStringFlag(name string, value string) *EnvironmentShell {
+	q := r.q.Select("setStringFlag")
+	q = q.Arg("name", name)
+	q = q.Arg("value", value)
+
+	return &EnvironmentShell{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentShell) WithDescription(description string) *EnvironmentShell {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &EnvironmentShell{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentShellWithFlagOpts contains options for EnvironmentShell.WithFlag
+type EnvironmentShellWithFlagOpts struct {
+	Description string
+}
+
+// TODO
+func (r *EnvironmentShell) WithFlag(name string, opts ...EnvironmentShellWithFlagOpts) *EnvironmentShell {
+	q := r.q.Select("withFlag")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+
+	return &EnvironmentShell{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentShell) WithName(name string) *EnvironmentShell {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentShell{
+		q: q,
+		c: r.c,
+	}
+}
+
+// A flag accepted by a environment shell.
+type EnvironmentShellFlag struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	name        *string
+}
+
+// Documentation for what this flag sets.
+func (r *EnvironmentShellFlag) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the flag.
+func (r *EnvironmentShellFlag) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3043,6 +3329,27 @@ func (r *Client) EnvironmentCommand(opts ...EnvironmentCommandOpts) *Environment
 	}
 
 	return &EnvironmentCommand{
+		q: q,
+		c: r.c,
+	}
+}
+
+// EnvironmentShellOpts contains options for Client.EnvironmentShell
+type EnvironmentShellOpts struct {
+	ID EnvironmentShellID
+}
+
+// Load a environment shell from ID.
+func (r *Client) EnvironmentShell(opts ...EnvironmentShellOpts) *EnvironmentShell {
+	q := r.q.Select("environmentShell")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &EnvironmentShell{
 		q: q,
 		c: r.c,
 	}

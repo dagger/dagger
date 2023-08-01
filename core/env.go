@@ -77,6 +77,23 @@ func (id EnvironmentCheckID) ToEnvironmentCheck() (*EnvironmentCheck, error) {
 	return &environmentCheck, nil
 }
 
+type EnvironmentShellID string
+
+func (id EnvironmentShellID) String() string {
+	return string(id)
+}
+
+func (id EnvironmentShellID) ToEnvironmentShell() (*EnvironmentShell, error) {
+	var environmentShell EnvironmentShell
+	if id == "" {
+		return &environmentShell, nil
+	}
+	if err := resourceid.Decode(&environmentShell, id); err != nil {
+		return nil, err
+	}
+	return &environmentShell, nil
+}
+
 type Environment struct {
 	// The environment's root directory
 	Directory *Directory `json:"directory"`
@@ -91,6 +108,7 @@ type Environment struct {
 	// TODO:
 	Commands []*EnvironmentCommand `json:"commands,omitempty"`
 	Checks   []*EnvironmentCheck   `json:"checks,omitempty"`
+	Shells   []*EnvironmentShell   `json:"shells,omitempty"`
 }
 
 func NewEnvironment(id EnvironmentID) (*Environment, error) {
@@ -325,6 +343,47 @@ func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) 
 	return env, nil
 }
 
+func (env *Environment) WithShell(ctx context.Context, shell *EnvironmentShell) (*Environment, error) {
+	env = env.Clone()
+	fieldDef := &ast.FieldDefinition{
+		Name:        shell.Name,
+		Description: shell.Description,
+		Type: &ast.Type{
+			// TODO: no hardcoding allowed
+			NamedType: "Container",
+			NonNull:   true,
+		},
+	}
+	for _, flag := range shell.Flags {
+		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+			Name: flag.Name,
+			// Type is always string for the moment
+			Type: &ast.Type{
+				NamedType: "String",
+				NonNull:   true,
+			},
+		})
+	}
+
+	buf := &bytes.Buffer{}
+	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
+		Extensions: ast.DefinitionList{
+			&ast.Definition{
+				// TODO: we need some namespace
+				// TODO:
+				// Name:   "Extensions",
+				Name:   "Query",
+				Kind:   ast.Object,
+				Fields: ast.FieldList{fieldDef},
+			},
+		},
+	})
+	env.Schema = env.Schema + "\n" + buf.String()
+
+	env.Shells = append(env.Shells, shell)
+	return env, nil
+}
+
 func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	return func(ctx *Context, parent any, args any) (any, error) {
 		ctr, err := runtime(ctx, bk, progSock, pipeline, env.Platform, env.Config.SDK, env.Directory, env.ConfigPath)
@@ -529,4 +588,63 @@ func (check *EnvironmentCheck) WithSubcheck(subcheck *EnvironmentCheck) (*Enviro
 	}
 	check.Subchecks = append(check.Subchecks, subcheckID)
 	return check, nil
+}
+
+type EnvironmentShell struct {
+	Name        string                 `json:"name"`
+	Flags       []EnvironmentShellFlag `json:"flags"`
+	Description string                 `json:"description"`
+}
+
+type EnvironmentShellFlag struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	SetValue    string `json:"setValue"`
+}
+
+func NewEnvironmentShell(id EnvironmentShellID) (*EnvironmentShell, error) {
+	environmentCmd, err := id.ToEnvironmentShell()
+	if err != nil {
+		return nil, err
+	}
+	return environmentCmd, nil
+}
+
+func (env *EnvironmentShell) ID() (EnvironmentShellID, error) {
+	return resourceid.Encode[EnvironmentShellID](env)
+}
+
+func (cmd EnvironmentShell) Clone() *EnvironmentShell {
+	cp := cmd
+	cp.Flags = cloneSlice(cmd.Flags)
+	return &cp
+}
+
+func (cmd *EnvironmentShell) WithName(name string) *EnvironmentShell {
+	cmd = cmd.Clone()
+	cmd.Name = name
+	return cmd
+}
+
+func (cmd *EnvironmentShell) WithFlag(flag EnvironmentShellFlag) *EnvironmentShell {
+	cmd = cmd.Clone()
+	cmd.Flags = append(cmd.Flags, flag)
+	return cmd
+}
+
+func (cmd *EnvironmentShell) WithDescription(description string) *EnvironmentShell {
+	cmd = cmd.Clone()
+	cmd.Description = description
+	return cmd
+}
+
+func (cmd *EnvironmentShell) SetStringFlag(name, value string) (*EnvironmentShell, error) {
+	cmd = cmd.Clone()
+	for i, flag := range cmd.Flags {
+		if flag.Name == name {
+			cmd.Flags[i].SetValue = value
+			return cmd, nil
+		}
+	}
+	return nil, fmt.Errorf("no flag named %q", name)
 }

@@ -1,7 +1,10 @@
 package schema
 
 import (
+	"context"
 	"fmt"
+	"net/http"
+	"runtime/debug"
 	"sort"
 	"sync"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/dagger/dagger/tracing"
 	"github.com/dagger/graphql"
 	tools "github.com/dagger/graphql-go-tools"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2"
@@ -36,6 +40,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		auth:            params.Auth,
 		secrets:         params.Secrets,
 		separateSchemas: map[string]ExecutableSchema{},
+		endpoints:       map[string]http.Handler{},
 	}
 	host := core.NewHost()
 	buildCache := core.NewCacheMap[uint64, *core.Container]()
@@ -77,6 +82,64 @@ type MergedSchemas struct {
 	separateSchemas map[string]ExecutableSchema
 	mergedSchema    ExecutableSchema
 	compiledSchema  *graphql.Schema
+
+	endpointMu sync.RWMutex
+	endpoints  map[string]http.Handler
+}
+
+func (s *MergedSchemas) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if v := recover(); v != nil {
+			bklog.G(context.TODO()).Errorf("panic serving schema: %v %s", v, string(debug.Stack()))
+
+			// TODO: this doesn't play nice with hijacked conns, need to fix
+			/*
+				msg := "Internal Server Error"
+				code := http.StatusInternalServerError
+				switch v := v.(type) {
+				case error:
+					msg = v.Error()
+					if errors.As(v, &InvalidInputError{}) {
+						// panics can happen on invalid input in scalar serde
+						code = http.StatusBadRequest
+					}
+				case string:
+					msg = v
+				}
+				res := graphql.Result{
+					Errors: []gqlerrors.FormattedError{
+						gqlerrors.NewFormattedError(msg),
+					},
+				}
+				bytes, err := json.Marshal(res)
+				if err != nil {
+					panic(err)
+				}
+				http.Error(w, string(bytes), code)
+			*/
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.Handle("/query", NewHandler(&HandlerConfig{
+		Schema: s.Schema(),
+	}))
+
+	s.endpointMu.RLock()
+	for path, handler := range s.endpoints {
+		mux.Handle(path, handler)
+	}
+	s.endpointMu.RUnlock()
+
+	mux.ServeHTTP(w, r)
+}
+
+func (s *MergedSchemas) MuxEndpoint(path string, handler http.Handler) {
+	s.endpointMu.Lock()
+	defer s.endpointMu.Unlock()
+	// TODO:
+	bklog.G(context.TODO()).Debugf("registering endpoint %s", path)
+	s.endpoints[path] = handler
 }
 
 func (s *MergedSchemas) Schema() *graphql.Schema {

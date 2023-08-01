@@ -239,7 +239,11 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
-	c.eg.Go(func() error {
+	c.eg.Go(func() (rerr error) {
+		// TODO:
+		defer func() {
+			fmt.Fprintf(os.Stderr, "session client: server connection closed %v\n", rerr)
+		}()
 		return bkSession.Run(c.internalCtx, func(ctx context.Context, proto string, meta map[string][]string) (net.Conn, error) {
 			return grpchijack.Dialer(c.bkClient.ControlClient())(ctx, proto, engine.ClientMetadata{
 				RegisterClient:      true,
@@ -283,6 +287,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 }
 
 func (c *Client) Close() (rerr error) {
+	// TODO:
+	// fmt.Fprintf(os.Stderr, "WE R CLOSING %s\n", string(debug.Stack()))
+
 	c.closeMu.Lock()
 	defer c.closeMu.Unlock()
 	select {

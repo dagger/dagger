@@ -2,12 +2,11 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -17,8 +16,6 @@ import (
 	"github.com/dagger/dagger/core/schema"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
-	"github.com/dagger/graphql"
-	"github.com/dagger/graphql/gqlerrors"
 	bkclient "github.com/moby/buildkit/client"
 	bksession "github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/util/bklog"
@@ -175,7 +172,8 @@ func (srv *DaggerServer) ServeClientConn(
 	}()
 	srv.clientMu.Unlock()
 
-	l := &singleConnListener{conn: nopCloserConn{conn}, closeCh: make(chan struct{})}
+	conn = &withDeadlineConn{conn: nopCloserConn{conn}}
+	l := &singleConnListener{conn: conn, closeCh: make(chan struct{})}
 	go func() {
 		<-ctx.Done()
 		l.Close()
@@ -183,57 +181,44 @@ func (srv *DaggerServer) ServeClientConn(
 
 	// NOTE: not sure how inefficient making a new server per-request is, fix if it's meaningful.
 	// Maybe we could dynamically mux in more endpoints for each client or something
+	handler, handlerDone := srv.HTTPHandlerForClient(clientMetadata, conn, bklog.G(ctx))
+	defer func() {
+		select {
+		case <-handlerDone:
+			// TODO:
+			bklog.G(ctx).Trace("handler done")
+			// case <-ctx.Done():
+			// TODO:
+			// bklog.G(ctx).Trace("context done instead of handler")
+		}
+	}()
 	httpSrv := http.Server{
-		Handler:           srv.HTTPHandlerForClient(clientMetadata),
+		Handler:           handler,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
 	defer httpSrv.Close()
 	return httpSrv.Serve(l)
 }
 
-func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata) http.Handler {
+func (srv *DaggerServer) HTTPHandlerForClient(clientMetadata *engine.ClientMetadata, conn net.Conn, lg *logrus.Entry) (http.Handler, <-chan struct{}) {
+	doneCh := make(chan struct{})
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		defer close(doneCh)
+		req = req.WithContext(bklog.WithLogger(req.Context(), lg))
 		bklog.G(req.Context()).Tracef("http handler for client conn")
 		defer bklog.G(req.Context()).Tracef("http handler for client conn done: %s", clientMetadata.ClientID)
-
-		w.Header().Add(engine.EngineVersionMetaKey, engine.Version)
-
-		defer func() {
-			if v := recover(); v != nil {
-				msg := "Internal Server Error"
-				code := http.StatusInternalServerError
-				switch v := v.(type) {
-				case error:
-					msg = v.Error()
-					if errors.As(v, &schema.InvalidInputError{}) {
-						// panics can happen on invalid input in scalar serde
-						code = http.StatusBadRequest
-					}
-				case string:
-					msg = v
-				}
-				res := graphql.Result{
-					Errors: []gqlerrors.FormattedError{
-						gqlerrors.NewFormattedError(msg),
-					},
-				}
-				bytes, err := json.Marshal(res)
-				if err != nil {
-					panic(err)
-				}
-				http.Error(w, string(bytes), code)
-			}
-		}()
 
 		req = req.WithContext(progrock.RecorderToContext(req.Context(), srv.recorder))
 		req = req.WithContext(engine.ContextWithClientMetadata(req.Context(), clientMetadata))
 
-		mux := http.NewServeMux()
-		mux.Handle("/query", NewHandler(&HandlerConfig{
-			Schema: srv.schema.Schema(),
-		}))
-		mux.ServeHTTP(w, req)
-	})
+		// TODO:
+		bklog.G(req.Context()).Debugf("http handler for path %s", req.URL.Path)
+
+		// TODO:
+		// req = req.WithContext(context.WithValue(req.Context(), "dumbhack", conn))
+		// w = &overrideHijacker{ResponseWriter: w, conn: conn}
+		srv.schema.ServeHTTP(w, req)
+	}), doneCh
 }
 
 // converts a pre-existing net.Conn into a net.Listener that returns the conn and then blocks
@@ -274,5 +259,109 @@ type nopCloserConn struct {
 }
 
 func (nopCloserConn) Close() error {
+	return nil
+}
+
+// TODO: could also implement this upstream on:
+// https://github.com/sipsma/buildkit/blob/fa11bf9e57a68e3b5252386fdf44042dd672949a/session/grpchijack/dial.go#L45-L45
+type withDeadlineConn struct {
+	conn          net.Conn
+	readDeadline  time.Time
+	writeDeadline time.Time
+}
+
+func (c *withDeadlineConn) Read(b []byte) (n int, err error) {
+	// If a deadline is set, create a channel to signal a timeout
+	if !c.readDeadline.IsZero() {
+		// if it's in the past, error immediately
+		if time.Now().After(c.readDeadline) {
+			return 0, os.ErrDeadlineExceeded
+		}
+
+		timeout := make(chan bool, 1)
+		go func() {
+			time.Sleep(time.Until(c.readDeadline))
+			timeout <- true
+		}()
+
+		// Start a goroutine for the actual Read operation
+		read := make(chan int, 1)
+		go func() {
+			n, err = c.conn.Read(b)
+			read <- 0
+		}()
+
+		// Wait for either Read to complete or the timeout
+		select {
+		case <-read:
+			return n, err
+		case <-timeout:
+			return 0, os.ErrDeadlineExceeded
+		}
+	}
+
+	// If no deadline is set, just call the Read method
+	return c.conn.Read(b)
+}
+
+func (c *withDeadlineConn) Write(b []byte) (n int, err error) {
+	// If a deadline is set, create a channel to signal a timeout
+	if !c.writeDeadline.IsZero() {
+		// if it's in the past, error immediately
+		if time.Now().After(c.readDeadline) {
+			return 0, os.ErrDeadlineExceeded
+		}
+
+		timeout := make(chan bool, 1)
+		go func() {
+			time.Sleep(time.Until(c.writeDeadline))
+			timeout <- true
+		}()
+
+		// Start a goroutine for the actual Write operation
+		write := make(chan int, 1)
+		go func() {
+			n, err = c.conn.Write(b)
+			write <- 0
+		}()
+
+		// Wait for either Write to complete or the timeout
+		select {
+		case <-write:
+			return n, err
+		case <-timeout:
+			return 0, os.ErrDeadlineExceeded
+		}
+	}
+
+	// If no deadline is set, just call the Write method
+	return c.conn.Write(b)
+}
+
+func (c *withDeadlineConn) Close() error {
+	return c.conn.Close()
+}
+
+func (c *withDeadlineConn) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *withDeadlineConn) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *withDeadlineConn) SetDeadline(t time.Time) error {
+	c.readDeadline = t
+	c.writeDeadline = t
+	return nil
+}
+
+func (c *withDeadlineConn) SetReadDeadline(t time.Time) error {
+	c.readDeadline = t
+	return nil
+}
+
+func (c *withDeadlineConn) SetWriteDeadline(t time.Time) error {
+	c.writeDeadline = t
 	return nil
 }

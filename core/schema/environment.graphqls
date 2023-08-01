@@ -8,6 +8,9 @@ extend type Query {
   "Load a environment check from ID."
   environmentCheck(id: EnvironmentCheckID): EnvironmentCheck!
 
+  "Load a environment shell from ID."
+  environmentShell(id: EnvironmentShellID): EnvironmentShell!
+
   "TODO"
   extensions: Extensions!
 }
@@ -26,6 +29,9 @@ scalar EnvironmentCommandID
 
 "A unique environment check identifier."
 scalar EnvironmentCheckID
+
+"A unique environment shell identifier."
+scalar EnvironmentShellID
 
 "A collection of Dagger resources that can be queried and invoked."
 type Environment {
@@ -57,10 +63,58 @@ type Environment {
   withCheck(id: EnvironmentCheckID!): Environment!
 
   "TODO"
+  withShell(id: EnvironmentShellID!): Environment!
+
+  "TODO"
   checks: [EnvironmentCheck!]
 
   "TODO"
   check(name: String!): EnvironmentCheck
+
+  "TODO"
+  shells: [EnvironmentShell!]
+
+  "TODO"
+  shell(name: String!): EnvironmentShell
+}
+
+"TODO"
+type EnvironmentShell {
+  "A unique identifier for this shell."
+  id: EnvironmentShellID!
+
+  "The name of the shell."
+  name: String!
+
+  "TODO"
+  withName(name: String!): EnvironmentShell!
+
+  "Documentation for what this shell shells. TODO: fix"
+  description: String
+
+  "TODO"
+  withDescription(description: String!): EnvironmentShell!
+
+  "Flags accepted by this shell."
+  flags: [EnvironmentShellFlag!]
+
+  "TODO"
+  withFlag(name: String!, description: String): EnvironmentShell!
+
+  "TODO"
+  setStringFlag(name: String!, value: String!): EnvironmentShell!
+
+  "TODO"
+  endpoint: String!
+}
+
+"A flag accepted by a environment shell."
+type EnvironmentShellFlag {
+  "The name of the flag."
+  name: String!
+
+  "Documentation for what this flag sets."
+  description: String
 }
 
 "A command defined in a environment that can be invoked from the CLI."

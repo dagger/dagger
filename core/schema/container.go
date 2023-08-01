@@ -100,6 +100,7 @@ func (s *containerSchema) Resolvers() Resolvers {
 			"withServiceBinding":   ToResolver(s.withServiceBinding),
 			"withFocus":            ToResolver(s.withFocus),
 			"withoutFocus":         ToResolver(s.withoutFocus),
+			"shellEndpoint":        ToResolver(s.shellEndpoint),
 		}),
 	}
 }
@@ -843,4 +844,19 @@ func (s *containerSchema) withoutFocus(ctx *core.Context, parent *core.Container
 	child := parent.Clone()
 	child.Focused = false
 	return child, nil
+}
+
+func (s *containerSchema) shellEndpoint(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	parent, err := s.withDefaultExec(ctx, parent)
+	if err != nil {
+		return "", err
+	}
+
+	endpoint, handler, err := parent.ShellEndpoint(s.bk, s.progSockPath)
+	if err != nil {
+		return "", err
+	}
+
+	s.MuxEndpoint(path.Join("/", endpoint), handler)
+	return "ws://dagger/" + endpoint, nil
 }

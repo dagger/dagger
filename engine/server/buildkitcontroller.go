@@ -151,8 +151,9 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	ctx = bklog.WithLogger(ctx, bklog.G(ctx).
 		WithField("client_id", opts.ClientID).
 		WithField("client_hostname", opts.ClientHostname).
-		WithField("server_id", opts.ServerID))
-	bklog.G(ctx).WithField("register_client", opts.RegisterClient).Trace("handling session call")
+		WithField("server_id", opts.ServerID).
+		WithField("register_client", opts.RegisterClient))
+	bklog.G(ctx).Trace("handling session call")
 	defer func() {
 		bklog.G(ctx).WithError(rerr).Debugf("session call done")
 	}()
@@ -161,6 +162,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	defer conn.Close()
 	go func() {
 		<-closeCh
+		bklog.G(ctx).Trace("session conn closeCh fired")
 		cancel()
 	}()
 

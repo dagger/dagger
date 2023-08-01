@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -41,15 +42,19 @@ var environmentCommandIDResolver = stringResolver(core.EnvironmentCommandID(""))
 
 var environmentCheckIDResolver = stringResolver(core.EnvironmentCheckID(""))
 
+var environmentShellIDResolver = stringResolver(core.EnvironmentShellID(""))
+
 func (s *environmentSchema) Resolvers() Resolvers {
 	return Resolvers{
 		"EnvironmentID":        environmentIDResolver,
 		"EnvironmentCommandID": environmentCommandIDResolver,
 		"EnvironmentCheckID":   environmentCheckIDResolver,
+		"EnvironmentShellID":   environmentShellIDResolver,
 		"Query": ObjectResolver{
 			"environment":        ToResolver(s.environment),
 			"environmentCommand": ToResolver(s.environmentCommand),
 			"environmentCheck":   ToResolver(s.environmentCheck),
+			"environmentShell":   ToResolver(s.environmentShell),
 		},
 		"Environment": ObjectResolver{
 			"id":               ToResolver(s.environmentID),
@@ -59,6 +64,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"command":          ToResolver(s.command),
 			"withCommand":      ToResolver(s.withCommand),
 			"withCheck":        ToResolver(s.withCheck),
+			"withShell":        ToResolver(s.withShell),
 			"withExtension":    ToResolver(s.withExtension),
 		},
 		"EnvironmentCommand": ObjectResolver{
@@ -79,6 +85,14 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withFlag":        ToResolver(s.withCheckFlag),
 			"setStringFlag":   ToResolver(s.setCheckStringFlag),
 			"result":          ToResolver(s.checkResult),
+		},
+		"EnvironmentShell": ObjectResolver{
+			"id":              ToResolver(s.shellID),
+			"withName":        ToResolver(s.withShellName),
+			"withDescription": ToResolver(s.withShellDescription),
+			"withFlag":        ToResolver(s.withShellFlag),
+			"setStringFlag":   ToResolver(s.setShellStringFlag),
+			"endpoint":        ToResolver(s.shellEndpoint),
 		},
 	}
 }
@@ -323,6 +337,18 @@ func (s *environmentSchema) withCheck(ctx *core.Context, parent *core.Environmen
 	return parent.WithCheck(ctx, cmd)
 }
 
+type withShellArgs struct {
+	ID core.EnvironmentShellID
+}
+
+func (s *environmentSchema) withShell(ctx *core.Context, parent *core.Environment, args withShellArgs) (*core.Environment, error) {
+	cmd, err := args.ID.ToEnvironmentShell()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithShell(ctx, cmd)
+}
+
 type withExtensionArgs struct {
 	ID        core.EnvironmentID
 	Namespace string
@@ -347,6 +373,14 @@ type environmentCheckArgs struct {
 
 func (s *environmentSchema) environmentCheck(ctx *core.Context, parent *core.Query, args environmentCheckArgs) (*core.EnvironmentCheck, error) {
 	return core.NewEnvironmentCheck(args.ID)
+}
+
+type environmentShellArgs struct {
+	ID core.EnvironmentShellID
+}
+
+func (s *environmentSchema) environmentShell(ctx *core.Context, parent *core.Query, args environmentShellArgs) (*core.EnvironmentShell, error) {
+	return core.NewEnvironmentShell(args.ID)
 }
 
 func (s *environmentSchema) commandID(ctx *core.Context, parent *core.EnvironmentCommand, args any) (core.EnvironmentCommandID, error) {
@@ -618,4 +652,108 @@ func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentC
 	}
 	checkRes.Name = check.Name
 	return checkRes, nil
+}
+
+func (s *environmentSchema) shellID(ctx *core.Context, parent *core.EnvironmentShell, args any) (core.EnvironmentShellID, error) {
+	return parent.ID()
+}
+
+type withShellNameArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) withShellName(ctx *core.Context, parent *core.EnvironmentShell, args withShellNameArgs) (*core.EnvironmentShell, error) {
+	return parent.WithName(args.Name), nil
+}
+
+type withShellDescriptionArgs struct {
+	Description string
+}
+
+func (s *environmentSchema) withShellDescription(ctx *core.Context, parent *core.EnvironmentShell, args withShellDescriptionArgs) (*core.EnvironmentShell, error) {
+	return parent.WithDescription(args.Description), nil
+}
+
+type withShellFlagArgs struct {
+	Name        string
+	Description string
+}
+
+func (s *environmentSchema) withShellFlag(ctx *core.Context, parent *core.EnvironmentShell, args withShellFlagArgs) (*core.EnvironmentShell, error) {
+	return parent.WithFlag(core.EnvironmentShellFlag{
+		Name:        args.Name,
+		Description: args.Description,
+	}), nil
+}
+
+type setShellStringFlagArgs struct {
+	Name  string
+	Value string
+}
+
+func (s *environmentSchema) setShellStringFlag(ctx *core.Context, parent *core.EnvironmentShell, args setShellStringFlagArgs) (*core.EnvironmentShell, error) {
+	return parent.SetStringFlag(args.Name, args.Value)
+}
+
+func (s *environmentSchema) shellEndpoint(ctx *core.Context, parent *core.EnvironmentShell, args any) (string, error) {
+	// TODO: just for now, should namespace asap
+	parentObj := s.MergedSchemas.Schema().QueryType()
+	parentVal := map[string]any{}
+
+	// find the field resolver for this shell, as installed during "load" above
+	var resolver Resolver
+	for objectName, possibleResolver := range s.resolvers() {
+		if objectName == parentObj.Name() {
+			resolver = possibleResolver
+		}
+	}
+	if resolver == nil {
+		return "", fmt.Errorf("no resolver for %s", parentObj.Name())
+	}
+	objResolver, ok := resolver.(ObjectResolver)
+	if !ok {
+		return "", fmt.Errorf("resolver for %s is not an object resolver", parentObj.Name())
+	}
+	var fieldResolver graphql.FieldResolveFn
+	for fieldName, possibleFieldResolver := range objResolver {
+		if fieldName == parent.Name {
+			fieldResolver = possibleFieldResolver
+		}
+	}
+	if fieldResolver == nil {
+		return "", fmt.Errorf("no field resolver for %s.%s", parentObj.Name(), parent.Name)
+	}
+
+	// setup the inputs and invoke it
+	resolveParams := graphql.ResolveParams{
+		Context: ctx,
+		Source:  parentVal,
+		Args:    map[string]any{},
+		Info: graphql.ResolveInfo{
+			FieldName:  parent.Name,
+			ParentType: parentObj,
+			// TODO: we don't currently use any of the other resolve info fields, but that could change
+		},
+	}
+	for _, flag := range parent.Flags {
+		resolveParams.Args[flag.Name] = flag.SetValue
+	}
+	res, err := fieldResolver(resolveParams)
+	if err != nil {
+		return "", err
+	}
+
+	ctr, ok := res.(*core.Container)
+	if !ok {
+		return "", fmt.Errorf("unexpected result type %T from shell resolver", res)
+	}
+
+	// TODO: dedupe w/ containerSchema
+	endpoint, handler, err := ctr.ShellEndpoint(s.bk, s.progSockPath)
+	if err != nil {
+		return "", err
+	}
+
+	s.MuxEndpoint(path.Join("/", endpoint), handler)
+	return "ws://dagger/" + endpoint, nil
 }

@@ -18,7 +18,11 @@ func EngineLint(ctx dagger.Context) (string, error) {
 
 // Build the Dagger CLI
 func Cli(ctx dagger.Context) (*dagger.Directory, error) {
-	bin := ctx.Client().Container().
+	return ctx.Client().Directory().WithFile("bin/dagger", cli(ctx)), nil
+}
+
+func cli(ctx dagger.Context) *dagger.File {
+	return ctx.Client().Container().
 		From("golang:1.20-alpine").
 		WithEnvVariable("CGO_ENABLED", "0").
 		WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
@@ -27,5 +31,12 @@ func Cli(ctx dagger.Context) (*dagger.Directory, error) {
 		WithWorkdir("/app").
 		WithExec([]string{"go", "build", "-o", "./bin/dagger", "./cmd/dagger"}).
 		File("./bin/dagger")
-	return ctx.Client().Directory().WithFile("bin/dagger", bin), nil
+}
+
+func DevShell(ctx dagger.Context) (*dagger.Container, error) {
+	return ctx.Client().Container().From("alpine:3.18").
+		WithMountedFile("/usr/local/bin/dagger", cli(ctx)).
+		WithNewFile("/cat-this-file", dagger.ContainerWithNewFileOpts{
+			Contents: "you're shellin like a felon 😎\n",
+		}), nil
 }

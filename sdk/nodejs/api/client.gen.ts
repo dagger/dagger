@@ -525,6 +525,15 @@ export type EnvironmentCommandID = string & { __EnvironmentCommandID: never }
  */
 export type EnvironmentID = string & { __EnvironmentID: never }
 
+export type EnvironmentShellWithFlagOpts = {
+  description?: string
+}
+
+/**
+ * A unique environment shell identifier.
+ */
+export type EnvironmentShellID = string & { __EnvironmentShellID: never }
+
 export type FileExportOpts = {
   /**
    * If allowParentDirPath is true, the path argument can be a directory path, in which case
@@ -628,6 +637,10 @@ export type ClientEnvironmentCheckOpts = {
 
 export type ClientEnvironmentCommandOpts = {
   id?: EnvironmentCommandID
+}
+
+export type ClientEnvironmentShellOpts = {
+  id?: EnvironmentShellID
 }
 
 export type ClientGitOpts = {
@@ -1321,6 +1334,23 @@ export class Container extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * TODO
+   */
+  async shellEndpoint(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "shellEndpoint",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -2756,6 +2786,40 @@ export class Environment extends BaseClient {
   /**
    * TODO
    */
+  shell(name: string): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "shell",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  async shells(): Promise<EnvironmentShell[]> {
+    const response: Awaited<EnvironmentShell[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "shells",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
   withCheck(id: EnvironmentCheck): Environment {
     return new Environment({
       queryTree: [
@@ -2797,6 +2861,23 @@ export class Environment extends BaseClient {
         {
           operation: "withExtension",
           args: { id, namespace },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withShell(id: EnvironmentShell): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withShell",
+          args: { id },
         },
       ],
       host: this.clientHost,
@@ -3562,6 +3643,215 @@ export class EnvironmentCommandFlag extends BaseClient {
       return this._name
     }
 
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
+ * TODO
+ */
+export class EnvironmentShell extends BaseClient {
+  /**
+   * Documentation for what this shell shells. TODO: fix
+   */
+  async description(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async endpoint(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "endpoint",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Flags accepted by this shell.
+   */
+  async flags(): Promise<EnvironmentShellFlag[]> {
+    const response: Awaited<EnvironmentShellFlag[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "flags",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A unique identifier for this shell.
+   */
+  async id(): Promise<EnvironmentShellID> {
+    const response: Awaited<EnvironmentShellID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the shell.
+   */
+  async name(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  setStringFlag(name: string, value: string): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setStringFlag",
+          args: { name, value },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withDescription(description: string): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withFlag(
+    name: string,
+    opts?: EnvironmentShellWithFlagOpts
+  ): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFlag",
+          args: { name, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withName(name: string): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentShell.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentShell) => EnvironmentShell) {
+    return arg(this)
+  }
+}
+
+/**
+ * A flag accepted by a environment shell.
+ */
+export class EnvironmentShellFlag extends BaseClient {
+  /**
+   * Documentation for what this flag sets.
+   */
+  async description(): Promise<string> {
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the flag.
+   */
+  async name(): Promise<string> {
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -4353,6 +4643,23 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "environmentCommand",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a environment shell from ID.
+   */
+  environmentShell(opts?: ClientEnvironmentShellOpts): EnvironmentShell {
+    return new EnvironmentShell({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentShell",
           args: { ...opts },
         },
       ],
