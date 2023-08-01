@@ -22,7 +22,9 @@ type containerSchema struct {
 	host         *core.Host
 	ociStore     content.Store
 	leaseManager *leaseutil.Manager
-	buildCache   *core.CacheMap[uint64, *core.Container]
+
+	buildCache  *core.CacheMap[uint64, *core.Container]
+	importCache *core.CacheMap[uint64, *specs.Descriptor]
 }
 
 var _ ExecutableSchema = &containerSchema{}
@@ -162,13 +164,13 @@ func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args 
 	}
 	return parent.Build(
 		ctx,
-		s.bk,
-		s.buildCache,
 		dir,
 		args.Dockerfile,
 		args.BuildArgs,
 		args.Target,
 		args.Secrets,
+		s.bk,
+		s.buildCache,
 	)
 }
 
@@ -675,7 +677,16 @@ type containerImportArgs struct {
 }
 
 func (s *containerSchema) import_(ctx *core.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	return parent.Import(ctx, s.bk, s.host, args.Source, args.Tag, s.ociStore, s.leaseManager)
+	return parent.Import(
+		ctx,
+		args.Source,
+		args.Tag,
+		s.bk,
+		s.host,
+		s.importCache,
+		s.ociStore,
+		s.leaseManager,
+	)
 }
 
 type containerWithRegistryAuthArgs struct {

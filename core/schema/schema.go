@@ -50,6 +50,7 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 			params.OCIStore,
 			params.LeaseManager,
 			buildCache,
+			core.NewCacheMap[uint64, *specs.Descriptor](),
 		},
 		&cacheSchema{merged},
 		&secretSchema{merged},

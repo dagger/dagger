@@ -233,12 +233,12 @@ func (s *directorySchema) dockerBuild(ctx *core.Context, parent *core.Directory,
 	}
 	return ctr.Build(
 		ctx,
-		s.bk,
-		s.buildCache,
 		parent,
 		args.Dockerfile,
 		args.BuildArgs,
 		args.Target,
 		args.Secrets,
+		s.bk,
+		s.buildCache,
 	)
 }
