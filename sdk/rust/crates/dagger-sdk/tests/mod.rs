@@ -64,11 +64,7 @@ async fn test_container() {
 
     let alpine = client.container().from("alpine:3.16.2");
 
-    let contents = alpine
-        .file("/etc/alpine-release")
-        .contents()
-        .await
-        .unwrap();
+    let contents = alpine.file("/etc/alpine-release").contents().await.unwrap();
     assert_eq!(contents, "3.16.2\n".to_string());
 
     let out = alpine
