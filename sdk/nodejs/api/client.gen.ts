@@ -3422,6 +3422,7 @@ export class ProjectCommandFlag extends BaseClient {
 }
 
 export class Client extends BaseClient {
+  private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
 
   /**
@@ -3429,10 +3430,12 @@ export class Client extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform
   ) {
     super(parent)
 
+    this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
   }
 
