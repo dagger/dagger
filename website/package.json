@@ -21,7 +21,7 @@
     "@docusaurus/theme-mermaid": "^2.4.0",
     "@svgr/webpack": "^8.0.1",
     "chalk": "4.1.2",
-    "clsx": "^1.2.1",
+    "clsx": "^2.0.0",
     "docusaurus-plugin-image-zoom": "^0.1.1",
     "docusaurus-plugin-includes": "^1.1.4",
     "docusaurus-plugin-sass": "^0.2.3",
