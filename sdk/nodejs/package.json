@@ -37,7 +37,7 @@
     "docs:fmt": "yarn eslint --fix --resolve-plugins-relative-to=./ --ext=.js,.ts,.mjs,.mts ../../docs/current ."
   },
   "devDependencies": {
-    "@trivago/prettier-plugin-sort-imports": "^4.1.1",
+    "@trivago/prettier-plugin-sort-imports": "^4.2.0",
     "@types/adm-zip": "^0.5.0",
     "@types/mocha": "latest",
     "@types/node": "~16",
