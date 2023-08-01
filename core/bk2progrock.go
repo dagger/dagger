@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
+	"github.com/opencontainers/go-digest"
 	"github.com/vito/progrock"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -13,17 +14,42 @@ import (
 const focusPrefix = "[focus] "
 const internalPrefix = "[internal] "
 
-func RecordBuildkitStatus(rec *progrock.Recorder, solveCh <-chan *bkclient.SolveStatus) error {
+func RecordBuildkitStatus(
+	rec *progrock.Recorder,
+	journalFile string,
+	solveCh <-chan *bkclient.SolveStatus,
+) error {
+	var enc *json.Encoder
+	if journalFile != "" {
+		f, err := os.Create(journalFile)
+		if err != nil {
+			return fmt.Errorf("create journal: %w", err)
+		}
+
+		enc = json.NewEncoder(f)
+	}
+
 	for ev := range solveCh {
 		if err := rec.Record(bk2progrock(ev)); err != nil {
 			return fmt.Errorf("record: %w", err)
 		}
+		if enc != nil {
+			if err := enc.Encode(ev); err != nil {
+				return fmt.Errorf("journal: %w", err)
+			}
+		}
 	}
+
 	return nil
 }
 
 func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 	var status progrock.StatusUpdate
+
+	// there appear to be edge cases were Buildkit will send the same vertex
+	// multiple times, so we dedupe and prioritize keeping the completed one
+	seen := map[digest.Digest]int{}
+
 	for _, v := range event.Vertexes {
 		vtx := &progrock.Vertex{
 			Id:     v.Digest.String(),
@@ -55,7 +81,13 @@ func bk2progrock(event *bkclient.SolveStatus) *progrock.StatusUpdate {
 				vtx.Error = &msg
 			}
 		}
-		status.Vertexes = append(status.Vertexes, vtx)
+
+		if i, ok := seen[v.Digest]; ok && vtx.Completed != nil {
+			status.Vertexes[i] = vtx
+		} else {
+			seen[v.Digest] = len(status.Vertexes)
+			status.Vertexes = append(status.Vertexes, vtx)
+		}
 	}
 
 	for _, s := range event.Statuses {
