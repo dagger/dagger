@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -30,13 +32,13 @@ func RecordBuildkitStatus(
 	}
 
 	for ev := range solveCh {
-		if err := rec.Record(bk2progrock(ev)); err != nil {
-			return fmt.Errorf("record: %w", err)
-		}
 		if enc != nil {
 			if err := enc.Encode(ev); err != nil {
 				return fmt.Errorf("journal: %w", err)
 			}
+		}
+		if err := rec.Record(bk2progrock(ev)); err != nil {
+			return fmt.Errorf("record: %w", err)
 		}
 	}
 

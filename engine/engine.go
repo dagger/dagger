@@ -68,15 +68,6 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		progMultiW = append(progMultiW, startOpts.ProgrockWriter)
 	}
 
-	if startOpts.JournalFile != "" {
-		fw, err := newProgrockFileWriter(startOpts.JournalFile)
-		if err != nil {
-			return err
-		}
-
-		progMultiW = append(progMultiW, fw)
-	}
-
 	tel := telemetry.New()
 
 	var cloudURL string
@@ -206,7 +197,11 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		return core.RecordBuildkitStatus(recorder, solveCh)
+		return core.RecordBuildkitStatus(
+			recorder,
+			startOpts.JournalFile,
+			solveCh,
+		)
 	})
 
 	eg.Go(func() error {
