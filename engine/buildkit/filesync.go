@@ -410,7 +410,6 @@ func (c *Client) newFileSendServerProxySession(ctx context.Context, destPath str
 				if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 					lg.Debug("session conn ended")
 				} else {
-					// TODO: cancel the whole buildkit client
 					lg.Error("failed to handle session conn")
 				}
 			}
@@ -426,7 +425,7 @@ func (c *Client) newFileSendServerProxySession(ctx context.Context, destPath str
 			if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
 				lg.Debug("client session in dagger frontend ended")
 			} else {
-				lg.Fatal("failed to run dagger frontend session")
+				lg.Error("failed to run dagger frontend session")
 			}
 		}
 	}()

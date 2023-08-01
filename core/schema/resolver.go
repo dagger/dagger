@@ -82,9 +82,7 @@ func ToResolver[P any, A any, R any](f func(*core.Context, P, A) (R, error)) gra
 				return nil, fmt.Errorf("failed to marshal parent: %w", err)
 			}
 			if err := json.Unmarshal(parentBytes, &parent); err != nil {
-				// TODO:
-				// return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
-				return nil, fmt.Errorf("failed to unmarshal parent: %w, raw bytes: %s", err, string(parentBytes))
+				return nil, fmt.Errorf("failed to unmarshal parent: %w", err)
 			}
 		}
 

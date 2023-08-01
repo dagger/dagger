@@ -96,9 +96,6 @@ func (c *Client) ExportContainerImage(
 	}
 
 	// TODO: workaround needed until upstream fix: https://github.com/moby/buildkit/pull/4049
-	// TODO: This probably doesn't entirely work yet in the case where the combined result is still
-	// lazy and relies on other session resources to be evaluated. Fix that if merging before upstream
-	// fix in place.
 	sess, err := c.newFileSendServerProxySession(ctx, destPath)
 	if err != nil {
 		return nil, err
@@ -124,7 +121,10 @@ func (c *Client) getContainerResult(
 	}
 	// TODO: probably faster to do this in parallel for each platform
 	for platformString, input := range inputByPlatform {
-		res, err := c.Solve(ctx, bkgw.SolveRequest{Definition: input.Definition})
+		res, err := c.Solve(ctx, bkgw.SolveRequest{
+			Definition: input.Definition,
+			Evaluate:   true,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to solve for container publish: %s", err)
 		}

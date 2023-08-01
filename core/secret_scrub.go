@@ -1,6 +1,6 @@
 package core
 
-// ScrubInfo stores the info to access secrets and scrub them from outputs.
+// SecretToScrubInfo stores the info to access secrets and scrub them from outputs.
 type SecretToScrubInfo struct {
 	// Envs stores environment variable names that we need to scrub.
 	Envs []string `json:"envs,omitempty"`

@@ -1068,10 +1068,6 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		return nil, err
 	}
 
-	// NB(vito): this is to support running the dagger CLI _in_ dagger
-	// TODO(vito): add a test that actually depends on this; Project tests
-	// don't need it, because they only depend on the root level domain, which
-	// they currently inherit via the networks.ConfigProvider attachable.
 	uncachedExecMetadataOpt, err := ContainerExecUncachedMetadata{
 		ParentClientIDs: clientMetadata.ClientIDs(),
 		ServerID:        clientMetadata.ServerID,
