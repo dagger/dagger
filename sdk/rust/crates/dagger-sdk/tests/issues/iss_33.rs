@@ -22,7 +22,7 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
             },
         )
         .with_exec(vec!["echo", "hello"])
-        .exit_code()
+        .sync()
         .await?;
 
     Ok(())
