@@ -89,7 +89,7 @@ pytest-subprocess==1.5.0
     # via -r -
 python-dateutil==2.8.2
     # via strawberry-graphql
-rich==13.4.2
+rich==13.5.2
     # via
     #   -r -
     #   typer
