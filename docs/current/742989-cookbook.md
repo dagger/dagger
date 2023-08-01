@@ -625,6 +625,44 @@ Set the Hashicorp Vault URI, namespace, role and secret identifiers as host envi
 
 [Learn more](./guides/723462-use-secrets.md)
 
+## Error handling
+
+### Aborting with unhandled error
+
+The following code listing demonstrates how to abort the script with an unhandled error, which allows debugging with the stack trace of the crash during development.
+
+```go file=./cookbook/snippets/error-handling/unhandled/main.go
+```
+
+### Aborting gracefully
+
+The following code listing demonstrates how to abort the script without crashing.
+
+```go file=./cookbook/snippets/error-handling/aborting/main.go
+```
+
+### Exit code and unexpected errors
+
+The following code listing demonstrates how to handle a non-zero exit code from running a command, with several use cases:
+
+- Difference between “test failed” and “failed to test”
+- Handle a specific exit code value
+- Handle an exec error without checking for the exit code
+- Handle an exec error without propagating
+- Get the stdout of an exec, whether it failed or not
+
+```go file=./cookbook/snippets/error-handling/exit-code/main.go
+```
+
+### Running container after a failed exec
+
+This code listing demonstrates how to continue using a container after a failed exec. A common use case for this is to export a report that a test suite tool generates.
+
+**Important note:** The caveat with this approach is that forcing a zero exit code on a failure caches the failure. Sometimes that’s ok, but it may not be, so it requires discernment for each use case.
+
+```go file=./cookbook/snippets/error-handling/postmortem/main.go
+```
+
 ## Optimizations
 
 ### Cache dependencies
