@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -93,7 +91,7 @@ func withEngineAndTUI(
 
 func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
 	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
-		fileW, err := newProgrockWriter(log)
+		fileW, err := progrock.CreateJournal(log)
 		if err != nil {
 			return nil, fmt.Errorf("open progrock log: %w", err)
 		}
@@ -204,31 +202,4 @@ func inlineTUI(
 	}
 
 	return nil
-}
-
-func newProgrockWriter(dest string) (progrock.Writer, error) {
-	f, err := os.Create(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	return progrockFileWriter{
-		enc: json.NewEncoder(f),
-		c:   f,
-	}, nil
-}
-
-type progrockFileWriter struct {
-	enc *json.Encoder
-	c   io.Closer
-}
-
-var _ progrock.Writer = progrockFileWriter{}
-
-func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
-	return p.enc.Encode(update)
-}
-
-func (p progrockFileWriter) Close() error {
-	return p.c.Close()
 }
