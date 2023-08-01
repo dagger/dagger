@@ -81,9 +81,9 @@ func (r Rust) Generate(ctx context.Context) error {
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
-		WithExec([]string{"cargo", "fix", "--all", "--allow-no-vcs"}).
-		WithExec([]string{"cargo", "fmt"})
+		WithExec([]string{cliBinPath, "run", "cargo", "run", "-p", "dagger-bootstrap", "generate", "--output", fmt.Sprintf("/%s", rustGeneratedAPIPath)}).
+		WithExec([]string{cliBinPath, "run", "cargo", "fix", "--all", "--allow-no-vcs"}).
+		WithExec([]string{cliBinPath, "run", "cargo", "fmt"})
 
 	contents, err := generated.File(strings.TrimPrefix(rustGeneratedAPIPath, "sdk/rust/")).
 		Contents(ctx)
@@ -215,7 +215,7 @@ func (r Rust) Test(ctx context.Context) error {
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 				WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 				WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-				WithExec([]string{"cargo", "test", "--release", "--all"}).
+				WithExec([]string{cliBinPath, "run", "cargo", "test", "--release", "--all"}).
 				Sync(ctx)
 			return err
 		})
