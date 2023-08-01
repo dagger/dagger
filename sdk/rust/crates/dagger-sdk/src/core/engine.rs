@@ -2,6 +2,7 @@ use crate::core::DAGGER_ENGINE_VERSION;
 use crate::core::{
     cli_session::CliSession, config::Config, connect_params::ConnectParams, downloader::Downloader,
 };
+use std::path::PathBuf;
 
 pub struct Engine {}
 
@@ -30,6 +31,10 @@ impl Engine {
             return Ok((conn, None));
         }
 
+        if let Ok((conn, child)) = self.from_local_cli(cfg).await {
+            return Ok((conn, Some(child)));
+        }
+
         let (conn, proc) = self.from_cli(cfg).await?;
 
         Ok((conn, Some(proc)))
@@ -43,5 +48,14 @@ impl Engine {
             port,
             session_token: token,
         })
+    }
+
+    async fn from_local_cli(
+        &self,
+        cfg: &Config,
+    ) -> eyre::Result<(ConnectParams, tokio::process::Child)> {
+        let bin: PathBuf = std::env::var("_EXPERIMENTAL_DAGGER_CLI_BIN")?.into();
+        let cli_session = CliSession::new();
+        Ok(cli_session.connect(cfg, &bin).await?)
     }
 }
