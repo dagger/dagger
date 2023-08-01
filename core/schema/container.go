@@ -22,6 +22,7 @@ type containerSchema struct {
 	host         *core.Host
 	ociStore     content.Store
 	leaseManager *leaseutil.Manager
+	buildCache   *core.CacheMap[uint64, *core.Container]
 }
 
 var _ ExecutableSchema = &containerSchema{}
@@ -159,7 +160,16 @@ func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args 
 	if err != nil {
 		return nil, err
 	}
-	return parent.Build(ctx, s.bk, dir, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	return parent.Build(
+		ctx,
+		s.bk,
+		s.buildCache,
+		dir,
+		args.Dockerfile,
+		args.BuildArgs,
+		args.Target,
+		args.Secrets,
+	)
 }
 
 type containerWithRootFSArgs struct {

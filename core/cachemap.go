@@ -7,7 +7,7 @@ import (
 	"github.com/zeebo/xxh3"
 )
 
-type cacheMap[K comparable, T any] struct {
+type CacheMap[K comparable, T any] struct {
 	l     sync.Mutex
 	calls map[K]*cache[T]
 }
@@ -32,13 +32,13 @@ func cacheKey(keys ...any) uint64 {
 	return hash.Sum64()
 }
 
-func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
-	return &cacheMap[K, T]{
+func NewCacheMap[K comparable, T any]() *CacheMap[K, T] {
+	return &CacheMap[K, T]{
 		calls: map[K]*cache[T]{},
 	}
 }
 
-func (m *cacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
+func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()

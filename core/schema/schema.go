@@ -38,12 +38,19 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		separateSchemas: map[string]ExecutableSchema{},
 	}
 	host := core.NewHost()
+	buildCache := core.NewCacheMap[uint64, *core.Container]()
 	err := merged.addSchemas(
 		&querySchema{merged},
-		&directorySchema{merged, host},
+		&directorySchema{merged, host, buildCache},
 		&fileSchema{merged, host},
 		&gitSchema{merged},
-		&containerSchema{merged, host, params.OCIStore, params.LeaseManager},
+		&containerSchema{
+			merged,
+			host,
+			params.OCIStore,
+			params.LeaseManager,
+			buildCache,
+		},
 		&cacheSchema{merged},
 		&secretSchema{merged},
 		&hostSchema{merged, host},

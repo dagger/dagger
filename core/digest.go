@@ -117,7 +117,7 @@ func stableDigestInto(value any, dest io.Writer) (err error) {
 	return nil
 }
 
-var stableDefCache = newCacheMap[*pb.Definition, *pb.Definition]()
+var stableDefCache = NewCacheMap[*pb.Definition, *pb.Definition]()
 
 // digestInner handles digesting inner content, looking for special types and
 // respecting the Digestible interface.

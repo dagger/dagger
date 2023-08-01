@@ -10,7 +10,7 @@ import (
 
 func TestCacheMapConcurrent(t *testing.T) {
 	t.Parallel()
-	c := newCacheMap[int, int]()
+	c := NewCacheMap[int, int]()
 
 	commonKey := 42
 	initialized := map[int]bool{}
@@ -38,7 +38,7 @@ func TestCacheMapConcurrent(t *testing.T) {
 
 func TestCacheMapErrors(t *testing.T) {
 	t.Parallel()
-	c := newCacheMap[int, int]()
+	c := NewCacheMap[int, int]()
 
 	commonKey := 42
 
