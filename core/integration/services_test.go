@@ -111,25 +111,6 @@ func TestContainerHostnameEndpoint(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	t.Run("hostname is independent of exposed ports", func(t *testing.T) {
-		t.Skip("no longer the case; does it matter?")
-
-		a, err := c.Container().
-			From("python").
-			WithExposedPort(8000).
-			WithExec([]string{"python", "-m", "http.server"}).
-			Hostname(ctx)
-		require.NoError(t, err)
-
-		b, err := c.Container().
-			From("python").
-			WithExec([]string{"python", "-m", "http.server"}).
-			Hostname(ctx)
-		require.NoError(t, err)
-
-		require.Equal(t, a, b)
-	})
-
 	t.Run("hostname is same as endpoint", func(t *testing.T) {
 		srv := c.Container().
 			From("python").
@@ -730,91 +711,6 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 		Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, content, fileContent)
-}
-
-func TestContainerBuildService(t *testing.T) {
-	t.Parallel()
-
-	c, ctx := connect(t)
-	defer c.Close()
-
-	t.Run("building with service dependency", func(t *testing.T) {
-		t.Skip("this no longer works, and it's kind of weird that it ever did")
-
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
-
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM `+alpineImage+`
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
-
-		fileContent, err := c.Container().
-			WithServiceBinding("www", srv).
-			Build(src).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
-	})
-
-	t.Run("building a directory that depends on a service (Container.Build)", func(t *testing.T) {
-		t.Skip("this no longer works, and it's kind of weird that it ever did")
-
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
-
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM `+alpineImage+`
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
-
-		gitDaemon, repoURL := gitService(ctx, t, c, src)
-
-		gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			Branch("main").
-			Tree()
-
-		fileContent, err := c.Container().
-			WithServiceBinding("www", srv).
-			Build(gitDir).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
-	})
-
-	t.Run("building a directory that depends on a service (Directory.DockerBuild)", func(t *testing.T) {
-		t.Skip("this no longer works, and it's kind of weird that it ever did")
-
-		content := identity.NewID()
-		srv, httpURL := httpService(ctx, t, c, content)
-
-		src := c.Directory().
-			WithNewFile("Dockerfile",
-				`FROM `+alpineImage+`
-WORKDIR /src
-RUN wget `+httpURL+`
-CMD cat index.html
-`)
-
-		gitDaemon, repoURL := gitService(ctx, t, c, src)
-
-		gitDir := c.Git(repoURL, dagger.GitOpts{ExperimentalServiceHost: gitDaemon}).
-			Branch("main").
-			Tree()
-
-		fileContent, err := gitDir.
-			DockerBuild().
-			WithServiceBinding("www", srv).
-			Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, content, fileContent)
-	})
 }
 
 func TestContainerExportServices(t *testing.T) {
