@@ -26,10 +26,10 @@ import (
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -2640,24 +2640,54 @@ func TestContainerImport(t *testing.T) {
 
 	ctx := context.Background()
 
-	dest := t.TempDir()
-
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
+	pf, err := c.DefaultPlatform(ctx)
+	require.NoError(t, err)
 
-	imagePath := filepath.Join(dest, "image.tar")
+	platform, err := platforms.Parse(string(pf))
+	require.NoError(t, err)
+
+	config := map[string]any{
+		"contents": map[string]any{
+			"keyring": []string{
+				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
+			},
+			"repositories": []string{
+				"https://packages.wolfi.dev/os",
+			},
+			"packages": []string{
+				"wolfi-base",
+			},
+		},
+		"cmd": "/bin/sh -l",
+		"environment": map[string]string{
+			"FOO": "bar",
+		},
+		"archs": []string{
+			platform.Architecture,
+		},
+	}
+
+	cfgYaml, err := yaml.Marshal(config)
+	require.NoError(t, err)
+
+	apko := c.Container().
+		From("cgr.dev/chainguard/apko:latest").
+		WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
+			Contents: string(cfgYaml),
+		})
 
 	t.Run("OCI", func(t *testing.T) {
-		ctr := c.Container().
-			From(alpineImage).
-			WithEnvVariable("FOO", "bar")
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		ok, err := ctr.Export(ctx, imagePath)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+		imported := c.Container().Import(imageFile)
 
 		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -2665,19 +2695,19 @@ func TestContainerImport(t *testing.T) {
 	})
 
 	t.Run("Docker", func(t *testing.T) {
-		ref := name.MustParseReference(alpineImage)
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"--use-docker-mediatypes",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		img, err := remote.Image(ref)
+		imported := c.Container().Import(imageFile)
+
+		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
-
-		err = tarball.WriteToFile(imagePath, ref, img)
-		require.NoError(t, err)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
-
-		out, err := imported.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", out)
+		require.Equal(t, "bar\n", out)
 	})
 }
 

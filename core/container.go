@@ -1617,11 +1617,12 @@ func (container *Container) Import(
 		return nil, err
 	}
 
-	_, err = store.Info(ctx, manifestDesc.Digest)
-	if err != nil {
-		// TODO(vito): loadManifest again, to be durable to buildctl prune. but I
-		// can't reproduce this at the moment since it doesn't seem to be pruned.
-		return nil, fmt.Errorf("manifest pruned?: %w", err)
+	if _, err := store.Info(ctx, manifestDesc.Digest); err != nil {
+		// NB(vito): loadManifest again, to be durable to buildctl prune.
+		manifestDesc, err = loadManifest()
+		if err != nil {
+			return nil, fmt.Errorf("recover: %w", err)
+		}
 	}
 
 	// NB: the repository portion of this ref doesn't actually matter, but it's
