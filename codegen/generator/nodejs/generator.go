@@ -5,6 +5,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/generator/nodejs/templates"
 	"github.com/dagger/dagger/codegen/introspection"
 )
@@ -13,6 +14,8 @@ type NodeGenerator struct{}
 
 // Generate will generate the NodeJS SDK code and might modify the schema to reorder types in a alphanumeric fashion.
 func (g *NodeGenerator) Generate(_ context.Context, schema *introspection.Schema) ([]byte, error) {
+	generator.SetSchema(schema)
+
 	sort.SliceStable(schema.Types, func(i, j int) bool {
 		return schema.Types[i].Name < schema.Types[j].Name
 	})
