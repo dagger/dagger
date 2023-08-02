@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
@@ -13,8 +15,27 @@ import (
 const focusPrefix = "[focus] "
 const internalPrefix = "[internal] "
 
-func RecordBuildkitStatus(rec *progrock.Recorder, solveCh <-chan *bkclient.SolveStatus) error {
+func RecordBuildkitStatus(
+	rec *progrock.Recorder,
+	journalFile string,
+	solveCh <-chan *bkclient.SolveStatus,
+) error {
+	var enc *json.Encoder
+	if journalFile != "" {
+		f, err := os.Create(journalFile)
+		if err != nil {
+			return fmt.Errorf("create journal: %w", err)
+		}
+
+		enc = json.NewEncoder(f)
+	}
+
 	for ev := range solveCh {
+		if enc != nil {
+			if err := enc.Encode(ev); err != nil {
+				return fmt.Errorf("journal: %w", err)
+			}
+		}
 		if err := rec.Record(bk2progrock(ev)); err != nil {
 			return fmt.Errorf("record: %w", err)
 		}

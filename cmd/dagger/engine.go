@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
@@ -64,8 +62,12 @@ func withEngineAndTUI(
 
 	engineConf.DisableHostRW = disableHostRW
 
-	if engineConf.JournalFile == "" {
-		engineConf.JournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
+	if engineConf.BuildkitJournalFile == "" {
+		engineConf.BuildkitJournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_JOURNAL")
+	}
+
+	if engineConf.ProgrockJournalFile == "" {
+		engineConf.ProgrockJournalFile = os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL")
 	}
 
 	if !silent {
@@ -91,29 +93,12 @@ func withEngineAndTUI(
 	return engine.Start(ctx, engineConf, fn)
 }
 
-func progrockTee(progW progrock.Writer) (progrock.Writer, error) {
-	if log := os.Getenv("_EXPERIMENTAL_DAGGER_PROGROCK_JOURNAL"); log != "" {
-		fileW, err := newProgrockWriter(log)
-		if err != nil {
-			return nil, fmt.Errorf("open progrock log: %w", err)
-		}
-
-		return progrock.MultiWriter{progW, fileW}, nil
-	}
-
-	return progW, nil
-}
-
 func interactiveTUI(
 	ctx context.Context,
 	engineConf engine.Config,
 	fn engine.StartCallback,
 ) error {
 	progR, progW := progrock.Pipe()
-	progW, err := progrockTee(progW)
-	if err != nil {
-		return err
-	}
 
 	engineConf.ProgrockWriter = progW
 
@@ -153,12 +138,7 @@ func inlineTUI(
 	tape.ShowInternal(debug)
 	tape.Focus(focus)
 
-	progW, engineErr := progrockTee(tape)
-	if engineErr != nil {
-		return engineErr
-	}
-
-	engineConf.ProgrockWriter = progW
+	engineConf.ProgrockWriter = tape
 
 	ctx, quit := context.WithCancel(ctx)
 	defer quit()
@@ -183,7 +163,7 @@ func inlineTUI(
 	}
 
 	var cbErr error
-	engineErr = engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
+	engineErr := engine.Start(ctx, engineConf, func(ctx context.Context, api *router.Router) error {
 		before := time.Now()
 
 		cbErr = fn(ctx, api)
@@ -204,31 +184,4 @@ func inlineTUI(
 	}
 
 	return nil
-}
-
-func newProgrockWriter(dest string) (progrock.Writer, error) {
-	f, err := os.Create(dest)
-	if err != nil {
-		return nil, err
-	}
-
-	return progrockFileWriter{
-		enc: json.NewEncoder(f),
-		c:   f,
-	}, nil
-}
-
-type progrockFileWriter struct {
-	enc *json.Encoder
-	c   io.Closer
-}
-
-var _ progrock.Writer = progrockFileWriter{}
-
-func (p progrockFileWriter) WriteStatus(update *progrock.StatusUpdate) error {
-	return p.enc.Encode(update)
-}
-
-func (p progrockFileWriter) Close() error {
-	return p.c.Close()
 }

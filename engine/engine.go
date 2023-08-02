@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -43,15 +42,16 @@ const (
 )
 
 type Config struct {
-	Workdir            string
-	JournalFile        string
-	ProgrockWriter     progrock.Writer
-	DisableHostRW      bool
-	RunnerHost         string
-	SessionToken       string
-	UserAgent          string
-	EngineNameCallback func(string)
-	CloudURLCallback   func(string)
+	Workdir             string
+	BuildkitJournalFile string // Buildkit statuses (before converting to Progrock)
+	ProgrockJournalFile string // Progrock updates (sent to Cloud)
+	ProgrockWriter      progrock.Writer
+	DisableHostRW       bool
+	RunnerHost          string
+	SessionToken        string
+	UserAgent           string
+	EngineNameCallback  func(string)
+	CloudURLCallback    func(string)
 }
 
 type StartCallback func(context.Context, *router.Router) error
@@ -68,8 +68,8 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 		progMultiW = append(progMultiW, startOpts.ProgrockWriter)
 	}
 
-	if startOpts.JournalFile != "" {
-		fw, err := newProgrockFileWriter(startOpts.JournalFile)
+	if startOpts.ProgrockJournalFile != "" {
+		fw, err := progrock.CreateJournal(startOpts.ProgrockJournalFile)
 		if err != nil {
 			return err
 		}
@@ -206,7 +206,11 @@ func Start(ctx context.Context, startOpts Config, fn StartCallback) error {
 	eg, groupCtx := errgroup.WithContext(ctx)
 	solveCh := make(chan *bkclient.SolveStatus)
 	eg.Go(func() error {
-		return core.RecordBuildkitStatus(recorder, solveCh)
+		return core.RecordBuildkitStatus(
+			recorder,
+			startOpts.BuildkitJournalFile,
+			solveCh,
+		)
 	})
 
 	eg.Go(func() error {
@@ -368,31 +372,4 @@ func progrockForwarder(w progrock.Writer) (string, progrock.Writer, func() error
 	}
 
 	return progSock, progW, l.Close, nil
-}
-
-type progrockFileWriter struct {
-	f   *os.File
-	enc *json.Encoder
-}
-
-func newProgrockFileWriter(filePath string) (progrock.Writer, error) {
-	f, err := os.Create(filePath)
-	if err != nil {
-		return nil, err
-	}
-
-	enc := json.NewEncoder(f)
-
-	return progrockFileWriter{
-		f:   f,
-		enc: enc,
-	}, nil
-}
-
-func (w progrockFileWriter) WriteStatus(ev *progrock.StatusUpdate) error {
-	return w.enc.Encode(ev)
-}
-
-func (w progrockFileWriter) Close() error {
-	return w.f.Close()
 }
