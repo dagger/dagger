@@ -252,6 +252,8 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	// host=>container networking
 	progMessages := progrock.NewPassthroughRecorder(progMultiW)
+	c.Recorder = progMessages
+	ctx = progrock.RecorderToContext(ctx, c.Recorder)
 	bkSession.Allow(session.NewProxyListenerAttachable(progMessages))
 
 	// connect to the server, registering our session attachables and starting the server if not

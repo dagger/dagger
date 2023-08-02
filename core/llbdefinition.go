@@ -213,6 +213,10 @@ type execOp struct {
 	*pb.ExecOp
 }
 
+func (exec *execOp) Input(i pb.InputIndex) *opDAG {
+	return exec.inputs[i]
+}
+
 func (exec *execOp) OutputMount() *pb.Mount {
 	for _, mnt := range exec.Mounts {
 		if mnt.Output == exec.outputIndex {

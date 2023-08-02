@@ -122,6 +122,20 @@ func TestDefToDAG(t *testing.T) {
 	})
 
 	t.Run("marshalling inputs", func(t *testing.T) {
+		llbdef, err := getState("a").Marshal(ctx)
+		require.NoError(t, err)
+		def := llbdef.ToPB()
+		def.Source = nil
+
+		dag, err := defToDAG(def)
+		require.NoError(t, err)
+
+		require.NotNil(t, dag)
+		_, isExec := dag.AsExec()
+		require.False(t, isExec)
+		require.Len(t, dag.inputs, 1)
+
+		execDag := dag.inputs[0]
 		exec, isExec := execDag.AsExec()
 		require.True(t, isExec)
 		require.NotNil(t, exec)
@@ -132,7 +146,7 @@ func TestDefToDAG(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, inputDef.Def, 2)
 
-		dag, err := defToDAG(inputDef)
+		dag, err = defToDAG(inputDef)
 		require.NoError(t, err)
 		require.Len(t, dag.inputs, 1)
 		require.Equal(t, dag.inputs[0], execDag.inputs[0])

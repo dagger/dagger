@@ -3,11 +3,9 @@ package core
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,7 +17,6 @@ import (
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/network"
-	"github.com/moby/buildkit/client/llb"
 	bkgw "github.com/moby/buildkit/frontend/gateway/client"
 	"github.com/moby/buildkit/solver/pb"
 	"github.com/opencontainers/go-digest"
@@ -29,10 +26,8 @@ import (
 )
 
 type Service struct {
-	// Container is the container that this service is running in.
+	// Container is the container to run as a service.
 	Container *Container `json:"container"`
-	// ContainerExecOpts is the command to run in the container.
-	ContainerExecOpts ContainerExecOpts `json:"exec"`
 
 	// TODO: consider putting ClientID in here for both of the following to
 	// intentionally prevent sharing across clients?
@@ -57,10 +52,9 @@ type Service struct {
 	ReverseProxyProtocol NetworkProtocol `json:"reverse_proxy_protocol,omitempty"`
 }
 
-func NewContainerService(ctr *Container, opts ContainerExecOpts) *Service {
+func NewContainerService(ctr *Container) *Service {
 	return &Service{
-		Container:         ctr,
-		ContainerExecOpts: opts,
+		Container: ctr,
 	}
 }
 
@@ -238,22 +232,10 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 	return endpoint, nil
 }
 
-func solveRef(ctx context.Context, bk *buildkit.Client, def *pb.Definition) (bkgw.Reference, error) {
-	res, err := bk.Solve(ctx, bkgw.SolveRequest{
-		Definition: def,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO(vito): is this needed anymore? had to deal with unwrapping at one point
-	return res.SingleRef()
-}
-
-func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	switch {
 	case svc.Container != nil:
-		return svc.startContainer(ctx, bk, progSock)
+		return svc.startContainer(ctx, bk)
 	case svc.ProxyUpstream != nil:
 		return svc.startProxy(ctx, bk)
 	case svc.ReverseProxyUpstreamAddr != "":
@@ -263,7 +245,7 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 	}
 }
 
-func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err
@@ -284,9 +266,25 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 		return nil, err
 	}
 
-	ctr, opts := svc.Container, svc.ContainerExecOpts
+	ctr := svc.Container
 
-	cfg := ctr.Config
+	dag, err := defToDAG(ctr.FS)
+	if err != nil {
+		return nil, err
+	}
+
+	if dag.GetOp() == nil && len(dag.inputs) == 1 {
+		dag = dag.inputs[0]
+	} else {
+		// i mean, theoretically this should never happen, but it's better to
+		// notice it
+		return nil, fmt.Errorf("what in tarnation? that's too many inputs! (%d) %v", len(dag.inputs), dag.GetInputs())
+	}
+
+	execOp, ok := dag.AsExec()
+	if !ok {
+		return nil, fmt.Errorf("expected exec op, got %T", dag.GetOp())
+	}
 
 	detachDeps, _, err := StartServices(ctx, bk, ctr.Services)
 	if err != nil {
@@ -299,45 +297,53 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 		}
 	}()
 
-	mounts, err := svc.mounts(ctx, bk)
-	if err != nil {
-		return nil, fmt.Errorf("mounts: %w", err)
-	}
-
-	args, err := ctr.command(opts)
-	if err != nil {
-		return nil, fmt.Errorf("command: %w", err)
-	}
-
-	env := svc.env()
-
-	metaEnv, err := ContainerExecUncachedMetadata{
-		ParentClientIDs: clientMetadata.ClientIDs(),
-		ServerID:        clientMetadata.ServerID,
-		ProgSockPath:    progSock,
-	}.ToEnv()
-	if err != nil {
-		return nil, fmt.Errorf("uncached metadata: %w", err)
-	}
-	env = append(env, metaEnv...)
-
-	secretEnv, mounts, env, err := svc.secrets(mounts, env)
-	if err != nil {
-		return nil, fmt.Errorf("secrets: %w", err)
-	}
-
-	var securityMode pb.SecurityMode
-	if opts.InsecureRootCapabilities {
-		securityMode = pb.SecurityMode_INSECURE
-	}
-
-	vtx := rec.Vertex(dig, "start "+strings.Join(args, " "))
+	vtx := rec.Vertex(dig, "start "+strings.Join(execOp.Meta.Args, " "))
+	defer func() {
+		if err != nil {
+			vtx.Error(err)
+		}
+	}()
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 
 	health := newHealth(bk, fullHost, ctr.Ports)
 
 	pbPlatform := pb.PlatformFromSpec(ctr.Platform)
+
+	mounts := make([]bkgw.Mount, len(execOp.Mounts))
+	for i, m := range execOp.Mounts {
+		mount := bkgw.Mount{
+			Selector:  m.Selector,
+			Dest:      m.Dest,
+			ResultID:  m.ResultID,
+			Readonly:  m.Readonly,
+			MountType: m.MountType,
+			CacheOpt:  m.CacheOpt,
+			SecretOpt: m.SecretOpt,
+			SSHOpt:    m.SSHOpt,
+			// TODO(vito): why is there no TmpfsOpt? PR upstream?
+			// TmpfsOpt  *TmpfsOpt   `protobuf:"bytes,19,opt,name=TmpfsOpt,proto3" json:"TmpfsOpt,omitempty"`
+		}
+
+		if m.Input > -1 {
+			input := execOp.Input(m.Input)
+			def, err := input.Marshal()
+			if err != nil {
+				return nil, fmt.Errorf("marshal mount %s: %w", m.Dest, err)
+			}
+
+			res, err := bk.Solve(ctx, bkgw.SolveRequest{
+				Definition: def,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("solve mount %s: %w", m.Dest, err)
+			}
+
+			mount.Ref = res.Ref
+		}
+
+		mounts[i] = mount
+	}
 
 	gc, err := bk.NewContainer(ctx, bkgw.NewContainerRequest{
 		Mounts:   mounts,
@@ -361,15 +367,15 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 
 	outBuf := new(bytes.Buffer)
 	svcProc, err := gc.Start(ctx, bkgw.StartRequest{
-		Args:         args,
-		Env:          env,
-		SecretEnv:    secretEnv,
-		User:         cfg.User,
-		Cwd:          cfg.WorkingDir,
+		Args:         execOp.Meta.Args,
+		Env:          append(execOp.Meta.Env, proxyEnvList(execOp.Meta.ProxyEnv)...),
+		Cwd:          execOp.Meta.Cwd,
+		User:         execOp.Meta.User,
+		SecretEnv:    execOp.Secretenv,
 		Tty:          false,
 		Stdout:       nopCloser{io.MultiWriter(vtx.Stdout(), outBuf)},
 		Stderr:       nopCloser{io.MultiWriter(vtx.Stderr(), outBuf)},
-		SecurityMode: securityMode,
+		SecurityMode: execOp.Security,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start container: %w", err)
@@ -383,7 +389,11 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 		detachDeps()
 	}()
 
-	stopSvc := func(ctx context.Context) error {
+	stopSvc := func(ctx context.Context) (stopErr error) {
+		defer func() {
+			vtx.Done(stopErr)
+		}()
+
 		// TODO(vito): graceful shutdown?
 		if err := svcProc.Signal(ctx, syscall.SIGKILL); err != nil {
 			return fmt.Errorf("signal: %w", err)
@@ -422,6 +432,26 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 
 		return nil, fmt.Errorf("service exited before healthcheck")
 	}
+}
+
+func proxyEnvList(p *pb.ProxyEnv) []string {
+	out := []string{}
+	if v := p.HttpProxy; v != "" {
+		out = append(out, "HTTP_PROXY="+v, "http_proxy="+v)
+	}
+	if v := p.HttpsProxy; v != "" {
+		out = append(out, "HTTPS_PROXY="+v, "https_proxy="+v)
+	}
+	if v := p.FtpProxy; v != "" {
+		out = append(out, "FTP_PROXY="+v, "ftp_proxy="+v)
+	}
+	if v := p.NoProxy; v != "" {
+		out = append(out, "NO_PROXY="+v, "no_proxy="+v)
+	}
+	if v := p.AllProxy; v != "" {
+		out = append(out, "ALL_PROXY="+v, "all_proxy="+v)
+	}
+	return out
 }
 
 func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
@@ -553,198 +583,6 @@ func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client) 
 	}
 }
 
-func (svc *Service) mounts(ctx context.Context, bk *buildkit.Client) ([]bkgw.Mount, error) {
-	ctr := svc.Container
-	opts := svc.ContainerExecOpts
-
-	fsRef, err := solveRef(ctx, bk, ctr.FS)
-	if err != nil {
-		return nil, err
-	}
-
-	mounts := []bkgw.Mount{
-		{
-			Dest:      "/",
-			MountType: pb.MountType_BIND,
-			Ref:       fsRef,
-		},
-	}
-
-	metaSt, metaSourcePath := metaMount(opts.Stdin)
-
-	metaDef, err := metaSt.Marshal(ctx, llb.Platform(ctr.Platform))
-	if err != nil {
-		return nil, err
-	}
-
-	metaRef, err := solveRef(ctx, bk, metaDef.ToPB())
-	if err != nil {
-		return nil, err
-	}
-
-	mounts = append(mounts, bkgw.Mount{
-		Dest:     buildkit.MetaMountDestPath,
-		Ref:      metaRef,
-		Selector: metaSourcePath,
-	})
-
-	for _, mnt := range ctr.Mounts {
-		mount := bkgw.Mount{
-			Dest:      mnt.Target,
-			MountType: pb.MountType_BIND,
-		}
-
-		if mnt.Source != nil {
-			srcRef, err := solveRef(ctx, bk, mnt.Source)
-			if err != nil {
-				return nil, fmt.Errorf("mount %s: %w", mnt.Target, err)
-			}
-
-			mount.Ref = srcRef
-		}
-
-		if mnt.SourcePath != "" {
-			mount.Selector = mnt.SourcePath
-		}
-
-		if mnt.CacheID != "" {
-			mount.MountType = pb.MountType_CACHE
-			mount.CacheOpt = &pb.CacheOpt{
-				ID: mnt.CacheID,
-			}
-
-			switch mnt.CacheSharingMode {
-			case CacheSharingModeShared:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_SHARED
-			case CacheSharingModePrivate:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_PRIVATE
-			case CacheSharingModeLocked:
-				mount.CacheOpt.Sharing = pb.CacheSharingOpt_LOCKED
-			default:
-				return nil, errors.Errorf("invalid cache mount sharing mode %q", mnt.CacheSharingMode)
-			}
-		}
-
-		if mnt.Tmpfs {
-			mount.MountType = pb.MountType_TMPFS
-		}
-
-		mounts = append(mounts, mount)
-	}
-
-	for _, ctrSocket := range ctr.Sockets {
-		if ctrSocket.UnixPath == "" {
-			return nil, fmt.Errorf("unsupported socket: only unix paths are implemented")
-		}
-
-		opt := &pb.SSHOpt{
-			ID: ctrSocket.SocketID.String(),
-		}
-
-		if ctrSocket.Owner != nil {
-			opt.Uid = uint32(ctrSocket.Owner.UID)
-			opt.Gid = uint32(ctrSocket.Owner.UID)
-			opt.Mode = 0o600 // preserve default
-		}
-
-		mounts = append(mounts, bkgw.Mount{
-			Dest:      ctrSocket.UnixPath,
-			MountType: pb.MountType_SSH,
-			SSHOpt:    opt,
-		})
-	}
-
-	return mounts, nil
-}
-
-func (svc *Service) env() []string {
-	ctr := svc.Container
-	opts := svc.ContainerExecOpts
-	cfg := ctr.Config
-
-	env := []string{}
-
-	for _, e := range cfg.Env {
-		// strip out any env that are meant for internal use only, to prevent
-		// manually setting them
-		switch {
-		case strings.HasPrefix(e, "_DAGGER_ENABLE_NESTING="):
-		default:
-			env = append(env, e)
-		}
-	}
-
-	if opts.ExperimentalPrivilegedNesting {
-		env = append(env, "_DAGGER_ENABLE_NESTING=")
-	}
-
-	if opts.RedirectStdout != "" {
-		env = append(env, "_DAGGER_REDIRECT_STDOUT="+opts.RedirectStdout)
-	}
-
-	if opts.RedirectStderr != "" {
-		env = append(env, "_DAGGER_REDIRECT_STDERR="+opts.RedirectStderr)
-	}
-
-	for _, bnd := range ctr.Services {
-		for _, alias := range bnd.Aliases {
-			env = append(env, "_DAGGER_HOSTNAME_ALIAS_"+alias+"="+bnd.Hostname)
-		}
-	}
-
-	return env
-}
-
-func (svc *Service) secrets(mounts []bkgw.Mount, env []string) ([]*pb.SecretEnv, []bkgw.Mount, []string, error) {
-	ctr := svc.Container
-
-	secretEnv := []*pb.SecretEnv{}
-	secretsToScrub := SecretToScrubInfo{}
-	for i, ctrSecret := range ctr.Secrets {
-		switch {
-		case ctrSecret.EnvName != "":
-			secretsToScrub.Envs = append(secretsToScrub.Envs, ctrSecret.EnvName)
-			secret, err := ctrSecret.Secret.ToSecret()
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			secretEnv = append(secretEnv, &pb.SecretEnv{
-				ID:   secret.Name,
-				Name: ctrSecret.EnvName,
-			})
-		case ctrSecret.MountPath != "":
-			secretsToScrub.Files = append(secretsToScrub.Files, ctrSecret.MountPath)
-			opt := &pb.SecretOpt{}
-			if ctrSecret.Owner != nil {
-				opt.Uid = uint32(ctrSecret.Owner.UID)
-				opt.Gid = uint32(ctrSecret.Owner.UID)
-				opt.Mode = 0o400 // preserve default
-			}
-			mounts = append(mounts, bkgw.Mount{
-				Dest:      ctrSecret.MountPath,
-				MountType: pb.MountType_SECRET,
-				SecretOpt: opt,
-			})
-		default:
-			return nil, nil, nil, fmt.Errorf("malformed secret config at index %d", i)
-		}
-	}
-
-	if len(secretsToScrub.Envs) != 0 || len(secretsToScrub.Files) != 0 {
-		// we sort to avoid non-deterministic order that would break caching
-		sort.Strings(secretsToScrub.Envs)
-		sort.Strings(secretsToScrub.Files)
-
-		secretsToScrubJSON, err := json.Marshal(secretsToScrub)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("scrub secrets json: %w", err)
-		}
-		env = append(env, "_DAGGER_SCRUB_SECRETS="+string(secretsToScrubJSON))
-	}
-
-	return secretEnv, mounts, env, nil
-}
-
 type RunningService struct {
 	Service *Service
 	Key     ServiceKey
@@ -830,9 +668,6 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 		ClientID: clientMetadata.ClientID,
 	}
 
-	// XXX(vito): hacky; aligned with engine/server/router.go
-	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", clientMetadata.ServerID)
-
 	ss.l.Lock()
 	starting, isStarting := ss.starting[key]
 	running, isRunning := ss.running[key]
@@ -870,7 +705,7 @@ func (ss *Services) Start(ctx context.Context, bk *buildkit.Client, svc *Service
 		svcCtx = engine.ContextWithClientMetadata(svcCtx, clientMetadata)
 	}
 
-	running, err = svc.Start(svcCtx, bk, progSockPath)
+	running, err = svc.Start(svcCtx, bk)
 	if err != nil {
 		stop()
 		ss.l.Lock()

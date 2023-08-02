@@ -55,10 +55,6 @@ type Container struct {
 	// Meta is the /dagger filesystem. It will be null if nothing has run yet.
 	Meta *pb.Definition `json:"meta,omitempty"`
 
-	// ServiceExec is a Service representation of a WithExec. It may be null if
-	// no exec has happened yet.
-	ServiceExec *Service `json:"service_exec,omitempty"`
-
 	// The platform of the container's rootfs.
 	Platform specs.Platform `json:"platform,omitempty"`
 
@@ -1014,11 +1010,7 @@ func (container *Container) WithPipeline(ctx context.Context, name, description 
 }
 
 func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, progSock string, defaultPlatform specs.Platform, opts ContainerExecOpts) (*Container, error) { //nolint:gocyclo
-	stripped := *container
-	stripped.ServiceExec = nil
-	svc := NewContainerService(&stripped, opts)
 	container = container.Clone()
-	container.ServiceExec = svc
 
 	cfg := container.Config
 	mounts := container.Mounts
@@ -1680,15 +1672,14 @@ func (container *Container) ImageRefOrErr(ctx context.Context, bk *buildkit.Clie
 }
 
 func (container *Container) Service(ctx context.Context, bk *buildkit.Client, progSock string) (*Service, error) {
-	if container.ServiceExec == nil {
+	if container.Meta == nil {
 		var err error
 		container, err = container.WithExec(ctx, bk, progSock, container.Platform, ContainerExecOpts{})
 		if err != nil {
 			return nil, err
 		}
 	}
-
-	return container.ServiceExec, nil
+	return NewContainerService(container), nil
 }
 
 func (container *Container) ownership(ctx context.Context, bk *buildkit.Client, owner string) (*Ownership, error) {
