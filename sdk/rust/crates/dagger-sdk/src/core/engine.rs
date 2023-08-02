@@ -31,7 +31,7 @@ impl Engine {
             return Ok((conn, None));
         }
 
-        if let Ok((conn, child)) = self.from_local_cli(cfg).await {
+        if let Some((conn, child)) = self.from_local_cli(cfg).await.ok() {
             return Ok((conn, Some(child)));
         }
 
