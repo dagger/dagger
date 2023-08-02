@@ -5,7 +5,6 @@ from textwrap import dedent
 import pytest
 
 import dagger
-from dagger.exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -144,7 +143,7 @@ async def test_host_directory():
 async def test_execute_timeout():
     async with dagger.Connection(dagger.Config(execute_timeout=0.5)) as client:
         alpine = client.container().from_("alpine:3.16.2")
-        with pytest.raises(ExecuteTimeoutError):
+        with pytest.raises(dagger.ExecuteTimeoutError):
             await (
                 alpine.with_env_variable("_NO_CACHE", str(uuid.uuid4()))
                 .with_exec(["sleep", "2"])
@@ -172,7 +171,9 @@ async def test_object_sequence(tmp_path):
 async def test_connection_closed_error():
     async with dagger.Connection() as client:
         ...
-    with pytest.raises(TransportError, match="Connection to engine has been closed"):
+    with pytest.raises(
+        dagger.TransportError, match="Connection to engine has been closed"
+    ):
         await client.container().id()
 
 

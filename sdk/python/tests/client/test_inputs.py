@@ -4,14 +4,11 @@ import pytest
 from pytest_lazyfixture import lazy_fixture
 
 import dagger
-from dagger.api.base import (
+from dagger.client._core import (
     Root,
-    Scalar,
-    Type,
-    is_id_type,
-    is_id_type_sequence,
-    typecheck,
 )
+from dagger.client._guards import is_id_type, is_id_type_sequence, typecheck
+from dagger.client.base import Scalar, Type
 
 pytestmark = pytest.mark.filterwarnings("ignore:coroutine")
 

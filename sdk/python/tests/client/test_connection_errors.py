@@ -3,7 +3,6 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import dagger
-from dagger.exceptions import ClientConnectionError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -22,7 +21,7 @@ async def test_request_error(httpx_mock: HTTPXMock):
     msg = "All connection attempts failed"
     httpx_mock.add_exception(httpx.ConnectError(msg))
 
-    with pytest.raises(ClientConnectionError, match=msg):
+    with pytest.raises(dagger.ClientConnectionError, match=msg):
         async with dagger.Connection():
             ...
 
@@ -37,7 +36,7 @@ async def test_request_error(httpx_mock: HTTPXMock):
 async def test_bad_response(response: httpx.Response, httpx_mock: HTTPXMock):
     httpx_mock.add_callback(lambda _: response)
 
-    with pytest.raises(ClientConnectionError, match="unexpected response"):
+    with pytest.raises(dagger.ClientConnectionError, match="unexpected response"):
         async with dagger.Connection():
             ...
 
@@ -54,6 +53,6 @@ async def test_introspection_error(httpx_mock: HTTPXMock):
             ],
         }
     )
-    with pytest.raises(ClientConnectionError, match="Failed to build schema"):
+    with pytest.raises(dagger.ClientConnectionError, match="Failed to build schema"):
         async with dagger.Connection():
             ...

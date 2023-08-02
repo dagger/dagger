@@ -3,14 +3,14 @@ import os
 
 import anyio
 
-from dagger._progress import Progress
-from dagger.config import Config, ConnectParams
-from dagger.context import SyncResourceManager
-from dagger.exceptions import ProvisionError
+import dagger
+from dagger._managers import SyncResourceManager
+from dagger.client._session import ConnectParams
 
 from ._version import CLI_VERSION
-from .cli import CLISession
 from .download import Downloader
+from .progress import Progress
+from .session import CLISession
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class Engine(SyncResourceManager):
     """Start engine, provisioning if needed."""
 
-    def __init__(self, cfg: Config, progress: Progress) -> None:
+    def __init__(self, cfg: dagger.Config, progress: Progress) -> None:
         super().__init__()
         self.cfg = cfg
         self.progress = progress
@@ -29,13 +29,13 @@ class Engine(SyncResourceManager):
             return None
         if not (token := os.environ.get("DAGGER_SESSION_TOKEN")):
             msg = "DAGGER_SESSION_TOKEN must be set when using DAGGER_SESSION_PORT"
-            raise ProvisionError(msg)
+            raise dagger.ProvisionError(msg)
         try:
             return ConnectParams(port=int(port), session_token=token)
         except ValueError as e:
             # only port is validated
             msg = f"Invalid DAGGER_SESSION_PORT: {port}"
-            raise ProvisionError(msg) from e
+            raise dagger.ProvisionError(msg) from e
 
     def from_cli(self) -> ConnectParams:
         # Only start progress if we are provisioning, not on active sessions

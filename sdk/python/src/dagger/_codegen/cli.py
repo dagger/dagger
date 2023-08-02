@@ -6,7 +6,7 @@ from graphql import GraphQLSchema
 
 import dagger
 
-from . import codegen
+from . import generator
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
 async def generate(output: anyio.Path | None = None):
     """Generate a client for the Dagger API."""
     schema = await _get_schema()
-    code = codegen.generate(schema)
+    code = generator.generate(schema)
 
     if output:
         await output.write_text(code)

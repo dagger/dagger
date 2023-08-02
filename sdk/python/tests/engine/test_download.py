@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 import dagger
-from dagger.engine import download
+from dagger._engine import download
 
 
 @pytest.fixture(autouse=True)

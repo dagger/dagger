@@ -3,7 +3,7 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import dagger
-from dagger.exceptions import ExecuteTimeoutError, TransportError
+from dagger._exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.anyio,

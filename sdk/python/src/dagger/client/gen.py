@@ -5,7 +5,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Optional
 
-from dagger.api.base import Arg, Enum, Input, Root, Scalar, Type, typecheck
+from ._core import Arg, Root
+from ._guards import typecheck
+from .base import Enum, Input, Scalar, Type
 
 
 class CacheID(Scalar):
@@ -799,7 +801,7 @@ class Container(Type):
         _args: list[Arg] = []
         _ctx = self._select("sync", _args)
         _id = await _ctx.execute(ContainerID)
-        _ctx = self._root_select("container", [Arg("id", _id)])
+        _ctx = Client.from_context(_ctx)._select("container", [Arg("id", _id)])
         return Container(_ctx)
 
     def __await__(self):
@@ -1787,7 +1789,7 @@ class Directory(Type):
         _args: list[Arg] = []
         _ctx = self._select("sync", _args)
         _id = await _ctx.execute(DirectoryID)
-        _ctx = self._root_select("directory", [Arg("id", _id)])
+        _ctx = Client.from_context(_ctx)._select("directory", [Arg("id", _id)])
         return Directory(_ctx)
 
     def __await__(self):
@@ -2154,7 +2156,7 @@ class File(Type):
         _args: list[Arg] = []
         _ctx = self._select("sync", _args)
         _id = await _ctx.execute(FileID)
-        _ctx = self._root_select("file", [Arg("id", _id)])
+        _ctx = Client.from_context(_ctx)._select("file", [Arg("id", _id)])
         return File(_ctx)
 
     def __await__(self):

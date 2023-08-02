@@ -15,7 +15,7 @@ import (
 )
 
 var (
-	pythonGeneratedAPIPath = "sdk/python/src/dagger/api/gen.py"
+	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
 	pythonDefaultVersion   = "3.11"
 )
 
@@ -201,10 +201,10 @@ func (t Python) Bump(_ context.Context, version string) error {
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return os.WriteFile("sdk/python/src/dagger/engine/_version.py", []byte(engineReference), 0o600)
+	return os.WriteFile("sdk/python/src/dagger/_engine/_version.py", []byte(engineReference), 0o600)
 }
 
-// pythonBaseEnv retuns a general python environment, without source files.
+// pythonBaseEnv returns a general python environment, without source files.
 func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 	pipx := c.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
 	venv := "/opt/venv"

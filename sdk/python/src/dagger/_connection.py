@@ -3,27 +3,26 @@ import warnings
 
 from gql.client import AsyncClientSession
 
-from dagger import Client, Config
+from dagger import Client, Config, QueryError, VersionMismatch
 
-from ._progress import Progress
-from .context import ResourceManager
-from .engine import Engine
-from .engine._version import CLI_VERSION
-from .exceptions import QueryError, VersionMismatch
-from .session import Session
+from ._engine._version import CLI_VERSION
+from ._engine.conn import Engine
+from ._engine.progress import Progress
+from ._managers import ResourceManager
+from .client._session import Session
 
 logger = logging.getLogger(__name__)
 
 
 class Connection(ResourceManager):
-    """
-    Connect to a Dagger Engine.
+    """Connect to a Dagger Engine.
 
     Example::
 
         async def main():
             async with dagger.Connection() as client:
                 ctr = client.container().from_("alpine")
+
 
     You can stream the logs from the engine to see progress::
 

@@ -68,11 +68,11 @@ class QueryErrorLocation:
 
 @dataclass
 class QueryErrorValue:
-    """Error value returned by the API."""
+    """An error value returned by the API."""
 
     message: str
-    locations: list[QueryErrorLocation]
-    path: list[str]
+    locations: list[QueryErrorLocation] | None
+    path: list[str] | None
     extensions: dict[str, Any] = field(default_factory=dict)
 
     def __str__(self) -> str:
@@ -101,20 +101,19 @@ class QueryError(ClientError):
             msg = "Errors list is empty"
             raise ValueError(msg)
         super().__init__(errors[0])
-        self.errors = errors
+        self.errors: list[QueryErrorValue] = errors
         self.query = query
 
-    @classmethod
-    def from_transport(cls, exc: TransportQueryError, query: graphql.DocumentNode):
-        """Create instance from a gql exception."""
-        try:
-            errors = cattrs.structure(exc.errors, list[QueryErrorValue])
-        except (TypeError, KeyError, ValueError):
-            return None
-        return QueryError(errors, query) if errors else None
-
     def debug_query(self):
-        """Return GraphQL query for debugging purposes."""
+        """Return GraphQL query for debugging purposes.
+
+        Example::
+
+            try:
+                await ctr
+            except dagger.QueryError as e:
+                print(e.debug_query())
+        """
         lines = graphql.print_ast(self.query).splitlines()
         # count number of digits from line count
         pad = len(str(len(lines)))
@@ -129,23 +128,69 @@ class QueryError(ClientError):
         return "\n".join(res)
 
 
+def _query_error_from_transport(exc: TransportQueryError, query: graphql.DocumentNode):
+    """Create instance from a gql exception."""
+    try:
+        errors = cattrs.structure(exc.errors, list[QueryErrorValue])
+    except (TypeError, KeyError, ValueError):
+        return None
+    return QueryError(errors, query) if errors else None
+
+
 class ExecError(QueryError):
-    """API error from an exec operation."""
+    """API error from an exec operation.
+
+    Attributes
+    ----------
+    command:
+        The command that was executed.
+    message:
+        The error message.
+    exit_code:
+        The exit code of the command.
+    stdout:
+        The stdout of the command.
+    stderr:
+        The stderr of the command.
+    """
 
     _type = "EXEC_ERROR"
+
+    command: list[str]
+    message: str
+    exit_code: int
+    stdout: str
+    stderr: str
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         error: QueryErrorValue = self.args[0]
         ext = error.extensions
-        self.command: list[str] = ext["cmd"]
+        self.command = ext["cmd"]
         self.message = error.message
-        self.exit_code: int = ext["exitCode"]
-        self.stdout: str = ext["stdout"]
-        self.stderr: str = ext["stderr"]
+        self.exit_code = ext["exitCode"]
+        self.stdout = ext["stdout"]
+        self.stderr = ext["stderr"]
 
     def __str__(self):
+        """Prints the error message with stdout and stderr."""
         # As a default when just printing the error, include the stdout
         # and stderr for visibility
         return f"{self.message}\nStdout:\n{self.stdout}\nStderr:\n{self.stderr}"
+
+
+__all__ = [
+    "VersionMismatch",
+    "DaggerError",
+    "ProvisionError",
+    "DownloadError",
+    "SessionError",
+    "ClientError",
+    "ClientConnectionError",
+    "TransportError",
+    "ExecuteTimeoutError",
+    "InvalidQueryError",
+    "QueryError",
+    "ExecError",
+]

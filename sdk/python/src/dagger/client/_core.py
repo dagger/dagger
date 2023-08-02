@@ -1,17 +1,10 @@
-import contextlib
-import enum
 import functools
-import inspect
 import logging
 import typing
 from collections import deque
-from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import MISSING, asdict, dataclass, field, is_dataclass, replace
+from dataclasses import MISSING, asdict, dataclass, field, replace
 from typing import (
-    Annotated,
     Any,
-    ParamSpec,
-    TypeGuard,
     TypeVar,
     get_type_hints,
     overload,
@@ -21,10 +14,7 @@ import anyio
 import cattrs
 import graphql
 import httpx
-from beartype import beartype
 from beartype.door import TypeHint
-from beartype.roar import BeartypeCallHintViolation
-from beartype.vale import Is, IsInstance, IsSubclass
 from cattrs.preconf.json import make_converter
 from gql.client import AsyncClientSession
 from gql.dsl import DSLField, DSLQuery, DSLSchema, DSLSelectable, DSLType, dsl_gql
@@ -35,17 +25,38 @@ from gql.transport.exceptions import (
     TransportServerError,
 )
 
-from dagger.exceptions import (
+from dagger import (
     ExecuteTimeoutError,
     InvalidQueryError,
-    QueryError,
     TransportError,
 )
+from dagger._exceptions import _query_error_from_transport
+from dagger.client._guards import (
+    IDType,
+    InputHint,
+    InputSeqHint,
+    is_id_type,
+    is_id_type_sequence,
+    is_id_type_subclass,
+)
+from dagger.client.base import Scalar, Type
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
-P = ParamSpec("P")
+
+
+class Arg(typing.NamedTuple):
+    name: str  # GraphQL name
+    value: Any
+    default: Any = MISSING
+
+    def as_input(self):
+        if InputHint.is_bearable(self.value):
+            return asdict(self.value)
+        if InputSeqHint.is_bearable(self.value):
+            return [asdict(v) for v in self.value]
+        return self.value
 
 
 @dataclass(slots=True)
@@ -101,9 +112,12 @@ class Context:
         self.converter = conv
 
     def select(
-        self, type_name: str, field_name: str, args: dict[str, Any]
+        self, type_name: str, field_name: str, args: typing.Sequence[Arg]
     ) -> "Context":
-        field_ = Field(type_name, field_name, args)
+        args_ = {
+            arg.name: arg.as_input() for arg in args if arg.value is not arg.default
+        }
+        field_ = Field(type_name, field_name, args_)
         selections = self.selections.copy()
         selections.append(field_)
         return replace(self, selections=selections)
@@ -178,7 +192,7 @@ class Context:
             raise TransportError(msg) from e
 
         except TransportQueryError as e:
-            if error := QueryError.from_transport(e, query):
+            if error := _query_error_from_transport(e, query):
                 raise error from e
             raise
 
@@ -235,96 +249,6 @@ class Context:
                         tg.start_soon(_resolve_id, i, k, v)
 
 
-class Arg(typing.NamedTuple):
-    name: str  # GraphQL name
-    value: Any
-    default: Any = MISSING
-
-
-class Scalar(str):
-    """Custom scalar."""
-
-    __slots__ = ()
-
-
-class Enum(str, enum.Enum):
-    """Custom enumeration."""
-
-    __slots__ = ()
-
-    def __str__(self) -> str:
-        return str(self.value)
-
-
-class Object:
-    """Base for object types."""
-
-    @classmethod
-    def _graphql_name(cls) -> str:
-        return cls.__name__
-
-
-class Input(Object):
-    """Input object type."""
-
-
-InputType = Annotated[Input, Is[lambda o: is_dataclass(o)]]
-InputTypeSeq = Annotated[Sequence[InputType], ~IsInstance[str]]
-
-InputHint = TypeHint(InputType)
-InputSeqHint = TypeHint(InputTypeSeq)
-
-
-def as_input_arg(val):
-    if InputHint.is_bearable(val):
-        return asdict(val)
-    if InputSeqHint.is_bearable(val):
-        return [asdict(v) for v in val]
-    return val
-
-
-class Type(Object):
-    """Object type."""
-
-    __slots__ = ("_ctx",)
-
-    def __init__(self, ctx: Context) -> None:
-        self._ctx = ctx
-
-    def _select(self, field_name: str, args: typing.Sequence[Arg]):
-        _args = {
-            arg.name: as_input_arg(arg.value)
-            for arg in args
-            if arg.value is not arg.default
-        }
-        return self._ctx.select(self._graphql_name(), field_name, _args)
-
-    def _root_select(self, field_name: str, args: typing.Sequence[Arg]):
-        return Root._from_context(self._ctx)._select(field_name, args)  # noqa: SLF001
-
-    def _select_multiple(self, **kwargs):
-        return self._ctx.select_multiple(self._graphql_name(), **kwargs)
-
-
-@typing.runtime_checkable
-class FromIDType(typing.Protocol):
-    @classmethod
-    def _id_type(cls) -> Scalar:
-        ...
-
-    @classmethod
-    def _from_id_query_field(cls) -> str:
-        ...
-
-
-IDTypeSubclass = Annotated[FromIDType, IsSubclass[Type, FromIDType]]
-IDTypeSubclassHint = TypeHint(IDTypeSubclass)
-
-
-def is_id_type_subclass(v: type) -> TypeGuard[type[IDTypeSubclass]]:
-    return IDTypeSubclassHint.is_bearable(v)
-
-
 _Type = TypeVar("_Type", bound=Type)
 
 
@@ -345,7 +269,7 @@ class Root(Type):
         return cls(ctx)
 
     @classmethod
-    def _from_context(cls, ctx: Context):
+    def from_context(cls, ctx: Context):
         return cls(replace(ctx, selections=deque()))
 
     def _get_object_instance(self, id_: str | Scalar, cls: type[_Type]) -> _Type:
@@ -360,104 +284,3 @@ class Root(Type):
         assert issubclass(cls, Type)
         ctx = self._select(cls._from_id_query_field(), [Arg("id", id_)])
         return cls(ctx)
-
-
-@typing.runtime_checkable
-class HasID(typing.Protocol):
-    async def id(self) -> Scalar:  # noqa: A003
-        ...
-
-
-IDType = Annotated[HasID, IsInstance[Type]]
-IDTypeSeq = Annotated[Sequence[IDType], ~IsInstance[str]]
-
-IDTypeHint = TypeHint(IDType)
-IDTypeSeqHint = TypeHint(IDTypeSeq)
-
-
-def is_id_type(v: object) -> TypeGuard[IDType]:
-    return IDTypeHint.is_bearable(v)
-
-
-def is_id_type_sequence(v: object) -> TypeGuard[IDTypeSeq]:
-    return IDTypeSeqHint.is_bearable(v)
-
-
-@overload
-def typecheck(
-    func: Callable[P, Coroutine[Any, Any, T]]
-) -> Callable[P, Coroutine[Any, Any, T]]:
-    ...
-
-
-@overload
-def typecheck(func: Callable[P, T]) -> Callable[P, T]:
-    ...
-
-
-def typecheck(
-    func: Callable[P, T | Coroutine[Any, Any, T]]
-) -> Callable[P, T | Coroutine[Any, Any, T]]:
-    ...
-
-    """
-    Runtime type checking.
-
-    Allows fast failure, before sending requests to the API,
-    and with greater detail over the specific method and
-    parameter with invalid type to help debug.
-
-    This includes catching typos or forgetting to await a
-    coroutine, but it's less forgiving in some instances.
-
-    For example, an `args: Sequence[str]` parameter set as
-    `args=["echo", 123]` was easily converting the int 123
-    to a string by the dynamic query builder. Now it'll fail.
-    """
-    # Using beartype for the hard work, just tune the traceback a bit.
-    # Hiding as **implementation detail** for now. The project is young
-    # but very active and with good plans on making it very modular/pluggable.
-
-    # Decorating here allows basic checks during definition time
-    # so it'll be catched early, during development.
-    bear = beartype(func)
-
-    @contextlib.contextmanager
-    def _handle_exception():
-        try:
-            yield
-        except BeartypeCallHintViolation as e:
-            # Tweak the error message a bit.
-            msg = str(e).replace("@beartyped ", "")
-
-            # Everything in `dagger.api.gen.` is exported under `dagger.`.
-            msg = msg.replace("dagger.api.gen.", "dagger.")
-
-            # No API methods accept a coroutine, add hint.
-            if "<coroutine object" in msg:
-                msg = f"{msg} Did you forget to await?"
-
-            # The following `raise` line will show in traceback, keep
-            # the noise down to minimum by instantiating outside of it.
-            err = TypeError(msg).with_traceback(None)
-            raise err from None
-
-    if inspect.iscoroutinefunction(bear):
-
-        @functools.wraps(func)
-        async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            with _handle_exception():
-                return await bear(*args, **kwargs)
-
-        return async_wrapper
-
-    if inspect.isfunction(bear):
-
-        @functools.wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            with _handle_exception():
-                return bear(*args, **kwargs)
-
-        return wrapper
-
-    return bear
