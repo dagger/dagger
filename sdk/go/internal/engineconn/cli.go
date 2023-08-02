@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/adrg/xdg"
+	"github.com/mitchellh/go-homedir"
 )
 
 const (
@@ -39,8 +40,11 @@ func FromLocalCLI(ctx context.Context, cfg *Config) (EngineConn, bool, error) {
 	if !ok {
 		return nil, false, nil
 	}
-
-	binPath, err := exec.LookPath(binPath)
+	binPath, err := homedir.Expand(binPath)
+	if err != nil {
+		return nil, false, err
+	}
+	binPath, err = exec.LookPath(binPath)
 	if err != nil {
 		return nil, false, err
 	}
