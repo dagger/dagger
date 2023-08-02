@@ -21,9 +21,9 @@ build=$(dagger query <<EOF | jq -r .container.from.withDirectory.withWorkdir.wit
 {
   container {
     from(address:"golang:latest") {
-      withDirectory(path:"/src", source:"$source") {
-        withWorkdir(path:"/src") {
-          withExec(args:["go", "build", "-o", "dagger-builds-hello", "./hello/hello.go"]) {
+      withDirectory(path:"/src", directory:"$source") {
+        withWorkdir(path:"/src/hello") {
+          withExec(args:["go", "build", "-o", "dagger-builds-hello", "."]) {
             file(path:"./dagger-builds-hello") {
               export(path:"./dagger-builds-hello")
             }
