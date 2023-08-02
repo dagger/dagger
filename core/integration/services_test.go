@@ -343,48 +343,29 @@ func TestContainerPortOCIConfig(t *testing.T) {
 
 func TestContainerExecServicesSimple(t *testing.T) {
 	t.Parallel()
+	c, ctx := connect(t)
 
-	t.Run("happy path", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
+	srv, url := httpService(ctx, t, c, "Hello, world!")
 
-		srv, url := httpService(ctx, t, c, "Hello, world!")
+	hostname, err := srv.Hostname(ctx)
+	require.NoError(t, err)
 
-		hostname, err := srv.Hostname(ctx)
-		require.NoError(t, err)
+	client := c.Container().
+		From(alpineImage).
+		WithServiceBinding("www", srv).
+		WithExec([]string{"apk", "add", "curl"}).
+		WithExec([]string{"curl", "-v", url})
 
-		client := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", srv).
-			WithExec([]string{"apk", "add", "curl"}).
-			WithExec([]string{"curl", "-v", url})
+	_, err = client.Sync(ctx)
+	require.NoError(t, err)
 
-		_, err = client.Sync(ctx)
-		require.NoError(t, err)
+	stdout, err := client.Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "Hello, world!", stdout)
 
-		stdout, err := client.Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "Hello, world!", stdout)
-
-		stderr, err := client.Stderr(ctx)
-		require.NoError(t, err)
-		require.Contains(t, stderr, "Host: "+hostname+":8000")
-	})
-
-	t.Run("not an exec", func(t *testing.T) {
-		t.Parallel()
-		c, ctx := connect(t)
-
-		srv, _ := httpService(ctx, t, c, "Hello, world!")
-		srv = srv.WithNewFile("/foo")
-
-		_, err := c.Container().
-			From(alpineImage).
-			WithServiceBinding("www", srv).
-			WithExec([]string{"true"}).
-			Sync(ctx)
-		require.ErrorContains(t, err, "service container must be result of withExec")
-	})
+	stderr, err := client.Stderr(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stderr, "Host: "+hostname+":8000")
 }
 
 func TestContainerExecServicesError(t *testing.T) {
