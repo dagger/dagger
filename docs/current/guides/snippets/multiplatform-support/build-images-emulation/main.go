@@ -74,6 +74,7 @@ func main() {
 		Container().
 		Publish(ctx, imageRepo, dagger.ContainerPublishOpts{
 			PlatformVariants: platformVariants,
+			MediaTypes: dagger.Dockermediatypes,
 		})
 	if err != nil {
 		panic(err)
