@@ -222,7 +222,7 @@ Using the host filesystem in your Dagger pipeline is convenient, but there are s
   To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable unless there's a strong need to be able to perform Git operations on top of the loaded directory inside Dagger.
   :::
 
-- The host directory is loaded into the Dagger Engine; it's not a "bind mount". This means that any change you make to the loaded directory in your Dagger pipeline will not result in a change to the directory on the host.
+- The host directory is synchronized into the Dagger Engine similar to `rsync` or `scp`; it's not a "bind mount". This means that any change you make to the loaded directory in your Dagger pipeline will not result in a change to the directory on the host.
 
   :::warning
   If you want the changes made to a loaded local directory inside a Dagger pipeline to be reflected on the host, it needs to be explictly exported to the host. However, this should be approached with great caution, since a mistake could result in files/directories being accidentally overwritten with undesired contents or unsaved work being deleted.
