@@ -228,7 +228,7 @@ Using the host filesystem in your Dagger pipeline is convenient, but there are s
   If you want the changes made to a loaded local directory inside a Dagger pipeline to be reflected on the host, it needs to be explictly exported to the host. However, this should be approached with caution, since any overlap in the files being exported with the files on the host will result in the host files being overwritten.
   :::
 
-- Synchronization of a local directory happens once per Dagger "session" (in user-facing terms, once per `dagger.Connect` call in the Dagger SDKs). This means that if you load the local directory, then make changes to it on the host, those changes will not be reloaded within the context of a single Dagger client. Furthermore, due to lazy executions, the loading happens the first time the directory is used in a non-lazy operation.
+- Synchronization of a local directory happens once per Dagger client instance (in user-facing terms, once per `dagger.Connect` call in the Dagger SDKs). This means that if you load the local directory, then make changes to it on the host, those changes will not be reloaded within the context of a single Dagger client. Furthermore, due to lazy executions, the loading happens the first time the directory is used in a non-lazy operation.
 
   :::tip
   It's safest to not modify a loaded host directory at all while a Dagger client is running, as otherwise it is hard to predict what will be loaded.
