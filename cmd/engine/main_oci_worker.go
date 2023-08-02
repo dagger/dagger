@@ -31,12 +31,11 @@ import (
 	sgzlayer "github.com/containerd/stargz-snapshotter/fs/layer"
 	sgzsource "github.com/containerd/stargz-snapshotter/fs/source"
 	remotesn "github.com/containerd/stargz-snapshotter/snapshot"
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/engine/sources/gitdns"
+	"github.com/dagger/dagger/engine/sources/httpdns"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/session"
-	"github.com/moby/buildkit/util/bklog"
-	"github.com/moby/buildkit/util/entitlements"
 	"github.com/moby/buildkit/util/network/cniprovider"
 	"github.com/moby/buildkit/util/network/netproviders"
 	"github.com/moby/buildkit/util/resolver"
@@ -202,13 +201,6 @@ func applyOCIFlags(c *cli.Context, cfg *config.Config) error {
 	for k, v := range labels {
 		cfg.Workers.OCI.Labels[k] = v
 	}
-	for _, e := range cfg.Entitlements {
-		if e == string(entitlements.EntitlementSecurityInsecure) {
-			// this is a hacky way of allowing dagger clients to know whether their session
-			// should request the insecure entitlement.
-			cfg.Workers.OCI.Labels[engine.PrivilegedExecLabel] = "true"
-		}
-	}
 
 	if c.GlobalIsSet("oci-worker-snapshotter") {
 		cfg.Workers.OCI.Snapshotter = c.GlobalString("oci-worker-snapshotter")
@@ -288,10 +280,6 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 
 	cfg := common.config.Workers.OCI
 
-	// Add a name for this engine to the labels that clients can use to log who they are connected to
-	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
-	cfg.Labels[engine.EngineNameLabel] = engineName
-
 	if (cfg.Enabled == nil && !validOCIBinary()) || (cfg.Enabled != nil && !*cfg.Enabled) {
 		return nil, nil
 	}
@@ -361,7 +349,35 @@ func ociWorkerInitializer(c *cli.Context, common workerInitializerOpt) ([]worker
 	if err != nil {
 		return nil, err
 	}
+	if err := registerDaggerCustomSources(w, dns); err != nil {
+		return nil, fmt.Errorf("register Dagger sources: %w", err)
+	}
 	return []worker.Worker{w}, nil
+}
+
+// registerDaggerCustomSources adds Dagger's custom sources to the worker.
+func registerDaggerCustomSources(worker *base.Worker, dns *oci.DNSConfig) error {
+	hs, err := httpdns.NewSource(httpdns.Opt{
+		CacheAccessor: worker.CacheMgr,
+		BaseDNSConfig: dns,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(hs)
+
+	gs, err := gitdns.NewSource(gitdns.Opt{
+		CacheAccessor: worker.CacheMgr,
+		BaseDNSConfig: dns,
+	})
+	if err != nil {
+		return err
+	}
+
+	worker.SourceManager.Register(gs)
+
+	return nil
 }
 
 func snapshotterFactory(commonRoot string, cfg config.OCIConfig, sm *session.Manager, hosts docker.RegistryHosts) (runc.SnapshotterFactory, error) {

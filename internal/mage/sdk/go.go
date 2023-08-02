@@ -88,18 +88,12 @@ func (t Go) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("generate")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"))
-	if err != nil {
-		return err
-	}
 	cliBinPath := "/.dagger-cli"
 
 	generated, err := util.GoBase(c).
 		WithMountedFile("/usr/local/bin/dagger", util.DaggerBinary(c)).
 		WithMountedFile("/usr/local/bin/client-gen", util.ClientGenBinary(c)).
 		WithWorkdir("sdk/go").
-		WithServiceBinding("dagger-engine", devEngine).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
 		WithExec([]string{"go", "generate", "-v", "./..."}).

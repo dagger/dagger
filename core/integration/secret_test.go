@@ -99,7 +99,7 @@ func TestSecretMountFromFileWithOverridingMount(t *testing.T) {
 	require.Contains(t, res.Container.From.WithMountedSecret.WithMountedFile.File.Contents, "some-content")
 }
 
-func TestNewSecret(t *testing.T) {
+func TestSecretSet(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -119,7 +119,7 @@ func TestNewSecret(t *testing.T) {
 	require.Equal(t, secretValue, plaintext)
 }
 
-func TestWhitespaceSecretScrubbed(t *testing.T) {
+func TestSecretWhitespaceScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()
@@ -137,7 +137,7 @@ func TestWhitespaceSecretScrubbed(t *testing.T) {
 	require.Equal(t, "***", stdout)
 }
 
-func TestBigSecretScrubbed(t *testing.T) {
+func TestSecretBigScrubbed(t *testing.T) {
 	t.Parallel()
 	c, ctx := connect(t)
 	defer c.Close()

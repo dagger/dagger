@@ -3,14 +3,16 @@ package schema
 import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/core/socket"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/sources/gitdns"
 	"github.com/moby/buildkit/client/llb"
 )
 
-var _ router.ExecutableSchema = &gitSchema{}
+var _ ExecutableSchema = &gitSchema{}
 
 type gitSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
 func (s *gitSchema) Name() string {
@@ -21,23 +23,23 @@ func (s *gitSchema) Schema() string {
 	return Git
 }
 
-func (s *gitSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
-		"Query": router.ObjectResolver{
-			"git": router.ToResolver(s.git),
+func (s *gitSchema) Resolvers() Resolvers {
+	return Resolvers{
+		"Query": ObjectResolver{
+			"git": ToResolver(s.git),
 		},
-		"GitRepository": router.ObjectResolver{
-			"branch": router.ToResolver(s.branch),
-			"tag":    router.ToResolver(s.tag),
-			"commit": router.ToResolver(s.commit),
+		"GitRepository": ObjectResolver{
+			"branch": ToResolver(s.branch),
+			"tag":    ToResolver(s.tag),
+			"commit": ToResolver(s.commit),
 		},
-		"GitRef": router.ObjectResolver{
-			"tree": router.ToResolver(s.tree),
+		"GitRef": ObjectResolver{
+			"tree": ToResolver(s.tree),
 		},
 	}
 }
 
-func (s *gitSchema) Dependencies() []router.ExecutableSchema {
+func (s *gitSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -60,7 +62,7 @@ type gitArgs struct {
 	ExperimentalServiceHost *core.ContainerID `json:"experimentalServiceHost"`
 }
 
-func (s *gitSchema) git(ctx *router.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
+func (s *gitSchema) git(ctx *core.Context, parent *core.Query, args gitArgs) (gitRepository, error) {
 	return gitRepository{
 		URL:         args.URL,
 		KeepGitDir:  args.KeepGitDir,
@@ -77,14 +79,14 @@ type commitArgs struct {
 	ID string
 }
 
-func (s *gitSchema) commit(ctx *router.Context, parent gitRepository, args commitArgs) (gitRef, error) {
+func (s *gitSchema) commit(ctx *core.Context, parent gitRepository, args commitArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.ID,
 	}, nil
 }
 
-func (s *gitSchema) branch(ctx *router.Context, parent gitRepository, args branchArgs) (gitRef, error) {
+func (s *gitSchema) branch(ctx *core.Context, parent gitRepository, args branchArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -95,7 +97,7 @@ type tagArgs struct {
 	Name string
 }
 
-func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs) (gitRef, error) {
+func (s *gitSchema) tag(ctx *core.Context, parent gitRepository, args tagArgs) (gitRef, error) {
 	return gitRef{
 		Repository: parent,
 		Name:       args.Name,
@@ -103,11 +105,11 @@ func (s *gitSchema) tag(ctx *router.Context, parent gitRepository, args tagArgs)
 }
 
 type gitTreeArgs struct {
-	SSHKnownHosts string        `json:"sshKnownHosts"`
-	SSHAuthSocket core.SocketID `json:"sshAuthSocket"`
+	SSHKnownHosts string    `json:"sshKnownHosts"`
+	SSHAuthSocket socket.ID `json:"sshAuthSocket"`
 }
 
-func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
+func (s *gitSchema) tree(ctx *core.Context, parent gitRef, args gitTreeArgs) (*core.Directory, error) {
 	opts := []llb.GitOption{}
 
 	if parent.Repository.KeepGitDir {
@@ -117,12 +119,34 @@ func (s *gitSchema) tree(ctx *router.Context, parent gitRef, args gitTreeArgs) (
 		opts = append(opts, llb.KnownSSHHosts(args.SSHKnownHosts))
 	}
 	if args.SSHAuthSocket != "" {
-		opts = append(opts, llb.MountSSHSock(args.SSHAuthSocket.LLBID()))
+		opts = append(opts, llb.MountSSHSock(string(args.SSHAuthSocket)))
 	}
 	var svcs core.ServiceBindings
 	if parent.Repository.ServiceHost != nil {
 		svcs = core.ServiceBindings{*parent.Repository.ServiceHost: nil}
 	}
-	st := llb.Git(parent.Repository.URL, parent.Name, opts...)
+
+	useDNS := len(svcs) > 0
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err == nil && !useDNS {
+		useDNS = len(clientMetadata.ParentClientIDs) > 0
+	}
+
+	var st llb.State
+	if useDNS {
+		// NB: only configure search domains if we're directly using a service, or
+		// if we're nested beneath another search domain.
+		//
+		// we have to be a bit selective here to avoid breaking Dockerfile builds
+		// that use a Buildkit frontend (# syntax = ...) that doesn't have the
+		// networks API cap.
+		//
+		// TODO: add API cap
+		st = gitdns.State(parent.Repository.URL, parent.Name, clientMetadata.ClientIDs(), opts...)
+	} else {
+		st = llb.Git(parent.Repository.URL, parent.Name, opts...)
+	}
+
 	return core.NewDirectorySt(ctx, st, "", parent.Repository.Pipeline, s.platform, svcs)
 }

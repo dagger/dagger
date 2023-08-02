@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"runtime"
 
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/engine"
 	"github.com/spf13/cobra"
 )
 

@@ -14,6 +14,11 @@ type Pipeline struct {
 	Weak        bool    `json:"weak,omitempty"`
 }
 
+// Pipelineable is any object which can return a pipeline.Path.
+type Pipelineable interface {
+	PipelinePath() Path
+}
+
 type Path []*Pipeline
 
 func (g Path) Copy() Path {

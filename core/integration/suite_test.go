@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"dagger.io/dagger"
@@ -30,8 +29,18 @@ func TestMain(m *testing.M) {
 }
 
 func connect(t require.TestingT) (*dagger.Client, context.Context) {
+	return connectWithLogOutput(t, os.Stderr)
+}
+
+func connectWithBufferedLogs(t require.TestingT) (*dagger.Client, context.Context, *safeBuffer) {
+	output := &safeBuffer{}
+	c, ctx := connectWithLogOutput(t, io.MultiWriter(os.Stderr, output))
+	return c, ctx, output
+}
+
+func connectWithLogOutput(t require.TestingT, logOutput io.Writer) (*dagger.Client, context.Context) {
 	ctx := context.Background()
-	client, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stderr))
+	client, err := dagger.Connect(ctx, dagger.WithLogOutput(logOutput))
 	require.NoError(t, err)
 	return client, ctx
 }
@@ -217,23 +226,12 @@ func daggerCliFile(t *testing.T, c *dagger.Client) *dagger.File {
 	return c.Host().File(daggerCliPath(t))
 }
 
-func lastNLines(str string, n int) string {
-	lines := strings.Split(strings.TrimSpace(str), "\n")
-	if len(lines) > n {
-		lines = lines[len(lines)-n:]
-	}
-	return strings.Join(lines, "\n")
-}
-
 const testCLIBinPath = "/bin/dagger"
 
 func CLITestContainer(ctx context.Context, t *testing.T, c *dagger.Client) *DaggerCLIContainer {
 	t.Helper()
 	ctr := c.Container().From(alpineImage).
-		WithMountedFile(testCLIBinPath, daggerCliFile(t, c)).
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", testCLIBinPath).
-		// TODO: this shouldn't be needed, dagger cli should pick up existing nestedness
-		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", "unix:///.runner.sock")
+		WithMountedFile(testCLIBinPath, daggerCliFile(t, c))
 
 	return &DaggerCLIContainer{
 		Container: ctr,
@@ -332,7 +330,7 @@ func (ctr DaggerCLIContainer) WithNameArg(name string) *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "do"}
+	args := []string{testCLIBinPath, "--debug", "do"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
@@ -348,7 +346,7 @@ func (ctr DaggerCLIContainer) CallDo() *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--silent", "project"}
+	args := []string{testCLIBinPath, "project"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}
@@ -357,7 +355,7 @@ func (ctr DaggerCLIContainer) CallProject() *DaggerCLIContainer {
 }
 
 func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
-	args := []string{testCLIBinPath, "--silent", "project", "init"}
+	args := []string{testCLIBinPath, "project", "init"}
 	if ctr.ProjectArg != "" {
 		args = append(args, "--project", ctr.ProjectArg)
 	}

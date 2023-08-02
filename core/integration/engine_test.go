@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -24,11 +23,8 @@ func devEngineContainer(c *dagger.Client) *dagger.Container {
 	} else {
 		tarPath = "./bin/engine.tar"
 	}
-	parentDir := filepath.Dir(tarPath)
-	tarFileName := filepath.Base(tarPath)
-	devEngineTar := c.Host().Directory(parentDir, dagger.HostDirectoryOpts{Include: []string{tarFileName}}).File(tarFileName)
+	devEngineTar := c.Host().File(tarPath)
 	return c.Container().Import(devEngineTar).
-		WithEnvVariable("GOTRACEBACK", "all"). // if something goes wrong, dump all the goroutines
 		WithExposedPort(1234, dagger.ContainerWithExposedPortOpts{Protocol: dagger.Tcp})
 }
 
@@ -82,13 +78,13 @@ func TestClientWaitsForEngine(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	devEngine := devEngineContainer(c).WithoutExposedPort(1234, dagger.ContainerWithoutExposedPortOpts{Protocol: dagger.Tcp})
+	devEngine := devEngineContainer(c)
 	entrypoint, err := devEngine.File("/usr/local/bin/dagger-entrypoint.sh").Contents(ctx)
 
 	require.NoError(t, err)
 	before, after, found := strings.Cut(entrypoint, "set -e")
 	require.True(t, found, "missing set -e in entrypoint")
-	entrypoint = before + "set -e \n" + "sleep 30\n" + after
+	entrypoint = before + "set -e \n" + "sleep 15\n" + "echo my hostname is $(hostname)\n" + after
 
 	devEngine = devEngine.
 		WithNewFile("/usr/local/bin/dagger-entrypoint.sh", dagger.ContainerWithNewFileOpts{
@@ -106,9 +102,7 @@ func TestClientWaitsForEngine(t *testing.T) {
 		WithNewFile("/query.graphql", dagger.ContainerWithNewFileOpts{
 			Contents: `{ defaultPlatform }`,
 		}). // arbitrary valid query
-		WithExec([]string{"time", "dagger", "query", "--debug", "--doc", "/query.graphql"}, dagger.ContainerWithExecOpts{
-			InsecureRootCapabilities: true,
-		}).Sync(ctx)
+		WithExec([]string{"dagger", "query", "--debug", "--doc", "/query.graphql"}).Sync(ctx)
 
 	require.NoError(t, err)
 }
@@ -120,6 +114,7 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	engineName := "my-special-engine"
 	devEngine := devEngineContainer(c).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_ENGINE_NAME", engineName).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
 		WithExec([]string{"--addr", "tcp://0.0.0.0:1234"}, dagger.ContainerWithExecOpts{
 			InsecureRootCapabilities: true,
 		})

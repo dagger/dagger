@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	loadOnce      sync.Once
-	loadDoneCh    = make(chan struct{})
+	setOnce       sync.Once
+	setDoneCh     = make(chan struct{})
 	defaultLabels []Label
 )
 
@@ -28,26 +28,32 @@ type Labels []Label
 
 // RootLabels returns default labels for Pipelines.
 //
-// `LoadRootLabels` *must* be called before invoking this function.
-// `RootLabels` will wait until `LoadRootLabels` has completed.
+// `SetRootLabels` *must* be called before invoking this function.
+// `RootLabels` will wait until `SetRootLabels` has completed.
 func RootLabels() []Label {
-	<-loadDoneCh
+	<-setDoneCh
 	return defaultLabels
 }
 
-// LoadRootLabels loads default Pipeline labels from a workdir.
-func LoadRootLabels(workdir string, engineName string) {
-	loadOnce.Do(func() {
-		defer close(loadDoneCh)
-		defaultLabels = loadRootLabels(workdir, engineName)
+// SetRootLabels sets the default Pipeline labels one time, unblocking RootLabels.
+// TODO: this doesn't need to be async anymore, can just be passed to schema or through
+// query context now
+func SetRootLabels(labels []Label) {
+	setOnce.Do(func() {
+		defer close(setDoneCh)
+		defaultLabels = labels
 	})
 }
 
-func loadRootLabels(workdir, engineName string) []Label {
-	labels := []Label{{
+func EngineLabel(engineName string) Label {
+	return Label{
 		Name:  "dagger.io/engine",
 		Value: engineName,
-	}}
+	}
+}
+
+func LoadVCSLabels(workdir string) []Label {
+	labels := []Label{}
 
 	if gitLabels, err := LoadGitLabels(workdir); err == nil {
 		labels = append(labels, gitLabels...)

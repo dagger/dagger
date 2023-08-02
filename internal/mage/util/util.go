@@ -69,7 +69,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			"**/go.sum",
 
 			// embedded files
-			"**/*.go.tmpl",
+			"**/*.tmpl",
 			"**/*.ts.gtpl",
 			"**/*.graphqls",
 			"**/*.graphql",
@@ -85,7 +85,7 @@ func goBase(c *dagger.Client) *dagger.Container {
 	repo := RepositoryGoCodeOnly(c)
 
 	return c.Container().
-		From("golang:1.20.0-alpine").
+		From("golang:1.20.4-alpine3.18").
 		// gcc is needed to run go test -race https://github.com/golang/go/issues/9918 (???)
 		WithExec([]string{"apk", "add", "build-base"}).
 		WithEnvVariable("CGO_ENABLED", "0").

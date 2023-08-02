@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/dagger/dagger/engine/server"
 	"github.com/mackerelio/go-osstat/cpu"
 	"github.com/mackerelio/go-osstat/loadavg"
 	"github.com/mackerelio/go-osstat/memory"
@@ -80,9 +81,12 @@ func logTraceMetrics(ctx context.Context) {
 	}
 }
 
-func logMetrics(ctx context.Context, engineStateRootDir string) {
+func logMetrics(ctx context.Context, engineStateRootDir string, ctrl *server.BuildkitController) {
 	for range time.Tick(60 * time.Second) {
 		l := bklog.G(ctx)
+
+		// controller stats
+		l = ctrl.LogMetrics(l)
 
 		// goroutine stats
 		l = l.WithField("goroutine-count", runtime.NumGoroutine())
