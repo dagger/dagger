@@ -3422,6 +3422,7 @@ export class ProjectCommandFlag extends BaseClient {
 }
 
 export class Client extends BaseClient {
+  private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
 
   /**
@@ -3429,10 +3430,12 @@ export class Client extends BaseClient {
    */
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _checkVersionCompatibility?: boolean,
     _defaultPlatform?: Platform
   ) {
     super(parent)
 
+    this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
   }
 
@@ -3452,6 +3455,25 @@ export class Client extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Checks if the current Dagger Engine is compatible with an SDK's required version.
+   * @param version The SDK's required version.
+   */
+  async checkVersionCompatibility(version: string): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "checkVersionCompatibility",
+          args: { version },
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**

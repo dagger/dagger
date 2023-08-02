@@ -6,6 +6,10 @@ import graphql
 from gql.transport.exceptions import TransportQueryError
 
 
+class VersionMismatch(Warning):
+    """Dagger CLI version doesn't match required version."""
+
+
 class DaggerError(Exception):
     """Base exception for all Dagger exceptions."""
 
