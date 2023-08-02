@@ -219,7 +219,7 @@ Using the host filesystem in your Dagger pipeline is convenient, but there are s
 - If a file loaded from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory will change frequently, including when there have been no actual changes to any source code.
 
   :::tip
-  To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable.
+  To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable unless there's a strong need to be able to perform Git operations on top of the loaded directory inside Dagger.
   :::
 
 - The host directory is loaded into the Dagger Engine; it's not a "bind mount". This means that any change you make to the loaded directory in your Dagger pipeline will not result in a change to the directory on the host.
