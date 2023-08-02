@@ -62,17 +62,19 @@ func (socket *Socket) Server() (sshforward.SSHServer, error) {
 }
 
 func (socket *Socket) Network() string {
-	if socket.HostPath != "" {
+	switch {
+	case socket.HostPath != "":
 		return "unix"
-	} else {
+	default:
 		return socket.HostProtocol
 	}
 }
 
 func (socket *Socket) Addr() string {
-	if socket.HostPath != "" {
+	switch {
+	case socket.HostPath != "":
 		return socket.HostPath
-	} else {
+	default:
 		return socket.HostAddr
 	}
 }

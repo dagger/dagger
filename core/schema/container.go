@@ -208,15 +208,11 @@ func (s *containerSchema) withExec(ctx *core.Context, parent *core.Container, ar
 	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) exitCode(ctx *core.Context, parent *core.Container, args any) (int, error) {
-	return parent.ExitCode(ctx, s.bk, s.progSockPath)
-}
-
-func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, args any) (string, error) {
+func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, _ any) (string, error) {
 	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stdout")
 }
 
-func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, args any) (string, error) {
+func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, _ any) (string, error) {
 	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stderr")
 }
 

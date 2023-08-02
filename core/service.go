@@ -136,11 +136,12 @@ func (svc *Service) Clone() *Service {
 
 // PipelinePath returns the service's pipeline path.
 func (svc *Service) PipelinePath() pipeline.Path {
-	if svc.Container != nil {
+	switch {
+	case svc.Container != nil:
 		return svc.Container.Pipeline
-	} else if svc.ProxyUpstream != nil {
+	case svc.ProxyUpstream != nil:
 		return svc.ProxyUpstream.PipelinePath()
-	} else {
+	default:
 		return pipeline.Path{}
 	}
 }
@@ -254,9 +255,9 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client, progSock str
 	case svc.Container != nil:
 		return svc.startContainer(ctx, bk, progSock)
 	case svc.ProxyUpstream != nil:
-		return svc.startProxy(ctx, bk, progSock)
+		return svc.startProxy(ctx, bk)
 	case svc.ReverseProxyUpstreamAddr != "":
-		return svc.startReverseProxy(ctx, bk, progSock)
+		return svc.startReverseProxy(ctx, bk)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
@@ -423,7 +424,7 @@ func (svc *Service) startContainer(ctx context.Context, bk *buildkit.Client, pro
 	}
 }
 
-func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	svcCtx, stop := context.WithCancel(context.Background())
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -474,7 +475,7 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client, progSoc
 	}, nil
 }
 
-func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client, progSock string) (running *RunningService, err error) {
+func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err

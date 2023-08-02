@@ -69,19 +69,19 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 				return
 			}
 
-			connId := conn.RemoteAddr().String()
+			connID := conn.RemoteAddr().String()
 
 			connsL.Lock()
-			conns[connId] = conn
+			conns[connID] = conn
 			connsL.Unlock()
 
 			sendL.Lock()
 			err = srv.Send(&ListenResponse{
-				ConnId: connId,
+				ConnId: connID,
 			})
 			sendL.Unlock()
 			if err != nil {
-				s.rec.Warn("send connId error", progrock.ErrorLabel(err))
+				s.rec.Warn("send connID error", progrock.ErrorLabel(err))
 				return
 			}
 
@@ -102,7 +102,7 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 
 					sendL.Lock()
 					err = srv.Send(&ListenResponse{
-						ConnId: connId,
+						ConnId: connID,
 						Data:   data[:n],
 					})
 					sendL.Unlock()
@@ -137,17 +137,17 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 			return err
 		}
 
-		connId := req.GetConnId()
+		connID := req.GetConnId()
 		if req.GetConnId() == "" {
-			s.rec.Warn("listener request with no connId")
+			s.rec.Warn("listener request with no connID")
 			continue
 		}
 
 		connsL.Lock()
-		conn, ok := conns[connId]
+		conn, ok := conns[connID]
 		connsL.Unlock()
 		if !ok {
-			s.rec.Warn("listener request for unknown connId", progrock.Labelf("connId", connId))
+			s.rec.Warn("listener request for unknown connID", progrock.Labelf("connID", connID))
 			continue
 		}
 
@@ -158,7 +158,7 @@ func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
 				continue
 			}
 			connsL.Lock()
-			delete(conns, connId)
+			delete(conns, connID)
 			connsL.Unlock()
 		case req.Data != nil:
 			_, err = conn.Write(req.GetData())

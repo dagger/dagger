@@ -543,13 +543,13 @@ func (c *Client) ListenHostToContainer(
 				return
 			}
 
-			connId := res.GetConnId()
-			if connId == "" {
+			connID := res.GetConnId()
+			if connID == "" {
 				continue
 			}
 
 			connsL.Lock()
-			conn, found := conns[connId]
+			conn, found := conns[connID]
 			connsL.Unlock()
 
 			if !found {
@@ -560,7 +560,7 @@ func (c *Client) ListenHostToContainer(
 				}
 
 				connsL.Lock()
-				conns[connId] = conn
+				conns[connID] = conn
 				connsL.Unlock()
 
 				wg.Add(1)
@@ -576,7 +576,7 @@ func (c *Client) ListenHostToContainer(
 
 						sendL.Lock()
 						err = listener.Send(&session.ListenRequest{
-							ConnId: connId,
+							ConnId: connID,
 							Data:   data[:n],
 						})
 						sendL.Unlock()
