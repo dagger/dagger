@@ -11,7 +11,11 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		// Don't panic
 		log.Fatal(err)
+		// Same as:
+		// fmt.Fprintln(os.Stderr, err)
+		// os.Exit(1)
 	}
 }
 
@@ -36,7 +40,8 @@ func Test(ctx context.Context, client *dagger.Client) error {
 	_, err := client.
 		Container().
 		From("alpine").
-		WithExec([]string{"false"}).
+		// ERROR: cat: read error: Is a directory
+		WithExec([]string{"cat", "/"}).
 		Sync(ctx)
 	return err
 }
