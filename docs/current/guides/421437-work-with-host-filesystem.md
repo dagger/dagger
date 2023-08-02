@@ -216,7 +216,7 @@ The following example creates a file in a container's `/tmp` directory and then 
 
 Using the host filesystem in your Dagger pipeline is convenient, but there are some important considerations to keep in mind:
 
-- If a file loaded from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory is constantly changing.
+- If a file loaded from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory will change frequently, including when there have been no actual changes to any source code.
 
   :::tip
   To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable.
