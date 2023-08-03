@@ -9,7 +9,10 @@ import (
 	"dagger.io/dagger"
 )
 
-var script = `
+// WarningExit is the exit code for warnings.
+const WarningExit = 5
+
+var reportCmd = `
 echo "QA Checks"
 echo "========="
 echo "Check 1: PASS"
@@ -62,7 +65,7 @@ func Test(ctx context.Context, client *dagger.Client) error {
 	if errors.As(err, &e) {
 		// Don't do anything when skipped.
 		// Print message to stderr otherwise.
-		if e.ExitCode != 5 {
+		if e.ExitCode != WarningExit {
 			fmt.Fprintf(os.Stderr, "Test failed: %s", e.Stderr)
 		}
 		return nil
@@ -74,7 +77,7 @@ func Report(ctx context.Context, client *dagger.Client) (string, error) {
 	output, err := client.
 		Container().
 		From("alpines"). // ⚠️ typo! non-exec failure
-		WithExec([]string{"sh", "-c", script}).
+		WithExec([]string{"sh", "-c", reportCmd}).
 		Stdout(ctx)
 
 	// Get stdout even on non-zero exit.

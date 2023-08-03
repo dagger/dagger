@@ -638,6 +638,12 @@ The following code listing demonstrates how to handle errors gracefully, without
 ```
 
 </TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/error-handling/aborting/index.mjs
+```
+
+</TabItem>
 <TabItem value="Python">
 
 ```python file=./cookbook/snippets/error-handling/aborting/main.py
@@ -663,6 +669,12 @@ The following code listing demonstrates how to handle a non-zero exit code (an e
 ```
 
 </TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/error-handling/exit-code/index.mjs
+```
+
+</TabItem>
 <TabItem value="Python">
 
 ```python file=./cookbook/snippets/error-handling/exit-code/main.py
@@ -683,6 +695,12 @@ The caveat with this approach is that forcing a zero exit code on a failure cach
 <TabItem value="Go">
 
 ```go file=./cookbook/snippets/error-handling/postmortem/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/error-handling/postmortem/index.mjs
 ```
 
 </TabItem>

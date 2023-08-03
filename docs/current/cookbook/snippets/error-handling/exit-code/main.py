@@ -8,7 +8,7 @@ import dagger
 WARNING_EXIT = 5
 """Exit code for warnings."""
 
-SCRIPT = """
+REPORT_CMD = """
 echo "QA Checks"
 echo "========="
 echo "Check 1: PASS"
@@ -44,12 +44,12 @@ async def test(client: dagger.Client):
 
 
 async def report(client: dagger.Client) -> str:
-    # Get stdout even on non-zero exit.
+    # Get stdout even on non-zero exit code.
     try:
         return await (
             client.container()
             .from_("alpines")  # ⚠️ typo! non-exec failure
-            .with_exec(["sh", "-c", SCRIPT])
+            .with_exec(["sh", "-c", REPORT_CMD])
             .stdout()
         )
     except dagger.ExecError as e:
