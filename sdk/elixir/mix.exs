@@ -1,7 +1,7 @@
 defmodule Dagger.MixProject do
   use Mix.Project
 
-  @version "0.0.0-dev"
+  @version "0.0.0"
   @source_url "https://github.com/dagger/dagger"
 
   def project do

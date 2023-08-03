@@ -170,8 +170,9 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	if err != nil {
 		return err
 	}
-	newMixExs := bytes.Replace(mixExs, []byte(`@version "0.0.0-dev"`), []byte(`@version "`+version+`"`), 1)
-	if err := os.WriteFile(mixFile, newMixExs, 0o600); err != nil {
+	newMixExs := bytes.Replace(mixExs, []byte(`@version "0.0.0"`), []byte(`@version "`+version+`"`), 1)
+	err = os.WriteFile(mixFile, newMixExs, 0o600)
+	if err != nil {
 		return err
 	}
 
