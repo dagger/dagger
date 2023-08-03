@@ -1,9 +1,9 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-July.%2019%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%203%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
 - [🚙 Engine + 🚗 CLI ⏱ `30mins`](#-engine---cli--30mins)
-- [🐹 Go SDK ⏱ `7mins`](#-go-sdk--7mins)
+- [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
@@ -122,8 +122,11 @@ and improve it. We want small, constant improvements which compound. Therefore:
 
 - [ ] Create `.changes/<ENGINE_VERSION>.md` by either running `changie batch
   patch` (or `changie batch minor` if this is a new minor). `ENGINE_VERSION`
-  will be automatically generated. If you do not have `changie` installed,
-  see https://changie.dev
+  will be automatically generated.
+
+> **Note**
+> If you do not have `changie` installed, see https://changie.dev
+
 - [ ] Update `CHANGELOG.md` by running `changie merge`.
 - [ ] Submit a PR with the resulting changes so that release notes can be
   generated correctly. The merge commit is what gets tagged in the next step.
@@ -136,7 +139,7 @@ git checkout main
 git pull
 
 # git show --summary
-# e.g. export ENGINE_GIT_SHA=104ff1fc59c4e2cff377a9c970f76553261cd579
+# e.g. export ENGINE_GIT_SHA=4fe49b534a8cc5bc37cbd17f4b4343d2c1868f8b
 # e.g. export ENGINE_VERSION="$(changie latest)"
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
@@ -180,7 +183,7 @@ changie merge
 
 
 
-## 🐹 Go SDK ⏱ `7mins`
+## 🐹 Go SDK ⏱ `30mins`
 
 - [ ] ⚠️ Ensure that all SDKs have the same Engine version
 
@@ -216,8 +219,9 @@ github.com/dagger/dagger-go-sdk](https://github.com/dagger/dagger-go-sdk/tags).
   [pkg.go.dev](https://pkg.go.dev/dagger.io/dagger). You can manually request
   this new version via `open https://pkg.go.dev/dagger.io/dagger@${GO_SDK_VERSION:?must be set}`.
   The new version can take up to `15mins` to appear, it's OK to move on.
-- [ ] `3mins` Bump the Go SDK version in our internal mage CI targets. Submit a
-  new PR when you are finished with the rest of the changes.
+- [ ] `20mins` Bump the Go SDK version in our internal mage CI targets. Submit a
+  new PR now, so that we can dogfood the first version ourselves, before
+  creating a new GitHub release and making it widely public.
 
 ```console
 cd internal/mage
@@ -429,5 +433,4 @@ Follow these steps to retrieve and verify the Playground Dagger version:
 - [ ] When all the above done, remember to open a PR with all the changes as a
   result of going through these steps. Here is an example:
   https://github.com/dagger/dagger/pull/5490
-- [ ] Remember to toggle all the checkboxes back to `[ ]` - in `*vim` it's just
-  a matter of running `:%s/\[x/\[ `
+- [ ] Remember to toggle all the checkboxes back to `[ ]`
