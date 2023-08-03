@@ -18,6 +18,7 @@ async def main():
             .with_workdir("/root")
             .with_mounted_file("myapp", client.host().file("myapp"))
             .with_exec(["gpg", "--detach-sign", "--armor", "-u", GPG_KEY, "myapp"])
+            .file("myapp.asc")
             .export("myapp.asc")
         )
 
