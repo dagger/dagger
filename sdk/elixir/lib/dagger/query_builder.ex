@@ -39,14 +39,46 @@ defmodule Dagger.QueryBuilder.Selection do
   end
 
   defp build_alias(""), do: []
-  defp build_alias(alias), do: [alias, ':']
+  defp build_alias(alias), do: [alias, ~c":"]
 
   defp build_args(nil), do: []
 
   defp build_args(args) do
-    fun = fn {name, value} -> [name, ':', Jason.encode!(value)] end
-    ['(', Enum.map_join(args, ",", fun), ')']
+    fun = fn {name, value} -> [name, ~c":", encode_value(value)] end
+    [~c"(", Enum.map(args, fun) |> Enum.intersperse(","), ~c")"]
   end
+
+  defp encode_value(value) when is_atom(value), do: encode_value(to_string(value))
+
+  defp encode_value(value) when is_binary(value) do
+    string =
+      value
+      |> String.replace("\n", "\\n")
+      |> String.replace("\t", "\\t")
+      |> String.replace("\"", "\\\"")
+
+    [~c"\"", string, ~c"\""]
+  end
+
+  defp encode_value(value) when is_list(value) do
+    [~c"[", Enum.map(value, &encode_value/1) |> Enum.intersperse(","), ~c"]"]
+  end
+
+  defp encode_value(value) when is_struct(value) do
+    value
+    |> Map.from_struct()
+    |> encode_value()
+  end
+
+  defp encode_value(value) when is_map(value) do
+    fun = fn {name, value} ->
+      [to_string(name), ~c":", encode_value(value)]
+    end
+
+    [~c"{", Enum.map(value, fun) |> Enum.intersperse(","), ~c"}"]
+  end
+
+  defp encode_value(value), do: [to_string(value)]
 
   def path(selection) do
     path(selection, [])

@@ -7,7 +7,7 @@ defmodule Dagger.GitRef do
 
   (
     @doc "The digest of the current value of this ref."
-    @spec digest(t()) :: String.t()
+    @spec digest(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def digest(%__MODULE__{} = git_ref) do
       selection = select(git_ref.selection, "digest")
       execute(selection, git_ref.client)
