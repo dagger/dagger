@@ -176,11 +176,6 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		return err
 	}
 
-	defer func() {
-		// Ensure to not make version file dirty.
-		os.WriteFile(mixFile, mixExs, 0o600)
-	}()
-
 	args := []string{"mix", "hex.publish", "--yes"}
 	if dryRun != "" {
 		args = append(args, "--dry-run")
@@ -192,6 +187,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		WithEnvVariable("HEX_API_KEY", hexAPIKey).
 		WithExec(args).
 		Sync(ctx)
+
 	return err
 }
 
@@ -214,6 +210,7 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 
 func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
 	const appDir = "sdk/elixir"
+
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
 	mountPath := fmt.Sprintf("/%s", appDir)
