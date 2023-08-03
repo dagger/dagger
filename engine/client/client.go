@@ -128,6 +128,16 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.CloudURLCallback(cloudURL)
 	}
 
+	// NB(vito): use a _passthrough_ recorder at this layer, since we don't want
+	// to initialize a group; that's handled by the other side.
+	//
+	// TODO: this is pretty confusing and could probably be refactored. afaict
+	// it's split up this way because we need the engine name to be part of the
+	// root group labels, but maybe that could be handled differently.
+	recorder := progrock.NewPassthroughRecorder(progMultiW)
+	c.Recorder = recorder
+	ctx = progrock.RecorderToContext(ctx, c.Recorder)
+
 	nestedSessionPortVal, isNestedSession := os.LookupEnv("DAGGER_SESSION_PORT")
 	if isNestedSession {
 		nestedSessionPort, err := strconv.Atoi(nestedSessionPortVal)
@@ -142,10 +152,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				DisableKeepAlives: true,
 			},
 		}
-
-		recorder := progrock.NewRecorder(progMultiW)
-		c.Recorder = recorder
-		ctx = progrock.RecorderToContext(ctx, c.Recorder)
 		return c, ctx, nil
 	}
 
