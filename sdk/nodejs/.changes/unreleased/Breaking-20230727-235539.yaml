@@ -1,6 +1,0 @@
-kind: Breaking
-body: Export `Client` as a named export, instead of default
-time: 2023-07-27T23:55:39.919682Z
-custom:
-  Author: helderco
-  PR: "5517"
