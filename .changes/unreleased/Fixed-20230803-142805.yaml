@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'core: fix setting image config during multiplatform export+publish'
+time: 2023-08-03T14:28:05.283620408-07:00
+custom:
+  Author: sipsma
+  PR: "5574"
