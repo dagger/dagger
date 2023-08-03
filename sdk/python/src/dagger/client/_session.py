@@ -1,4 +1,5 @@
 import logging
+from dataclasses import dataclass, field
 
 import httpx
 from gql.client import AsyncClientSession
@@ -9,19 +10,34 @@ from gql.transport.exceptions import (
     TransportServerError,
 )
 
-from dagger.exceptions import ClientConnectionError
+import dagger
+from dagger._managers import ResourceManager
 
-from .config import Config, ConnectParams
-from .context import ResourceManager
-from .transport.httpx import HTTPXAsyncTransport
+from ._transport.httpx import HTTPXAsyncTransport
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True, kw_only=True)
+class ConnectParams:
+    """Options for making a session connection. For internal use only."""
+
+    port: int
+    session_token: str
+    url: httpx.URL = field(init=False)
+
+    def __post_init__(self):
+        self.port = int(self.port)
+        if self.port < 1:
+            msg = f"Invalid port value: {self.port}"
+            raise ValueError(msg)
+        self.url = httpx.URL(f"http://127.0.0.1:{self.port}/query")
 
 
 class Session(ResourceManager):
     """Establish a GraphQL client connection to the engine."""
 
-    def __init__(self, conn: ConnectParams, cfg: Config):
+    def __init__(self, conn: ConnectParams, cfg: dagger.Config):
         super().__init__()
         self.conn = conn
         self.cfg = cfg
@@ -48,10 +64,10 @@ class Session(ResourceManager):
                 session = await stack.enter_async_context(client)
             except httpx.RequestError as e:
                 msg = f"Could not make request: {e}"
-                raise ClientConnectionError(msg) from e
+                raise dagger.ClientConnectionError(msg) from e
             except (TransportProtocolError, TransportServerError) as e:
                 msg = f"Got unexpected response from engine: {e}"
-                raise ClientConnectionError(msg) from e
+                raise dagger.ClientConnectionError(msg) from e
             except TransportQueryError as e:
                 # Only query during connection is the introspection query
                 # for building the schema.
@@ -60,5 +76,5 @@ class Session(ResourceManager):
                 if e.errors and "message" in e.errors[0]:
                     msg = e.errors[0]["message"].strip()
                 msg = f"Failed to build schema from introspection query: {msg}"
-                raise ClientConnectionError(msg) from e
+                raise dagger.ClientConnectionError(msg) from e
             return session

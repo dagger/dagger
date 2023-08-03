@@ -17,9 +17,9 @@ from typing import IO
 import httpx
 import platformdirs
 
-from dagger._progress import Progress
-from dagger.context import SyncResourceManager
-from dagger.exceptions import DownloadError
+import dagger
+from dagger._engine.progress import Progress
+from dagger._managers import SyncResourceManager
 
 from ._version import CLI_VERSION
 
@@ -171,21 +171,21 @@ class Downloader:
             expected_hash = self.expected_checksum()
         except httpx.HTTPError as e:
             msg = f"Failed to download checksums from {self.checksum_url}: {e}"
-            raise DownloadError(msg) from e
+            raise dagger.DownloadError(msg) from e
 
         with TempFile(f"temp-{self.CLI_BIN_PREFIX}", self.cache_dir) as tmp_bin:
             try:
                 actual_hash = self.extract_cli_archive(tmp_bin)
             except httpx.HTTPError as e:
                 msg = f"Failed to download archive from {self.archive_url}: {e}"
-                raise DownloadError(msg) from e
+                raise dagger.DownloadError(msg) from e
 
             if actual_hash != expected_hash:
                 msg = (
                     f"Downloaded CLI binary checksum ({actual_hash}) "
                     f"does not match expected checksum ({expected_hash})"
                 )
-                raise DownloadError(msg)
+                raise dagger.DownloadError(msg)
 
         tmp_bin_path = Path(tmp_bin.name)
         tmp_bin_path.chmod(0o700)
@@ -200,7 +200,7 @@ class Downloader:
                 if filename == archive_name:
                     return checksum
         msg = "Could not find checksum for archive"
-        raise DownloadError(msg)
+        raise dagger.DownloadError(msg)
 
     def extract_cli_archive(self, dest: IO[bytes]) -> str:
         """
@@ -238,7 +238,7 @@ class Downloader:
                     break
             else:
                 msg = "There is no item named 'dagger' in the archive"
-                raise DownloadError(msg)
+                raise dagger.DownloadError(msg)
 
     @contextlib.contextmanager
     def _extract_from_zip(self, reader: StreamReader) -> Iterator[IO[bytes]]:
@@ -249,4 +249,4 @@ class Downloader:
                     yield file
             except KeyError as e:
                 msg = "There is no item named 'dagger.exe' in the archive"
-                raise DownloadError(msg) from e
+                raise dagger.DownloadError(msg) from e

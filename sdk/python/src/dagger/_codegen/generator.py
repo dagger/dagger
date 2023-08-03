@@ -186,7 +186,9 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         from dataclasses import dataclass
         from typing import Optional
 
-        from dagger.api.base import Arg, Enum, Input, Root, Scalar, Type, typecheck
+        from ._core import Arg, Root
+        from ._guards import typecheck
+        from .base import Enum, Input, Scalar, Type
         """,
     )
 
@@ -707,7 +709,10 @@ class _ObjectField:
             if self.convert_id:
                 if _field := self.id_query_field:
                     yield f"_id = await _ctx.execute({self.named_type.name})"
-                    yield f'_ctx = self._root_select("{_field}", [Arg("id", _id)])'
+                    yield (
+                        f'_ctx = Client.from_context(_ctx)._select("{_field}",'
+                        ' [Arg("id", _id)])'
+                    )
                     yield f"return {self.type}(_ctx)"
                 else:
                     yield "await _ctx.execute()"

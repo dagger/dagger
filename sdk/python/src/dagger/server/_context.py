@@ -1,7 +1,7 @@
-from dagger.api.gen import Client
-from dagger.config import Config
-from dagger.connection import Connection
-from dagger.context import ResourceManager
+from dagger._config import Config
+from dagger._connection import Connection
+from dagger._managers import ResourceManager
+from dagger.client.gen import Client
 
 
 class Context(ResourceManager):

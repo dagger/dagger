@@ -3,7 +3,8 @@ from typing import NamedTuple
 
 import pytest
 
-from dagger.api.base import Context, Field, InvalidQueryError, Scalar
+from dagger.client._core import Context, Field, InvalidQueryError
+from dagger.client.base import Scalar
 
 
 class SomeID(Scalar):

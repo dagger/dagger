@@ -6,9 +6,9 @@ from importlib import metadata
 from pathlib import Path
 
 import dagger
-from dagger.config import ConnectParams
-from dagger.context import SyncResourceManager
-from dagger.exceptions import SessionError
+from dagger._managers import SyncResourceManager
+
+from .conn import ConnectParams
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class CLISession(SyncResourceManager):
             try:
                 proc = self._start()
             except (OSError, ValueError, TypeError) as e:
-                raise SessionError(e) from e
+                raise dagger.SessionError(e) from e
             stack.push(proc)
             conn = self._get_conn(proc)
         return conn
@@ -82,7 +82,7 @@ class CLISession(SyncResourceManager):
                 return proc
 
         msg = "CLI busy"
-        raise SessionError(msg)
+        raise dagger.SessionError(msg)
 
     def _get_conn(self, proc: subprocess.Popen) -> ConnectParams:
         # TODO: implement engine session timeout (self.cfg.engine_timeout?)
@@ -103,14 +103,14 @@ class CLISession(SyncResourceManager):
                 # `msg` ends in a period, just append
                 msg = f"{msg} {detail.strip()}"
 
-            raise SessionError(msg)
+            raise dagger.SessionError(msg)
 
         if not conn:
             msg = "No connection params"
-            raise SessionError(msg)
+            raise dagger.SessionError(msg)
 
         try:
             return ConnectParams(**json.loads(conn))
         except (ValueError, TypeError) as e:
             msg = f"Invalid connection params: {conn}"
-            raise SessionError(msg) from e
+            raise dagger.SessionError(msg) from e
