@@ -82,9 +82,9 @@ func (container *Container) runShell(
 	// TODO:
 	opts := ContainerExecOpts{
 		// TODO: use default args if set
-		Args:           []string{"/bin/sh"},
-		SkipEntrypoint: true,
-		// TODO: ExperimentalPrivilegedNesting: true,
+		Args:                          []string{"/bin/sh"},
+		SkipEntrypoint:                true,
+		ExperimentalPrivilegedNesting: true,
 	}
 
 	cfg := container.Config

@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"dagger.io/dagger"
@@ -33,7 +34,7 @@ var shellCmd = &cobra.Command{
 	RunE:               loadEnvCmdWrapper(RunShell),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		// TODO: would be nice to see progress somehow, but also need to control terminal ourselves
-		silent = true
+		progress = "plain"
 	},
 }
 
@@ -258,11 +259,24 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 		}
 	}()
 
-	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
+	origState, err := term.GetState(int(os.Stdin.Fd()))
 	if err != nil {
-		return fmt.Errorf("failed to set stdin to raw mode: %w", err)
+		return fmt.Errorf("failed to get stdin state: %w", err)
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	defer term.Restore(int(os.Stdin.Fd()), origState)
+	// TODO: delaying until we actually get data from the tty is a brittle
+	// attempt to fix overlapping the time progress output is still being
+	// flushed with time the terminal is in a raw state (which messes
+	// plain progress up). Need better solution.
+	makeRawOnce := sync.Once{}
+	makeRaw := func() {
+		makeRawOnce.Do(func() {
+			_, err := term.MakeRaw(int(os.Stdin.Fd()))
+			if err != nil {
+				panic(fmt.Sprintf("failed to set stdin to raw mode: %v", err))
+			}
+		})
+	}
 
 	// Handle incoming messages
 	errCh := make(chan error)
@@ -276,6 +290,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				errCh <- fmt.Errorf("read: %w", err)
 				return
 			}
+			makeRaw()
 			switch {
 			case bytes.HasPrefix(buff, stdoutPrefix):
 				os.Stdout.Write(bytes.TrimPrefix(buff, stdoutPrefix))
@@ -300,6 +315,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 				fmt.Fprintf(os.Stderr, "read: %v\n", err)
 				continue
 			}
+			makeRaw()
 			message := append([]byte{}, stdinPrefix...)
 			message = append(message, b[:n]...)
 			err = wsconn.WriteMessage(websocket.BinaryMessage, message)
