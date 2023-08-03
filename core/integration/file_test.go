@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -196,6 +197,20 @@ func TestFileExport(t *testing.T) {
 		contents, err = os.ReadFile(dest)
 		require.NoError(t, err)
 		require.Equal(t, "content2", string(contents))
+	})
+
+	t.Run("file larger than max chunk size", func(t *testing.T) {
+		maxChunkSize := buildkit.MaxFileContentsChunkSize
+		fileSizeBytes := maxChunkSize*4 + 1 // +1 so it's not an exact number of chunks, to ensure we cover that case
+
+		_, err := c.Container().From(alpineImage).WithExec([]string{"sh", "-c",
+			fmt.Sprintf("dd if=/dev/zero of=/file bs=%d count=1", fileSizeBytes)}).
+			File("/file").Export(ctx, "some-pretty-big-file")
+		require.NoError(t, err)
+
+		stat, err := os.Stat(filepath.Join(wd, "some-pretty-big-file"))
+		require.NoError(t, err)
+		require.EqualValues(t, fileSizeBytes, stat.Size())
 	})
 }
 
