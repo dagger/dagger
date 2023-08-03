@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 
 	"dagger.io/dagger"
@@ -12,10 +11,8 @@ import (
 func main() {
 	if err := run(); err != nil {
 		// Don't panic
-		log.Fatal(err)
-		// Same as:
-		// fmt.Fprintln(os.Stderr, err)
-		// os.Exit(1)
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 

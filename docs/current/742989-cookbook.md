@@ -631,8 +631,20 @@ Set the Hashicorp Vault URI, namespace, role and secret identifiers as host envi
 
 The following code listing demonstrates how to handle errors gracefully, without crashing the program or script running Dagger pipelines.
 
+<Tabs groupId="language">
+<TabItem value="Go">
+
 ```go file=./cookbook/snippets/error-handling/aborting/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/error-handling/aborting/main.py
+```
+
+</TabItem>
+</Tabs>
 
 ### Handle exit code and unexpected errors
 
@@ -644,8 +656,20 @@ The following code listing demonstrates how to handle a non-zero exit code (an e
 - Catching and handling a failure from a command executed in a container, without propagating it
 - Get the standard output of a command, irrespective of whether or not it failed
 
+<Tabs groupId="language">
+<TabItem value="Go">
+
 ```go file=./cookbook/snippets/error-handling/exit-code/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/error-handling/exit-code/main.py
+```
+
+</TabItem>
+</Tabs>
 
 ### Continue using container after command execution fails
 
@@ -655,8 +679,20 @@ This code listing demonstrates how to continue using a container after a command
 The caveat with this approach is that forcing a zero exit code on a failure caches the failure. This may not be desired depending on the use case.
 :::
 
+<Tabs groupId="language">
+<TabItem value="Go">
+
 ```go file=./cookbook/snippets/error-handling/postmortem/main.go
 ```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/error-handling/postmortem/main.py
+```
+
+</TabItem>
+</Tabs>
 
 ## Optimizations
 

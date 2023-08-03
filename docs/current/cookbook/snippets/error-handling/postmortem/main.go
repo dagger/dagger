@@ -3,9 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
-	"strings"
 
 	"dagger.io/dagger"
 )
@@ -21,7 +19,9 @@ exit 1
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		// Don't panic
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -37,7 +37,7 @@ func run() error {
 }
 
 func Test(ctx context.Context, client *dagger.Client) error {
-	// Result of `Sync` is the container, which allows continued chaining.
+	// The result of `Sync` is the container, which allows continued chaining.
 	ctr, err := client.
 		Container().
 		From("alpine").
@@ -47,7 +47,7 @@ func Test(ctx context.Context, client *dagger.Client) error {
 			Permissions: 0o750,
 		}).
 		// If the exit code isn't needed: "run-tests; true"
-		WithExec([]string{"sh", "-c", "/run-tests; echo $? > /exit_code"}).
+		WithExec([]string{"sh", "-c", "/run-tests; echo -n $? > /exit_code"}).
 		Sync(ctx)
 	if err != nil {
 		// Unexpected error, could be network failure.
@@ -63,14 +63,14 @@ func Test(ctx context.Context, client *dagger.Client) error {
 		return fmt.Errorf("get report: %w", err)
 	}
 
-	// Use the exit code to determine if the test passed.
+	// Use the saved exit code to determine if the tests passed.
 	exitCode, err := ctr.File("/exit_code").Contents(ctx)
 	if err != nil {
 		return fmt.Errorf("get exit code: %w", err)
 	}
 
-	if strings.TrimSpace(exitCode) != "0" {
-		log.Print("Tests failed!")
+	if exitCode != "0" {
+		fmt.Fprintln(os.Stderr, "Tests failed!")
 	} else {
 		fmt.Println("Tests passed!")
 	}

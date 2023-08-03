@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 
 	"dagger.io/dagger"
@@ -21,7 +20,9 @@ exit 1
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		// Don't panic
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
 	}
 }
 
@@ -56,12 +57,13 @@ func Test(ctx context.Context, client *dagger.Client) error {
 		WithExec([]string{"sh", "-c", "echo Skipped! >&2; exit 5"}).
 		Sync(ctx)
 
+		// Handle error from WithExec error here, but let other errors bubble up.
 	var e *dagger.ExecError
 	if errors.As(err, &e) {
 		// Don't do anything when skipped.
-		// Print non-fatal stderr otherwise.
+		// Print message to stderr otherwise.
 		if e.ExitCode != 5 {
-			log.Println("test failed:", e.Stderr)
+			fmt.Fprintf(os.Stderr, "Test failed: %s", e.Stderr)
 		}
 		return nil
 	}
@@ -76,9 +78,9 @@ func Report(ctx context.Context, client *dagger.Client) (string, error) {
 		Stdout(ctx)
 
 	// Get stdout even on non-zero exit.
-	// Not necessary to use e.ExitCode.
 	var e *dagger.ExecError
 	if errors.As(err, &e) {
+		// Not necessary to check for `e.ExitCode != 0`.
 		return e.Stdout, nil
 	}
 	return output, err
