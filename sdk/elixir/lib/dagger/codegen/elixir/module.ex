@@ -21,4 +21,12 @@ defmodule Dagger.Codegen.Elixir.Module do
     |> Macro.camelize()
     |> String.to_atom()
   end
+
+  def from_name("Query") do
+    from_name("Client")
+  end
+
+  def from_name(name) do
+    Module.concat([Dagger, format_name(name)])
+  end
 end

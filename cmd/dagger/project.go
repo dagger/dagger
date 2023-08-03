@@ -11,9 +11,8 @@ import (
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/core/projectconfig"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -56,7 +55,7 @@ var projectCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get project: %w", err)
 		}
-		var cfg *core.ProjectConfig
+		var cfg *projectconfig.Config
 		switch {
 		case proj.local != nil:
 			cfg, err = proj.local.config()
@@ -65,8 +64,8 @@ var projectCmd = &cobra.Command{
 			}
 		case proj.git != nil:
 			// we need to read the git repo, which currently requires an engine+client
-			err = withEngineAndTUI(ctx, engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
-				c, err := dagger.Connect(ctx, dagger.WithConn(router.EngineConn(r)))
+			err = withEngineAndTUI(ctx, client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
+				c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
 				if err != nil {
 					return fmt.Errorf("failed to connect to dagger: %w", err)
 				}
@@ -106,12 +105,12 @@ var projectInitCmd = &cobra.Command{
 		if _, err := os.Stat(proj.local.path); err == nil {
 			return fmt.Errorf("project init config path already exists: %s", proj.local.path)
 		}
-		switch core.ProjectSDK(sdk) {
-		case core.ProjectSDKGo, core.ProjectSDKPython:
+		switch projectconfig.SDK(sdk) {
+		case projectconfig.SDKGo, projectconfig.SDKPython:
 		default:
 			return fmt.Errorf("unsupported project SDK: %s", sdk)
 		}
-		cfg := &core.ProjectConfig{
+		cfg := &projectconfig.Config{
 			Name: projectName,
 			SDK:  sdk,
 			Root: projectRoot,
@@ -210,12 +209,12 @@ type localProject struct {
 	path string
 }
 
-func (p localProject) config() (*core.ProjectConfig, error) {
+func (p localProject) config() (*projectconfig.Config, error) {
 	configBytes, err := os.ReadFile(p.path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read local config file: %w", err)
 	}
-	var cfg core.ProjectConfig
+	var cfg projectconfig.Config
 	if err := json.Unmarshal(configBytes, &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse local config file: %w", err)
 	}
@@ -251,12 +250,12 @@ type gitProject struct {
 	ref     string
 }
 
-func (p gitProject) config(ctx context.Context, c *dagger.Client) (*core.ProjectConfig, error) {
+func (p gitProject) config(ctx context.Context, c *dagger.Client) (*projectconfig.Config, error) {
 	configStr, err := c.Git(p.repo).Branch(p.ref).Tree().File(p.subpath).Contents(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read git config file: %w", err)
 	}
-	var cfg core.ProjectConfig
+	var cfg projectconfig.Config
 	if err := json.Unmarshal([]byte(configStr), &cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse git config file: %w", err)
 	}

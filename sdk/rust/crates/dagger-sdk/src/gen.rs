@@ -169,26 +169,6 @@ pub struct ContainerEndpointOpts<'a> {
     pub scheme: Option<&'a str>,
 }
 #[derive(Builder, Debug, PartialEq)]
-pub struct ContainerExecOpts<'a> {
-    /// Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-    #[builder(setter(into, strip_option), default)]
-    pub args: Option<Vec<&'a str>>,
-    /// Provide dagger access to the executed command.
-    /// Do not use this option unless you trust the command being executed.
-    /// The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-    #[builder(setter(into, strip_option), default)]
-    pub experimental_privileged_nesting: Option<bool>,
-    /// Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stderr: Option<&'a str>,
-    /// Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-    #[builder(setter(into, strip_option), default)]
-    pub redirect_stdout: Option<&'a str>,
-    /// Content to write to the command's standard input before closing (e.g., "Hello world").
-    #[builder(setter(into, strip_option), default)]
-    pub stdin: Option<&'a str>,
-}
-#[derive(Builder, Debug, PartialEq)]
 pub struct ContainerExportOpts {
     /// Force each layer of the exported image to use the specified compression algorithm.
     /// If this is unset, then if a layer already has a compressed blob in the engine's
@@ -197,6 +177,11 @@ pub struct ContainerExportOpts {
     /// engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the exported image's layers. Defaults to OCI, which
+    /// is largely compatible with most recent container runtimes, but Docker may be needed
+    /// for older runtimes without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
@@ -227,6 +212,11 @@ pub struct ContainerPublishOpts {
     /// engine's cache, then it will be compressed using Gzip.
     #[builder(setter(into, strip_option), default)]
     pub forced_compression: Option<ImageLayerCompression>,
+    /// Use the specified media types for the published image's layers. Defaults to OCI, which
+    /// is largely compatible with most recent registries, but Docker may be needed for older
+    /// registries without OCI support.
+    #[builder(setter(into, strip_option), default)]
+    pub media_types: Option<ImageMediaTypes>,
     /// Identifiers for other platform specific containers.
     /// Used for multi-platform image.
     #[builder(setter(into, strip_option), default)]
@@ -496,56 +486,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         }];
     }
-    /// Retrieves this container after executing the specified command inside it.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn exec(&self) -> Container {
-        let query = self.selection.select("exec");
-        return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Retrieves this container after executing the specified command inside it.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn exec_opts<'a>(&self, opts: ContainerExecOpts<'a>) -> Container {
-        let mut query = self.selection.select("exec");
-        if let Some(args) = opts.args {
-            query = query.arg("args", args);
-        }
-        if let Some(stdin) = opts.stdin {
-            query = query.arg("stdin", stdin);
-        }
-        if let Some(redirect_stdout) = opts.redirect_stdout {
-            query = query.arg("redirectStdout", redirect_stdout);
-        }
-        if let Some(redirect_stderr) = opts.redirect_stderr {
-            query = query.arg("redirectStderr", redirect_stderr);
-        }
-        if let Some(experimental_privileged_nesting) = opts.experimental_privileged_nesting {
-            query = query.arg(
-                "experimentalPrivilegedNesting",
-                experimental_privileged_nesting,
-            );
-        }
-        return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Exit code of the last executed command. Zero means success.
-    /// Will execute default command if none is set, or error if there's no default.
-    pub async fn exit_code(&self) -> Result<isize, DaggerError> {
-        let query = self.selection.select("exitCode");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.
     /// Return true on success.
     /// It can also publishes platform variants.
@@ -581,6 +521,9 @@ impl Container {
         }
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg_enum("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg_enum("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -622,15 +565,6 @@ impl Container {
         let mut query = self.selection.select("from");
         query = query.arg("address", address.into());
         return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Retrieves this container's root filesystem. Mounts are not included.
-    pub fn fs(&self) -> Directory {
-        let query = self.selection.select("fs");
-        return Directory {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -791,6 +725,9 @@ impl Container {
         }
         if let Some(forced_compression) = opts.forced_compression {
             query = query.arg_enum("forcedCompression", forced_compression);
+        }
+        if let Some(media_types) = opts.media_types {
+            query = query.arg_enum("mediaTypes", media_types);
         }
         query.execute(self.graphql_client.clone()).await
     }
@@ -1079,16 +1016,6 @@ impl Container {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Initializes this container from this DirectoryID.
-    pub fn with_fs(&self, id: DirectoryId) -> Container {
-        let mut query = self.selection.select("withFS");
-        query = query.arg("id", id);
-        return Container {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// Retrieves this container plus the contents of the given file copied to the given path.
     ///
     /// # Arguments
@@ -1128,6 +1055,16 @@ impl Container {
         if let Some(owner) = opts.owner {
             query = query.arg("owner", owner);
         }
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Indicate that subsequent operations should be featured more prominently in
+    /// the UI.
+    pub fn with_focus(&self) -> Container {
+        let query = self.selection.select("withFocus");
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1410,9 +1347,9 @@ impl Container {
         };
     }
     /// Initializes this container from this DirectoryID.
-    pub fn with_rootfs(&self, id: DirectoryId) -> Container {
+    pub fn with_rootfs(&self, directory: DirectoryId) -> Container {
         let mut query = self.selection.select("withRootfs");
-        query = query.arg("id", id);
+        query = query.arg("directory", directory);
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1577,6 +1514,17 @@ impl Container {
         if let Some(protocol) = opts.protocol {
             query = query.arg_enum("protocol", protocol);
         }
+        return Container {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Indicate that subsequent operations should not be featured more prominently
+    /// in the UI.
+    /// This is the initial state of all containers.
+    pub fn without_focus(&self) -> Container {
+        let query = self.selection.select("withoutFocus");
         return Container {
             proc: self.proc.clone(),
             selection: query,
@@ -1880,6 +1828,11 @@ impl Directory {
             graphql_client: self.graphql_client.clone(),
         };
     }
+    /// Force evaluation in the engine.
+    pub async fn sync(&self) -> Result<DirectoryId, DaggerError> {
+        let query = self.selection.select("sync");
+        query.execute(self.graphql_client.clone()).await
+    }
     /// Retrieves this directory plus a directory written at the given path.
     ///
     /// # Arguments
@@ -2162,18 +2115,14 @@ impl File {
         let query = self.selection.select("id");
         query.execute(self.graphql_client.clone()).await
     }
-    /// Retrieves a secret referencing the contents of this file.
-    pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
-        return Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// Gets the size of the file, in bytes.
     pub async fn size(&self) -> Result<isize, DaggerError> {
         let query = self.selection.select("size");
+        query.execute(self.graphql_client.clone()).await
+    }
+    /// Force evaluation in the engine.
+    pub async fn sync(&self) -> Result<FileId, DaggerError> {
+        let query = self.selection.select("sync");
         query.execute(self.graphql_client.clone()).await
     }
     /// Retrieves this file with its created/modified timestamps set to the given time.
@@ -2207,11 +2156,6 @@ pub struct GitRefTreeOpts<'a> {
     pub ssh_known_hosts: Option<&'a str>,
 }
 impl GitRef {
-    /// The digest of the current value of this ref.
-    pub async fn digest(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("digest");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// The filesystem tree at this ref.
     ///
     /// # Arguments
@@ -2266,11 +2210,6 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Lists of branches on the repository.
-    pub async fn branches(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("branches");
-        query.execute(self.graphql_client.clone()).await
-    }
     /// Returns details on one commit.
     ///
     /// # Arguments
@@ -2299,11 +2238,6 @@ impl GitRepository {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Lists of tags on the repository.
-    pub async fn tags(&self) -> Result<Vec<String>, DaggerError> {
-        let query = self.selection.select("tags");
-        query.execute(self.graphql_client.clone()).await
-    }
 }
 #[derive(Clone)]
 pub struct Host {
@@ -2313,15 +2247,6 @@ pub struct Host {
 }
 #[derive(Builder, Debug, PartialEq)]
 pub struct HostDirectoryOpts<'a> {
-    /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-    #[builder(setter(into, strip_option), default)]
-    pub exclude: Option<Vec<&'a str>>,
-    /// Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-    #[builder(setter(into, strip_option), default)]
-    pub include: Option<Vec<&'a str>>,
-}
-#[derive(Builder, Debug, PartialEq)]
-pub struct HostWorkdirOpts<'a> {
     /// Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
     #[builder(setter(into, strip_option), default)]
     pub exclude: Option<Vec<&'a str>>,
@@ -2370,20 +2295,6 @@ impl Host {
             graphql_client: self.graphql_client.clone(),
         };
     }
-    /// Accesses an environment variable on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `name` - Name of the environment variable (e.g., "PATH").
-    pub fn env_variable(&self, name: impl Into<String>) -> HostVariable {
-        let mut query = self.selection.select("envVariable");
-        query = query.arg("name", name.into());
-        return HostVariable {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
     /// Accesses a file on the host.
     ///
     /// # Arguments
@@ -2393,6 +2304,23 @@ impl Host {
         let mut query = self.selection.select("file");
         query = query.arg("path", path.into());
         return File {
+            proc: self.proc.clone(),
+            selection: query,
+            graphql_client: self.graphql_client.clone(),
+        };
+    }
+    /// Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+    /// The file is limited to a size of 512000 bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - The user defined name for this secret.
+    /// * `path` - Location of the file to set as a secret.
+    pub fn set_secret_file(&self, name: impl Into<String>, path: impl Into<String>) -> Secret {
+        let mut query = self.selection.select("setSecretFile");
+        query = query.arg("name", name.into());
+        query = query.arg("path", path.into());
+        return Secret {
             proc: self.proc.clone(),
             selection: query,
             graphql_client: self.graphql_client.clone(),
@@ -2411,60 +2339,6 @@ impl Host {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
-    }
-    /// Retrieves the current working directory on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn workdir(&self) -> Directory {
-        let query = self.selection.select("workdir");
-        return Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// Retrieves the current working directory on the host.
-    ///
-    /// # Arguments
-    ///
-    /// * `opt` - optional argument, see inner type for documentation, use <func>_opts to use
-    pub fn workdir_opts<'a>(&self, opts: HostWorkdirOpts<'a>) -> Directory {
-        let mut query = self.selection.select("workdir");
-        if let Some(exclude) = opts.exclude {
-            query = query.arg("exclude", exclude);
-        }
-        if let Some(include) = opts.include {
-            query = query.arg("include", include);
-        }
-        return Directory {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-}
-#[derive(Clone)]
-pub struct HostVariable {
-    pub proc: Option<Arc<Child>>,
-    pub selection: Selection,
-    pub graphql_client: DynGraphQLClient,
-}
-impl HostVariable {
-    /// A secret referencing the value of this variable.
-    pub fn secret(&self) -> Secret {
-        let query = self.selection.select("secret");
-        return Secret {
-            proc: self.proc.clone(),
-            selection: query,
-            graphql_client: self.graphql_client.clone(),
-        };
-    }
-    /// The value of this variable.
-    pub async fn value(&self) -> Result<String, DaggerError> {
-        let query = self.selection.select("value");
-        query.execute(self.graphql_client.clone()).await
     }
 }
 #[derive(Clone)]
@@ -2681,6 +2555,19 @@ impl Query {
             selection: query,
             graphql_client: self.graphql_client.clone(),
         };
+    }
+    /// Checks if the current Dagger Engine is compatible with an SDK's required version.
+    ///
+    /// # Arguments
+    ///
+    /// * `version` - The SDK's required version.
+    pub async fn check_version_compatibility(
+        &self,
+        version: impl Into<String>,
+    ) -> Result<bool, DaggerError> {
+        let mut query = self.selection.select("checkVersionCompatibility");
+        query = query.arg("version", version.into());
+        query.execute(self.graphql_client.clone()).await
     }
     /// Loads a container from ID.
     /// Null ID returns an empty container (scratch).
@@ -3040,6 +2927,11 @@ pub enum ImageLayerCompression {
     Gzip,
     Uncompressed,
     Zstd,
+}
+#[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
+pub enum ImageMediaTypes {
+    DockerMediaTypes,
+    OCIMediaTypes,
 }
 #[derive(Serialize, Deserialize, Clone, PartialEq, Debug)]
 pub enum NetworkProtocol {

@@ -80,11 +80,11 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	defer c.Close()
 
 	c = c.Pipeline("engine").Pipeline("publish")
-	engineImage, err := util.WithSetHostVar(ctx, c.Host(), "DAGGER_ENGINE_IMAGE").Value(ctx)
-	if err != nil {
-		return err
-	}
-	ref := fmt.Sprintf("%s:%s", engineImage, version)
+
+	var (
+		engineImage = util.GetHostEnv("DAGGER_ENGINE_IMAGE")
+		ref         = fmt.Sprintf("%s:%s", engineImage, version)
+	)
 
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
 		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),

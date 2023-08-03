@@ -45,23 +45,19 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 
 	for _, m := range ev.Memberships {
 		for _, vid := range m.Vertexes {
-			v, found := t.pipeliner.Vertex(vid)
-			if !found {
-				continue
+			if v, found := t.pipeliner.Vertex(vid); found {
+				t.maybeEmitOp(ts, v, false)
 			}
-			t.maybeEmitOp(ts, v, false)
 		}
 	}
 	for _, eventVertex := range ev.Vertexes {
-		v, found := t.pipeliner.Vertex(eventVertex.Id)
-		if !found {
-			continue
+		if v, found := t.pipeliner.Vertex(eventVertex.Id); found {
+			// override the vertex with the current event vertex since a
+			// single PipelineEvent could contain duplicated vertices with
+			// different data like started and completed
+			v.Vertex = eventVertex
+			t.maybeEmitOp(ts, v, true)
 		}
-
-		// override the vertex with the current event vertex since a
-		// single PipelineEvent could contain duplicated vertices
-		v.Vertex = eventVertex
-		t.maybeEmitOp(ts, v, true)
 	}
 
 	for _, l := range ev.Logs {

@@ -1,6 +1,9 @@
 package generator
 
 import (
+	"fmt"
+	"unicode"
+
 	"github.com/dagger/dagger/codegen/introspection"
 )
 
@@ -65,6 +68,49 @@ func (c *CommonFunctions) IsSelfChainable(t introspection.Type) bool {
 // as an input (for chaining).
 func (c *CommonFunctions) FormatReturnType(f introspection.Field) string {
 	return c.formatType(f.TypeRef, c.ConvertID(f))
+}
+
+func (c *CommonFunctions) ToLowerCase(s string) string {
+	return fmt.Sprintf("%c%s", unicode.ToLower(rune(s[0])), s[1:])
+}
+
+func (c *CommonFunctions) ToUpperCase(s string) string {
+	return fmt.Sprintf("%c%s", unicode.ToUpper(rune(s[0])), s[1:])
+}
+
+func (c *CommonFunctions) IsListOfObject(t *introspection.TypeRef) bool {
+	return t.OfType.OfType.IsObject()
+}
+
+func (c *CommonFunctions) GetArrayField(f *introspection.Field) []*introspection.Field {
+	schema := GetSchema()
+
+	fieldType := f.TypeRef
+	if !fieldType.IsOptional() {
+		fieldType = fieldType.OfType
+	}
+	if !fieldType.IsList() {
+		panic("field is not a list")
+	}
+	fieldType = fieldType.OfType
+	if !fieldType.IsOptional() {
+		fieldType = fieldType.OfType
+	}
+	schemaType := schema.Types.Get(fieldType.Name)
+	if schemaType == nil {
+		panic(fmt.Sprintf("schema type %s is nil", fieldType.Name))
+	}
+
+	var fields []*introspection.Field
+	// Only include scalar fields for now
+	// TODO: include subtype too
+	for _, typeField := range schemaType.Fields {
+		if typeField.TypeRef.IsScalar() {
+			fields = append(fields, typeField)
+		}
+	}
+
+	return fields
 }
 
 // ConvertID returns true if the field returns an ID that should be

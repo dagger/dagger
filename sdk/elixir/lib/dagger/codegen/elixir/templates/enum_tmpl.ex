@@ -2,33 +2,24 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
   @moduledoc false
 
   alias Dagger.Codegen.Elixir.Function
+  alias Dagger.Codegen.Elixir.Module, as: Mod
 
   def render(%{
+        "name" => name,
         "description" => desc,
-        "enumValues" => enum_values,
-        "private" => %{mod_name: mod_name}
+        "enumValues" => enum_values
       }) do
+    mod_name = Mod.from_name(name)
+
+    enum_values =
+      enum_values
+      |> Enum.sort_by(fn %{"name" => name} -> name end)
+
     type = render_possible_enum_values(enum_values)
 
     funs =
-      for %{
-            "name" => value,
-            "description" => desc,
-            "deprecationReason" => deprecated_reason
-          } <-
-            enum_values do
-        Function.define(
-          value,
-          [],
-          nil,
-          quote do
-            unquote(String.to_atom(value))
-          end,
-          doc: desc,
-          deprecated: deprecated_reason,
-          spec: {[], quote(do: unquote(String.to_atom(value)))}
-        )
-      end
+      enum_values
+      |> Enum.map(&render_function/1)
 
     quote do
       defmodule unquote(mod_name) do
@@ -39,6 +30,24 @@ defmodule Dagger.Codegen.Elixir.Templates.Enum do
         unquote_splicing(funs)
       end
     end
+  end
+
+  defp render_function(%{
+         "name" => value,
+         "description" => desc,
+         "deprecationReason" => deprecated_reason
+       }) do
+    Function.define(
+      value,
+      [],
+      nil,
+      quote do
+        unquote(String.to_atom(value))
+      end,
+      doc: desc,
+      deprecated: deprecated_reason,
+      spec: {[], quote(do: unquote(String.to_atom(value)))}
+    )
   end
 
   defp render_possible_enum_values([%{"name" => v1}, %{"name" => v2}]) do

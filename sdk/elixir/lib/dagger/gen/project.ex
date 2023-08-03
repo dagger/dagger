@@ -7,7 +7,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Commands provided by this project"
-    @spec commands(t()) :: [Dagger.ProjectCommand.t()]
+    @spec commands(t()) :: {:ok, [Dagger.ProjectCommand.t()] | nil} | {:error, term()}
     def commands(%__MODULE__{} = project) do
       selection = select(project.selection, "commands")
       execute(selection, project.client)
@@ -16,7 +16,7 @@ defmodule Dagger.Project do
 
   (
     @doc "A unique identifier for this project."
-    @spec id(t()) :: Dagger.Project.t()
+    @spec id(t()) :: {:ok, Dagger.ProjectID.t()} | {:error, term()}
     def id(%__MODULE__{} = project) do
       selection = select(project.selection, "id")
       execute(selection, project.client)
@@ -25,7 +25,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Initialize this project from the given directory and config path\n\n## Required Arguments\n\n* `source` - \n* `config_path` -"
-    @spec load(t(), Dagger.Directory.t(), String.t()) :: Dagger.Project.t()
+    @spec load(t(), Dagger.Directory.t(), Dagger.String.t()) :: Dagger.Project.t()
     def load(%__MODULE__{} = project, source, config_path) do
       selection = select(project.selection, "load")
 
@@ -41,7 +41,7 @@ defmodule Dagger.Project do
 
   (
     @doc "Name of the project"
-    @spec name(t()) :: String.t()
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = project) do
       selection = select(project.selection, "name")
       execute(selection, project.client)

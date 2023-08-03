@@ -1,10 +1,13 @@
 package core
 
 import (
+	"fmt"
 	"sync"
+
+	"github.com/zeebo/xxh3"
 )
 
-type cacheMap[K comparable, T any] struct {
+type CacheMap[K comparable, T any] struct {
 	l     sync.Mutex
 	calls map[K]*cache[T]
 }
@@ -15,13 +18,27 @@ type cache[T any] struct {
 	err error
 }
 
-func newCacheMap[K comparable, T any]() *cacheMap[K, T] {
-	return &cacheMap[K, T]{
+func cacheKey(keys ...any) uint64 {
+	hash := xxh3.New()
+
+	for _, key := range keys {
+		dig, err := stableDigest(key)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Fprintln(hash, dig)
+	}
+
+	return hash.Sum64()
+}
+
+func NewCacheMap[K comparable, T any]() *CacheMap[K, T] {
+	return &CacheMap[K, T]{
 		calls: map[K]*cache[T]{},
 	}
 }
 
-func (m *cacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
+func (m *CacheMap[K, T]) GetOrInitialize(key K, fn func() (T, error)) (T, error) {
 	m.l.Lock()
 	if c, ok := m.calls[key]; ok {
 		m.l.Unlock()

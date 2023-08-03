@@ -2,14 +2,13 @@ package schema
 
 import (
 	"github.com/dagger/dagger/core"
-	"github.com/dagger/dagger/router"
 )
 
 type cacheSchema struct {
-	*baseSchema
+	*MergedSchemas
 }
 
-var _ router.ExecutableSchema = &cacheSchema{}
+var _ ExecutableSchema = &cacheSchema{}
 
 func (s *cacheSchema) Name() string {
 	return "cache"
@@ -21,23 +20,23 @@ func (s *cacheSchema) Schema() string {
 
 var cacheIDResolver = stringResolver(core.CacheID(""))
 
-func (s *cacheSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
+func (s *cacheSchema) Resolvers() Resolvers {
+	return Resolvers{
 		"CacheID": cacheIDResolver,
-		"Query": router.ObjectResolver{
-			"cacheVolume": router.ToResolver(s.cacheVolume),
+		"Query": ObjectResolver{
+			"cacheVolume": ToResolver(s.cacheVolume),
 		},
-		"CacheVolume": router.ObjectResolver{
-			"id": router.ToResolver(s.id),
+		"CacheVolume": ObjectResolver{
+			"id": ToResolver(s.id),
 		},
 	}
 }
 
-func (s *cacheSchema) Dependencies() []router.ExecutableSchema {
+func (s *cacheSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
-func (s *cacheSchema) id(ctx *router.Context, parent *core.CacheVolume, args any) (core.CacheID, error) {
+func (s *cacheSchema) id(ctx *core.Context, parent *core.CacheVolume, args any) (core.CacheID, error) {
 	return parent.ID()
 }
 
@@ -45,7 +44,7 @@ type cacheArgs struct {
 	Key string
 }
 
-func (s *cacheSchema) cacheVolume(ctx *router.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
+func (s *cacheSchema) cacheVolume(ctx *core.Context, parent any, args cacheArgs) (*core.CacheVolume, error) {
 	// TODO(vito): inject some sort of scope/session/project/user derived value
 	// here instead of a static value
 	//

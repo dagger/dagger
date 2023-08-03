@@ -1,14 +1,12 @@
 package core
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/core"
 	"github.com/moby/buildkit/identity"
 	"github.com/stretchr/testify/require"
 )
@@ -55,16 +53,14 @@ func TestProjectCmd(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(tc.projectPath, testGitProject).
 					CallProject().
 					Stderr(ctx)
 				require.NoError(t, err)
-				cfg := core.ProjectConfig{}
-				require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
-				require.Equal(t, tc.expectedSDK, cfg.SDK)
-				require.Equal(t, tc.expectedName, cfg.Name)
-				require.Equal(t, tc.expectedRoot, cfg.Root)
+				require.Contains(t, stderr, fmt.Sprintf(`"root": %q`, tc.expectedRoot))
+				require.Contains(t, stderr, fmt.Sprintf(`"name": %q`, tc.expectedName))
+				require.Contains(t, stderr, fmt.Sprintf(`"sdk": %q`, tc.expectedSDK))
 			})
 		}
 	}
@@ -153,12 +149,10 @@ func TestProjectCmdInit(t *testing.T) {
 			_, err := ctr.File(expectedConfigPath).Contents(ctx)
 			require.NoError(t, err)
 
-			output, err := ctr.CallProject().Stderr(ctx)
+			stderr, err := ctr.CallProject().Stderr(ctx)
 			require.NoError(t, err)
-			cfg := core.ProjectConfig{}
-			require.NoError(t, json.Unmarshal([]byte(lastNLines(output, 5)), &cfg))
-			require.Equal(t, tc.sdk, cfg.SDK)
-			require.Equal(t, tc.name, cfg.Name)
+			require.Contains(t, stderr, fmt.Sprintf(`"name": %q`, tc.name))
+			require.Contains(t, stderr, fmt.Sprintf(`"sdk": %q`, tc.sdk))
 		})
 	}
 
@@ -187,21 +181,21 @@ func TestProjectCommandHierarchy(t *testing.T) {
 			c, ctx := connect(t)
 			defer c.Close()
 
-			output, err := CLITestContainer(ctx, t, c).
+			stderr, err := CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:foo").
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output, "hello from foo")
+			require.Contains(t, stderr, "hello from foo")
 
-			output, err = CLITestContainer(ctx, t, c).
+			stderr, err = CLITestContainer(ctx, t, c).
 				WithLoadedProject(projectDir, false).
 				WithTarget("level-1:level-2:level-3:bar").
 				CallDo().
 				Stderr(ctx)
 			require.NoError(t, err)
-			require.Contains(t, output, "hello from bar")
+			require.Contains(t, stderr, "hello from bar")
 		})
 	}
 }
@@ -393,16 +387,16 @@ func TestProjectDirImported(t *testing.T) {
 				t.Parallel()
 				c, ctx := connect(t)
 				defer c.Close()
-				output, err := CLITestContainer(ctx, t, c).
+				stderr, err := CLITestContainer(ctx, t, c).
 					WithLoadedProject(projectDir, testGitProject).
 					WithTarget("test-imported-project-dir").
 					CallDo().
 					Stderr(ctx)
 				require.NoError(t, err)
-				require.Contains(t, output, "README.md")
-				require.Contains(t, output, projectDir)
-				require.Contains(t, output, projectDir+"/dagger.json")
-				require.Contains(t, output, projectDir+"/"+tc.expectedMainFile)
+				require.Contains(t, stderr, "README.md")
+				require.Contains(t, stderr, projectDir)
+				require.Contains(t, stderr, projectDir+"/dagger.json")
+				require.Contains(t, stderr, projectDir+"/"+tc.expectedMainFile)
 			})
 		}
 	}

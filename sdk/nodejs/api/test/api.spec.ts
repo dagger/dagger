@@ -7,8 +7,9 @@ import {
   GraphQLRequestError,
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
-import Client, {
+import {
   connect,
+  Client,
   ClientContainerOpts,
   Container,
   Directory,
@@ -364,6 +365,29 @@ describe("NodeJS SDK api", function () {
 
         await fs.unlinkSync(exportID)
         assert.strictEqual(isSuccess, true)
+      },
+      { LogOutput: process.stderr }
+    )
+  })
+
+  it("Handle list of objects", async function () {
+    this.timeout(60000)
+
+    await connect(
+      async (client) => {
+        const ctr = await client
+          .container()
+          .from("alpine:3.16.2")
+          .withEnvVariable("FOO", "BAR")
+          .withEnvVariable("BAR", "BOOL")
+
+        const envs = await ctr.envVariables()
+
+        assert.strictEqual(await envs[1].name(), "FOO")
+        assert.strictEqual(await envs[1].value(), "BAR")
+
+        assert.strictEqual(await envs[2].name(), "BAR")
+        assert.strictEqual(await envs[2].value(), "BOOL")
       },
       { LogOutput: process.stderr }
     )

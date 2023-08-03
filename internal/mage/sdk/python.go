@@ -15,11 +15,8 @@ import (
 )
 
 var (
-	pythonGeneratedAPIPaths = []string{
-		"sdk/python/src/dagger/api/gen.py",
-		"sdk/python/src/dagger/api/gen_sync.py",
-	}
-	pythonDefaultVersion = "3.11"
+	pythonGeneratedAPIPath = "sdk/python/src/dagger/client/gen.py"
+	pythonDefaultVersion   = "3.11"
 )
 
 var _ SDK = Python{}
@@ -60,8 +57,8 @@ func (t Python) Lint(ctx context.Context) error {
 
 	eg.Go(func() error {
 		return lintGeneratedCode(func() error {
-			return t.Generate(ctx)
-		}, pythonGeneratedAPIPaths...)
+			return t.Generate(gctx)
+		}, pythonGeneratedAPIPath)
 	})
 
 	return eg.Wait()
@@ -144,23 +141,20 @@ func (t Python) Generate(ctx context.Context) error {
 	}
 	cliBinPath := "/.dagger-cli"
 
-	generated := pythonBase(c, pythonDefaultVersion).
+	generated, err := pythonBase(c, pythonDefaultVersion).
 		WithServiceBinding("dagger-engine", devEngine).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_RUNNER_HOST", endpoint).
 		WithMountedFile(cliBinPath, util.DaggerBinary(c)).
 		WithEnvVariable("_EXPERIMENTAL_DAGGER_CLI_BIN", cliBinPath).
-		WithExec([]string{"hatch", "run", "generate"})
-
-	for _, f := range pythonGeneratedAPIPaths {
-		contents, err := generated.File(strings.TrimPrefix(f, "sdk/python/")).Contents(ctx)
-		if err != nil {
-			return err
-		}
-		if err := os.WriteFile(f, []byte(contents), 0o600); err != nil {
-			return err
-		}
+		WithWorkdir("/").
+		WithExec([]string{"python", "-m", "dagger", "generate", pythonGeneratedAPIPath}).
+		WithExec([]string{"black", "--preview", pythonGeneratedAPIPath}).
+		File(pythonGeneratedAPIPath).
+		Contents(ctx)
+	if err != nil {
+		return err
 	}
-	return nil
+	return os.WriteFile(pythonGeneratedAPIPath, []byte(generated), 0o600)
 }
 
 // Publish publishes the Python SDK
@@ -207,10 +201,10 @@ func (t Python) Bump(_ context.Context, version string) error {
 
 	// NOTE: if you change this path, be sure to update .github/workflows/publish.yml so that
 	// provision tests run whenever this file changes.
-	return os.WriteFile("sdk/python/src/dagger/engine/_version.py", []byte(engineReference), 0o600)
+	return os.WriteFile("sdk/python/src/dagger/_engine/_version.py", []byte(engineReference), 0o600)
 }
 
-// pythonBaseEnv retuns a general python environment, without source files.
+// pythonBaseEnv returns a general python environment, without source files.
 func pythonBaseEnv(c *dagger.Client, version string) *dagger.Container {
 	pipx := c.HTTP("https://github.com/pypa/pipx/releases/download/1.2.0/pipx.pyz")
 	venv := "/opt/venv"
@@ -255,5 +249,5 @@ func pythonBase(c *dagger.Client, version string) *dagger.Container {
 		WithExec([]string{"pip", "install", "-r", reqPath}).
 		WithDirectory(mountPath, src).
 		WithWorkdir(mountPath).
-		WithExec([]string{"pip", "install", ".[cli]"})
+		WithExec([]string{"pip", "install", "."})
 }

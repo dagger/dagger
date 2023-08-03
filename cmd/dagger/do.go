@@ -3,15 +3,15 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"dagger.io/dagger"
-	"github.com/dagger/dagger/engine"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/engine/client"
 	"github.com/iancoleman/strcase"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -52,8 +52,7 @@ var doCmd = &cobra.Command{
 		dynamicCmdArgs := flags.Args()
 
 		focus = doFocus
-
-		return withEngineAndTUI(cmd.Context(), engine.Config{}, func(ctx context.Context, r *router.Router) (err error) {
+		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) error {
 			rec := progrock.RecorderFromContext(ctx)
 			vtx := rec.Vertex("do", strings.Join(os.Args, " "))
 			if !silent {
@@ -65,12 +64,13 @@ var doCmd = &cobra.Command{
 			cmd.Println("Loading+installing project...")
 
 			opts := []dagger.ClientOpt{
-				dagger.WithConn(router.EngineConn(r)),
+				dagger.WithConn(EngineConn(engineClient)),
 			}
 			c, err := dagger.Connect(ctx, opts...)
 			if err != nil {
 				return fmt.Errorf("failed to connect to dagger: %w", err)
 			}
+			defer c.Close()
 
 			proj, err := getProjectFlagConfig()
 			if err != nil {
@@ -94,7 +94,7 @@ var doCmd = &cobra.Command{
 				return fmt.Errorf("failed to get project commands: %w", err)
 			}
 			for _, projCmd := range projCmds {
-				subCmds, err := addCmd(ctx, nil, projCmd, c, r)
+				subCmds, err := addCmd(ctx, nil, projCmd, c, engineClient)
 				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
@@ -122,7 +122,7 @@ var doCmd = &cobra.Command{
 			err = subCmd.Execute()
 			if err != nil {
 				cmd.PrintErrln("Error:", err.Error())
-				return errors.Join(fmt.Errorf("failed to execute subcmd: %w", err), pflag.ErrHelp)
+				return fmt.Errorf("failed to execute subcmd: %w", err)
 			}
 			return nil
 		})
@@ -130,7 +130,7 @@ var doCmd = &cobra.Command{
 }
 
 // nolint:gocyclo
-func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *router.Router) ([]*cobra.Command, error) {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.ProjectCommand, c *dagger.Client, r *client.Client) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	projCmdID, err := projCmd.ID(ctx)
@@ -279,7 +279,7 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, projCmd dagger.Proje
 			queryBytes := b.Bytes()
 
 			resMap := map[string]any{}
-			_, err := r.Do(cmd.Context(), string(queryBytes), opName, queryVars, &resMap)
+			err := r.Do(cmd.Context(), string(queryBytes), opName, queryVars, &resMap)
 			if err != nil {
 				return err
 			}
@@ -418,4 +418,27 @@ func (m commandAnnotations) getCommandSpecificFlags() []string {
 		return nil
 	}
 	return split
+}
+
+func EngineConn(engineClient *client.Client) DirectConn {
+	return func(req *http.Request) (*http.Response, error) {
+		req.SetBasicAuth(engineClient.SecretToken, "")
+		resp := httptest.NewRecorder()
+		engineClient.ServeHTTP(resp, req)
+		return resp.Result(), nil
+	}
+}
+
+type DirectConn func(*http.Request) (*http.Response, error)
+
+func (f DirectConn) Do(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
+func (f DirectConn) Host() string {
+	return ":mem:"
+}
+
+func (f DirectConn) Close() error {
+	return nil
 }

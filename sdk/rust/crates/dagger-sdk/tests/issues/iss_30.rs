@@ -14,7 +14,7 @@ async fn test_issue_30_alt() -> eyre::Result<()> {
             })
             .from("alpine")
             .with_exec(vec!["echo", "'hello'"])
-            .exit_code()
+            .sync()
             .await?;
 
         println!("published image to: {:#?}", ref_);
@@ -37,7 +37,7 @@ async fn test_issue_30() -> eyre::Result<()> {
             )
             .from("alpine")
             .with_exec(vec!["echo", "'hello'"])
-            .exit_code()
+            .sync()
             .await?;
 
         println!("published image to: {:#?}", ref_);

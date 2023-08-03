@@ -22,8 +22,9 @@ import (
 	"github.com/containerd/containerd/sys"
 	sddaemon "github.com/coreos/go-systemd/v22/daemon"
 	"github.com/dagger/dagger/engine/cache"
-	"github.com/dagger/dagger/internal/engine"
+	"github.com/dagger/dagger/engine/server"
 	"github.com/dagger/dagger/network"
+	"github.com/dagger/dagger/network/netinst"
 	"github.com/docker/docker/pkg/reexec"
 	"github.com/gofrs/flock"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
@@ -36,7 +37,6 @@ import (
 	s3remotecache "github.com/moby/buildkit/cache/remotecache/s3"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/cmd/buildkitd/config"
-	"github.com/moby/buildkit/control"
 	"github.com/moby/buildkit/executor/oci"
 	"github.com/moby/buildkit/frontend"
 	dockerfile "github.com/moby/buildkit/frontend/dockerfile/builder"
@@ -65,7 +65,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
-	"go.etcd.io/bbolt"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -213,12 +212,12 @@ func main() { //nolint:gocyclo
 		cli.StringFlag{
 			Name:  "network-name",
 			Usage: "short name for the engine's container network; used for interface name",
-			Value: "dagger",
+			Value: network.DefaultName,
 		},
 		cli.StringFlag{
 			Name:  "network-cidr",
 			Usage: "address range to use for networked containers",
-			Value: "10.87.0.0/16",
+			Value: network.DefaultCIDR,
 		},
 	)
 	app.Flags = append(app.Flags, appFlags...)
@@ -241,7 +240,7 @@ func main() { //nolint:gocyclo
 		bklog.G(ctx).Debug("setting up engine networking")
 		networkContext, cancelNetworking := context.WithCancel(context.Background())
 		defer cancelNetworking()
-		cniConfigPath, err := setupNetwork(networkContext,
+		netConf, err := setupNetwork(networkContext,
 			c.GlobalString("network-name"),
 			c.GlobalString("network-cidr"),
 		)
@@ -250,7 +249,7 @@ func main() { //nolint:gocyclo
 		}
 
 		bklog.G(ctx).Debug("setting engine configs from defaults and flags")
-		if err := setDaggerDefaults(&cfg, cniConfigPath); err != nil {
+		if err := setDaggerDefaults(&cfg, netConf); err != nil {
 			return err
 		}
 
@@ -298,11 +297,6 @@ func main() { //nolint:gocyclo
 		}
 		cfg.Root = root
 
-		go logMetrics(context.Background(), cfg.Root)
-		if cfg.Trace {
-			go logTraceMetrics(context.Background())
-		}
-
 		if err := os.MkdirAll(root, 0o700); err != nil {
 			return errors.Wrapf(err, "failed to create %s", root)
 		}
@@ -330,6 +324,11 @@ func main() { //nolint:gocyclo
 		defer controller.Close()
 
 		controller.Register(server)
+
+		go logMetrics(context.Background(), cfg.Root, controller)
+		if cfg.Trace {
+			go logTraceMetrics(context.Background())
+		}
 
 		ents := c.GlobalStringSlice("allow-insecure-entitlement")
 		if len(ents) > 0 {
@@ -704,7 +703,7 @@ func serverCredentials(cfg config.TLSConfig) (*tls.Config, error) {
 	return tlsConf, nil
 }
 
-func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*control.Controller, cache.Manager, error) {
+func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*server.BuildkitController, cache.Manager, error) {
 	sessionManager, err := session.NewManager()
 	if err != nil {
 		return nil, nil, err
@@ -732,21 +731,16 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 	if err != nil {
 		return nil, nil, err
 	}
+	w, err := wc.GetDefault()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	frontends := map[string]frontend.Frontend{}
 	frontends["dockerfile.v0"] = forwarder.NewGatewayForwarder(wc, dockerfile.Build)
 	frontends["gateway.v0"] = gateway.NewGatewayFrontend(wc)
 
 	cacheStorage, err := bboltcachestorage.NewStore(filepath.Join(cfg.Root, "cache.db"))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	historyDB, err := bbolt.Open(filepath.Join(cfg.Root, "history.db"), 0o600, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	w, err := wc.GetDefault()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -764,7 +758,7 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 		MountManager: mounts.NewMountManager("dagger-cache", w.CacheManager(), sessionManager),
 		ServiceURL:   cacheServiceURL,
 		Token:        cacheServiceToken,
-		EngineID:     w.Labels()[engine.EngineNameLabel],
+		EngineID:     engineName,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -795,19 +789,19 @@ func newController(ctx context.Context, c *cli.Context, cfg *config.Config) (*co
 		},
 	}
 
-	ctrler, err := control.NewController(control.Opt{
-		SessionManager:            sessionManager,
-		WorkerController:          wc,
-		Frontends:                 frontends,
-		ResolveCacheExporterFuncs: remoteCacheExporterFuncs,
-		ResolveCacheImporterFuncs: remoteCacheImporterFuncs,
-		CacheManager:              cacheManager,
-		Entitlements:              cfg.Entitlements,
-		TraceCollector:            tc,
-		HistoryDB:                 historyDB,
-		LeaseManager:              w.LeaseManager(),
-		ContentStore:              w.ContentStore(),
-		HistoryConfig:             cfg.History,
+	bklog.G(context.Background()).Debugf("engine name: %s", engineName)
+	ctrler, err := server.NewBuildkitController(server.BuildkitControllerOpts{
+		WorkerController:       wc,
+		SessionManager:         sessionManager,
+		CacheManager:           cacheManager,
+		ContentStore:           w.ContentStore(),
+		LeaseManager:           w.LeaseManager(),
+		Entitlements:           cfg.Entitlements,
+		EngineName:             engineName,
+		Frontends:              frontends,
+		TraceCollector:         tc,
+		UpstreamCacheExporters: remoteCacheExporterFuncs,
+		UpstreamCacheImporters: remoteCacheImporterFuncs,
 	})
 	if err != nil {
 		return nil, nil, err
@@ -959,32 +953,46 @@ func (t *traceCollector) Export(ctx context.Context, req *tracev1.ExportTraceSer
 	return &tracev1.ExportTraceServiceResponse{}, nil
 }
 
-func setupNetwork(ctx context.Context, netName, netCIDR string) (string, error) {
+type networkConfig struct {
+	NetName       string
+	NetCIDR       string
+	Bridge        net.IP
+	CNIConfigPath string
+}
+
+func setupNetwork(ctx context.Context, netName, netCIDR string) (*networkConfig, error) {
 	if os.Getenv(servicesDNSEnvName) == "0" {
-		return "", nil
+		return nil, nil
 	}
 
 	bridge, err := network.BridgeFromCIDR(netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("bridge from cidr: %w", err)
+		return nil, fmt.Errorf("bridge from cidr: %w", err)
 	}
 
-	err = network.InstallResolvconf(netName, bridge.String())
+	// NB: this is needed for the Dagger shim worker at the moment for host alias
+	// resolution
+	err = netinst.InstallResolvconf(netName, bridge.String())
 	if err != nil {
-		return "", fmt.Errorf("install resolv.conf: %w", err)
+		return nil, fmt.Errorf("install resolv.conf: %w", err)
 	}
 
-	err = network.InstallDnsmasq(ctx, netName)
+	err = netinst.InstallDnsmasq(ctx, netName)
 	if err != nil {
-		return "", fmt.Errorf("install dnsmasq: %w", err)
+		return nil, fmt.Errorf("install dnsmasq: %w", err)
 	}
 
-	cniConfigPath, err := network.InstallCNIConfig(netName, netCIDR)
+	cniConfigPath, err := netinst.InstallCNIConfig(netName, netCIDR)
 	if err != nil {
-		return "", fmt.Errorf("install cni: %w", err)
+		return nil, fmt.Errorf("install cni: %w", err)
 	}
 
-	return cniConfigPath, nil
+	return &networkConfig{
+		NetName:       netName,
+		NetCIDR:       netCIDR,
+		Bridge:        bridge,
+		CNIConfigPath: cniConfigPath,
+	}, nil
 }
 
 type noopCacheImporter struct{}

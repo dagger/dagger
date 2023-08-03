@@ -19,15 +19,17 @@ import (
 	"testing"
 
 	"dagger.io/dagger"
+	"github.com/containerd/containerd/platforms"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/schema"
+	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/internal/testutil"
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
-	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/moby/buildkit/identity"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestContainerScratch(t *testing.T) {
@@ -350,62 +352,6 @@ func TestContainerExecSync(t *testing.T) {
 	require.Contains(t, err.Error(), `process "false" did not complete successfully`)
 }
 
-func TestContainerExecExitCode(t *testing.T) {
-	t.Parallel()
-
-	res := struct {
-		Container struct {
-			From struct {
-				WithExec struct {
-					ExitCode *int
-				}
-			}
-		}
-	}{}
-
-	err := testutil.Query(
-		`{
-			container {
-				from(address: "`+alpineImage+`") {
-					withExec(args: ["true"]) {
-						exitCode
-					}
-				}
-			}
-		}`, &res, nil)
-	require.NoError(t, err)
-	require.NotNil(t, res.Container.From.WithExec.ExitCode)
-	require.Equal(t, 0, *res.Container.From.WithExec.ExitCode)
-
-	/*
-		It's not currently possible to get a nonzero exit code back because
-		Buildkit raises an error.
-
-		We could perhaps have the shim mask the exit status and always exit 0, but
-		we would have to be careful not to let that happen in a big chained LLB
-		since it would prevent short-circuiting.
-
-		We could only do it when the user requests the exitCode, but then we would
-		actually need to run the command _again_ since we'd need some way to tell
-		the shim what to do.
-
-		Hmm...
-
-		err = testutil.Query(
-			`{
-				container {
-					from(address: "`+alpineImage+`") {
-						withExec(args: ["false"]) {
-							exitCode
-						}
-					}
-				}
-			}`, &res, nil)
-		require.NoError(t, err)
-		require.Equal(t, res.Container.From.WithExec.ExitCode, 1)
-	*/
-}
-
 func TestContainerExecStdoutStderr(t *testing.T) {
 	t.Parallel()
 
@@ -520,12 +466,12 @@ func TestContainerExecRedirectStdoutStderr(t *testing.T) {
 	require.Equal(t, "goodbye\n", stderr)
 
 	_, err = execWithMount.Stdout(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stdout: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "hello\n", stdout)
 
 	_, err = execWithMount.Stderr(ctx)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "stderr: no such file or directory")
+	require.NoError(t, err)
+	require.Equal(t, "goodbye\n", stderr)
 }
 
 func TestContainerExecWithWorkdir(t *testing.T) {
@@ -2304,7 +2250,6 @@ func TestContainerFileErrors(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "bogus: cannot retrieve path from cache")
 
-	secretID := newSecret(t, "some-secret")
 	err = testutil.Query(
 		`query Test($secret: SecretID!) {
 			container {
@@ -2316,8 +2261,8 @@ func TestContainerFileErrors(t *testing.T) {
 					}
 				}
 			}
-		}`, nil, &testutil.QueryOptions{Variables: map[string]any{
-			"secret": secretID,
+		}`, nil, &testutil.QueryOptions{Secrets: map[string]string{
+			"secret": "some-secret",
 		}})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "sekret: no such file or directory")
@@ -2639,7 +2584,7 @@ func TestContainerExport(t *testing.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 
@@ -2695,24 +2640,54 @@ func TestContainerImport(t *testing.T) {
 
 	ctx := context.Background()
 
-	dest := t.TempDir()
-
 	c, err := dagger.Connect(ctx)
 	require.NoError(t, err)
 	defer c.Close()
+	pf, err := c.DefaultPlatform(ctx)
+	require.NoError(t, err)
 
-	imagePath := filepath.Join(dest, "image.tar")
+	platform, err := platforms.Parse(string(pf))
+	require.NoError(t, err)
+
+	config := map[string]any{
+		"contents": map[string]any{
+			"keyring": []string{
+				"https://packages.wolfi.dev/os/wolfi-signing.rsa.pub",
+			},
+			"repositories": []string{
+				"https://packages.wolfi.dev/os",
+			},
+			"packages": []string{
+				"wolfi-base",
+			},
+		},
+		"cmd": "/bin/sh -l",
+		"environment": map[string]string{
+			"FOO": "bar",
+		},
+		"archs": []string{
+			platform.Architecture,
+		},
+	}
+
+	cfgYaml, err := yaml.Marshal(config)
+	require.NoError(t, err)
+
+	apko := c.Container().
+		From("cgr.dev/chainguard/apko:latest").
+		WithNewFile("config.yml", dagger.ContainerWithNewFileOpts{
+			Contents: string(cfgYaml),
+		})
 
 	t.Run("OCI", func(t *testing.T) {
-		ctr := c.Container().
-			From(alpineImage).
-			WithEnvVariable("FOO", "bar")
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		ok, err := ctr.Export(ctx, imagePath)
-		require.NoError(t, err)
-		require.True(t, ok)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
+		imported := c.Container().Import(imageFile)
 
 		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
@@ -2720,19 +2695,19 @@ func TestContainerImport(t *testing.T) {
 	})
 
 	t.Run("Docker", func(t *testing.T) {
-		ref := name.MustParseReference(alpineImage)
+		imageFile := apko.
+			WithExec([]string{
+				"build",
+				"--use-docker-mediatypes",
+				"config.yml", "latest", "output.tar",
+			}).
+			File("output.tar")
 
-		img, err := remote.Image(ref)
+		imported := c.Container().Import(imageFile)
+
+		out, err := imported.WithExec([]string{"sh", "-c", "echo $FOO"}).Stdout(ctx)
 		require.NoError(t, err)
-
-		err = tarball.WriteToFile(imagePath, ref, img)
-		require.NoError(t, err)
-
-		imported := c.Container().Import(c.Host().Directory(dest).File("image.tar"))
-
-		out, err := imported.WithExec([]string{"cat", "/etc/alpine-release"}).Stdout(ctx)
-		require.NoError(t, err)
-		require.Equal(t, "3.18.2\n", out)
+		require.Equal(t, "bar\n", out)
 	})
 }
 
@@ -2749,7 +2724,6 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(alpineImage).
 			WithExec([]string{"uname", "-m"})
-
 		variants = append(variants, ctr)
 	}
 
@@ -2763,10 +2737,29 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 
 	entries := tarEntries(t, dest)
 	require.Contains(t, entries, "oci-layout")
-	require.Contains(t, entries, "index.json")
-
 	// multi-platform images don't contain a manifest.json
 	require.NotContains(t, entries, "manifest.json")
+
+	indexBytes := readTarFile(t, dest, "index.json")
+	var index ocispecs.Index
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+	// index is nested (search "nested index" in spec here):
+	// https://github.com/opencontainers/image-spec/blob/main/image-index.md
+	nestedIndexDigest := index.Manifests[0].Digest
+	indexBytes = readTarFile(t, dest, "blobs/sha256/"+nestedIndexDigest.Encoded())
+	index = ocispecs.Index{}
+	require.NoError(t, json.Unmarshal(indexBytes, &index))
+
+	// make sure all the platforms we expected are there
+	exportedPlatforms := make(map[string]struct{})
+	for _, desc := range index.Manifests {
+		require.NotNil(t, desc.Platform)
+		exportedPlatforms[platforms.Format(*desc.Platform)] = struct{}{}
+	}
+	for platform := range platformToUname {
+		delete(exportedPlatforms, string(platform))
+	}
+	require.Empty(t, exportedPlatforms)
 }
 
 func TestContainerMultiPlatformImport(t *testing.T) {
@@ -2967,20 +2960,20 @@ func TestContainerExecError(t *testing.T) {
 		// fill a byte buffer with a string that is slightly over the size of the max output
 		// size, then base64 encode it
 		var stdoutBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stdoutBuf.WriteByte('a')
 		}
 		stdoutStr := stdoutBuf.String()
 		encodedOutMsg := base64.StdEncoding.EncodeToString(stdoutBuf.Bytes())
 
 		var stderrBuf bytes.Buffer
-		for i := 0; i < core.MaxExecErrorOutputBytes+50; i++ {
+		for i := 0; i < buildkit.MaxExecErrorOutputBytes+50; i++ {
 			stderrBuf.WriteByte('b')
 		}
 		stderrStr := stderrBuf.String()
 		encodedErrMsg := base64.StdEncoding.EncodeToString(stderrBuf.Bytes())
 
-		truncMsg := fmt.Sprintf(core.TruncationMessage, 50)
+		truncMsg := fmt.Sprintf(buildkit.TruncationMessage, 50)
 
 		_, err = c.Container().
 			From(alpineImage).
@@ -2994,8 +2987,8 @@ func TestContainerExecError(t *testing.T) {
 		var exErr *dagger.ExecError
 
 		require.ErrorAs(t, err, &exErr)
-		require.Equal(t, truncMsg+stdoutStr[:core.MaxExecErrorOutputBytes], exErr.Stdout)
-		require.Equal(t, truncMsg+stderrStr[:core.MaxExecErrorOutputBytes], exErr.Stderr)
+		require.Equal(t, truncMsg+stdoutStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stdout)
+		require.Equal(t, truncMsg+stderrStr[:buildkit.MaxExecErrorOutputBytes-len(truncMsg)], exErr.Stderr)
 	})
 }
 
@@ -3016,36 +3009,17 @@ func TestContainerWithRegistryAuth(t *testing.T) {
 	_, err = container.Publish(ctx, testRef)
 	require.Error(t, err)
 
-	t.Run("legacy secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				//nolint:staticcheck // SA1019 We want to test this API while we support it.
-				c.Container().
-					WithNewFile("secret.txt", dagger.ContainerWithNewFileOpts{Contents: "xFlejaPdjrt25Dvr"}).
-					File("secret.txt").
-					Secret(),
-			).
-			Publish(ctx, testRef)
+	pushedRef, err := container.
+		WithRegistryAuth(
+			privateRegistryHost,
+			"john",
+			c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
+		).
+		Publish(ctx, testRef)
 
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
-	t.Run("new secret API", func(t *testing.T) {
-		pushedRef, err := container.
-			WithRegistryAuth(
-				privateRegistryHost,
-				"john",
-				c.SetSecret("this-secret", "xFlejaPdjrt25Dvr"),
-			).
-			Publish(ctx, testRef)
-
-		require.NoError(t, err)
-		require.NotEqual(t, testRef, pushedRef)
-		require.Contains(t, pushedRef, "@sha256:")
-	})
+	require.NoError(t, err)
+	require.NotEqual(t, testRef, pushedRef)
+	require.Contains(t, pushedRef, "@sha256:")
 }
 
 func TestContainerImageRef(t *testing.T) {
@@ -3168,7 +3142,7 @@ func TestContainerInsecureRootCapabilites(t *testing.T) {
 	defer cancel()
 
 	// This isn't exhaustive, but it's the major important ones. Being exhaustive
-	// is trickier since the full list of caps is host dependent.
+	// is trickier since the full list of caps is host dependent based on the kernel version.
 	privilegedCaps := []string{
 		"cap_sys_admin",
 		"cap_net_admin",
@@ -3252,10 +3226,6 @@ func TestContainerNoExec(t *testing.T) {
 	c, ctx := connect(t)
 	defer c.Close()
 
-	code, err := c.Container().From(alpineImage).ExitCode(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 0, code)
-
 	stdout, err := c.Container().From(alpineImage).Stdout(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "", stdout)
@@ -3269,7 +3239,7 @@ func TestContainerNoExec(t *testing.T) {
 		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{
 			Args: nil,
 		}).
-		ExitCode(ctx)
+		Stdout(ctx)
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no command has been set")

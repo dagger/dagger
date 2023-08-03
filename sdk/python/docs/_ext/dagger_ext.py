@@ -1,3 +1,4 @@
+# ruff: noqa: ARG001,PLR0913
 from typing import TYPE_CHECKING
 
 from docutils import nodes
@@ -23,7 +24,19 @@ class Deprecated(admonitions.Warning):
         self.options["classes"] = ["warning"]
 
 
+def autodoc_skip(app, what: str, name: str, obj, skip, options) -> bool:
+    from dagger.client.gen import __all__ as all_gen
+
+    # The only doc that uses the "module" directive is for the Client page.
+    # The others use "autoclass" so skip them here to avoid duplicates.
+    if what == "module" and name.split(".")[-1] not in all_gen:
+        return True
+
+    return skip
+
+
 def setup(app: "Sphinx"):
+    app.connect("autodoc-skip-member", autodoc_skip)
     app.add_directive("deprecated", Deprecated, override=True)
 
     return {

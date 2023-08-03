@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 
+	"github.com/dagger/dagger/core/resourceid"
 	"github.com/pkg/errors"
 )
 
@@ -30,7 +31,7 @@ type CacheID string
 
 func (id CacheID) ToCacheVolume() (*CacheVolume, error) {
 	var cache CacheVolume
-	if err := decodeID(&cache, id); err != nil {
+	if err := resourceid.Decode(&cache, id); err != nil {
 		return nil, ErrInvalidCacheID
 	}
 
@@ -52,7 +53,7 @@ func (cache *CacheVolume) Sum() string {
 }
 
 func (cache *CacheVolume) ID() (CacheID, error) {
-	return encodeID[CacheID](cache)
+	return resourceid.Encode[CacheID](cache)
 }
 
 // CacheSharingMode is a string deriving from CacheSharingMode enum

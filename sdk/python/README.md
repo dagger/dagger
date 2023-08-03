@@ -105,9 +105,9 @@ The following commands are available:
 - `hatch run test`: Run tests.
 - `hatch run fmt`: Re-format code following common styling conventions.
 - `hatch run lint`: Check for linting violations.
-- `hatch run generate`: Regenerate API client after changes to the codegen.
 - `hatch run typing:check`: Run the type checker.
-- `hatch run docs:build`: Build reference docs locally (check with `(cd docs/_build && python -m http.server)`).
+- `hatch run docs:build`: Build reference docs locally
+- `hatch run docs:preview`: Build and serve reference docs (defaults to localhost:8000)
 
 ### Engine changes
 

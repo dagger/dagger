@@ -3,6 +3,7 @@
 extend = "../../sdk/python/pyproject.toml"
 
 ignore = [
+    "D1",    # docstrings
     "E501",  # line too long
     "S108",  # probable insecure usage of temporary file or directory
     "T201",  # `print` found

@@ -1,4 +1,4 @@
-import Client, { connect } from "@dagger.io/dagger"
+import { connect, Client } from "@dagger.io/dagger"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"

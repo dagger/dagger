@@ -6,11 +6,11 @@ import (
 	"sort"
 	"strings"
 	"text/template"
-	"unicode"
+
+	"github.com/iancoleman/strcase"
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/iancoleman/strcase"
 )
 
 var (
@@ -27,10 +27,10 @@ var (
 		"FieldOptionsStructName":  fieldOptionsStructName,
 		"FieldFunction":           fieldFunction,
 		"IsEnum":                  isEnum,
-		"GetArrayField":           getArrayField,
-		"IsListOfObject":          isListOfObject,
-		"ToLowerCase":             toLowerCase,
-		"ToUpperCase":             toUpperCase,
+		"GetArrayField":           commonFunc.GetArrayField,
+		"IsListOfObject":          commonFunc.IsListOfObject,
+		"ToLowerCase":             commonFunc.ToLowerCase,
+		"ToUpperCase":             commonFunc.ToUpperCase,
 		"FormatArrayField":        formatArrayField,
 		"FormatArrayToSingleType": formatArrayToSingleType,
 		"ConvertID":               commonFunc.ConvertID,
@@ -99,46 +99,11 @@ func sortEnumFields(s []introspection.EnumValue) []introspection.EnumValue {
 	return s
 }
 
-func isListOfObject(t *introspection.TypeRef) bool {
-	return t.OfType.OfType.IsObject()
-}
-
-func getArrayField(f *introspection.Field) []*introspection.Field {
-	schema := generator.GetSchema()
-
-	fieldType := f.TypeRef
-	if !fieldType.IsOptional() {
-		fieldType = fieldType.OfType
-	}
-	if !fieldType.IsList() {
-		panic("field is not a list")
-	}
-	fieldType = fieldType.OfType
-	if !fieldType.IsOptional() {
-		fieldType = fieldType.OfType
-	}
-	schemaType := schema.Types.Get(fieldType.Name)
-	if schemaType == nil {
-		panic(fmt.Sprintf("schema type %s is nil", fieldType.Name))
-	}
-
-	var fields []*introspection.Field
-	// Only include scalar fields for now
-	// TODO: include subtype too
-	for _, typeField := range schemaType.Fields {
-		if typeField.TypeRef.IsScalar() {
-			fields = append(fields, typeField)
-		}
-	}
-
-	return fields
-}
-
 func formatArrayField(fields []*introspection.Field) string {
 	result := []string{}
 
 	for _, f := range fields {
-		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, toUpperCase(f.Name)))
+		result = append(result, fmt.Sprintf("%s: &fields[i].%s", f.Name, commonFunc.ToUpperCase(f.Name)))
 	}
 
 	return strings.Join(result, ", ")
@@ -146,14 +111,6 @@ func formatArrayField(fields []*introspection.Field) string {
 
 func formatArrayToSingleType(arrType string) string {
 	return arrType[2:]
-}
-
-func toLowerCase(s string) string {
-	return fmt.Sprintf("%c%s", unicode.ToLower(rune(s[0])), s[1:])
-}
-
-func toUpperCase(s string) string {
-	return fmt.Sprintf("%c%s", unicode.ToUpper(rune(s[0])), s[1:])
 }
 
 // fieldOptionsStructName returns the options struct name for a given field

@@ -127,35 +127,6 @@ export type ContainerEndpointOpts = {
   scheme?: string
 }
 
-export type ContainerExecOpts = {
-  /**
-   * Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   */
-  args?: string[]
-
-  /**
-   * Content to write to the command's standard input before closing (e.g., "Hello world").
-   */
-  stdin?: string
-
-  /**
-   * Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   */
-  redirectStdout?: string
-
-  /**
-   * Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   */
-  redirectStderr?: string
-
-  /**
-   * Provide dagger access to the executed command.
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   */
-  experimentalPrivilegedNesting?: boolean
-}
-
 export type ContainerExportOpts = {
   /**
    * Identifiers for other platform specific containers.
@@ -561,18 +532,6 @@ export type HostDirectoryOpts = {
   include?: string[]
 }
 
-export type HostWorkdirOpts = {
-  /**
-   * Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   */
-  exclude?: string[]
-
-  /**
-   * Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   */
-  include?: string[]
-}
-
 /**
  * The `ID` scalar type represents a unique identifier, often used to refetch an object or as key for a cache. The ID type appears in a JSON response as a String; however, it is not intended to be human-readable. When expected as an input type, any string (such as `"4"`) or integer (such as `4`) input value will be accepted as an ID.
  */
@@ -711,7 +670,24 @@ export type __TypeFieldsOpts = {
  * A directory whose contents persist across runs.
  */
 export class CacheVolume extends BaseClient {
+  private readonly _id?: CacheID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: CacheID
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
   async id(): Promise<CacheID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<CacheID> = await computeQuery(
       [
         ...this._queryTree,
@@ -730,6 +706,59 @@ export class CacheVolume extends BaseClient {
  * An OCI-compatible container, also known as a docker container.
  */
 export class Container extends BaseClient {
+  private readonly _endpoint?: string = undefined
+  private readonly _envVariable?: string = undefined
+  private readonly _export?: boolean = undefined
+  private readonly _hostname?: string = undefined
+  private readonly _id?: ContainerID = undefined
+  private readonly _imageRef?: string = undefined
+  private readonly _label?: string = undefined
+  private readonly _platform?: Platform = undefined
+  private readonly _publish?: string = undefined
+  private readonly _stderr?: string = undefined
+  private readonly _stdout?: string = undefined
+  private readonly _sync?: ContainerID = undefined
+  private readonly _user?: string = undefined
+  private readonly _workdir?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _endpoint?: string,
+    _envVariable?: string,
+    _export?: boolean,
+    _hostname?: string,
+    _id?: ContainerID,
+    _imageRef?: string,
+    _label?: string,
+    _platform?: Platform,
+    _publish?: string,
+    _stderr?: string,
+    _stdout?: string,
+    _sync?: ContainerID,
+    _user?: string,
+    _workdir?: string
+  ) {
+    super(parent)
+
+    this._endpoint = _endpoint
+    this._envVariable = _envVariable
+    this._export = _export
+    this._hostname = _hostname
+    this._id = _id
+    this._imageRef = _imageRef
+    this._label = _label
+    this._platform = _platform
+    this._publish = _publish
+    this._stderr = _stderr
+    this._stdout = _stdout
+    this._sync = _sync
+    this._user = _user
+    this._workdir = _workdir
+  }
+
   /**
    * Initializes this container from a Dockerfile build.
    * @param context Directory context used by the Dockerfile.
@@ -805,6 +834,10 @@ export class Container extends BaseClient {
    * @param opts.scheme Return a URL with the given scheme, eg. http for http://
    */
   async endpoint(opts?: ContainerEndpointOpts): Promise<string> {
+    if (this._endpoint) {
+      return this._endpoint
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -841,6 +874,10 @@ export class Container extends BaseClient {
    * @param name The name of the environment variable to retrieve (e.g., "PATH").
    */
   async envVariable(name: string): Promise<string> {
+    if (this._envVariable) {
+      return this._envVariable
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -859,62 +896,36 @@ export class Container extends BaseClient {
    * Retrieves the list of environment variables passed to commands.
    */
   async envVariables(): Promise<EnvVariable[]> {
-    const response: Awaited<EnvVariable[]> = await computeQuery(
+    type envVariables = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<envVariables[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "envVariables",
         },
-      ],
-      this.client
-    )
-
-    return response
-  }
-
-  /**
-   * Retrieves this container after executing the specified command inside it.
-   * @param opts.args Command to run instead of the container's default command (e.g., ["run", "main.go"]).
-   * @param opts.stdin Content to write to the command's standard input before closing (e.g., "Hello world").
-   * @param opts.redirectStdout Redirect the command's standard output to a file in the container (e.g., "/tmp/stdout").
-   * @param opts.redirectStderr Redirect the command's standard error to a file in the container (e.g., "/tmp/stderr").
-   * @param opts.experimentalPrivilegedNesting Provide dagger access to the executed command.
-   * Do not use this option unless you trust the command being executed.
-   * The command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM.
-   * @deprecated Replaced by withExec.
-   */
-  exec(opts?: ContainerExecOpts): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
         {
-          operation: "exec",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Exit code of the last executed command. Zero means success.
-   *
-   * Will execute default command if none is set, or error if there's no default.
-   * @deprecated Use sync instead.
-   */
-  async exitCode(): Promise<number> {
-    const response: Awaited<number> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "exitCode",
+          operation: "name value",
         },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new EnvVariable(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
   }
 
   /**
@@ -936,6 +947,10 @@ export class Container extends BaseClient {
    * for older runtimes without OCI support.
    */
   async export(path: string, opts?: ContainerExportOpts): Promise<boolean> {
+    if (this._export) {
+      return this._export
+    }
+
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
@@ -959,17 +974,38 @@ export class Container extends BaseClient {
    * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async exposedPorts(): Promise<Port[]> {
-    const response: Awaited<Port[]> = await computeQuery(
+    type exposedPorts = {
+      description: string
+      port: number
+      protocol: NetworkProtocol
+    }
+
+    const response: Awaited<exposedPorts[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "exposedPorts",
         },
+        {
+          operation: "description port protocol",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new Port(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.port,
+          r.protocol
+        )
+    )
   }
 
   /**
@@ -1013,28 +1049,15 @@ export class Container extends BaseClient {
   }
 
   /**
-   * Retrieves this container's root filesystem. Mounts are not included.
-   * @deprecated Replaced by rootfs.
-   */
-  fs(): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "fs",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Retrieves a hostname which can be used by clients to reach this container.
    *
    * Currently experimental; set _EXPERIMENTAL_DAGGER_SERVICES_DNS=0 to disable.
    */
   async hostname(): Promise<string> {
+    if (this._hostname) {
+      return this._hostname
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1052,6 +1075,10 @@ export class Container extends BaseClient {
    * A unique identifier for this container.
    */
   async id(): Promise<ContainerID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<ContainerID> = await computeQuery(
       [
         ...this._queryTree,
@@ -1069,6 +1096,10 @@ export class Container extends BaseClient {
    * The unique image reference which can only be retrieved immediately after the 'Container.From' call.
    */
   async imageRef(): Promise<string> {
+    if (this._imageRef) {
+      return this._imageRef
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1109,6 +1140,10 @@ export class Container extends BaseClient {
    * Retrieves the value of the specified label.
    */
   async label(name: string): Promise<string> {
+    if (this._label) {
+      return this._label
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1127,17 +1162,36 @@ export class Container extends BaseClient {
    * Retrieves the list of labels passed to container.
    */
   async labels(): Promise<Label[]> {
-    const response: Awaited<Label[]> = await computeQuery(
+    type labels = {
+      name: string
+      value: string
+    }
+
+    const response: Awaited<labels[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "labels",
         },
+        {
+          operation: "name value",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new Label(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.name,
+          r.value
+        )
+    )
   }
 
   /**
@@ -1181,6 +1235,10 @@ export class Container extends BaseClient {
    * The platform this container executes and publishes as.
    */
   async platform(): Promise<Platform> {
+    if (this._platform) {
+      return this._platform
+    }
+
     const response: Awaited<Platform> = await computeQuery(
       [
         ...this._queryTree,
@@ -1214,6 +1272,10 @@ export class Container extends BaseClient {
    * registries without OCI support.
    */
   async publish(address: string, opts?: ContainerPublishOpts): Promise<string> {
+    if (this._publish) {
+      return this._publish
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1250,6 +1312,10 @@ export class Container extends BaseClient {
    * Will execute default command if none is set, or error if there's no default.
    */
   async stderr(): Promise<string> {
+    if (this._stderr) {
+      return this._stderr
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1269,6 +1335,10 @@ export class Container extends BaseClient {
    * Will execute default command if none is set, or error if there's no default.
    */
   async stdout(): Promise<string> {
+    if (this._stdout) {
+      return this._stdout
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1305,6 +1375,10 @@ export class Container extends BaseClient {
    * Retrieves the user to be set for all commands.
    */
   async user(): Promise<string> {
+    if (this._user) {
+      return this._user
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -1463,24 +1537,6 @@ export class Container extends BaseClient {
         {
           operation: "withExposedPort",
           args: { port, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Initializes this container from this DirectoryID.
-   * @deprecated Replaced by withRootfs.
-   */
-  withFS(id: Directory): Container {
-    return new Container({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "withFS",
-          args: { id },
         },
       ],
       host: this.clientHost,
@@ -1746,13 +1802,13 @@ export class Container extends BaseClient {
   /**
    * Initializes this container from this DirectoryID.
    */
-  withRootfs(id: Directory): Container {
+  withRootfs(directory: Directory): Container {
     return new Container({
       queryTree: [
         ...this._queryTree,
         {
           operation: "withRootfs",
-          args: { id },
+          args: { directory },
         },
       ],
       host: this.clientHost,
@@ -2009,6 +2065,10 @@ export class Container extends BaseClient {
    * Retrieves the working directory for all commands.
    */
   async workdir(): Promise<string> {
+    if (this._workdir) {
+      return this._workdir
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2036,6 +2096,26 @@ export class Container extends BaseClient {
  * A directory.
  */
 export class Directory extends BaseClient {
+  private readonly _export?: boolean = undefined
+  private readonly _id?: DirectoryID = undefined
+  private readonly _sync?: DirectoryID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _export?: boolean,
+    _id?: DirectoryID,
+    _sync?: DirectoryID
+  ) {
+    super(parent)
+
+    this._export = _export
+    this._id = _id
+    this._sync = _sync
+  }
+
   /**
    * Gets the difference between this directory and an another directory.
    * @param other Identifier of the directory to compare.
@@ -2122,6 +2202,10 @@ export class Directory extends BaseClient {
    * @param path Location of the copied directory (e.g., "logs/").
    */
   async export(path: string): Promise<boolean> {
+    if (this._export) {
+      return this._export
+    }
+
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
@@ -2158,6 +2242,10 @@ export class Directory extends BaseClient {
    * The content-addressed identifier of the directory.
    */
   async id(): Promise<DirectoryID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<DirectoryID> = await computeQuery(
       [
         ...this._queryTree,
@@ -2379,10 +2467,31 @@ export class Directory extends BaseClient {
  * A simple key value object that represents an environment variable.
  */
 export class EnvVariable extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _value?: string
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._value = _value
+  }
+
   /**
    * The environment variable name.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2400,6 +2509,10 @@ export class EnvVariable extends BaseClient {
    * The environment variable value.
    */
   async value(): Promise<string> {
+    if (this._value) {
+      return this._value
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2418,10 +2531,40 @@ export class EnvVariable extends BaseClient {
  * A file.
  */
 export class File extends BaseClient {
+  private readonly _contents?: string = undefined
+  private readonly _export?: boolean = undefined
+  private readonly _id?: FileID = undefined
+  private readonly _size?: number = undefined
+  private readonly _sync?: FileID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _contents?: string,
+    _export?: boolean,
+    _id?: FileID,
+    _size?: number,
+    _sync?: FileID
+  ) {
+    super(parent)
+
+    this._contents = _contents
+    this._export = _export
+    this._id = _id
+    this._size = _size
+    this._sync = _sync
+  }
+
   /**
    * Retrieves the contents of the file.
    */
   async contents(): Promise<string> {
+    if (this._contents) {
+      return this._contents
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2442,6 +2585,10 @@ export class File extends BaseClient {
    * the file will be created in that directory.
    */
   async export(path: string, opts?: FileExportOpts): Promise<boolean> {
+    if (this._export) {
+      return this._export
+    }
+
     const response: Awaited<boolean> = await computeQuery(
       [
         ...this._queryTree,
@@ -2460,6 +2607,10 @@ export class File extends BaseClient {
    * Retrieves the content-addressed identifier of the file.
    */
   async id(): Promise<FileID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<FileID> = await computeQuery(
       [
         ...this._queryTree,
@@ -2474,26 +2625,13 @@ export class File extends BaseClient {
   }
 
   /**
-   * Retrieves a secret referencing the contents of this file.
-   * @deprecated insecure, leaves secret in cache. Superseded by setSecret
-   */
-  secret(): Secret {
-    return new Secret({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "secret",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Gets the size of the file, in bytes.
    */
   async size(): Promise<number> {
+    if (this._size) {
+      return this._size
+    }
+
     const response: Awaited<number> = await computeQuery(
       [
         ...this._queryTree,
@@ -2559,6 +2697,17 @@ export class File extends BaseClient {
  */
 export class GitRef extends BaseClient {
   /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
    * The filesystem tree at this ref.
    */
   tree(opts?: GitRefTreeOpts): Directory {
@@ -2580,6 +2729,17 @@ export class GitRef extends BaseClient {
  * A git repository.
  */
 export class GitRepository extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
   /**
    * Returns details on one branch.
    * @param name Branch's name (e.g., "main").
@@ -2640,6 +2800,17 @@ export class GitRepository extends BaseClient {
  */
 export class Host extends BaseClient {
   /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
    * Accesses a directory on the host.
    * @param path Location of the directory to access (e.g., ".").
    * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
@@ -2652,24 +2823,6 @@ export class Host extends BaseClient {
         {
           operation: "directory",
           args: { path, ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * Accesses an environment variable on the host.
-   * @param name Name of the environment variable (e.g., "PATH").
-   */
-  envVariable(name: string): HostVariable {
-    return new HostVariable({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "envVariable",
-          args: { name },
         },
       ],
       host: this.clientHost,
@@ -2696,6 +2849,26 @@ export class Host extends BaseClient {
   }
 
   /**
+   * Sets a secret given a user-defined name and the file path on the host, and returns the secret.
+   * The file is limited to a size of 512000 bytes.
+   * @param name The user defined name for this secret.
+   * @param path Location of the file to set as a secret.
+   */
+  setSecretFile(name: string, path: string): Secret {
+    return new Secret({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "setSecretFile",
+          args: { name, path },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
    * Accesses a Unix socket on the host.
    * @param path Location of the Unix socket (e.g., "/var/run/docker.sock").
    */
@@ -2712,75 +2885,37 @@ export class Host extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-
-  /**
-   * Retrieves the current working directory on the host.
-   * @param opts.exclude Exclude artifacts that match the given pattern (e.g., ["node_modules/", ".git*"]).
-   * @param opts.include Include only artifacts that match the given pattern (e.g., ["app/", "package.*"]).
-   * @deprecated Use directory with path set to '.' instead.
-   */
-  workdir(opts?: HostWorkdirOpts): Directory {
-    return new Directory({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "workdir",
-          args: { ...opts },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-}
-
-/**
- * An environment variable on the host environment.
- */
-export class HostVariable extends BaseClient {
-  /**
-   * A secret referencing the value of this variable.
-   * @deprecated been superseded by setSecret
-   */
-  secret(): Secret {
-    return new Secret({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "secret",
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
-   * The value of this variable.
-   */
-  async value(): Promise<string> {
-    const response: Awaited<string> = await computeQuery(
-      [
-        ...this._queryTree,
-        {
-          operation: "value",
-        },
-      ],
-      this.client
-    )
-
-    return response
-  }
 }
 
 /**
  * A simple key value object that represents a label.
  */
 export class Label extends BaseClient {
+  private readonly _name?: string = undefined
+  private readonly _value?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _name?: string,
+    _value?: string
+  ) {
+    super(parent)
+
+    this._name = _name
+    this._value = _value
+  }
+
   /**
    * The label name.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2798,6 +2933,10 @@ export class Label extends BaseClient {
    * The label value.
    */
   async value(): Promise<string> {
+    if (this._value) {
+      return this._value
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2816,10 +2955,34 @@ export class Label extends BaseClient {
  * A port exposed by a container.
  */
 export class Port extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _port?: number = undefined
+  private readonly _protocol?: NetworkProtocol = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _port?: number,
+    _protocol?: NetworkProtocol
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._port = _port
+    this._protocol = _protocol
+  }
+
   /**
    * The port description.
    */
   async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2837,6 +3000,10 @@ export class Port extends BaseClient {
    * The port number.
    */
   async port(): Promise<number> {
+    if (this._port) {
+      return this._port
+    }
+
     const response: Awaited<number> = await computeQuery(
       [
         ...this._queryTree,
@@ -2854,6 +3021,10 @@ export class Port extends BaseClient {
    * The transport layer network protocol.
    */
   async protocol(): Promise<NetworkProtocol> {
+    if (this._protocol) {
+      return this._protocol
+    }
+
     const response: Awaited<NetworkProtocol> = await computeQuery(
       [
         ...this._queryTree,
@@ -2872,27 +3043,71 @@ export class Port extends BaseClient {
  * A collection of Dagger resources that can be queried and invoked.
  */
 export class Project extends BaseClient {
+  private readonly _id?: ProjectID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: ProjectID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._name = _name
+  }
+
   /**
    * Commands provided by this project
    */
   async commands(): Promise<ProjectCommand[]> {
-    const response: Awaited<ProjectCommand[]> = await computeQuery(
+    type commands = {
+      description: string
+      id: ProjectCommandID
+      name: string
+      resultType: string
+    }
+
+    const response: Awaited<commands[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "commands",
         },
+        {
+          operation: "description id name resultType",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new ProjectCommand(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.id,
+          r.name,
+          r.resultType
+        )
+    )
   }
 
   /**
    * A unique identifier for this project.
    */
   async id(): Promise<ProjectID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<ProjectID> = await computeQuery(
       [
         ...this._queryTree,
@@ -2927,6 +3142,10 @@ export class Project extends BaseClient {
    * Name of the project
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2954,10 +3173,37 @@ export class Project extends BaseClient {
  * A command defined in a project that can be invoked from the CLI.
  */
 export class ProjectCommand extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _id?: ProjectCommandID = undefined
+  private readonly _name?: string = undefined
+  private readonly _resultType?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _id?: ProjectCommandID,
+    _name?: string,
+    _resultType?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._id = _id
+    this._name = _name
+    this._resultType = _resultType
+  }
+
   /**
    * Documentation for what this command does.
    */
   async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2975,23 +3221,46 @@ export class ProjectCommand extends BaseClient {
    * Flags accepted by this command.
    */
   async flags(): Promise<ProjectCommandFlag[]> {
-    const response: Awaited<ProjectCommandFlag[]> = await computeQuery(
+    type flags = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<flags[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "flags",
         },
+        {
+          operation: "description name",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new ProjectCommandFlag(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
   }
 
   /**
    * A unique identifier for this command.
    */
   async id(): Promise<ProjectCommandID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<ProjectCommandID> = await computeQuery(
       [
         ...this._queryTree,
@@ -3009,6 +3278,10 @@ export class ProjectCommand extends BaseClient {
    * The name of the command.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3026,6 +3299,10 @@ export class ProjectCommand extends BaseClient {
    * The name of the type returned by this command.
    */
   async resultType(): Promise<string> {
+    if (this._resultType) {
+      return this._resultType
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3043,17 +3320,40 @@ export class ProjectCommand extends BaseClient {
    * Subcommands, if any, that this command provides.
    */
   async subcommands(): Promise<ProjectCommand[]> {
-    const response: Awaited<ProjectCommand[]> = await computeQuery(
+    type subcommands = {
+      description: string
+      id: ProjectCommandID
+      name: string
+      resultType: string
+    }
+
+    const response: Awaited<subcommands[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "subcommands",
         },
+        {
+          operation: "description id name resultType",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new ProjectCommand(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.id,
+          r.name,
+          r.resultType
+        )
+    )
   }
 }
 
@@ -3061,10 +3361,31 @@ export class ProjectCommand extends BaseClient {
  * A flag accepted by a project command.
  */
 export class ProjectCommandFlag extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
   /**
    * Documentation for what this flag sets.
    */
   async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3082,6 +3403,10 @@ export class ProjectCommandFlag extends BaseClient {
    * The name of the flag.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3096,7 +3421,24 @@ export class ProjectCommandFlag extends BaseClient {
   }
 }
 
-export default class Client extends BaseClient {
+export class Client extends BaseClient {
+  private readonly _checkVersionCompatibility?: boolean = undefined
+  private readonly _defaultPlatform?: Platform = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _checkVersionCompatibility?: boolean,
+    _defaultPlatform?: Platform
+  ) {
+    super(parent)
+
+    this._checkVersionCompatibility = _checkVersionCompatibility
+    this._defaultPlatform = _defaultPlatform
+  }
+
   /**
    * Constructs a cache volume for a given cache key.
    * @param key A string identifier to target this cache volume (e.g., "modules-cache").
@@ -3113,6 +3455,25 @@ export default class Client extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * Checks if the current Dagger Engine is compatible with an SDK's required version.
+   * @param version The SDK's required version.
+   */
+  async checkVersionCompatibility(version: string): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "checkVersionCompatibility",
+          args: { version },
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**
@@ -3366,10 +3727,31 @@ export default class Client extends BaseClient {
  * A reference to a secret value, which can be handled more safely than the value itself.
  */
 export class Secret extends BaseClient {
+  private readonly _id?: SecretID = undefined
+  private readonly _plaintext?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: SecretID,
+    _plaintext?: string
+  ) {
+    super(parent)
+
+    this._id = _id
+    this._plaintext = _plaintext
+  }
+
   /**
    * The identifier for this secret.
    */
   async id(): Promise<SecretID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<SecretID> = await computeQuery(
       [
         ...this._queryTree,
@@ -3387,6 +3769,10 @@ export class Secret extends BaseClient {
    * The value of this secret.
    */
   async plaintext(): Promise<string> {
+    if (this._plaintext) {
+      return this._plaintext
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3402,10 +3788,28 @@ export class Secret extends BaseClient {
 }
 
 export class Socket extends BaseClient {
+  private readonly _id?: SocketID = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _id?: SocketID
+  ) {
+    super(parent)
+
+    this._id = _id
+  }
+
   /**
    * The content-addressed identifier of the socket.
    */
   async id(): Promise<SocketID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<SocketID> = await computeQuery(
       [
         ...this._queryTree,

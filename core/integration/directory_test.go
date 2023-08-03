@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func TestEmptyDirectory(t *testing.T) {
 			directory {
 				entries
 			}
-		}`, &res, nil)
+		}`, &res, nil, dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	require.Empty(t, res.Directory.Entries)
 }
@@ -594,7 +595,7 @@ func TestDirectoryExport(t *testing.T) {
 	wd := t.TempDir()
 	dest := t.TempDir()
 
-	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd))
+	c, err := dagger.Connect(ctx, dagger.WithWorkdir(wd), dagger.WithLogOutput(os.Stderr))
 	require.NoError(t, err)
 	defer c.Close()
 

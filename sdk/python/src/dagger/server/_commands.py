@@ -18,8 +18,8 @@ from strawberry.field import StrawberryField
 from strawberry.types import Info
 from strawberry.utils.await_maybe import await_maybe
 
-from dagger.api.base import Type as DaggerType
-from dagger.api.gen import Client
+from dagger.client.base import Type as DaggerType
+from dagger.client.gen import Client
 
 from ._exceptions import BadParameterError, SchemaValidationError
 from ._util import has_resolver

@@ -10,19 +10,24 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
-	"github.com/dagger/dagger/router"
+	"github.com/dagger/dagger/core/socket"
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
+	"github.com/moby/buildkit/util/leaseutil"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type containerSchema struct {
-	*baseSchema
+	*MergedSchemas
 
-	host     *core.Host
-	ociStore content.Store
+	host         *core.Host
+	ociStore     content.Store
+	leaseManager *leaseutil.Manager
+
+	buildCache  *core.CacheMap[uint64, *core.Container]
+	importCache *core.CacheMap[uint64, *specs.Descriptor]
 }
 
-var _ router.ExecutableSchema = &containerSchema{}
+var _ ExecutableSchema = &containerSchema{}
 
 func (s *containerSchema) Name() string {
 	return "container"
@@ -32,78 +37,74 @@ func (s *containerSchema) Schema() string {
 	return Container
 }
 
-func (s *containerSchema) Resolvers() router.Resolvers {
-	return router.Resolvers{
+func (s *containerSchema) Resolvers() Resolvers {
+	return Resolvers{
 		"ContainerID": stringResolver(core.ContainerID("")),
-		"Query": router.ObjectResolver{
-			"container": router.ToResolver(s.container),
+		"Query": ObjectResolver{
+			"container": ToResolver(s.container),
 		},
-		"Container": router.ObjectResolver{
-			"id":                   router.ToResolver(s.id),
-			"sync":                 router.ToResolver(s.sync),
-			"from":                 router.ToResolver(s.from),
-			"build":                router.ToResolver(s.build),
-			"rootfs":               router.ToResolver(s.rootfs),
-			"pipeline":             router.ToResolver(s.pipeline),
-			"fs":                   router.ToResolver(s.rootfs), // deprecated
-			"withRootfs":           router.ToResolver(s.withRootfs),
-			"withFS":               router.ToResolver(s.withRootfs), // deprecated
-			"file":                 router.ToResolver(s.file),
-			"directory":            router.ToResolver(s.directory),
-			"user":                 router.ToResolver(s.user),
-			"withUser":             router.ToResolver(s.withUser),
-			"workdir":              router.ToResolver(s.workdir),
-			"withWorkdir":          router.ToResolver(s.withWorkdir),
-			"envVariables":         router.ToResolver(s.envVariables),
-			"envVariable":          router.ToResolver(s.envVariable),
-			"withEnvVariable":      router.ToResolver(s.withEnvVariable),
-			"withSecretVariable":   router.ToResolver(s.withSecretVariable),
-			"withoutEnvVariable":   router.ToResolver(s.withoutEnvVariable),
-			"withLabel":            router.ToResolver(s.withLabel),
-			"label":                router.ToResolver(s.label),
-			"labels":               router.ToResolver(s.labels),
-			"withoutLabel":         router.ToResolver(s.withoutLabel),
-			"entrypoint":           router.ToResolver(s.entrypoint),
-			"withEntrypoint":       router.ToResolver(s.withEntrypoint),
-			"defaultArgs":          router.ToResolver(s.defaultArgs),
-			"withDefaultArgs":      router.ToResolver(s.withDefaultArgs),
-			"mounts":               router.ToResolver(s.mounts),
-			"withMountedDirectory": router.ToResolver(s.withMountedDirectory),
-			"withMountedFile":      router.ToResolver(s.withMountedFile),
-			"withMountedTemp":      router.ToResolver(s.withMountedTemp),
-			"withMountedCache":     router.ToResolver(s.withMountedCache),
-			"withMountedSecret":    router.ToResolver(s.withMountedSecret),
-			"withUnixSocket":       router.ToResolver(s.withUnixSocket),
-			"withoutUnixSocket":    router.ToResolver(s.withoutUnixSocket),
-			"withoutMount":         router.ToResolver(s.withoutMount),
-			"withFile":             router.ToResolver(s.withFile),
-			"withNewFile":          router.ToResolver(s.withNewFile),
-			"withDirectory":        router.ToResolver(s.withDirectory),
-			"withExec":             router.ToResolver(s.withExec),
-			"exec":                 router.ToResolver(s.withExec), // deprecated
-			"exitCode":             router.ToResolver(s.exitCode),
-			"stdout":               router.ToResolver(s.stdout),
-			"stderr":               router.ToResolver(s.stderr),
-			"publish":              router.ToResolver(s.publish),
-			"platform":             router.ToResolver(s.platform),
-			"export":               router.ToResolver(s.export),
-			"import":               router.ToResolver(s.import_),
-			"withRegistryAuth":     router.ToResolver(s.withRegistryAuth),
-			"withoutRegistryAuth":  router.ToResolver(s.withoutRegistryAuth),
-			"imageRef":             router.ToResolver(s.imageRef),
-			"withExposedPort":      router.ToResolver(s.withExposedPort),
-			"withoutExposedPort":   router.ToResolver(s.withoutExposedPort),
-			"exposedPorts":         router.ToResolver(s.exposedPorts),
-			"hostname":             router.ToResolver(s.hostname),
-			"endpoint":             router.ToResolver(s.endpoint),
-			"withServiceBinding":   router.ToResolver(s.withServiceBinding),
-			"withFocus":            router.ToResolver(s.withFocus),
-			"withoutFocus":         router.ToResolver(s.withoutFocus),
+		"Container": ObjectResolver{
+			"id":                   ToResolver(s.id),
+			"sync":                 ToResolver(s.sync),
+			"from":                 ToResolver(s.from),
+			"build":                ToResolver(s.build),
+			"rootfs":               ToResolver(s.rootfs),
+			"pipeline":             ToResolver(s.pipeline),
+			"withRootfs":           ToResolver(s.withRootfs),
+			"file":                 ToResolver(s.file),
+			"directory":            ToResolver(s.directory),
+			"user":                 ToResolver(s.user),
+			"withUser":             ToResolver(s.withUser),
+			"workdir":              ToResolver(s.workdir),
+			"withWorkdir":          ToResolver(s.withWorkdir),
+			"envVariables":         ToResolver(s.envVariables),
+			"envVariable":          ToResolver(s.envVariable),
+			"withEnvVariable":      ToResolver(s.withEnvVariable),
+			"withSecretVariable":   ToResolver(s.withSecretVariable),
+			"withoutEnvVariable":   ToResolver(s.withoutEnvVariable),
+			"withLabel":            ToResolver(s.withLabel),
+			"label":                ToResolver(s.label),
+			"labels":               ToResolver(s.labels),
+			"withoutLabel":         ToResolver(s.withoutLabel),
+			"entrypoint":           ToResolver(s.entrypoint),
+			"withEntrypoint":       ToResolver(s.withEntrypoint),
+			"defaultArgs":          ToResolver(s.defaultArgs),
+			"withDefaultArgs":      ToResolver(s.withDefaultArgs),
+			"mounts":               ToResolver(s.mounts),
+			"withMountedDirectory": ToResolver(s.withMountedDirectory),
+			"withMountedFile":      ToResolver(s.withMountedFile),
+			"withMountedTemp":      ToResolver(s.withMountedTemp),
+			"withMountedCache":     ToResolver(s.withMountedCache),
+			"withMountedSecret":    ToResolver(s.withMountedSecret),
+			"withUnixSocket":       ToResolver(s.withUnixSocket),
+			"withoutUnixSocket":    ToResolver(s.withoutUnixSocket),
+			"withoutMount":         ToResolver(s.withoutMount),
+			"withFile":             ToResolver(s.withFile),
+			"withNewFile":          ToResolver(s.withNewFile),
+			"withDirectory":        ToResolver(s.withDirectory),
+			"withExec":             ToResolver(s.withExec),
+			"stdout":               ToResolver(s.stdout),
+			"stderr":               ToResolver(s.stderr),
+			"publish":              ToResolver(s.publish),
+			"platform":             ToResolver(s.platform),
+			"export":               ToResolver(s.export),
+			"import":               ToResolver(s.import_),
+			"withRegistryAuth":     ToResolver(s.withRegistryAuth),
+			"withoutRegistryAuth":  ToResolver(s.withoutRegistryAuth),
+			"imageRef":             ToResolver(s.imageRef),
+			"withExposedPort":      ToResolver(s.withExposedPort),
+			"withoutExposedPort":   ToResolver(s.withoutExposedPort),
+			"exposedPorts":         ToResolver(s.exposedPorts),
+			"hostname":             ToResolver(s.hostname),
+			"endpoint":             ToResolver(s.endpoint),
+			"withServiceBinding":   ToResolver(s.withServiceBinding),
+			"withFocus":            ToResolver(s.withFocus),
+			"withoutFocus":         ToResolver(s.withoutFocus),
 		},
 	}
 }
 
-func (s *containerSchema) Dependencies() []router.ExecutableSchema {
+func (s *containerSchema) Dependencies() []ExecutableSchema {
 	return nil
 }
 
@@ -112,8 +113,8 @@ type containerArgs struct {
 	Platform *specs.Platform
 }
 
-func (s *containerSchema) container(ctx *router.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
-	platform := s.baseSchema.platform
+func (s *containerSchema) container(ctx *core.Context, parent *core.Query, args containerArgs) (*core.Container, error) {
+	platform := s.MergedSchemas.platform
 	if args.Platform != nil {
 		if args.ID != "" {
 			return nil, fmt.Errorf("cannot specify both existing container ID and platform")
@@ -128,15 +129,15 @@ func (s *containerSchema) container(ctx *router.Context, parent *core.Query, arg
 	return ctr, err
 }
 
-func (s *containerSchema) sync(ctx *router.Context, parent *core.Container, _ any) (core.ContainerID, error) {
-	err := parent.Evaluate(ctx.Context, s.gw)
+func (s *containerSchema) sync(ctx *core.Context, parent *core.Container, _ any) (core.ContainerID, error) {
+	err := parent.Evaluate(ctx, s.bk)
 	if err != nil {
 		return "", err
 	}
 	return parent.ID()
 }
 
-func (s *containerSchema) id(ctx *router.Context, parent *core.Container, args any) (core.ContainerID, error) {
+func (s *containerSchema) id(ctx *core.Context, parent *core.Container, args any) (core.ContainerID, error) {
 	return parent.ID()
 }
 
@@ -144,8 +145,8 @@ type containerFromArgs struct {
 	Address string
 }
 
-func (s *containerSchema) from(ctx *router.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
-	return parent.From(ctx, s.gw, args.Address)
+func (s *containerSchema) from(ctx *core.Context, parent *core.Container, args containerFromArgs) (*core.Container, error) {
+	return parent.From(ctx, s.bk, args.Address)
 }
 
 type containerBuildArgs struct {
@@ -156,20 +157,29 @@ type containerBuildArgs struct {
 	Secrets    []core.SecretID
 }
 
-func (s *containerSchema) build(ctx *router.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
+func (s *containerSchema) build(ctx *core.Context, parent *core.Container, args containerBuildArgs) (*core.Container, error) {
 	dir, err := args.Context.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
-	return parent.Build(ctx, s.gw, dir, args.Dockerfile, args.BuildArgs, args.Target, args.Secrets)
+	return parent.Build(
+		ctx,
+		dir,
+		args.Dockerfile,
+		args.BuildArgs,
+		args.Target,
+		args.Secrets,
+		s.bk,
+		s.buildCache,
+	)
 }
 
 type containerWithRootFSArgs struct {
-	ID core.DirectoryID
+	Directory core.DirectoryID
 }
 
-func (s *containerSchema) withRootfs(ctx *router.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
-	dir, err := args.ID.ToDirectory()
+func (s *containerSchema) withRootfs(ctx *core.Context, parent *core.Container, args containerWithRootFSArgs) (*core.Container, error) {
+	dir, err := args.Directory.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
@@ -182,11 +192,11 @@ type containerPipelineArgs struct {
 	Labels      []pipeline.Label
 }
 
-func (s *containerSchema) pipeline(ctx *router.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
+func (s *containerSchema) pipeline(ctx *core.Context, parent *core.Container, args containerPipelineArgs) (*core.Container, error) {
 	return parent.WithPipeline(ctx, args.Name, args.Description, args.Labels)
 }
 
-func (s *containerSchema) rootfs(ctx *router.Context, parent *core.Container, args any) (*core.Directory, error) {
+func (s *containerSchema) rootfs(ctx *core.Context, parent *core.Container, args any) (*core.Directory, error) {
 	return parent.RootFS(ctx)
 }
 
@@ -194,45 +204,37 @@ type containerExecArgs struct {
 	core.ContainerExecOpts
 }
 
-func (s *containerSchema) withExec(ctx *router.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
-	progSock := &core.Socket{HostPath: s.progSock}
-	return parent.WithExec(ctx, s.gw, progSock, s.baseSchema.platform, args.ContainerExecOpts)
+func (s *containerSchema) withExec(ctx *core.Context, parent *core.Container, args containerExecArgs) (*core.Container, error) {
+	return parent.WithExec(ctx, s.bk, s.progSockPath, s.MergedSchemas.platform, args.ContainerExecOpts)
 }
 
-func (s *containerSchema) withDefaultExec(ctx *router.Context, parent *core.Container) (*core.Container, error) {
+func (s *containerSchema) withDefaultExec(ctx *core.Context, parent *core.Container) (*core.Container, error) {
 	if parent.Meta == nil {
 		return s.withExec(ctx, parent, containerExecArgs{})
 	}
 	return parent, nil
 }
 
-func (s *containerSchema) exitCode(ctx *router.Context, parent *core.Container, args any) (int, error) {
-	progSock := &core.Socket{HostPath: s.progSock}
-	return parent.ExitCode(ctx, s.gw, progSock)
+func (s *containerSchema) stdout(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stdout")
 }
 
-func (s *containerSchema) stdout(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	progSock := &core.Socket{HostPath: s.progSock}
-	return parent.MetaFileContents(ctx, s.gw, progSock, "stdout")
-}
-
-func (s *containerSchema) stderr(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	progSock := &core.Socket{HostPath: s.progSock}
-	return parent.MetaFileContents(ctx, s.gw, progSock, "stderr")
+func (s *containerSchema) stderr(ctx *core.Context, parent *core.Container, args any) (string, error) {
+	return parent.MetaFileContents(ctx, s.bk, s.progSockPath, "stderr")
 }
 
 type containerWithEntrypointArgs struct {
 	Args []string
 }
 
-func (s *containerSchema) withEntrypoint(ctx *router.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
+func (s *containerSchema) withEntrypoint(ctx *core.Context, parent *core.Container, args containerWithEntrypointArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.Entrypoint = args.Args
 		return cfg
 	})
 }
 
-func (s *containerSchema) entrypoint(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
+func (s *containerSchema) entrypoint(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -245,7 +247,7 @@ type containerWithDefaultArgs struct {
 	Args *[]string
 }
 
-func (s *containerSchema) withDefaultArgs(ctx *router.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
+func (s *containerSchema) withDefaultArgs(ctx *core.Context, parent *core.Container, args containerWithDefaultArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		if args.Args == nil {
 			cfg.Cmd = []string{}
@@ -257,7 +259,7 @@ func (s *containerSchema) withDefaultArgs(ctx *router.Context, parent *core.Cont
 	})
 }
 
-func (s *containerSchema) defaultArgs(ctx *router.Context, parent *core.Container, args any) ([]string, error) {
+func (s *containerSchema) defaultArgs(ctx *core.Context, parent *core.Container, args any) ([]string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -270,14 +272,14 @@ type containerWithUserArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withUser(ctx *router.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
+func (s *containerSchema) withUser(ctx *core.Context, parent *core.Container, args containerWithUserArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.User = args.Name
 		return cfg
 	})
 }
 
-func (s *containerSchema) user(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+func (s *containerSchema) user(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return "", err
@@ -290,14 +292,14 @@ type containerWithWorkdirArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withWorkdir(ctx *router.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
+func (s *containerSchema) withWorkdir(ctx *core.Context, parent *core.Container, args containerWithWorkdirArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		cfg.WorkingDir = absPath(cfg.WorkingDir, args.Path)
 		return cfg
 	})
 }
 
-func (s *containerSchema) workdir(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+func (s *containerSchema) workdir(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return "", err
@@ -312,7 +314,7 @@ type containerWithVariableArgs struct {
 	Expand bool
 }
 
-func (s *containerSchema) withEnvVariable(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withEnvVariable(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		value := args.Value
 
@@ -333,7 +335,7 @@ type containerWithoutVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutEnvVariable(ctx *router.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withoutEnvVariable(ctx *core.Context, parent *core.Container, args containerWithoutVariableArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		newEnv := []string{}
 
@@ -354,7 +356,7 @@ type EnvVariable struct {
 	Value string `json:"value"`
 }
 
-func (s *containerSchema) envVariables(ctx *router.Context, parent *core.Container, args any) ([]EnvVariable, error) {
+func (s *containerSchema) envVariables(ctx *core.Context, parent *core.Container, args any) ([]EnvVariable, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -373,7 +375,7 @@ type containerVariableArgs struct {
 	Name string
 }
 
-func (s *containerSchema) envVariable(ctx *router.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
+func (s *containerSchema) envVariable(ctx *core.Context, parent *core.Container, args containerVariableArgs) (*string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -391,7 +393,7 @@ type Label struct {
 	Value string `json:"value"`
 }
 
-func (s *containerSchema) labels(ctx *router.Context, parent *core.Container, args any) ([]Label, error) {
+func (s *containerSchema) labels(ctx *core.Context, parent *core.Container, args any) ([]Label, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -414,7 +416,7 @@ type containerLabelArgs struct {
 	Name string
 }
 
-func (s *containerSchema) label(ctx *router.Context, parent *core.Container, args containerLabelArgs) (*string, error) {
+func (s *containerSchema) label(ctx *core.Context, parent *core.Container, args containerLabelArgs) (*string, error) {
 	cfg, err := parent.ImageConfig(ctx)
 	if err != nil {
 		return nil, err
@@ -433,12 +435,12 @@ type containerWithMountedDirectoryArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withMountedDirectory(ctx *router.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedDirectory(ctx *core.Context, parent *core.Container, args containerWithMountedDirectoryArgs) (*core.Container, error) {
 	dir, err := args.Source.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedDirectory(ctx, s.gw, args.Path, dir, args.Owner)
+	return parent.WithMountedDirectory(ctx, s.bk, args.Path, dir, args.Owner)
 }
 
 type containerPublishArgs struct {
@@ -448,8 +450,8 @@ type containerPublishArgs struct {
 	MediaTypes        core.ImageMediaTypes
 }
 
-func (s *containerSchema) publish(ctx *router.Context, parent *core.Container, args containerPublishArgs) (string, error) {
-	return parent.Publish(ctx, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, s.bkClient, s.solveOpts, s.solveCh)
+func (s *containerSchema) publish(ctx *core.Context, parent *core.Container, args containerPublishArgs) (string, error) {
+	return parent.Publish(ctx, s.bk, args.Address, args.PlatformVariants, args.ForcedCompression, args.MediaTypes)
 }
 
 type containerWithMountedFileArgs struct {
@@ -458,12 +460,12 @@ type containerWithMountedFileArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withMountedFile(ctx *router.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedFile(ctx *core.Context, parent *core.Container, args containerWithMountedFileArgs) (*core.Container, error) {
 	file, err := args.Source.ToFile()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedFile(ctx, s.gw, args.Path, file, args.Owner)
+	return parent.WithMountedFile(ctx, s.bk, args.Path, file, args.Owner)
 }
 
 type containerWithMountedCacheArgs struct {
@@ -474,7 +476,7 @@ type containerWithMountedCacheArgs struct {
 	Owner       string
 }
 
-func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedCache(ctx *core.Context, parent *core.Container, args containerWithMountedCacheArgs) (*core.Container, error) {
 	var dir *core.Directory
 	if args.Source != "" {
 		var err error
@@ -489,14 +491,14 @@ func (s *containerSchema) withMountedCache(ctx *router.Context, parent *core.Con
 		return nil, err
 	}
 
-	return parent.WithMountedCache(ctx, s.gw, args.Path, cache, dir, args.Concurrency, args.Owner)
+	return parent.WithMountedCache(ctx, s.bk, args.Path, cache, dir, args.Concurrency, args.Owner)
 }
 
 type containerWithMountedTempArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withMountedTemp(ctx *router.Context, parent *core.Container, args containerWithMountedTempArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedTemp(ctx *core.Context, parent *core.Container, args containerWithMountedTempArgs) (*core.Container, error) {
 	return parent.WithMountedTemp(ctx, args.Path)
 }
 
@@ -504,11 +506,11 @@ type containerWithoutMountArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withoutMount(ctx *router.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
+func (s *containerSchema) withoutMount(ctx *core.Context, parent *core.Container, args containerWithoutMountArgs) (*core.Container, error) {
 	return parent.WithoutMount(ctx, args.Path)
 }
 
-func (s *containerSchema) mounts(ctx *router.Context, parent *core.Container, _ any) ([]string, error) {
+func (s *containerSchema) mounts(ctx *core.Context, parent *core.Container, _ any) ([]string, error) {
 	return parent.MountTargets(ctx)
 }
 
@@ -517,7 +519,7 @@ type containerWithLabelArgs struct {
 	Value string
 }
 
-func (s *containerSchema) withLabel(ctx *router.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
+func (s *containerSchema) withLabel(ctx *core.Context, parent *core.Container, args containerWithLabelArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		if cfg.Labels == nil {
 			cfg.Labels = make(map[string]string)
@@ -531,7 +533,7 @@ type containerWithoutLabelArgs struct {
 	Name string
 }
 
-func (s *containerSchema) withoutLabel(ctx *router.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
+func (s *containerSchema) withoutLabel(ctx *core.Context, parent *core.Container, args containerWithoutLabelArgs) (*core.Container, error) {
 	return parent.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
 		delete(cfg.Labels, args.Name)
 		return cfg
@@ -542,16 +544,16 @@ type containerDirectoryArgs struct {
 	Path string
 }
 
-func (s *containerSchema) directory(ctx *router.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
-	return parent.Directory(ctx, s.gw, args.Path)
+func (s *containerSchema) directory(ctx *core.Context, parent *core.Container, args containerDirectoryArgs) (*core.Directory, error) {
+	return parent.Directory(ctx, s.bk, args.Path)
 }
 
 type containerFileArgs struct {
 	Path string
 }
 
-func (s *containerSchema) file(ctx *router.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
-	return parent.File(ctx, s.gw, args.Path)
+func (s *containerSchema) file(ctx *core.Context, parent *core.Container, args containerFileArgs) (*core.File, error) {
+	return parent.File(ctx, s.bk, args.Path)
 }
 
 func absPath(workDir string, containerPath string) string {
@@ -571,7 +573,7 @@ type containerWithSecretVariableArgs struct {
 	Secret core.SecretID
 }
 
-func (s *containerSchema) withSecretVariable(ctx *router.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
+func (s *containerSchema) withSecretVariable(ctx *core.Context, parent *core.Container, args containerWithSecretVariableArgs) (*core.Container, error) {
 	secret, err := args.Secret.ToSecret()
 	if err != nil {
 		return nil, err
@@ -585,12 +587,12 @@ type containerWithMountedSecretArgs struct {
 	Owner  string
 }
 
-func (s *containerSchema) withMountedSecret(ctx *router.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
+func (s *containerSchema) withMountedSecret(ctx *core.Context, parent *core.Container, args containerWithMountedSecretArgs) (*core.Container, error) {
 	secret, err := args.Source.ToSecret()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithMountedSecret(ctx, s.gw, args.Path, secret, args.Owner)
+	return parent.WithMountedSecret(ctx, s.bk, args.Path, secret, args.Owner)
 }
 
 type containerWithDirectoryArgs struct {
@@ -598,12 +600,12 @@ type containerWithDirectoryArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withDirectory(ctx *router.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
+func (s *containerSchema) withDirectory(ctx *core.Context, parent *core.Container, args containerWithDirectoryArgs) (*core.Container, error) {
 	dir, err := args.Directory.ToDirectory()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithDirectory(ctx, s.gw, args.Path, dir, args.CopyFilter, args.Owner)
+	return parent.WithDirectory(ctx, s.bk, args.Path, dir, args.CopyFilter, args.Owner)
 }
 
 type containerWithFileArgs struct {
@@ -611,12 +613,12 @@ type containerWithFileArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withFile(ctx *router.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
+func (s *containerSchema) withFile(ctx *core.Context, parent *core.Container, args containerWithFileArgs) (*core.Container, error) {
 	file, err := args.Source.ToFile()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithFile(ctx, s.gw, args.Path, file, args.Permissions, args.Owner)
+	return parent.WithFile(ctx, s.bk, args.Path, file, args.Permissions, args.Owner)
 }
 
 type containerWithNewFileArgs struct {
@@ -624,33 +626,33 @@ type containerWithNewFileArgs struct {
 	Owner string
 }
 
-func (s *containerSchema) withNewFile(ctx *router.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
-	return parent.WithNewFile(ctx, s.gw, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
+func (s *containerSchema) withNewFile(ctx *core.Context, parent *core.Container, args containerWithNewFileArgs) (*core.Container, error) {
+	return parent.WithNewFile(ctx, s.bk, args.Path, []byte(args.Contents), args.Permissions, args.Owner)
 }
 
 type containerWithUnixSocketArgs struct {
 	Path   string
-	Source core.SocketID
+	Source socket.ID
 	Owner  string
 }
 
-func (s *containerSchema) withUnixSocket(ctx *router.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
+func (s *containerSchema) withUnixSocket(ctx *core.Context, parent *core.Container, args containerWithUnixSocketArgs) (*core.Container, error) {
 	socket, err := args.Source.ToSocket()
 	if err != nil {
 		return nil, err
 	}
-	return parent.WithUnixSocket(ctx, s.gw, args.Path, socket, args.Owner)
+	return parent.WithUnixSocket(ctx, s.bk, args.Path, socket, args.Owner)
 }
 
 type containerWithoutUnixSocketArgs struct {
 	Path string
 }
 
-func (s *containerSchema) withoutUnixSocket(ctx *router.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
+func (s *containerSchema) withoutUnixSocket(ctx *core.Context, parent *core.Container, args containerWithoutUnixSocketArgs) (*core.Container, error) {
 	return parent.WithoutUnixSocket(ctx, args.Path)
 }
 
-func (s *containerSchema) platform(ctx *router.Context, parent *core.Container, args any) (specs.Platform, error) {
+func (s *containerSchema) platform(ctx *core.Context, parent *core.Container, args any) (specs.Platform, error) {
 	return parent.Platform, nil
 }
 
@@ -661,8 +663,8 @@ type containerExportArgs struct {
 	MediaTypes        core.ImageMediaTypes
 }
 
-func (s *containerSchema) export(ctx *router.Context, parent *core.Container, args containerExportArgs) (bool, error) {
-	if err := parent.Export(ctx, s.host, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes, s.bkClient, s.solveOpts, s.solveCh); err != nil {
+func (s *containerSchema) export(ctx *core.Context, parent *core.Container, args containerExportArgs) (bool, error) {
+	if err := parent.Export(ctx, s.bk, args.Path, args.PlatformVariants, args.ForcedCompression, args.MediaTypes); err != nil {
 		return false, err
 	}
 
@@ -674,8 +676,17 @@ type containerImportArgs struct {
 	Tag    string
 }
 
-func (s *containerSchema) import_(ctx *router.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
-	return parent.Import(ctx, s.gw, s.host, args.Source, args.Tag, s.ociStore)
+func (s *containerSchema) import_(ctx *core.Context, parent *core.Container, args containerImportArgs) (*core.Container, error) { // nolint:revive
+	return parent.Import(
+		ctx,
+		args.Source,
+		args.Tag,
+		s.bk,
+		s.host,
+		s.importCache,
+		s.ociStore,
+		s.leaseManager,
+	)
 }
 
 type containerWithRegistryAuthArgs struct {
@@ -684,7 +695,7 @@ type containerWithRegistryAuthArgs struct {
 	Secret   core.SecretID `json:"secret"`
 }
 
-func (s *containerSchema) withRegistryAuth(ctx *router.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withRegistryAuth(ctx *core.Context, parents *core.Container, args containerWithRegistryAuthArgs) (*core.Container, error) {
 	secretBytes, err := s.secrets.GetSecret(ctx, args.Secret.String())
 	if err != nil {
 		return nil, err
@@ -701,7 +712,7 @@ type containerWithoutRegistryAuthArgs struct {
 	Address string
 }
 
-func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
+func (s *containerSchema) withoutRegistryAuth(_ *core.Context, parents *core.Container, args containerWithoutRegistryAuthArgs) (*core.Container, error) {
 	if err := s.auth.RemoveCredential(args.Address); err != nil {
 		return nil, err
 	}
@@ -709,15 +720,11 @@ func (s *containerSchema) withoutRegistryAuth(_ *router.Context, parents *core.C
 	return parents, nil
 }
 
-func (s *containerSchema) imageRef(ctx *router.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
-	return parent.ImageRefOrErr(ctx, s.gw)
+func (s *containerSchema) imageRef(ctx *core.Context, parent *core.Container, args containerWithVariableArgs) (string, error) {
+	return parent.ImageRefOrErr(ctx, s.bk)
 }
 
-func (s *containerSchema) hostname(ctx *router.Context, parent *core.Container, args any) (string, error) {
-	if !s.servicesEnabled {
-		return "", ErrServicesDisabled
-	}
-
+func (s *containerSchema) hostname(ctx *core.Context, parent *core.Container, args any) (string, error) {
 	parent, err := s.withDefaultExec(ctx, parent)
 	if err != nil {
 		return "", err
@@ -731,17 +738,13 @@ type containerEndpointArgs struct {
 	Scheme string
 }
 
-func (s *containerSchema) endpoint(ctx *router.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
-	if !s.servicesEnabled {
-		return "", ErrServicesDisabled
-	}
-
+func (s *containerSchema) endpoint(ctx *core.Context, parent *core.Container, args containerEndpointArgs) (string, error) {
 	parent, err := s.withDefaultExec(ctx, parent)
 	if err != nil {
 		return "", err
 	}
 
-	return parent.Endpoint(args.Port, args.Scheme)
+	return parent.Endpoint(s.bk, args.Port, args.Scheme)
 }
 
 type containerWithServiceDependencyArgs struct {
@@ -749,11 +752,7 @@ type containerWithServiceDependencyArgs struct {
 	Alias   string
 }
 
-func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
-	if !s.servicesEnabled {
-		return nil, ErrServicesDisabled
-	}
-
+func (s *containerSchema) withServiceBinding(ctx *core.Context, parent *core.Container, args containerWithServiceDependencyArgs) (*core.Container, error) {
 	svc, err := args.Service.ToContainer()
 	if err != nil {
 		return nil, err
@@ -764,7 +763,7 @@ func (s *containerSchema) withServiceBinding(ctx *router.Context, parent *core.C
 		return nil, err
 	}
 
-	return parent.WithServiceBinding(svc, args.Alias)
+	return parent.WithServiceBinding(s.bk, svc, args.Alias)
 }
 
 type containerWithExposedPortArgs struct {
@@ -773,11 +772,7 @@ type containerWithExposedPortArgs struct {
 	Description *string
 }
 
-func (s *containerSchema) withExposedPort(ctx *router.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
-	if !s.servicesEnabled {
-		return nil, ErrServicesDisabled
-	}
-
+func (s *containerSchema) withExposedPort(ctx *core.Context, parent *core.Container, args containerWithExposedPortArgs) (*core.Container, error) {
 	return parent.WithExposedPort(core.ContainerPort{
 		Protocol:    args.Protocol,
 		Port:        args.Port,
@@ -790,11 +785,7 @@ type containerWithoutExposedPortArgs struct {
 	Port     int
 }
 
-func (s *containerSchema) withoutExposedPort(ctx *router.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
-	if !s.servicesEnabled {
-		return nil, ErrServicesDisabled
-	}
-
+func (s *containerSchema) withoutExposedPort(ctx *core.Context, parent *core.Container, args containerWithoutExposedPortArgs) (*core.Container, error) {
 	return parent.WithoutExposedPort(args.Port, args.Protocol)
 }
 
@@ -806,11 +797,7 @@ type ExposedPort struct {
 	Description *string `json:"description,omitempty"`
 }
 
-func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Container, args any) ([]ExposedPort, error) {
-	if !s.servicesEnabled {
-		return nil, ErrServicesDisabled
-	}
-
+func (s *containerSchema) exposedPorts(ctx *core.Context, parent *core.Container, args any) ([]ExposedPort, error) {
 	// get descriptions from `Container.Ports` (not in the OCI spec)
 	ports := make(map[string]ExposedPort, len(parent.Ports))
 	for _, p := range parent.Ports {
@@ -846,13 +833,13 @@ func (s *containerSchema) exposedPorts(ctx *router.Context, parent *core.Contain
 	return exposedPorts, nil
 }
 
-func (s *containerSchema) withFocus(ctx *router.Context, parent *core.Container, args any) (*core.Container, error) {
+func (s *containerSchema) withFocus(ctx *core.Context, parent *core.Container, args any) (*core.Container, error) {
 	child := parent.Clone()
 	child.Focused = true
 	return child, nil
 }
 
-func (s *containerSchema) withoutFocus(ctx *router.Context, parent *core.Container, args any) (*core.Container, error) {
+func (s *containerSchema) withoutFocus(ctx *core.Context, parent *core.Container, args any) (*core.Container, error) {
 	child := parent.Clone()
 	child.Focused = false
 	return child, nil

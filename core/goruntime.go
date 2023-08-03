@@ -5,16 +5,16 @@ import (
 	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
-	bkgw "github.com/moby/buildkit/frontend/gateway/client"
+	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
-func (p *Project) goRuntime(ctx context.Context, gw bkgw.Client, progSock *Socket, pipeline pipeline.Path) (*Container, error) {
+func (p *Project) goRuntime(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (*Container, error) {
 	ctr, err := NewContainer("", pipeline, p.Platform)
 	if err != nil {
 		return nil, err
 	}
-	ctr, err = ctr.From(ctx, gw, "golang:1.20-alpine")
+	ctr, err = ctr.From(ctx, bk, "golang:1.20-alpine")
 	if err != nil {
 		return nil, err
 	}
@@ -28,21 +28,21 @@ func (p *Project) goRuntime(ctx context.Context, gw bkgw.Client, progSock *Socke
 	if err != nil {
 		return nil, err
 	}
-	ctr, err = ctr.WithMountedDirectory(ctx, gw, workdir, p.Directory, "")
+	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, p.Directory, "")
 	if err != nil {
 		return nil, err
 	}
 
-	ctr, err = ctr.WithMountedCache(ctx, gw, "/go/pkg/mod", NewCache("gomodcache"), nil, CacheSharingModeShared, "")
+	ctr, err = ctr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("gomodcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
 		return nil, err
 	}
-	ctr, err = ctr.WithMountedCache(ctx, gw, "/root/.cache/go-build", NewCache("gobuildcache"), nil, CacheSharingModeShared, "")
+	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("gobuildcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
 		return nil, err
 	}
 
-	ctr, err = ctr.WithExec(ctx, gw, progSock, p.Platform, ContainerExecOpts{
+	ctr, err = ctr.WithExec(ctx, bk, progSock, p.Platform, ContainerExecOpts{
 		Args: []string{
 			"go", "build", "-o", "/entrypoint", "-ldflags", "-s -d -w",
 			path.Join(workdir, path.Dir(p.ConfigPath)),

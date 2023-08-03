@@ -12,7 +12,8 @@ A client package for running `Dagger <https://dagger.io/>`_ pipelines.
    :caption: Reference
 
    connection
-   api
+   client
+   exceptions
 
 
 Project links

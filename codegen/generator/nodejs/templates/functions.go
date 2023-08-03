@@ -36,6 +36,11 @@ var (
 		"Subtract":            subtract,
 		"ConvertID":           commonFunc.ConvertID,
 		"IsSelfChainable":     commonFunc.IsSelfChainable,
+		"IsListOfObject":      commonFunc.IsListOfObject,
+		"GetArrayField":       commonFunc.GetArrayField,
+		"ToLowerCase":         commonFunc.ToLowerCase,
+		"ToUpperCase":         commonFunc.ToUpperCase,
+		"ToSingleType":        toSingleType,
 	}
 )
 
@@ -166,4 +171,8 @@ func argsHaveDescription(values introspection.InputValues) bool {
 	}
 
 	return false
+}
+
+func toSingleType(value string) string {
+	return value[:len(value)-2]
 }

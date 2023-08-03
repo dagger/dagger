@@ -6,9 +6,6 @@ import (
 
 	"github.com/dagger/dagger/codegen/generator"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/engine"
-	internalengine "github.com/dagger/dagger/internal/engine"
-	"github.com/dagger/dagger/router"
 	"github.com/stretchr/testify/require"
 )
 
@@ -16,22 +13,12 @@ var currentSchema *introspection.Schema
 
 func init() {
 	ctx := context.Background()
-
-	engineConf := engine.Config{
-		RunnerHost: internalengine.RunnerHost(),
-	}
-	err := engine.Start(ctx, engineConf, func(ctx context.Context, r *router.Router) error {
-		var err error
-		currentSchema, err = generator.Introspect(ctx, r)
-		if err != nil {
-			panic(err)
-		}
-		generator.SetSchemaParents(currentSchema)
-		return nil
-	})
+	var err error
+	currentSchema, err = generator.Introspect(ctx)
 	if err != nil {
 		panic(err)
 	}
+	generator.SetSchemaParents(currentSchema)
 }
 
 func getField(t *introspection.Type, name string) *introspection.Field {
@@ -44,10 +31,10 @@ func getField(t *introspection.Type, name string) *introspection.Field {
 }
 
 func TestSplitRequiredOptionalArgs(t *testing.T) {
-	t.Run("container exec", func(t *testing.T) {
+	t.Run("container withDefaultArgs", func(t *testing.T) {
 		container := currentSchema.Types.Get("Container")
 		require.NotNil(t, container)
-		execField := getField(container, "exec")
+		execField := getField(container, "withDefaultArgs")
 
 		t.Log(container)
 		required, optional := splitRequiredOptionalArgs(execField.Args)

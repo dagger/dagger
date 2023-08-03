@@ -7,7 +7,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Documentation for what this command does."
-    @spec description(t()) :: String.t()
+    @spec description(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def description(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "description")
       execute(selection, project_command.client)
@@ -16,7 +16,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Flags accepted by this command."
-    @spec flags(t()) :: [Dagger.ProjectCommandFlag.t()]
+    @spec flags(t()) :: {:ok, [Dagger.ProjectCommandFlag.t()] | nil} | {:error, term()}
     def flags(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "flags")
       execute(selection, project_command.client)
@@ -25,7 +25,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "A unique identifier for this command."
-    @spec id(t()) :: Dagger.ProjectCommand.t()
+    @spec id(t()) :: {:ok, Dagger.ProjectCommandID.t()} | {:error, term()}
     def id(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "id")
       execute(selection, project_command.client)
@@ -34,7 +34,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "The name of the command."
-    @spec name(t()) :: String.t()
+    @spec name(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
     def name(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "name")
       execute(selection, project_command.client)
@@ -43,7 +43,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "The name of the type returned by this command."
-    @spec result_type(t()) :: String.t()
+    @spec result_type(t()) :: {:ok, Dagger.String.t() | nil} | {:error, term()}
     def result_type(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "resultType")
       execute(selection, project_command.client)
@@ -52,7 +52,7 @@ defmodule Dagger.ProjectCommand do
 
   (
     @doc "Subcommands, if any, that this command provides."
-    @spec subcommands(t()) :: [Dagger.ProjectCommand.t()]
+    @spec subcommands(t()) :: {:ok, [Dagger.ProjectCommand.t()] | nil} | {:error, term()}
     def subcommands(%__MODULE__{} = project_command) do
       selection = select(project_command.selection, "subcommands")
       execute(selection, project_command.client)

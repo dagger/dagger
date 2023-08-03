@@ -63,8 +63,47 @@ defmodule Dagger.QueryBuilder.SelectionTest do
     root =
       Selection.query()
       |> Selection.select("a")
+      |> Selection.arg("arg", [])
+
+    assert Selection.build(root) == "query{a(arg:[])}"
+
+    root =
+      Selection.query()
+      |> Selection.select("a")
       |> Selection.arg("arg", ["value"])
 
     assert Selection.build(root) == "query{a(arg:[\"value\"])}"
+
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", ["value", "value2"])
+
+    assert Selection.build(root) == "query{a(arg:[\"value\",\"value2\"])}"
+
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", [%{"name" => "foo"}])
+
+    assert Selection.build(root) == "query{a(arg:[{name:\"foo\"}])}"
+  end
+
+  test "object args" do
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", %{"name" => "a", "value" => "b"})
+
+    assert Selection.build(root) == "query{a(arg:{name:\"a\",value:\"b\"})}"
+  end
+
+  test "string arg escape" do
+    root =
+      Selection.query()
+      |> Selection.select("a")
+      |> Selection.arg("arg", "\n\t\"")
+
+    assert Selection.build(root) == "query{a(arg:\"\\n\\t\\\"\")}"
   end
 end

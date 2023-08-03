@@ -11,7 +11,7 @@ import readline from "readline"
 import * as tar from "tar"
 import { fileURLToPath } from "url"
 
-import Client from "../api/client.gen.js"
+import { Client } from "../api/client.gen.js"
 import {
   EngineSessionConnectionTimeoutError,
   EngineSessionConnectParamsParseError,
@@ -54,8 +54,17 @@ export class Bin implements EngineConn {
 
   async Connect(opts: ConnectOpts): Promise<Client> {
     if (!this.binPath) {
+      if (opts.LogOutput) {
+        opts.LogOutput.write("Downloading CLI... ")
+      }
+
       this.binPath = await this.downloadCLI()
+
+      if (opts.LogOutput) {
+        opts.LogOutput.write("OK!\n")
+      }
     }
+
     return this.runEngineSession(this.binPath, opts)
   }
 
@@ -174,6 +183,10 @@ export class Bin implements EngineConn {
       }
     })
 
+    if (opts.LogOutput) {
+      opts.LogOutput.write("Creating new Engine session... ")
+    }
+
     this.subProcess = execaCommand(args.join(" "), {
       stdio: "pipe",
       reject: true,
@@ -193,19 +206,27 @@ export class Bin implements EngineConn {
 
     const timeOutDuration = 300000
 
+    if (opts.LogOutput) {
+      opts.LogOutput.write("OK!\nEstablishing connection to Engine... ")
+    }
+
     const connectParams: ConnectParams = (await Promise.race([
       this.readConnectParams(stdoutReader),
       new Promise((_, reject) => {
         setTimeout(() => {
           reject(
             new EngineSessionConnectionTimeoutError(
-              "timeout reading connect params from engine session",
+              "Engine connection timeout",
               { timeOutDuration }
             )
           )
         }, timeOutDuration).unref() // long timeout to account for extensions, though that should be optimized in future
       }),
     ])) as ConnectParams
+
+    if (opts.LogOutput) {
+      opts.LogOutput.write("OK!\n")
+    }
 
     return new Client({
       host: `127.0.0.1:${connectParams.port}`,
