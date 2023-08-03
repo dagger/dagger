@@ -3,6 +3,7 @@ defmodule Dagger.Directory do
   @moduledoc "A directory."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   (
@@ -143,6 +144,15 @@ defmodule Dagger.Directory do
         end
 
       %Dagger.Directory{selection: selection, client: directory.client}
+    end
+  )
+
+  (
+    @doc "Force evaluation in the engine."
+    @spec sync(t()) :: {:ok, Dagger.DirectoryID.t()} | {:error, term()}
+    def sync(%__MODULE__{} = directory) do
+      selection = select(directory.selection, "sync")
+      execute(selection, directory.client)
     end
   )
 

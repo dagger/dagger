@@ -126,66 +126,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Retrieves this container after executing the specified command inside it.\n\n\n\n## Optional Arguments\n\n* `args` - Command to run instead of the container's default command (e.g., [\"run\", \"main.go\"]).\n* `stdin` - Content to write to the command's standard input before closing (e.g., \"Hello world\").\n* `redirect_stdout` - Redirect the command's standard output to a file in the container (e.g., \"/tmp/stdout\").\n* `redirect_stderr` - Redirect the command's standard error to a file in the container (e.g., \"/tmp/stderr\").\n* `experimental_privileged_nesting` - Provide dagger access to the executed command.\nDo not use this option unless you trust the command being executed.\nThe command being executed WILL BE GRANTED FULL ACCESS TO YOUR HOST FILESYSTEM."
-    @deprecated "Replaced by `with_exec`"
-    @spec exec(t(), keyword()) :: Dagger.Container.t()
-    def exec(%__MODULE__{} = container, optional_args \\ []) do
-      selection = select(container.selection, "exec")
-
-      selection =
-        if is_nil(optional_args[:args]) do
-          selection
-        else
-          arg(selection, "args", optional_args[:args])
-        end
-
-      selection =
-        if is_nil(optional_args[:stdin]) do
-          selection
-        else
-          arg(selection, "stdin", optional_args[:stdin])
-        end
-
-      selection =
-        if is_nil(optional_args[:redirect_stdout]) do
-          selection
-        else
-          arg(selection, "redirectStdout", optional_args[:redirect_stdout])
-        end
-
-      selection =
-        if is_nil(optional_args[:redirect_stderr]) do
-          selection
-        else
-          arg(selection, "redirectStderr", optional_args[:redirect_stderr])
-        end
-
-      selection =
-        if is_nil(optional_args[:experimental_privileged_nesting]) do
-          selection
-        else
-          arg(
-            selection,
-            "experimentalPrivilegedNesting",
-            optional_args[:experimental_privileged_nesting]
-          )
-        end
-
-      %Dagger.Container{selection: selection, client: container.client}
-    end
-  )
-
-  (
-    @doc "Exit code of the last executed command. Zero means success.\n\nWill execute default command if none is set, or error if there's no default."
-    @spec exit_code(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
-    def exit_code(%__MODULE__{} = container) do
-      selection = select(container.selection, "exitCode")
-      execute(selection, container.client)
-    end
-  )
-
-  (
-    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
+    @doc "Writes the container as an OCI tarball to the destination file path on the host for the specified platform variants.\n\nReturn true on success.\nIt can also publishes platform variants.\n\n## Required Arguments\n\n* `path` - Host's destination path (e.g., \"./tarball\").\nPath can be relative to the engine's workdir or absolute.\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the exported image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip.\n* `media_types` - Use the specified media types for the exported image's layers. Defaults to OCI, which\nis largely compatible with most recent container runtimes, but Docker may be needed\nfor older runtimes without OCI support."
     @spec export(t(), Dagger.String.t(), keyword()) ::
             {:ok, Dagger.Boolean.t()} | {:error, term()}
     def export(%__MODULE__{} = container, path, optional_args \\ []) do
@@ -204,6 +145,13 @@ defmodule Dagger.Container do
           selection
         else
           arg(selection, "forcedCompression", optional_args[:forced_compression])
+        end
+
+      selection =
+        if is_nil(optional_args[:media_types]) do
+          selection
+        else
+          arg(selection, "mediaTypes", optional_args[:media_types])
         end
 
       execute(selection, container.client)
@@ -240,16 +188,6 @@ defmodule Dagger.Container do
       selection = select(container.selection, "from")
       selection = arg(selection, "address", address)
       %Dagger.Container{selection: selection, client: container.client}
-    end
-  )
-
-  (
-    @doc "Retrieves this container's root filesystem. Mounts are not included."
-    @deprecated "Replaced by `rootfs`"
-    @spec fs(t()) :: Dagger.Directory.t()
-    def fs(%__MODULE__{} = container) do
-      selection = select(container.selection, "fs")
-      %Dagger.Directory{selection: selection, client: container.client}
     end
   )
 
@@ -369,7 +307,7 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the published image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip."
+    @doc "Publishes this container as a new image to the specified address.\n\nPublish returns a fully qualified ref.\nIt can also publish platform variants.\n\n## Required Arguments\n\n* `address` - Registry's address to publish the image to.\n\nFormatted as [host]/[user]/[repo]:[tag] (e.g. \"docker.io/dagger/dagger:main\").\n\n## Optional Arguments\n\n* `platform_variants` - Identifiers for other platform specific containers.\nUsed for multi-platform image.\n* `forced_compression` - Force each layer of the published image to use the specified compression algorithm.\nIf this is unset, then if a layer already has a compressed blob in the engine's\ncache, that will be used (this can result in a mix of compression algorithms for\ndifferent layers). If this is unset and a layer has no compressed blob in the\nengine's cache, then it will be compressed using Gzip.\n* `media_types` - Use the specified media types for the published image's layers. Defaults to OCI, which\nis largely compatible with most recent registries, but Docker may be needed for older\nregistries without OCI support."
     @spec publish(t(), Dagger.String.t(), keyword()) ::
             {:ok, Dagger.String.t()} | {:error, term()}
     def publish(%__MODULE__{} = container, address, optional_args \\ []) do
@@ -388,6 +326,13 @@ defmodule Dagger.Container do
           selection
         else
           arg(selection, "forcedCompression", optional_args[:forced_compression])
+        end
+
+      selection =
+        if is_nil(optional_args[:media_types]) do
+          selection
+        else
+          arg(selection, "mediaTypes", optional_args[:media_types])
         end
 
       execute(selection, container.client)
@@ -607,22 +552,6 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` -"
-    @deprecated "Replaced by `with_rootfs`"
-    @spec with_fs(t(), Dagger.Directory.t()) :: Dagger.Container.t()
-    def with_fs(%__MODULE__{} = container, directory) do
-      selection = select(container.selection, "withFS")
-
-      (
-        {:ok, id} = Dagger.Directory.id(directory)
-        selection = arg(selection, "id", id)
-      )
-
-      %Dagger.Container{selection: selection, client: container.client}
-    end
-  )
-
-  (
     @doc "Retrieves this container plus the contents of the given file copied to the given path.\n\n## Required Arguments\n\n* `path` - Location of the copied file (e.g., \"/tmp/file.txt\").\n* `source` - Identifier of the file to copy.\n\n## Optional Arguments\n\n* `permissions` - Permission given to the copied file (e.g., 0600).\n\nDefault: 0644.\n* `owner` - A user:group to set for the file.\n\nThe user and group can either be an ID (1000:1000) or a name (foo:bar).\n\nIf the group is omitted, it defaults to the same as the user."
     @spec with_file(t(), Dagger.String.t(), Dagger.File.t(), keyword()) :: Dagger.Container.t()
     def with_file(%__MODULE__{} = container, path, source, optional_args \\ []) do
@@ -648,6 +577,15 @@ defmodule Dagger.Container do
           arg(selection, "owner", optional_args[:owner])
         end
 
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Indicate that subsequent operations should be featured more prominently in\nthe UI."
+    @spec with_focus(t()) :: Dagger.Container.t()
+    def with_focus(%__MODULE__{} = container) do
+      selection = select(container.selection, "withFocus")
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
@@ -834,14 +772,14 @@ defmodule Dagger.Container do
   )
 
   (
-    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `id` -"
+    @doc "Initializes this container from this DirectoryID.\n\n## Required Arguments\n\n* `directory` -"
     @spec with_rootfs(t(), Dagger.Directory.t()) :: Dagger.Container.t()
     def with_rootfs(%__MODULE__{} = container, directory) do
       selection = select(container.selection, "withRootfs")
 
       (
         {:ok, id} = Dagger.Directory.id(directory)
-        selection = arg(selection, "id", id)
+        selection = arg(selection, "directory", id)
       )
 
       %Dagger.Container{selection: selection, client: container.client}
@@ -949,6 +887,15 @@ defmodule Dagger.Container do
           arg(selection, "protocol", optional_args[:protocol])
         end
 
+      %Dagger.Container{selection: selection, client: container.client}
+    end
+  )
+
+  (
+    @doc "Indicate that subsequent operations should not be featured more prominently\nin the UI.\n\nThis is the initial state of all containers."
+    @spec without_focus(t()) :: Dagger.Container.t()
+    def without_focus(%__MODULE__{} = container) do
+      selection = select(container.selection, "withoutFocus")
       %Dagger.Container{selection: selection, client: container.client}
     end
   )
