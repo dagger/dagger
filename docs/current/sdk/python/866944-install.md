@@ -11,10 +11,10 @@ import TabItem from "@theme/TabItem";
 The Dagger Python SDK requires [Python 3.10 or later](https://docs.python.org/3/using/index.html). Using a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments) is recommended.
 :::
 
-Install the Dagger Python SDK in your project's virtual environment using `pip` or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
+Install the Dagger Python SDK in your project's virtual environment using [PyPI](https://pypi.org/project/dagger-io/) or [Conda](https://anaconda.org/conda-forge/dagger-io) (from the [conda-forge](https://conda-forge.org/docs/user/introduction.html#how-can-i-install-packages-from-conda-forge) channel):
 
 <Tabs>
-<TabItem value="pip">
+<TabItem value="PyPI">
 
 ```shell
 pip install dagger-io
@@ -22,7 +22,7 @@ pip install dagger-io
 
 </TabItem>
 
-<TabItem value="conda">
+<TabItem value="Conda">
 
 ```shell
 conda install dagger-io
