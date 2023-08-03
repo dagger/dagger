@@ -1,6 +1,0 @@
-kind: Added
-body: 'engine: implement `Host.setSecretFile` to securely set binary files as secrets'
-time: 2023-07-27T11:40:58.108919+02:00
-custom:
-  Author: grouville
-  PR: "5500"
