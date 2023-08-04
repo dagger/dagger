@@ -85,4 +85,6 @@ defmodule Dagger.EngineConn do
   def disconnect(%__MODULE__{session_pid: pid}) do
     Dagger.Session.stop(pid)
   end
+
+  def engine_version(), do: @dagger_cli_version
 end
