@@ -190,7 +190,6 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		if err != nil {
 			return fmt.Errorf("failed to add cmd: %w", err)
 		}
-		cmd.AddCommand(subChecks...)
 		for _, subCheck := range subChecks {
 			if subCheck.Annotations["leaf"] == "true" {
 				allLeafCmds[subCheck.Name()] = subCheck
@@ -198,7 +197,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		}
 	}
 
-	subCmd, _, err := cmd.Find(dynamicCmdArgs)
+	subCmd, restOfArgs, err := cmd.Find(dynamicCmdArgs)
 	if err != nil {
 		return fmt.Errorf("failed to find: %w", err)
 	}
@@ -213,10 +212,12 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 
 	if subCmd.Name() == cmd.Name() {
 		// default to running all checks
+		// TODO: this case also gets triggered if you try to run a check that doesn't exist, fix
 		var eg errgroup.Group
 		var i int
 		for _, leafCmd := range allLeafCmds {
 			leafCmd := leafCmd
+			leafCmd.SetArgs(restOfArgs)
 			i++
 			eg.Go(leafCmd.Execute)
 		}
@@ -227,6 +228,7 @@ func RunCheck(ctx context.Context, _ *client.Client, c *dagger.Client, loadedEnv
 		return nil
 	}
 
+	subCmd.SetArgs(restOfArgs)
 	err = subCmd.Execute()
 	if err != nil {
 		return fmt.Errorf("failed to execute subcmd: %w", err)
