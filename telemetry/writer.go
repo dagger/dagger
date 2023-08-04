@@ -45,12 +45,19 @@ func (t *writer) WriteStatus(ev *progrock.StatusUpdate) error {
 
 	for _, m := range ev.Memberships {
 		for _, vid := range m.Vertexes {
-			t.maybeEmitOp(ts, vid, false)
+			if v, found := t.pipeliner.Vertex(vid); found {
+				t.maybeEmitOp(ts, v, false)
+			}
 		}
 	}
-
-	for _, v := range ev.Vertexes {
-		t.maybeEmitOp(ts, v.Id, true)
+	for _, eventVertex := range ev.Vertexes {
+		if v, found := t.pipeliner.Vertex(eventVertex.Id); found {
+			// override the vertex with the current event vertex since a
+			// single PipelineEvent could contain duplicated vertices with
+			// different data like started and completed
+			v.Vertex = eventVertex
+			t.maybeEmitOp(ts, v, true)
+		}
 	}
 
 	for _, l := range ev.Logs {
@@ -72,12 +79,7 @@ func (t *writer) Close() error {
 // maybeEmitOp emits a OpPayload for a vertex if either A) an OpPayload hasn't
 // been emitted yet because we saw the vertex before its membership, or B) the
 // vertex has been updated.
-func (t *writer) maybeEmitOp(ts time.Time, vid string, isUpdated bool) {
-	v, found := t.pipeliner.Vertex(vid)
-	if !found {
-		return
-	}
-
+func (t *writer) maybeEmitOp(ts time.Time, v *PipelinedVertex, isUpdated bool) {
 	if len(v.Groups) == 0 {
 		// should be impossible, since the vertex is found and we've processed
 		// a membership for it
@@ -94,7 +96,7 @@ func (t *writer) maybeEmitOp(ts time.Time, vid string, isUpdated bool) {
 	pipeline := v.Pipelines[0]
 
 	key := vertexMembership{
-		vertexID: vid,
+		vertexID: v.Id,
 		groupID:  group,
 	}
 
