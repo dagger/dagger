@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'core: handle v prefix in version compatibility check'
-time: 2023-08-04T08:56:22.404513041-07:00
-custom:
-  Author: sipsma
-  PR: "5578"

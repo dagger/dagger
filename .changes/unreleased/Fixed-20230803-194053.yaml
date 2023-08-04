@@ -1,6 +1,0 @@
-kind: Fixed
-body: 'cli: fix `dagger run` not showing command progress'
-time: 2023-08-03T19:40:53.394254+01:00
-custom:
-  Author: vito
-  PR: "5564"
