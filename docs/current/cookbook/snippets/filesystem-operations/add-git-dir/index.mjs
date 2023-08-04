@@ -3,7 +3,6 @@ import { connect } from "@dagger.io/dagger"
 // create Dagger client
 connect(
   async (client) => {
-
     // get repository at specified branch
     const project = client
       .git("https://github.com/dagger/dagger")
