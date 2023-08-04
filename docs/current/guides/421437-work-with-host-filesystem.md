@@ -212,6 +212,28 @@ The following example creates a file in a container's `/tmp` directory and then 
 </TabItem>
 </Tabs>
 
+## Important notes
+
+Using the host filesystem in your Dagger pipeline is convenient, but there are some important considerations to keep in mind:
+
+- If a file loaded from the host changes even slightly (including minor changes such as a timestamp change with the file contents left unmodified), then the Dagger cache will be invalidated. An extremely common source of invalidations occurs when loading the `.git` directory from the host filesystem, as that directory will change frequently, including when there have been no actual changes to any source code.
+
+  :::tip
+  To maximize cache re-use, it's important to use the include/exclude options for local directories to only include the files/directories needed for the pipeline. Excluding the `.git` directory is highly advisable unless there's a strong need to be able to perform Git operations on top of the loaded directory inside Dagger.
+  :::
+
+- The host directory is synchronized into the Dagger Engine similar to `rsync` or `scp`; it's not a "bind mount". This means that any change you make to the loaded directory in your Dagger pipeline will not result in a change to the directory on the host.
+
+  :::warning
+  If you want the changes made to a loaded local directory inside a Dagger pipeline to be reflected on the host, it needs to be explictly exported to the host. However, this should be approached with caution, since any overlap in the files being exported with the files on the host will result in the host files being overwritten.
+  :::
+
+- Synchronization of a local directory happens once per Dagger client instance (in user-facing terms, once per `dagger.Connect` call in the Dagger SDKs). This means that if you load the local directory, then make changes to it on the host, those changes will not be reloaded within the context of a single Dagger client. Furthermore, due to lazy executions, the loading happens the first time the directory is used in a non-lazy operation.
+
+  :::tip
+  It's safest to not modify a loaded host directory at all while a Dagger client is running, as otherwise it is hard to predict what will be loaded.
+  :::
+
 ## Conclusion
 
 This guide introduced you to the functions available in the Dagger SDKs to work with the host filesystem. It provided explanations and code samples demonstrating how to set the host working directory, read directory contents (with and without pathname filters), mount a host directory in a container and export a directory from a container to the host.
