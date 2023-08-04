@@ -1,4 +1,4 @@
-name: "Publish Go SDK"
+name: "Publish Elixir SDK"
 on:
   push:
     branches: ["main"]
