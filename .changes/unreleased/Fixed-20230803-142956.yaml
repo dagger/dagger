@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'core: fix exports of files larger than default grpc max message size'
+time: 2023-08-03T14:29:56.093508143-07:00
+custom:
+  Author: sipsma
+  PR: "5570"

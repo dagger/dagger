@@ -1458,7 +1458,7 @@ func (container *Container) Publish(
 		}
 		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
-			Config:     container.Config,
+			Config:     variant.Config,
 		}
 		services.Merge(variant.Services)
 	}
@@ -1553,7 +1553,7 @@ func (container *Container) Export(
 		}
 		inputByPlatform[platforms.Format(variant.Platform)] = buildkit.ContainerExport{
 			Definition: def.ToPB(),
-			Config:     container.Config,
+			Config:     variant.Config,
 		}
 		services.Merge(variant.Services)
 	}

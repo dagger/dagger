@@ -153,11 +153,11 @@ func (c *Client) getContainerResult(
 		if err != nil {
 			return nil, err
 		}
+		combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
 		if len(inputByPlatform) == 1 {
 			combinedResult.AddMeta(exptypes.ExporterImageConfigKey, cfgBytes)
 			combinedResult.SetRef(ref)
 		} else {
-			combinedResult.AddMeta(fmt.Sprintf("%s/%s", exptypes.ExporterImageConfigKey, platformString), cfgBytes)
 			expPlatforms.Platforms[len(combinedResult.Refs)] = exptypes.Platform{
 				ID:       platformString,
 				Platform: platform,
