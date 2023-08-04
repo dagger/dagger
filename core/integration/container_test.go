@@ -2517,17 +2517,24 @@ func TestContainerPublish(t *testing.T) {
 	defer c.Close()
 
 	testRef := registryRef("container-publish")
-	pushedRef, err := c.Container().
-		From(alpineImage).
-		Publish(ctx, testRef)
+
+	entrypoint := []string{"echo", "im-a-entrypoint"}
+	ctr := c.Container().From(alpineImage).
+		WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+		WithEntrypoint(entrypoint)
+	pushedRef, err := ctr.Publish(ctx, testRef)
 	require.NoError(t, err)
 	require.NotEqual(t, testRef, pushedRef)
 	require.Contains(t, pushedRef, "@sha256:")
 
-	contents, err := c.Container().
-		From(pushedRef).Rootfs().File("/etc/alpine-release").Contents(ctx)
+	pulledCtr := c.Container().From(pushedRef)
+	contents, err := pulledCtr.File("/etc/alpine-release").Contents(ctx)
 	require.NoError(t, err)
 	require.Equal(t, contents, "3.18.2\n")
+
+	output, err := pulledCtr.WithExec(nil).Stdout(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "im-a-entrypoint\n", output)
 }
 
 func TestExecFromScratch(t *testing.T) {
@@ -2588,7 +2595,9 @@ func TestContainerExport(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	ctr := c.Container().From(alpineImage)
+	entrypoint := []string{"sh", "-c", "im-a-entrypoint"}
+	ctr := c.Container().From(alpineImage).
+		WithEntrypoint(entrypoint)
 
 	t.Run("to absolute dir", func(t *testing.T) {
 		imagePath := filepath.Join(dest, "image.tar")
@@ -2601,9 +2610,22 @@ func TestContainerExport(t *testing.T) {
 		require.Contains(t, entries, "oci-layout")
 		require.Contains(t, entries, "index.json")
 
-		// a single-platform image can include a manifest.json, making it
+		// a single-platform image includes a manifest.json, making it
 		// compatible with docker load
 		require.Contains(t, entries, "manifest.json")
+
+		dockerManifestBytes := readTarFile(t, imagePath, "manifest.json")
+		// NOTE: this is what buildkit integ tests do, use a one-off struct rather than actual defined type
+		var dockerManifest []struct {
+			Config string
+		}
+		require.NoError(t, json.Unmarshal(dockerManifestBytes, &dockerManifest))
+		require.Len(t, dockerManifest, 1)
+		configPath := dockerManifest[0].Config
+		configBytes := readTarFile(t, imagePath, configPath)
+		var img ocispecs.Image
+		require.NoError(t, json.Unmarshal(configBytes, &img))
+		require.Equal(t, entrypoint, img.Config.Entrypoint)
 	})
 
 	t.Run("to workdir", func(t *testing.T) {
@@ -2720,10 +2742,12 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	defer c.Close()
 
 	variants := make([]*dagger.Container, 0, len(platformToUname))
-	for platform := range platformToUname {
+	for platform, uname := range platformToUname {
 		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
 			From(alpineImage).
-			WithExec([]string{"uname", "-m"})
+			WithExec([]string{"uname", "-m"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+			WithEntrypoint([]string{"echo", uname})
 		variants = append(variants, ctr)
 	}
 
@@ -2754,12 +2778,58 @@ func TestContainerMultiPlatformExport(t *testing.T) {
 	exportedPlatforms := make(map[string]struct{})
 	for _, desc := range index.Manifests {
 		require.NotNil(t, desc.Platform)
-		exportedPlatforms[platforms.Format(*desc.Platform)] = struct{}{}
+		platformStr := platforms.Format(*desc.Platform)
+		exportedPlatforms[platformStr] = struct{}{}
+
+		manifestDigest := desc.Digest
+		manifestBytes := readTarFile(t, dest, "blobs/sha256/"+manifestDigest.Encoded())
+		var manifest ocispecs.Manifest
+		require.NoError(t, json.Unmarshal(manifestBytes, &manifest))
+		configDigest := manifest.Config.Digest
+		configBytes := readTarFile(t, dest, "blobs/sha256/"+configDigest.Encoded())
+		var config ocispecs.Image
+		require.NoError(t, json.Unmarshal(configBytes, &config))
+		require.Equal(t, []string{"echo", platformToUname[dagger.Platform(platformStr)]}, config.Config.Entrypoint)
 	}
 	for platform := range platformToUname {
 		delete(exportedPlatforms, string(platform))
 	}
 	require.Empty(t, exportedPlatforms)
+}
+
+// Multiplatform publish is also tested in more complicated scenarios in platform_test.go
+func TestContainerMultiPlatformPublish(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c, err := dagger.Connect(ctx, dagger.WithLogOutput(os.Stdout))
+	require.NoError(t, err)
+	defer c.Close()
+
+	variants := make([]*dagger.Container, 0, len(platformToUname))
+	for platform, uname := range platformToUname {
+		ctr := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From(alpineImage).
+			WithExec([]string{"uname", "-m"}).
+			WithDefaultArgs(dagger.ContainerWithDefaultArgsOpts{}).
+			WithEntrypoint([]string{"echo", uname})
+		variants = append(variants, ctr)
+	}
+
+	testRef := registryRef("container-multiplatform-publish")
+
+	publishedRef, err := c.Container().Publish(ctx, testRef, dagger.ContainerPublishOpts{
+		PlatformVariants: variants,
+	})
+	require.NoError(t, err)
+
+	for platform, uname := range platformToUname {
+		output, err := c.Container(dagger.ContainerOpts{Platform: platform}).
+			From(publishedRef).
+			WithExec(nil).Stdout(ctx)
+		require.NoError(t, err)
+		require.Equal(t, uname+"\n", output)
+	}
 }
 
 func TestContainerMultiPlatformImport(t *testing.T) {
