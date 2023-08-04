@@ -1,0 +1,6 @@
+kind: Fixed
+body: 'engine: report correct engine version by stamping engine image too'
+time: 2023-08-04T08:37:20.482919496-07:00
+custom:
+  Author: sipsma
+  PR: "5578"
