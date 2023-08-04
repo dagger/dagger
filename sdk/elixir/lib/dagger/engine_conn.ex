@@ -36,6 +36,7 @@ defmodule Dagger.EngineConn do
   @doc false
   def from_local_cli(opts) do
     with {:ok, bin} <- System.fetch_env("_EXPERIMENTAL_DAGGER_CLI_BIN"),
+         bin = Path.expand(bin),
          bin_path when is_binary(bin_path) <- System.find_executable(bin) do
       start_cli_session(bin_path, opts)
     else
