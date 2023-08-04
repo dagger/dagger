@@ -87,7 +87,7 @@ func (t Engine) Publish(ctx context.Context, version string) error {
 	)
 
 	digest, err := c.Container().Publish(ctx, ref, dagger.ContainerPublishOpts{
-		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),
+		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, version),
 	})
 	if err != nil {
 		return err
@@ -119,7 +119,7 @@ func (t Engine) TestPublish(ctx context.Context) error {
 
 	c = c.Pipeline("engine").Pipeline("test-publish")
 	_, err = c.Container().Export(ctx, "./engine.tar.gz", dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches),
+		PlatformVariants: util.DevEngineContainer(c, publishedEngineArches, ""),
 	})
 	return err
 }
@@ -156,7 +156,7 @@ func (t Engine) test(ctx context.Context, race bool) error {
 			`registry."privateregistry:5000"`: "http = true",
 		},
 	}
-	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, util.DefaultDevEngineOpts, opts)[0]
+	devEngine := util.DevEngineContainer(c.Pipeline("dev-engine"), []string{runtime.GOARCH}, "", util.DefaultDevEngineOpts, opts)[0]
 
 	// This creates an engine.tar container file that can be used by the integration tests.
 	// In particular, it is used by core/integration/remotecache_test.go to create a
@@ -270,7 +270,7 @@ func (t Engine) Dev(ctx context.Context) error {
 	tarPath := "./bin/engine.tar"
 
 	_, err = c.Container().Export(ctx, tarPath, dagger.ContainerExportOpts{
-		PlatformVariants: util.DevEngineContainer(c, arches),
+		PlatformVariants: util.DevEngineContainer(c, arches, ""),
 	})
 	if err != nil {
 		return err

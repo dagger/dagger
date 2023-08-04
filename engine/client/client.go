@@ -124,10 +124,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		cloudURL = tel.URL()
 		progMultiW = append(progMultiW, telemetry.NewWriter(tel))
 	}
-	if c.CloudURLCallback != nil && cloudURL != "" {
-		c.CloudURLCallback(cloudURL)
-	}
-
 	// NB(vito): use a _passthrough_ recorder at this layer, since we don't want
 	// to initialize a group; that's handled by the other side.
 	//
@@ -277,6 +273,10 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	}, backoff.WithContext(bo, connectRetryCtx))
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
+	}
+
+	if c.CloudURLCallback != nil && cloudURL != "" {
+		c.CloudURLCallback(cloudURL)
 	}
 
 	return c, ctx, nil
