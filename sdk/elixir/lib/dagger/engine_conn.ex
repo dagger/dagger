@@ -5,7 +5,7 @@ defmodule Dagger.EngineConn do
 
   defstruct [:port, :token, :session_pid]
 
-  @dagger_cli_version "0.6.4"
+  @dagger_cli_version "0.8.1"
 
   @doc false
   def get(opts) do
