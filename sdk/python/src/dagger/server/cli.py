@@ -1,52 +1,30 @@
 """Command line interface for the dagger extension runtime."""
-import logging
+import inspect
+import sys
 from importlib import import_module
-from typing import Annotated
+from typing import cast
 
-import typer
-from click import ClickException
-from strawberry import Schema
+from rich.console import Console
 
-from dagger.log import configure_logging
+from ._environment import Environment
+from ._exceptions import FatalError
 
-from . import _commands as commands
-from ._exceptions import SchemaValidationError
-from ._server import Server
-
-app = typer.Typer()
+errors = Console(stderr=True)
 
 
-@app.command()
-def main(
-    schema: Annotated[
-        bool,
-        typer.Option("-schema", help="Save schema to file and exit"),
-    ] = False
-):
+def app():
     """Entrypoint for a dagger extension."""
-    # Add current directory to path so that the main module can be imported.
     try:
-        server = get_server()
-    except SchemaValidationError as e:
-        # TODO: ClickException just prints the message in a bordered box
-        # with title "Error". For some errors we may want a bit more detail.
-        raise ClickException(str(e)) from e
+        env = get_environment()
+    except FatalError as e:
+        errors.print(e)
+        sys.exit(1)
 
-    configure_logging(logging.DEBUG if server.debug else logging.INFO)
-
-    if schema:
-        server.export_schema()
-        raise typer.Exit
-
-    server.execute()
+    env()
 
 
-def get_server(module_name: str = "main") -> Server:
-    """Get the server instance from the main module."""
-    # TODO: Temporarily always on debug during experimental phase.
-    # Support user configuration in a `pyproject.toml`.
-    debug = True
-
+def get_environment(module_name: str = "main") -> Environment:
+    """Get the environment instance from the main module."""
     try:
         module = import_module(module_name)
     except ModuleNotFoundError as e:
@@ -54,17 +32,30 @@ def get_server(module_name: str = "main") -> Server:
             f'The "{module_name}" module could not be found. '
             f'Did you create a "{module_name}.py" file in the root of your project?'
         )
-        raise ClickException(msg) from e
+        raise FatalError(msg) from e
 
-    # These add compatibility for full strawberry control.
-    if (server := getattr(module, "server", None)) and isinstance(server, Server):
-        return server
+    if (env := getattr(module, "env", None)) and isinstance(env, Environment):
+        return env
 
-    if (schema := getattr(module, "schema", None)) and isinstance(schema, Schema):
-        return Server(schema=schema, debug=debug)
+    envs = (
+        cast(Environment, attr)
+        for name, attr in inspect.getmembers(
+            module, lambda obj: isinstance(obj, Environment)
+        )
+        if not name.startswith("_")
+    )
 
-    if schema := commands.get_schema(module):
-        return Server(schema=schema, debug=debug)
+    env = next(envs, None)
 
-    msg = f'No importable commands were found in module "{module_name}".'
-    raise ClickException(msg)
+    if not env:
+        msg = f'No environment was found in module "{module_name}".'
+        raise FatalError(msg)
+
+    if next(envs, None):
+        msg = (
+            f'Multiple environments were found in module "{module_name}". '
+            "Please ensure that there is only one environment defined."
+        )
+        raise FatalError(msg)
+
+    return env
