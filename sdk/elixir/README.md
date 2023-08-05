@@ -32,12 +32,16 @@ Let's write a code below into a script:
 # ci.exs
 client = Dagger.connect!()
 
-client
-|> Dagger.Query.container([])
-|> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
-|> Dagger.Container.with_exec(["elixir", "--version"])
-|> Dagger.Container.stdout()
-|> IO.puts()
+{:ok, out} =
+  client
+  |> Dagger.Client.container([])
+  |> Dagger.Container.from("hexpm/elixir:1.14.4-erlang-25.3-debian-buster-20230227-slim")
+  |> Dagger.Container.with_exec(["elixir", "--version"])
+  |> Dagger.Container.stdout()
+
+IO.puts(out)
+
+Dagger.close(client)
 ```
 
 Then running with:
