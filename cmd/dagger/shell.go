@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -221,7 +222,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	if err != nil {
 		return err
 	}
-	defer wsconn.Close()
+	// wsconn is closed as part of the caller closing engineClient
 
 	// TODO:
 	// fmt.Fprintf(os.Stderr, "WE ARE SO CONNECTED\n")
@@ -248,6 +249,7 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	}
 	// Send updates as terminal gets resized
 	sigWinch := make(chan os.Signal, 1)
+	defer close(sigWinch)
 	signal.Notify(sigWinch, syscall.SIGWINCH)
 	go func() {
 		for range sigWinch {
@@ -327,9 +329,11 @@ func attachToShell(ctx context.Context, engineClient *client.Client, shellEndpoi
 	}()
 
 	if err := <-errCh; err != nil {
-		if !websocket.IsCloseError(err, websocket.CloseNormalClosure) {
-			return fmt.Errorf("websocket close: %w", err)
+		wsCloseErr := &websocket.CloseError{}
+		if errors.As(err, &wsCloseErr) && wsCloseErr.Code == websocket.CloseNormalClosure {
+			return nil
 		}
+		return fmt.Errorf("websocket close: %w", err)
 	}
 	if exitCode != 0 {
 		return fmt.Errorf("exited with code %d", exitCode)
