@@ -48,10 +48,10 @@ Add the executable bit to the shell script and then run the script by executing 
 
 ```shell
 chmod +x ./build.sh
-./build.sh
+dagger run ./build.sh
 ```
 
-The script outputs a string similar to the one below.
+The `dagger run` command executes the script in a Dagger session and displays live progress. On completion, the script outputs a string similar to the one below.
 
 ```shell
 Linux buildkitsandbox 5.15.0-53-generic #59-Ubuntu SMP Mon Oct 17 18:53:30 UTC 2022 x86_64 Linux
@@ -88,10 +88,12 @@ The return value of the final `export` field is a Boolean value indicating wheth
 Run the shell script by executing the command below:
 
 ```shell
-./build.sh
+dagger run ./build.sh
 ```
 
-As described above, the script retrieves the source code repository, mounts and builds it in a container, and writes the resulting binary file to the host. At the end of the process, the built Go application is available in the working directory on the host, as shown below:
+As described above, the script retrieves the source code repository, mounts and builds it in a container, and writes the resulting binary file to the host. You can follow along with the actions performed by the script using the live terminal output provided by the `dagger run` command.
+
+At the end of the process, the built Go application is available in the working directory on the host, as shown below:
 
 ```shell
 tree
@@ -102,6 +104,6 @@ tree
 
 ## Conclusion
 
-This tutorial introduced you to the Dagger CLI and its `dagger query` sub-command. It explained how to install the CLI and how to use it to execute Dagger GraphQL API queries. It also provided a working example of how to run a Dagger pipeline from the command line using a Bash shell script.
+This tutorial introduced you to the Dagger CLI and its `dagger query` and `dagger run` sub-commands. It explained how to install the CLI and how to use it to execute Dagger GraphQL API queries. It also provided a working example of how to run a Dagger pipeline from the command line using a Bash shell script.
 
 Use the [API Reference](https://docs.dagger.io/api/reference) and the [CLI Reference](./979595-reference.md) to learn more about the Dagger GraphQL API and the Dagger CLI respectively.

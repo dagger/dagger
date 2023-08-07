@@ -18,6 +18,7 @@ This tutorial assumes that:
 
 - You have a basic understanding of the Python programming language. If not, [read the Python tutorial](https://www.python.org/about/gettingstarted/).
 - You have a Python development environment with Python 3.10 or later. If not, install [Python](https://www.python.org/downloads/).
+- You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 - You have a Python application with tests defined and in a [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
 
@@ -66,10 +67,10 @@ This Python stub imports the Dagger SDK and defines an asynchronous function nam
 Run the Python CI tool by executing the command below from the project directory:
 
 ```shell
-python test.py
+dagger run python test.py
 ```
 
-The tool outputs a string similar to the one below.
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. The tool outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and Python 3.11.1
@@ -101,7 +102,7 @@ The `from_()`, `with_directory()`, `with_workdir()` and `with_exec()` methods al
 Run the Python CI tool by executing the command below:
 
 ```shell
-python test.py
+dagger run python test.py
 ```
 
 The tool tests the application, logging its operations to the console as it works. If all tests pass, it displays the final output below:
@@ -127,7 +128,7 @@ This revision of the CI tool does much the same as before, except that it now su
 Run the CI tool by executing the command below:
 
 ```shell
-python test.py
+dagger run python test.py
 ```
 
 The tool tests the application against each version in sequence and displays the following final output:
@@ -154,7 +155,7 @@ One further improvement is to speed things up by having the tests run concurrent
 Run the tool again by executing the command below:
 
 ```shell
-python test.py
+dagger run python test.py
 ```
 
 Now, the tool performs tests concurrently, with a noticeable difference in the total time required.

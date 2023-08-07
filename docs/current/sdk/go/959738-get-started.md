@@ -17,20 +17,20 @@ This tutorial assumes that:
 
 - You have a basic understanding of the Go programming language. If not, [read the Go tutorial](https://go.dev/doc/tutorial/getting-started).
 - You have a Go development environment with Go 1.20 or later. If not, [download and install Go](https://go.dev/doc/install).
+- You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 :::note
-This tutorial creates a Go CI tool using the Dagger Go SDK. It uses this tool to build the Go application in the current directory. The binary from this guide can be used to build any Go project.
+This tutorial creates a Go CI tool using the Dagger CLI and the Go SDK. It uses this tool to build the Go application in the current directory. The binary from this guide can be used to build any Go project.
 :::
 
 ## Step 1: Create a Go module for the tool
 
-The first step is to create a new Go module for the tool.
+The first step is to create a new Go module and sub-directory for the tool.
 
 ```shell
-mkdir multibuild
-cd multibuild
 go mod init multibuild
+mkdir multibuild
 ```
 
 ## Step 2: Create a Dagger client in Go
@@ -39,7 +39,7 @@ go mod init multibuild
 If you would prefer to use the final `main.go` file right away, it can be found in [Step 5](#step-5-create-a-multi-build-pipeline)
 :::
 
-Create a new file named `main.go` and add the following code to it.
+Create a new file in the `multibuild` sub-directory named `main.go` and add the following code to it.
 
 ```go file=snippets/get-started/step2/main.go
 ```
@@ -55,10 +55,10 @@ The `build()` function creates a Dagger client with [`dagger.Connect()`](https:/
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go run main.go
+dagger run go run multibuild/main.go
 ```
 
-The tool outputs the string below, although it isn't actually building anything yet.
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. Once complete, the Go CI tool outputs the string below, although it isn't actually building anything yet.
 
 ```shell
 Building with Dagger
@@ -89,7 +89,7 @@ The revised `build()` function is the main workhorse here, so let's step through
 Try the tool by executing the commands below:
 
 ```shell
-go run main.go
+dagger run go run multibuild/main.go
 ```
 
 The Go CI tool builds the current Go project and writes the build result to `build/` on the host.
@@ -120,10 +120,10 @@ This revision of the Go CI tool does much the same as before, except that it now
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go run main.go
+dagger run go run multibuild/main.go
 ```
 
-The Go CI tool builds the application for each OS/architecture combination and writes the build results to the host. You will see the build process run four times, once for each combination. Note that the each build is happening concurrently, because each build in the DAG do not depend on eachother.
+The Go CI tool builds the application for each OS/architecture combination and writes the build results to the host. You will see the build process run four times, once for each combination. Note that the builds are happening concurrently, because the builds do not depend on eachother.
 
 Use the `tree` command to see the build artifacts on the host, as shown below:
 
@@ -152,7 +152,7 @@ This revision of the Go CI tool adds another layer to the build matrix, this tim
 Try the Go CI tool by executing the commands below:
 
 ```shell
-go run main.go
+dagger run go run multibuild/main.go
 ```
 
 The Go CI tool builds the application for each OS/architecture/version combination and writes the results to the host. You will see the build process run eight times, once for each combination. Note that the builds are happening concurrently, because each build in the DAG does not depend on any other build.
