@@ -122,7 +122,6 @@ from = "/648215/quickstart"
 to = "/quickstart"
 status = 302
 
-**
 [[redirects]]
 # redirect old quickstart basics page
 from = "/319191/quickstart-basics"
