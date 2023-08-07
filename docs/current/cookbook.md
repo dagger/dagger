@@ -9,31 +9,6 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Add Git repository to container
-
-The following code listing adds a remote Git repository branch to a container at the `/src` container path and then executes a command in the container referencing the repository.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./cookbook/snippets/filesystem-operations/add-git-dir/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir/index.mjs
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./cookbook/snippets/filesystem-operations/add-git-dir/main.py
-```
-
-</TabItem>
-</Tabs>
-
 ### List host directory contents
 
 The following code listing obtains a reference to the host working directory and lists the directory's contents.

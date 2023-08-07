@@ -11,7 +11,11 @@ connect(
 
     // return container with repository
     // at /src path
+<<<<<<< HEAD
     // including only *.md files
+=======
+  	// including only *.md files
+>>>>>>> 9cafd301 (Added recipes)
     const contents = await client
       .container()
       .from("alpine:latest")
