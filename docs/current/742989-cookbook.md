@@ -9,31 +9,6 @@ import TabItem from "@theme/TabItem";
 
 ## Filesystem
 
-### Add Git repository to container
-
-The following code listing adds a remote Git repository branch to a container at the `/src` container path and then executes a command in the container referencing the repository.
-
-<Tabs groupId="language">
-<TabItem value="Go">
-
-```go file=./cookbook/snippets/filesystem-operations/add-git-dir/main.go
-```
-
-</TabItem>
-<TabItem value="Node.js">
-
-```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir/index.mjs
-```
-
-</TabItem>
-<TabItem value="Python">
-
-```python file=./cookbook/snippets/filesystem-operations/add-git-dir/main.py
-```
-
-</TabItem>
-</Tabs>
-
 ### List host directory contents
 
 The following code listing obtains a reference to the host working directory and lists the directory's contents.
@@ -193,6 +168,106 @@ The following code listing obtains a reference to the host working directory con
 </Tabs>
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
+
+### Add Git repository as directory to container
+
+The following code listing adds a remote Git repository branch to a container as a directory at the `/src` container path and then executes a command in the container to list the directory contents.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./cookbook/snippets/filesystem-operations/add-git-dir/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./cookbook/snippets/filesystem-operations/add-git-dir/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Add Git repository as directory to container with exclusions
+
+The following code listing adds a remote Git repository branch as a directory at the `/src` container path, excluding `*.md` files.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/filesystem-operations/add-git-dir-exclude/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/filesystem-operations/add-git-dir-exclude/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/filesystem-operations/add-git-dir-exclude/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Add Git repository as directory to container with inclusions
+
+The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including only `*.md` files.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/filesystem-operations/add-git-dir-include/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/filesystem-operations/add-git-dir-include/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/filesystem-operations/add-git-dir-include/main.py
+```
+
+</TabItem>
+</Tabs>
+
+### Add Git repository as directory to container with exclusions and inclusions
+
+The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including all files except files beginning with `.git`.
+
+<Tabs groupId="language">
+<TabItem value="Go">
+
+```go file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/main.go
+```
+
+</TabItem>
+<TabItem value="Node.js">
+
+```javascript file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/index.mjs
+```
+
+</TabItem>
+<TabItem value="Python">
+
+```python file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/main.py
+```
+
+</TabItem>
+</Tabs>
 
 ## Builds
 
