@@ -26,10 +26,10 @@ This tutorial assumes that:
 This tutorial creates a CI tool to test your Python application against multiple Python versions. If you don't have a Python application already, clone an existing Python project with a well-defined test suite before proceeding. A good example is the [FastAPI](https://github.com/tiangolo/fastapi) library, which you can clone as below:
 
 ```shell
-git clone https://github.com/tiangolo/fastapi
+git clone  --branch 0.101.0 https://github.com/tiangolo/fastapi
 ```
 
-The code samples in this tutorial are based on the above FastAPI project. If using a different project, adjust the code samples accordingly.
+The code samples in this tutorial are based on the above FastAPI project and tag. If using a different project, adjust the code samples accordingly.
 :::
 
 ## Step 1: Install the Dagger Python SDK
