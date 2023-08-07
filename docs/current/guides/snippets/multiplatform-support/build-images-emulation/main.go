@@ -74,6 +74,9 @@ func main() {
 		Container().
 		Publish(ctx, imageRepo, dagger.ContainerPublishOpts{
 			PlatformVariants: platformVariants,
+			// Some registries may require explicit use of docker mediatypes
+			// rather than the default OCI mediatypes
+			// MediaTypes: dagger.Dockermediatypes,
 		})
 	if err != nil {
 		panic(err)
