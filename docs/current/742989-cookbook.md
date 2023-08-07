@@ -201,19 +201,19 @@ The following code listing adds a remote Git repository branch as a directory at
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/filesystem-operations/add-git-dir-exclude/main.go
+```go file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./guides/snippets/filesystem-operations/add-git-dir-exclude/index.mjs
+```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/filesystem-operations/add-git-dir-exclude/main.py
+```python file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude/main.py
 ```
 
 </TabItem>
@@ -226,19 +226,19 @@ The following code listing adds a remote Git repository branch as a directory at
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/filesystem-operations/add-git-dir-include/main.go
+```go file=./cookbook/snippets/filesystem-operations/add-git-dir-include/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./guides/snippets/filesystem-operations/add-git-dir-include/index.mjs
+```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir-include/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/filesystem-operations/add-git-dir-include/main.py
+```python file=./cookbook/snippets/filesystem-operations/add-git-dir-include/main.py
 ```
 
 </TabItem>
@@ -251,19 +251,19 @@ The following code listing adds a remote Git repository branch as a directory at
 <Tabs groupId="language">
 <TabItem value="Go">
 
-```go file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/main.go
+```go file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude-include/main.go
 ```
 
 </TabItem>
 <TabItem value="Node.js">
 
-```javascript file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/index.mjs
+```javascript file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude-include/index.mjs
 ```
 
 </TabItem>
 <TabItem value="Python">
 
-```python file=./guides/snippets/filesystem-operations/add-git-dir-exclude-include/main.py
+```python file=./cookbook/snippets/filesystem-operations/add-git-dir-exclude-include/main.py
 ```
 
 </TabItem>
