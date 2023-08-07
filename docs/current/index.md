@@ -38,7 +38,7 @@ Dagger may be a good fit if you are...
 
 ## Getting started
 
-To get started with Dagger, use our [quickstart](./quickstart/648215-quickstart-introduction.mdx), which walks you through the basics of creating and using a pipeline with our SDKs.
+To get started with Dagger, use our [quickstart](./quickstart/index.mdx), which walks you through the basics of creating and using a pipeline with our SDKs.
 
 Alternatively, choose an SDK and follow that SDK's getting started guide.
 

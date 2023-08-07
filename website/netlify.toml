@@ -35,19 +35,19 @@ status = 302
 [[redirects]]
 # redirect single-language guide index to unified guides index
 from = "/sdk/go/275922/guides"
-to = "/278912/guides"
+to = "/guides"
 status = 302
 
 [[redirects]]
 # redirect single-language guide index to unified guides index
 from = "/sdk/nodejs/947203/guides"
-to = "/278912/guides"
+to = "/guides"
 status = 302
 
 [[redirects]]
 # redirect single-language guide index to unified guides index
 from = "/sdk/python/234291/guides"
-to = "/278912/guides"
+to = "/guides"
 status = 302
 
 [[redirects]]
@@ -97,6 +97,32 @@ status = 302
 from = "/454108/python-ci"
 to = "/145912/ci"
 status = 302
+
+[[redirects]]
+# redirect old guides index page
+from = "/278912/guides"
+to = "/guides"
+status = 302
+
+[[redirects]]
+# redirect old cookbook index page
+from = "/7442989/cookbook"
+to = "/cookbook"
+status = 302
+
+[[redirects]]
+# redirect old FAQ index page
+from = "/162770/faq"
+to = "/faq"
+status = 302
+
+[[redirects]]
+# redirect old quickstart index page
+from = "/648215/quickstart"
+to = "/quickstart"
+status = 302
+
+
 
 # redirect to the playground's embed to maintain same origin
 # see https://github.com/dagger/dagger/pull/4753
