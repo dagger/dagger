@@ -48,31 +48,6 @@ defmodule Dagger.Service do
   )
 
   (
-    @doc "Defines a proxy to forward traffic from a host IP:Port to this service.\n\n## Required Arguments\n\n* `host_listen_address` - Host IP:Port for proxy binding. Port 0 implies any available port.\n\n## Optional Arguments\n\n* `service_port` - Service port to send traffic. Defaults to first exposed port.\n* `protocol` - Traffic protocol. Defaults to TCP."
-    @spec proxy(t(), Dagger.String.t(), keyword()) :: Dagger.Service.t()
-    def proxy(%__MODULE__{} = service, host_listen_address, optional_args \\ []) do
-      selection = select(service.selection, "proxy")
-      selection = arg(selection, "hostListenAddress", host_listen_address)
-
-      selection =
-        if is_nil(optional_args[:service_port]) do
-          selection
-        else
-          arg(selection, "servicePort", optional_args[:service_port])
-        end
-
-      selection =
-        if is_nil(optional_args[:protocol]) do
-          selection
-        else
-          arg(selection, "protocol", optional_args[:protocol])
-        end
-
-      %Dagger.Service{selection: selection, client: service.client}
-    end
-  )
-
-  (
     @doc "Start the service and wait for its health checks to succeed.\n\nServices bound to a Container do not need to be manually started."
     @spec start(t()) :: {:ok, Dagger.ServiceID.t()} | {:error, term()}
     def start(%__MODULE__{} = service) do
@@ -87,16 +62,6 @@ defmodule Dagger.Service do
     def stop(%__MODULE__{} = service) do
       selection = select(service.selection, "stop")
       execute(selection, service.client)
-    end
-  )
-
-  (
-    @doc "Accesses a Unix socket in the service.\n\n## Required Arguments\n\n* `path` - Location of the Unix socket (e.g., \"/var/run/docker.sock\")."
-    @spec unix_socket(t(), Dagger.String.t()) :: Dagger.Socket.t()
-    def unix_socket(%__MODULE__{} = service, path) do
-      selection = select(service.selection, "unixSocket")
-      selection = arg(selection, "path", path)
-      %Dagger.Socket{selection: selection, client: service.client}
     end
   )
 end
