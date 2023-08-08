@@ -13,7 +13,7 @@ func main() {
 		WithCheck_(Lint).
 		WithShell_(DevShell).
 		// WithExtension(ctx.Client().Environment().LoadFromUniverse("dagger/gosdk"), "go").
-		Serve(ctx)
+		Serve()
 }
 
 func srcDir(ctx dagger.Context) *dagger.Directory {

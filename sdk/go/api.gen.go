@@ -65,6 +65,31 @@ type PipelineLabel struct {
 	Value string `json:"value"`
 }
 
+type Apko struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+func (r *Apko) Alpine(packages []string) *Container {
+	q := r.q.Select("alpine")
+	q = q.Arg("packages", packages)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Apko) Wolfi(packages []string) *Container {
+	q := r.q.Select("wolfi")
+	q = q.Arg("packages", packages)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A directory whose contents persist across runs.
 type CacheVolume struct {
 	q *querybuilder.Selection
@@ -3434,11 +3459,10 @@ func (r *Client) With(f WithClientFunc) *Client {
 	return f(r)
 }
 
-func (r *Client) Alpine(packages []string) *Container {
-	q := r.q.Select("alpine")
-	q = q.Arg("packages", packages)
+func (r *Client) Apko() *Apko {
+	q := r.q.Select("apko")
 
-	return &Container{
+	return &Apko{
 		q: q,
 		c: r.c,
 	}
@@ -3795,16 +3819,6 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 
 	return &Socket{
-		q: q,
-		c: r.c,
-	}
-}
-
-func (r *Client) Wolfi(packages []string) *Container {
-	q := r.q.Select("wolfi")
-	q = q.Arg("packages", packages)
-
-	return &Container{
 		q: q,
 		c: r.c,
 	}

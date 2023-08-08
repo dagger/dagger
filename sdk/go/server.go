@@ -83,14 +83,9 @@ func (r *Environment) Serve() {
 	if input.Resolver == "" {
 		writeErrorf(fmt.Errorf("missing resolver"))
 	}
-	objName, fieldName, ok := strings.Cut(input.Resolver, ".")
+	_, fieldName, ok := strings.Cut(input.Resolver, ".")
 	if !ok {
 		writeErrorf(fmt.Errorf("invalid resolver name: %s", input.Resolver))
-	}
-
-	if objName != "Query" {
-		// TODO:
-		writeErrorf(fmt.Errorf("only Query is supported for now"))
 	}
 	fn := resolvers[fieldName]
 

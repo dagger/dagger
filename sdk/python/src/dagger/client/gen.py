@@ -128,6 +128,24 @@ class PipelineLabel(Input):
     """Label value."""
 
 
+class Apko(Type):
+    @typecheck
+    def alpine(self, packages: Sequence[str]) -> "Container":
+        _args = [
+            Arg("packages", packages),
+        ]
+        _ctx = self._select("alpine", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def wolfi(self, packages: Sequence[str]) -> "Container":
+        _args = [
+            Arg("packages", packages),
+        ]
+        _ctx = self._select("wolfi", _args)
+        return Container(_ctx)
+
+
 class CacheVolume(Type):
     """A directory whose contents persist across runs."""
 
@@ -3875,12 +3893,10 @@ class Port(Type):
 
 class Client(Root):
     @typecheck
-    def alpine(self, packages: Sequence[str]) -> Container:
-        _args = [
-            Arg("packages", packages),
-        ]
-        _ctx = self._select("alpine", _args)
-        return Container(_ctx)
+    def apko(self) -> Apko:
+        _args: list[Arg] = []
+        _ctx = self._select("apko", _args)
+        return Apko(_ctx)
 
     @typecheck
     def cache_volume(self, key: str) -> CacheVolume:
@@ -4209,14 +4225,6 @@ class Client(Root):
         _ctx = self._select("socket", _args)
         return Socket(_ctx)
 
-    @typecheck
-    def wolfi(self, packages: Sequence[str]) -> Container:
-        _args = [
-            Arg("packages", packages),
-        ]
-        _ctx = self._select("wolfi", _args)
-        return Container(_ctx)
-
     def with_(self, cb: Callable[["Client"], "Client"]) -> "Client":
         """Call the provided callable with current Client.
 
@@ -4319,6 +4327,7 @@ class Socket(Type):
 
 
 __all__ = [
+    "Apko",
     "BuildArg",
     "CacheID",
     "CacheSharingMode",

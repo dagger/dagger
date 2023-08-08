@@ -70,18 +70,18 @@ var doCmd = &cobra.Command{
 			defer c.Close()
 
 			load := vtx.Task("loading environment")
-			loadedProj, err := loadEnv(ctx, c)
+			loadedEnv, err := loadEnv(ctx, c)
 			load.Done(err)
 			if err != nil {
 				return err
 			}
 
-			envCmds, err := loadedProj.Commands(ctx)
+			envCmds, err := loadedEnv.Commands(ctx)
 			if err != nil {
 				return fmt.Errorf("failed to get environment commands: %w", err)
 			}
 			for _, envCmd := range envCmds {
-				subCmds, err := addCmd(ctx, nil, envCmd, c, engineClient)
+				subCmds, err := addCmd(ctx, nil, loadedEnv, envCmd, c, engineClient)
 				if err != nil {
 					return fmt.Errorf("failed to add cmd: %w", err)
 				}
@@ -117,7 +117,7 @@ var doCmd = &cobra.Command{
 }
 
 // nolint:gocyclo
-func addCmd(ctx context.Context, cmdStack []*cobra.Command, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client) ([]*cobra.Command, error) {
+func addCmd(ctx context.Context, cmdStack []*cobra.Command, env *dagger.Environment, envCmd dagger.EnvironmentCommand, c *dagger.Client, r *client.Client) ([]*cobra.Command, error) {
 	// TODO: this shouldn't be needed, there is a bug in our codegen for lists of objects. It should
 	// internally be doing this so it's not needed explicitly
 	envCmdID, err := envCmd.ID(ctx)
@@ -143,6 +143,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, envCmd dagger.Enviro
 	envFlags, err := envCmd.Flags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cmd flags: %w", err)
+	}
+
+	envName, err := env.Name(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get env name: %w", err)
 	}
 
 	// TODO:
@@ -177,6 +182,13 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, envCmd dagger.Enviro
 			varDefinitions := ast.VariableDefinitionList{}
 			topSelection := &ast.Field{}
 			curSelection := topSelection
+
+			// select the object for the environment
+			curSelection.Name = envName
+			newSelection := &ast.Field{}
+			curSelection.SelectionSet = ast.SelectionSet{newSelection}
+			curSelection = newSelection
+
 			for i, cmd := range cmdStack {
 				cmdName := getSubcommandName(cmd)
 				curSelection.Name = strcase.ToLowerCamel(cmdName)
@@ -276,6 +288,11 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, envCmd dagger.Enviro
 			}
 			var res string
 			resSelection := resMap
+			// select the env field name under query first
+			resSelection, ok := resSelection[envName].(map[string]any)
+			if !ok {
+				return fmt.Errorf("expected object, got %T", resSelection)
+			}
 			for i, cmd := range cmdStack {
 				next := resSelection[strcase.ToLowerCamel(getSubcommandName(cmd))]
 				switch next := next.(type) {
@@ -313,8 +330,8 @@ func addCmd(ctx context.Context, cmdStack []*cobra.Command, envCmd dagger.Enviro
 		commandAnnotations(subcmd.Annotations).addCommandSpecificFlag(flagName)
 	}
 	returnCmds := []*cobra.Command{subcmd}
-	for _, subProjCmd := range envSubcommands {
-		subCmds, err := addCmd(ctx, cmdStack, subProjCmd, c, r)
+	for _, subEnvCmd := range envSubcommands {
+		subCmds, err := addCmd(ctx, cmdStack, env, subEnvCmd, c, r)
 		if err != nil {
 			return nil, err
 		}

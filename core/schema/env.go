@@ -142,42 +142,42 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	if err != nil {
 		return nil, fmt.Errorf("failed to load env root directory: %w", err)
 	}
-	env, resolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+	env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load environment: %w", err)
 	}
 
-	resolvers := make(Resolvers)
 	doc, err := parser.ParseSchema(&ast.Source{Input: env.Schema})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse environment schema: %w: %s", err, env.Schema)
 	}
-	for _, def := range append(doc.Definitions, doc.Extensions...) {
-		def := def
-		if def.Kind != ast.Object {
-			continue
-		}
-		existingResolver, ok := resolvers[def.Name]
-		if !ok {
-			existingResolver = ObjectResolver{}
-		}
-		objResolver, ok := existingResolver.(ObjectResolver)
-		if !ok {
-			return nil, fmt.Errorf("failed to load environment: resolver for %s is not an object resolver", def.Name)
-		}
-		for _, field := range def.Fields {
-			field := field
-			objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
-				res, err := resolver(ctx, parent, args)
-				// don't check err yet, convert output may do some handling of that
-				res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
-				if err != nil {
-					return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
-				}
-				return res, nil
-			})
-		}
-		resolvers[def.Name] = objResolver
+	objName, err := env.GQLObjectName()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment object name: %w", err)
+	}
+	def := doc.Definitions.ForName(objName)
+	if def == nil {
+		return nil, fmt.Errorf("failed to find environment object %q in schema", objName)
+	}
+
+	objResolver := ObjectResolver{}
+	for _, field := range def.Fields {
+		field := field
+		objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+			res, err := fieldResolver(ctx, parent, args)
+			// don't check err yet, convert output may do some handling of that
+			res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
+			if err != nil {
+				return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
+			}
+			return res, nil
+		})
+	}
+	resolvers := Resolvers{
+		"Query": ObjectResolver{
+			env.Config.Name: PassthroughResolver,
+		},
+		def.Name: objResolver,
 	}
 
 	envId, err := env.ID()
@@ -224,6 +224,9 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 		checkRes.Output = output
 		return checkRes, nil
 	}
+	if resErr != nil {
+		return nil, resErr
+	}
 
 	// see if the output type needs to be converted from an id to a dagger object (container, directory, etc)
 	for objectName, baseResolver := range s.resolvers() {
@@ -239,7 +242,7 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 		// between the session and environment container.
 		outputStr, ok := rawOutput.(string)
 		if !ok {
-			return nil, fmt.Errorf("expected id string output for %s", objectName)
+			return nil, fmt.Errorf("expected id string output for %s, got %T", objectName, rawOutput)
 		}
 		return resolver.FromID(outputStr)
 	}
@@ -399,23 +402,19 @@ func (s *environmentSchema) setCommandStringFlag(ctx *core.Context, parent *core
 }
 
 func (s *environmentSchema) invokeCommand(ctx *core.Context, cmd *core.EnvironmentCommand, _ any) (map[string]any, error) {
-	// TODO: just for now, should namespace asap
-	parentObj := s.MergedSchemas.Schema().QueryType()
-	parentVal := map[string]any{}
-
-	// find the field resolver for this command, as installed during "load" above
+	// find the object resolver for the command's environment
 	var resolver Resolver
 	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == parentObj.Name() {
+		if objectName == cmd.ParentObjectName {
 			resolver = possibleResolver
 		}
 	}
 	if resolver == nil {
-		return nil, fmt.Errorf("no resolver for %s", parentObj.Name())
+		return nil, fmt.Errorf("no resolver for %s", cmd.ParentObjectName)
 	}
 	objResolver, ok := resolver.(ObjectResolver)
 	if !ok {
-		return nil, fmt.Errorf("resolver for %s is not an object resolver", parentObj.Name())
+		return nil, fmt.Errorf("resolver for %s is not an object resolver", cmd.ParentObjectName)
 	}
 	var fieldResolver graphql.FieldResolveFn
 	for fieldName, possibleFieldResolver := range objResolver {
@@ -424,17 +423,17 @@ func (s *environmentSchema) invokeCommand(ctx *core.Context, cmd *core.Environme
 		}
 	}
 	if fieldResolver == nil {
-		return nil, fmt.Errorf("no field resolver for %s.%s", parentObj.Name(), cmd.Name)
+		return nil, fmt.Errorf("no field resolver for %s.%s", cmd.ParentObjectName, cmd.Name)
 	}
 
 	// setup the inputs and invoke it
 	resolveParams := graphql.ResolveParams{
 		Context: ctx,
-		Source:  parentVal,
+		Source:  struct{}{}, // TODO: could support data fields too
 		Args:    map[string]any{},
 		Info: graphql.ResolveInfo{
 			FieldName:  cmd.Name,
-			ParentType: parentObj,
+			ParentType: s.MergedSchemas.Schema().Type(cmd.ParentObjectName),
 			// TODO: we don't currently use any of the other resolve info fields, but that could change
 		},
 	}
@@ -564,23 +563,19 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 
 // private helper, not in schema
 func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentCheck) (*core.EnvironmentCheckResult, error) {
-	// TODO: just for now, should namespace asap
-	parentObj := s.MergedSchemas.Schema().QueryType()
-	parentVal := map[string]any{}
-
-	// find the field resolver for this check, as installed during "load" above
+	// find the object resolver for the check's environment
 	var resolver Resolver
 	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == parentObj.Name() {
+		if objectName == check.ParentObjectName {
 			resolver = possibleResolver
 		}
 	}
 	if resolver == nil {
-		return nil, fmt.Errorf("no resolver for %s", parentObj.Name())
+		return nil, fmt.Errorf("no resolver for %q", check.ParentObjectName)
 	}
 	objResolver, ok := resolver.(ObjectResolver)
 	if !ok {
-		return nil, fmt.Errorf("resolver for %s is not an object resolver", parentObj.Name())
+		return nil, fmt.Errorf("resolver for %s is not an object resolver", check.ParentObjectName)
 	}
 	var fieldResolver graphql.FieldResolveFn
 	for fieldName, possibleFieldResolver := range objResolver {
@@ -589,28 +584,28 @@ func (s *environmentSchema) runCheck(ctx *core.Context, check *core.EnvironmentC
 		}
 	}
 	if fieldResolver == nil {
-		return nil, fmt.Errorf("no field resolver for %s.%s", parentObj.Name(), check.Name)
+		return nil, fmt.Errorf("no field resolver for %s.%s", check.ParentObjectName, check.Name)
 	}
 
 	// setup the inputs and invoke it
 	resolveParams := graphql.ResolveParams{
 		Context: ctx,
-		Source:  parentVal,
+		Source:  struct{}{}, // TODO: could support data fields too
 		Args:    map[string]any{},
 		Info: graphql.ResolveInfo{
 			FieldName:  check.Name,
-			ParentType: parentObj,
+			ParentType: s.MergedSchemas.Schema().Type(check.ParentObjectName),
 			// TODO: we don't currently use any of the other resolve info fields, but that could change
 		},
 	}
 	for _, flag := range check.Flags {
 		resolveParams.Args[flag.Name] = flag.SetValue
 	}
-
 	res, err := fieldResolver(resolveParams)
 	if err != nil {
 		return nil, err
 	}
+
 	// all the result type handling is done in convertOutput above
 	checkRes, ok := res.(*core.EnvironmentCheckResult)
 	if !ok {
@@ -661,52 +656,48 @@ func (s *environmentSchema) setShellStringFlag(ctx *core.Context, parent *core.E
 	return parent.SetStringFlag(args.Name, args.Value)
 }
 
-func (s *environmentSchema) shellEndpoint(ctx *core.Context, parent *core.EnvironmentShell, args any) (string, error) {
-	// TODO: just for now, should namespace asap
-	parentObj := s.MergedSchemas.Schema().QueryType()
-	parentVal := map[string]any{}
-
-	// find the field resolver for this shell, as installed during "load" above
+func (s *environmentSchema) shellEndpoint(ctx *core.Context, shell *core.EnvironmentShell, args any) (string, error) {
+	// find the object resolver for the shell's environment
 	var resolver Resolver
 	for objectName, possibleResolver := range s.resolvers() {
-		if objectName == parentObj.Name() {
+		if objectName == shell.ParentObjectName {
 			resolver = possibleResolver
 		}
 	}
 	if resolver == nil {
-		return "", fmt.Errorf("no resolver for %s", parentObj.Name())
+		return "", fmt.Errorf("no resolver for %s", shell.ParentObjectName)
 	}
 	objResolver, ok := resolver.(ObjectResolver)
 	if !ok {
-		return "", fmt.Errorf("resolver for %s is not an object resolver", parentObj.Name())
+		return "", fmt.Errorf("resolver for %s is not an object resolver", shell.ParentObjectName)
 	}
 	var fieldResolver graphql.FieldResolveFn
 	for fieldName, possibleFieldResolver := range objResolver {
-		if fieldName == parent.Name {
+		if fieldName == shell.Name {
 			fieldResolver = possibleFieldResolver
 		}
 	}
 	if fieldResolver == nil {
-		return "", fmt.Errorf("no field resolver for %s.%s", parentObj.Name(), parent.Name)
+		return "", fmt.Errorf("no field resolver for %s.%s", shell.ParentObjectName, shell.Name)
 	}
 
 	// setup the inputs and invoke it
 	resolveParams := graphql.ResolveParams{
 		Context: ctx,
-		Source:  parentVal,
+		Source:  struct{}{}, // TODO: could support data fields too
 		Args:    map[string]any{},
 		Info: graphql.ResolveInfo{
-			FieldName:  parent.Name,
-			ParentType: parentObj,
+			FieldName:  shell.Name,
+			ParentType: s.MergedSchemas.Schema().Type(shell.ParentObjectName),
 			// TODO: we don't currently use any of the other resolve info fields, but that could change
 		},
 	}
-	for _, flag := range parent.Flags {
+	for _, flag := range shell.Flags {
 		resolveParams.Args[flag.Name] = flag.SetValue
 	}
 	res, err := fieldResolver(resolveParams)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error resolving shell container: %w", err)
 	}
 
 	ctr, ok := res.(*core.Container)
@@ -717,7 +708,7 @@ func (s *environmentSchema) shellEndpoint(ctx *core.Context, parent *core.Enviro
 	// TODO: dedupe w/ containerSchema
 	endpoint, handler, err := ctr.ShellEndpoint(s.bk, s.progSockPath)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("error getting shell endpoint: %w", err)
 	}
 
 	s.MuxEndpoint(path.Join("/", endpoint), handler)

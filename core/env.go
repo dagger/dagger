@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path"
+	"strings"
 
 	"github.com/dagger/dagger/core/environmentconfig"
 	"github.com/dagger/dagger/core/pipeline"
@@ -215,12 +216,16 @@ func LoadEnvironment(
 	env.ConfigPath = configPath
 	env.Config = cfg
 	env.Platform = platform
-
-	resolver, err := env.resolver(ctx, bk, progSock, pipeline)
+	env.Schema, err = env.buildSchema()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get resolver: %w", err)
+		return nil, nil, fmt.Errorf("failed to build schema: %w", err)
 	}
-	return env, resolver, nil
+
+	fieldResolver, err := env.fieldResolver(ctx, bk, progSock, pipeline)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get fieldResolver: %w", err)
+	}
+	return env, fieldResolver, nil
 }
 
 // figure out if we were passed a path to a dagger.json file or a parent dir that may contain such a file
@@ -252,97 +257,219 @@ func runtime(
 	}
 }
 
-func (env *Environment) WithCommand(ctx context.Context, cmd *EnvironmentCommand) (*Environment, error) {
-	env = env.Clone()
-	if cmd.ResultType == "" {
-		// TODO: this should be allowed, return type can be Void in this case
-		return nil, fmt.Errorf("command %q has no result type", cmd.Name)
+func (env *Environment) GQLObjectName() (string, error) {
+	if env.Config.Name == "" {
+		return "", fmt.Errorf("environment has no name")
 	}
-	fieldDef := &ast.FieldDefinition{
-		Name:        cmd.Name,
-		Description: cmd.Description,
-		Type: &ast.Type{
-			NamedType: cmd.ResultType,
-			NonNull:   true,
-		},
+	// gql object name is capitalized environment name
+	// TODO: enforce allowed chars (or replace unallowed w/ allowed)
+	return strings.ToUpper(env.Config.Name[:1]) + env.Config.Name[1:], nil
+}
+
+func (env *Environment) buildSchema() (string, error) {
+	schemaDoc := &ast.SchemaDocument{}
+
+	objName, err := env.GQLObjectName()
+	if err != nil {
+		return "", fmt.Errorf("failed to get gql object name: %w", err)
 	}
-	for _, flag := range cmd.Flags {
-		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
-			Name: flag.Name,
-			// Type is always string for the moment
+	obj := &ast.Definition{
+		Name: objName,
+		Kind: ast.Object,
+	}
+
+	// extend Query root with a field for this environment's object, which
+	// will have fields for all the different entrypoints
+	schemaDoc.Extensions = append(schemaDoc.Extensions, &ast.Definition{
+		Name: "Query",
+		Kind: ast.Object,
+		Fields: ast.FieldList{&ast.FieldDefinition{
+			// field is just the env name, object type is the capitalized env name (objName)
+			Name: env.Config.Name,
+			// TODO: Description
 			Type: &ast.Type{
-				NamedType: "String",
+				NamedType: objName,
 				NonNull:   true,
 			},
-		})
+		}},
+	})
+
+	// commands
+	for _, cmd := range env.Commands {
+		cmd.ParentObjectName = objName
+		if cmd.ResultType == "" {
+			// TODO: this should be allowed, return type can be Void in this case
+			return "", fmt.Errorf("command %q has no result type", cmd.Name)
+		}
+		fieldDef := &ast.FieldDefinition{
+			Name:        cmd.Name,
+			Description: cmd.Description,
+			Type: &ast.Type{
+				NamedType: cmd.ResultType,
+				NonNull:   true,
+			},
+		}
+		for _, flag := range cmd.Flags {
+			fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+				Name: flag.Name,
+				// Type is always string for the moment
+				Type: &ast.Type{
+					NamedType: "String",
+					NonNull:   true,
+				},
+			})
+		}
+		obj.Fields = append(obj.Fields, fieldDef)
 	}
 
-	buf := &bytes.Buffer{}
-	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
-		Extensions: ast.DefinitionList{
-			&ast.Definition{
-				// TODO: we need some namespace
-				// TODO:
-				// Name:   "Extensions",
-				Name:   "Query",
-				Kind:   ast.Object,
-				Fields: ast.FieldList{fieldDef},
-			},
-		},
-	})
-	env.Schema = env.Schema + "\n" + buf.String()
+	// checks
+	checks := env.Checks
+	checkMemo := map[EnvironmentCheckID]struct{}{}
+	for len(checks) > 0 {
+		var newChecks []*EnvironmentCheck
+		for _, check := range checks {
+			check.ParentObjectName = objName
+			checkID, err := check.ID()
+			if err != nil {
+				return "", fmt.Errorf("failed to get check id: %w", err)
+			}
+			if _, ok := checkMemo[checkID]; ok {
+				continue
+			}
+			checkMemo[checkID] = struct{}{}
 
+			fieldDef := &ast.FieldDefinition{
+				Name:        check.Name,
+				Description: check.Description,
+				Type: &ast.Type{
+					NamedType: "EnvironmentCheckResult",
+					NonNull:   true,
+				},
+			}
+			for _, flag := range check.Flags {
+				fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+					Name: flag.Name,
+					// Type is always string for the moment
+					Type: &ast.Type{
+						NamedType: "String",
+						NonNull:   true,
+					},
+				})
+			}
+			// TODO: not sure about putting every subcheck in the object directly, should
+			// probably create objects for each check and extend those with subchecks instead
+			obj.Fields = append(obj.Fields, fieldDef)
+
+			for i, subcheckID := range check.Subchecks {
+				subcheck, err := subcheckID.ToEnvironmentCheck()
+				if err != nil {
+					return "", fmt.Errorf("failed to decode subcheck %q: %w", subcheckID, err)
+				}
+
+				// update the subcheck and parent check ids
+				subcheck.ParentObjectName = objName
+				subcheckID, err = subcheck.ID()
+				if err != nil {
+					return "", fmt.Errorf("failed to get subcheck id: %w", err)
+				}
+				check.Subchecks[i] = subcheckID
+
+				newChecks = append(newChecks, subcheck)
+			}
+		}
+		checks = newChecks
+	}
+
+	// shells
+	for _, shell := range env.Shells {
+		shell.ParentObjectName = objName
+		fieldDef := &ast.FieldDefinition{
+			Name:        shell.Name,
+			Description: shell.Description,
+			Type: &ast.Type{
+				// TODO: no hardcoding allowed
+				NamedType: "Container",
+				NonNull:   true,
+			},
+		}
+		for _, flag := range shell.Flags {
+			fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+				Name: flag.Name,
+				// Type is always string for the moment
+				Type: &ast.Type{
+					NamedType: "String",
+					NonNull:   true,
+				},
+			})
+		}
+		obj.Fields = append(obj.Fields, fieldDef)
+	}
+
+	// functions
+	for _, function := range env.Functions {
+		function.ParentObjectName = objName
+		fieldDef := &ast.FieldDefinition{
+			Name:        function.Name,
+			Description: function.Description,
+			Type: &ast.Type{
+				// TODO:
+				NamedType: function.ResultType,
+				NonNull:   true,
+			},
+		}
+		for _, arg := range function.Args {
+			typ := &ast.Type{
+				NamedType: arg.ArgType,
+				NonNull:   true, // TODO: support optional
+			}
+			if arg.IsList {
+				typ = &ast.Type{
+					Elem:    typ,
+					NonNull: true, // TODO: support optional
+				}
+			}
+			fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+				Name: arg.Name,
+				Type: typ,
+			})
+		}
+		obj.Fields = append(obj.Fields, fieldDef)
+	}
+
+	// add the fully filled-out object to the schema, compile the doc and return
+	schemaDoc.Definitions = append(schemaDoc.Definitions, obj)
+	buf := &bytes.Buffer{}
+	formatter.NewFormatter(buf).FormatSchemaDocument(schemaDoc)
+	return buf.String(), nil
+}
+
+func (env *Environment) WithCommand(ctx context.Context, cmd *EnvironmentCommand) (*Environment, error) {
+	env = env.Clone()
 	env.Commands = append(env.Commands, cmd)
+	return env, nil
+}
+
+func (env *Environment) WithShell(ctx context.Context, shell *EnvironmentShell) (*Environment, error) {
+	env = env.Clone()
+	env.Shells = append(env.Shells, shell)
+	return env, nil
+}
+
+func (env *Environment) WithFunction(ctx context.Context, function *EnvironmentFunction) (*Environment, error) {
+	env = env.Clone()
+	env.Functions = append(env.Functions, function)
 	return env, nil
 }
 
 func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) (*Environment, error) {
 	env = env.Clone()
 
-	fieldDef := &ast.FieldDefinition{
-		Name:        check.Name,
-		Description: check.Description,
-		Type: &ast.Type{
-			NamedType: "EnvironmentCheckResult",
-			NonNull:   true,
-		},
-	}
-	for _, flag := range check.Flags {
-		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
-			Name: flag.Name,
-			// Type is always string for the moment
-			Type: &ast.Type{
-				NamedType: "String",
-				NonNull:   true,
-			},
-		})
-	}
-
-	buf := &bytes.Buffer{}
-	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
-		Extensions: ast.DefinitionList{
-			&ast.Definition{
-				// TODO: we need some namespace
-				// TODO:
-				// Name:   "Extensions",
-				Name:   "Query",
-				Kind:   ast.Object,
-				Fields: ast.FieldList{fieldDef},
-			},
-		},
-	})
-	env.Schema = env.Schema + "\n" + buf.String()
-
-	checkID, err := check.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get check id: %w", err)
-	}
 	for i, subcheckID := range check.Subchecks {
 		subcheck, err := NewEnvironmentCheck(subcheckID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get subcheck %q: %w", subcheckID, err)
 		}
-		subcheck.ParentCheck = checkID
+		subcheck.IsSubcheck = true
 		newSubcheckID, err := subcheck.ID()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get subcheck id: %w", err)
@@ -354,106 +481,18 @@ func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) 
 		}
 	}
 
-	if check.ParentCheck == "" {
-		// only include top-level checks in the environment's check list
+	// only include top-level checks in the environment's check list
+	if !check.IsSubcheck {
 		env.Checks = append(env.Checks, check)
 	}
 	return env, nil
 }
 
-func (env *Environment) WithShell(ctx context.Context, shell *EnvironmentShell) (*Environment, error) {
-	env = env.Clone()
-	fieldDef := &ast.FieldDefinition{
-		Name:        shell.Name,
-		Description: shell.Description,
-		Type: &ast.Type{
-			// TODO: no hardcoding allowed
-			NamedType: "Container",
-			NonNull:   true,
-		},
-	}
-	for _, flag := range shell.Flags {
-		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
-			Name: flag.Name,
-			// Type is always string for the moment
-			Type: &ast.Type{
-				NamedType: "String",
-				NonNull:   true,
-			},
-		})
-	}
-
-	buf := &bytes.Buffer{}
-	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
-		Extensions: ast.DefinitionList{
-			&ast.Definition{
-				// TODO: we need some namespace
-				// TODO:
-				// Name:   "Extensions",
-				Name:   "Query",
-				Kind:   ast.Object,
-				Fields: ast.FieldList{fieldDef},
-			},
-		},
-	})
-	env.Schema = env.Schema + "\n" + buf.String()
-
-	env.Shells = append(env.Shells, shell)
-	return env, nil
-}
-
-func (env *Environment) WithFunction(ctx context.Context, function *EnvironmentFunction) (*Environment, error) {
-	env = env.Clone()
-	fieldDef := &ast.FieldDefinition{
-		Name:        function.Name,
-		Description: function.Description,
-		Type: &ast.Type{
-			// TODO:
-			NamedType: function.ResultType,
-			NonNull:   true,
-		},
-	}
-	for _, arg := range function.Args {
-		typ := &ast.Type{
-			NamedType: arg.ArgType,
-			NonNull:   true, // TODO: support optional
-		}
-		if arg.IsList {
-			typ = &ast.Type{
-				Elem:    typ,
-				NonNull: true, // TODO: support optional
-			}
-		}
-		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
-			Name: arg.Name,
-			Type: typ,
-		})
-	}
-
-	buf := &bytes.Buffer{}
-	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
-		Extensions: ast.DefinitionList{
-			&ast.Definition{
-				// TODO: we need some namespace
-				// TODO:
-				// Name:   "Extensions",
-				Name:   "Query",
-				Kind:   ast.Object,
-				Fields: ast.FieldList{fieldDef},
-			},
-		},
-	})
-	env.Schema = env.Schema + "\n" + buf.String()
-
-	env.Functions = append(env.Functions, function)
-	return env, nil
-}
-
-func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
+func (env *Environment) fieldResolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	return func(ctx *Context, parent any, args any) (any, error) {
 		ctr, err := runtime(ctx, bk, progSock, pipeline, env.Platform, env.Config.SDK, env.Directory, env.ConfigPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get runtime container for resolver: %w", err)
+			return nil, fmt.Errorf("failed to get runtime container for fieldResolver: %w", err)
 		}
 
 		resolverName := fmt.Sprintf("%s.%s", ctx.ResolveParams.Info.ParentType.Name(), ctx.ResolveParams.Info.FieldName)
@@ -505,10 +544,11 @@ func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progS
 }
 
 type EnvironmentCommand struct {
-	Name        string                   `json:"name"`
-	Flags       []EnvironmentCommandFlag `json:"flags"`
-	ResultType  string                   `json:"resultType"`
-	Description string                   `json:"description"`
+	Name             string                   `json:"name"`
+	Flags            []EnvironmentCommandFlag `json:"flags"`
+	ResultType       string                   `json:"resultType"`
+	Description      string                   `json:"description"`
+	ParentObjectName string                   `json:"parentObjectName"`
 }
 
 type EnvironmentCommandFlag struct {
@@ -571,11 +611,12 @@ func (cmd *EnvironmentCommand) SetStringFlag(name, value string) (*EnvironmentCo
 }
 
 type EnvironmentCheck struct {
-	Name        string                 `json:"name"`
-	Flags       []EnvironmentCheckFlag `json:"flags"`
-	Description string                 `json:"description"`
-	Subchecks   []EnvironmentCheckID   `json:"subchecks"`
-	ParentCheck EnvironmentCheckID     `json:"parent_check"`
+	Name             string                 `json:"name"`
+	Flags            []EnvironmentCheckFlag `json:"flags"`
+	Description      string                 `json:"description"`
+	Subchecks        []EnvironmentCheckID   `json:"subchecks"`
+	IsSubcheck       bool                   `json:"isSubcheck"`
+	ParentObjectName string                 `json:"parentObjectName"`
 }
 
 type EnvironmentCheckFlag struct {
@@ -588,8 +629,6 @@ type EnvironmentCheckResult struct {
 	Success bool   `json:"success"`
 	Output  string `json:"output"`
 	Name    string `json:"name"`
-
-	ParentCheck EnvironmentCheckID `json:"parent_check"`
 }
 
 func NewEnvironmentCheck(id EnvironmentCheckID) (*EnvironmentCheck, error) {
@@ -642,11 +681,6 @@ func (check *EnvironmentCheck) SetStringFlag(name, value string) (*EnvironmentCh
 
 func (check *EnvironmentCheck) WithSubcheck(subcheck *EnvironmentCheck) (*EnvironmentCheck, error) {
 	check = check.Clone()
-	var err error
-	subcheck.ParentCheck, err = check.ID()
-	if err != nil {
-		return nil, err
-	}
 	subcheckID, err := subcheck.ID()
 	if err != nil {
 		return nil, err
@@ -656,9 +690,10 @@ func (check *EnvironmentCheck) WithSubcheck(subcheck *EnvironmentCheck) (*Enviro
 }
 
 type EnvironmentShell struct {
-	Name        string                 `json:"name"`
-	Flags       []EnvironmentShellFlag `json:"flags"`
-	Description string                 `json:"description"`
+	Name             string                 `json:"name"`
+	Flags            []EnvironmentShellFlag `json:"flags"`
+	Description      string                 `json:"description"`
+	ParentObjectName string                 `json:"parentObjectName"`
 }
 
 type EnvironmentShellFlag struct {
@@ -715,10 +750,11 @@ func (cmd *EnvironmentShell) SetStringFlag(name, value string) (*EnvironmentShel
 }
 
 type EnvironmentFunction struct {
-	Name        string                   `json:"name"`
-	Args        []EnvironmentFunctionArg `json:"args"`
-	Description string                   `json:"description"`
-	ResultType  string                   `json:"resultType"`
+	Name             string                   `json:"name"`
+	Args             []EnvironmentFunctionArg `json:"args"`
+	Description      string                   `json:"description"`
+	ResultType       string                   `json:"resultType"`
+	ParentObjectName string                   `json:"parentObjectName"`
 }
 
 type EnvironmentFunctionArg struct {
