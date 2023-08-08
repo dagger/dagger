@@ -94,6 +94,23 @@ func (id EnvironmentShellID) ToEnvironmentShell() (*EnvironmentShell, error) {
 	return &environmentShell, nil
 }
 
+type EnvironmentFunctionID string
+
+func (id EnvironmentFunctionID) String() string {
+	return string(id)
+}
+
+func (id EnvironmentFunctionID) ToEnvironmentFunction() (*EnvironmentFunction, error) {
+	var environmentFunction EnvironmentFunction
+	if id == "" {
+		return &environmentFunction, nil
+	}
+	if err := resourceid.Decode(&environmentFunction, id); err != nil {
+		return nil, err
+	}
+	return &environmentFunction, nil
+}
+
 type Environment struct {
 	// The environment's root directory
 	Directory *Directory `json:"directory"`
@@ -106,9 +123,10 @@ type Environment struct {
 	// The environment's platform
 	Platform specs.Platform `json:"platform,omitempty"`
 	// TODO:
-	Commands []*EnvironmentCommand `json:"commands,omitempty"`
-	Checks   []*EnvironmentCheck   `json:"checks,omitempty"`
-	Shells   []*EnvironmentShell   `json:"shells,omitempty"`
+	Commands  []*EnvironmentCommand  `json:"commands,omitempty"`
+	Checks    []*EnvironmentCheck    `json:"checks,omitempty"`
+	Shells    []*EnvironmentShell    `json:"shells,omitempty"`
+	Functions []*EnvironmentFunction `json:"functions,omitempty"`
 }
 
 func NewEnvironment(id EnvironmentID) (*Environment, error) {
@@ -384,6 +402,53 @@ func (env *Environment) WithShell(ctx context.Context, shell *EnvironmentShell) 
 	return env, nil
 }
 
+func (env *Environment) WithFunction(ctx context.Context, function *EnvironmentFunction) (*Environment, error) {
+	env = env.Clone()
+	fieldDef := &ast.FieldDefinition{
+		Name:        function.Name,
+		Description: function.Description,
+		Type: &ast.Type{
+			// TODO:
+			NamedType: function.ResultType,
+			NonNull:   true,
+		},
+	}
+	for _, arg := range function.Args {
+		typ := &ast.Type{
+			NamedType: arg.ArgType,
+			NonNull:   true, // TODO: support optional
+		}
+		if arg.IsList {
+			typ = &ast.Type{
+				Elem:    typ,
+				NonNull: true, // TODO: support optional
+			}
+		}
+		fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
+			Name: arg.Name,
+			Type: typ,
+		})
+	}
+
+	buf := &bytes.Buffer{}
+	formatter.NewFormatter(buf).FormatSchemaDocument(&ast.SchemaDocument{
+		Extensions: ast.DefinitionList{
+			&ast.Definition{
+				// TODO: we need some namespace
+				// TODO:
+				// Name:   "Extensions",
+				Name:   "Query",
+				Kind:   ast.Object,
+				Fields: ast.FieldList{fieldDef},
+			},
+		},
+	})
+	env.Schema = env.Schema + "\n" + buf.String()
+
+	env.Functions = append(env.Functions, function)
+	return env, nil
+}
+
 func (env *Environment) resolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	return func(ctx *Context, parent any, args any) (any, error) {
 		ctr, err := runtime(ctx, bk, progSock, pipeline, env.Platform, env.Config.SDK, env.Directory, env.ConfigPath)
@@ -647,4 +712,60 @@ func (cmd *EnvironmentShell) SetStringFlag(name, value string) (*EnvironmentShel
 		}
 	}
 	return nil, fmt.Errorf("no flag named %q", name)
+}
+
+type EnvironmentFunction struct {
+	Name        string                   `json:"name"`
+	Args        []EnvironmentFunctionArg `json:"args"`
+	Description string                   `json:"description"`
+	ResultType  string                   `json:"resultType"`
+}
+
+type EnvironmentFunctionArg struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	ArgType     string `json:"argType"`
+	IsList      bool   `json:"isList"`
+}
+
+func NewEnvironmentFunction(id EnvironmentFunctionID) (*EnvironmentFunction, error) {
+	environmentCmd, err := id.ToEnvironmentFunction()
+	if err != nil {
+		return nil, err
+	}
+	return environmentCmd, nil
+}
+
+func (env *EnvironmentFunction) ID() (EnvironmentFunctionID, error) {
+	return resourceid.Encode[EnvironmentFunctionID](env)
+}
+
+func (cmd EnvironmentFunction) Clone() *EnvironmentFunction {
+	cp := cmd
+	cp.Args = cloneSlice(cmd.Args)
+	return &cp
+}
+
+func (cmd *EnvironmentFunction) WithName(name string) *EnvironmentFunction {
+	cmd = cmd.Clone()
+	cmd.Name = name
+	return cmd
+}
+
+func (cmd *EnvironmentFunction) WithArg(flag EnvironmentFunctionArg) *EnvironmentFunction {
+	cmd = cmd.Clone()
+	cmd.Args = append(cmd.Args, flag)
+	return cmd
+}
+
+func (cmd *EnvironmentFunction) WithDescription(description string) *EnvironmentFunction {
+	cmd = cmd.Clone()
+	cmd.Description = description
+	return cmd
+}
+
+func (cmd *EnvironmentFunction) WithResultType(resultType string) *EnvironmentFunction {
+	cmd = cmd.Clone()
+	cmd.ResultType = resultType
+	return cmd
 }

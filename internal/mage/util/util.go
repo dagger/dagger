@@ -85,7 +85,7 @@ func RepositoryGoCodeOnly(c *dagger.Client) *dagger.Directory {
 			// TODO:
 			// TODO:
 			// TODO:
-			"universe/dagger/**",
+			"universe/dagger/**/*",
 			"universe/universe.tar",
 			"universe/embed.go",
 		},

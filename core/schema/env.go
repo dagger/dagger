@@ -16,6 +16,7 @@ import (
 	"github.com/dagger/dagger/engine/buildkit"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
+	"github.com/moby/buildkit/util/bklog"
 	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
@@ -44,28 +45,41 @@ var environmentCheckIDResolver = stringResolver(core.EnvironmentCheckID(""))
 
 var environmentShellIDResolver = stringResolver(core.EnvironmentShellID(""))
 
+var environmentFunctionIDResolver = stringResolver(core.EnvironmentFunctionID(""))
+
 func (s *environmentSchema) Resolvers() Resolvers {
 	return Resolvers{
-		"EnvironmentID":        environmentIDResolver,
-		"EnvironmentCommandID": environmentCommandIDResolver,
-		"EnvironmentCheckID":   environmentCheckIDResolver,
-		"EnvironmentShellID":   environmentShellIDResolver,
+		"EnvironmentID":         environmentIDResolver,
+		"EnvironmentCommandID":  environmentCommandIDResolver,
+		"EnvironmentCheckID":    environmentCheckIDResolver,
+		"EnvironmentShellID":    environmentShellIDResolver,
+		"EnvironmentFunctionID": environmentFunctionIDResolver,
 		"Query": ObjectResolver{
-			"environment":        ToResolver(s.environment),
-			"environmentCommand": ToResolver(s.environmentCommand),
-			"environmentCheck":   ToResolver(s.environmentCheck),
-			"environmentShell":   ToResolver(s.environmentShell),
+			"environment":         ToResolver(s.environment),
+			"environmentCommand":  ToResolver(s.environmentCommand),
+			"environmentCheck":    ToResolver(s.environmentCheck),
+			"environmentShell":    ToResolver(s.environmentShell),
+			"environmentFunction": ToResolver(s.environmentFunction),
+			// TODO:
+			"loadUniverse": ToResolver(s.loadUniverse),
 		},
 		"Environment": ObjectResolver{
-			"id":               ToResolver(s.environmentID),
-			"load":             ToResolver(s.load),
-			"loadFromUniverse": ToResolver(s.loadFromUniverse),
-			"name":             ToResolver(s.environmentName),
-			"command":          ToResolver(s.command),
-			"withCommand":      ToResolver(s.withCommand),
-			"withCheck":        ToResolver(s.withCheck),
-			"withShell":        ToResolver(s.withShell),
-			"withExtension":    ToResolver(s.withExtension),
+			"id":            ToResolver(s.environmentID),
+			"load":          ToResolver(s.load),
+			"name":          ToResolver(s.environmentName),
+			"command":       ToResolver(s.command),
+			"withCommand":   ToResolver(s.withCommand),
+			"withCheck":     ToResolver(s.withCheck),
+			"withShell":     ToResolver(s.withShell),
+			"withExtension": ToResolver(s.withExtension),
+			"withFunction":  ToResolver(s.withFunction),
+		},
+		"EnvironmentFunction": ObjectResolver{
+			"id":              ToResolver(s.functionID),
+			"withName":        ToResolver(s.withFunctionName),
+			"withDescription": ToResolver(s.withFunctionDescription),
+			"withArg":         ToResolver(s.withFunctionArg),
+			"withResultType":  ToResolver(s.withFunctionResultType),
 		},
 		"EnvironmentCommand": ObjectResolver{
 			"id":              ToResolver(s.commandID),
@@ -232,74 +246,6 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 	return rawOutput, nil
 }
 
-type loadFromUniverseArgs struct {
-	Name string
-}
-
-var loadUniverseOnce = &sync.Once{}
-var universeDirID core.DirectoryID
-var loadUniverseErr error
-
-func (s *environmentSchema) loadFromUniverse(ctx *core.Context, parent *core.Environment, args loadFromUniverseArgs) (*core.Environment, error) {
-	// TODO: unpacking to a tmpdir and loading as a local dir sucks, but what's better?
-	loadUniverseOnce.Do(func() {
-		tempdir, err := os.MkdirTemp("", "dagger-universe")
-		if err != nil {
-			loadUniverseErr = err
-			return
-		}
-
-		tarReader := tar.NewReader(bytes.NewReader(universe.Tar))
-		for {
-			header, err := tarReader.Next()
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				loadUniverseErr = err
-				return
-			}
-			if header.FileInfo().IsDir() {
-				if err := os.MkdirAll(filepath.Join(tempdir, header.Name), header.FileInfo().Mode()); err != nil {
-					loadUniverseErr = err
-					return
-				}
-			} else {
-				if err := os.MkdirAll(filepath.Join(tempdir, filepath.Dir(header.Name)), header.FileInfo().Mode()); err != nil {
-					loadUniverseErr = err
-					return
-				}
-				f, err := os.OpenFile(filepath.Join(tempdir, header.Name), os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode())
-				if err != nil {
-					loadUniverseErr = err
-					return
-				}
-				defer f.Close()
-				if _, err := io.Copy(f, tarReader); err != nil {
-					loadUniverseErr = err
-					return
-				}
-			}
-		}
-
-		dir, err := core.NewHost().EngineServerDirectory(ctx, s.bk, tempdir, nil, "universe", s.platform, core.CopyFilter{})
-		if err != nil {
-			loadUniverseErr = err
-			return
-		}
-		universeDirID, loadUniverseErr = dir.ID()
-	})
-	if loadUniverseErr != nil {
-		return nil, loadUniverseErr
-	}
-
-	return s.load(ctx, parent, loadArgs{
-		Source: universeDirID,
-		// TODO: should be by name, not path
-		ConfigPath: filepath.Join("universe", args.Name),
-	})
-}
-
 type commandArgs struct {
 	Name string
 }
@@ -349,6 +295,18 @@ func (s *environmentSchema) withShell(ctx *core.Context, parent *core.Environmen
 	return parent.WithShell(ctx, cmd)
 }
 
+type withFunctionArgs struct {
+	ID core.EnvironmentFunctionID
+}
+
+func (s *environmentSchema) withFunction(ctx *core.Context, parent *core.Environment, args withFunctionArgs) (*core.Environment, error) {
+	cmd, err := args.ID.ToEnvironmentFunction()
+	if err != nil {
+		return nil, err
+	}
+	return parent.WithFunction(ctx, cmd)
+}
+
 type withExtensionArgs struct {
 	ID        core.EnvironmentID
 	Namespace string
@@ -381,6 +339,14 @@ type environmentShellArgs struct {
 
 func (s *environmentSchema) environmentShell(ctx *core.Context, parent *core.Query, args environmentShellArgs) (*core.EnvironmentShell, error) {
 	return core.NewEnvironmentShell(args.ID)
+}
+
+type environmentFunctionArgs struct {
+	ID core.EnvironmentFunctionID
+}
+
+func (s *environmentSchema) environmentFunction(ctx *core.Context, parent *core.Query, args environmentFunctionArgs) (*core.EnvironmentFunction, error) {
+	return core.NewEnvironmentFunction(args.ID)
 }
 
 func (s *environmentSchema) commandID(ctx *core.Context, parent *core.EnvironmentCommand, args any) (core.EnvironmentCommandID, error) {
@@ -756,4 +722,178 @@ func (s *environmentSchema) shellEndpoint(ctx *core.Context, parent *core.Enviro
 
 	s.MuxEndpoint(path.Join("/", endpoint), handler)
 	return "ws://dagger/" + endpoint, nil
+}
+
+// TODO:
+var loadUniverseOnce = &sync.Once{}
+var universeSchemas []ExecutableSchema
+var loadUniverseErr error
+
+func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, error) {
+	// TODO: unpacking to a tmpdir and loading as a local dir is dumb
+	loadUniverseOnce.Do(func() {
+		loadUniverseErr = func() error {
+			tempdir, err := os.MkdirTemp("", "dagger-universe")
+			if err != nil {
+				return fmt.Errorf("failed to create tempdir: %w", err)
+			}
+
+			tarReader := tar.NewReader(bytes.NewReader(universe.Tar))
+			var envPaths []string
+			for {
+				header, err := tarReader.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					return fmt.Errorf("failed to read tar header: %w", err)
+				}
+
+				// TODO: hack to skip broken envs, remove
+				if strings.HasPrefix(filepath.Clean(header.Name), "universe/_") {
+					bklog.G(ctx).Warnf("SKIPPING ENV %s", header.Name)
+					continue
+				}
+
+				if header.FileInfo().IsDir() {
+					if err := os.MkdirAll(filepath.Join(tempdir, header.Name), header.FileInfo().Mode()); err != nil {
+						return fmt.Errorf("failed to create dir %s: %w", header.Name, err)
+					}
+				} else {
+					if filepath.Base(header.Name) == "dagger.json" && strings.HasPrefix(filepath.Clean(header.Name), "universe/") {
+						envPaths = append(envPaths, filepath.Dir(header.Name))
+					}
+
+					if err := os.MkdirAll(filepath.Join(tempdir, filepath.Dir(header.Name)), header.FileInfo().Mode()); err != nil {
+						return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(header.Name), err)
+					}
+					f, err := os.OpenFile(filepath.Join(tempdir, header.Name), os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode())
+					if err != nil {
+						return fmt.Errorf("failed to create file %s: %w", header.Name, err)
+					}
+					defer f.Close()
+					if _, err := io.Copy(f, tarReader); err != nil {
+						return fmt.Errorf("failed to copy file %s: %w", header.Name, err)
+					}
+				}
+			}
+
+			universeDir, err := core.NewHost().EngineServerDirectory(ctx, s.bk, tempdir, nil, "universe", s.platform, core.CopyFilter{})
+			if err != nil {
+				return fmt.Errorf("failed to load universe dir: %w", err)
+			}
+
+			universeSchemas = make([]ExecutableSchema, len(envPaths))
+			var eg errgroup.Group
+			for i, envPath := range envPaths {
+				i, envPath := i, envPath
+				eg.Go(func() error {
+					// TODO: dedupe w/ load resolver
+					env, resolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
+					if err != nil {
+						return fmt.Errorf("failed to load environment: %w", err)
+					}
+
+					resolvers := make(Resolvers)
+					doc, err := parser.ParseSchema(&ast.Source{Input: env.Schema})
+					if err != nil {
+						return fmt.Errorf("failed to parse environment schema: %w: %s", err, env.Schema)
+					}
+					for _, def := range append(doc.Definitions, doc.Extensions...) {
+						def := def
+						if def.Kind != ast.Object {
+							continue
+						}
+						existingResolver, ok := resolvers[def.Name]
+						if !ok {
+							existingResolver = ObjectResolver{}
+						}
+						objResolver, ok := existingResolver.(ObjectResolver)
+						if !ok {
+							return fmt.Errorf("failed to load environment: resolver for %s is not an object resolver", def.Name)
+						}
+						for _, field := range def.Fields {
+							field := field
+							objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
+								res, err := resolver(ctx, parent, args)
+								// don't check err yet, convert output may do some handling of that
+								res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
+								if err != nil {
+									return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
+								}
+								return res, nil
+							})
+						}
+						resolvers[def.Name] = objResolver
+					}
+
+					envId, err := env.ID()
+					if err != nil {
+						return fmt.Errorf("failed to get environment id: %w", err)
+					}
+					universeSchemas[i] = StaticSchema(StaticSchemaParams{
+						Name:      digest.FromString(string(envId)).Encoded(),
+						Schema:    env.Schema,
+						Resolvers: resolvers,
+					})
+					return nil
+				})
+			}
+			return eg.Wait()
+		}()
+	})
+	if loadUniverseErr != nil {
+		bklog.G(ctx).Errorf("FAILED TO LOAD UNIVERSE: %s", loadUniverseErr)
+		return nil, loadUniverseErr
+	}
+
+	err := s.addSchemas(universeSchemas...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add universe schemas: %w", err)
+	}
+	return true, nil
+}
+
+func (s *environmentSchema) functionID(ctx *core.Context, parent *core.EnvironmentFunction, args any) (core.EnvironmentFunctionID, error) {
+	return parent.ID()
+}
+
+type withFunctionNameArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) withFunctionName(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionNameArgs) (*core.EnvironmentFunction, error) {
+	return parent.WithName(args.Name), nil
+}
+
+type withFunctionDescriptionArgs struct {
+	Description string
+}
+
+func (s *environmentSchema) withFunctionDescription(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionDescriptionArgs) (*core.EnvironmentFunction, error) {
+	return parent.WithDescription(args.Description), nil
+}
+
+type withFunctionArgArgs struct {
+	Name        string
+	Description string
+	ArgType     string
+	IsList      bool
+}
+
+func (s *environmentSchema) withFunctionArg(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionArgArgs) (*core.EnvironmentFunction, error) {
+	return parent.WithArg(core.EnvironmentFunctionArg{
+		Name:        args.Name,
+		Description: args.Description,
+		ArgType:     args.ArgType,
+		IsList:      args.IsList,
+	}), nil
+}
+
+type withFunctionResultTypeArgs struct {
+	Name string
+}
+
+func (s *environmentSchema) withFunctionResultType(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionResultTypeArgs) (*core.EnvironmentFunction, error) {
+	return parent.WithResultType(args.Name), nil
 }

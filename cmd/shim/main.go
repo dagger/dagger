@@ -617,6 +617,8 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		// TODO:
+		SkipUniverse: true,
 	}
 
 	progW, err := progrock.DialRPC(ctx, "unix:///.progrock.sock")

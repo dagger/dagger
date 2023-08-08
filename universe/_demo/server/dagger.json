@@ -1,0 +1,5 @@
+{
+  "root": "../../..",
+  "name": "demo-server",
+  "sdk": "go"
+}

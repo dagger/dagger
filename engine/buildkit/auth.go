@@ -27,6 +27,9 @@ func (p *authProxy) Credentials(ctx context.Context, req *bkauth.CredentialsRequ
 	if status.Code(err) != codes.NotFound {
 		return nil, err
 	}
+	if p.c.MainClientCaller == nil {
+		return nil, status.Error(codes.NotFound, "no auth provider")
+	}
 	return bkauth.NewAuthClient(p.c.MainClientCaller.Conn()).Credentials(ctx, req)
 }
 
@@ -37,6 +40,9 @@ func (p *authProxy) FetchToken(ctx context.Context, req *bkauth.FetchTokenReques
 	}
 	if status.Code(err) != codes.NotFound {
 		return nil, err
+	}
+	if p.c.MainClientCaller == nil {
+		return nil, status.Error(codes.NotFound, "no auth provider")
 	}
 	return bkauth.NewAuthClient(p.c.MainClientCaller.Conn()).FetchToken(ctx, req)
 }
@@ -49,6 +55,9 @@ func (p *authProxy) GetTokenAuthority(ctx context.Context, req *bkauth.GetTokenA
 	if status.Code(err) != codes.NotFound {
 		return nil, err
 	}
+	if p.c.MainClientCaller == nil {
+		return nil, status.Error(codes.NotFound, "no auth provider")
+	}
 	return bkauth.NewAuthClient(p.c.MainClientCaller.Conn()).GetTokenAuthority(ctx, req)
 }
 
@@ -59,6 +68,9 @@ func (p *authProxy) VerifyTokenAuthority(ctx context.Context, req *bkauth.Verify
 	}
 	if status.Code(err) != codes.NotFound {
 		return nil, err
+	}
+	if p.c.MainClientCaller == nil {
+		return nil, status.Error(codes.NotFound, "no auth provider")
 	}
 	return bkauth.NewAuthClient(p.c.MainClientCaller.Conn()).VerifyTokenAuthority(ctx, req)
 }

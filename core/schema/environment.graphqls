@@ -11,8 +11,14 @@ extend type Query {
   "Load a environment shell from ID."
   environmentShell(id: EnvironmentShellID): EnvironmentShell!
 
+  "Load a environment function from ID."
+  environmentFunction(id: EnvironmentFunctionID): EnvironmentFunction!
+
   "TODO"
   extensions: Extensions!
+
+  "TODO: temp hack, should make each env load lazily (with some cache backend too)"
+  loadUniverse: Boolean!
 }
 
 "TODO"
@@ -33,6 +39,9 @@ scalar EnvironmentCheckID
 "A unique environment shell identifier."
 scalar EnvironmentShellID
 
+"A unique environment function identifier."
+scalar EnvironmentFunctionID
+
 "A collection of Dagger resources that can be queried and invoked."
 type Environment {
   "A unique identifier for this environment."
@@ -40,9 +49,6 @@ type Environment {
 
   "Initialize this environment from the given directory and config path"
   load(source: DirectoryID!, configPath: String!): Environment!
-
-  "TODO"
-  loadFromUniverse(name: String!): Environment!
 
   "Name of the environment"
   name: String!
@@ -63,19 +69,67 @@ type Environment {
   withCheck(id: EnvironmentCheckID!): Environment!
 
   "TODO"
-  withShell(id: EnvironmentShellID!): Environment!
-
-  "TODO"
   checks: [EnvironmentCheck!]
 
   "TODO"
   check(name: String!): EnvironmentCheck
 
   "TODO"
+  withShell(id: EnvironmentShellID!): Environment!
+
+  "TODO"
   shells: [EnvironmentShell!]
 
   "TODO"
   shell(name: String!): EnvironmentShell
+
+  "TODO"
+  withFunction(id: EnvironmentFunctionID!): Environment!
+}
+
+"TODO"
+type EnvironmentFunction {
+  "A unique identifier for this function."
+  id: EnvironmentFunctionID!
+
+  "The name of the function."
+  name: String!
+
+  "TODO"
+  withName(name: String!): EnvironmentFunction!
+
+  "TODO"
+  description: String
+
+  "TODO"
+  withDescription(description: String!): EnvironmentFunction!
+
+  "TODO"
+  args: [EnvironmentFunctionArg!]
+
+  "TODO"
+  withArg(name: String!, argType: String!, isList: Boolean!, description: String): EnvironmentFunction!
+
+  "The name of the type returned by this function."
+  resultType: String
+
+  "TODO"
+  withResultType(name: String!): EnvironmentFunction!
+}
+
+"TODO"
+type EnvironmentFunctionArg {
+  "The name of the arg."
+  name: String!
+
+  "Documentation for what this arg sets."
+  description: String
+
+  "TODO, should be enum"
+  argType: String!
+
+  "TODO"
+  isList: Boolean!
 }
 
 "TODO"
@@ -225,3 +279,4 @@ type EnvironmentCheckResult {
   output: String!
   name: String!
 }
+

@@ -32,7 +32,7 @@ type InitializeArgs struct {
 	Secrets        *core.SecretStore
 }
 
-func New(params InitializeArgs) (*MergedSchemas, error) {
+func New(ctx context.Context, params InitializeArgs) (*MergedSchemas, error) {
 	merged := &MergedSchemas{
 		bk:              params.BuildkitClient,
 		platform:        params.Platform,
@@ -44,7 +44,8 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 	}
 	host := core.NewHost()
 	buildCache := core.NewCacheMap[uint64, *core.Container]()
-	err := merged.addSchemas(
+
+	coreSchemas := []ExecutableSchema{
 		&querySchema{merged},
 		&directorySchema{merged, host, buildCache},
 		&fileSchema{merged, host},
@@ -64,7 +65,8 @@ func New(params InitializeArgs) (*MergedSchemas, error) {
 		&httpSchema{merged},
 		&platformSchema{merged},
 		&socketSchema{merged, host},
-	)
+	}
+	err := merged.addSchemas(coreSchemas...)
 	if err != nil {
 		return nil, err
 	}
@@ -298,6 +300,7 @@ func mergeExecutableSchemas(existingSchema ExecutableSchema, newSchemas ...Execu
 	// gqlparser has actual validation and errors, unlike the graphql-go library
 	_, err := gqlparser.LoadSchema(&ast.Source{Input: mergedSchema.Schema})
 	if err != nil {
+		bklog.G(context.Background()).WithError(err).Error("schema validation failed")
 		return nil, fmt.Errorf("schema validation failed: %w\n%s", err, mergedSchema.Schema)
 	}
 

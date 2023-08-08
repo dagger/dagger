@@ -57,18 +57,20 @@ func NewDaggerServer(
 		doneCh:   make(chan struct{}, 1),
 	}
 
+	progrockWriters := progrock.MultiWriter{
+		buildkit.ProgrockLogrusWriter{},
+	}
+
 	clientConn := caller.Conn()
 	progClient := progrock.NewProgressServiceClient(clientConn)
 	progUpdates, err := progClient.WriteUpdates(ctx)
 	if err != nil {
 		return nil, err
 	}
+	progrockWriters = append(progrockWriters, &progrock.RPCWriter{Conn: clientConn, Updates: progUpdates})
 
 	progSockPath := fmt.Sprintf("/run/dagger/server-progrock-%s.sock", serverID)
-	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrock.MultiWriter{
-		&progrock.RPCWriter{Conn: clientConn, Updates: progUpdates},
-		buildkit.ProgrockLogrusWriter{},
-	})
+	progWriter, progCleanup, err := buildkit.ProgrockForwarder(progSockPath, progrockWriters)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +114,7 @@ func NewDaggerServer(
 		}
 	}()
 
-	apiSchema, err := schema.New(schema.InitializeArgs{
+	apiSchema, err := schema.New(ctx, schema.InitializeArgs{
 		BuildkitClient: srv.bkClient,
 		Platform:       srv.worker.Platforms(true)[0],
 		ProgSockPath:   progSockPath,

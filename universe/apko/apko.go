@@ -1,4 +1,4 @@
-package apkoenv
+package main
 
 import (
 	"runtime"
@@ -7,8 +7,11 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type ApkoOpts struct {
-	Repositories []string
+func main() {
+	dagger.DefaultContext().Client().Environment().
+		WithFunction_(Alpine).
+		WithFunction_(Wolfi).
+		Serve()
 }
 
 type cfg map[string]any
@@ -21,7 +24,7 @@ var baseConfig = cfg{
 	"archs": []string{runtime.GOARCH},
 }
 
-func Alpine(ctx dagger.Context, packages []string, opts_ ...ApkoOpts) *dagger.Container {
+func Alpine(ctx dagger.Context, packages []string) *dagger.Container {
 	ic := baseConfig
 	ic["contents"] = cfg{
 		"repositories": []string{
@@ -32,7 +35,7 @@ func Alpine(ctx dagger.Context, packages []string, opts_ ...ApkoOpts) *dagger.Co
 	return apko(ctx, ic)
 }
 
-func Wolfi(ctx dagger.Context, packages []string, opts_ ...ApkoOpts) *dagger.Container {
+func Wolfi(ctx dagger.Context, packages []string) *dagger.Container {
 	ic := baseConfig
 	ic["contents"] = cfg{
 		"repositories": []string{

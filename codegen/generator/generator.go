@@ -2,13 +2,12 @@ package generator
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/core/schema"
-	"github.com/dagger/graphql"
+	"github.com/dagger/dagger/engine"
+	"github.com/dagger/dagger/engine/client"
 )
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
@@ -43,28 +42,17 @@ func SetSchemaParents(schema *introspection.Schema) {
 
 // Introspect get the Dagger Schema
 func Introspect(ctx context.Context) (*introspection.Schema, error) {
-	api, err := schema.New(schema.InitializeArgs{})
+	engineClient, ctx, err := client.Connect(ctx, client.Params{
+		RunnerHost: engine.RunnerHost(),
+	})
 	if err != nil {
 		return nil, err
 	}
-	apiSchema := api.Schema()
-	resp := graphql.Do(graphql.Params{Schema: *apiSchema, RequestString: introspection.Query, Context: ctx})
-	if resp.Errors != nil {
-		errs := make([]error, len(resp.Errors))
-		for i, err := range resp.Errors {
-			errs[i] = err
-		}
-		return nil, errors.Join(errs...)
-	}
-
+	defer engineClient.Close()
 	var introspectionResp introspection.Response
-	dataBytes, err := json.Marshal(resp.Data)
+	err = engineClient.Do(ctx, introspection.Query, "IntrospectionQuery", nil, &introspectionResp)
 	if err != nil {
-		return nil, fmt.Errorf("marshal data: %w", err)
-	}
-	err = json.Unmarshal(dataBytes, &introspectionResp)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal data: %w", err)
+		return nil, fmt.Errorf("introspection query: %w", err)
 	}
 	return introspectionResp.Schema, nil
 }

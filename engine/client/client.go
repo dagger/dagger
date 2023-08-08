@@ -62,6 +62,9 @@ type Params struct {
 	ProgrockWriter     progrock.Writer
 	EngineNameCallback func(string)
 	CloudURLCallback   func(string)
+
+	// TODO:
+	SkipUniverse bool
 }
 
 type Client struct {
@@ -277,6 +280,14 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	if c.CloudURLCallback != nil && cloudURL != "" {
 		c.CloudURLCallback(cloudURL)
+	}
+
+	// TODO: hack to load universe at startup
+	if !c.SkipUniverse {
+		err = c.Do(ctx, `{loadUniverse}`, "", nil, nil)
+		if err != nil {
+			return nil, nil, fmt.Errorf("load universe: %w", err)
+		}
 	}
 
 	return c, ctx, nil

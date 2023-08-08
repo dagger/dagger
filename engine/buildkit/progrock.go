@@ -85,7 +85,9 @@ func (w ProgrockLogrusWriter) WriteStatus(ev *progrock.StatusUpdate) error {
 	for _, log := range ev.Logs {
 		l = l.WithField("log-"+log.Vertex, log)
 	}
-	l.Trace()
+	// TODO:
+	// l.Trace()
+	l.Debug()
 	return nil
 }
 

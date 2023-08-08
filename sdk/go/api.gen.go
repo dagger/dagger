@@ -24,6 +24,9 @@ type EnvironmentCheckID string
 // A unique environment command identifier.
 type EnvironmentCommandID string
 
+// A unique environment function identifier.
+type EnvironmentFunctionID string
+
 // A unique environment identifier.
 type EnvironmentID string
 
@@ -1884,17 +1887,6 @@ func (r *Environment) Load(source *Directory, configPath string) *Environment {
 	}
 }
 
-// TODO
-func (r *Environment) LoadFromUniverse(name string) *Environment {
-	q := r.q.Select("loadFromUniverse")
-	q = q.Arg("name", name)
-
-	return &Environment{
-		q: q,
-		c: r.c,
-	}
-}
-
 // Name of the environment
 func (r *Environment) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
@@ -1980,6 +1972,17 @@ func (r *Environment) WithExtension(id *Environment, namespace string) *Environm
 	q := r.q.Select("withExtension")
 	q = q.Arg("id", id)
 	q = q.Arg("namespace", namespace)
+
+	return &Environment{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *Environment) WithFunction(id *EnvironmentFunction) *Environment {
+	q := r.q.Select("withFunction")
+	q = q.Arg("id", id)
 
 	return &Environment{
 		q: q,
@@ -2543,6 +2546,250 @@ func (r *EnvironmentCommandFlag) Description(ctx context.Context) (string, error
 
 // The name of the flag.
 func (r *EnvironmentCommandFlag) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+type EnvironmentFunction struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	description *string
+	id          *EnvironmentFunctionID
+	name        *string
+	resultType  *string
+}
+type WithEnvironmentFunctionFunc func(r *EnvironmentFunction) *EnvironmentFunction
+
+// With calls the provided function with current EnvironmentFunction.
+//
+// This is useful for reusability and readability by not breaking the calling chain.
+func (r *EnvironmentFunction) With(f WithEnvironmentFunctionFunc) *EnvironmentFunction {
+	return f(r)
+}
+
+// TODO
+func (r *EnvironmentFunction) Args(ctx context.Context) ([]EnvironmentFunctionArg, error) {
+	q := r.q.Select("args")
+
+	q = q.Select("argType description isList name")
+
+	type args struct {
+		ArgType     string
+		Description string
+		IsList      bool
+		Name        string
+	}
+
+	convert := func(fields []args) []EnvironmentFunctionArg {
+		out := []EnvironmentFunctionArg{}
+
+		for i := range fields {
+			out = append(out, EnvironmentFunctionArg{argType: &fields[i].ArgType, description: &fields[i].Description, isList: &fields[i].IsList, name: &fields[i].Name})
+		}
+
+		return out
+	}
+	var response []args
+
+	q = q.Bind(&response)
+
+	err := q.Execute(ctx, r.c)
+	if err != nil {
+		return nil, err
+	}
+
+	return convert(response), nil
+}
+
+// TODO
+func (r *EnvironmentFunction) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// A unique identifier for this function.
+func (r *EnvironmentFunction) ID(ctx context.Context) (EnvironmentFunctionID, error) {
+	if r.id != nil {
+		return *r.id, nil
+	}
+	q := r.q.Select("id")
+
+	var response EnvironmentFunctionID
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// XXX_GraphQLType is an internal function. It returns the native GraphQL type name
+func (r *EnvironmentFunction) XXX_GraphQLType() string {
+	return "EnvironmentFunction"
+}
+
+// XXX_GraphQLIDType is an internal function. It returns the native GraphQL type name for the ID of this object
+func (r *EnvironmentFunction) XXX_GraphQLIDType() string {
+	return "EnvironmentFunctionID"
+}
+
+// XXX_GraphQLID is an internal function. It returns the underlying type ID
+func (r *EnvironmentFunction) XXX_GraphQLID(ctx context.Context) (string, error) {
+	id, err := r.ID(ctx)
+	if err != nil {
+		return "", err
+	}
+	return string(id), nil
+}
+
+// The name of the function.
+func (r *EnvironmentFunction) Name(ctx context.Context) (string, error) {
+	if r.name != nil {
+		return *r.name, nil
+	}
+	q := r.q.Select("name")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the type returned by this function.
+func (r *EnvironmentFunction) ResultType(ctx context.Context) (string, error) {
+	if r.resultType != nil {
+		return *r.resultType, nil
+	}
+	q := r.q.Select("resultType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// EnvironmentFunctionWithArgOpts contains options for EnvironmentFunction.WithArg
+type EnvironmentFunctionWithArgOpts struct {
+	Description string
+}
+
+// TODO
+func (r *EnvironmentFunction) WithArg(name string, argType string, isList bool, opts ...EnvironmentFunctionWithArgOpts) *EnvironmentFunction {
+	q := r.q.Select("withArg")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `description` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Description) {
+			q = q.Arg("description", opts[i].Description)
+		}
+	}
+	q = q.Arg("name", name)
+	q = q.Arg("argType", argType)
+	q = q.Arg("isList", isList)
+
+	return &EnvironmentFunction{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentFunction) WithDescription(description string) *EnvironmentFunction {
+	q := r.q.Select("withDescription")
+	q = q.Arg("description", description)
+
+	return &EnvironmentFunction{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentFunction) WithName(name string) *EnvironmentFunction {
+	q := r.q.Select("withName")
+	q = q.Arg("name", name)
+
+	return &EnvironmentFunction{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+func (r *EnvironmentFunction) WithResultType(name string) *EnvironmentFunction {
+	q := r.q.Select("withResultType")
+	q = q.Arg("name", name)
+
+	return &EnvironmentFunction{
+		q: q,
+		c: r.c,
+	}
+}
+
+// TODO
+type EnvironmentFunctionArg struct {
+	q *querybuilder.Selection
+	c graphql.Client
+
+	argType     *string
+	description *string
+	isList      *bool
+	name        *string
+}
+
+// TODO, should be enum
+func (r *EnvironmentFunctionArg) ArgType(ctx context.Context) (string, error) {
+	if r.argType != nil {
+		return *r.argType, nil
+	}
+	q := r.q.Select("argType")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// Documentation for what this arg sets.
+func (r *EnvironmentFunctionArg) Description(ctx context.Context) (string, error) {
+	if r.description != nil {
+		return *r.description, nil
+	}
+	q := r.q.Select("description")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// TODO
+func (r *EnvironmentFunctionArg) IsList(ctx context.Context) (bool, error) {
+	if r.isList != nil {
+		return *r.isList, nil
+	}
+	q := r.q.Select("isList")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
+// The name of the arg.
+func (r *EnvironmentFunctionArg) Name(ctx context.Context) (string, error) {
 	if r.name != nil {
 		return *r.name, nil
 	}
@@ -3187,6 +3434,16 @@ func (r *Client) With(f WithClientFunc) *Client {
 	return f(r)
 }
 
+func (r *Client) Alpine(packages []string) *Container {
+	q := r.q.Select("alpine")
+	q = q.Arg("packages", packages)
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
 // Constructs a cache volume for a given cache key.
 func (r *Client) CacheVolume(key string) *CacheVolume {
 	q := r.q.Select("cacheVolume")
@@ -3334,6 +3591,27 @@ func (r *Client) EnvironmentCommand(opts ...EnvironmentCommandOpts) *Environment
 	}
 }
 
+// EnvironmentFunctionOpts contains options for Client.EnvironmentFunction
+type EnvironmentFunctionOpts struct {
+	ID EnvironmentFunctionID
+}
+
+// Load a environment function from ID.
+func (r *Client) EnvironmentFunction(opts ...EnvironmentFunctionOpts) *EnvironmentFunction {
+	q := r.q.Select("environmentFunction")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `id` optional argument
+		if !querybuilder.IsZeroValue(opts[i].ID) {
+			q = q.Arg("id", opts[i].ID)
+		}
+	}
+
+	return &EnvironmentFunction{
+		q: q,
+		c: r.c,
+	}
+}
+
 // EnvironmentShellOpts contains options for Client.EnvironmentShell
 type EnvironmentShellOpts struct {
 	ID EnvironmentShellID
@@ -3438,6 +3716,16 @@ func (r *Client) HTTP(url string, opts ...HTTPOpts) *File {
 	}
 }
 
+// TODO: temp hack, should make each env load lazily (with some cache backend too)
+func (r *Client) LoadUniverse(ctx context.Context) (bool, error) {
+	q := r.q.Select("loadUniverse")
+
+	var response bool
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.c)
+}
+
 // PipelineOpts contains options for Client.Pipeline
 type PipelineOpts struct {
 	// Pipeline description.
@@ -3507,6 +3795,16 @@ func (r *Client) Socket(opts ...SocketOpts) *Socket {
 	}
 
 	return &Socket{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Client) Wolfi(packages []string) *Container {
+	q := r.q.Select("wolfi")
+	q = q.Arg("packages", packages)
+
+	return &Container{
 		q: q,
 		c: r.c,
 	}
