@@ -46,30 +46,6 @@ type Service {
   Stop the service.
   """
   stop: ServiceID!
-
-  """
-  Defines a proxy to forward traffic from a host IP:Port to this service.
-  """
-  proxy(
-    "Host IP:Port for proxy binding. Port 0 implies any available port."
-    hostListenAddress: String!
-
-    "Service port to send traffic. Defaults to first exposed port."
-    servicePort: Int
-
-    "Traffic protocol. Defaults to TCP."
-    protocol: NetworkProtocol = TCP
-  ): Service!
-
-  """
-  Accesses a Unix socket in the service.
-  """
-  unixSocket(
-    """
-    Location of the Unix socket (e.g., "/var/run/docker.sock").
-    """
-    path: String!
-  ): Socket!
 }
 
 extend type Container {

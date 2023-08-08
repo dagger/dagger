@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/dagger/dagger/core"
@@ -33,6 +34,7 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"file":          ToResolver(s.file),
 			"unixSocket":    ToResolver(s.socket),
 			"setSecretFile": ToResolver(s.setSecretFile),
+			"proxy":         ToResolver(s.proxy),
 			"reverseProxy":  ToResolver(s.reverseProxy),
 		},
 	}
@@ -85,6 +87,35 @@ type hostFileArgs struct {
 
 func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileArgs) (*core.File, error) {
 	return s.host.File(ctx, s.bk, args.Path, parent.PipelinePath(), s.platform)
+}
+
+type hostProxyArgs struct {
+	Upstream          core.ServiceID
+	HostListenAddress string
+	UpstreamPort      int
+	Protocol          core.NetworkProtocol
+}
+
+func (s *hostSchema) proxy(ctx *core.Context, parent any, args hostProxyArgs) (*core.Service, error) {
+	svc, err := args.Upstream.ToService()
+	if err != nil {
+		return nil, err
+	}
+
+	if args.UpstreamPort == 0 {
+		if svc.Container == nil {
+			return nil, errors.New("TODO: invalid")
+		}
+
+		ports := svc.Container.Ports
+		if len(ports) == 0 {
+			return nil, errors.New("TODO: no ports")
+		}
+
+		args.UpstreamPort = ports[0].Port
+	}
+
+	return core.NewProxyService(svc, args.HostListenAddress, args.UpstreamPort, args.Protocol), nil
 }
 
 type hostReverseProxyArgs struct {

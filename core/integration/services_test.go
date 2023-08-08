@@ -1221,7 +1221,7 @@ func TestServiceHostToContainer(t *testing.T) {
 		Service()
 
 	localBindAddr := "127.0.0.1:0"
-	proxy, err := srv.Proxy(localBindAddr).Start(ctx)
+	proxy, err := c.Host().Proxy(srv, localBindAddr).Start(ctx)
 	require.NoError(t, err)
 
 	defer func() {

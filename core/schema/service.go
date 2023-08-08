@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"errors"
 	"runtime/debug"
 
 	"github.com/dagger/dagger/core"
@@ -36,7 +35,6 @@ func (s *serviceSchema) Resolvers() Resolvers {
 			"endpoint": ToResolver(s.endpoint),
 			"start":    ToResolver(s.start),
 			"stop":     ToResolver(s.stop),
-			"proxy":    ToResolver(s.proxy),
 		},
 	}
 }
@@ -97,27 +95,4 @@ func (s *serviceSchema) stop(ctx *core.Context, parent *core.Service, args any) 
 	}
 
 	return parent.ID()
-}
-
-type serviceProxyArgs struct {
-	HostListenAddress string
-	ServicePort       int
-	Protocol          core.NetworkProtocol
-}
-
-func (s *serviceSchema) proxy(ctx *core.Context, parent *core.Service, args serviceProxyArgs) (*core.Service, error) {
-	if args.ServicePort == 0 {
-		if parent.Container == nil {
-			return nil, errors.New("TODO: invalid")
-		}
-
-		ports := parent.Container.Ports
-		if len(ports) == 0 {
-			return nil, errors.New("TODO: no ports")
-		}
-
-		args.ServicePort = ports[0].Port
-	}
-
-	return core.NewProxyService(parent, args.HostListenAddress, args.ServicePort, args.Protocol), nil
 }

@@ -46,15 +46,34 @@ type Host {
   ): Socket!
 
   """
-  Creates a proxy forwarding traffic via the host to a specified address.
+  Creates a proxy forwarding traffic from a host IP:Port to a service.
+  """
+  proxy(
+    "Service to send traffic from the proxy."
+    upstream: ServiceID!
+
+    "Host IP:port for the proxy to listen for traffic. Port 0 implies any available port."
+    hostListenAddress: String!
+
+    "Service port to send traffic to. Defaults to the first exposed port."
+    upstreamPort: Int
+
+    "Traffic protocol. Defaults to TCP."
+    protocol: NetworkProtocol = TCP
+  ): Service!
+
+  """
+  Creates a proxy forwarding traffic to a specified address via the host.
   """
   reverseProxy(
-    "Backend server host:port for traffic forwarding."
-    upstreamAddress: String!,
-    "Listening port for incoming connections."
-    servicePort: Int!,
+    "Host:Port to send traffic from the proxy."
+    upstreamAddress: String!
+
+    "Port to expose from the proxy service for downstream clients."
+    servicePort: Int!
+
     "Traffic protocol. Defaults to TCP."
-    protocol: NetworkProtocol = TCP,
+    protocol: NetworkProtocol = TCP
   ): Service!
 
   """

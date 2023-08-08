@@ -29,11 +29,6 @@ type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
 
-	// TODO: consider putting ClientID in here for both of the following to
-	// intentionally prevent sharing across clients?
-	// TODONE: services are already scoped per-client, just like everything else,
-	// so technically this shuold be fine
-
 	// Upstream is the service that this service is proxying to.
 	ProxyUpstream *Service `json:"upstream,omitempty"`
 	// ProxyUpstreamPort is the port for the proxy to send traffic to.
