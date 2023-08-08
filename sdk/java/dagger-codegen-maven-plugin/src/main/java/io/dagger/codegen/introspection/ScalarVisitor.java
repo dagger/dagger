@@ -25,8 +25,17 @@ class ScalarVisitor extends AbstractVisitor {
             .addParameter(ClassName.get(String.class), "value")
             .addStatement("super(value)")
             .build();
-
     classBuilder.addMethod(constructor);
+
+    ClassName className = ClassName.bestGuess(Helpers.formatName(type));
+    MethodSpec fromMethod =
+        MethodSpec.methodBuilder("from")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(ClassName.get(String.class), "value")
+            .returns(className)
+            .addStatement("return new $T(value)", className)
+            .build();
+    classBuilder.addMethod(fromMethod);
 
     return classBuilder.build();
   }

@@ -4,7 +4,7 @@ public class Scalar<T> {
 
   private final T value;
 
-  public Scalar(T value) {
+  protected Scalar(T value) {
     this.value = value;
   }
 
