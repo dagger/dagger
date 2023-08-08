@@ -17,7 +17,6 @@ import (
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/moby/buildkit/util/bklog"
-	"github.com/opencontainers/go-digest"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/parser"
 	"golang.org/x/sync/errgroup"
@@ -25,6 +24,7 @@ import (
 
 type environmentSchema struct {
 	*MergedSchemas
+	loadedEnvCache *core.CacheMap[string, *core.Environment] // env name -> env
 }
 
 var _ ExecutableSchema = &environmentSchema{}
@@ -142,11 +142,30 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 	if err != nil {
 		return nil, fmt.Errorf("failed to load env root directory: %w", err)
 	}
-	env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+
+	envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, rootDir, args.ConfigPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load environment: %w", err)
+		return nil, fmt.Errorf("failed to load environment config: %w", err)
 	}
 
+	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
+		env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load environment: %w", err)
+		}
+
+		executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
+		}
+		if err := s.addSchemas(executableSchema); err != nil {
+			return nil, fmt.Errorf("failed to install environment schema: %w", err)
+		}
+		return env, nil
+	})
+}
+
+func (s *environmentSchema) envToExecutableSchema(ctx *core.Context, env *core.Environment, fieldResolver core.Resolver) (ExecutableSchema, error) {
 	doc, err := parser.ParseSchema(&ast.Source{Input: env.Schema})
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse environment schema: %w: %s", err, env.Schema)
@@ -180,19 +199,11 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 		def.Name: objResolver,
 	}
 
-	envId, err := env.ID()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get environment id: %w", err)
-	}
-	if err := s.addSchemas(StaticSchema(StaticSchemaParams{
-		Name:      digest.FromString(string(envId)).Encoded(),
+	return StaticSchema(StaticSchemaParams{
+		Name:      env.Config.Name,
 		Schema:    env.Schema,
 		Resolvers: resolvers,
-	})); err != nil {
-		return nil, fmt.Errorf("failed to install environment schema: %w", err)
-	}
-
-	return env, nil
+	}), nil
 }
 
 func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *MergedSchemas) (any, error) {
@@ -779,54 +790,29 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 			for i, envPath := range envPaths {
 				i, envPath := i, envPath
 				eg.Go(func() error {
-					// TODO: dedupe w/ load resolver
-					env, resolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
+					envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, universeDir, envPath)
 					if err != nil {
-						return fmt.Errorf("failed to load environment: %w", err)
+						return fmt.Errorf("failed to load environment config: %w", err)
 					}
 
-					resolvers := make(Resolvers)
-					doc, err := parser.ParseSchema(&ast.Source{Input: env.Schema})
-					if err != nil {
-						return fmt.Errorf("failed to parse environment schema: %w: %s", err, env.Schema)
-					}
-					for _, def := range append(doc.Definitions, doc.Extensions...) {
-						def := def
-						if def.Kind != ast.Object {
-							continue
+					// TODO: this doesn't work if the universe env was loaded before this call, but that's currently not possible
+					// since load universe is hardcoded in the engine client to be called before Connect returns. Once that's fixed,
+					// keep in mind
+					_, err = s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
+						env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
+						if err != nil {
+							return nil, fmt.Errorf("failed to load environment: %w", err)
 						}
-						existingResolver, ok := resolvers[def.Name]
-						if !ok {
-							existingResolver = ObjectResolver{}
+						executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
+						if err != nil {
+							return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
 						}
-						objResolver, ok := existingResolver.(ObjectResolver)
-						if !ok {
-							return fmt.Errorf("failed to load environment: resolver for %s is not an object resolver", def.Name)
-						}
-						for _, field := range def.Fields {
-							field := field
-							objResolver[field.Name] = ToResolver(func(ctx *core.Context, parent any, args any) (any, error) {
-								res, err := resolver(ctx, parent, args)
-								// don't check err yet, convert output may do some handling of that
-								res, err = convertOutput(res, err, field.Type, s.MergedSchemas)
-								if err != nil {
-									return nil, fmt.Errorf("failed to resolve field %s: %w", field.Name, err)
-								}
-								return res, nil
-							})
-						}
-						resolvers[def.Name] = objResolver
-					}
-
-					envId, err := env.ID()
-					if err != nil {
-						return fmt.Errorf("failed to get environment id: %w", err)
-					}
-					universeSchemas[i] = StaticSchema(StaticSchemaParams{
-						Name:      digest.FromString(string(envId)).Encoded(),
-						Schema:    env.Schema,
-						Resolvers: resolvers,
+						universeSchemas[i] = executableSchema
+						return env, nil
 					})
+					if err != nil {
+						return fmt.Errorf("failed to load environment %s: %w", envCfg.Name, err)
+					}
 					return nil
 				})
 			}
@@ -834,7 +820,7 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 		}()
 	})
 	if loadUniverseErr != nil {
-		bklog.G(ctx).Errorf("FAILED TO LOAD UNIVERSE: %s", loadUniverseErr)
+		bklog.G(ctx).Fatalf("FAILED TO LOAD UNIVERSE: %s", loadUniverseErr)
 		return nil, loadUniverseErr
 	}
 

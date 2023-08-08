@@ -6,7 +6,7 @@ func main() {
 	ctx := dagger.DefaultContext()
 	ctx.Client().Environment().
 		WithCheck_(Targets.GoLint).
-		Serve(ctx)
+		Serve()
 }
 
 type Targets struct {

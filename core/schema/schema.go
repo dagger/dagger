@@ -61,7 +61,7 @@ func New(ctx context.Context, params InitializeArgs) (*MergedSchemas, error) {
 		&cacheSchema{merged},
 		&secretSchema{merged},
 		&hostSchema{merged, host},
-		&environmentSchema{merged},
+		&environmentSchema{merged, core.NewCacheMap[string, *core.Environment]()},
 		&httpSchema{merged},
 		&platformSchema{merged},
 		&socketSchema{merged, host},
@@ -180,6 +180,9 @@ func (s *MergedSchemas) addSchemas(schemasToAdd ...ExecutableSchema) error {
 		}
 	}
 	for _, schemaToAdd := range schemasToAdd {
+		if schemaToAdd == nil {
+			continue
+		}
 		addOne(schemaToAdd)
 	}
 	if len(newSchemas) == 0 {

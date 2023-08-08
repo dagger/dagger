@@ -118,7 +118,7 @@ type Environment struct {
 	// Path to the environment's config file relative to the root directory
 	ConfigPath string `json:"configPath"`
 	// The parsed environment config
-	Config environmentconfig.Config `json:"config"`
+	Config *environmentconfig.Config `json:"config"`
 	// The graphql schema for the environment
 	Schema string `json:"schema"`
 	// The environment's platform
@@ -158,6 +158,31 @@ func (env *Environment) Clone() *Environment {
 
 type Resolver func(ctx *Context, parent any, args any) (any, error)
 
+// Just load the config without actually getting the schema, useful for checking env metadata
+// in an inexpensive way
+func LoadEnvironmentConfig(
+	ctx context.Context,
+	bk *buildkit.Client,
+	rootDir *Directory,
+	configPath string,
+) (*environmentconfig.Config, error) {
+	configPath = normalizeConfigPath(configPath)
+
+	configFile, err := rootDir.File(ctx, bk, configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load environment config at path %q: %w", configPath, err)
+	}
+	cfgBytes, err := configFile.Contents(ctx, bk)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read environment config at path %q: %w", configPath, err)
+	}
+	var cfg environmentconfig.Config
+	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal environment config: %w", err)
+	}
+	return &cfg, nil
+}
+
 func LoadEnvironment(
 	ctx context.Context,
 	bk *buildkit.Client,
@@ -168,18 +193,9 @@ func LoadEnvironment(
 	configPath string,
 ) (*Environment, Resolver, error) {
 	configPath = normalizeConfigPath(configPath)
-
-	configFile, err := rootDir.File(ctx, bk, configPath)
+	cfg, err := LoadEnvironmentConfig(ctx, bk, rootDir, configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load environment config at path %q: %w", configPath, err)
-	}
-	cfgBytes, err := configFile.Contents(ctx, bk)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to read environment config at path %q: %w", configPath, err)
-	}
-	var cfg environmentconfig.Config
-	if err := json.Unmarshal(cfgBytes, &cfg); err != nil {
-		return nil, nil, fmt.Errorf("failed to unmarshal environment config: %w", err)
+		return nil, nil, fmt.Errorf("failed to load environment config: %w", err)
 	}
 
 	ctr, err := runtime(ctx, bk, progSock, pipeline, platform, cfg.SDK, rootDir, configPath)

@@ -1,5 +1,5 @@
 {
-  "name": "dagger-gosdk",
+  "name": "daggergo",
   "sdk": "go",
   "root": "../../.."
 }

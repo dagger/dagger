@@ -1,5 +1,5 @@
 {
-  "name": "dagger-python-sdk",
+  "name": "daggerpython",
   "sdk": "python",
   "root": "../../../"
 }
