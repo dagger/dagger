@@ -15,6 +15,8 @@ import (
 	"github.com/dagger/dagger/engine/client"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vito/progrock"
+	"golang.org/x/sync/errgroup"
 )
 
 var (
@@ -38,6 +40,7 @@ func init() {
 	shellCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	listenCmd.PersistentFlags().AddFlagSet(environmentFlags)
 	queryCmd.PersistentFlags().AddFlagSet(environmentFlags)
+	codegenCmd.PersistentFlags().AddFlagSet(environmentFlags)
 
 	environmentInitCmd.PersistentFlags().StringVar(&sdk, "sdk", "", "SDK to use for the environment")
 	environmentInitCmd.MarkFlagRequired("sdk")
@@ -209,6 +212,58 @@ func (p environmentFlagConfig) load(ctx context.Context, c *dagger.Client) (*dag
 	}
 }
 
+func (p environmentFlagConfig) config(ctx context.Context, c *dagger.Client) (*environmentconfig.Config, error) {
+	switch {
+	case p.local != nil:
+		return p.local.config()
+	case p.git != nil:
+		return p.git.config(ctx, c)
+	default:
+		panic("invalid environment")
+	}
+}
+
+func (p environmentFlagConfig) loadDeps(ctx context.Context, c *dagger.Client) ([]*dagger.Environment, error) {
+	if p.local == nil {
+		return nil, fmt.Errorf("TODO: implement non-local environment dependency loading")
+	}
+
+	cfg, err := p.config(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment config: %w", err)
+	}
+
+	var depEnvs []*dagger.Environment
+	for _, dep := range cfg.Dependencies {
+		depPath := filepath.Join(filepath.Dir(p.local.path), dep)
+		if filepath.Base(depPath) != "dagger.json" {
+			depPath = filepath.Join(depPath, "dagger.json")
+		}
+		depEnv, err := localEnvironment{path: depPath}.load(c)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load dependency environment: %w", err)
+		}
+		depEnvs = append(depEnvs, depEnv)
+	}
+
+	var eg errgroup.Group
+	// TODO: hack to unlazy env load
+	for _, depEnv := range depEnvs {
+		depEnv := depEnv
+		eg.Go(func() error {
+			_, err := depEnv.ID(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to load dependency environment %w", err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, err
+	}
+	return depEnvs, nil
+}
+
 type localEnvironment struct {
 	path string
 }
@@ -280,4 +335,128 @@ func (p gitEnvironment) load(ctx context.Context, c *dagger.Client) (*dagger.Env
 		return nil, fmt.Errorf("environment config path %q is not under environment root %q", p.subpath, rootPath)
 	}
 	return c.Environment().Load(c.Git(p.repo).Branch(p.ref).Tree().Directory(rootPath), subdirRelPath), nil
+}
+
+func loadEnvCmdWrapper(
+	fn func(context.Context, *client.Client, *dagger.Client, *dagger.Environment, *cobra.Command, []string) error,
+) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+		flags.SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+		flags.AddFlagSet(cmd.Flags())
+		flags.AddFlagSet(cmd.PersistentFlags())
+		err := flags.Parse(args)
+		if err != nil {
+			return fmt.Errorf("failed to parse top-level flags: %w", err)
+		}
+		dynamicCmdArgs := flags.Args()
+
+		focus = doFocus
+		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			rec := progrock.RecorderFromContext(ctx)
+			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
+			defer func() { vtx.Done(err) }()
+
+			connect := vtx.Task("connecting to Dagger")
+			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
+			connect.Done(err)
+			if err != nil {
+				return fmt.Errorf("connect to dagger: %w", err)
+			}
+
+			load := vtx.Task("loading environment")
+			loadedEnv, err := loadEnv(ctx, c)
+			load.Done(err)
+			if err != nil {
+				return err
+			}
+
+			return fn(ctx, engineClient, c, loadedEnv, cmd, dynamicCmdArgs)
+		})
+	}
+}
+
+// TODO: dedupe w/ above where possible
+func loadEnvDepsCmdWrapper(
+	fn func(context.Context, *client.Client, *dagger.Client, *environmentconfig.Config, []*dagger.Environment, *cobra.Command, []string) error,
+) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+		flags.SetInterspersed(false) // stop parsing at first possible dynamic subcommand
+		flags.AddFlagSet(cmd.Flags())
+		flags.AddFlagSet(cmd.PersistentFlags())
+		err := flags.Parse(args)
+		if err != nil {
+			return fmt.Errorf("failed to parse top-level flags: %w", err)
+		}
+		dynamicCmdArgs := flags.Args()
+
+		focus = doFocus
+		return withEngineAndTUI(cmd.Context(), client.Params{}, func(ctx context.Context, engineClient *client.Client) (err error) {
+			rec := progrock.RecorderFromContext(ctx)
+			vtx := rec.Vertex("cmd-loader", strings.Join(os.Args, " "))
+			defer func() { vtx.Done(err) }()
+
+			connect := vtx.Task("connecting to Dagger")
+			c, err := dagger.Connect(ctx, dagger.WithConn(EngineConn(engineClient)))
+			connect.Done(err)
+			if err != nil {
+				return fmt.Errorf("connect to dagger: %w", err)
+			}
+
+			load := vtx.Task("loading environment")
+			envConfig, depEnvs, err := loadEnvDeps(ctx, c)
+			load.Done(err)
+			if err != nil {
+				return err
+			}
+
+			return fn(ctx, engineClient, c, envConfig, depEnvs, cmd, dynamicCmdArgs)
+		})
+	}
+}
+
+func loadEnv(ctx context.Context, c *dagger.Client) (*dagger.Environment, error) {
+	env, err := getEnvironmentFlagConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment config: %w", err)
+	}
+	if env.local != nil && outputPath == "" {
+		// default to outputting to the environment root dir
+		rootDir, err := env.local.rootDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get environment root dir: %w", err)
+		}
+		outputPath = rootDir
+	}
+
+	loadedEnv, err := env.load(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load environment: %w", err)
+	}
+
+	// TODO: hack to unlazy env so it's actually loaded
+	_, err = loadedEnv.ID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get environment ID: %w", err)
+	}
+
+	return loadedEnv, nil
+}
+
+func loadEnvDeps(ctx context.Context, c *dagger.Client) (*environmentconfig.Config, []*dagger.Environment, error) {
+	env, err := getEnvironmentFlagConfig()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get environment config: %w", err)
+	}
+
+	cfg, err := env.config(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	deps, err := env.loadDeps(ctx, c)
+	if err != nil {
+		return nil, nil, err
+	}
+	return cfg, deps, nil
 }

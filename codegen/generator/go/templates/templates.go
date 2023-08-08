@@ -10,6 +10,10 @@ var (
 	headerSource string
 	Header       *template.Template
 
+	//go:embed src/environment_header.go.tmpl
+	environmentHeaderSource string
+	EnvironmentHeader       *template.Template
+
 	//go:embed src/scalar.go.tmpl
 	scalarSource string
 	Scalar       *template.Template
@@ -21,6 +25,10 @@ var (
 	//go:embed src/object.go.tmpl
 	objectSource string
 	Object       *template.Template
+
+	//go:embed src/environment_object.go.tmpl
+	environmentObjectSource string
+	EnvironmentObject       *template.Template
 
 	//go:embed src/enum.go.tmpl
 	enumSource string
@@ -34,6 +42,12 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
+
+	EnvironmentHeader, err = template.New("environment_header").Funcs(funcMap).Parse(environmentHeaderSource)
+	if err != nil {
+		panic(err)
+	}
+
 	Scalar, err = template.New("scalar").Funcs(funcMap).Parse(scalarSource)
 	if err != nil {
 		panic(err)
@@ -45,6 +59,11 @@ func init() {
 	}
 
 	Object, err = template.New("object").Funcs(funcMap).Parse(objectSource)
+	if err != nil {
+		panic(err)
+	}
+
+	EnvironmentObject, err = template.New("environment_object").Funcs(funcMap).Parse(environmentObjectSource)
 	if err != nil {
 		panic(err)
 	}

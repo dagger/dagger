@@ -1,0 +1,5 @@
+{
+  "name": "democlient",
+  "sdk": "python",
+  "root": "../../../"
+}

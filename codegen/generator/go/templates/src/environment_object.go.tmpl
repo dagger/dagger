@@ -12,42 +12,8 @@ type {{ .Name | FormatName }} struct {
 }
 {{- end }}
 
-
-{{- if . | IsSelfChainable }}
-type With{{ .Name | FormatName }}Func func(r *{{ .Name | FormatName }}) *{{ .Name | FormatName }}
-
-// With calls the provided function with current {{ .Name | FormatName }}.
-//
-// This is useful for reusability and readability by not breaking the calling chain.
-func (r *{{ $.Name | FormatName }}) With(f With{{ .Name | FormatName }}Func) *{{ $.Name | FormatName }} {
-	return f(r)
-}
-
-{{- end }}
-
 {{ range $field := .Fields }}
-{{- if $field.Args.HasOptionals }}
-// {{ $field | FieldOptionsStructName }} contains options for {{ $.Name | FormatName }}.{{ $field.Name | FormatName }}
-type {{ $field | FieldOptionsStructName }} struct {
-	{{- range $arg := $field.Args }}
-	{{- if $arg.TypeRef.IsOptional }}
-	{{ $arg.Description | Comment }}
-	{{- if and (eq $arg.Name "id") (eq $.Name "Query") }}
-	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatOutputType }}
-	{{- else }}
-	{{ $arg.Name | FormatName }} {{ $arg.TypeRef | FormatInputType }}
-	{{- end }}
-	{{- end }}
-	{{- end }}
-}
 
-{{- end }}
-
-{{ $field.Description | Comment }}
-{{- if $field.IsDeprecated }}
-//
-{{ $field.DeprecationReason | FormatDeprecation }}
-{{- end }}
 {{- $convertID := $field | ConvertID }}
 {{ $field | FieldFunction }} {
     {{- if and ($field.TypeRef.IsScalar) (ne $field.ParentObject.Name "Query") (not $convertID) }}
@@ -56,20 +22,6 @@ type {{ $field | FieldOptionsStructName }} struct {
     }
     {{- end }}
 	q := r.Q.Select("{{ $field.Name }}")
-
-	{{- if $field.Args.HasOptionals }}
-	for i := len(opts) - 1; i >= 0; i-- {
-	{{- range $arg := $field.Args }}
-	{{- if $arg.TypeRef.IsOptional }}
-	// `{{ $arg.Name }}` optional argument
-	if !querybuilder.IsZeroValue(opts[i].{{ $arg.Name | FormatName }}) {
-		q = q.Arg("{{ $arg.Name }}", opts[i].{{ $arg.Name | FormatName }})
-	}
-	{{- end }}
-	{{- end }}
-	}
-	{{- end }}
-
 
 	{{- range $arg := $field.Args }}
 	{{- if not $arg.TypeRef.IsOptional }}

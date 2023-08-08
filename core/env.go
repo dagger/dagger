@@ -358,7 +358,7 @@ func (env *Environment) buildSchema() (string, error) {
 				Name:        check.Name,
 				Description: check.Description,
 				Type: &ast.Type{
-					NamedType: "EnvironmentCheckResult",
+					NamedType: "EnvironmentCheck",
 					NonNull:   true,
 				},
 			}

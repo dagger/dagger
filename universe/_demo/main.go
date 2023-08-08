@@ -7,43 +7,48 @@ import (
 )
 
 func main() {
-	Dagger().Environment().
-		WithCheck_(IntegTest).
-		WithExtension(Dagger().MyPythonApp(), "client").
-		WithExtension(Dagger().MyGoServer(), "server").
+	DaggerClient().Environment().
+		WithCommand_(PublishAll).
+		// TODO: WithCheck_(IntegTest).
+		// TODO: WithShell_(DevShell).
 		Serve()
 }
 
-func IntegTest(ctx dagger.Context) error {
-	pythonApp := Dagger().MyPythonApp().Build()
-	goServer := Dagger().MyGoServer().Build()
+func PublishAll(ctx dagger.Context, version string) (string, error) {
+	// First, publish the server
+	_, err := DaggerClient().Demoserver().Publish(ctx, version)
+	if err != nil {
+		return "", fmt.Errorf("failed to publish go server: %w", err)
+	}
 
-	return pythonApp.
-		WithServiceBinding("server", goServer).
-		WithExec([]string{"say-hello", "server"}).
-		Sync(ctx)
+	/*
+		// if that worked, publish the client app
+		err := Dagger().MyPythonApp().Publish(ctx, version)
+		if err != nil {
+			return fmt.Errorf("failed to publish python app: %w", err)
+		}
+	*/
+	return "", nil
 }
 
-func PublishAll(ctx dagger.Context, version string) error {
-	// First, publish the server
-	err := Dagger().MyGoServer().Publish(ctx, version)
-	if err != nil {
-		return fmt.Errorf("failed to publish go server: %w", err)
-	}
+/*
+func IntegTest(ctx dagger.Context) error {
+	// TODO: clientApp := Dagger().Democlient().Build()
+	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
 
-	// if that worked, publish the client app
-	err := Dagger().MyPythonApp().Publish(ctx, version)
-	if err != nil {
-		return fmt.Errorf("failed to publish python app: %w", err)
-	}
-	return nil
+	_, err := clientApp.
+		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
+		WithExec([]string{"curl", "http://server/hello"}).
+		Sync(ctx)
+	return err
 }
 
 func DevShell(ctx dagger.Context) (*dagger.Container, error) {
-	pythonApp := Dagger().MyPythonApp().Build()
-	goServer := Dagger().MyGoServer().Build()
+	// TODO: clientApp := Dagger().Democlient().Build()
+	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
 
-	return pythonApp.
-		WithServiceBinding("server", goServer).
-		WithEntrypoint([]string{"bash"})
+	return clientApp.
+		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
+		WithEntrypoint([]string{"sh"}), nil
 }
+*/

@@ -148,6 +148,23 @@ func (s *environmentSchema) load(ctx *core.Context, _ *core.Environment, args lo
 		return nil, fmt.Errorf("failed to load environment config: %w", err)
 	}
 
+	var eg errgroup.Group
+	for _, dep := range envCfg.Dependencies {
+		dep := dep
+		// TODO: currently just assuming that all deps are local and that they all share the same root
+		depConfigPath := filepath.Join(filepath.Dir(args.ConfigPath), dep)
+		eg.Go(func() error {
+			_, err := s.load(ctx, nil, loadArgs{Source: args.Source, ConfigPath: depConfigPath})
+			if err != nil {
+				return fmt.Errorf("failed to load environment dependency %q: %w", dep, err)
+			}
+			return nil
+		})
+	}
+	if err := eg.Wait(); err != nil {
+		return nil, fmt.Errorf("failed to load environment dependencies: %w", err)
+	}
+
 	return s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
 		env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, rootDir.Pipeline, s.platform, rootDir, args.ConfigPath)
 		if err != nil {
@@ -226,13 +243,11 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 			}
 			return checkRes, nil
 		}
-		// TODO: should collect all the progress and prints from user code and set that to output instead
-		output, ok := rawOutput.(string)
-		if !ok {
-			return nil, fmt.Errorf("expected string output for check entrypoint")
-		}
 		checkRes.Success = true
-		checkRes.Output = output
+		output, ok := rawOutput.(string)
+		if ok {
+			checkRes.Output = output
+		}
 		return checkRes, nil
 	}
 	if resErr != nil {
@@ -790,6 +805,7 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 			for i, envPath := range envPaths {
 				i, envPath := i, envPath
 				eg.Go(func() error {
+					// TODO: support dependencies
 					envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, universeDir, envPath)
 					if err != nil {
 						return fmt.Errorf("failed to load environment config: %w", err)

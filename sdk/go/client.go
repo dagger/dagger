@@ -11,15 +11,17 @@ import (
 	"github.com/vektah/gqlparser/v2/gqlerror"
 
 	"dagger.io/dagger/internal/engineconn"
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/querybuilder"
 )
 
 // Client is the Dagger Engine Client
 type Client struct {
 	conn engineconn.EngineConn
-	c    graphql.Client
 
-	q *querybuilder.Selection
+	// TODO: making public for codegen from envs outside universe, but not ideal,
+	// maybe expose this but w/ a scarier XXX prefix?
+	C graphql.Client
+	Q *querybuilder.Selection
 }
 
 // ClientOpt holds a client option
@@ -75,9 +77,9 @@ func Connect(ctx context.Context, opts ...ClientOpt) (_ *Client, rerr error) {
 	gql := errorWrappedClient{graphql.NewClient("http://"+conn.Host()+"/query", conn)}
 
 	c := &Client{
-		c:    gql,
+		C:    gql,
 		conn: conn,
-		q:    querybuilder.Query(),
+		Q:    querybuilder.Query(),
 	}
 
 	// Call version compatibility.
@@ -105,7 +107,7 @@ func (c *Client) Do(ctx context.Context, req *Request, resp *Response) error {
 		r.Errors = resp.Errors
 		r.Extensions = resp.Extensions
 	}
-	return c.c.MakeRequest(ctx, &graphql.Request{
+	return c.C.MakeRequest(ctx, &graphql.Request{
 		Query:     req.Query,
 		Variables: req.Variables,
 		OpName:    req.OpName,

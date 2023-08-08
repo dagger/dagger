@@ -1,5 +1,6 @@
 {
   "root": "../..",
   "name": "demo",
-  "sdk": "go"
+  "sdk": "go",
+  "dependencies": ["./server"]
 }

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"dagger.io/dagger/internal/querybuilder"
+	"dagger.io/dagger/querybuilder"
 	"github.com/iancoleman/strcase"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -48,6 +48,10 @@ func DefaultContext() Context {
 		}
 	})
 	return defaultContext
+}
+
+func DefaultClient() *Client {
+	return DefaultContext().Client()
 }
 
 // TODO: this is obviously dumb, but can be cleaned up nicely w/ codegen changes
@@ -404,8 +408,8 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 		case "Cache":
 			cacheID := CacheID(id)
 			return CacheVolume{
-				q:  client.q,
-				c:  client.c,
+				Q:  client.Q,
+				C:  client.C,
 				id: &cacheID,
 			}, nil
 		default:
@@ -414,8 +418,7 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 	}
 
 	// recurse
-	newInput := reflect.New(desiredType).Interface()
-	inputObj := reflect.ValueOf(newInput).Elem()
+	inputObj := reflect.ValueOf(input)
 	switch desiredType.Kind() {
 	case reflect.Pointer:
 		x, err := convertInput(inputObj.Interface(), desiredType.Elem(), client)
@@ -424,16 +427,18 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 		}
 		return &x, nil
 	case reflect.Slice:
+		returnObj := reflect.MakeSlice(desiredType, inputObj.Len(), inputObj.Len())
 		for i := 0; i < inputObj.Len(); i++ {
 			value := inputObj.Index(i).Interface()
 			convertedValue, err := convertInput(value, desiredType.Elem(), client)
 			if err != nil {
 				return nil, err
 			}
-			inputObj.Index(i).Set(reflect.ValueOf(convertedValue))
+			returnObj.Index(i).Set(reflect.ValueOf(convertedValue))
 		}
-		return inputObj.Interface(), nil
+		return returnObj.Interface(), nil
 	case reflect.Struct:
+		returnObj := reflect.New(desiredType).Elem()
 		for i := 0; i < desiredType.NumField(); i++ {
 			inputMap, ok := input.(map[string]any)
 			if !ok {
@@ -445,10 +450,11 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 			if err != nil {
 				return nil, err
 			}
-			inputObj.Field(i).Set(reflect.ValueOf(convertedField))
+			returnObj.Field(i).Set(reflect.ValueOf(convertedField))
 		}
-		return inputObj.Interface(), nil
+		return returnObj.Interface(), nil
 	case reflect.Map:
+		returnObj := reflect.MakeMap(desiredType)
 		for _, key := range inputObj.MapKeys() {
 			value := inputObj.MapIndex(key).Interface()
 			convertedValue, err := convertInput(value, desiredType.Elem(), client)
@@ -457,7 +463,7 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 			}
 			inputObj.SetMapIndex(key, reflect.ValueOf(convertedValue))
 		}
-		return inputObj.Interface(), nil
+		return returnObj.Interface(), nil
 	default:
 		return input, nil
 	}

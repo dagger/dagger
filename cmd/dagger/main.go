@@ -40,6 +40,7 @@ func init() {
 		runCmd,
 		sessionCmd(),
 		environmentCmd,
+		codegenCmd,
 	)
 }
 

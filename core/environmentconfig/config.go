@@ -11,4 +11,6 @@ type Config struct {
 	Root string `json:"root"`
 	Name string `json:"name"`
 	SDK  SDK    `json:"sdk,omitempty"`
+	// TODO: support non-local environments
+	Dependencies []string `json:"dependencies,omitempty"`
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/introspection"
 	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/client"
@@ -12,6 +13,7 @@ import (
 
 var ErrUnknownSDKLang = errors.New("unknown sdk language")
 
+// TODO: de-dupe this with environment api
 type SDKLang string
 
 const (
@@ -25,6 +27,8 @@ type Config struct {
 	// Package is the target package that is generated.
 	// Not used for the SDKLangNodeJS.
 	Package string
+	// TODO:
+	Environments []*dagger.Environment
 }
 
 type Generator interface {
@@ -41,25 +45,30 @@ func SetSchemaParents(schema *introspection.Schema) {
 }
 
 // Introspect get the Dagger Schema
-func Introspect(ctx context.Context) (*introspection.Schema, error) {
-	engineClient, ctx, err := client.Connect(ctx, client.Params{
-		RunnerHost: engine.RunnerHost(),
-	})
-	if err != nil {
-		return nil, err
+func Introspect(ctx context.Context, engineClient *client.Client) (*introspection.Schema, error) {
+	if engineClient == nil {
+		var err error
+		engineClient, ctx, err = client.Connect(ctx, client.Params{
+			RunnerHost: engine.RunnerHost(),
+		})
+		if err != nil {
+			return nil, err
+		}
+		defer engineClient.Close()
 	}
-	defer engineClient.Close()
+
 	var introspectionResp introspection.Response
-	err = engineClient.Do(ctx, introspection.Query, "IntrospectionQuery", nil, &introspectionResp)
+	err := engineClient.Do(ctx, introspection.Query, "IntrospectionQuery", nil, &introspectionResp)
 	if err != nil {
 		return nil, fmt.Errorf("introspection query: %w", err)
 	}
+
 	return introspectionResp.Schema, nil
 }
 
 // IntrospectAndGenerate generate the Dagger API
 func IntrospectAndGenerate(ctx context.Context, generator Generator) ([]byte, error) {
-	schema, err := Introspect(ctx)
+	schema, err := Introspect(ctx, nil)
 	if err != nil {
 		return nil, err
 	}

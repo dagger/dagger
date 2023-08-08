@@ -10,70 +10,68 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/spf13/cobra"
-
+	"dagger.io/dagger"
 	"github.com/dagger/dagger/codegen/generator"
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
 	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
 	"github.com/dagger/dagger/codegen/introspection"
-	"github.com/dagger/dagger/tracing"
+	"github.com/dagger/dagger/core/environmentconfig"
+	"github.com/dagger/dagger/engine/client"
+	"github.com/spf13/cobra"
 )
 
-var (
-	workdir string
-)
-
-var rootCmd = &cobra.Command{
-	Use:  "client-gen",
-	RunE: ClientGen,
+// TODO: converge client-gen binary to this one too
+var codegenCmd = &cobra.Command{
+	Use:  "codegen",
+	RunE: loadEnvDepsCmdWrapper(RunCodegen),
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&workdir, "workdir", "", "The host workdir loaded into dagger")
-	rootCmd.Flags().StringP("output", "o", "", "output file")
-	rootCmd.Flags().String("package", "", "package name")
-	rootCmd.Flags().String("lang", "", "language to generate in")
+	codegenCmd.Flags().StringP("output", "o", "", "output file")
+	codegenCmd.Flags().String("package", "", "package name")
 }
 
-func ClientGen(cmd *cobra.Command, args []string) error {
-	ctx := context.Background()
-
+func RunCodegen(
+	ctx context.Context,
+	engineClient *client.Client,
+	c *dagger.Client,
+	envCfg *environmentconfig.Config,
+	depEnvs []*dagger.Environment,
+	cmd *cobra.Command,
+	_ []string,
+) error {
 	if workdir != "" {
 		if err := os.Chdir(workdir); err != nil {
 			return err
 		}
 	}
 
-	lang, err := getLang(cmd)
+	pkg, err := getPackage(cmd, envCfg.SDK)
 	if err != nil {
 		return err
 	}
 
-	pkg, err := getPackage(cmd)
-	if err != nil {
-		return err
-	}
-
-	introspectionSchema, err := generator.Introspect(ctx, nil)
+	introspectionSchema, err := generator.Introspect(ctx, engineClient)
 	if err != nil {
 		return err
 	}
 
 	generated, err := generate(ctx, introspectionSchema, generator.Config{
-		Package: pkg,
-		Lang:    generator.SDKLang(lang),
+		Package:      pkg,
+		Lang:         generator.SDKLang(envCfg.SDK),
+		Environments: depEnvs,
 	})
 	if err != nil {
 		return err
 	}
 
-	output, err := cmd.Flags().GetString("output")
+	output, err := getOutput(cmd, envCfg.SDK)
 	if err != nil {
 		return err
 	}
 
 	if output == "" || output == "-" {
-		fmt.Fprint(os.Stdout, string(generated))
+		cmd.Println(string(generated))
 	} else {
 		if err := os.MkdirAll(filepath.Dir(output), 0o700); err != nil {
 			return err
@@ -91,16 +89,30 @@ func ClientGen(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func getLang(cmd *cobra.Command) (string, error) {
-	lang, err := cmd.Flags().GetString("lang")
+func getOutput(cmd *cobra.Command, sdk environmentconfig.SDK) (string, error) {
+	output, err := cmd.Flags().GetString("output")
 	if err != nil {
 		return "", err
 	}
+	if output != "" {
+		return output, nil
+	}
 
-	return lang, nil
+	// TODO:
+	if sdk != environmentconfig.SDKGo {
+		return output, nil
+	}
+	envCfg, err := getEnvironmentFlagConfig()
+	if err != nil {
+		return "", err
+	}
+	if envCfg.local == nil {
+		return output, nil
+	}
+	return filepath.Join(filepath.Dir(envCfg.local.path), "dagger.gen.go"), nil
 }
 
-func getPackage(cmd *cobra.Command) (string, error) {
+func getPackage(cmd *cobra.Command, sdk environmentconfig.SDK) (string, error) {
 	pkg, err := cmd.Flags().GetString("package")
 	if err != nil {
 		return "", err
@@ -112,7 +124,7 @@ func getPackage(cmd *cobra.Command) (string, error) {
 	}
 
 	// Come up with a default package name
-	output, err := cmd.Flags().GetString("output")
+	output, err := getOutput(cmd, sdk)
 	if err != nil {
 		return "", err
 	}
@@ -161,14 +173,4 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 	}
 
 	return gen.Generate(ctx, introspectionSchema)
-}
-
-func main() {
-	closer := tracing.Init()
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		closer.Close()
-		os.Exit(1)
-	}
-	closer.Close()
 }
