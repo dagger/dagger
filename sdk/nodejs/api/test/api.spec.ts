@@ -13,7 +13,7 @@ import {
   connect,
   Container,
   Directory,
-  ImageMediaTypes,
+  NetworkProtocol,
 } from "../../index.js"
 import { buildQuery, queryFlatten } from "../utils.js"
 
@@ -375,17 +375,15 @@ describe("NodeJS SDK api", function () {
     this.timeout(60000)
 
     await connect(async (client) => {
-      const exportID = `./export-${randomUUID()}`
-
-      const isSuccess = await client
+      const ports = await client
         .container()
         .from("alpine:3.16.2")
-        .export(exportID, {
-          mediaTypes: ImageMediaTypes.Dockermediatypes,
+        .withExposedPort(8000, {
+          protocol: NetworkProtocol.Udp,
         })
+        .exposedPorts()
 
-      await fs.unlinkSync(exportID)
-      assert.strictEqual(isSuccess, true)
+      assert.strictEqual(await ports[0].protocol(), NetworkProtocol.Udp)
     })
   })
 
