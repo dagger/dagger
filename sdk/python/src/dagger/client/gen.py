@@ -4326,6 +4326,31 @@ class Socket(Type):
         return "socket"
 
 
+_client = Client()
+container = _client.container
+set_secret = _client.set_secret
+environment_command = _client.environment_command
+default_platform = _client.default_platform
+extensions = _client.extensions
+cache_volume = _client.cache_volume
+check_version_compatibility = _client.check_version_compatibility
+file = _client.file
+http = _client.http
+pipeline = _client.pipeline
+environment = _client.environment
+environment_shell = _client.environment_shell
+environment_check = _client.environment_check
+host = _client.host
+secret = _client.secret
+directory = _client.directory
+git = _client.git
+socket = _client.socket
+
+
+def client() -> Client:
+    return _client
+
+
 __all__ = [
     "Apko",
     "BuildArg",
@@ -4371,4 +4396,23 @@ __all__ = [
     "SecretID",
     "Socket",
     "SocketID",
+    "cache_volume",
+    "check_version_compatibility",
+    "client",
+    "container",
+    "default_platform",
+    "directory",
+    "environment",
+    "environment_check",
+    "environment_command",
+    "environment_shell",
+    "extensions",
+    "file",
+    "git",
+    "host",
+    "http",
+    "pipeline",
+    "secret",
+    "set_secret",
+    "socket",
 ]

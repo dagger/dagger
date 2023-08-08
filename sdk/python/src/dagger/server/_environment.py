@@ -16,12 +16,11 @@ from rich.console import Console
 import dagger
 from dagger.log import configure_logging
 
-from ._context import Context
 from ._converter import converter as json_converter
 from ._converter import register_dagger_type_hooks
 from ._exceptions import FatalError
 
-CheckResolver: TypeAlias = Callable[..., Coroutine[Any, Any, str]]
+CheckResolverFunc: TypeAlias = Callable[..., Coroutine[Any, Any, str]]
 
 errors = Console(stderr=True)
 logger = logging.getLogger(__name__)
@@ -33,14 +32,14 @@ envid_path = anyio.Path("/outputs/envid")
 
 @dataclass(slots=True)
 class Resolver:
-    wrapped_func: CheckResolver
+    wrapped_func: CheckResolverFunc
     name: str
     description: str | None
 
     @classmethod
     def from_callable(
         cls,
-        func: CheckResolver,
+        func: CheckResolverFunc,
         name: str | None = None,
         description: str | None = None,
     ):
@@ -62,28 +61,14 @@ class Inputs:
 
 @dataclass(slots=True)
 class Environment:
-    debug: bool = _(default=True)
-    converter: JsonConverter = _(default=json_converter)
+    debug: bool = True
+    converter: JsonConverter = json_converter
     _resolvers: dict[str, Resolver] = _(init=False, default_factory=dict)
 
-    def check(
-        self,
-        resolver: CheckResolver | None = None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        def wrapper(func: CheckResolver):
-            r = Resolver.from_callable(func, name, description)
-            self._resolvers[r.name] = r
-            return r
-
-        return wrapper(resolver) if resolver else wrapper
-
     def __call__(self) -> None:
-        typer.run(self._run)
+        typer.run(self._entrypoint)
 
-    def _run(
+    def _entrypoint(
         self,
         register: Annotated[
             bool,
@@ -92,26 +77,30 @@ class Environment:
     ):
         configure_logging(logging.DEBUG if self.debug else logging.INFO)
         try:
-            anyio.run(self._register if register else self._serve)
+            anyio.run(self._run, self._register if register else self._serve)
         except FatalError as e:
             errors.print(e)
             sys.exit(1)
 
+    async def _run(self, func):
+        try:
+            await func()
+        finally:
+            await dagger.close()
+
     async def _register(self):
-        # TODO: Replace with default client.
-        async with dagger.Connection() as client:
-            env = client.environment()
+        env = dagger.environment()
 
-            for r in self._resolvers.values():
-                check = client.environment_check().with_name(r.name)
-                if r.description:
-                    check = check.with_description(r.description)
-                env = env.with_check(check)
+        for r in self._resolvers.values():
+            check = dagger.environment_check().with_name(r.name)
+            if r.description:
+                check = check.with_description(r.description)
+            env = env.with_check(check)
 
-            envid = await env.id()
-            logger.debug("EnvironmentID = %s", envid)
+        envid = await env.id()
+        logger.debug("EnvironmentID = %s", envid)
 
-            await envid_path.write_text(envid)
+        await envid_path.write_text(envid)
 
     async def _serve(self):
         inputs = self.converter.loads(await inputs_path.read_text(), Inputs)
@@ -133,30 +122,39 @@ class Environment:
             msg = "Resolver parent is not supported for now"
             raise FatalError(msg)
 
-        # TODO: Replace with default client.
-        async with Context() as ctx:
-            register_dagger_type_hooks(self.converter, ctx)
+        register_dagger_type_hooks(self.converter)
 
-            try:
-                result = await resolver.call(**inputs.args)
-            except dagger.ExecError as e:
-                rich.print(e.stdout)
-                errors.print(e.stderr)
-                sys.exit(e.exit_code)
-            except ValueError as e:
-                errors.print(e)
-                sys.exit(1)
+        try:
+            result = await resolver.call(**inputs.args)
+        except dagger.ExecError as e:
+            rich.print(e.stdout)
+            errors.print(e.stderr)
+            sys.exit(e.exit_code)
 
-            # cattrs is a sync library but we may need to use an
-            # async function hook to convert the result so use to_thread
-            # to coordinate this because from sync we can call from_thread.run.
-            output = await anyio.to_thread.run_sync(
-                functools.partial(
-                    self.converter.dumps,
-                    result,
-                    ensure_ascii=False,
-                )
+        # cattrs is a sync library but we may need to use an
+        # async function hook to convert the result so use to_thread
+        # to coordinate this because from sync we can call from_thread.run.
+        output = await anyio.to_thread.run_sync(
+            functools.partial(
+                self.converter.dumps,
+                result,
+                ensure_ascii=False,
             )
+        )
 
         logger.debug("output = %s", output)
         await outputs_path.write_text(output)
+
+    def check(
+        self,
+        resolver: CheckResolverFunc | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ):
+        def wrapper(func: CheckResolverFunc):
+            r = Resolver.from_callable(func, name, description)
+            self._resolvers[r.name] = r
+            return r
+
+        return wrapper(resolver) if resolver else wrapper

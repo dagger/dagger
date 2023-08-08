@@ -3,7 +3,6 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 import dagger
-from dagger._exceptions import ExecuteTimeoutError, TransportError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -18,14 +17,15 @@ def anyio_backend():
 
 @pytest.fixture(scope="module")
 async def client():
-    async with dagger.Connection() as client:
+    async with dagger.Connection(dagger.Config(retry=None)) as client:
         yield client
 
 
 async def test_timeout(client: dagger.Client, httpx_mock: HTTPXMock):
     httpx_mock.add_exception(httpx.ReadTimeout("Request took too long"))
+    msg = "Try setting a higher timeout value"
 
-    with pytest.raises(ExecuteTimeoutError, match="execute_timeout"):
+    with pytest.raises(dagger.ExecuteTimeoutError, match=msg):
         await client.container()
 
 
@@ -33,7 +33,7 @@ async def test_request_error(client: dagger.Client, httpx_mock: HTTPXMock):
     msg = "Server disconnected without sending a response."
     httpx_mock.add_exception(httpx.RemoteProtocolError(msg))
 
-    with pytest.raises(TransportError, match=msg):
+    with pytest.raises(dagger.TransportError, match=msg):
         await client.container()
 
 
@@ -52,7 +52,7 @@ async def test_bad_response(
 ):
     httpx_mock.add_callback(lambda _: response)
 
-    with pytest.raises(TransportError, match="Unexpected response"):
+    with pytest.raises(dagger.TransportError, match="Unexpected response"):
         await client.container()
 
 
@@ -79,8 +79,25 @@ async def test_query_error(client: dagger.Client, httpx_mock: HTTPXMock):
     exc = exc_info.value
     assert msg in str(exc)
     assert exc.errors[0].path == ["container", "from"]
+    assert exc.errors[0].locations is not None
     assert exc.errors[0].locations[0].line == 3
     assert exc.errors[0].locations[0].column == 5
+
+
+async def test_no_path_query_error(client: dagger.Client, httpx_mock: HTTPXMock):
+    msg = "invalid request"
+    error = {
+        "message": msg,
+    }
+    httpx_mock.add_response(json={"errors": [error]})
+
+    with pytest.raises(dagger.QueryError) as exc_info:
+        await client.container().from_("invalid!")
+
+    exc = exc_info.value
+    assert msg in str(exc)
+    assert exc.errors[0].path is None
+    assert exc.errors[0].locations is None
 
 
 async def test_exec_error(client: dagger.Client, httpx_mock: HTTPXMock):

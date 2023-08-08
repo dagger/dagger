@@ -221,6 +221,11 @@ def generate(schema: GraphQLSchema) -> Iterator[str]:
         yield handler.render(named_type)
         ctx.process_type(type_name)
 
+    yield render_default_client(
+        ctx.defined,
+        get_root_fields(schema.type_map),
+    )
+
     yield ""
     yield "__all__ = ["
     yield from (indent(f"{quote(name)},") for name in sorted(ctx.defined))
@@ -260,11 +265,9 @@ def create_id_query_map(id_map: IDMap, type_map: TypeMap) -> IDQueryMap:
     Used to create a classmethod that returns a Directory instance
     from a DirectoryID by telling us which field to query for.
     """
-    root_type = cast(GraphQLObjectType, type_map["Query"])
-    root_fields: dict[str, GraphQLField] = root_type.fields
 
     def _iter():
-        for field_name, f in root_fields.items():
+        for field_name, f in get_root_fields(type_map).items():
             field_type = get_named_type(f.type)
             id_arg = f.args.get("id")
             # Ignore fields that have required arguments other than id.
@@ -279,6 +282,31 @@ def create_id_query_map(id_map: IDMap, type_map: TypeMap) -> IDQueryMap:
                 yield id_type.name, field_name
 
     return dict(_iter())
+
+
+def get_root_fields(type_map: TypeMap) -> GraphQLFieldMap:
+    """Get all fields under Query."""
+    return cast(GraphQLObjectType, type_map["Query"]).fields
+
+
+@joiner
+def render_default_client(
+    defined: set[str], root_fields: GraphQLFieldMap
+) -> Iterator[str]:
+    names = {format_name(name) for name in root_fields}
+    defined.update(names)
+
+    yield "_client = Client()"
+    yield from (f"{name} = _client.{name}" for name in names)
+
+    yield textwrap.dedent(
+        """\
+        def client() -> Client:
+            return _client
+        """,
+    )
+
+    defined.add("client")
 
 
 @dataclass(slots=True)
