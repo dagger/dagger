@@ -8,13 +8,14 @@ import {
   TooManyNestedObjectsError,
 } from "../../common/errors/index.js"
 import {
-  connect,
   Client,
   ClientContainerOpts,
+  connect,
   Container,
   Directory,
+  ImageMediaTypes,
 } from "../../index.js"
-import { queryFlatten, buildQuery } from "../utils.js"
+import { buildQuery, queryFlatten } from "../utils.js"
 
 const querySanitizer = (query: string) => query.replace(/\s+/g, " ")
 
@@ -368,6 +369,24 @@ describe("NodeJS SDK api", function () {
       },
       { LogOutput: process.stderr }
     )
+  })
+
+  it("Handle enumeration", async function () {
+    this.timeout(60000)
+
+    await connect(async (client) => {
+      const exportID = `./export-${randomUUID()}`
+
+      const isSuccess = await client
+        .container()
+        .from("alpine:3.16.2")
+        .export(exportID, {
+          mediaTypes: ImageMediaTypes.Dockermediatypes,
+        })
+
+      await fs.unlinkSync(exportID)
+      assert.strictEqual(isSuccess, true)
+    })
   })
 
   it("Handle list of objects", async function () {

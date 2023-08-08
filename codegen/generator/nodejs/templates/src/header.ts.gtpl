@@ -25,6 +25,14 @@ interface ClientConfig {
   sessionToken?: string
 }
 
+export function isEnum(value: never): boolean {
+    const enums = [{{ ListOfEnum }}]
+
+    return enums
+      .map((e) => Object.values(e).includes(value))
+      .includes(true)
+}
+
 class BaseClient {
   protected _queryTree: QueryTree[]
   protected client: GraphQLClient
