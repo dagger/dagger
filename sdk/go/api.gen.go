@@ -1382,6 +1382,101 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.c)
 }
 
+type Dagger struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Build the Dagger CLI
+func (r *Dagger) Cli() *Directory {
+	q := r.q.Select("cli")
+
+	return &Directory{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Dagger) DevShell() *Container {
+	q := r.q.Select("devShell")
+
+	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Lint the Dagger engine code
+func (r *Dagger) EngineLint() *EnvironmentCheckResult {
+	q := r.q.Select("engineLint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Lint everything (engine, sdks, etc)
+func (r *Dagger) Lint() *EnvironmentCheckResult {
+	q := r.q.Select("lint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Lint the Nodejs SDK
+func (r *Dagger) NodejsLint() *EnvironmentCheckResult {
+	q := r.q.Select("nodejsLint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+// Lint the Dagger Python SDK
+func (r *Dagger) PythonLint() *EnvironmentCheckResult {
+	q := r.q.Select("pythonLint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+type Daggergo struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Lint the Dagger Go SDK
+// TODO: once namespacing is in place, can just name this "Lint"
+func (r *Daggergo) GoLint() *EnvironmentCheckResult {
+	q := r.q.Select("goLint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
+type Daggerpython struct {
+	q *querybuilder.Selection
+	c graphql.Client
+}
+
+// Lint the Python SDK
+func (r *Daggerpython) PyLint() *EnvironmentCheckResult {
+	q := r.q.Select("py_lint")
+
+	return &EnvironmentCheckResult{
+		q: q,
+		c: r.c,
+	}
+}
+
 // A directory.
 type Directory struct {
 	q *querybuilder.Selection
@@ -3516,6 +3611,33 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Client) Dagger() *Dagger {
+	q := r.q.Select("dagger")
+
+	return &Dagger{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Client) Daggergo() *Daggergo {
+	q := r.q.Select("daggergo")
+
+	return &Daggergo{
+		q: q,
+		c: r.c,
+	}
+}
+
+func (r *Client) Daggerpython() *Daggerpython {
+	q := r.q.Select("daggerpython")
+
+	return &Daggerpython{
 		q: q,
 		c: r.c,
 	}

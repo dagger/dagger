@@ -88,7 +88,7 @@ func (t Go) Generate(ctx context.Context) error {
 
 	c = c.Pipeline("sdk").Pipeline("go").Pipeline("generate")
 
-	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-python-generate"})
+	devEngine, endpoint, err := util.CIDevEngineContainerAndEndpoint(ctx, c.Pipeline("dev-engine"), util.DevEngineOpts{Name: "sdk-go-generate"})
 	if err != nil {
 		return err
 	}

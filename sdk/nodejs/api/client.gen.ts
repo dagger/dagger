@@ -520,6 +520,15 @@ export type EnvironmentCommandWithFlagOpts = {
  */
 export type EnvironmentCommandID = string & { __EnvironmentCommandID: never }
 
+export type EnvironmentFunctionWithArgOpts = {
+  description?: string
+}
+
+/**
+ * A unique environment function identifier.
+ */
+export type EnvironmentFunctionID = string & { __EnvironmentFunctionID: never }
+
 /**
  * A unique environment identifier.
  */
@@ -639,6 +648,10 @@ export type ClientEnvironmentCommandOpts = {
   id?: EnvironmentCommandID
 }
 
+export type ClientEnvironmentFunctionOpts = {
+  id?: EnvironmentFunctionID
+}
+
 export type ClientEnvironmentShellOpts = {
   id?: EnvironmentShellID
 }
@@ -696,6 +709,45 @@ export type __TypeFieldsOpts = {
   includeDeprecated?: boolean
 }
 
+export class Apko extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+  alpine(packages: string[]): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "alpine",
+          args: { packages },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  wolfi(packages: string[]): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "wolfi",
+          args: { packages },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
 /**
  * A directory whose contents persist across runs.
  */
@@ -745,6 +797,7 @@ export class Container extends BaseClient {
   private readonly _label?: string = undefined
   private readonly _platform?: Platform = undefined
   private readonly _publish?: string = undefined
+  private readonly _shellEndpoint?: string = undefined
   private readonly _stderr?: string = undefined
   private readonly _stdout?: string = undefined
   private readonly _sync?: ContainerID = undefined
@@ -765,6 +818,7 @@ export class Container extends BaseClient {
     _label?: string,
     _platform?: Platform,
     _publish?: string,
+    _shellEndpoint?: string,
     _stderr?: string,
     _stdout?: string,
     _sync?: ContainerID,
@@ -782,6 +836,7 @@ export class Container extends BaseClient {
     this._label = _label
     this._platform = _platform
     this._publish = _publish
+    this._shellEndpoint = _shellEndpoint
     this._stderr = _stderr
     this._stdout = _stdout
     this._sync = _sync
@@ -1340,6 +1395,10 @@ export class Container extends BaseClient {
    * TODO
    */
   async shellEndpoint(): Promise<string> {
+    if (this._shellEndpoint) {
+      return this._shellEndpoint
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -2139,6 +2198,170 @@ export class Container extends BaseClient {
   }
 }
 
+export class Dagger extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * Build the Dagger CLI
+   */
+  cli(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "cli",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  devShell(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "devShell",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint the Dagger engine code
+   */
+  engineLint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "engineLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint everything (engine, sdks, etc)
+   */
+  lint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "lint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint the Nodejs SDK
+   */
+  nodejsLint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "nodejsLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint the Dagger Python SDK
+   */
+  pythonLint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "pythonLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class Daggergo extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * Lint the Dagger Go SDK
+   * TODO: once namespacing is in place, can just name this "Lint"
+   */
+  goLint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "goLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class Daggerpython extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * Lint the Python SDK
+   */
+  py_lint(): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "py_lint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
 /**
  * A directory.
  */
@@ -2746,23 +2969,6 @@ export class Environment extends BaseClient {
   }
 
   /**
-   * TODO
-   */
-  loadFromUniverse(name: string): Environment {
-    return new Environment({
-      queryTree: [
-        ...this._queryTree,
-        {
-          operation: "loadFromUniverse",
-          args: { name },
-        },
-      ],
-      host: this.clientHost,
-      sessionToken: this.sessionToken,
-    })
-  }
-
-  /**
    * Name of the environment
    */
   async name(): Promise<string> {
@@ -2804,17 +3010,40 @@ export class Environment extends BaseClient {
    * TODO
    */
   async shells(): Promise<EnvironmentShell[]> {
-    const response: Awaited<EnvironmentShell[]> = await computeQuery(
+    type shells = {
+      description: string
+      endpoint: string
+      id: EnvironmentShellID
+      name: string
+    }
+
+    const response: Awaited<shells[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "shells",
         },
+        {
+          operation: "description endpoint id name",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new EnvironmentShell(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.endpoint,
+          r.id,
+          r.name
+        )
+    )
   }
 
   /**
@@ -2861,6 +3090,23 @@ export class Environment extends BaseClient {
         {
           operation: "withExtension",
           args: { id, namespace },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withFunction(id: EnvironmentFunction): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withFunction",
+          args: { id },
         },
       ],
       host: this.clientHost,
@@ -3660,11 +3906,384 @@ export class EnvironmentCommandFlag extends BaseClient {
 /**
  * TODO
  */
+export class EnvironmentFunction extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _id?: EnvironmentFunctionID = undefined
+  private readonly _name?: string = undefined
+  private readonly _resultType?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _id?: EnvironmentFunctionID,
+    _name?: string,
+    _resultType?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._id = _id
+    this._name = _name
+    this._resultType = _resultType
+  }
+
+  /**
+   * TODO
+   */
+  async args(): Promise<EnvironmentFunctionArg[]> {
+    type args = {
+      argType: string
+      description: string
+      isList: boolean
+      name: string
+    }
+
+    const response: Awaited<args[]> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "args",
+        },
+        {
+          operation: "argType description isList name",
+        },
+      ],
+      this.client
+    )
+
+    return response.map(
+      (r) =>
+        new EnvironmentFunctionArg(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.argType,
+          r.description,
+          r.isList,
+          r.name
+        )
+    )
+  }
+
+  /**
+   * TODO
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * A unique identifier for this function.
+   */
+  async id(): Promise<EnvironmentFunctionID> {
+    if (this._id) {
+      return this._id
+    }
+
+    const response: Awaited<EnvironmentFunctionID> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "id",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the function.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the type returned by this function.
+   */
+  async resultType(): Promise<string> {
+    if (this._resultType) {
+      return this._resultType
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "resultType",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  withArg(
+    name: string,
+    argType: string,
+    isList: boolean,
+    opts?: EnvironmentFunctionWithArgOpts
+  ): EnvironmentFunction {
+    return new EnvironmentFunction({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withArg",
+          args: { name, argType, isList, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withDescription(description: string): EnvironmentFunction {
+    return new EnvironmentFunction({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withDescription",
+          args: { description },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withName(name: string): EnvironmentFunction {
+    return new EnvironmentFunction({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withName",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * TODO
+   */
+  withResultType(name: string): EnvironmentFunction {
+    return new EnvironmentFunction({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withResultType",
+          args: { name },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Call the provided function with current EnvironmentFunction.
+   *
+   * This is useful for reusability and readability by not breaking the calling chain.
+   */
+  with(arg: (param: EnvironmentFunction) => EnvironmentFunction) {
+    return arg(this)
+  }
+}
+
+/**
+ * TODO
+ */
+export class EnvironmentFunctionArg extends BaseClient {
+  private readonly _argType?: string = undefined
+  private readonly _description?: string = undefined
+  private readonly _isList?: boolean = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _argType?: string,
+    _description?: string,
+    _isList?: boolean,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._argType = _argType
+    this._description = _description
+    this._isList = _isList
+    this._name = _name
+  }
+
+  /**
+   * TODO, should be enum
+   */
+  async argType(): Promise<string> {
+    if (this._argType) {
+      return this._argType
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "argType",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * Documentation for what this arg sets.
+   */
+  async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "description",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * TODO
+   */
+  async isList(): Promise<boolean> {
+    if (this._isList) {
+      return this._isList
+    }
+
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "isList",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+
+  /**
+   * The name of the arg.
+   */
+  async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "name",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
+/**
+ * TODO
+ */
 export class EnvironmentShell extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _endpoint?: string = undefined
+  private readonly _id?: EnvironmentShellID = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _endpoint?: string,
+    _id?: EnvironmentShellID,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._endpoint = _endpoint
+    this._id = _id
+    this._name = _name
+  }
+
   /**
    * Documentation for what this shell shells. TODO: fix
    */
   async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3682,6 +4301,10 @@ export class EnvironmentShell extends BaseClient {
    * TODO
    */
   async endpoint(): Promise<string> {
+    if (this._endpoint) {
+      return this._endpoint
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3699,23 +4322,46 @@ export class EnvironmentShell extends BaseClient {
    * Flags accepted by this shell.
    */
   async flags(): Promise<EnvironmentShellFlag[]> {
-    const response: Awaited<EnvironmentShellFlag[]> = await computeQuery(
+    type flags = {
+      description: string
+      name: string
+    }
+
+    const response: Awaited<flags[]> = await computeQuery(
       [
         ...this._queryTree,
         {
           operation: "flags",
         },
+        {
+          operation: "description name",
+        },
       ],
       this.client
     )
 
-    return response
+    return response.map(
+      (r) =>
+        new EnvironmentShellFlag(
+          {
+            queryTree: this.queryTree,
+            host: this.clientHost,
+            sessionToken: this.sessionToken,
+          },
+          r.description,
+          r.name
+        )
+    )
   }
 
   /**
    * A unique identifier for this shell.
    */
   async id(): Promise<EnvironmentShellID> {
+    if (this._id) {
+      return this._id
+    }
+
     const response: Awaited<EnvironmentShellID> = await computeQuery(
       [
         ...this._queryTree,
@@ -3733,6 +4379,10 @@ export class EnvironmentShell extends BaseClient {
    * The name of the shell.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3831,10 +4481,31 @@ export class EnvironmentShell extends BaseClient {
  * A flag accepted by a environment shell.
  */
 export class EnvironmentShellFlag extends BaseClient {
+  private readonly _description?: string = undefined
+  private readonly _name?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _description?: string,
+    _name?: string
+  ) {
+    super(parent)
+
+    this._description = _description
+    this._name = _name
+  }
+
   /**
    * Documentation for what this flag sets.
    */
   async description(): Promise<string> {
+    if (this._description) {
+      return this._description
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -3852,6 +4523,10 @@ export class EnvironmentShellFlag extends BaseClient {
    * The name of the flag.
    */
   async name(): Promise<string> {
+    if (this._name) {
+      return this._name
+    }
+
     const response: Awaited<string> = await computeQuery(
       [
         ...this._queryTree,
@@ -4493,6 +5168,7 @@ export class Port extends BaseClient {
 export class Client extends BaseClient {
   private readonly _checkVersionCompatibility?: boolean = undefined
   private readonly _defaultPlatform?: Platform = undefined
+  private readonly _loadUniverse?: boolean = undefined
 
   /**
    * Constructor is used for internal usage only, do not create object from it.
@@ -4500,12 +5176,26 @@ export class Client extends BaseClient {
   constructor(
     parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
     _checkVersionCompatibility?: boolean,
-    _defaultPlatform?: Platform
+    _defaultPlatform?: Platform,
+    _loadUniverse?: boolean
   ) {
     super(parent)
 
     this._checkVersionCompatibility = _checkVersionCompatibility
     this._defaultPlatform = _defaultPlatform
+    this._loadUniverse = _loadUniverse
+  }
+  apko(): Apko {
+    return new Apko({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "apko",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -4559,6 +5249,42 @@ export class Client extends BaseClient {
         {
           operation: "container",
           args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  dagger(): Dagger {
+    return new Dagger({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "dagger",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  daggergo(): Daggergo {
+    return new Daggergo({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggergo",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  daggerpython(): Daggerpython {
+    return new Daggerpython({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggerpython",
         },
       ],
       host: this.clientHost,
@@ -4643,6 +5369,25 @@ export class Client extends BaseClient {
         ...this._queryTree,
         {
           operation: "environmentCommand",
+          args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Load a environment function from ID.
+   */
+  environmentFunction(
+    opts?: ClientEnvironmentFunctionOpts
+  ): EnvironmentFunction {
+    return new EnvironmentFunction({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "environmentFunction",
           args: { ...opts },
         },
       ],
@@ -4756,6 +5501,23 @@ export class Client extends BaseClient {
       host: this.clientHost,
       sessionToken: this.sessionToken,
     })
+  }
+
+  /**
+   * TODO: temp hack, should make each env load lazily (with some cache backend too)
+   */
+  async loadUniverse(): Promise<boolean> {
+    const response: Awaited<boolean> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "loadUniverse",
+        },
+      ],
+      this.client
+    )
+
+    return response
   }
 
   /**

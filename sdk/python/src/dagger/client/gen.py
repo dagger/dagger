@@ -1627,6 +1627,69 @@ class Container(Type):
         return cb(self)
 
 
+class Dagger(Type):
+    @typecheck
+    def cli(self) -> "Directory":
+        """Build the Dagger CLI"""
+        _args: list[Arg] = []
+        _ctx = self._select("cli", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def dev_shell(self) -> Container:
+        _args: list[Arg] = []
+        _ctx = self._select("devShell", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def engine_lint(self) -> "EnvironmentCheckResult":
+        """Lint the Dagger engine code"""
+        _args: list[Arg] = []
+        _ctx = self._select("engineLint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def lint(self) -> "EnvironmentCheckResult":
+        """Lint everything (engine, sdks, etc)"""
+        _args: list[Arg] = []
+        _ctx = self._select("lint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def nodejs_lint(self) -> "EnvironmentCheckResult":
+        """Lint the Nodejs SDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("nodejsLint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+    @typecheck
+    def python_lint(self) -> "EnvironmentCheckResult":
+        """Lint the Dagger Python SDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("pythonLint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+
+class Daggergo(Type):
+    @typecheck
+    def go_lint(self) -> "EnvironmentCheckResult":
+        """Lint the Dagger Go SDK
+        TODO: once namespacing is in place, can just name this "Lint"
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("goLint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+
+class Daggerpython(Type):
+    @typecheck
+    def py_lint(self) -> "EnvironmentCheckResult":
+        """Lint the Python SDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("py_lint", _args)
+        return EnvironmentCheckResult(_ctx)
+
+
 class Directory(Type):
     """A directory."""
 
@@ -3964,6 +4027,24 @@ class Client(Root):
         return Container(_ctx)
 
     @typecheck
+    def dagger(self) -> Dagger:
+        _args: list[Arg] = []
+        _ctx = self._select("dagger", _args)
+        return Dagger(_ctx)
+
+    @typecheck
+    def daggergo(self) -> Daggergo:
+        _args: list[Arg] = []
+        _ctx = self._select("daggergo", _args)
+        return Daggergo(_ctx)
+
+    @typecheck
+    def daggerpython(self) -> Daggerpython:
+        _args: list[Arg] = []
+        _ctx = self._select("daggerpython", _args)
+        return Daggerpython(_ctx)
+
+    @typecheck
     async def default_platform(self) -> Platform:
         """The default platform of the builder.
 
@@ -4327,24 +4408,30 @@ class Socket(Type):
 
 
 _client = Client()
-container = _client.container
-set_secret = _client.set_secret
-environment_command = _client.environment_command
-default_platform = _client.default_platform
-extensions = _client.extensions
-cache_volume = _client.cache_volume
-check_version_compatibility = _client.check_version_compatibility
-file = _client.file
-http = _client.http
-pipeline = _client.pipeline
-environment = _client.environment
-environment_shell = _client.environment_shell
-environment_check = _client.environment_check
-host = _client.host
-secret = _client.secret
-directory = _client.directory
 git = _client.git
+set_secret = _client.set_secret
+default_platform = _client.default_platform
+dagger = _client.dagger
+directory = _client.directory
+check_version_compatibility = _client.check_version_compatibility
+environment_function = _client.environment_function
+cache_volume = _client.cache_volume
+extensions = _client.extensions
+host = _client.host
+pipeline = _client.pipeline
+load_universe = _client.load_universe
+environment_command = _client.environment_command
+secret = _client.secret
+environment_check = _client.environment_check
+environment_shell = _client.environment_shell
+environment = _client.environment
+http = _client.http
+daggergo = _client.daggergo
 socket = _client.socket
+daggerpython = _client.daggerpython
+file = _client.file
+apko = _client.apko
+container = _client.container
 
 
 def client() -> Client:
@@ -4360,6 +4447,9 @@ __all__ = [
     "Client",
     "Container",
     "ContainerID",
+    "Dagger",
+    "Daggergo",
+    "Daggerpython",
     "Directory",
     "DirectoryID",
     "EnvVariable",
@@ -4396,21 +4486,27 @@ __all__ = [
     "SecretID",
     "Socket",
     "SocketID",
+    "apko",
     "cache_volume",
     "check_version_compatibility",
     "client",
     "container",
+    "dagger",
+    "daggergo",
+    "daggerpython",
     "default_platform",
     "directory",
     "environment",
     "environment_check",
     "environment_command",
+    "environment_function",
     "environment_shell",
     "extensions",
     "file",
     "git",
     "host",
     "http",
+    "load_universe",
     "pipeline",
     "secret",
     "set_secret",
