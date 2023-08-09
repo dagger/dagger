@@ -96,6 +96,12 @@ dagger run -- sh -c 'curl \
   http://127.0.0.1:$DAGGER_SESSION_PORT/query'
 ```
 
+Direct command output to file, displaying progress in terminal:
+
+```shell
+dagger run go run ci.go > foo.out
+```
+
 Output Dagger logs to file:
 
 ```shell
