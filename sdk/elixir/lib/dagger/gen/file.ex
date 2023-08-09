@@ -3,6 +3,7 @@ defmodule Dagger.File do
   @moduledoc "A file."
   use Dagger.QueryBuilder
   @type t() :: %__MODULE__{}
+  @derive Dagger.Sync
   defstruct [:selection, :client]
 
   (
@@ -43,20 +44,19 @@ defmodule Dagger.File do
   )
 
   (
-    @doc "Retrieves a secret referencing the contents of this file."
-    @deprecated "insecure, leaves secret in cache. Superseded by `set_secret`"
-    @spec secret(t()) :: Dagger.Secret.t()
-    def secret(%__MODULE__{} = file) do
-      selection = select(file.selection, "secret")
-      %Dagger.Secret{selection: selection, client: file.client}
-    end
-  )
-
-  (
     @doc "Gets the size of the file, in bytes."
     @spec size(t()) :: {:ok, Dagger.Int.t()} | {:error, term()}
     def size(%__MODULE__{} = file) do
       selection = select(file.selection, "size")
+      execute(selection, file.client)
+    end
+  )
+
+  (
+    @doc "Force evaluation in the engine."
+    @spec sync(t()) :: {:ok, Dagger.FileID.t()} | {:error, term()}
+    def sync(%__MODULE__{} = file) do
+      selection = select(file.selection, "sync")
       execute(selection, file.client)
     end
   )

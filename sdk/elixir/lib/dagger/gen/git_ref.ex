@@ -6,15 +6,6 @@ defmodule Dagger.GitRef do
   defstruct [:selection, :client]
 
   (
-    @doc "The digest of the current value of this ref."
-    @spec digest(t()) :: {:ok, Dagger.String.t()} | {:error, term()}
-    def digest(%__MODULE__{} = git_ref) do
-      selection = select(git_ref.selection, "digest")
-      execute(selection, git_ref.client)
-    end
-  )
-
-  (
     @doc "The filesystem tree at this ref.\n\n\n\n## Optional Arguments\n\n* `ssh_known_hosts` - \n* `ssh_auth_socket` -"
     @spec tree(t(), keyword()) :: Dagger.Directory.t()
     def tree(%__MODULE__{} = git_ref, optional_args \\ []) do

@@ -16,15 +16,6 @@ defmodule Dagger.GitRepository do
   )
 
   (
-    @doc "Lists of branches on the repository."
-    @spec branches(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
-    def branches(%__MODULE__{} = git_repository) do
-      selection = select(git_repository.selection, "branches")
-      execute(selection, git_repository.client)
-    end
-  )
-
-  (
     @doc "Returns details on one commit.\n\n## Required Arguments\n\n* `id` - Identifier of the commit (e.g., \"b6315d8f2810962c601af73f86831f6866ea798b\")."
     @spec commit(t(), Dagger.String.t()) :: Dagger.GitRef.t()
     def commit(%__MODULE__{} = git_repository, id) do
@@ -41,15 +32,6 @@ defmodule Dagger.GitRepository do
       selection = select(git_repository.selection, "tag")
       selection = arg(selection, "name", name)
       %Dagger.GitRef{selection: selection, client: git_repository.client}
-    end
-  )
-
-  (
-    @doc "Lists of tags on the repository."
-    @spec tags(t()) :: {:ok, [Dagger.String.t()]} | {:error, term()}
-    def tags(%__MODULE__{} = git_repository) do
-      selection = select(git_repository.selection, "tags")
-      execute(selection, git_repository.client)
     end
   )
 end
