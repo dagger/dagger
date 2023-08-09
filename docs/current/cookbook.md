@@ -234,7 +234,7 @@ The following code listing adds a remote Git repository branch as a directory at
 </TabItem>
 </Tabs>
 
-The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including all files except files beginning with `.git`.
+The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including all `*.md` files except `README.md`.
 
 <Tabs groupId="language">
 <TabItem value="Go">
