@@ -83,10 +83,8 @@ class Environment:
             sys.exit(1)
 
     async def _run(self, func):
-        try:
+        async with await dagger.connect():
             await func()
-        finally:
-            await dagger.close()
 
     async def _register(self):
         env = dagger.environment()
