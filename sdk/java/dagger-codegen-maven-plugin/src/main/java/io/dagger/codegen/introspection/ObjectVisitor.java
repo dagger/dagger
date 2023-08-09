@@ -22,7 +22,7 @@ class ObjectVisitor extends AbstractVisitor {
         .returns(returnType)
         .addStatement("this.$1L = $1L", var)
         .addStatement("return this")
-        .addJavadoc(Helpers.escapeJavadoc(doc))
+        .addJavadoc(Helpers.escapeJavadoc(doc) + "\n")
         .build();
   }
 
@@ -135,7 +135,7 @@ class ObjectVisitor extends AbstractVisitor {
                                 ? arg.getType().formatOutput()
                                 : arg.getType().formatInput(),
                             arg.getName())
-                        .addJavadoc(arg.getDescription())
+                        .addJavadoc(arg.getDescription() + "\n")
                         .build())
             .toList();
     fieldMethodBuilder.addParameters(mandatoryParams);
@@ -144,7 +144,7 @@ class ObjectVisitor extends AbstractVisitor {
           ParameterSpec.builder(
                   ClassName.bestGuess(capitalize(Helpers.formatName(field)) + "Arguments"),
                   "optArgs")
-              .addJavadoc("$L optional arguments", Helpers.formatName(field))
+              .addJavadoc("$L optional arguments\n", Helpers.formatName(field))
               .build());
     }
     fieldMethodBuilder.addJavadoc(Helpers.escapeJavadoc(field.getDescription()));
@@ -220,7 +220,7 @@ class ObjectVisitor extends AbstractVisitor {
 
     if (field.isDeprecated()) {
       fieldMethodBuilder.addAnnotation(Deprecated.class);
-      fieldMethodBuilder.addJavadoc("\n@deprecated $L", field.getDeprecationReason());
+      fieldMethodBuilder.addJavadoc("@deprecated $L\n", field.getDeprecationReason());
     }
 
     classBuilder.addMethod(fieldMethodBuilder.build());
