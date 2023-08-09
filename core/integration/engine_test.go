@@ -131,3 +131,40 @@ func TestEngineSetsNameFromEnv(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, out, "Connected to engine "+engineName)
 }
+
+func TestDaggerRun(t *testing.T) {
+	t.Parallel()
+
+	c, ctx := connect(t)
+	defer c.Close()
+
+	devEngine := devEngineContainer(c).
+		WithMountedCache("/var/lib/dagger", c.CacheVolume("dagger-dev-engine-state-"+identity.NewID())).
+		WithExec(nil, dagger.ContainerWithExecOpts{
+			InsecureRootCapabilities: true,
+		})
+
+	clientCtr, err := engineClientContainer(ctx, t, c, devEngine)
+	require.NoError(t, err)
+
+	runCommand := `
+	jq -n '{query:"{container{from(address: \"alpine:3.18.2\"){file(path: \"/etc/alpine-release\"){contents}}}}"}' | \
+	dagger run sh -c 'curl -s \
+		-u $DAGGER_SESSION_TOKEN: \
+		-H "content-type:application/json" \
+		-d @- \
+		http://127.0.0.1:$DAGGER_SESSION_PORT/query'`
+
+	clientCtr = clientCtr.
+		WithExec([]string{"apk", "add", "jq", "curl"}).
+		WithExec([]string{"sh", "-c", runCommand})
+
+	stdout, err := clientCtr.Stdout(ctx)
+	require.NoError(t, err)
+	require.Contains(t, stdout, "3.18.2")
+
+	stderr, err := clientCtr.Stderr(ctx)
+	require.NoError(t, err)
+	// verify we got some progress output
+	require.Contains(t, stderr, "resolve image config for")
+}
