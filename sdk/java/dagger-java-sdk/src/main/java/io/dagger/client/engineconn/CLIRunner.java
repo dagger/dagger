@@ -20,18 +20,20 @@ class CLIRunner implements Runnable {
   private ConnectParams params;
   private boolean failed = false;
   private ExecutorService executorService;
+  private final CLIDownloader cliDownloader;
 
-  private static String getCLIPath() throws IOException {
+  public CLIRunner(String workingDir, CLIDownloader cliDownloader) throws IOException {
+    this.workingDir = workingDir;
+    this.cliDownloader = cliDownloader;
+  }
+
+  private String getCLIPath() throws IOException {
     String cliBinPath = System.getenv("_EXPERIMENTAL_DAGGER_CLI_BIN");
     if (cliBinPath == null) {
-      cliBinPath = new CLIDownloader().downloadCLI();
+      cliBinPath = cliDownloader.downloadCLI();
     }
     LOG.info("Found dagger CLI: " + cliBinPath);
     return cliBinPath;
-  }
-
-  public CLIRunner(String workingDir) throws IOException {
-    this.workingDir = workingDir;
   }
 
   synchronized ConnectParams getConnectionParams() throws IOException {
@@ -69,6 +71,7 @@ class CLIRunner implements Runnable {
                 "--label",
                 "dagger.io/sdk.version:" + Provisioning.getCLIVersion())
             .withAllowedExitCodes(137);
+    LOG.debug("Opening session: {}", process.toString());
     executorService = Executors.newSingleThreadExecutor(r -> new Thread(r, "dagger-runner"));
     executorService.execute(this);
   }
@@ -102,7 +105,11 @@ class CLIRunner implements Runnable {
   }
 
   public void shutdown() {
-    executorService.shutdown();
-    process.close();
+    if (executorService != null) {
+      executorService.shutdown();
+    }
+    if (process != null) {
+      process.close();
+    }
   }
 }

@@ -61,13 +61,14 @@ public final class Connection {
       return getConnection(
           connectParams.getPort(), connectParams.getSessionToken(), Optional.of(cliRunner));
     } catch (IOException ioe) {
+      LOG.error(ioe.getMessage(), ioe);
       cliRunner.shutdown();
       throw ioe;
     }
   }
 
   public static Connection get(String workingDir) throws IOException {
-    return fromEnv().orElse(fromCLI(new CLIRunner(workingDir)));
+    return fromEnv().orElse(fromCLI(new CLIRunner(workingDir, new CLIDownloader())));
   }
 
   private static Connection getConnection(int port, String token, Optional<CLIRunner> runner) {

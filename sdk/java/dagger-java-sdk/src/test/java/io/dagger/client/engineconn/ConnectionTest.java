@@ -2,7 +2,10 @@ package io.dagger.client.engineconn;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -14,6 +17,7 @@ import uk.org.webcompere.systemstubs.jupiter.SystemStubsExtension;
 
 @ExtendWith(SystemStubsExtension.class)
 public class ConnectionTest {
+
   @SystemStub private EnvironmentVariables environmentVariables;
 
   @Test
@@ -53,6 +57,17 @@ public class ConnectionTest {
     verify(runner, times(1)).getConnectionParams();
     conn.close();
     verify(runner, times(1)).shutdown();
+  }
+
+  @Test
+  public void should_fail_when_download_fails() throws Exception {
+    environmentVariables.set("_EXPERIMENTAL_DAGGER_CLI_BIN", null);
+    CLIDownloader downloader = mock(CLIDownloader.class);
+    when(downloader.downloadCLI()).thenThrow(new IOException("DOWNLOAD FAILED"));
+    CLIRunner runner = new CLIRunner(".", downloader);
+    assertThatThrownBy(() -> Connection.fromCLI(runner))
+        .isInstanceOf(IOException.class)
+        .hasMessage("DOWNLOAD FAILED");
   }
 
   @Test
