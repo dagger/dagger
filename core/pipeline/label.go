@@ -82,19 +82,24 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 		return nil, err
 	}
 
+	labels := []Label{}
+
 	origin, err := repo.Remote("origin")
-	if err != nil {
-		return nil, err
-	}
+	if err == nil {
+		urls := origin.Config().URLs
+		if len(urls) == 0 {
+			return []Label{}, nil
+		}
 
-	urls := origin.Config().URLs
-	if len(urls) == 0 {
-		return []Label{}, nil
-	}
+		endpoint, err := parseGitURL(urls[0])
+		if err != nil {
+			return nil, err
+		}
 
-	endpoint, err := parseGitURL(urls[0])
-	if err != nil {
-		return nil, err
+		labels = append(labels, Label{
+			Name:  "dagger.io/git.remote",
+			Value: endpoint,
+		})
 	}
 
 	head, err := repo.Head()
@@ -109,36 +114,32 @@ func LoadGitLabels(workdir string) ([]Label, error) {
 
 	title, _, _ := strings.Cut(commit.Message, "\n")
 
-	labels := []Label{
-		{
-			Name:  "dagger.io/git.remote",
-			Value: endpoint,
-		},
-		{
+	labels = append(labels,
+		Label{
 			Name:  "dagger.io/git.ref",
 			Value: head.Hash().String(),
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.author.name",
 			Value: commit.Author.Name,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.author.email",
 			Value: commit.Author.Email,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.committer.name",
 			Value: commit.Committer.Name,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.committer.email",
 			Value: commit.Committer.Email,
 		},
-		{
+		Label{
 			Name:  "dagger.io/git.title",
 			Value: title, // first line from commit message
 		},
-	}
+	)
 
 	if head.Name().IsTag() {
 		labels = append(labels, Label{

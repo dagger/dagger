@@ -371,3 +371,13 @@ func (ctr DaggerCLIContainer) CallProjectInit() *DaggerCLIContainer {
 	ctr.Container = ctr.WithExec(args, dagger.ContainerWithExecOpts{ExperimentalPrivilegedNesting: true})
 	return &ctr
 }
+
+func goCache(c *dagger.Client) dagger.WithContainerFunc {
+	return func(ctr *dagger.Container) *dagger.Container {
+		return ctr.
+			WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
+			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
+			WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
+			WithEnvVariable("GOCACHE", "/go/build-cache")
+	}
+}

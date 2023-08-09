@@ -619,13 +619,10 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 
 	fileContent, err := c.Container().
 		From("golang:1.20.6-alpine").
+		With(goCache(c)).
 		WithServiceBinding("www", srv).
 		WithMountedDirectory("/src", code).
 		WithWorkdir("/src").
-		WithMountedCache("/go/pkg/mod", c.CacheVolume("go-mod")).
-		WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-		WithMountedCache("/go/build-cache", c.CacheVolume("go-build")).
-		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested/",
 			"exec", strconv.Itoa(nestingLimit), svcURL,
