@@ -49,7 +49,7 @@ export enum {{ .Name }} {
 				{{- end }}
    */
 			{{- end }}
-  {{ .Name | FormatEnum }},
+  {{ .Name | FormatEnum }} = "{{ .Name }}",
 		{{- end }}
 }
 	{{- end }}

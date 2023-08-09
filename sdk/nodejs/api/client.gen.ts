@@ -20,6 +20,17 @@ interface ClientConfig {
   sessionToken?: string
 }
 
+export function isEnum(value: never): boolean {
+  const enums = [
+    CacheSharingMode,
+    ImageLayerCompression,
+    ImageMediaTypes,
+    NetworkProtocol,
+  ]
+
+  return enums.map((e) => Object.values(e).includes(value)).includes(true)
+}
+
 class BaseClient {
   protected _queryTree: QueryTree[]
   protected client: GraphQLClient
@@ -77,17 +88,17 @@ export enum CacheSharingMode {
    * Shares the cache volume amongst many build pipelines,
    * but will serialize the writes
    */
-  Locked,
+  Locked = "LOCKED",
 
   /**
    * Keeps a cache volume for a single build pipeline
    */
-  Private,
+  Private = "PRIVATE",
 
   /**
    * Shares the cache volume amongst many build pipelines
    */
-  Shared,
+  Shared = "SHARED",
 }
 export type ContainerBuildOpts = {
   /**
@@ -541,17 +552,17 @@ export type ID = string & { __ID: never }
  * Compression algorithm to use for image layers.
  */
 export enum ImageLayerCompression {
-  Estargz,
-  Gzip,
-  Uncompressed,
-  Zstd,
+  Estargz = "EStarGZ",
+  Gzip = "Gzip",
+  Uncompressed = "Uncompressed",
+  Zstd = "Zstd",
 }
 /**
  * Mediatypes to use in published or exported image metadata.
  */
 export enum ImageMediaTypes {
-  Dockermediatypes,
-  Ocimediatypes,
+  Dockermediatypes = "DockerMediaTypes",
+  Ocimediatypes = "OCIMediaTypes",
 }
 /**
  * Transport layer network protocol associated to a port.
@@ -560,12 +571,12 @@ export enum NetworkProtocol {
   /**
    * TCP (Transmission Control Protocol)
    */
-  Tcp,
+  Tcp = "TCP",
 
   /**
    * UDP (User Datagram Protocol)
    */
-  Udp,
+  Udp = "UDP",
 }
 export type PipelineLabel = {
   /**

@@ -8,17 +8,25 @@ import {
   NotAwaitedRequestError,
   ExecError,
 } from "../common/errors/index.js"
-import { QueryTree } from "./client.gen.js"
+import { isEnum, QueryTree } from "./client.gen.js"
 
 /**
  * Format argument into GraphQL query format.
  */
 function buildArgs(args: any): string {
   // Remove unwanted quotes
-  const formatValue = (value: string) =>
-    JSON.stringify(value).replace(/\{"[a-zA-Z]+":|,"[a-zA-Z]+":/gi, (str) =>
-      str.replace(/"/g, "")
+  const formatValue = (value: string) => {
+    if (isEnum(value as never)) {
+      return JSON.stringify(value).replace(/['"]+/g, "")
+    }
+
+    return JSON.stringify(value).replace(
+      /\{"[a-zA-Z]+":|,"[a-zA-Z]+":/gi,
+      (str) => {
+        return str.replace(/"/g, "")
+      }
     )
+  }
 
   if (args === undefined || args === null) {
     return ""

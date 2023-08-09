@@ -41,8 +41,23 @@ var (
 		"ToLowerCase":         commonFunc.ToLowerCase,
 		"ToUpperCase":         commonFunc.ToUpperCase,
 		"ToSingleType":        toSingleType,
+		"ListOfEnum":          listOfEnum,
 	}
 )
+
+func listOfEnum() string {
+	schema := generator.GetSchema()
+
+	var result []string
+
+	for _, t := range schema.Types {
+		if t.Kind == introspection.TypeKindEnum && !strings.HasPrefix(t.Name, "__") {
+			result = append(result, t.Name)
+		}
+	}
+
+	return strings.Join(result, ", ")
+}
 
 // pascalCase change a type name into pascalCase
 func pascalCase(name string) string {
