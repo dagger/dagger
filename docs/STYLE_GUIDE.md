@@ -2,10 +2,9 @@
 
 ## Files
 
-- Filenames should be prefixed with random 6-digit identifier generated via `new.sh` script
+- Filenames for standalone articles (not list or index pages) should be prefixed with random 6-digit identifier generated via `new.sh` script
 - URLs for SDK-specific pages should be in the form `/sdk/[language]/[number]/[label]`
 - URLs for API- or CLI-specific pages should be in the form `/[api|cli]/[number]/[label]`
-- URLs for non-SDK pages should be in the form `/[number]/[label]`
 
 ## Page titles
 
