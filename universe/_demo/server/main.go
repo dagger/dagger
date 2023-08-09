@@ -19,12 +19,13 @@ func buildBase(ctx dagger.Context) *dagger.Container {
 }
 
 func binary(ctx dagger.Context) *dagger.File {
-	srcDir := dagger.DefaultClient().Host().Directory(".")
-	return buildBase(ctx).
-		WithMountedDirectory("/src", srcDir).
-		WithWorkdir("/src").
-		WithExec([]string{"go", "build", "-o", "/server", "./universe/_demo/server/cmd/server"}).
-		File("/server")
+	return dagger.DefaultClient().Go().Build(
+		buildBase(ctx),
+		dagger.DefaultClient().Host().Directory("."),
+		dagger.GoBuildOpts{
+			Packages: []string{"./universe/_demo/server/cmd/server"},
+		},
+	).File("server")
 }
 
 func UnitTest(ctx dagger.Context) error {

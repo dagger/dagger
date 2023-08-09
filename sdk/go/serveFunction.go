@@ -86,7 +86,6 @@ func (r *Environment) WithFunction_(in any) *Environment {
 				}
 			}
 			return false
-
 		case *goast.GenDecl:
 			// TODO:
 		default:
@@ -103,6 +102,7 @@ func (r *Environment) WithFunction_(in any) *Environment {
 		WithName(strcase.ToLowerCamel(fn.name)).
 		WithDescription(fn.doc)
 
+	params := []*goParam{}
 	for i, param := range fn.args {
 		// skip receiver
 		if fn.hasReceiver && i == 0 {
@@ -110,27 +110,55 @@ func (r *Environment) WithFunction_(in any) *Environment {
 		}
 
 		// skip Context
-		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if param.typ == daggerContextT {
 			continue
 		}
-		astType, err := goReflectTypeToGraphqlType(param.typ, false)
+
+		if param.typ.Kind() == reflect.Struct {
+			for i := 0; i < param.typ.NumField(); i++ {
+				field := param.typ.Field(i)
+				params = append(params, &goParam{
+					name:     strcase.ToLowerCamel(field.Name),
+					typ:      field.Type,
+					doc:      field.Tag.Get("doc"),
+					optional: true,
+				})
+			}
+			continue
+		}
+
+		params = append(params, param)
+	}
+
+	for _, param := range params {
+		astType, err := goReflectTypeToGraphqlType(param.typ, true)
 		if err != nil {
 			writeErrorf(err)
 		}
-		typeName := astType.Name()
-		isList := false
-		if !astType.NonNull {
-			// must be a list
-			typeName = astType.Elem.Name()
-			isList = true
+
+		if param.optional {
+			// ensure optional params (i.e. struct fields) are nullable
+			astType.NonNull = false
 		}
-		function = function.WithArg(param.name, typeName, isList, EnvironmentFunctionWithArgOpts{
-			Description: "TODO",
-		})
+
+		typeName := astType.Name()
+		isList := astType.NamedType == ""
+		isOptional := !astType.NonNull
+
+		function = function.WithArg(
+			param.name,
+			typeName,
+			isList,
+			EnvironmentFunctionWithArgOpts{
+				Description: param.doc,
+				IsOptional:  isOptional,
+			},
+		)
 	}
+
 	for _, param := range fn.returns {
 		// skip error
-		if param.typ == reflect.TypeOf((*error)(nil)).Elem() {
+		if param.typ == errorT {
 			continue
 		}
 		astType, err := goReflectTypeToGraphqlType(param.typ, false)

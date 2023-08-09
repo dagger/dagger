@@ -108,7 +108,7 @@ type EnvironmentFunction {
   args: [EnvironmentFunctionArg!]
 
   "TODO"
-  withArg(name: String!, argType: String!, isList: Boolean!, description: String): EnvironmentFunction!
+  withArg(name: String!, argType: String!, isList: Boolean!, isOptional: Boolean, description: String): EnvironmentFunction!
 
   "The name of the type returned by this function."
   resultType: String

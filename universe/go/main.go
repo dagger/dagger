@@ -1,4 +1,4 @@
-package goenv
+package main
 
 import (
 	"fmt"
@@ -7,56 +7,27 @@ import (
 	"dagger.io/dagger"
 )
 
-// TODO: integrate this into the API, have it cd into /absddfksdf so it doesn't
-// have to take an arg?
-func Cd(dst string, src *dagger.Directory) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			WithMountedDirectory(dst, src).
-			WithWorkdir(dst)
-	}
-}
-
-func GlobalCache(ctx dagger.Context) dagger.WithContainerFunc {
-	return func(ctr *dagger.Container) *dagger.Container {
-		return ctr.
-			WithMountedCache("/go/pkg/mod", ctx.Client().CacheVolume("go-mod")).
-			WithEnvVariable("GOMODCACHE", "/go/pkg/mod").
-			WithMountedCache("/go/build-cache", ctx.Client().CacheVolume("go-build")).
-			WithEnvVariable("GOCACHE", "/go/build-cache")
-	}
-}
-
-func BinPath(ctr *dagger.Container) *dagger.Container {
-	return ctr.
-		WithEnvVariable("GOBIN", "/go/bin").
-		WithEnvVariable("PATH", "$GOBIN:$PATH", dagger.ContainerWithEnvVariableOpts{
-			Expand: true,
-		})
+func main() {
+	dagger.DefaultContext().Client().Environment().
+		WithFunction_(Build).
+		WithFunction_(Test).
+		WithFunction_(Generate).
+		WithFunction_(Gotestsum).
+		WithFunction_(GolangCILint).
+		Serve()
 }
 
 type GoBuildOpts struct {
-	// Packages to build.
-	Packages []string
+	Packages []string `doc:"Packages to build."`
+	Subdir   string   `doc:"Subdirectory in which to place the built artifacts."`
+	Xdefs    []string `doc:"-X definitions to pass to go build -ldflags."`
+	Static   bool     `doc:"Whether to enable CGO."`
+	Race     bool     `doc:"Whether to build with race detection."`
 
-	// Optional subdirectory in which to place the built
-	// artifacts.
-	Subdir string
+	GOOS   string `doc:"GOOS to pass to go build for cross-compilation."`
+	GOARCH string `doc:"GOARCH to pass to go build. for cross-compilation"`
 
-	// -X definitions to pass to go build -ldflags.
-	Xdefs []string
-
-	// Whether to enable CGO.
-	Static bool
-
-	// Whether to build with race detection.
-	Race bool
-
-	// Cross-compile via GOOS and GOARCH.
-	GOOS, GOARCH string
-
-	// Arbitrary flags to pass along to go build.
-	BuildFlags []string
+	BuildFlags []string `doc:"Arbitrary flags to pass along to go build."`
 }
 
 func Build(ctx dagger.Context, base *dagger.Container, src *dagger.Directory, opts GoBuildOpts) *dagger.Directory {
@@ -119,12 +90,8 @@ func Test(
 	ctx dagger.Context,
 	base *dagger.Container,
 	src *dagger.Directory,
-	opts_ ...GoTestOpts,
+	opts GoTestOpts,
 ) *dagger.Container {
-	var opts GoTestOpts
-	if len(opts_) > 0 {
-		opts = opts_[0]
-	}
 	cmd := []string{"go", "test"}
 	if opts.Race {
 		cmd = append(cmd, "-race")
@@ -159,12 +126,8 @@ func Gotestsum(
 	ctx dagger.Context,
 	base *dagger.Container,
 	src *dagger.Directory,
-	opts_ ...GotestsumOpts,
+	opts GotestsumOpts,
 ) *dagger.Container {
-	var opts GotestsumOpts
-	if len(opts_) > 0 {
-		opts = opts_[0]
-	}
 	if opts.Format == "" {
 		opts.Format = "testname"
 	}
@@ -218,12 +181,8 @@ func GolangCILint(
 	ctx dagger.Context,
 	base *dagger.Container,
 	src *dagger.Directory,
-	opts_ ...GolangCILintOpts,
+	opts GolangCILintOpts,
 ) *dagger.Container {
-	var opts GolangCILintOpts
-	if len(opts_) > 0 {
-		opts = opts_[0]
-	}
 	cmd := []string{"golangci-lint", "run"}
 	if opts.Verbose {
 		cmd = append(cmd, "--verbose")

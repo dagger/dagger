@@ -1,6 +1,6 @@
 {
   "root": "../..",
-  "name": "apko",
+  "name": "go",
   "sdk": "go",
   "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixir", "sdk/nodejs", "sdk/rust"]
 }

@@ -126,7 +126,7 @@ func (r *Environment) WithCommand_(in any) *Environment {
 		}
 
 		// skip Context
-		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if param.typ == daggerContextT {
 			continue
 		}
 		cmd = cmd.WithFlag(param.name, EnvironmentCommandWithFlagOpts{
@@ -135,7 +135,7 @@ func (r *Environment) WithCommand_(in any) *Environment {
 	}
 	for _, param := range fn.returns {
 		// skip error
-		if param.typ == reflect.TypeOf((*error)(nil)).Elem() {
+		if param.typ == errorT {
 			continue
 		}
 		astType, err := goReflectTypeToGraphqlType(param.typ, false)

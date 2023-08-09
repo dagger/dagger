@@ -136,7 +136,7 @@ func (r *Environment) WithShell_(in any) *Environment {
 		}
 
 		// skip Context
-		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if param.typ == daggerContextT {
 			continue
 		}
 		shell = shell.WithFlag(param.name, EnvironmentShellWithFlagOpts{

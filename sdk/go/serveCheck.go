@@ -137,7 +137,7 @@ func (r *Environment) WithCheck_(in any) *Environment {
 		}
 
 		// skip Context
-		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if param.typ == daggerContextT {
 			continue
 		}
 		check = check.WithFlag(param.name, EnvironmentCheckWithFlagOpts{
@@ -269,7 +269,7 @@ func (r *EnvironmentCheck) WithSubcheck_(in any) *EnvironmentCheck {
 		}
 
 		// skip Context
-		if param.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if param.typ == daggerContextT {
 			continue
 		}
 		check = check.WithFlag(param.name, EnvironmentCheckWithFlagOpts{

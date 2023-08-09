@@ -2803,6 +2803,8 @@ func (r *EnvironmentFunction) ResultType(ctx context.Context) (string, error) {
 
 // EnvironmentFunctionWithArgOpts contains options for EnvironmentFunction.WithArg
 type EnvironmentFunctionWithArgOpts struct {
+	IsOptional bool
+
 	Description string
 }
 
@@ -2810,6 +2812,10 @@ type EnvironmentFunctionWithArgOpts struct {
 func (r *EnvironmentFunction) WithArg(name string, argType string, isList bool, opts ...EnvironmentFunctionWithArgOpts) *EnvironmentFunction {
 	q := r.Q.Select("withArg")
 	for i := len(opts) - 1; i >= 0; i-- {
+		// `isOptional` optional argument
+		if !querybuilder.IsZeroValue(opts[i].IsOptional) {
+			q = q.Arg("isOptional", opts[i].IsOptional)
+		}
 		// `description` optional argument
 		if !querybuilder.IsZeroValue(opts[i].Description) {
 			q = q.Arg("description", opts[i].Description)
@@ -3350,6 +3356,200 @@ func (r *GitRepository) Tag(name string) *GitRef {
 	}
 }
 
+type Go struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+}
+
+// GoBuildOpts contains options for Go.Build
+type GoBuildOpts struct {
+	Packages []string
+
+	Subdir string
+
+	Xdefs []string
+
+	Static bool
+
+	Race bool
+
+	Goos string
+
+	Goarch string
+
+	BuildFlags []string
+}
+
+func (r *Go) Build(base *Container, src *Directory, opts ...GoBuildOpts) *Directory {
+	q := r.Q.Select("build")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `packages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Packages) {
+			q = q.Arg("packages", opts[i].Packages)
+		}
+		// `subdir` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Subdir) {
+			q = q.Arg("subdir", opts[i].Subdir)
+		}
+		// `xdefs` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Xdefs) {
+			q = q.Arg("xdefs", opts[i].Xdefs)
+		}
+		// `static` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Static) {
+			q = q.Arg("static", opts[i].Static)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `goos` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Goos) {
+			q = q.Arg("goos", opts[i].Goos)
+		}
+		// `goarch` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Goarch) {
+			q = q.Arg("goarch", opts[i].Goarch)
+		}
+		// `buildFlags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].BuildFlags) {
+			q = q.Arg("buildFlags", opts[i].BuildFlags)
+		}
+	}
+	q = q.Arg("base", base)
+	q = q.Arg("src", src)
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Go) Generate(base *Container, src *Directory) *Directory {
+	q := r.Q.Select("generate")
+	q = q.Arg("base", base)
+	q = q.Arg("src", src)
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// GoGolangCilintOpts contains options for Go.GolangCilint
+type GoGolangCilintOpts struct {
+	Verbose bool
+
+	Timeout int
+}
+
+func (r *Go) GolangCilint(base *Container, src *Directory, opts ...GoGolangCilintOpts) *Container {
+	q := r.Q.Select("golangCilint")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `verbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Verbose) {
+			q = q.Arg("verbose", opts[i].Verbose)
+		}
+		// `timeout` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Timeout) {
+			q = q.Arg("timeout", opts[i].Timeout)
+		}
+	}
+	q = q.Arg("base", base)
+	q = q.Arg("src", src)
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// GoGotestsumOpts contains options for Go.Gotestsum
+type GoGotestsumOpts struct {
+	Packages []string
+
+	Format string
+
+	Race bool
+
+	GoTestFlags []string
+
+	GotestsumFlags []string
+}
+
+func (r *Go) Gotestsum(base *Container, src *Directory, opts ...GoGotestsumOpts) *Container {
+	q := r.Q.Select("gotestsum")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `packages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Packages) {
+			q = q.Arg("packages", opts[i].Packages)
+		}
+		// `format` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Format) {
+			q = q.Arg("format", opts[i].Format)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `goTestFlags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GoTestFlags) {
+			q = q.Arg("goTestFlags", opts[i].GoTestFlags)
+		}
+		// `gotestsumFlags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].GotestsumFlags) {
+			q = q.Arg("gotestsumFlags", opts[i].GotestsumFlags)
+		}
+	}
+	q = q.Arg("base", base)
+	q = q.Arg("src", src)
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// GoTestOpts contains options for Go.Test
+type GoTestOpts struct {
+	Packages []string
+
+	Race bool
+
+	Verbose bool
+
+	TestFlags []string
+}
+
+func (r *Go) Test(base *Container, src *Directory, opts ...GoTestOpts) *Container {
+	q := r.Q.Select("test")
+	for i := len(opts) - 1; i >= 0; i-- {
+		// `packages` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Packages) {
+			q = q.Arg("packages", opts[i].Packages)
+		}
+		// `race` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Race) {
+			q = q.Arg("race", opts[i].Race)
+		}
+		// `verbose` optional argument
+		if !querybuilder.IsZeroValue(opts[i].Verbose) {
+			q = q.Arg("verbose", opts[i].Verbose)
+		}
+		// `testFlags` optional argument
+		if !querybuilder.IsZeroValue(opts[i].TestFlags) {
+			q = q.Arg("testFlags", opts[i].TestFlags)
+		}
+	}
+	q = q.Arg("base", base)
+	q = q.Arg("src", src)
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
 // Information about the host execution environment.
 type Host struct {
 	Q *querybuilder.Selection
@@ -3824,6 +4024,15 @@ func (r *Client) Git(url string, opts ...GitOpts) *GitRepository {
 	q = q.Arg("url", url)
 
 	return &GitRepository{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Client) Go() *Go {
+	q := r.Q.Select("go")
+
+	return &Go{
 		Q: q,
 		C: r.C,
 	}

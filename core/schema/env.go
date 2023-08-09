@@ -877,6 +877,7 @@ type withFunctionArgArgs struct {
 	Description string
 	ArgType     string
 	IsList      bool
+	IsOptional  bool
 }
 
 func (s *environmentSchema) withFunctionArg(ctx *core.Context, parent *core.EnvironmentFunction, args withFunctionArgArgs) (*core.EnvironmentFunction, error) {
@@ -885,6 +886,7 @@ func (s *environmentSchema) withFunctionArg(ctx *core.Context, parent *core.Envi
 		Description: args.Description,
 		ArgType:     args.ArgType,
 		IsList:      args.IsList,
+		IsOptional:  args.IsOptional,
 	}), nil
 }
 

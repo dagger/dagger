@@ -22,6 +22,12 @@ func init() {
 	flag.BoolVar(&getSchema, "schema", false, "print the schema rather than executing")
 }
 
+var (
+	daggerContextT = reflect.TypeOf((*Context)(nil)).Elem()
+	errorT         = reflect.TypeOf((*error)(nil)).Elem()
+	marshallerT    = reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
+)
+
 type Context struct {
 	context.Context
 	client *Client
@@ -159,8 +165,10 @@ type goFunc struct {
 }
 
 type goParam struct {
-	name string
-	typ  reflect.Type
+	name     string
+	doc      string
+	typ      reflect.Type
+	optional bool
 }
 
 func (fn *goFunc) srcPathAndLine() (string, int) {
@@ -183,7 +191,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 	}
 
 	for _, arg := range fn.args[len(callArgs):] {
-		if arg.typ == reflect.TypeOf((*Context)(nil)).Elem() {
+		if arg.typ == daggerContextT {
 			callArgs = append(callArgs, reflect.ValueOf(Context{
 				Context: ctx,
 				client:  client,
@@ -192,11 +200,23 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 		}
 
 		rawArg, argValuePresent := rawArgs[arg.name]
-		var argIsOptional bool
-		switch arg.typ.Kind() {
-		case reflect.Ptr, reflect.Slice:
-			// TODO: sometimes we don't really want Ptr to necessarily mean "optional", i.e. *dagger.Container
-			argIsOptional = true
+
+		// support FooOpts structs
+		if arg.typ.Kind() == reflect.Struct {
+			opts := reflect.New(arg.typ)
+			for i := 0; i < arg.typ.NumField(); i++ {
+				field := arg.typ.Field(i)
+				rawArg, optPresent := rawArgs[strcase.ToLowerCamel(field.Name)]
+				if optPresent {
+					optVal, err := convertInput(rawArg, field.Type, client)
+					if err != nil {
+						return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
+					}
+					opts.Elem().Field(i).Set(reflect.ValueOf(optVal))
+				}
+			}
+			callArgs = append(callArgs, opts.Elem())
+			continue
 		}
 
 		switch {
@@ -206,7 +226,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 				return nil, fmt.Errorf("unable to convert arg %s: %w", arg.name, err)
 			}
 			callArgs = append(callArgs, reflect.ValueOf(argVal))
-		case !argIsOptional:
+		case !arg.optional:
 			return nil, fmt.Errorf("missing required argument %s", arg.name)
 		default:
 			callArgs = append(callArgs, reflect.New(arg.typ).Elem())
@@ -217,7 +237,7 @@ func (fn *goFunc) call(ctx context.Context, rawParent, rawArgs map[string]any) (
 	var returnVal any
 	var returnErr error
 	for _, output := range reflectOutputs {
-		if output.Type() == reflect.TypeOf((*error)(nil)).Elem() {
+		if output.Type() == errorT {
 			if !output.IsNil() {
 				returnErr = output.Interface().(error)
 			}
@@ -250,16 +270,30 @@ func inputName(name string) string {
 }
 
 func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error) {
+	// Handle types that implement the GraphQL serializer
+	if t.Implements(marshallerT) {
+		typ := reflect.New(t.Elem())
+		var typeName string
+		if isInput {
+			result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
+			typeName = result[0].String()
+		} else {
+			result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
+			typeName = result[0].String()
+		}
+		return ast.NonNullNamedType(typeName, nil), nil
+	}
+
 	switch t.Kind() {
 	case reflect.String:
-		/* TODO:(sipsma)
-		Huge hack: handle any scalar type from the go SDK (i.e. DirectoryID/ContainerID)
-		The much cleaner approach will come when we integrate this code w/ the
-		in-progress codegen work.
-		*/
-		if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger") {
-			return ast.NonNullNamedType(t.Name(), nil), nil
-		}
+		// /* TODO:(sipsma)
+		// Huge hack: handle any scalar type from the go SDK (i.e. DirectoryID/ContainerID)
+		// The much cleaner approach will come when we integrate this code w/ the
+		// in-progress codegen work.
+		// */
+		// if strings.HasPrefix(t.PkgPath(), "dagger.io/dagger") {
+		// 	return ast.NonNullNamedType(t.Name(), nil), nil
+		// }
 		return ast.NonNullNamedType("String", nil), nil
 	case reflect.Int:
 		return ast.NonNullNamedType("Int", nil), nil
@@ -273,24 +307,8 @@ func goReflectTypeToGraphqlType(t reflect.Type, isInput bool) (*ast.Type, error)
 		if err != nil {
 			return nil, err
 		}
-		return ast.ListType(elementType, nil), nil
+		return ast.NonNullListType(elementType, nil), nil
 	case reflect.Struct:
-		// Handle types that implement the GraphQL serializer
-		// TODO: move this at the top so it works on scalars as well
-		marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-		if t.Implements(marshaller) {
-			typ := reflect.New(t)
-			var typeName string
-			if isInput {
-				result := typ.MethodByName(querybuilder.GraphQLMarshallerIDType).Call([]reflect.Value{})
-				typeName = result[0].String()
-			} else {
-				result := typ.MethodByName(querybuilder.GraphQLMarshallerType).Call([]reflect.Value{})
-				typeName = result[0].String()
-			}
-			return ast.NonNullNamedType(typeName, nil), nil
-		}
-
 		if isInput {
 			return ast.NonNullNamedType(inputName(t.Name()), nil), nil
 		}
@@ -372,8 +390,7 @@ func convertResult(ctx context.Context, result any) (any, error) {
 // TODO: doc, basically inverse of convertResult
 func convertInput(input any, desiredType reflect.Type, client *Client) (any, error) {
 	// check if desiredType implements querybuilder.GraphQLMarshaller, in which case it's a core type e.g. Container
-	marshaller := reflect.TypeOf((*querybuilder.GraphQLMarshaller)(nil)).Elem()
-	if desiredType.Implements(marshaller) {
+	if desiredType.Implements(marshallerT) {
 		// ID-able dagger objects are serialized as their ID string across the wire
 		// between the session and project container.
 		id, ok := input.(string)
@@ -425,7 +442,9 @@ func convertInput(input any, desiredType reflect.Type, client *Client) (any, err
 		if err != nil {
 			return nil, err
 		}
-		return &x, nil
+		ptr := reflect.New(desiredType.Elem())
+		ptr.Elem().Set(reflect.ValueOf(x))
+		return ptr.Interface(), nil
 	case reflect.Slice:
 		returnObj := reflect.MakeSlice(desiredType, inputObj.Len(), inputObj.Len())
 		for i := 0; i < inputObj.Len(); i++ {

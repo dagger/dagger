@@ -436,12 +436,12 @@ func (env *Environment) buildSchema() (string, error) {
 		for _, arg := range function.Args {
 			typ := &ast.Type{
 				NamedType: arg.ArgType,
-				NonNull:   true, // TODO: support optional
+				NonNull:   !arg.IsOptional,
 			}
 			if arg.IsList {
 				typ = &ast.Type{
 					Elem:    typ,
-					NonNull: true, // TODO: support optional
+					NonNull: !arg.IsOptional,
 				}
 			}
 			fieldDef.Arguments = append(fieldDef.Arguments, &ast.ArgumentDefinition{
@@ -778,6 +778,7 @@ type EnvironmentFunctionArg struct {
 	Description string `json:"description"`
 	ArgType     string `json:"argType"`
 	IsList      bool   `json:"isList"`
+	IsOptional  bool   `json:"isOptional"`
 }
 
 func NewEnvironmentFunction(id EnvironmentFunctionID) (*EnvironmentFunction, error) {
