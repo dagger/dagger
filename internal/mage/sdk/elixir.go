@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -155,23 +156,25 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 	defer c.Close()
 
 	var (
-		version     = strings.TrimPrefix(tag, "sdk/elixir/v")
-		versionFile = "sdk/elixir/VERSION"
-		hexAPIKey   = os.Getenv("HEX_API_KEY")
-		dryRun      = os.Getenv("HEX_DRY_RUN")
+		version   = strings.TrimPrefix(tag, "sdk/elixir/v")
+		mixFile   = "sdk/elixir/mix.exs"
+		hexAPIKey = os.Getenv("HEX_API_KEY")
+		dryRun    = os.Getenv("HEX_DRY_RUN")
 	)
 
 	if hexAPIKey == "" {
 		return errors.New("HEX_API_KEY environment variable must be set")
 	}
 
-	if err := os.WriteFile(versionFile, []byte(version), 0o600); err != nil {
+	mixExs, err := os.ReadFile(mixFile)
+	if err != nil {
 		return err
 	}
-	defer func() {
-		// Ensure to not make version file dirty.
-		os.WriteFile(versionFile, []byte("0.0.0\n"), 0o600)
-	}()
+	newMixExs := bytes.Replace(mixExs, []byte(`@version "0.0.0"`), []byte(`@version "`+version+`"`), 1)
+	err = os.WriteFile(mixFile, newMixExs, 0o600)
+	if err != nil {
+		return err
+	}
 
 	args := []string{"mix", "hex.publish", "--yes"}
 	if dryRun != "" {
@@ -184,6 +187,7 @@ func (Elixir) Publish(ctx context.Context, tag string) error {
 		WithEnvVariable("HEX_API_KEY", hexAPIKey).
 		WithExec(args).
 		Sync(ctx)
+
 	return err
 }
 
@@ -206,6 +210,7 @@ func (Elixir) Bump(ctx context.Context, engineVersion string) error {
 
 func elixirBase(c *dagger.Client, elixirVersion string) *dagger.Container {
 	const appDir = "sdk/elixir"
+
 	src := c.Directory().WithDirectory("/", util.Repository(c).Directory(appDir))
 
 	mountPath := fmt.Sprintf("/%s", appDir)
