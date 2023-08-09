@@ -19,6 +19,7 @@ This tutorial assumes that:
 
 - You have a Node.js development environment with Node.js 16.x or later. If not, install [NodeJS](https://nodejs.org/en/download/).
 - You have a Node.js application developed in either JavaScript or TypeScript. If not, follow the steps in Appendix A to [create an example React application in TypeScript](#appendix-a-create-a-react-application).
+- You have the Dagger CLI installed on the host system. If not, [install the Dagger CLI](../../cli/465058-install.md).
 - You have Docker installed and running on the host system. If not, [install Docker](https://docs.docker.com/engine/install/).
 
 ## Step 1: Install the Dagger Node.js SDK
@@ -101,27 +102,27 @@ Run the Node.js CI tool by executing the command below from the project director
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.mts
+dagger run node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
   <TabItem value="js-esm" label="JavaScript (ESM)">
 
 ```shell
-node ./build.mjs
+dagger run node ./build.mjs
 ```
 
   </TabItem>
   <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
-node ./build.js
+dagger run node ./build.js
 ```
 
   </TabItem>
 </Tabs>
 
-The tool outputs a string similar to the one below.
+The `dagger run` command executes the specified command in a Dagger session and displays live progress. At the end of the process, the tool outputs a string similar to the one below.
 
 ```shell
 Hello from Dagger and Node v16.18.1
@@ -180,21 +181,21 @@ Run the Node.js CI tool by executing the command below:
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.mts
+dagger run node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
   <TabItem value="js-esm" label="JavaScript (ESM)">
 
 ```shell
-node ./build.mjs
+dagger run node ./build.mjs
 ```
 
   </TabItem>
   <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
-node ./build.js
+dagger run node ./build.js
 ```
 
   </TabItem>
@@ -268,7 +269,7 @@ Run the Node.js CI tool by executing the command below:
   <TabItem value="ts" label="TypeScript">
 
 ```shell
-node --loader ts-node/esm ./build.mts
+dagger run node --loader ts-node/esm ./build.mts
 ```
 
   </TabItem>
@@ -276,14 +277,14 @@ node --loader ts-node/esm ./build.mts
   <TabItem value="js-esm" label="JavaScript (ESM)">
 
 ```shell
-node ./build.mjs
+dagger run node ./build.mjs
 ```
 
   </TabItem>
   <TabItem value="js-cjs" label="JavaScript (CommonJS)">
 
 ```shell
-node ./build.js
+dagger run node ./build.js
 ```
 
   </TabItem>
