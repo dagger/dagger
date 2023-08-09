@@ -13,11 +13,9 @@ import (
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/socket"
-	"github.com/dagger/dagger/router"
 
 	"github.com/moby/buildkit/frontend/dockerfile/shell"
 	"github.com/moby/buildkit/util/leaseutil"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type containerSchema struct {
