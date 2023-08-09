@@ -18,12 +18,6 @@ func buildBase(ctx dagger.Context) *dagger.Container {
 	return dagger.DefaultClient().Apko().Wolfi([]string{"go-1.20"})
 }
 
-func Container(ctx dagger.Context) (*dagger.Container, error) {
-	return dagger.DefaultClient().Apko().Wolfi(nil).
-		WithMountedFile("/usr/bin/server", binary(ctx)).
-		WithExposedPort(8080), nil
-}
-
 func binary(ctx dagger.Context) *dagger.File {
 	srcDir := dagger.DefaultClient().Host().Directory(".")
 	return buildBase(ctx).
@@ -54,4 +48,11 @@ func Publish(ctx dagger.Context, version string) (string, error) {
 	// TODO: call go releaser from universe?
 	fmt.Println("Publishing version", version)
 	return "", nil
+}
+
+func Container(ctx dagger.Context) (*dagger.Container, error) {
+	return dagger.DefaultClient().Apko().Wolfi(nil).
+		WithMountedFile("/usr/bin/server", binary(ctx)).
+		WithExposedPort(8081).
+		WithExec([]string{"/usr/bin/server"}), nil
 }

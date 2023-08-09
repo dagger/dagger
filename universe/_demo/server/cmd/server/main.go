@@ -11,11 +11,10 @@ func main() {
 	mux.HandleFunc("/hello", func(w http.ResponseWriter, r *http.Request) {
 		respMsg := fmt.Sprintf("Hello, %s!", r.RemoteAddr)
 		fmt.Fprintln(w, respMsg)
-		w.WriteHeader(http.StatusOK)
 	})
 
 	httpSrv := http.Server{
-		Addr:              ":8080",
+		Addr:              ":8081",
 		Handler:           mux,
 		ReadHeaderTimeout: 30 * time.Second,
 	}

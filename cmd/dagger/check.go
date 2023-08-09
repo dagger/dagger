@@ -71,6 +71,7 @@ func ListChecks(ctx context.Context, _ *client.Client, c *dagger.Client, loadedE
 		if err != nil {
 			return fmt.Errorf("failed to get check name: %w", err)
 		}
+		name = strcase.ToKebab(name)
 
 		descr, err := check.Description(ctx)
 		if err != nil {

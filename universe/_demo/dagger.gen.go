@@ -18,6 +18,29 @@ type daggerClient struct {
 	*Client
 }
 
+type Democlient struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+}
+
+func (r *Democlient) Publish() *EnvironmentCheck {
+	q := r.Q.Select("publish")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Democlient) UnitTest() *EnvironmentCheck {
+	q := r.Q.Select("unit_test")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
 type Demoserver struct {
 	Q *querybuilder.Selection
 	C graphql.Client
@@ -51,6 +74,15 @@ func (r *Demoserver) UnitTest() *EnvironmentCheck {
 	q := r.Q.Select("unitTest")
 
 	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *daggerClient) Democlient() *Democlient {
+	q := r.Q.Select("democlient")
+
+	return &Democlient{
 		Q: q,
 		C: r.C,
 	}

@@ -50,9 +50,7 @@ func (container *Container) ShellEndpoint(bk *buildkit.Client, progSock string) 
 		// TODO:
 		bklog.G(context.TODO()).Debugf("SHELL HANDLER FOR %s HAS BEEN UPGRADED", endpoint)
 
-		// TODO:?
-		// if err := container.runShell(r.Context(), ws, bk, progSock); err != nil {
-		if err := container.runShell(context.Background(), ws, bk, progSock, clientMetadata); err != nil {
+		if err := container.runShell(r.Context(), ws, bk, progSock, clientMetadata); err != nil {
 			bklog.G(r.Context()).WithError(err).Error("shell handler failed")
 		}
 	}), nil

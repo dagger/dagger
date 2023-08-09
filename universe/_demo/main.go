@@ -9,8 +9,8 @@ import (
 func main() {
 	DaggerClient().Environment().
 		WithCommand_(PublishAll).
-		// TODO: WithCheck_(IntegTest).
-		// TODO: WithShell_(DevShell).
+		WithCheck_(IntegTest).
+		WithShell_(DevShell).
 		Serve()
 }
 
@@ -31,14 +31,13 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
-/*
 func IntegTest(ctx dagger.Context) error {
 	// TODO: clientApp := Dagger().Democlient().Build()
 	clientApp := DaggerClient().Apko().Wolfi([]string{"curl"})
 
 	_, err := clientApp.
 		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
-		WithExec([]string{"curl", "http://server/hello"}).
+		WithExec([]string{"curl", "http://server:8081/hello"}).
 		Sync(ctx)
 	return err
 }
@@ -51,4 +50,3 @@ func DevShell(ctx dagger.Context) (*dagger.Container, error) {
 		WithServiceBinding("server", DaggerClient().Demoserver().Container()).
 		WithEntrypoint([]string{"sh"}), nil
 }
-*/
