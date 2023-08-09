@@ -1,5 +1,6 @@
 {
   "name": "democlient",
   "sdk": "python",
-  "root": "../../../"
+  "root": "../../../",
+  "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixter", "sdk/nodejs", "sdk/rust"]
 }

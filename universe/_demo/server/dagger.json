@@ -1,5 +1,6 @@
 {
   "root": "../../..",
   "name": "demoserver",
-  "sdk": "go"
+  "sdk": "go",
+  "exclude": [".git/", "bin/", "docs/", "universe/universe.tar", "sdk/cue", "sdk/dotnet", "sdk/elixter", "sdk/nodejs", "sdk/rust"]
 }

@@ -292,7 +292,15 @@ func (p localEnvironment) load(c *dagger.Client) (*dagger.Environment, error) {
 	if strings.HasPrefix(subdirRelPath, "..") {
 		return nil, fmt.Errorf("environment config path %q is not under environment root %q", p.path, rootDir)
 	}
-	return c.Environment().Load(c.Host().Directory(rootDir), subdirRelPath), nil
+	cfg, err := p.config()
+	if err != nil {
+		return nil, err
+	}
+	hostDir := c.Host().Directory(rootDir, dagger.HostDirectoryOpts{
+		Include: cfg.Include,
+		Exclude: cfg.Exclude,
+	})
+	return c.Environment().Load(hostDir, subdirRelPath), nil
 }
 
 func (p localEnvironment) rootDir() (string, error) {
