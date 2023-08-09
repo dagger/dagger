@@ -90,6 +90,7 @@ Note: While the DAG is constructed serially, the engine will execute the full DA
 - [secrets](./nodejs/secrets/)
 - [multiplatform](./nodejs/multiplatform/)
 - [multistage](./nodejs/multistage/)
+- [Pulumi](./nodejs/pulumi/)
 
 ### Bash with Dagger CLI and GraphQL
 
