@@ -16,12 +16,16 @@ dagger [options] [command]
 
 The options below can be used with all CLI commands.
 
-| Option         | Description                                     |
-| -------------- | ----------------------------------------------- |
-| `--debug`      | Show Buildkitd debug logs                       |
-| `-h`, `--help` | Show help text                                  |
-| `--workdir`    | Define the host working directory (default `.`) |
-| ---            | ---                                             |
+| Option                | Description                                                      |
+| --------------------- | ---------------------------------------------------------------- |
+| `--cpuprofile string` | Collect CPU profile to path, and trace at path.trace             |
+| `--debug`             | Show more information for debugging                              |
+| `--pprof string`      | Serve HTTP pprof at this address                                 |
+| `--progress string`   | Progress output format (`auto`, `plain`, `tty`) (default `auto`) |
+| `-s`, `--silent`      | Disable terminal UI and progress output                          |
+| `-h`, `--help`        | Show help text                                                   |
+| `--workdir`           | Define the host working directory (default `.`)                  |
+| --------------------- | ---------------------------------------------------------------- |
 
 ## Commands
 
@@ -80,7 +84,7 @@ dagger run [--debug] [command]
 | ------------ | -----------------------------|
 | `--debug`    | Display underlying API calls |
 
-### Example
+### Examples
 
 Make an HTTP request using `curl`:
 
@@ -90,6 +94,30 @@ dagger run -- sh -c 'curl \
   -H "content-type:application/json" \
   -d "{\"query\":\"{container{id}}\"}" \
   http://127.0.0.1:$DAGGER_SESSION_PORT/query'
+```
+
+Direct command output to file, displaying progress in terminal:
+
+```shell
+dagger run go run ci.go > foo.out
+```
+
+Output Dagger logs to file:
+
+```shell
+dagger run go run ci.go > log.txt 2>&1
+```
+
+Output Dagger logs to terminal and to file:
+
+```shell
+dagger run go run ci.go 2>&1 | tee log.txt
+```
+
+Disable Dagger terminal output, but continue emitting program standard output:
+
+```shell
+dagger --silent run go run ci.go 2>&1 | tee foo.out
 ```
 
 ## dagger help
