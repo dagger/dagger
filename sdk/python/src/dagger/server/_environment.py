@@ -155,7 +155,7 @@ class Environment:
     ) -> ResolverFunc[T] | DecoratedResolverFunc[T]:
         def wrapper(func: ResolverFunc[T]):
             r = resolver_class.from_callable(func, name, description)
-            self._resolvers[r.name] = r
+            self._resolvers[r.graphql_name] = r
             return func
 
         return wrapper(resolver_func) if resolver_func else wrapper

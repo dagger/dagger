@@ -21,19 +21,24 @@ type daggerClient struct {
 type Democlient struct {
 	Q *querybuilder.Selection
 	C graphql.Client
+
+	publish *string
 }
 
-func (r *Democlient) Publish() *EnvironmentCheck {
+func (r *Democlient) Publish(ctx context.Context) (string, error) {
+	if r.publish != nil {
+		return *r.publish, nil
+	}
 	q := r.Q.Select("publish")
 
-	return &EnvironmentCheck{
-		Q: q,
-		C: r.C,
-	}
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
 }
 
 func (r *Democlient) UnitTest() *EnvironmentCheck {
-	q := r.Q.Select("unit_test")
+	q := r.Q.Select("unitTest")
 
 	return &EnvironmentCheck{
 		Q: q,

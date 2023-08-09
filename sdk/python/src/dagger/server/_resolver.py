@@ -5,6 +5,8 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Generic, Protocol, TypeAlias, TypeVar
 
+from gql.utils import to_camel_case
+
 from ._utils import await_maybe
 
 if TYPE_CHECKING:
@@ -45,11 +47,15 @@ class Resolver(Generic[T]):
         description = description or inspect.getdoc(func)
         return cls(func, name, description)
 
+    @property
+    def graphql_name(self) -> str:
+        return to_camel_case(self.name)
+
     def register(self, env: dagger.Environment) -> dagger.Environment:
         return env
 
     def create_kind(self, kind: K) -> K:
-        kind = kind.with_name(self.name)
+        kind = kind.with_name(self.graphql_name)
         if self.description:
             kind = kind.with_description(self.description)
         return kind

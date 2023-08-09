@@ -6,7 +6,7 @@ env = Environment()
 
 
 @env.command
-async def pypublish() -> str:
+async def publish() -> str:
     """Publish the client."""
     return await (
         dagger.container()
@@ -17,7 +17,7 @@ async def pypublish() -> str:
 
 
 @env.check
-async def pylint() -> str:
+async def lint() -> str:
     """Lint the Python SDK"""
     return await (
         dagger.container()
