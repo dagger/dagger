@@ -8,14 +8,8 @@ import dagger
 async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
-
         # get repository at specified branch
-        project = (
-          client
-          .git("https://github.com/dagger/dagger")
-          .branch("main")
-          .tree()
-        )
+        project = client.git("https://github.com/dagger/dagger").branch("main").tree()
 
         # return container with repository
         # at /src path
@@ -30,5 +24,6 @@ async def main():
         )
 
     print(out)
+
 
 anyio.run(main)
