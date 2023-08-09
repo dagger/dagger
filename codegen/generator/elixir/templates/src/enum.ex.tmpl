@@ -1,0 +1,17 @@
+{{- if IsEnum . }}
+
+defmodule {{ .Name | FormatModule }} do
+  @moduledoc {{ .Description | DocComment }}
+
+  @type t :: {{ .EnumValues | SortEnumFields | FormatEnumType }}
+
+  {{- range $index, $field := .EnumValues | SortEnumFields }}
+  @doc {{ $field.Description | DocComment }}
+  {{- if $field.IsDeprecated }}
+  @deprecated {{ $field.DeprecationReason | FormatDeprecation }}
+  {{- end }}
+  def {{ $field.Name | FormatFunction }}(), do: {{ $field.Name | FormatEnum }}
+  {{- end }}
+end
+
+{{- end }}

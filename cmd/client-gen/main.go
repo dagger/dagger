@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dagger/dagger/codegen/generator"
+	elixirgenerator "github.com/dagger/dagger/codegen/generator/elixir"
 	gogenerator "github.com/dagger/dagger/codegen/generator/go"
 	nodegenerator "github.com/dagger/dagger/codegen/generator/nodejs"
 	"github.com/dagger/dagger/codegen/introspection"
@@ -152,10 +153,14 @@ func generate(ctx context.Context, introspectionSchema *introspection.Schema, cf
 	case generator.SDKLangNodeJS:
 		gen = &nodegenerator.NodeGenerator{}
 
+	case generator.SDKLangElixir:
+		gen = &elixirgenerator.ElixirGenerator{}
+
 	default:
 		sdks := []string{
 			string(generator.SDKLangGo),
 			string(generator.SDKLangNodeJS),
+			string(generator.SDKLangElixir),
 		}
 		return []byte{}, fmt.Errorf("use target SDK language: %s: %w", sdks, generator.ErrUnknownSDKLang)
 	}

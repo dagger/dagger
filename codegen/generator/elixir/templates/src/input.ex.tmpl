@@ -1,0 +1,9 @@
+defmodule {{ .Name | FormatModule }} do
+  @moduledoc {{ .Description | DocComment }}
+
+  @type t :: %__MODULE__{
+  {{- range $field := .InputFields }}
+    {{ $field.Name }}: {{ $field.TypeRef | FormatInputType }},
+  {{- end }}
+  }
+end
