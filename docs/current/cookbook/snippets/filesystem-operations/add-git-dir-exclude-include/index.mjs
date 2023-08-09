@@ -17,7 +17,7 @@ connect(
       .from("alpine:latest")
       .withDirectory("/src", project, {
         include: ["*.md"],
-        exclude: ["README.md"]
+        exclude: ["README.md"],
       })
       .withWorkdir("/src")
       .withExec(["ls", "/src"])
