@@ -1,5 +1,5 @@
 ---
-slug: /7442989/cookbook
+slug: /cookbook
 ---
 
 import Tabs from "@theme/Tabs";
@@ -280,7 +280,7 @@ The following code listing builds an image using an existing Dockerfile.
 </TabItem>
 </Tabs>
 
-[Learn more](./quickstart/429462-quickstart-build-dockerfile.mdx)
+[Learn more](./quickstart/429462-build-dockerfile.mdx)
 
 ### Add OCI annotations to image
 
@@ -764,7 +764,7 @@ The following code listing uses a cache volume for application dependencies. Thi
 </TabItem>
 </Tabs>
 
-[Learn more](./quickstart/635927-quickstart-caching.mdx)
+[Learn more](./quickstart/635927-caching.mdx)
 
 ### Persist service state between runs
 

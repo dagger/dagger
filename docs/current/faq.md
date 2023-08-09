@@ -1,5 +1,5 @@
 ---
-slug: /162770/faq
+slug: /faq
 ---
 
 import Tabs from "@theme/Tabs";
@@ -166,7 +166,7 @@ No. You only need to know one of Dagger's supported SDKs languages to use Dagger
 
 ### There's no SDK for &lt;language&gt; yet. Can I still use Dagger?
 
-Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/) ([example](./api/254103-build-custom-client.md)) or from the [Dagger CLI](./cli/698277-index.md).
+Yes. It's possible to use the Dagger GraphQL API from any language that [supports GraphQL](https://graphql.org/code/) ([example](./api/254103-build-custom-client.md)) or from the [Dagger CLI](./cli/index.md).
 
 ### I am stuck. How can I get help?
 
