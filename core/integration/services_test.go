@@ -593,6 +593,14 @@ func TestContainerExecServicesChained(t *testing.T) {
 	require.Equal(t, "0\n1\n2\n3\n4\n5\n6\n7\n8\n9\n", fileContent)
 }
 
+// NB: currently maxes out around 8-9 due to 256 character limit on DNS
+// search domain config
+//
+// 4 is the effective limit in GitHub actions, since a) after bootstrapping
+// on 0.8 the outer Dagger adds domains of its own, and b) GitHub adds a
+// quite long (52-char) domain to begin with
+const nestingLimit = 4
+
 func TestContainerExecServicesNestedExec(t *testing.T) {
 	t.Parallel()
 
@@ -609,10 +617,6 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 	content := identity.NewID()
 	srv, svcURL := httpService(ctx, t, c, content)
 
-	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
-	// search domain config
-	depth := 5
-
 	fileContent, err := c.Container().
 		From("golang:1.20.6-alpine").
 		WithServiceBinding("www", srv).
@@ -624,7 +628,7 @@ func TestContainerExecServicesNestedExec(t *testing.T) {
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested/",
-			"exec", strconv.Itoa(depth), svcURL,
+			"exec", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
@@ -649,10 +653,6 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 	content := identity.NewID()
 	srv, svcURL := httpService(ctx, t, c, content)
 
-	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
-	// search domain config
-	depth := 5
-
 	fileContent, err := c.Container().
 		From("golang:1.20.6-alpine").
 		WithServiceBinding("www", srv).
@@ -664,7 +664,7 @@ func TestContainerExecServicesNestedHTTP(t *testing.T) {
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested/",
-			"http", strconv.Itoa(depth), svcURL,
+			"http", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
@@ -689,10 +689,6 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 	content := identity.NewID()
 	srv, svcURL := gitService(ctx, t, c, c.Directory().WithNewFile("/index.html", content))
 
-	// NB: currently maxes out around 8-9 due to 256 character limit on DNS
-	// search domain config
-	depth := 5
-
 	fileContent, err := c.Container().
 		From("golang:1.20.6-alpine").
 		WithServiceBinding("www", srv).
@@ -704,7 +700,7 @@ func TestContainerExecServicesNestedGit(t *testing.T) {
 		WithEnvVariable("GOCACHE", "/go/build-cache").
 		WithExec([]string{
 			"go", "run", "./core/integration/testdata/nested/",
-			"git", strconv.Itoa(depth), svcURL,
+			"git", strconv.Itoa(nestingLimit), svcURL,
 		}, dagger.ContainerWithExecOpts{
 			ExperimentalPrivilegedNesting: true,
 		}).
