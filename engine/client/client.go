@@ -84,6 +84,8 @@ type Client struct {
 	hostname string
 
 	nestedSessionPort int
+
+	labels []pipeline.Label
 }
 
 func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, rerr error) {
@@ -211,12 +213,15 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if err != nil {
 		return nil, nil, fmt.Errorf("get workdir: %w", err)
 	}
+
+	c.labels = pipeline.LoadVCSLabels(workdir)
+
 	c.internalCtx = engine.ContextWithClientMetadata(c.internalCtx, &engine.ClientMetadata{
 		ClientID:          c.ID(),
 		ClientSecretToken: c.SecretToken,
 		ServerID:          c.ServerID,
 		ClientHostname:    c.hostname,
-		Labels:            pipeline.LoadVCSLabels(workdir),
+		Labels:            c.labels,
 		ParentClientIDs:   c.ParentClientIDs,
 	})
 
@@ -249,6 +254,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ParentClientIDs:     c.ParentClientIDs,
 				ClientHostname:      hostname,
 				UpstreamCacheConfig: c.upstreamCacheOptions,
+				Labels:              c.labels,
 			}.AppendToMD(meta))
 		})
 	})
@@ -371,6 +377,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		ServerID:          c.ServerID,
 		ClientHostname:    c.hostname,
 		ParentClientIDs:   c.ParentClientIDs,
+		Labels:            c.labels,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
