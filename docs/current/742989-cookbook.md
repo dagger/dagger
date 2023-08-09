@@ -88,7 +88,7 @@ The following code listing mounts a host directory in a container at the `/host`
 
 [Learn more](./guides/421437-work-with-host-filesystem.md)
 
-### Get host directory with exclusions
+### Get host directory with filters
 
 The following code listing obtains a reference to the host working directory containing all files except `*.txt` files.
 
@@ -113,10 +113,6 @@ The following code listing obtains a reference to the host working directory con
 </TabItem>
 </Tabs>
 
-[Learn more](./guides/421437-work-with-host-filesystem.md)
-
-### Get host directory with inclusions
-
 The following code listing obtains a reference to the host working directory containing only `*.rar` files.
 
 <Tabs groupId="language">
@@ -139,10 +135,6 @@ The following code listing obtains a reference to the host working directory con
 
 </TabItem>
 </Tabs>
-
-[Learn more](./guides/421437-work-with-host-filesystem.md)
-
-### Get host directory with exclusions and inclusions
 
 The following code listing obtains a reference to the host working directory containing all files except `*.rar` files.
 
@@ -194,7 +186,7 @@ The following code listing adds a remote Git repository branch to a container as
 </TabItem>
 </Tabs>
 
-### Add Git repository as directory to container with exclusions
+### Add Git repository as directory to container with filters
 
 The following code listing adds a remote Git repository branch as a directory at the `/src` container path, excluding `*.md` files.
 
@@ -219,8 +211,6 @@ The following code listing adds a remote Git repository branch as a directory at
 </TabItem>
 </Tabs>
 
-### Add Git repository as directory to container with inclusions
-
 The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including only `*.md` files.
 
 <Tabs groupId="language">
@@ -243,8 +233,6 @@ The following code listing adds a remote Git repository branch as a directory at
 
 </TabItem>
 </Tabs>
-
-### Add Git repository as directory to container with exclusions and inclusions
 
 The following code listing adds a remote Git repository branch as a directory at the `/src` container path, including all files except files beginning with `.git`.
 

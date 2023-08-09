@@ -13,13 +13,13 @@ async def main():
 
         # return container with repository
         # at /src path
-        # including all files except files beginning with .git
+        # include all *.md files except README.md
         out = await (
             client.container()
             .from_("alpine:latest")
-            .with_directory("/src", project, include=["*"], exclude=[".git*"])
+            .with_directory("/src", project, include=["*.md"], exclude=["README.md"])
             .with_workdir("/src")
-            .with_exec(["ls", "-a", "/src"])
+            .with_exec(["ls", "/src"])
             .stdout()
         )
 

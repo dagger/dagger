@@ -26,12 +26,12 @@ func main() {
 
 	// return container with repository
 	// at /src path
-	// including all files except files beginning with .git
+	// include all *.md files except README.md
 	contents, err := client.Container().
 		From("alpine:latest").
 		WithDirectory("/src", project, dagger.ContainerWithDirectoryOpts{
-			Include: []string{"*"},
-			Exclude: []string{".git*"},
+			Include: []string{"*.md"},
+			Exclude: []string{"README.md"},
 		}).
 		WithWorkdir("/src").
 		WithExec([]string{"ls", "/src"}).

@@ -11,13 +11,13 @@ connect(
 
     // return container with repository
     // at /src path
-    // including all files except files beginning with .git
+    // include all *.md files except README.md
     const contents = await client
       .container()
       .from("alpine:latest")
-      .withDirectory("/src", project, { include: ["*"], exclude: [".git*"] })
+      .withDirectory("/src", project, { include: ["*.md"], exclude: ["README.md"] })
       .withWorkdir("/src")
-      .withExec(["ls", "-a", "/src"])
+      .withExec(["ls", "/src"])
       .stdout()
 
     console.log(contents)
