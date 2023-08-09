@@ -29,8 +29,4 @@ async def main():
 
     print(out)
 
-<<<<<<< HEAD
-
-=======
->>>>>>> 94586f11 (docs: Added cookbook recipe for Git dir ops)
 anyio.run(main)

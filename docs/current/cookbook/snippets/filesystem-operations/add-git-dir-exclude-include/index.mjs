@@ -15,7 +15,10 @@ connect(
     const contents = await client
       .container()
       .from("alpine:latest")
-      .withDirectory("/src", project, { include: ["*.md"], exclude: ["README.md"] })
+      .withDirectory("/src", project, {
+        include: ["*.md"],
+        exclude: ["README.md"]
+      })
       .withWorkdir("/src")
       .withExec(["ls", "/src"])
       .stdout()
