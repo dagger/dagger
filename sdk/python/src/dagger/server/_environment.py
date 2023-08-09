@@ -1,11 +1,10 @@
 import functools
-import inspect
 import logging
 import sys
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as _
-from typing import Annotated, Any, TypeAlias
+from typing import Annotated, Any, TypeAlias, TypeVar, overload
 
 import anyio
 import rich
@@ -16,11 +15,12 @@ from rich.console import Console
 import dagger
 from dagger.log import configure_logging
 
+from ._checks import CheckResolver, CheckResolverFunc
+from ._commands import CommandResolver, CommandResolverFunc
 from ._converter import converter as json_converter
 from ._converter import register_dagger_type_hooks
 from ._exceptions import FatalError
-
-CheckResolverFunc: TypeAlias = Callable[..., Coroutine[Any, Any, str]]
+from ._resolver import Resolver, ResolverFunc
 
 errors = Console(stderr=True)
 logger = logging.getLogger(__name__)
@@ -29,27 +29,9 @@ inputs_path = anyio.Path("/inputs/dagger.json")
 outputs_path = anyio.Path("/outputs/dagger.json")
 envid_path = anyio.Path("/outputs/envid")
 
+T = TypeVar("T")
 
-@dataclass(slots=True)
-class Resolver:
-    wrapped_func: CheckResolverFunc
-    name: str
-    description: str | None
-
-    @classmethod
-    def from_callable(
-        cls,
-        func: CheckResolverFunc,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        name = name or func.__name__
-        description = description or inspect.getdoc(func)
-        return cls(func, name, description)
-
-    async def call(self, *args, **kwargs):
-        # TODO: Use await_maybe to support non-async functions
-        return await self.wrapped_func(*args, **kwargs)
+DecoratedResolverFunc: TypeAlias = Callable[[ResolverFunc[T]], ResolverFunc[T]]
 
 
 @dataclass(slots=True)
@@ -90,10 +72,10 @@ class Environment:
         env = dagger.environment()
 
         for r in self._resolvers.values():
-            check = dagger.environment_check().with_name(r.name)
-            if r.description:
-                check = check.with_description(r.description)
-            env = env.with_check(check)
+            try:
+                env = r.register(env)
+            except TypeError:
+                logger.exception("Failed to register resolver %s", r.name)
 
         envid = await env.id()
         logger.debug("EnvironmentID = %s", envid)
@@ -141,6 +123,57 @@ class Environment:
         logger.debug("output = %s", output)
         await outputs_path.write_text(output)
 
+    @overload
+    def _generic_decorator(
+        self,
+        resolver_class: type[Resolver[T]],
+        resolver_func: None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> DecoratedResolverFunc[T]:
+        ...
+
+    @overload
+    def _generic_decorator(
+        self,
+        resolver_class: type[Resolver[T]],
+        resolver_func: ResolverFunc[T],
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> ResolverFunc[T]:
+        ...
+
+    def _generic_decorator(
+        self,
+        resolver_class: type[Resolver[T]],
+        resolver_func: ResolverFunc[T] | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> ResolverFunc[T] | DecoratedResolverFunc[T]:
+        def wrapper(func: ResolverFunc[T]):
+            r = resolver_class.from_callable(func, name, description)
+            self._resolvers[r.name] = r
+            return func
+
+        return wrapper(resolver_func) if resolver_func else wrapper
+
+    def command(
+        self,
+        resolver: CommandResolverFunc | None = None,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ):
+        return self._generic_decorator(
+            CommandResolver,
+            resolver,
+            name=name,
+            description=description,
+        )
+
     def check(
         self,
         resolver: CheckResolverFunc | None = None,
@@ -148,9 +181,9 @@ class Environment:
         name: str | None = None,
         description: str | None = None,
     ):
-        def wrapper(func: CheckResolverFunc):
-            r = Resolver.from_callable(func, name, description)
-            self._resolvers[r.name] = r
-            return r
-
-        return wrapper(resolver) if resolver else wrapper
+        return self._generic_decorator(
+            CheckResolver,
+            resolver,
+            name=name,
+            description=description,
+        )

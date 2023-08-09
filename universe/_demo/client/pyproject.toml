@@ -1,5 +1,5 @@
 [project]
-name = "basic"
+name = "democlient"
 version = "0.0.0"
 dependencies = [
     "dagger-io[server] @ {root:uri}/../../../sdk/python"

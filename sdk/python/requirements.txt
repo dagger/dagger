@@ -70,7 +70,7 @@ platformdirs==3.10.0
     #   black
 pluggy==1.2.0
     # via pytest
-pygments==2.15.1
+pygments==2.16.1
     # via rich
 pytest==7.4.0
     # via
@@ -93,7 +93,7 @@ rich==13.5.2
     # via
     #   -r -
     #   typer
-ruff==0.0.282
+ruff==0.0.283
     # via -r -
 shellingham==1.5.0.post1
     # via typer
@@ -104,7 +104,7 @@ sniffio==1.3.0
     #   anyio
     #   httpcore
     #   httpx
-strawberry-graphql==0.199.0
+strawberry-graphql==0.202.0
     # via -r -
 typer[all]==0.9.0
     # via -r -

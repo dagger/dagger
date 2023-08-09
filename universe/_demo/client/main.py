@@ -5,8 +5,7 @@ from dagger.server import Environment
 env = Environment()
 
 
-# TODO: this should be a command
-@env.check
+@env.command
 async def publish() -> str:
     """Publish the client"""
     return await (

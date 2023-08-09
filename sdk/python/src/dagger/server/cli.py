@@ -16,11 +16,10 @@ def app():
     """Entrypoint for a dagger extension."""
     try:
         env = get_environment()
+        env()
     except FatalError as e:
         errors.print(e)
         sys.exit(1)
-
-    env()
 
 
 def get_environment(module_name: str = "main") -> Environment:

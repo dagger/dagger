@@ -43,7 +43,6 @@ dependencies = [
 [project.optional-dependencies]
 server = [
     "typer[all]>=0.6.1",
-    "strawberry-graphql>=0.187.0",
 ]
 
 [project.urls]
