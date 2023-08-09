@@ -293,11 +293,11 @@ def get_root_fields(type_map: TypeMap) -> GraphQLFieldMap:
 def render_default_client(
     defined: set[str], root_fields: GraphQLFieldMap
 ) -> Iterator[str]:
-    names = {format_name(name) for name in root_fields}
-    defined.update(names)
+    names = sorted(format_name(name) for name in root_fields)
 
     yield "_client = Client()"
     yield from (f"{name} = _client.{name}" for name in names)
+    defined.update(names)
 
     yield textwrap.dedent(
         """\
@@ -305,7 +305,6 @@ def render_default_client(
             return _client
         """,
     )
-
     defined.add("client")
 
 

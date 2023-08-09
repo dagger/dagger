@@ -106,10 +106,8 @@ class Environment:
         inputs = self.converter.loads(await inputs_path.read_text(), Inputs)
         logger.debug("inputs = %s", inputs)
 
-        type_name, field_name = inputs.resolver.split(".", 2)
-        if type_name != "Query":
-            msg = "Only Query resolvers are supported for now"
-            raise FatalError(msg)
+        # TODO: support type name
+        _, field_name = inputs.resolver.split(".", 2)
 
         try:
             resolver = self._resolvers[field_name]

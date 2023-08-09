@@ -229,7 +229,7 @@ func convertOutput(rawOutput any, resErr error, schemaOutputType *ast.Type, s *M
 	}
 
 	// TODO: avoid hardcoding type names amap
-	if schemaOutputType.Name() == "EnvironmentCheckResult" {
+	if schemaOutputType.Name() == "EnvironmentCheck" {
 		checkRes := &core.EnvironmentCheckResult{}
 		if resErr != nil {
 			checkRes.Success = false
