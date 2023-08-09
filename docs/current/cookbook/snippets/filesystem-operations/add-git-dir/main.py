@@ -4,6 +4,7 @@ import anyio
 
 import dagger
 
+
 async def main():
     # create Dagger client
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as client:
