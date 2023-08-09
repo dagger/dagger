@@ -154,8 +154,8 @@ module.exports = {
     },
     {
       type: "link",
-      label: "Releases 🔗",
-      href: "https://github.com/dagger/dagger/releases",
+      label: "Changelog 🔗",
+      href: "https://github.com/dagger/dagger/blob/main/CHANGELOG.md",
     },
   ],
   quickstart: [
