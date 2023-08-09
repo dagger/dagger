@@ -299,7 +299,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 	refName, err := reference.ParseNormalizedNamed(addr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to parse image reference: %w", err)
 	}
 
 	ref := reference.TagNameOnly(refName).String()
@@ -309,17 +309,17 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 		ResolveMode: llb.ResolveModeDefault.String(),
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to resolve image config: %w", err)
 	}
 
 	digested, err := reference.WithDigest(refName, digest)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create digested reference: %w", err)
 	}
 
 	var imgSpec specs.Image
 	if err := json.Unmarshal(cfgBytes, &imgSpec); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal image config: %w", err)
 	}
 
 	fsSt := llb.Image(
@@ -329,7 +329,7 @@ func (container *Container) From(ctx context.Context, bk *buildkit.Client, addr 
 
 	def, err := fsSt.Marshal(ctx, llb.Platform(container.Platform))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to marshal image state: %w", err)
 	}
 
 	container.FS = def.ToPB()

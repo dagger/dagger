@@ -232,6 +232,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			PrivilegedExecEnabled: e.privilegedExecEnabled,
 			UpstreamCacheImports:  cacheImporterCfgs,
 			MainClientCaller:      caller,
+			ServerID:              opts.ServerID,
 		})
 		if err != nil {
 			e.serverMu.Unlock()
@@ -251,7 +252,7 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 
 		// delete the server after the initial client who created it exits
 		defer func() {
-			bklog.G(ctx).Trace("removing server")
+			bklog.G(ctx).Debug("removing server")
 			e.serverMu.Lock()
 			srv.Close()
 			delete(e.servers, opts.ServerID)
@@ -260,10 +261,10 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 			if err := bkClient.Close(); err != nil {
 				bklog.G(ctx).WithError(err).Errorf("failed to close buildkit client for server %s", opts.ServerID)
 			}
-			bklog.G(ctx).Trace("closed buildkit client")
+			bklog.G(ctx).Debug("closed buildkit client")
 
 			time.AfterFunc(time.Second, e.throttledGC)
-			bklog.G(ctx).Trace("server removed")
+			bklog.G(ctx).Debug("server removed")
 		}()
 	}
 
@@ -275,9 +276,9 @@ func (e *BuildkitController) Session(stream controlapi.Control_SessionServer) (r
 	e.serverMu.Unlock()
 
 	eg.Go(func() error {
-		bklog.G(ctx).Trace("waiting for server")
+		bklog.G(ctx).Debug("waiting for server")
 		err := srv.Wait(egctx)
-		bklog.G(ctx).WithError(err).Trace("server done")
+		bklog.G(ctx).WithError(err).Debug("server done")
 		return err
 	})
 	err = eg.Wait()

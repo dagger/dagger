@@ -743,20 +743,21 @@ func (s *environmentSchema) shellEndpoint(ctx *core.Context, shell *core.Environ
 
 // TODO:
 var loadUniverseOnce = &sync.Once{}
-var universeSchemas []ExecutableSchema
-var loadUniverseErr error
+var loadUniverseLocalPath string
+var universeEnvPaths []string
+var unpackUniverseError error
 
 func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, error) {
 	// TODO: unpacking to a tmpdir and loading as a local dir is dumb
 	loadUniverseOnce.Do(func() {
-		loadUniverseErr = func() error {
-			tempdir, err := os.MkdirTemp("", "dagger-universe")
+		unpackUniverseError = func() error {
+			var err error
+			loadUniverseLocalPath, err = os.MkdirTemp("", "dagger-universe")
 			if err != nil {
 				return fmt.Errorf("failed to create tempdir: %w", err)
 			}
 
 			tarReader := tar.NewReader(bytes.NewReader(universe.Tar))
-			var envPaths []string
 			for {
 				header, err := tarReader.Next()
 				if err == io.EOF {
@@ -773,18 +774,18 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 				}
 
 				if header.FileInfo().IsDir() {
-					if err := os.MkdirAll(filepath.Join(tempdir, header.Name), header.FileInfo().Mode()); err != nil {
+					if err := os.MkdirAll(filepath.Join(loadUniverseLocalPath, header.Name), header.FileInfo().Mode()); err != nil {
 						return fmt.Errorf("failed to create dir %s: %w", header.Name, err)
 					}
 				} else {
 					if filepath.Base(header.Name) == "dagger.json" && strings.HasPrefix(filepath.Clean(header.Name), "universe/") {
-						envPaths = append(envPaths, filepath.Dir(header.Name))
+						universeEnvPaths = append(universeEnvPaths, filepath.Dir(header.Name))
 					}
 
-					if err := os.MkdirAll(filepath.Join(tempdir, filepath.Dir(header.Name)), header.FileInfo().Mode()); err != nil {
+					if err := os.MkdirAll(filepath.Join(loadUniverseLocalPath, filepath.Dir(header.Name)), header.FileInfo().Mode()); err != nil {
 						return fmt.Errorf("failed to create dir %s: %w", filepath.Dir(header.Name), err)
 					}
-					f, err := os.OpenFile(filepath.Join(tempdir, header.Name), os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode())
+					f, err := os.OpenFile(filepath.Join(loadUniverseLocalPath, header.Name), os.O_CREATE|os.O_WRONLY, header.FileInfo().Mode())
 					if err != nil {
 						return fmt.Errorf("failed to create file %s: %w", header.Name, err)
 					}
@@ -794,53 +795,57 @@ func (s *environmentSchema) loadUniverse(ctx *core.Context, _ any, _ any) (any, 
 					}
 				}
 			}
-
-			universeDir, err := core.NewHost().EngineServerDirectory(ctx, s.bk, tempdir, nil, "universe", s.platform, core.CopyFilter{})
-			if err != nil {
-				return fmt.Errorf("failed to load universe dir: %w", err)
-			}
-
-			universeSchemas = make([]ExecutableSchema, len(envPaths))
-			var eg errgroup.Group
-			for i, envPath := range envPaths {
-				i, envPath := i, envPath
-				eg.Go(func() error {
-					// TODO: support dependencies
-					envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, universeDir, envPath)
-					if err != nil {
-						return fmt.Errorf("failed to load environment config: %w", err)
-					}
-
-					// TODO: this doesn't work if the universe env was loaded before this call, but that's currently not possible
-					// since load universe is hardcoded in the engine client to be called before Connect returns. Once that's fixed,
-					// keep in mind
-					_, err = s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
-						env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
-						if err != nil {
-							return nil, fmt.Errorf("failed to load environment: %w", err)
-						}
-						executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
-						if err != nil {
-							return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
-						}
-						universeSchemas[i] = executableSchema
-						return env, nil
-					})
-					if err != nil {
-						return fmt.Errorf("failed to load environment %s: %w", envCfg.Name, err)
-					}
-					return nil
-				})
-			}
-			return eg.Wait()
+			return nil
 		}()
 	})
-	if loadUniverseErr != nil {
-		bklog.G(ctx).Fatalf("FAILED TO LOAD UNIVERSE: %s", loadUniverseErr)
-		return nil, loadUniverseErr
+	if unpackUniverseError != nil {
+		bklog.G(ctx).Fatalf("FAILED TO LOAD UNIVERSE: %s", unpackUniverseError)
+		return nil, unpackUniverseError
 	}
 
-	err := s.addSchemas(universeSchemas...)
+	universeDir, err := core.NewHost().EngineServerDirectory(ctx, s.bk, loadUniverseLocalPath, nil, "universe", s.platform, core.CopyFilter{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to load universe dir: %w", err)
+	}
+
+	universeSchemas := make([]ExecutableSchema, len(universeEnvPaths))
+	var eg errgroup.Group
+	for i, envPath := range universeEnvPaths {
+		i, envPath := i, envPath
+		eg.Go(func() error {
+			// TODO: support dependencies
+			envCfg, err := core.LoadEnvironmentConfig(ctx, s.bk, universeDir, envPath)
+			if err != nil {
+				return fmt.Errorf("failed to load environment config: %w", err)
+			}
+
+			// TODO: this doesn't work if the universe env was loaded before this call, but that's currently not possible
+			// since load universe is hardcoded in the engine client to be called before Connect returns. Once that's fixed,
+			// keep in mind
+			_, err = s.loadedEnvCache.GetOrInitialize(envCfg.Name, func() (*core.Environment, error) {
+				env, fieldResolver, err := core.LoadEnvironment(ctx, s.bk, s.progSockPath, universeDir.Pipeline, s.platform, universeDir, envPath)
+				if err != nil {
+					return nil, fmt.Errorf("failed to load environment: %w", err)
+				}
+				executableSchema, err := s.envToExecutableSchema(ctx, env, fieldResolver)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert environment to executable schema: %w", err)
+				}
+				universeSchemas[i] = executableSchema
+				return env, nil
+			})
+			if err != nil {
+				return fmt.Errorf("failed to load environment %s: %w", envCfg.Name, err)
+			}
+			return nil
+		})
+	}
+	err = eg.Wait()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load universe: %w", err)
+	}
+
+	err = s.addSchemas(universeSchemas...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add universe schemas: %w", err)
 	}

@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"path"
 
 	"github.com/dagger/dagger/core/pipeline"
@@ -20,11 +21,11 @@ func goRuntime(
 ) (*Container, error) {
 	ctr, err := NewContainer("", pipeline, platform)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
 	ctr, err = ctr.From(ctx, bk, "golang:1.20-alpine")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create container from: %w", err)
 	}
 
 	workdir := "/src"
@@ -34,20 +35,20 @@ func goRuntime(
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 	ctr, err = ctr.WithMountedDirectory(ctx, bk, workdir, rootDir, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount workdir directory: %w", err)
 	}
 
 	ctr, err = ctr.WithMountedCache(ctx, bk, "/go/pkg/mod", NewCache("gomodcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount gomodcache: %w", err)
 	}
 	ctr, err = ctr.WithMountedCache(ctx, bk, "/root/.cache/go-build", NewCache("gobuildcache"), nil, CacheSharingModeShared, "")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to mount gobuildcache: %w", err)
 	}
 
 	ctr, err = ctr.WithExec(ctx, bk, progSock, platform, ContainerExecOpts{
@@ -57,7 +58,7 @@ func goRuntime(
 		},
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to exec go build: %w", err)
 	}
 
 	ctr, err = ctr.UpdateImageConfig(ctx, func(cfg specs.ImageConfig) specs.ImageConfig {
@@ -65,7 +66,7 @@ func goRuntime(
 		return cfg
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to update image config: %w", err)
 	}
 
 	return ctr, nil

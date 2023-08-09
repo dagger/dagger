@@ -2,7 +2,6 @@ package buildkit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -51,6 +50,8 @@ type Opts struct {
 	// that registry auth and sockets are currently only ever sourced from this caller,
 	// not any nested clients (may change in future).
 	MainClientCaller bksession.Caller
+	// ServerID is only used for logging right now
+	ServerID string
 }
 
 type ResolveCacheExporterFunc func(ctx context.Context, g bksession.Group) (remotecache.Exporter, error)
@@ -166,7 +167,7 @@ func (c *Client) withClientCloseCancel(ctx context.Context) (context.Context, co
 	defer c.closeMu.RUnlock()
 	select {
 	case <-c.closeCtx.Done():
-		return nil, nil, errors.New("client closed")
+		return nil, nil, fmt.Errorf("buildkit client for server %q closed", c.ServerID)
 	default:
 	}
 	ctx, cancel := context.WithCancel(ctx)
