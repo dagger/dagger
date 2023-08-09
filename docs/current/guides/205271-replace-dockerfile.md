@@ -74,25 +74,6 @@ There's a lot going on here, so let's step through it in detail:
 - Finally, it calls the `Container.Publish()` method, which executes the entire pipeline described above and publishes the resulting container image to Docker Hub.
 
 </TabItem>
-<TabItem value="Python">
-
-To see how this works, create a file named `main.py` and add the following code to it. Replace the DOCKER-HUB-USERNAME placeholder with your Docker Hub username.
-
-```python file=./snippets/replace-dockerfile/main.py
-```
-
-There's a lot going on here, so let's step through it in detail:
-
-- The Python CI pipeline imports the Dagger SDK and defines a `main()` function. The `main()` function creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
-- It initializes a new container from a base image with the client's `container().from_()` method and returns a new `Container`. In this case, the base image is the `alpine:3.17` image.
-- It calls the `with_exec()` method to define the `adduser`, `addgroup` and `apk add` commands for execution, and the `with_env_variable()` method to set the `MEMCACHED_VERSION` and `MEMCACHED_SHA1` container environment variables.
-- It calls a custom `set_dependencies()` function, which internally uses `with_exec()` to define the `apk add` command that installs all the required dependencies to build and test Memcached in the container.
-- It calls a custom `download_memcached()` function, which internally uses `with_exec()` to define the `wget`, `tar` and related commands required to download, verify and extract the Memcached source code archive in the container at the `/usr/src/memcached` container path.
-- It calls a custom `build_memcached()` function, which internally uses `with_exec()` to define the `configure` and `make` commands required to build, test and install Memcached in the container. The `build_memcached()` function also takes care of deleting the source code directory at `/usr/src/memcached` in the container and executing `memcached -V` to output the version string to the console.
-- It updates the container filesystem to include the entrypoint script from the host using `with_file()` and specifies it as the command to be executed when the container runs using `with_entrypoint()`. The `with_default_args()` methods specifies the entrypoint arguments.
-- Finally, it calls the `Container.publish()` method, which executes the entire pipeline described above and publishes the resulting container image to Docker Hub.
-
-</TabItem>
 <TabItem value="Node.js">
 
 To see how this works, create a file named `index.mjs` and add the following code to it. Replace the DOCKER-HUB-USERNAME placeholder with your Docker Hub username.
@@ -109,6 +90,25 @@ There's a lot going on here, so let's step through it in detail:
 - It calls a custom `downloadMemcached()` function, which internally uses `withExec()` to define the `wget`, `tar` and related commands required to download, verify and extract the Memcached source code archive in the container at the `/usr/src/memcached` container path.
 - It calls a custom `buildMemcached()` function, which internally uses `withExec()` to define the `configure` and `make` commands required to build, test and install Memcached in the container. The `buildMemcached()` function also takes care of deleting the source code directory at `/usr/src/memcached` in the container and executing `memcached -V` to output the version string to the console.
 - It updates the container filesystem to include the entrypoint script from the host using `withFile()` and specifies it as the command to be executed when the container runs using `withEntrypoint()`. The `withDefaultArgs()` methods specifies the entrypoint arguments.
+- Finally, it calls the `Container.publish()` method, which executes the entire pipeline described above and publishes the resulting container image to Docker Hub.
+
+</TabItem>
+<TabItem value="Python">
+
+To see how this works, create a file named `main.py` and add the following code to it. Replace the DOCKER-HUB-USERNAME placeholder with your Docker Hub username.
+
+```python file=./snippets/replace-dockerfile/main.py
+```
+
+There's a lot going on here, so let's step through it in detail:
+
+- The Python CI pipeline imports the Dagger SDK and defines a `main()` function. The `main()` function creates a Dagger client with `dagger.Connection()`. This client provides an interface for executing commands against the Dagger engine.
+- It initializes a new container from a base image with the client's `container().from_()` method and returns a new `Container`. In this case, the base image is the `alpine:3.17` image.
+- It calls the `with_exec()` method to define the `adduser`, `addgroup` and `apk add` commands for execution, and the `with_env_variable()` method to set the `MEMCACHED_VERSION` and `MEMCACHED_SHA1` container environment variables.
+- It calls a custom `set_dependencies()` function, which internally uses `with_exec()` to define the `apk add` command that installs all the required dependencies to build and test Memcached in the container.
+- It calls a custom `download_memcached()` function, which internally uses `with_exec()` to define the `wget`, `tar` and related commands required to download, verify and extract the Memcached source code archive in the container at the `/usr/src/memcached` container path.
+- It calls a custom `build_memcached()` function, which internally uses `with_exec()` to define the `configure` and `make` commands required to build, test and install Memcached in the container. The `build_memcached()` function also takes care of deleting the source code directory at `/usr/src/memcached` in the container and executing `memcached -V` to output the version string to the console.
+- It updates the container filesystem to include the entrypoint script from the host using `with_file()` and specifies it as the command to be executed when the container runs using `with_entrypoint()`. The `with_default_args()` methods specifies the entrypoint arguments.
 - Finally, it calls the `Container.publish()` method, which executes the entire pipeline described above and publishes the resulting container image to Docker Hub.
 
 </TabItem>
@@ -138,26 +138,7 @@ Test the Dagger pipeline as follows:
 1. Run the pipeline:
 
   ```shell
-  go run main.go
-  ```
-
-</TabItem>
-<TabItem value="Python">
-
-1. Log in to Docker on the host:
-
-  ```shell
-  docker login
-  ```
-
-  :::info
-  This step is necessary because Dagger relies on the host's Docker credentials and authorizations when publishing to remote registries.
-  :::
-
-1. Run the pipeline:
-
-  ```shell
-  python main.py
+  dagger run go run main.go
   ```
 
 </TabItem>
@@ -176,7 +157,26 @@ Test the Dagger pipeline as follows:
 1. Run the pipeline:
 
   ```shell
-  node index.mjs
+  dagger run node index.mjs
+  ```
+
+</TabItem>
+<TabItem value="Python">
+
+1. Log in to Docker on the host:
+
+  ```shell
+  docker login
+  ```
+
+  :::info
+  This step is necessary because Dagger relies on the host's Docker credentials and authorizations when publishing to remote registries.
+  :::
+
+1. Run the pipeline:
+
+  ```shell
+  dagger run python main.py
   ```
 
 </TabItem>
@@ -186,7 +186,7 @@ Test the Dagger pipeline as follows:
 Verify that you have an entrypoint script on the host at `./docker-entrypoint.sh` before running the Dagger pipeline.
 :::
 
-Dagger performs the operations defined in the pipeline script, logging each operation to the console. This process will take some time. At the end of the process, the built container image is published on Docker Hub and a message similar to the one below appears in the console output:
+The `dagger run` command executes the script in a Dagger session and displays live progress. This process will take some time. At the end of the process, the built container image is published on Docker Hub and a message similar to the one below appears in the console output:
 
 ```shell
 Published to docker.io/.../my-memcached@sha256:692....
