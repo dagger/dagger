@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -325,8 +326,11 @@ func (labels *Labels) AppendAnonymousGitLabels(workdir string) *Labels {
 	}
 
 	for _, gitLabel := range gitLabels {
-		if gitLabel.Name == "dagger.io/git.author.email" || gitLabel.Name == "dagger.io/git.remote" {
-			labels.Add(gitLabel.Name, fmt.Sprintf("%x", base64.StdEncoding.EncodeToString([]byte(gitLabel.Value))))
+		if gitLabel.Name == "dagger.io/git.author.email" {
+			labels.Add(gitLabel.Name, fmt.Sprintf("%x", sha256.Sum256([]byte(gitLabel.Value))))
+		}
+		if gitLabel.Name == "dagger.io/git.remote" {
+			labels.Add(gitLabel.Name, base64.StdEncoding.EncodeToString([]byte(gitLabel.Value)))
 		}
 	}
 
