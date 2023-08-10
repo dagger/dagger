@@ -521,6 +521,7 @@ export type EnvironmentCommandWithFlagOpts = {
 export type EnvironmentCommandID = string & { __EnvironmentCommandID: never }
 
 export type EnvironmentFunctionWithArgOpts = {
+  isOptional?: boolean
   description?: string
 }
 
@@ -559,6 +560,37 @@ export type FileID = string & { __FileID: never }
 export type GitRefTreeOpts = {
   sshKnownHosts?: string
   sshAuthSocket?: Socket
+}
+
+export type GoBuildOpts = {
+  packages?: string[]
+  subdir?: string
+  xdefs?: string[]
+  static?: boolean
+  race?: boolean
+  goos?: string
+  goarch?: string
+  buildFlags?: string[]
+}
+
+export type GoGolangCilintOpts = {
+  verbose?: boolean
+  timeout?: number
+}
+
+export type GoGotestsumOpts = {
+  packages?: string[]
+  format?: string
+  race?: boolean
+  goTestFlags?: string[]
+  gotestsumFlags?: string[]
+}
+
+export type GoTestOpts = {
+  packages?: string[]
+  race?: boolean
+  verbose?: boolean
+  testFlags?: string[]
 }
 
 export type HostDirectoryOpts = {
@@ -2198,6 +2230,162 @@ export class Container extends BaseClient {
   }
 }
 
+export class Dagger extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * Build the Dagger CLI
+   */
+  cli(): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "cli",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  devShell(): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "devShell",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint the Dagger engine code
+   */
+  engineLint(): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "engineLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Lint the Nodejs SDK
+   */
+  nodejsLint(): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "nodejsLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class Daggergo extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+
+  /**
+   * Lint the Dagger Go SDK
+   * TODO: once namespacing is in place, can just name this "Lint"
+   */
+  goLint(): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "goLint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
+export class Daggerpython extends BaseClient {
+  private readonly _publish?: string = undefined
+
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(
+    parent?: { queryTree?: QueryTree[]; host?: string; sessionToken?: string },
+    _publish?: string
+  ) {
+    super(parent)
+
+    this._publish = _publish
+  }
+
+  /**
+   * Lint the Python SDK
+   */
+  lint(): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "lint",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Publish the client.
+   */
+  async publish(): Promise<string> {
+    if (this._publish) {
+      return this._publish
+    }
+
+    const response: Awaited<string> = await computeQuery(
+      [
+        ...this._queryTree,
+        {
+          operation: "publish",
+        },
+      ],
+      this.client
+    )
+
+    return response
+  }
+}
+
 /**
  * A directory.
  */
@@ -3169,6 +3357,23 @@ export class EnvironmentCheck extends BaseClient {
           r.name
         )
     )
+  }
+
+  /**
+   * TODO
+   */
+  withContainer(id: Container): EnvironmentCheck {
+    return new EnvironmentCheck({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "withContainer",
+          args: { id },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
   }
 
   /**
@@ -4697,6 +4902,92 @@ export class GitRepository extends BaseClient {
   }
 }
 
+export class Go extends BaseClient {
+  /**
+   * Constructor is used for internal usage only, do not create object from it.
+   */
+  constructor(parent?: {
+    queryTree?: QueryTree[]
+    host?: string
+    sessionToken?: string
+  }) {
+    super(parent)
+  }
+  build(base: Container, src: Directory, opts?: GoBuildOpts): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "build",
+          args: { base, src, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  generate(base: Container, src: Directory): Directory {
+    return new Directory({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "generate",
+          args: { base, src },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  golangCilint(
+    base: Container,
+    src: Directory,
+    opts?: GoGolangCilintOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "golangCilint",
+          args: { base, src, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  gotestsum(
+    base: Container,
+    src: Directory,
+    opts?: GoGotestsumOpts
+  ): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "gotestsum",
+          args: { base, src, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  test(base: Container, src: Directory, opts?: GoTestOpts): Container {
+    return new Container({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "test",
+          args: { base, src, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+}
+
 /**
  * Information about the host execution environment.
  */
@@ -5103,6 +5394,42 @@ export class Client extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
+  dagger(): Dagger {
+    return new Dagger({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "dagger",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  daggergo(): Daggergo {
+    return new Daggergo({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggergo",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  daggerpython(): Daggerpython {
+    return new Daggerpython({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "daggerpython",
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
 
   /**
    * The default platform of the builder.
@@ -5293,6 +5620,18 @@ export class Client extends BaseClient {
         {
           operation: "git",
           args: { url, ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+  go(): Go {
+    return new Go({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "go",
         },
       ],
       host: this.clientHost,

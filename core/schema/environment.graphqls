@@ -264,6 +264,9 @@ type EnvironmentCheck {
   withSubcheck(id: EnvironmentCheckID!): EnvironmentCheck!
 
   "TODO"
+  withContainer(id: ContainerID!): EnvironmentCheck!
+
+  "TODO"
   result: EnvironmentCheckResult!
 }
 

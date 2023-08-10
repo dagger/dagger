@@ -100,6 +100,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"withFlag":        ToResolver(s.withCheckFlag),
 			"setStringFlag":   ToResolver(s.setCheckStringFlag),
 			"withSubcheck":    ToResolver(s.withSubcheck),
+			"withContainer":   ToResolver(s.withCheckContainer),
 			"result":          ToResolver(s.checkResult),
 		}),
 		"EnvironmentShell": ToIDableObjectResolver(core.EnvironmentShellID.ToEnvironmentShell, ObjectResolver{
@@ -541,11 +542,37 @@ func (s *environmentSchema) withSubcheck(ctx *core.Context, parent *core.Environ
 	return parent.WithSubcheck(args.ID), nil
 }
 
+type withCheckContainerArgs struct {
+	ID core.ContainerID
+}
+
+func (s *environmentSchema) withCheckContainer(ctx *core.Context, parent *core.EnvironmentCheck, args withCheckContainerArgs) (*core.EnvironmentCheck, error) {
+	return parent.WithContainer(args.ID), nil
+}
+
 func (s *environmentSchema) checkResult(ctx *core.Context, check *core.EnvironmentCheck, _ any) (*core.EnvironmentCheckResult, error) {
 	// if there's no subchecks, resolve the result directly
 	if len(check.Subchecks) == 0 {
 		// TODO:
 		bklog.G(ctx).Debugf("CHECK RESULT RESOLVER %s %+v %+v", check.Name, ctx.ResolveParams.Info.Path.AsArray(), check)
+
+		if check.ContainerID != "" {
+			ctr, err := check.ContainerID.ToContainer()
+			if err != nil {
+				return nil, err
+			}
+			err = ctr.Evaluate(ctx, s.bk)
+			if err != nil {
+				return &core.EnvironmentCheckResult{
+					Success: false,
+					Output:  err.Error(),
+				}, nil
+			}
+			return &core.EnvironmentCheckResult{
+				Success: true,
+				// TODO: get stdout/stderr, set to output
+			}, nil
+		}
 
 		// resolve the result directly
 		// TODO: more strands of spaghetti

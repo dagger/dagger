@@ -37,6 +37,9 @@ func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	return DaggerClient().EnvironmentCheck().
 		WithSubcheck(DaggerClient().Democlient().UnitTest()).
 		WithSubcheck(DaggerClient().Demoserver().UnitTest()).
+		WithSubcheck(DaggerClient().EnvironmentCheck().WithName("ctrtest").WithContainer(
+			DaggerClient().Apko().Wolfi([]string{"coreutils"}).WithExec([]string{"false"}),
+		)).
 		Result(), nil
 }
 

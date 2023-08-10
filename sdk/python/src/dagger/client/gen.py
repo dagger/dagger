@@ -1627,6 +1627,77 @@ class Container(Type):
         return cb(self)
 
 
+class Dagger(Type):
+    @typecheck
+    def cli(self) -> "Directory":
+        """Build the Dagger CLI"""
+        _args: list[Arg] = []
+        _ctx = self._select("cli", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def dev_shell(self) -> Container:
+        _args: list[Arg] = []
+        _ctx = self._select("devShell", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def engine_lint(self) -> "EnvironmentCheck":
+        """Lint the Dagger engine code"""
+        _args: list[Arg] = []
+        _ctx = self._select("engineLint", _args)
+        return EnvironmentCheck(_ctx)
+
+    @typecheck
+    def nodejs_lint(self) -> "EnvironmentCheck":
+        """Lint the Nodejs SDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("nodejsLint", _args)
+        return EnvironmentCheck(_ctx)
+
+
+class Daggergo(Type):
+    @typecheck
+    def go_lint(self) -> "EnvironmentCheck":
+        """Lint the Dagger Go SDK
+        TODO: once namespacing is in place, can just name this "Lint"
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("goLint", _args)
+        return EnvironmentCheck(_ctx)
+
+
+class Daggerpython(Type):
+    @typecheck
+    def lint(self) -> "EnvironmentCheck":
+        """Lint the Python SDK"""
+        _args: list[Arg] = []
+        _ctx = self._select("lint", _args)
+        return EnvironmentCheck(_ctx)
+
+    @typecheck
+    async def publish(self) -> str:
+        """Publish the client.
+
+        Returns
+        -------
+        str
+            The `String` scalar type represents textual data, represented as
+            UTF-8 character sequences. The String type is most often used by
+            GraphQL to represent free-form human-readable text.
+
+        Raises
+        ------
+        ExecuteTimeoutError
+            If the time to execute the query exceeds the configured timeout.
+        QueryError
+            If the API returns an error.
+        """
+        _args: list[Arg] = []
+        _ctx = self._select("publish", _args)
+        return await _ctx.execute(str)
+
+
 class Directory(Type):
     """A directory."""
 
@@ -2397,6 +2468,15 @@ class EnvironmentCheck(Type):
         return await _ctx.execute(list[EnvironmentCheck])
 
     @typecheck
+    def with_container(self, id: Container) -> "EnvironmentCheck":
+        """TODO"""
+        _args = [
+            Arg("id", id),
+        ]
+        _ctx = self._select("withContainer", _args)
+        return EnvironmentCheck(_ctx)
+
+    @typecheck
     def with_description(self, description: str) -> "EnvironmentCheck":
         """TODO"""
         _args = [
@@ -2976,6 +3056,7 @@ class EnvironmentFunction(Type):
         arg_type: str,
         is_list: bool,
         *,
+        is_optional: Optional[bool] = None,
         description: Optional[str] = None,
     ) -> "EnvironmentFunction":
         """TODO"""
@@ -2983,6 +3064,7 @@ class EnvironmentFunction(Type):
             Arg("name", name),
             Arg("argType", arg_type),
             Arg("isList", is_list),
+            Arg("isOptional", is_optional, None),
             Arg("description", description, None),
         ]
         _ctx = self._select("withArg", _args)
@@ -3630,6 +3712,111 @@ class GitRepository(Type):
         return GitRef(_ctx)
 
 
+class Go(Type):
+    @typecheck
+    def build(
+        self,
+        base: Container,
+        src: Directory,
+        *,
+        packages: Optional[Sequence[Optional[str]]] = None,
+        subdir: Optional[str] = None,
+        xdefs: Optional[Sequence[Optional[str]]] = None,
+        static: Optional[bool] = None,
+        race: Optional[bool] = None,
+        goos: Optional[str] = None,
+        goarch: Optional[str] = None,
+        build_flags: Optional[Sequence[Optional[str]]] = None,
+    ) -> Directory:
+        _args = [
+            Arg("base", base),
+            Arg("src", src),
+            Arg("packages", packages, None),
+            Arg("subdir", subdir, None),
+            Arg("xdefs", xdefs, None),
+            Arg("static", static, None),
+            Arg("race", race, None),
+            Arg("goos", goos, None),
+            Arg("goarch", goarch, None),
+            Arg("buildFlags", build_flags, None),
+        ]
+        _ctx = self._select("build", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def generate(self, base: Container, src: Directory) -> Directory:
+        _args = [
+            Arg("base", base),
+            Arg("src", src),
+        ]
+        _ctx = self._select("generate", _args)
+        return Directory(_ctx)
+
+    @typecheck
+    def golang_cilint(
+        self,
+        base: Container,
+        src: Directory,
+        *,
+        verbose: Optional[bool] = None,
+        timeout: Optional[int] = None,
+    ) -> Container:
+        _args = [
+            Arg("base", base),
+            Arg("src", src),
+            Arg("verbose", verbose, None),
+            Arg("timeout", timeout, None),
+        ]
+        _ctx = self._select("golangCilint", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def gotestsum(
+        self,
+        base: Container,
+        src: Directory,
+        *,
+        packages: Optional[Sequence[Optional[str]]] = None,
+        format: Optional[str] = None,
+        race: Optional[bool] = None,
+        go_test_flags: Optional[Sequence[Optional[str]]] = None,
+        gotestsum_flags: Optional[Sequence[Optional[str]]] = None,
+    ) -> Container:
+        _args = [
+            Arg("base", base),
+            Arg("src", src),
+            Arg("packages", packages, None),
+            Arg("format", format, None),
+            Arg("race", race, None),
+            Arg("goTestFlags", go_test_flags, None),
+            Arg("gotestsumFlags", gotestsum_flags, None),
+        ]
+        _ctx = self._select("gotestsum", _args)
+        return Container(_ctx)
+
+    @typecheck
+    def test(
+        self,
+        base: Container,
+        src: Directory,
+        *,
+        packages: Optional[Sequence[Optional[str]]] = None,
+        race: Optional[bool] = None,
+        verbose: Optional[bool] = None,
+        test_flags: Optional[Sequence[Optional[str]]] = None,
+    ) -> Container:
+        _args = [
+            Arg("base", base),
+            Arg("src", src),
+            Arg("packages", packages, None),
+            Arg("race", race, None),
+            Arg("verbose", verbose, None),
+            Arg("testFlags", test_flags, None),
+        ]
+        _ctx = self._select("test", _args)
+        return Container(_ctx)
+
+
 class Host(Type):
     """Information about the host execution environment."""
 
@@ -3970,6 +4157,24 @@ class Client(Root):
         return Container(_ctx)
 
     @typecheck
+    def dagger(self) -> Dagger:
+        _args: list[Arg] = []
+        _ctx = self._select("dagger", _args)
+        return Dagger(_ctx)
+
+    @typecheck
+    def daggergo(self) -> Daggergo:
+        _args: list[Arg] = []
+        _ctx = self._select("daggergo", _args)
+        return Daggergo(_ctx)
+
+    @typecheck
+    def daggerpython(self) -> Daggerpython:
+        _args: list[Arg] = []
+        _ctx = self._select("daggerpython", _args)
+        return Daggerpython(_ctx)
+
+    @typecheck
     async def default_platform(self) -> Platform:
         """The default platform of the builder.
 
@@ -4126,6 +4331,12 @@ class Client(Root):
         ]
         _ctx = self._select("git", _args)
         return GitRepository(_ctx)
+
+    @typecheck
+    def go(self) -> Go:
+        _args: list[Arg] = []
+        _ctx = self._select("go", _args)
+        return Go(_ctx)
 
     @typecheck
     def host(self) -> Host:
@@ -4349,6 +4560,9 @@ apko = _client.apko
 cache_volume = _client.cache_volume
 check_version_compatibility = _client.check_version_compatibility
 container = _client.container
+dagger = _client.dagger
+daggergo = _client.daggergo
+daggerpython = _client.daggerpython
 default_platform = _client.default_platform
 directory = _client.directory
 environment = _client.environment
@@ -4360,6 +4574,7 @@ environment_shell = _client.environment_shell
 extensions = _client.extensions
 file = _client.file
 git = _client.git
+go = _client.go
 host = _client.host
 http = _client.http
 load_universe = _client.load_universe
@@ -4382,6 +4597,9 @@ __all__ = [
     "Client",
     "Container",
     "ContainerID",
+    "Dagger",
+    "Daggergo",
+    "Daggerpython",
     "Directory",
     "DirectoryID",
     "EnvVariable",
@@ -4405,6 +4623,7 @@ __all__ = [
     "FileID",
     "GitRef",
     "GitRepository",
+    "Go",
     "Host",
     "ImageLayerCompression",
     "ImageMediaTypes",
@@ -4423,6 +4642,9 @@ __all__ = [
     "check_version_compatibility",
     "client",
     "container",
+    "dagger",
+    "daggergo",
+    "daggerpython",
     "default_platform",
     "directory",
     "environment",
@@ -4434,6 +4656,7 @@ __all__ = [
     "extensions",
     "file",
     "git",
+    "go",
     "host",
     "http",
     "load_universe",

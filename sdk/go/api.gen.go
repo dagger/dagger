@@ -1382,6 +1382,96 @@ func (r *Container) Workdir(ctx context.Context) (string, error) {
 	return response, q.Execute(ctx, r.C)
 }
 
+type Dagger struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+}
+
+// Build the Dagger CLI
+func (r *Dagger) Cli() *Directory {
+	q := r.Q.Select("cli")
+
+	return &Directory{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Dagger) DevShell() *Container {
+	q := r.Q.Select("devShell")
+
+	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// Lint the Dagger engine code
+func (r *Dagger) EngineLint() *EnvironmentCheck {
+	q := r.Q.Select("engineLint")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// Lint the Nodejs SDK
+func (r *Dagger) NodejsLint() *EnvironmentCheck {
+	q := r.Q.Select("nodejsLint")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+type Daggergo struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+}
+
+// Lint the Dagger Go SDK
+// TODO: once namespacing is in place, can just name this "Lint"
+func (r *Daggergo) GoLint() *EnvironmentCheck {
+	q := r.Q.Select("goLint")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+type Daggerpython struct {
+	Q *querybuilder.Selection
+	C graphql.Client
+
+	publish *string
+}
+
+// Lint the Python SDK
+func (r *Daggerpython) Lint() *EnvironmentCheck {
+	q := r.Q.Select("lint")
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
+}
+
+// Publish the client.
+func (r *Daggerpython) Publish(ctx context.Context) (string, error) {
+	if r.publish != nil {
+		return *r.publish, nil
+	}
+	q := r.Q.Select("publish")
+
+	var response string
+
+	q = q.Bind(&response)
+	return response, q.Execute(ctx, r.C)
+}
+
 // A directory.
 type Directory struct {
 	Q *querybuilder.Selection
@@ -2187,6 +2277,17 @@ func (r *EnvironmentCheck) Subchecks(ctx context.Context) ([]EnvironmentCheck, e
 	}
 
 	return convert(response), nil
+}
+
+// TODO
+func (r *EnvironmentCheck) WithContainer(id *Container) *EnvironmentCheck {
+	q := r.Q.Select("withContainer")
+	q = q.Arg("id", id)
+
+	return &EnvironmentCheck{
+		Q: q,
+		C: r.C,
+	}
 }
 
 // TODO
@@ -3725,6 +3826,33 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 
 	return &Container{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Client) Dagger() *Dagger {
+	q := r.Q.Select("dagger")
+
+	return &Dagger{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Client) Daggergo() *Daggergo {
+	q := r.Q.Select("daggergo")
+
+	return &Daggergo{
+		Q: q,
+		C: r.C,
+	}
+}
+
+func (r *Client) Daggerpython() *Daggerpython {
+	q := r.Q.Select("daggerpython")
+
+	return &Daggerpython{
 		Q: q,
 		C: r.C,
 	}

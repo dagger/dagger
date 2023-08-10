@@ -587,6 +587,7 @@ type EnvironmentCheck struct {
 	Description     string                 `json:"description"`
 	Subchecks       []EnvironmentCheckID   `json:"subchecks"`
 	EnvironmentName string                 `json:"environmentName"`
+	ContainerID     ContainerID            `json:"containerID"`
 }
 
 type EnvironmentCheckFlag struct {
@@ -642,6 +643,12 @@ func (check *EnvironmentCheck) WithDescription(description string) *EnvironmentC
 func (check *EnvironmentCheck) WithSubcheck(subcheckID EnvironmentCheckID) *EnvironmentCheck {
 	check = check.Clone()
 	check.Subchecks = append(check.Subchecks, subcheckID)
+	return check
+}
+
+func (check *EnvironmentCheck) WithContainer(containerID ContainerID) *EnvironmentCheck {
+	check = check.Clone()
+	check.ContainerID = containerID
 	return check
 }
 
