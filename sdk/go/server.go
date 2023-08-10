@@ -354,9 +354,36 @@ func convertResult(ctx context.Context, result any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		subresults, err := checkRes.Subresults(ctx)
+		if err != nil {
+			return nil, err
+		}
+		// TODO: getting bitten again by bug in go sdk around returned list of objects being empty...
+		// TODO: As a result, also not handling arbitrary nesting of subresults yet, just one level
+		var actualSubresults []map[string]any
+		for _, subresult := range subresults {
+			success, err := subresult.Success(ctx)
+			if err != nil {
+				return nil, err
+			}
+			output, err := subresult.Output(ctx)
+			if err != nil {
+				return nil, err
+			}
+			name, err := subresult.Name(ctx)
+			if err != nil {
+				return nil, err
+			}
+			actualSubresults = append(actualSubresults, map[string]any{
+				"success": success,
+				"output":  output,
+				"name":    name,
+			})
+		}
 		return map[string]any{
-			"success": success,
-			"output":  output,
+			"success":    success,
+			"output":     output,
+			"subresults": actualSubresults,
 		}, nil
 	}
 

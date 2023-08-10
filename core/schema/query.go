@@ -66,7 +66,9 @@ func (s *querySchema) checkVersionCompatibility(ctx *core.Context, _ *core.Query
 
 	// Skip development version
 	if strings.Contains(engine.Version, "devel") {
-		recorder.Warn("Using development engine; skipping version compatibility check.")
+		// TODO: this is useful when shown once, but with nested execs it shows up many times, need a better fix,
+		// but disabling for now
+		// recorder.Warn("Using development engine; skipping version compatibility check.")
 
 		return true, nil
 	}

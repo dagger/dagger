@@ -10,7 +10,7 @@ func main() {
 	DaggerClient().Environment().
 		WithCommand_(PublishAll).
 		WithCheck_(IntegTest).
-		WithCheck_(UnitTest).
+		WithCheck_(FooTest).
 		WithShell_(DevShell).
 		Serve()
 }
@@ -32,14 +32,12 @@ func PublishAll(ctx dagger.Context, version string) (string, error) {
 	return "", nil
 }
 
-func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+// TODO: func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
+func FooTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
 	// TODO: sugar to make this less annoying
 	return DaggerClient().EnvironmentCheck().
 		WithSubcheck(DaggerClient().Democlient().UnitTest()).
 		WithSubcheck(DaggerClient().Demoserver().UnitTest()).
-		WithSubcheck(DaggerClient().EnvironmentCheck().WithName("ctrtest").WithContainer(
-			DaggerClient().Apko().Wolfi([]string{"coreutils"}).WithExec([]string{"false"}),
-		)).
 		Result(), nil
 }
 

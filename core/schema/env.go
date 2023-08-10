@@ -564,11 +564,13 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			err = ctr.Evaluate(ctx, s.bk)
 			if err != nil {
 				return &core.EnvironmentCheckResult{
+					Name:    check.EnvironmentName + "." + check.Name,
 					Success: false,
 					Output:  err.Error(),
 				}, nil
 			}
 			return &core.EnvironmentCheckResult{
+				Name:    check.EnvironmentName + "." + check.Name,
 				Success: true,
 				// TODO: get stdout/stderr, set to output
 			}, nil
@@ -628,7 +630,7 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 			}
 		}
 
-		checkRes.Name = check.Name
+		checkRes.Name = check.EnvironmentName + "." + check.Name
 
 		// TODO:
 		bklog.G(ctx).Debugf("CHECK RESULT RESOLVER RETURNED %s %+v %+v", check.Name, res, checkRes)
@@ -642,7 +644,7 @@ func (s *environmentSchema) checkResult(ctx *core.Context, check *core.Environme
 
 	// TODO: guard against infinite recursion
 	checkRes := &core.EnvironmentCheckResult{
-		Name:       check.Name,
+		Name:       check.EnvironmentName + "." + check.Name,
 		Subresults: make([]*core.EnvironmentCheckResult, len(check.Subchecks)),
 		Success:    true,
 		// TODO: could combine output in theory, but not sure what the format would be.

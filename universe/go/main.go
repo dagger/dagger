@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"path"
 	"strings"
 
 	"dagger.io/dagger"
@@ -159,7 +158,10 @@ func Test(
 
 	for pkg, tests := range pkgTests {
 		for _, name := range tests {
-			checkName := path.Join(pkg, name)
+			// TODO: including pkg would be ideal, but wreaks havok once handled as a gql field name...
+			// Maybe add a description field to CheckResult?
+			// checkName := path.Join(pkg, name)
+			checkName := name
 
 			onlyTest := append(goTest, "-run", "^"+name+"$", pkg)
 

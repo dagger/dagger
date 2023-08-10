@@ -230,13 +230,16 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 			if err != nil {
 				return fmt.Errorf("failed to get check result output: %w", err)
 			}
-			subcheckSuffix := " " + strcase.ToKebab(name)
+			envName, checkResultName, _ := strings.Cut(name, ".")
+			subcheckSuffix := " " + envName + " " + strcase.ToKebab(checkResultName)
 			if success {
 				cmd.Println(termenv.String("PASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
 			} else {
 				cmd.Println(termenv.String("FAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
 			}
-			cmd.Println(output)
+			if strings.TrimSpace(output) != "" {
+				cmd.Println(output)
+			}
 			// TODO: handle arbitrary levels of nested results
 			subresults, err := result.Subresults(ctx)
 			for _, subresult := range subresults {
@@ -248,13 +251,16 @@ func addCheck(ctx context.Context, envCheck *dagger.EnvironmentCheck, c *dagger.
 				if err != nil {
 					return fmt.Errorf("failed to get subresult success: %w", err)
 				}
-				subcheckSuffix := " " + strcase.ToKebab(subresultName)
+				envName, subresultName, _ := strings.Cut(subresultName, ".")
+				subcheckSuffix := " " + envName + " " + strcase.ToKebab(subresultName)
 				if subresultSuccess {
 					cmd.Println(termenv.String("\tPASS" + subcheckSuffix).Foreground(termenv.ANSIGreen))
 				} else {
 					cmd.Println(termenv.String("\tFAIL" + subcheckSuffix).Foreground(termenv.ANSIRed))
 				}
-				cmd.Println(output)
+				if strings.TrimSpace(output) != "" {
+					cmd.Println(output)
+				}
 			}
 			return nil
 		},
