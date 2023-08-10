@@ -154,14 +154,17 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		return c, ctx, nil
 	}
 
-	loader := progrock.RecorderFromContext(ctx).WithGroup("start engine").Vertex("loading-engine", "loading")
-	defer loader.Complete()
+	initGroup := progrock.RecorderFromContext(ctx).WithGroup("init", progrock.Weak())
+
+	loader := initGroup.Vertex("starting-engine", "connect")
+	defer func() {
+		loader.Done(rerr)
+	}()
 
 	// Check if any of the upstream cache importers/exporters are enabled.
 	// Note that this is not the cache service support in engine/cache/, that
 	// is a different feature which is configured in the engine daemon.
 
-	fmt.Fprintf(loader.Stdout(), "Configure cache... ")
 	cacheConfigType, cacheConfigAttrs, err := cacheConfigFromEnv()
 	if err != nil {
 		return nil, nil, fmt.Errorf("cache config from env: %w", err)
@@ -172,25 +175,26 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			Attrs: cacheConfigAttrs,
 		}}
 	}
-	fmt.Fprintf(loader.Stdout(), "OK!\n")
 
 	remote, err := url.Parse(c.RunnerHost)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse runner host: %w", err)
 	}
 
-	fmt.Fprintf(loader.Stdout(), "Create buildkit client...")
-
+	engineTask := loader.Task("starting engine")
 	bkClient, err := newBuildkitClient(ctx, remote, c.UserAgent)
+	engineTask.Done(err)
 	if err != nil {
 		return nil, nil, fmt.Errorf("new client: %w", err)
 	}
+
 	c.bkClient = bkClient
 	defer func() {
 		if rerr != nil {
 			c.bkClient.Close()
 		}
 	}()
+
 	if c.EngineNameCallback != nil {
 		info, err := c.bkClient.Info(ctx)
 		if err != nil {
@@ -200,15 +204,13 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		c.EngineNameCallback(engineName)
 	}
 
-	fmt.Fprintf(loader.Stdout(), "OK!\n")
-
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, nil, fmt.Errorf("get hostname: %w", err)
 	}
 	c.hostname = hostname
 
-	fmt.Fprintf(loader.Stdout(), "Start session... ")
+	sessionTask := loader.Task("starting session")
 
 	sharedKey := c.ServerID // share a session across servers
 	bkSession, err := bksession.NewSession(ctx, identity.NewID(), sharedKey)
@@ -221,8 +223,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 			c.bkSession.Close()
 		}
 	}()
-
-	fmt.Fprintf(loader.Stdout(), "OK!\n")
 
 	workdir, err := os.Getwd()
 	if err != nil {
@@ -256,8 +256,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 
 	// registry auth
 	bkSession.Allow(authprovider.NewDockerAuthProvider(config.LoadDefaultConfigFile(os.Stderr)))
-
-	fmt.Fprintf(loader.Stdout(), "Connect to session... ")
 
 	// connect to the server, registering our session attachables and starting the server if not
 	// already started
@@ -294,6 +292,9 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		defer cancel()
 		return c.Do(ctx, `{defaultPlatform}`, "", nil, nil)
 	}, backoff.WithContext(bo, connectRetryCtx))
+
+	sessionTask.Done(err)
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect: %w", err)
 	}
@@ -301,8 +302,6 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 	if c.CloudURLCallback != nil && cloudURL != "" {
 		c.CloudURLCallback(cloudURL)
 	}
-
-	fmt.Fprintf(loader.Stdout(), "OK!\n")
 
 	return c, ctx, nil
 }
