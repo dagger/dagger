@@ -1,6 +1,0 @@
-kind: Fixed
-body: Expand tilde to home when using custom CLI path
-time: 2023-08-09T20:03:54.419635+01:00
-custom:
-  Author: wingyplus
-  PR: "5555"
