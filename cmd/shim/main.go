@@ -419,6 +419,7 @@ func setupBundle() int {
 				return 1
 			}
 			keepEnv = append(keepEnv, "_DAGGER_SERVER_ID="+execMetadata.ServerID)
+			keepEnv = append(keepEnv, "_DAGGER_ENVIRONMENT_NAME="+execMetadata.EnvironmentName)
 
 			// mount buildkit sock since it's nesting
 			spec.Mounts = append(spec.Mounts, specs.Mount{
@@ -612,11 +613,13 @@ func runWithNesting(ctx context.Context, cmd *exec.Cmd) error {
 		return fmt.Errorf("missing _DAGGER_SERVER_ID")
 	}
 	parentClientIDsVal, _ := internalEnv("_DAGGER_PARENT_CLIENT_IDS")
+	environmentName, _ := internalEnv("_DAGGER_ENVIRONMENT_NAME")
 	sessParams := client.Params{
 		ServerID:        serverID,
 		SecretToken:     sessionToken.String(),
 		RunnerHost:      "unix:///.runner.sock",
 		ParentClientIDs: strings.Fields(parentClientIDsVal),
+		EnvironmentName: environmentName,
 		// TODO:
 		SkipUniverse: true,
 	}

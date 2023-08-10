@@ -3831,6 +3831,16 @@ func (r *Client) Container(opts ...ContainerOpts) *Container {
 	}
 }
 
+// Return the current environment being executed in.
+func (r *Client) CurrentEnvironment() *Environment {
+	q := r.Q.Select("currentEnvironment")
+
+	return &Environment{
+		Q: q,
+		C: r.C,
+	}
+}
+
 func (r *Client) Dagger() *Dagger {
 	q := r.Q.Select("dagger")
 

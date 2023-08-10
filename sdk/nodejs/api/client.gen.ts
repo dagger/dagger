@@ -4973,8 +4973,12 @@ export class Go extends BaseClient {
       sessionToken: this.sessionToken,
     })
   }
-  test(base: Container, src: Directory, opts?: GoTestOpts): Container {
-    return new Container({
+  test(
+    base: Container,
+    src: Directory,
+    opts?: GoTestOpts
+  ): EnvironmentCheckResult {
+    return new EnvironmentCheckResult({
       queryTree: [
         ...this._queryTree,
         {
@@ -5388,6 +5392,22 @@ export class Client extends BaseClient {
         {
           operation: "container",
           args: { ...opts },
+        },
+      ],
+      host: this.clientHost,
+      sessionToken: this.sessionToken,
+    })
+  }
+
+  /**
+   * Return the current environment being executed in.
+   */
+  currentEnvironment(): Environment {
+    return new Environment({
+      queryTree: [
+        ...this._queryTree,
+        {
+          operation: "currentEnvironment",
         },
       ],
       host: this.clientHost,

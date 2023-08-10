@@ -60,6 +60,9 @@ type ClientMetadata struct {
 
 	// Import configuration for Buildkit's remote cache
 	UpstreamCacheConfig []*controlapi.CacheOptionsEntry
+
+	// Name of the environment the client is running in, if any
+	EnvironmentName string
 }
 
 // ClientIDs returns the ClientID followed by ParentClientIDs.

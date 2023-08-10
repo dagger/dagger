@@ -1072,6 +1072,7 @@ func (container *Container) WithExec(ctx context.Context, bk *buildkit.Client, p
 		ParentClientIDs: clientMetadata.ClientIDs(),
 		ServerID:        clientMetadata.ServerID,
 		ProgSockPath:    progSock,
+		EnvironmentName: clientMetadata.EnvironmentName,
 	}.ToLLBRunOpt()
 	if err != nil {
 		return nil, err
@@ -1955,6 +1956,7 @@ type ContainerExecUncachedMetadata struct {
 	ParentClientIDs []string `json:"parentClientIDs,omitempty"`
 	ServerID        string   `json:"serverID,omitempty"`
 	ProgSockPath    string   `json:"progSockPath,omitempty"`
+	EnvironmentName string   `json:"environmentName,omitempty"`
 }
 
 func (md ContainerExecUncachedMetadata) ToLLBRunOpt() (llb.RunOption, error) {

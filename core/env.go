@@ -11,6 +11,7 @@ import (
 	"github.com/dagger/dagger/core/environmentconfig"
 	"github.com/dagger/dagger/core/pipeline"
 	"github.com/dagger/dagger/core/resourceid"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/engine/buildkit"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -197,6 +198,13 @@ func LoadEnvironment(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load environment config: %w", err)
 	}
+
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get client metadata: %w", err)
+	}
+	clientMetadata.EnvironmentName = cfg.Name
+	ctx = engine.ContextWithClientMetadata(ctx, clientMetadata)
 
 	ctr, err := runtime(ctx, bk, progSock, pipeline, platform, cfg.SDK, rootDir, configPath)
 	if err != nil {
@@ -461,6 +469,13 @@ func (env *Environment) WithCheck(ctx context.Context, check *EnvironmentCheck) 
 
 func (env *Environment) FieldResolver(ctx context.Context, bk *buildkit.Client, progSock string, pipeline pipeline.Path) (Resolver, error) {
 	return func(ctx *Context, parent any, args any) (any, error) {
+		clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get client metadata: %w", err)
+		}
+		clientMetadata.EnvironmentName = env.Config.Name
+		ctx.Context = engine.ContextWithClientMetadata(ctx.Context, clientMetadata)
+
 		ctr, err := runtime(ctx, bk, progSock, pipeline, env.Platform, env.Config.SDK, env.Directory, env.ConfigPath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get runtime container for fieldResolver: %w", err)

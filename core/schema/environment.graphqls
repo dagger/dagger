@@ -22,6 +22,9 @@ extend type Query {
 
   "TODO: temp hack, should make each env load lazily (with some cache backend too)"
   loadUniverse: Boolean!
+
+  "Return the current environment being executed in."
+  currentEnvironment: Environment!
 }
 
 "TODO"

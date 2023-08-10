@@ -3804,7 +3804,7 @@ class Go(Type):
         race: Optional[bool] = None,
         verbose: Optional[bool] = None,
         test_flags: Optional[Sequence[Optional[str]]] = None,
-    ) -> Container:
+    ) -> EnvironmentCheckResult:
         _args = [
             Arg("base", base),
             Arg("src", src),
@@ -3814,7 +3814,7 @@ class Go(Type):
             Arg("testFlags", test_flags, None),
         ]
         _ctx = self._select("test", _args)
-        return Container(_ctx)
+        return EnvironmentCheckResult(_ctx)
 
 
 class Host(Type):
@@ -4155,6 +4155,13 @@ class Client(Root):
         ]
         _ctx = self._select("container", _args)
         return Container(_ctx)
+
+    @typecheck
+    def current_environment(self) -> Environment:
+        """Return the current environment being executed in."""
+        _args: list[Arg] = []
+        _ctx = self._select("currentEnvironment", _args)
+        return Environment(_ctx)
 
     @typecheck
     def dagger(self) -> Dagger:
@@ -4560,6 +4567,7 @@ apko = _client.apko
 cache_volume = _client.cache_volume
 check_version_compatibility = _client.check_version_compatibility
 container = _client.container
+current_environment = _client.current_environment
 dagger = _client.dagger
 daggergo = _client.daggergo
 daggerpython = _client.daggerpython
@@ -4642,6 +4650,7 @@ __all__ = [
     "check_version_compatibility",
     "client",
     "container",
+    "current_environment",
     "dagger",
     "daggergo",
     "daggerpython",

@@ -16,6 +16,7 @@ import (
 
 	"github.com/dagger/dagger/core"
 	"github.com/dagger/dagger/core/pipeline"
+	"github.com/dagger/dagger/engine"
 	"github.com/dagger/dagger/universe"
 	"github.com/dagger/graphql"
 	"github.com/moby/buildkit/util/bklog"
@@ -63,6 +64,7 @@ func (s *environmentSchema) Resolvers() Resolvers {
 			"environmentCheckResult": ToResolver(s.environmentCheckResult),
 			"environmentShell":       ToResolver(s.environmentShell),
 			"environmentFunction":    ToResolver(s.environmentFunction),
+			"currentEnvironment":     ToResolver(s.currentEnvironment),
 			// TODO:
 			"loadUniverse": ToResolver(s.loadUniverse),
 		},
@@ -422,6 +424,16 @@ type environmentFunctionArgs struct {
 
 func (s *environmentSchema) environmentFunction(ctx *core.Context, parent *core.Query, args environmentFunctionArgs) (*core.EnvironmentFunction, error) {
 	return core.NewEnvironmentFunction(args.ID)
+}
+
+func (s *environmentSchema) currentEnvironment(ctx *core.Context, parent *core.Query, args any) (*core.Environment, error) {
+	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.loadedEnvCache.GetOrInitialize(clientMetadata.EnvironmentName, func() (*core.Environment, error) {
+		return nil, fmt.Errorf("no such environment %s", clientMetadata.EnvironmentName)
+	})
 }
 
 func (s *environmentSchema) commandID(ctx *core.Context, parent *core.EnvironmentCommand, args any) (core.EnvironmentCommandID, error) {

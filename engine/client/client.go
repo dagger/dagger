@@ -64,7 +64,8 @@ type Params struct {
 	CloudURLCallback   func(string)
 
 	// TODO:
-	SkipUniverse bool
+	SkipUniverse    bool
+	EnvironmentName string
 }
 
 type Client struct {
@@ -221,6 +222,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 		ClientHostname:    c.hostname,
 		Labels:            pipeline.LoadVCSLabels(workdir),
 		ParentClientIDs:   c.ParentClientIDs,
+		EnvironmentName:   c.EnvironmentName,
 	})
 
 	// progress
@@ -252,6 +254,7 @@ func Connect(ctx context.Context, params Params) (_ *Client, _ context.Context, 
 				ParentClientIDs:     c.ParentClientIDs,
 				ClientHostname:      hostname,
 				UpstreamCacheConfig: c.upstreamCacheOptions,
+				EnvironmentName:     c.EnvironmentName,
 			}.AppendToMD(meta))
 		})
 	})
@@ -382,6 +385,7 @@ func (c *Client) DialContext(ctx context.Context, _, _ string) (net.Conn, error)
 		ServerID:          c.ServerID,
 		ClientHostname:    c.hostname,
 		ParentClientIDs:   c.ParentClientIDs,
+		EnvironmentName:   c.EnvironmentName,
 	}.ToGRPCMD())
 	if err != nil {
 		return nil, err
