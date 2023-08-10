@@ -1,14 +1,17 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"path"
 	"strings"
 
 	"dagger.io/dagger"
 )
 
 func main() {
-	dagger.DefaultContext().Client().Environment().
+	dagger.DefaultClient().Environment().
 		WithFunction_(Build).
 		WithFunction_(Test).
 		WithFunction_(Generate).
@@ -91,27 +94,84 @@ func Test(
 	base *dagger.Container,
 	src *dagger.Directory,
 	opts GoTestOpts,
-) *dagger.Container {
-	cmd := []string{"go", "test"}
-	if opts.Race {
-		cmd = append(cmd, "-race")
-	}
-	if opts.Verbose {
-		cmd = append(cmd, "-v")
-	}
-	cmd = append(cmd, opts.TestFlags...)
-	if len(opts.Packages) > 0 {
-		cmd = append(cmd, opts.Packages...)
-	} else {
-		cmd = append(cmd, "./...")
-	}
-	return base.
+) (*dagger.EnvironmentCheckResult, error) {
+	withCode := base.
 		With(GlobalCache(ctx)).
 		WithMountedDirectory("/src", src).
-		WithWorkdir("/src").
-		WithFocus().
-		WithExec(cmd).
-		WithoutFocus()
+		WithWorkdir("/src")
+
+	pkgs := opts.Packages
+	if len(pkgs) == 0 {
+		pkgs = []string{"./..."}
+	}
+
+	listCmd := []string{"go", "test", "-list=^Test", "-json"}
+	listCmd = append(listCmd, pkgs...)
+
+	jsonOut, err := withCode.WithExec(listCmd).Stdout(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tests: %w", err)
+	}
+
+	dec := json.NewDecoder(bytes.NewBufferString(jsonOut))
+
+	type testOut struct {
+		// Time time.Time
+		Action  string
+		Package string
+		Output  string
+	}
+
+	// package => pkgTests
+	pkgTests := map[string][]string{}
+
+	for {
+		var out testOut
+		if err := dec.Decode(&out); err != nil {
+			break
+		}
+
+		if out.Action != "output" {
+			continue
+		}
+
+		if !strings.HasPrefix(out.Output, "Test") {
+			// "ok  \t..."
+			continue
+		}
+
+		pkgTests[out.Package] = append(pkgTests[out.Package], strings.Fields(out.Output)...)
+	}
+
+	goTest := []string{"go", "test"}
+
+	if opts.Race {
+		goTest = append(goTest, "-race")
+	}
+
+	if opts.Verbose {
+		goTest = append(goTest, "-v")
+	}
+
+	goTest = append(goTest, opts.TestFlags...)
+
+	checks := ctx.Client().EnvironmentCheck()
+
+	for pkg, tests := range pkgTests {
+		for _, name := range tests {
+			checkName := path.Join(pkg, name)
+
+			onlyTest := append(goTest, "-run", "^"+name+"$", pkg)
+
+			checks = checks.WithSubcheck(
+				ctx.Client().EnvironmentCheck().
+					WithName(checkName).
+					WithContainer(withCode.WithFocus().WithExec(onlyTest).WithoutFocus()),
+			)
+		}
+	}
+
+	return checks.Result(), nil
 }
 
 type GotestsumOpts struct {

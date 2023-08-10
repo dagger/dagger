@@ -28,21 +28,14 @@ func binary(ctx dagger.Context) *dagger.File {
 	).File("server")
 }
 
-func UnitTest(ctx dagger.Context) (*dagger.EnvironmentCheckResult, error) {
-	srcDir := dagger.DefaultClient().Host().Directory(".")
-
-	// TODO: fix go universe env, use that
-	// TODO: desperately need combined stdout/stderr
-	stdout, err := buildBase(ctx).
-		WithMountedDirectory("/src", srcDir).
-		WithWorkdir("/src").
-		WithExec([]string{"go", "test", "./universe/_demo/server/cmd/server"}).
-		Stdout(ctx)
-	// TODO: this is all boilerplatey, sugar to support other return types will fix
-	if err != nil {
-		return dagger.DefaultClient().EnvironmentCheckResult(false, err.Error()), nil
-	}
-	return dagger.DefaultClient().EnvironmentCheckResult(true, stdout), nil
+func UnitTest(ctx dagger.Context) *dagger.EnvironmentCheckResult {
+	return dagger.DefaultClient().Go().Test(
+		buildBase(ctx),
+		dagger.DefaultClient().Host().Directory("."),
+		dagger.GoTestOpts{
+			Packages: []string{"./universe/_demo/server/cmd/server"},
+		},
+	)
 }
 
 func Publish(ctx dagger.Context, version string) (string, error) {
