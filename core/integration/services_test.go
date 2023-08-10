@@ -1221,15 +1221,15 @@ func TestServiceHostToContainer(t *testing.T) {
 		Service()
 
 	localBindAddr := "127.0.0.1:0"
-	proxy, err := c.Host().Proxy(srv, localBindAddr).Start(ctx)
+	tunnel, err := c.Host().Tunnel(srv, localBindAddr).Start(ctx)
 	require.NoError(t, err)
 
 	defer func() {
-		_, err := proxy.Stop(ctx)
+		_, err := tunnel.Stop(ctx)
 		require.NoError(t, err)
 	}()
 
-	srvURL, err := proxy.Endpoint(ctx)
+	srvURL, err := tunnel.Endpoint(ctx)
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
@@ -1261,7 +1261,7 @@ func TestServiceContainerToHost(t *testing.T) {
 
 	localDialAddr := l.Addr().String()
 
-	host := c.Host().ReverseProxy(localDialAddr, 80)
+	host := c.Host().ReverseTunnel(localDialAddr, 80)
 
 	for _, content := range []string{"yes", "no", "maybe", "so"} {
 		out, err := c.Container().

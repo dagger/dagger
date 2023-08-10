@@ -84,8 +84,8 @@ func internalCommand() int {
 			return 1
 		}
 		return 0
-	case "proxy":
-		if err := proxy(args); err != nil {
+	case "tunnel":
+		if err := tunnel(args); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return 1
 		}

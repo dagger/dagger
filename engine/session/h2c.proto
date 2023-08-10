@@ -2,7 +2,7 @@ syntax = "proto3";
 
 option go_package = "session";
 
-service ProxyListener {
+service TunnelListener {
   rpc Listen(stream ListenRequest) returns (stream ListenResponse);
 }
 

@@ -508,9 +508,9 @@ func (c *Client) ListenHostToContainer(
 
 	conn := clientCaller.Conn()
 
-	proxyClient := session.NewProxyListenerClient(conn)
+	tunnelClient := session.NewTunnelListenerClient(conn)
 
-	listener, err := proxyClient.Listen(ctx)
+	listener, err := tunnelClient.Listen(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to listen: %s", err)
 	}

@@ -13,9 +13,9 @@ import (
 
 const upstreamSock = "/upstream.sock"
 
-func proxy(args []string) error {
+func tunnel(args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: proxy <upstream> port/tcp")
+		return fmt.Errorf("usage: tunnel <upstream> port/tcp")
 	}
 
 	log.Println("listening on", args[0])

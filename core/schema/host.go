@@ -34,8 +34,8 @@ func (s *hostSchema) Resolvers() Resolvers {
 			"file":          ToResolver(s.file),
 			"unixSocket":    ToResolver(s.socket),
 			"setSecretFile": ToResolver(s.setSecretFile),
-			"proxy":         ToResolver(s.proxy),
-			"reverseProxy":  ToResolver(s.reverseProxy),
+			"tunnel":        ToResolver(s.tunnel),
+			"reverseTunnel": ToResolver(s.reverseTunnel),
 		},
 	}
 }
@@ -89,14 +89,14 @@ func (s *hostSchema) file(ctx *core.Context, parent *core.Query, args hostFileAr
 	return s.host.File(ctx, s.bk, args.Path, parent.PipelinePath(), s.platform)
 }
 
-type hostProxyArgs struct {
+type hostTunnelArgs struct {
 	Upstream          core.ServiceID
 	HostListenAddress string
 	UpstreamPort      int
 	Protocol          core.NetworkProtocol
 }
 
-func (s *hostSchema) proxy(ctx *core.Context, parent any, args hostProxyArgs) (*core.Service, error) {
+func (s *hostSchema) tunnel(ctx *core.Context, parent any, args hostTunnelArgs) (*core.Service, error) {
 	svc, err := args.Upstream.ToService()
 	if err != nil {
 		return nil, err
@@ -115,15 +115,15 @@ func (s *hostSchema) proxy(ctx *core.Context, parent any, args hostProxyArgs) (*
 		args.UpstreamPort = ports[0].Port
 	}
 
-	return core.NewProxyService(svc, args.HostListenAddress, args.UpstreamPort, args.Protocol), nil
+	return core.NewTunnelService(svc, args.HostListenAddress, args.UpstreamPort, args.Protocol), nil
 }
 
-type hostReverseProxyArgs struct {
+type hostReverseTunnelArgs struct {
 	UpstreamAddress string
 	ServicePort     int
 	Protocol        core.NetworkProtocol
 }
 
-func (s *hostSchema) reverseProxy(ctx *core.Context, parent *core.Host, args hostReverseProxyArgs) (*core.Service, error) {
-	return core.NewReverseProxyService(args.UpstreamAddress, args.ServicePort, args.Protocol), nil
+func (s *hostSchema) reverseTunnel(ctx *core.Context, parent *core.Host, args hostReverseTunnelArgs) (*core.Service, error) {
+	return core.NewReverseTunnelService(args.UpstreamAddress, args.ServicePort, args.Protocol), nil
 }

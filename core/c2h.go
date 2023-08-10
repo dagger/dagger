@@ -16,30 +16,20 @@ import (
 	"github.com/vito/progrock"
 )
 
-type c2hProxy struct {
-	bk           *buildkit.Client
-	upstreamAddr string
-	proxyHost    string
-	proxyPort    int
-	protocol     NetworkProtocol
+type c2hTunnel struct {
+	bk                *buildkit.Client
+	upstreamAddr      string
+	tunnelServiceHost string
+	tunnelServicePort int
+	protocol          NetworkProtocol
 }
 
-func newC2HProxy(bk *buildkit.Client, proxyHost string, proto NetworkProtocol, addr string, proxyPort int) *c2hProxy {
-	return &c2hProxy{
-		bk:           bk,
-		upstreamAddr: addr,
-		proxyHost:    proxyHost,
-		proxyPort:    proxyPort,
-		protocol:     proto,
-	}
-}
-
-func (d *c2hProxy) Proxy(ctx context.Context) (err error) {
+func (d *c2hTunnel) Tunnel(ctx context.Context) (err error) {
 	rec := progrock.RecorderFromContext(ctx)
 
 	args := []string{
-		"proxy",
-		fmt.Sprintf("%d/%s", d.proxyPort, d.protocol.Network()),
+		"tunnel",
+		fmt.Sprintf("%d/%s", d.tunnelServicePort, d.protocol.Network()),
 	}
 
 	vtx := rec.Vertex(
@@ -71,7 +61,7 @@ func (d *c2hProxy) Proxy(ctx context.Context) (err error) {
 	}
 
 	container, err := d.bk.NewContainer(ctx, bkgw.NewContainerRequest{
-		Hostname: d.proxyHost,
+		Hostname: d.tunnelServiceHost,
 		Mounts: []bkgw.Mount{
 			{
 				Dest:      "/",

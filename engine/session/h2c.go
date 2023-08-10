@@ -13,22 +13,22 @@ import (
 	codes "google.golang.org/grpc/codes"
 )
 
-type ProxyListenerAttachable struct {
+type TunnelListenerAttachable struct {
 	rec *progrock.Recorder
-	UnimplementedProxyListenerServer
+	UnimplementedTunnelListenerServer
 }
 
-func NewProxyListenerAttachable(rec *progrock.Recorder) ProxyListenerAttachable {
-	return ProxyListenerAttachable{
+func NewTunnelListenerAttachable(rec *progrock.Recorder) TunnelListenerAttachable {
+	return TunnelListenerAttachable{
 		rec: rec,
 	}
 }
 
-func (s ProxyListenerAttachable) Register(srv *grpc.Server) {
-	RegisterProxyListenerServer(srv, &s)
+func (s TunnelListenerAttachable) Register(srv *grpc.Server) {
+	RegisterTunnelListenerServer(srv, &s)
 }
 
-func (s ProxyListenerAttachable) Listen(srv ProxyListener_ListenServer) error {
+func (s TunnelListenerAttachable) Listen(srv TunnelListener_ListenServer) error {
 	req, err := srv.Recv()
 	if err != nil {
 		return err

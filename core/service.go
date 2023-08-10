@@ -29,22 +29,22 @@ type Service struct {
 	// Container is the container to run as a service.
 	Container *Container `json:"container"`
 
-	// Upstream is the service that this service is proxying to.
-	ProxyUpstream *Service `json:"upstream,omitempty"`
-	// ProxyUpstreamPort is the port for the proxy to send traffic to.
-	ProxyUpstreamPort int `json:"proxy_port,omitempty"`
-	// ProxyListenAddress is the host address that the proxy listens on.
-	ProxyListenAddress string `json:"proxy_listen_address,omitempty"`
-	// ProxyProtocol is the protocol for traffic proxied to upstream.
-	ProxyProtocol NetworkProtocol `json:"proxy_protocol,omitempty"`
+	// Upstream is the service that this service is tunnelling to.
+	TunnelUpstream *Service `json:"upstream,omitempty"`
+	// TunnelUpstreamPort is the port for the tunnel to send traffic to.
+	TunnelUpstreamPort int `json:"tunnel_port,omitempty"`
+	// TunnelListenAddress is the host address that the tunnel listens on.
+	TunnelListenAddress string `json:"tunnel_listen_address,omitempty"`
+	// TunnelProtocol is the protocol for traffic proxied to upstream.
+	TunnelProtocol NetworkProtocol `json:"tunnel_protocol,omitempty"`
 
-	// ReverseProxyUpstreamAddr is the address for the reverse proxy to request
+	// ReverseTunnelUpstreamAddr is the address for the reverse tunnel to request
 	// through the host.
-	ReverseProxyUpstreamAddr string `json:"reverse_proxy_upstream_addr,omitempty"`
-	// ReverseProxyExposedPort is the port for the reverse proxy service to expose
-	ReverseProxyExposedPort int `json:"reverse_proxy_exposed_port,omitempty"`
-	// ReverseProxyProtocol is the protocol for traffic proxied to upstream.
-	ReverseProxyProtocol NetworkProtocol `json:"reverse_proxy_protocol,omitempty"`
+	ReverseTunnelUpstreamAddr string `json:"reverse_tunnel_upstream_addr,omitempty"`
+	// ReverseTunnelExposedPort is the port for the reverse tunnel service to expose
+	ReverseTunnelExposedPort int `json:"reverse_tunnel_exposed_port,omitempty"`
+	// ReverseTunnelProtocol is the protocol for traffic proxied to upstream.
+	ReverseTunnelProtocol NetworkProtocol `json:"reverse_tunnel_protocol,omitempty"`
 }
 
 func NewContainerService(ctr *Container) *Service {
@@ -53,20 +53,20 @@ func NewContainerService(ctr *Container) *Service {
 	}
 }
 
-func NewProxyService(upstream *Service, addr string, port int, proto NetworkProtocol) *Service {
+func NewTunnelService(upstream *Service, addr string, port int, proto NetworkProtocol) *Service {
 	return &Service{
-		ProxyUpstream:      upstream,
-		ProxyUpstreamPort:  port,
-		ProxyListenAddress: addr,
-		ProxyProtocol:      proto,
+		TunnelUpstream:      upstream,
+		TunnelUpstreamPort:  port,
+		TunnelListenAddress: addr,
+		TunnelProtocol:      proto,
 	}
 }
 
-func NewReverseProxyService(upstreamAddr string, exposedPort int, proto NetworkProtocol) *Service {
+func NewReverseTunnelService(upstreamAddr string, exposedPort int, proto NetworkProtocol) *Service {
 	return &Service{
-		ReverseProxyUpstreamAddr: upstreamAddr,
-		ReverseProxyExposedPort:  exposedPort,
-		ReverseProxyProtocol:     proto,
+		ReverseTunnelUpstreamAddr: upstreamAddr,
+		ReverseTunnelExposedPort:  exposedPort,
+		ReverseTunnelProtocol:     proto,
 	}
 }
 
@@ -117,8 +117,8 @@ func (svc *Service) Clone() *Service {
 	if cp.Container != nil {
 		cp.Container = cp.Container.Clone()
 	}
-	if cp.ProxyUpstream != nil {
-		cp.ProxyUpstream = cp.ProxyUpstream.Clone()
+	if cp.TunnelUpstream != nil {
+		cp.TunnelUpstream = cp.TunnelUpstream.Clone()
 	}
 	return &cp
 }
@@ -128,8 +128,8 @@ func (svc *Service) PipelinePath() pipeline.Path {
 	switch {
 	case svc.Container != nil:
 		return svc.Container.Pipeline
-	case svc.ProxyUpstream != nil:
-		return svc.ProxyUpstream.PipelinePath()
+	case svc.TunnelUpstream != nil:
+		return svc.TunnelUpstream.PipelinePath()
 	default:
 		return pipeline.Path{}
 	}
@@ -146,7 +146,7 @@ func (svc *Service) Digest() (digest.Digest, error) {
 
 func (svc *Service) Hostname(ctx context.Context) (string, error) {
 	switch {
-	case svc.ProxyUpstream != nil:
+	case svc.TunnelUpstream != nil:
 		upstream, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
@@ -159,7 +159,7 @@ func (svc *Service) Hostname(ctx context.Context) (string, error) {
 
 		return host, nil
 	case svc.Container != nil,
-		svc.ReverseProxyUpstreamAddr != "":
+		svc.ReverseTunnelUpstreamAddr != "":
 		dig, err := svc.Digest()
 		if err != nil {
 			return "", err
@@ -188,14 +188,14 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 
 			port = svc.Container.Ports[0].Port
 		}
-	case svc.ProxyUpstream != nil:
-		proxy, err := AllServices.Get(ctx, svc)
+	case svc.TunnelUpstream != nil:
+		tunnel, err := AllServices.Get(ctx, svc)
 		if err != nil {
 			return "", err
 		}
 
 		var portStr string
-		host, portStr, err = net.SplitHostPort(proxy.Addr)
+		host, portStr, err = net.SplitHostPort(tunnel.Addr)
 		if err != nil {
 			return "", err
 		}
@@ -206,14 +206,14 @@ func (svc *Service) Endpoint(ctx context.Context, port int, scheme string) (stri
 				return "", err
 			}
 		}
-	case svc.ReverseProxyUpstreamAddr != "":
+	case svc.ReverseTunnelUpstreamAddr != "":
 		host, err = svc.Hostname(ctx)
 		if err != nil {
 			return "", err
 		}
 
 		if port == 0 {
-			port = svc.ReverseProxyExposedPort
+			port = svc.ReverseTunnelExposedPort
 		}
 	default:
 		return "", fmt.Errorf("unknown service type")
@@ -231,10 +231,10 @@ func (svc *Service) Start(ctx context.Context, bk *buildkit.Client) (running *Ru
 	switch {
 	case svc.Container != nil:
 		return svc.startContainer(ctx, bk)
-	case svc.ProxyUpstream != nil:
-		return svc.startProxy(ctx, bk)
-	case svc.ReverseProxyUpstreamAddr != "":
-		return svc.startReverseProxy(ctx, bk)
+	case svc.TunnelUpstream != nil:
+		return svc.startTunnel(ctx, bk)
+	case svc.ReverseTunnelUpstreamAddr != "":
+		return svc.startReverseTunnel(ctx, bk)
 	default:
 		return nil, fmt.Errorf("unknown service type")
 	}
@@ -449,7 +449,7 @@ func proxyEnvList(p *pb.ProxyEnv) []string {
 	return out
 }
 
-func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) startTunnel(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	svcCtx, stop := context.WithCancel(context.Background())
 
 	clientMetadata, err := engine.ClientMetadataFromContext(ctx)
@@ -461,7 +461,7 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (runnin
 
 	svcCtx = progrock.ToContext(svcCtx, progrock.FromContext(ctx))
 
-	upstream, err := AllServices.Start(svcCtx, bk, svc.ProxyUpstream)
+	upstream, err := AllServices.Start(svcCtx, bk, svc.TunnelUpstream)
 	if err != nil {
 		stop()
 		return nil, fmt.Errorf("start upstream: %w", err)
@@ -469,9 +469,9 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (runnin
 
 	res, closeListener, err := bk.ListenHostToContainer(
 		svcCtx,
-		svc.ProxyListenAddress,
-		svc.ProxyProtocol.Network(),
-		fmt.Sprintf("%s:%d", upstream.Addr, svc.ProxyUpstreamPort),
+		svc.TunnelListenAddress,
+		svc.TunnelProtocol.Network(),
+		fmt.Sprintf("%s:%d", upstream.Addr, svc.TunnelUpstreamPort),
 	)
 	if err != nil {
 		stop()
@@ -500,7 +500,7 @@ func (svc *Service) startProxy(ctx context.Context, bk *buildkit.Client) (runnin
 	}, nil
 }
 
-func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
+func (svc *Service) startReverseTunnel(ctx context.Context, bk *buildkit.Client) (running *RunningService, err error) {
 	dig, err := svc.Digest()
 	if err != nil {
 		return nil, err
@@ -524,28 +524,28 @@ func (svc *Service) startReverseProxy(ctx context.Context, bk *buildkit.Client) 
 
 	fullHost := host + "." + network.ClientDomain(clientMetadata.ClientID)
 
-	proxy := newC2HProxy(
-		bk,
-		fullHost,
-		svc.ReverseProxyProtocol,
-		svc.ReverseProxyUpstreamAddr,
-		svc.ReverseProxyExposedPort,
-	)
+	tunnel := &c2hTunnel{
+		bk:                bk,
+		upstreamAddr:      svc.ReverseTunnelUpstreamAddr,
+		tunnelServiceHost: fullHost,
+		tunnelServicePort: svc.ReverseTunnelExposedPort,
+		protocol:          svc.ReverseTunnelProtocol,
+	}
 
 	check := newHealth(
 		bk,
 		fullHost,
 		[]ContainerPort{
 			{
-				Port:     svc.ReverseProxyExposedPort,
-				Protocol: svc.ReverseProxyProtocol,
+				Port:     svc.ReverseTunnelExposedPort,
+				Protocol: svc.ReverseTunnelProtocol,
 			},
 		},
 	)
 
 	exited := make(chan error, 1)
 	go func() {
-		exited <- proxy.Proxy(svcCtx)
+		exited <- tunnel.Tunnel(svcCtx)
 	}()
 
 	checked := make(chan error, 1)

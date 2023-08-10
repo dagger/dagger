@@ -46,13 +46,13 @@ type Host {
   ): Socket!
 
   """
-  Creates a proxy forwarding traffic from a host IP:Port to a service.
+  Creates a tunnel forwarding traffic from the host to a service.
   """
-  proxy(
-    "Service to send traffic from the proxy."
+  tunnel(
+    "Service to send traffic from the tunnel."
     upstream: ServiceID!
 
-    "Host IP:port for the proxy to listen for traffic. Port 0 implies any available port."
+    "Host IP:port for the tunnel to listen for traffic. Port 0 implies any available port."
     hostListenAddress: String!
 
     "Service port to send traffic to. Defaults to the first exposed port."
@@ -63,13 +63,13 @@ type Host {
   ): Service!
 
   """
-  Creates a proxy forwarding traffic to a specified address via the host.
+  Creates a tunnel forwarding traffic to a specified address via the host.
   """
-  reverseProxy(
-    "Host:Port to send traffic from the proxy."
+  reverseTunnel(
+    "Host:Port to send traffic from the tunnel."
     upstreamAddress: String!
 
-    "Port to expose from the proxy service for downstream clients."
+    "Port to expose from the tunnel service for downstream clients."
     servicePort: Int!
 
     "Traffic protocol. Defaults to TCP."

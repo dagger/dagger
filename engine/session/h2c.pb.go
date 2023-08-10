@@ -179,7 +179,7 @@ func init() {
 func init() { proto.RegisterFile("h2c.proto", fileDescriptor_3c81c9c611bd5641) }
 
 var fileDescriptor_3c81c9c611bd5641 = []byte{
-	// 265 bytes of a gzipped FileDescriptorProto
+	// 266 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0xcc, 0x30, 0x4a, 0xd6,
 	0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x57, 0x6a, 0x64, 0xe4, 0xe2, 0xf5, 0xc9, 0x2c, 0x2e, 0x49, 0xcd,
 	0x0b, 0x4a, 0x2d, 0x2c, 0x4d, 0x2d, 0x2e, 0x11, 0x12, 0xe2, 0x62, 0x49, 0x4c, 0x49, 0x29, 0x92,
@@ -189,14 +189,14 @@ var fileDescriptor_3c81c9c611bd5641 = []byte{
 	0xa8, 0xc1, 0x13, 0x04, 0x66, 0x0b, 0x89, 0x70, 0xb1, 0x26, 0xe7, 0xe4, 0x17, 0xa7, 0x4a, 0xb0,
 	0x2a, 0x30, 0x6a, 0x70, 0x04, 0x41, 0x38, 0x4a, 0x69, 0x5c, 0x7c, 0x30, 0x27, 0x14, 0x17, 0xe4,
 	0xe7, 0x15, 0xa7, 0x62, 0x75, 0x03, 0xc2, 0x1e, 0x26, 0xac, 0xf6, 0x30, 0x63, 0xb3, 0x87, 0x05,
-	0xc9, 0x1e, 0x23, 0x3b, 0x2e, 0xde, 0x80, 0xa2, 0xfc, 0x8a, 0x4a, 0x88, 0x65, 0xa9, 0x45, 0x42,
-	0xba, 0x5c, 0x6c, 0x10, 0xb6, 0x10, 0x9f, 0x1e, 0x4a, 0x20, 0x48, 0xf1, 0xeb, 0xa1, 0xba, 0x48,
-	0x83, 0xd1, 0x80, 0xd1, 0xc9, 0xf6, 0xc2, 0x43, 0x39, 0x86, 0x1b, 0x0f, 0xe5, 0x18, 0x3e, 0x3c,
-	0x94, 0x63, 0x6c, 0x78, 0x24, 0xc7, 0xb8, 0xe2, 0x91, 0x1c, 0xe3, 0x89, 0x47, 0x72, 0x8c, 0x17,
-	0x1e, 0xc9, 0x31, 0x3e, 0x78, 0x24, 0xc7, 0xf8, 0xe2, 0x91, 0x1c, 0xc3, 0x87, 0x47, 0x72, 0x8c,
-	0x13, 0x1e, 0xcb, 0x31, 0x5c, 0x78, 0x2c, 0xc7, 0x70, 0xe3, 0xb1, 0x1c, 0x43, 0x14, 0x7b, 0x71,
-	0x6a, 0x71, 0x71, 0x66, 0x7e, 0x5e, 0x12, 0x1b, 0x38, 0xc8, 0x8c, 0x01, 0x01, 0x00, 0x00, 0xff,
-	0xff, 0x3d, 0x46, 0x1d, 0xb6, 0x7e, 0x01, 0x00, 0x00,
+	0xc9, 0x1e, 0x23, 0x7b, 0x2e, 0xbe, 0x90, 0xd2, 0xbc, 0xbc, 0xd4, 0x1c, 0x88, 0x6d, 0xa9, 0x45,
+	0x42, 0xba, 0x5c, 0x6c, 0x10, 0xb6, 0x10, 0x9f, 0x1e, 0x4a, 0x28, 0x48, 0xf1, 0xeb, 0xa1, 0x3a,
+	0x49, 0x83, 0xd1, 0x80, 0xd1, 0xc9, 0xf6, 0xc2, 0x43, 0x39, 0x86, 0x1b, 0x0f, 0xe5, 0x18, 0x3e,
+	0x3c, 0x94, 0x63, 0x6c, 0x78, 0x24, 0xc7, 0xb8, 0xe2, 0x91, 0x1c, 0xe3, 0x89, 0x47, 0x72, 0x8c,
+	0x17, 0x1e, 0xc9, 0x31, 0x3e, 0x78, 0x24, 0xc7, 0xf8, 0xe2, 0x91, 0x1c, 0xc3, 0x87, 0x47, 0x72,
+	0x8c, 0x13, 0x1e, 0xcb, 0x31, 0x5c, 0x78, 0x2c, 0xc7, 0x70, 0xe3, 0xb1, 0x1c, 0x43, 0x14, 0x7b,
+	0x71, 0x6a, 0x71, 0x71, 0x66, 0x7e, 0x5e, 0x12, 0x1b, 0x38, 0xcc, 0x8c, 0x01, 0x01, 0x00, 0x00,
+	0xff, 0xff, 0x56, 0xc5, 0x9d, 0x89, 0x7f, 0x01, 0x00, 0x00,
 }
 
 func (this *ListenRequest) Equal(that interface{}) bool {
@@ -312,45 +312,45 @@ var _ grpc.ClientConn
 // is compatible with the grpc package it is being compiled against.
 const _ = grpc.SupportPackageIsVersion4
 
-// ProxyListenerClient is the client API for ProxyListener service.
+// TunnelListenerClient is the client API for TunnelListener service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
-type ProxyListenerClient interface {
-	Listen(ctx context.Context, opts ...grpc.CallOption) (ProxyListener_ListenClient, error)
+type TunnelListenerClient interface {
+	Listen(ctx context.Context, opts ...grpc.CallOption) (TunnelListener_ListenClient, error)
 }
 
-type proxyListenerClient struct {
+type tunnelListenerClient struct {
 	cc *grpc.ClientConn
 }
 
-func NewProxyListenerClient(cc *grpc.ClientConn) ProxyListenerClient {
-	return &proxyListenerClient{cc}
+func NewTunnelListenerClient(cc *grpc.ClientConn) TunnelListenerClient {
+	return &tunnelListenerClient{cc}
 }
 
-func (c *proxyListenerClient) Listen(ctx context.Context, opts ...grpc.CallOption) (ProxyListener_ListenClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_ProxyListener_serviceDesc.Streams[0], "/ProxyListener/Listen", opts...)
+func (c *tunnelListenerClient) Listen(ctx context.Context, opts ...grpc.CallOption) (TunnelListener_ListenClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_TunnelListener_serviceDesc.Streams[0], "/TunnelListener/Listen", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &proxyListenerListenClient{stream}
+	x := &tunnelListenerListenClient{stream}
 	return x, nil
 }
 
-type ProxyListener_ListenClient interface {
+type TunnelListener_ListenClient interface {
 	Send(*ListenRequest) error
 	Recv() (*ListenResponse, error)
 	grpc.ClientStream
 }
 
-type proxyListenerListenClient struct {
+type tunnelListenerListenClient struct {
 	grpc.ClientStream
 }
 
-func (x *proxyListenerListenClient) Send(m *ListenRequest) error {
+func (x *tunnelListenerListenClient) Send(m *ListenRequest) error {
 	return x.ClientStream.SendMsg(m)
 }
 
-func (x *proxyListenerListenClient) Recv() (*ListenResponse, error) {
+func (x *tunnelListenerListenClient) Recv() (*ListenResponse, error) {
 	m := new(ListenResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -358,42 +358,42 @@ func (x *proxyListenerListenClient) Recv() (*ListenResponse, error) {
 	return m, nil
 }
 
-// ProxyListenerServer is the server API for ProxyListener service.
-type ProxyListenerServer interface {
-	Listen(ProxyListener_ListenServer) error
+// TunnelListenerServer is the server API for TunnelListener service.
+type TunnelListenerServer interface {
+	Listen(TunnelListener_ListenServer) error
 }
 
-// UnimplementedProxyListenerServer can be embedded to have forward compatible implementations.
-type UnimplementedProxyListenerServer struct {
+// UnimplementedTunnelListenerServer can be embedded to have forward compatible implementations.
+type UnimplementedTunnelListenerServer struct {
 }
 
-func (*UnimplementedProxyListenerServer) Listen(srv ProxyListener_ListenServer) error {
+func (*UnimplementedTunnelListenerServer) Listen(srv TunnelListener_ListenServer) error {
 	return status.Errorf(codes.Unimplemented, "method Listen not implemented")
 }
 
-func RegisterProxyListenerServer(s *grpc.Server, srv ProxyListenerServer) {
-	s.RegisterService(&_ProxyListener_serviceDesc, srv)
+func RegisterTunnelListenerServer(s *grpc.Server, srv TunnelListenerServer) {
+	s.RegisterService(&_TunnelListener_serviceDesc, srv)
 }
 
-func _ProxyListener_Listen_Handler(srv interface{}, stream grpc.ServerStream) error {
-	return srv.(ProxyListenerServer).Listen(&proxyListenerListenServer{stream})
+func _TunnelListener_Listen_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(TunnelListenerServer).Listen(&tunnelListenerListenServer{stream})
 }
 
-type ProxyListener_ListenServer interface {
+type TunnelListener_ListenServer interface {
 	Send(*ListenResponse) error
 	Recv() (*ListenRequest, error)
 	grpc.ServerStream
 }
 
-type proxyListenerListenServer struct {
+type tunnelListenerListenServer struct {
 	grpc.ServerStream
 }
 
-func (x *proxyListenerListenServer) Send(m *ListenResponse) error {
+func (x *tunnelListenerListenServer) Send(m *ListenResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func (x *proxyListenerListenServer) Recv() (*ListenRequest, error) {
+func (x *tunnelListenerListenServer) Recv() (*ListenRequest, error) {
 	m := new(ListenRequest)
 	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -401,14 +401,14 @@ func (x *proxyListenerListenServer) Recv() (*ListenRequest, error) {
 	return m, nil
 }
 
-var _ProxyListener_serviceDesc = grpc.ServiceDesc{
-	ServiceName: "ProxyListener",
-	HandlerType: (*ProxyListenerServer)(nil),
+var _TunnelListener_serviceDesc = grpc.ServiceDesc{
+	ServiceName: "TunnelListener",
+	HandlerType: (*TunnelListenerServer)(nil),
 	Methods:     []grpc.MethodDesc{},
 	Streams: []grpc.StreamDesc{
 		{
 			StreamName:    "Listen",
-			Handler:       _ProxyListener_Listen_Handler,
+			Handler:       _TunnelListener_Listen_Handler,
 			ServerStreams: true,
 			ClientStreams: true,
 		},
