@@ -1,10 +1,8 @@
 import functools
 import logging
 import sys
-from collections.abc import Callable
 from dataclasses import dataclass
-from dataclasses import field as _
-from typing import Annotated, Any, TypeAlias, TypeVar, overload
+from typing import Annotated, Any, TypeVar
 
 import anyio
 import rich
@@ -15,12 +13,14 @@ from rich.console import Console
 import dagger
 from dagger.log import configure_logging
 
-from ._checks import CheckResolver, CheckResolverFunc
-from ._commands import CommandResolver, CommandResolverFunc
+from ._checks import CheckResolver
+from ._commands import CommandResolver
 from ._converter import converter as json_converter
 from ._converter import register_dagger_type_hooks
 from ._exceptions import FatalError
-from ._resolver import Resolver, ResolverFunc
+from ._functions import FunctionResolver
+from ._resolver import Resolver
+from ._shells import ShellResolver
 
 errors = Console(stderr=True)
 logger = logging.getLogger(__name__)
@@ -31,21 +31,29 @@ envid_path = anyio.Path("/outputs/envid")
 
 T = TypeVar("T")
 
-DecoratedResolverFunc: TypeAlias = Callable[[ResolverFunc[T]], ResolverFunc[T]]
 
-
-@dataclass(slots=True)
+@dataclass(slots=True, kw_only=True)
 class Inputs:
     resolver: str
     args: dict[str, Any]
     parent: dict[str, Any] | None
 
 
-@dataclass(slots=True)
 class Environment:
-    debug: bool = True
-    converter: JsonConverter = json_converter
-    _resolvers: dict[str, Resolver] = _(init=False, default_factory=dict)
+    function = FunctionResolver.to_decorator()
+    check = CheckResolver.to_decorator()
+    command = CommandResolver.to_decorator()
+    shell = ShellResolver.to_decorator()
+
+    def __init__(
+        self,
+        *,
+        debug: bool = True,
+        converter: JsonConverter = json_converter,
+    ):
+        self.debug = debug
+        self.converter = converter
+        self._resolvers: dict[str, Resolver] = {}
 
     def __call__(self) -> None:
         typer.run(self._entrypoint)
@@ -122,68 +130,3 @@ class Environment:
 
         logger.debug("output = %s", output)
         await outputs_path.write_text(output)
-
-    @overload
-    def _generic_decorator(
-        self,
-        resolver_class: type[Resolver[T]],
-        resolver_func: None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> DecoratedResolverFunc[T]:
-        ...
-
-    @overload
-    def _generic_decorator(
-        self,
-        resolver_class: type[Resolver[T]],
-        resolver_func: ResolverFunc[T],
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> ResolverFunc[T]:
-        ...
-
-    def _generic_decorator(
-        self,
-        resolver_class: type[Resolver[T]],
-        resolver_func: ResolverFunc[T] | None = None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ) -> ResolverFunc[T] | DecoratedResolverFunc[T]:
-        def wrapper(func: ResolverFunc[T]):
-            r = resolver_class.from_callable(func, name, description)
-            self._resolvers[r.graphql_name] = r
-            return func
-
-        return wrapper(resolver_func) if resolver_func else wrapper
-
-    def command(
-        self,
-        resolver: CommandResolverFunc | None = None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        return self._generic_decorator(
-            CommandResolver,
-            resolver,
-            name=name,
-            description=description,
-        )
-
-    def check(
-        self,
-        resolver: CheckResolverFunc | None = None,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-    ):
-        return self._generic_decorator(
-            CheckResolver,
-            resolver,
-            name=name,
-            description=description,
-        )
