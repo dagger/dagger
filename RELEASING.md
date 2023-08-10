@@ -6,6 +6,7 @@ This describes how to release Dagger:
 - [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
+- [Elixir SDK ⏱ `5mins`](#elixir-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
@@ -17,7 +18,7 @@ flowchart TD
     docs["📒 Documentation"]
     playground["🛝 Playground"]
     repo -.-> docs & playground
-    
+
     subgraph Dagger
         engine("🚙 Engine")
         cli("🚗 CLI &nbsp;")
@@ -49,6 +50,10 @@ flowchart TD
     nodejs["⬢ Node.js SDK"]
     npm["⬢ npmjs.com/@dagger.io/dagger"]
     repo ==> nodejs --> npm
+
+    elixir["Elixir SDK"]
+    hexpm["hex.pm/packages/dagger"]
+    repo ==> elixir --> hexpm
 ```
 
 
@@ -350,6 +355,55 @@ gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
 
 
 
+## Elixir SDK ⏱ `5mins`
+
+- [ ] ⚠️ Ensure that all SDKs have the same Engine version
+
+> **Warning**
+>
+> If we publish one SDK with an updated Engine version, we **must** do the same
+> for all other SDKs. This is important as currently our automatic provisioning
+> code enforces the existence of a single Engine running at a time. Users will
+> not be able to use multiple SDKs at the same time if the Engine version that
+> they reference differs.
+
+- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+  branch that you are about to release. This will usually be the commit that
+  bumps the Engine version, the one that you merged earlier.
+- [ ] Tag & publish:
+
+
+```console
+# e.g. cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
+# git show --summary
+# e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
+git tag "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push origin sdk/elixir/${ELIXIR_SDK_VERSION}
+```
+
+This will trigger the [`Publish Elixir SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-elixir.yml)
+which publishes a new version to [hex.pm/packages/dagger](https://hex.pm/packages/dagger)
+
+> **Note**
+>
+> To upload the release notes, we need to have the [`gh`
+CLI](https://cli.github.com/) installed, e.g. `brew install gh`
+
+- [ ] Upload the release notes by running:
+
+```console
+gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
+    --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
+```
+
+- [ ] Check that release notes look good in `Preview`
+- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Click on **Publish release**
+
+
+
 ## 📒 Documentation ⏱ `5mins`
 
 > **Warning**
@@ -415,7 +469,7 @@ The [Dagger Playground](https://play.dagger.cloud) is set to automatically
 update once there's a new release of the Dagger Engine. In order to verify
 which Dagger version the Playground is using, check the `x-dagger-engine` HTTP
 header with the deployed Dagger Engine version is returned for each playground
-query: 
+query:
 
 ![image](https://user-images.githubusercontent.com/1578458/226123191-fae0dff4-018d-4e62-bac3-73e54e87938a.png)
 
