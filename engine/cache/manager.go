@@ -343,8 +343,8 @@ func (m *manager) pushLayer(ctx context.Context, layerDesc ocispecs.Descriptor, 
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	if err := checkResponse(resp); err != nil {
+		return err
 	}
 	return nil
 }
