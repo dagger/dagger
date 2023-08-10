@@ -1,4 +1,4 @@
-# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%203%2C%202023-success?style=flat-square)
+# Releasing ![shields.io](https://img.shields.io/badge/Last%20updated%20on-August%2010%2C%202023-success?style=flat-square)
 
 This describes how to release Dagger:
 
@@ -6,6 +6,7 @@ This describes how to release Dagger:
 - [🐹 Go SDK ⏱ `30mins`](#-go-sdk--30mins)
 - [🐍 Python SDK ⏱ `5mins`](#-python-sdk--5mins)
 - [⬢ Node.js SDK ⏱ `5mins`](#-nodejs-sdk--5mins)
+- [🧪 Elixir SDK ⏱ `5mins`](#-elixir-sdk--5mins)
 - [📒 Documentation ⏱ `5mins`](#-documentation--5mins)
 - [🛝 Playground ⏱ `2mins`](#-playground--2mins)
 
@@ -39,7 +40,7 @@ flowchart TD
     go-ref["🐹 pkg.go.dev/dagger.io/dagger"]
 
     repo ==> go --> go-repo --> go-pkg & go-ref
-    registry -.- S3 -.- go & python & nodejs
+    registry -.- S3 -.- go & python & nodejs & elixir
 
     python["🐍 Python SDK"]
     pypi["🐍 pypi.org/project/dagger-io"]
@@ -49,6 +50,10 @@ flowchart TD
     nodejs["⬢ Node.js SDK"]
     npm["⬢ npmjs.com/@dagger.io/dagger"]
     repo ==> nodejs --> npm
+
+    elixir["🧪 Elixir SDK"]
+    hex["🧪 hex.pm/packages/dagger"]
+    repo ==> elixir --> hex
 ```
 
 
@@ -138,9 +143,8 @@ and improve it. We want small, constant improvements which compound. Therefore:
 git checkout main
 git pull
 
-# git show --summary
-# e.g. export ENGINE_GIT_SHA=4fe49b534a8cc5bc37cbd17f4b4343d2c1868f8b
-# e.g. export ENGINE_VERSION="$(changie latest)"
+export ENGINE_GIT_SHA="$(git rev-parse --verify HEAD)"
+export ENGINE_VERSION="$(changie latest)"
 git tag "${ENGINE_VERSION:?must be set}" "${ENGINE_GIT_SHA:?must be set}"
 
 git push origin "${ENGINE_VERSION:?must be set}"
@@ -160,17 +164,22 @@ git fetch origin
 git checkout bump-engine
 
 cd sdk/go
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5613"
 changie batch patch
 changie merge
 
 cd ../python
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5613"
 changie batch patch
 changie merge
 
 cd ../nodejs
-changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5489"
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5613"
+changie batch patch
+changie merge
+
+cd ../elixir
+changie new --kind "Dependencies" --body "Bump Engine to $ENGINE_VERSION" --custom "Author=github-actions" --custom "PR=5613"
 changie batch patch
 changie merge
 ```
@@ -201,9 +210,8 @@ changie merge
 - [ ] Tag & publish:
 
 ```console
-# git show --summary
-# e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
-# e.g. cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
+export SDK_GIT_SHA="$(git rev-parse --verify HEAD)"
+cd sdk/go && export GO_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/go/${GO_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin "sdk/go/${GO_SDK_VERSION:?must be set}"
 ```
@@ -270,9 +278,7 @@ gh release create "sdk/go/${GO_SDK_VERSION:?must be set}" \
 
 
 ```console
-# git show --summary
-# e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
-# e.g. cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
+cd sdk/python && export PYTHON_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/python/${PYTHON_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/python/${PYTHON_SDK_VERSION}
 ```
@@ -320,9 +326,7 @@ gh release create "sdk/python/${PYTHON_SDK_VERSION:?must be set}" \
 
 
 ```console
-# e.g. cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
-# git show --summary
-# e.g. export SDK_GIT_SHA=92e7a4b1d23e0f4bb67f38cf0cbbbc5e82298e4e
+cd sdk/nodejs && export NODEJS_SDK_VERSION=$(changie latest) && cd ../..
 git tag "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
 git push origin sdk/nodejs/${NODEJS_SDK_VERSION}
 ```
@@ -342,6 +346,53 @@ CLI](https://cli.github.com/) installed, e.g. `brew install gh`
 gh release create "sdk/nodejs/${NODEJS_SDK_VERSION:?must be set}" \
     --draft --verify-tag --title sdk/nodejs/$NODEJS_SDK_VERSION \
     --notes-file sdk/nodejs/.changes/$NODEJS_SDK_VERSION.md
+```
+
+- [ ] Check that release notes look good in `Preview`
+- [ ] ⚠️ De-select **Set as the latest release** (only used for 🚙 Engine + 🚗 CLI releases)
+- [ ] Click on **Publish release**
+
+
+
+## 🧪 Elixir SDK ⏱ `5mins`
+
+- [ ] ⚠️ Ensure that all SDKs have the same Engine version
+
+> **Warning**
+>
+> If we publish one SDK with an updated Engine version, we **must** do the same
+> for all other SDKs. This is important as currently our automatic provisioning
+> code enforces the existence of a single Engine running at a time. Users will
+> not be able to use multiple SDKs at the same time if the Engine version that
+> they reference differs.
+
+- [ ] Ensure that all checks are green ✅ for the `<SDK_GIT_SHA>` on the `main`
+  branch that you are about to release. This will usually be the commit that
+  bumps the Engine version, the one that you merged earlier.
+- [ ] Tag & publish:
+
+
+```console
+cd sdk/elixir && export ELIXIR_SDK_VERSION=$(changie latest) && cd ../..
+git tag "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" "${SDK_GIT_SHA:?must be set}"
+git push origin sdk/elixir/${NODEJS_SDK_VERSION}
+```
+
+This will trigger the [`Publish Elixir SDK`
+workflow](https://github.com/dagger/dagger/actions/workflows/publish-sdk-elixir.yml)
+which publishes a new version to [🧪 hex.pm/packages/dagger](https://hex.pm/packages/dagger)
+
+> **Note**
+>
+> To upload the release notes, we need to have the [`gh`
+CLI](https://cli.github.com/) installed, e.g. `brew install gh`
+
+- [ ] Upload the release notes by running:
+
+```console
+gh release create "sdk/elixir/${ELIXIR_SDK_VERSION:?must be set}" \
+    --draft --verify-tag --title sdk/elixir/$ELIXIR_SDK_VERSION \
+    --notes-file sdk/elixir/.changes/$ELIXIR_SDK_VERSION.md
 ```
 
 - [ ] Check that release notes look good in `Preview`
